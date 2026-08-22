@@ -3,34 +3,34 @@ import type { PersistedAuthSession } from '../../auth/persistence/auth-persisten
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 
 import type {
-  ClientMutationIssuedSessionAuthority,
-  ClientMutationOperation,
-  ClientMutationSystemAuthority,
+    ClientMutationIssuedSessionAuthority,
+    ClientMutationOperation,
+    ClientMutationSystemAuthority
 } from './client-mutation-contracts.ts';
 
 export function toClientMutationIssuedSessionAuthority(
-  session: IssuedAuthSession | PersistedAuthSession,
-  scope: StateScope,
-  operation: Exclude<ClientMutationOperation, 'expireSession'>,
+    session: IssuedAuthSession | PersistedAuthSession,
+    scope: StateScope,
+    operation: Exclude<ClientMutationOperation, 'expireSession'>
 ): ClientMutationIssuedSessionAuthority {
-  return {
-    kind: 'issued-session',
-    version: 1,
-    principalId: session.clientId,
-    sessionId: session.sessionId,
-    sessionIssuedAtEpochMs: session.issuedAtEpochMs,
-    sessionExpiresAtEpochMs: session.expiresAtEpochMs,
-    applicationId: scope.applicationId,
-    workspaceId: scope.workspaceId,
-    operation,
-  };
+    return {
+        kind: 'issued-session',
+        version: 1,
+        principalId: session.clientId,
+        sessionId: session.sessionId,
+        sessionIssuedAtEpochMs: session.issuedAtEpochMs,
+        sessionExpiresAtEpochMs: session.expiresAtEpochMs,
+        applicationId: scope.applicationId,
+        workspaceId: scope.workspaceId,
+        operation
+    };
 }
 
 export function toClientMutationSystemAuthority(serviceId: string): ClientMutationSystemAuthority {
-  return {
-    kind: 'system',
-    version: 1,
-    serviceId,
-    operation: 'expireSession',
-  };
+    return {
+        kind: 'system',
+        version: 1,
+        serviceId,
+        operation: 'expireSession'
+    };
 }

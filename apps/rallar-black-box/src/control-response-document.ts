@@ -2,7 +2,7 @@ const documentTextByValue = new WeakMap<object, string>();
 
 export function rememberControlResponseDocument(
     value: unknown,
-    exactText: string,
+    exactText: string
 ): void {
     const key = weakKey(value);
     if (key) {
@@ -12,7 +12,7 @@ export function rememberControlResponseDocument(
 
 export function inheritControlResponseDocument(
     from: unknown,
-    to: unknown,
+    to: unknown
 ): void {
     const exactText = controlResponseDocumentText(from);
     if (exactText !== undefined) {
@@ -21,7 +21,7 @@ export function inheritControlResponseDocument(
 }
 
 export function controlResponseDocumentText(
-    value: unknown,
+    value: unknown
 ): string | undefined {
     const key = weakKey(value);
     return key ? documentTextByValue.get(key) : undefined;
@@ -29,7 +29,7 @@ export function controlResponseDocumentText(
 
 function weakKey(value: unknown): object | undefined {
     return value !== null &&
-        (typeof value === 'object' || typeof value === 'function')
+            (typeof value === 'object' || typeof value === 'function')
         ? (value as object)
         : undefined;
 }

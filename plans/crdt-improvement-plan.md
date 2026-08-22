@@ -411,4 +411,3 @@ Acceptance criteria:
 - How much CRDT metadata should browser local storage retain after a successful
   durable snapshot?
 - What is the product-level conflict resolution UX for multi-value registers?
-

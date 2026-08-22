@@ -23,10 +23,12 @@
 ### Task 1: Classify rejected agent-ticket auth at the launch boundary
 
 **Files:**
+
 - Modify: `packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts`
 - Modify: `apps/rallar-black-box/src/browser-agent-launch-service.ts`
 
 **Interfaces:**
+
 - Consumes: `ApiHttpError` from `@shared-web/browser/api-integration.ts`.
 - Produces: optional `onAuthInvalid(error: unknown): void | Promise<void>` configuration on `createBrowserAgentLaunchService(...)`.
 - Preserves: `BrowserAgentLaunchService.prepare(...)` and `PreparedBrowserAgentCohort` public shapes.
@@ -44,7 +46,7 @@ describe('Recipe Console browser-agent launch auth recovery', () => {
         accessToken: 'rejected-access-token',
         username: 'operator',
         sessionId: 'operator-session',
-        expiresAtEpochMs: 4_000_000_000_000,
+        expiresAtEpochMs: 4_000_000_000_000
     };
     const issueRunToken = vi.fn(async ({ runId, agentId }: {
         runId: string;
@@ -54,7 +56,7 @@ describe('Recipe Console browser-agent launch auth recovery', () => {
         agentId,
         token: `control-${agentId}`,
         issuedAtEpochMs: 1_000,
-        expiresAtEpochMs: 61_000,
+        expiresAtEpochMs: 61_000
     }));
 
     it('invalidates a rejected operator session and preserves the ticket 401', async () => {
@@ -62,7 +64,7 @@ describe('Recipe Console browser-agent launch auth recovery', () => {
             'POST',
             '/api/auth/agent-session-tickets',
             401,
-            '{"error":"Unauthorized: Invalid or expired access token"}',
+            '{"error":"Unauthorized: Invalid or expired access token"}'
         );
         const onAuthInvalid = vi.fn(() => {
             throw new Error('cleanup failed');
@@ -74,14 +76,16 @@ describe('Recipe Console browser-agent launch auth recovery', () => {
             apiBaseUrl: 'https://api.example.test',
             authSession,
             issueRunToken,
-            issueAgentTickets: async () => { throw unauthorized; },
-            onAuthInvalid,
+            issueAgentTickets: async () => {
+                throw unauthorized;
+            },
+            onAuthInvalid
         });
 
         await expect(service.prepare({
             runId: 'run-1',
             agentIds: ['browser-1', 'browser-2', 'browser-3'],
-            group,
+            group
         })).rejects.toBe(unauthorized);
         expect(onAuthInvalid).toHaveBeenCalledOnce();
         expect(onAuthInvalid).toHaveBeenCalledWith(unauthorized);
@@ -93,7 +97,7 @@ describe('Recipe Console browser-agent launch auth recovery', () => {
             'POST',
             '/api/auth/agent-session-tickets',
             403,
-            '{"error":"Forbidden"}',
+            '{"error":"Forbidden"}'
         );
         const onAuthInvalid = vi.fn();
         const service = createBrowserAgentLaunchService({
@@ -103,14 +107,16 @@ describe('Recipe Console browser-agent launch auth recovery', () => {
             apiBaseUrl: 'https://api.example.test',
             authSession,
             issueRunToken,
-            issueAgentTickets: async () => { throw forbidden; },
-            onAuthInvalid,
+            issueAgentTickets: async () => {
+                throw forbidden;
+            },
+            onAuthInvalid
         });
 
         await expect(service.prepare({
             runId: 'run-1',
             agentIds: ['browser-1'],
-            group,
+            group
         })).rejects.toBe(forbidden);
         expect(onAuthInvalid).not.toHaveBeenCalled();
         expect(issueRunToken).not.toHaveBeenCalled();
@@ -156,23 +162,25 @@ export function createBrowserAgentLaunchService(config: Readonly<{
 Wrap only the protected ticket request in `issueTickets(...)`:
 
 ```typescript
-    let response: AgentSessionTicketResponse;
-    try {
-        response = await (config.issueAgentTickets ?? issueAgentSessionTicketsAt)(
-            config.apiBaseUrl,
-            { agentIds },
-            { authSession: config.authSession, signal },
-        );
-    } catch (error) {
-        if (error instanceof ApiHttpError && error.status === 401) {
-            try {
-                await config.onAuthInvalid?.(error);
-            } catch {
-                // Auth recovery must not replace the actionable API failure.
-            }
+let response: AgentSessionTicketResponse;
+try {
+    response = await (config.issueAgentTickets ?? issueAgentSessionTicketsAt)(
+        config.apiBaseUrl,
+        { agentIds },
+        { authSession: config.authSession, signal }
+    );
+}
+catch (error) {
+    if (error instanceof ApiHttpError && error.status === 401) {
+        try {
+            await config.onAuthInvalid?.(error);
         }
-        throw error;
+        catch {
+            // Auth recovery must not replace the actionable API failure.
+        }
     }
+    throw error;
+}
 ```
 
 Leave ticket validation, control-token minting, and launch URL construction unchanged.
@@ -199,12 +207,14 @@ git commit -m "fix: classify browser agent ticket auth failures"
 ### Task 2: Return the stale-session operator to login from the visible flow
 
 **Files:**
+
 - Modify: `tests/playwright/rallar-black-box/recipe-console-agent-launch.spec.ts`
 - Modify: `apps/rallar-black-box/src/App.tsx`
 - Modify: `apps/rallar-black-box/src/recipe-console/app/RecipeConsoleApp.tsx`
 - Modify: `apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx`
 
 **Interfaces:**
+
 - Consumes: `onAuthInvalid(error)` emitted by Task 1.
 - Produces: app-owned clearing of `auth.session` and `authSession`, followed by the existing `LoginScreen` branch.
 - Preserves: direct `ControlConnectionProvider` test and app consumers by keeping its callback prop optional.
@@ -220,24 +230,24 @@ const API_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):8080\/.*/;
 Add this test after the successful three-agent flow:
 
 ```typescript
-test('returns a rejected stored operator session to login and closes reserved tabs', async ({
-    context,
-    page,
-}) => {
+test('returns a rejected stored operator session to login and closes reserved tabs', async ({ context, page }) => {
     const control = await installAgentLaunchControl(context, {
-        registerOnToken: false,
+        registerOnToken: false
     });
     await context.addInitScript(() => {
-        localStorage.setItem('auth.session', JSON.stringify({
-            clientId: 'stale-operator-client',
-            accessToken: 'server-rejected-access-token',
-            username: 'stale-operator',
-            sessionId: 'stale-operator-session',
-            expiresAtEpochMs: 4_000_000_000_000,
-        }));
+        localStorage.setItem(
+            'auth.session',
+            JSON.stringify({
+                clientId: 'stale-operator-client',
+                accessToken: 'server-rejected-access-token',
+                username: 'stale-operator',
+                sessionId: 'stale-operator-session',
+                expiresAtEpochMs: 4_000_000_000_000
+            })
+        );
     });
     let ticketRequests = 0;
-    await context.route(API_ROUTE, async route => {
+    await context.route(API_ROUTE, async (route) => {
         const request = route.request();
         const pathname = new URL(request.url()).pathname;
         if (request.method() === 'OPTIONS') {
@@ -250,7 +260,7 @@ test('returns a rejected stored operator session to login and closes reserved ta
         ) {
             ticketRequests += 1;
             await fulfillJson(route, {
-                error: 'Unauthorized: Invalid or expired access token',
+                error: 'Unauthorized: Invalid or expired access token'
             }, 401);
             return;
         }
@@ -258,13 +268,15 @@ test('returns a rejected stored operator session to login and closes reserved ta
     });
 
     await page.goto(
-        EXECUTE_ROUTE.replace('provider=simulated', 'provider=browser-rallar'),
+        EXECUTE_ROUTE.replace('provider=simulated', 'provider=browser-rallar')
     );
     await page.getByLabel('Control run ID for new agents')
         .fill('stale-session-run');
     const childPages: Page[] = [];
-    context.on('page', child => {
-        if (child !== page) childPages.push(child);
+    context.on('page', (child) => {
+        if (child !== page) {
+            childPages.push(child);
+        }
     });
     await page.getByRole('button', { name: 'Open 3 browser agents' }).click();
 
@@ -272,10 +284,10 @@ test('returns a rejected stored operator session to login and closes reserved ta
         .toBeVisible();
     await expect.poll(() => childPages.length).toBe(3);
     await expect.poll(
-        () => childPages.filter(child => !child.isClosed()).length,
+        () => childPages.filter((child) => !child.isClosed()).length
     ).toBe(0);
     await expect.poll(
-        async () => await page.evaluate(() => localStorage.getItem('auth.session')),
+        async () => await page.evaluate(() => localStorage.getItem('auth.session'))
     ).toBeNull();
     expect(ticketRequests).toBe(1);
     expect(control.tokenRequests).toHaveLength(0);
@@ -291,9 +303,8 @@ async function fulfillApiPreflight(route: Route): Promise<void> {
         headers: {
             'access-control-allow-origin': '*',
             'access-control-allow-methods': 'POST, OPTIONS',
-            'access-control-allow-headers':
-                'authorization, content-type, x-client-id',
-        },
+            'access-control-allow-headers': 'authorization, content-type, x-client-id'
+        }
     });
 }
 ```
@@ -335,12 +346,12 @@ export default function RecipeConsoleApp({
 ```
 
 ```tsx
-                <ControlConnectionProvider
-                    authSession={authSession}
-                    bootstrap={preferences.state.effectiveBootstrap}
-                    controlReadTimeoutMs={preferences.state.controlReadTimeoutMs}
-                    onAuthInvalid={onAuthInvalid}
-                >
+<ControlConnectionProvider
+    authSession={authSession}
+    bootstrap={preferences.state.effectiveBootstrap}
+    controlReadTimeoutMs={preferences.state.controlReadTimeoutMs}
+    onAuthInvalid={onAuthInvalid}
+>
 ```
 
 Add the optional callback to `ControlConnectionProvider`, forward it to the launch service, and include it in the memo dependencies:
@@ -362,37 +373,37 @@ export function ControlConnectionProvider({
 ```
 
 ```typescript
-        ? createBrowserAgentLaunchService({
-            origin: globalThis.location?.origin ?? 'http://localhost:5176',
-            providerMode: bootstrap.providerMode,
-            controlWsUrl: controlWebSocketUrlFromHttpBaseUrl(apiSetup.api.baseUrl),
-            apiBaseUrl: bootstrap.apiBaseUrl,
-            authSession,
-            issueRunToken: apiSetup.api.agentLaunch.issueRunToken,
-            onAuthInvalid,
-        })
+? createBrowserAgentLaunchService({
+    origin: globalThis.location?.origin ?? 'http://localhost:5176',
+    providerMode: bootstrap.providerMode,
+    controlWsUrl: controlWebSocketUrlFromHttpBaseUrl(apiSetup.api.baseUrl),
+    apiBaseUrl: bootstrap.apiBaseUrl,
+    authSession,
+    issueRunToken: apiSetup.api.agentLaunch.issueRunToken,
+    onAuthInvalid,
+})
 ```
 
 ```typescript
-        browserAgentLaunchIssue,
-        onAuthInvalid,
-    ]);
+    browserAgentLaunchIssue,
+    onAuthInvalid,
+]);
 ```
 
 In `App`, add the idempotent local invalidation handler before `logout` and pass it to the lazy Recipe Console:
 
 ```typescript
-    const invalidateAuthSession = (): void => {
-        clearSession();
-        setAuthSession(undefined);
-        setAuthBusy(false);
-        setAuthError(undefined);
-    };
+const invalidateAuthSession = (): void => {
+    clearSession();
+    setAuthSession(undefined);
+    setAuthBusy(false);
+    setAuthError(undefined);
+};
 ```
 
 ```tsx
-                    onAuthInvalid={invalidateAuthSession}
-                    onLogout={logout}
+onAuthInvalid = { invalidateAuthSession };
+onLogout = { logout };
 ```
 
 Remove five blank separator lines in `App.tsx` while making these adjacent edits so the existing 260-line structural limit remains true; do not compress logic or change the limit.
@@ -429,11 +440,13 @@ git commit -m "fix: recover browser agent launch from stale auth"
 ### Task 3: Verify successful launch compatibility and app integrity
 
 **Files:**
+
 - Verify: `apps/rallar-black-box/src/**`
 - Verify: `packages/tests/rallar-black-box/recipe-console-agent-launch.test.ts`
 - Verify: `tests/playwright/rallar-black-box/recipe-console-agent-launch.spec.ts`
 
 **Interfaces:**
+
 - Consumes: completed Task 1 and Task 2 behavior.
 - Produces: verification evidence for stale-session recovery and preserved valid three-agent launch behavior.
 

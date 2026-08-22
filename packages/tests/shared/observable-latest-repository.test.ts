@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ObservableLatestRepository } from '@shared/cache/ObservableLatestRepository.ts';
-import { type ObservableKeyedValueEvent, ObservableValueEventType, } from '@shared/cache/RepositoryInterfaces.ts';
+import { ObservableValueEventType, type ObservableKeyedValueEvent } from '@shared/cache/RepositoryInterfaces.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('ObservableLatestRepository', () => {
     afterEach(() => {
@@ -26,20 +26,17 @@ describe('ObservableLatestRepository', () => {
             ['a', ObservableValueEventType.Created],
             ['a', ObservableValueEventType.Updated],
             ['a', ObservableValueEventType.Refreshed],
-            ['a', ObservableValueEventType.Deleted],
+            ['a', ObservableValueEventType.Deleted]
         ]);
         expect(events[3]).toMatchObject({
             key: 'a',
-            previous: 2,
+            previous: 2
         });
     });
 
     it('uses custom equality for refreshed writes', async () => {
-        const repository = new ObservableLatestRepository<
-            string,
-            { version: number; value: string }
-        >({
-            equals: (left, right) => left.version === right.version,
+        const repository = new ObservableLatestRepository<string, { version: number; value: string; }>({
+            equals: (left, right) => left.version === right.version
         });
         const events: ObservableValueEventType[] = [];
 
@@ -55,7 +52,7 @@ describe('ObservableLatestRepository', () => {
         expect(events).toEqual([
             ObservableValueEventType.Created,
             ObservableValueEventType.Refreshed,
-            ObservableValueEventType.Updated,
+            ObservableValueEventType.Updated
         ]);
     });
 
@@ -64,7 +61,7 @@ describe('ObservableLatestRepository', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const repository = new ObservableLatestRepository<string, number>({
-            ttlMs: 100,
+            ttlMs: 100
         });
         const events: ObservableValueEventType[] = [];
 
@@ -82,7 +79,7 @@ describe('ObservableLatestRepository', () => {
         expect(events).toEqual([
             ObservableValueEventType.Created,
             ObservableValueEventType.Refreshed,
-            ObservableValueEventType.Deleted,
+            ObservableValueEventType.Deleted
         ]);
         expect(repository.has('a')).toBe(false);
     });
@@ -93,7 +90,7 @@ describe('ObservableLatestRepository', () => {
 
         const repository = new ObservableLatestRepository<string, number>({
             ttlMs: 10,
-            deleteExpiredIntervalMs: 20,
+            deleteExpiredIntervalMs: 20
         });
         const events: ObservableValueEventType[] = [];
 
@@ -112,7 +109,7 @@ describe('ObservableLatestRepository', () => {
         expect(repository.size()).toBe(0);
         expect(events).toEqual([
             ObservableValueEventType.Created,
-            ObservableValueEventType.Deleted,
+            ObservableValueEventType.Deleted
         ]);
 
         repository.set('kept-after-dispose', 2);
@@ -145,7 +142,7 @@ describe('ObservableLatestRepository', () => {
             key: 'a',
             type: ObservableValueEventType.Updated,
             value: 2,
-            previous: 1,
+            previous: 1
         });
     });
 
@@ -154,7 +151,7 @@ describe('ObservableLatestRepository', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const repository = new ObservableLatestRepository<string, number>({
-            ttlMs: 10,
+            ttlMs: 10
         });
         repository.set('a', 1);
         repository.set('b', 2);
@@ -167,9 +164,9 @@ describe('ObservableLatestRepository', () => {
     });
 
     it('updateIfNewer creates, applies newer versions, and emits the matching events', async () => {
-        type Versioned = Readonly<{ version: number; payload: string }>;
+        type Versioned = Readonly<{ version: number; payload: string; }>;
         const repository = new ObservableLatestRepository<string, Versioned>({
-            equals: (left, right) => left.version === right.version,
+            equals: (left, right) => left.version === right.version
         });
         const events: ObservableValueEventType[] = [];
         repository.onChangeDo((event) => {
@@ -184,29 +181,29 @@ describe('ObservableLatestRepository', () => {
             repository.updateIfNewer('k', { version: 1, payload: 'a' }, {
                 versionOf,
                 onNewer,
-                onStale,
-            }),
+                onStale
+            })
         ).toBe(true);
         expect(
             repository.updateIfNewer('k', { version: 2, payload: 'b' }, {
                 versionOf,
                 onNewer,
-                onStale,
-            }),
+                onStale
+            })
         ).toBe(true);
         expect(
             repository.updateIfNewer('k', { version: 1, payload: 'stale' }, {
                 versionOf,
                 onNewer,
-                onStale,
-            }),
+                onStale
+            })
         ).toBe(false);
         expect(
             repository.updateIfNewer('k', { version: 2, payload: 'sameVersion' }, {
                 versionOf,
                 onNewer,
-                onStale,
-            }),
+                onStale
+            })
         ).toBe(false);
 
         await repository.whenIdle();
@@ -218,7 +215,7 @@ describe('ObservableLatestRepository', () => {
             ObservableValueEventType.Created,
             ObservableValueEventType.Updated,
             ObservableValueEventType.Refreshed,
-            ObservableValueEventType.Refreshed,
+            ObservableValueEventType.Refreshed
         ]);
     });
 
@@ -239,13 +236,13 @@ describe('ObservableLatestRepository', () => {
 
         expect(events).toEqual([
             ['b', ObservableValueEventType.Created],
-            ['b', ObservableValueEventType.Updated],
+            ['b', ObservableValueEventType.Updated]
         ]);
         expect(repository.read('b')).toBe(2);
     });
 
     it('deletes only the exact observed value', async () => {
-        type Snapshot = Readonly<{ revision: number }>;
+        type Snapshot = Readonly<{ revision: number; }>;
         type ConditionallyDeletable = Readonly<{
             compareAndDelete?: (key: string, expected: Snapshot) => boolean;
         }>;
@@ -260,20 +257,20 @@ describe('ObservableLatestRepository', () => {
         repository.set('room', first);
 
         expect(
-            conditionallyDeletable.compareAndDelete?.('room', equalButDifferent)
-                ?? false,
+            conditionallyDeletable.compareAndDelete?.('room', equalButDifferent) ??
+                false
         ).toBe(false);
         expect(repository.peek('room')).toBe(first);
 
         repository.set('room', newer);
         await repository.whenIdle();
         expect(
-            conditionallyDeletable.compareAndDelete?.('room', first) ?? false,
+            conditionallyDeletable.compareAndDelete?.('room', first) ?? false
         ).toBe(false);
         expect(repository.peek('room')).toBe(newer);
 
         expect(
-            conditionallyDeletable.compareAndDelete?.('room', newer) ?? false,
+            conditionallyDeletable.compareAndDelete?.('room', newer) ?? false
         ).toBe(true);
         await repository.whenIdle();
 
@@ -281,7 +278,7 @@ describe('ObservableLatestRepository', () => {
         expect(deleted).toHaveBeenCalledTimes(1);
         expect(deleted.mock.calls[0]?.[0]).toMatchObject({
             key: 'room',
-            previous: newer,
+            previous: newer
         });
     });
 });

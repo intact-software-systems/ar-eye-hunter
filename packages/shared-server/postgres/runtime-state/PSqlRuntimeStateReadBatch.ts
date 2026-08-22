@@ -1,31 +1,31 @@
-import type { PSqlSql } from '../PostgresSqlClient.ts';
 import {
-  type RuntimeStateReadBatchSelection,
-  type RuntimeStateReadBatchSelector,
-  validateRuntimeStateReadBatchResult,
-  validateRuntimeStateReadBatchSelectors,
+    validateRuntimeStateReadBatchResult,
+    validateRuntimeStateReadBatchSelectors,
+    type RuntimeStateReadBatchSelection,
+    type RuntimeStateReadBatchSelector
 } from '../../runtime-state/RuntimeStateReadBatch.ts';
+import type { PSqlSql } from '../PostgresSqlClient.ts';
 import { toExclusivePrefixEnd } from './PSqlRuntimeStateSqlValues.ts';
 
 type PSqlRuntimeStateReadBatchRow = Readonly<{
-  selections: unknown;
+    selections: unknown;
 }>;
 
 type PSqlRuntimeStateReadBatchSelector = Readonly<{
-  selectorId: string;
-  kind: RuntimeStateReadBatchSelector['kind'];
-  namespace: string;
-  key: string | null;
-  keyPrefix: string | null;
-  prefixEnd: string | null;
+    selectorId: string;
+    kind: RuntimeStateReadBatchSelector['kind'];
+    namespace: string;
+    key: string | null;
+    keyPrefix: string | null;
+    prefixEnd: string | null;
 }>;
 
 export async function readPSqlRuntimeStateBatch(
-  sql: PSqlSql,
-  input: readonly RuntimeStateReadBatchSelector[],
+    sql: PSqlSql,
+    input: readonly RuntimeStateReadBatchSelector[]
 ): Promise<readonly RuntimeStateReadBatchSelection[]> {
-  const selectors = validateRuntimeStateReadBatchSelectors(input);
-  const rows = await sql<PSqlRuntimeStateReadBatchRow[]>`
+    const selectors = validateRuntimeStateReadBatchSelectors(input);
+    const rows = await sql<PSqlRuntimeStateReadBatchRow[]>`
     select coalesce(
              jsonb_agg(
                jsonb_build_object(
@@ -92,74 +92,77 @@ export async function readPSqlRuntimeStateBatch(
     ) selector_result
   `;
 
-  if (rows.length !== 1) {
-    throw new Error(
-      `Invalid runtime state read batch database result: expected one packed row, received ${rows.length}`,
+    if (rows.length !== 1) {
+        throw new Error(
+            `Invalid runtime state read batch database result: expected one packed row, received ${rows.length}`
+        );
+    }
+    return validateRuntimeStateReadBatchResult(
+        selectors,
+        normalizeDriverResult(rows[0].selections)
     );
-  }
-  return validateRuntimeStateReadBatchResult(
-    selectors,
-    normalizeDriverResult(rows[0].selections),
-  );
 }
 
 function toSqlSelector(
-  selector: RuntimeStateReadBatchSelector,
+    selector: RuntimeStateReadBatchSelector
 ): PSqlRuntimeStateReadBatchSelector {
-  return selector.kind === 'key'
-    ? {
-      ...selector,
-      keyPrefix: null,
-      prefixEnd: null,
-    }
-    : {
-      ...selector,
-      key: null,
-      prefixEnd: toExclusivePrefixEnd(selector.keyPrefix),
-    };
+    return selector.kind === 'key'
+        ? {
+            ...selector,
+            keyPrefix: null,
+            prefixEnd: null
+        }
+        : {
+            ...selector,
+            key: null,
+            prefixEnd: toExclusivePrefixEnd(selector.keyPrefix)
+        };
 }
 
 function normalizeDriverResult(input: unknown): unknown {
-  const parsed = typeof input === 'string' ? parsePayload(input) : input;
-  if (!Array.isArray(parsed)) return parsed;
-  return parsed.map((selection) => {
-    if (!isRecord(selection) || !Array.isArray(selection.entries)) {
-      return selection;
+    const parsed = typeof input === 'string' ? parsePayload(input) : input;
+    if (!Array.isArray(parsed)) {
+        return parsed;
     }
-    return {
-      ...selection,
-      entries: selection.entries.map((entry) => {
-        if (!isRecord(entry)) return entry;
+    return parsed.map((selection) => {
+        if (!isRecord(selection) || !Array.isArray(selection.entries)) {
+            return selection;
+        }
         return {
-          ...entry,
-          expireAtTimestamp: normalizeDriverInteger(entry.expireAtTimestamp),
-          revision: normalizeDriverInteger(entry.revision),
+            ...selection,
+            entries: selection.entries.map((entry) => {
+                if (!isRecord(entry)) {
+                    return entry;
+                }
+                return {
+                    ...entry,
+                    expireAtTimestamp: normalizeDriverInteger(entry.expireAtTimestamp),
+                    revision: normalizeDriverInteger(entry.revision)
+                };
+            })
         };
-      }),
-    };
-  });
+    });
 }
 
 function parsePayload(input: string): unknown {
-  try {
-    return JSON.parse(input) as unknown;
-  } catch (error) {
-    throw new Error(
-      `Invalid runtime state read batch database JSON: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
-  }
+    try {
+        return JSON.parse(input) as unknown;
+    }
+    catch (error) {
+        throw new Error(
+            `Invalid runtime state read batch database JSON: ${error instanceof Error ? error.message : String(error)}`
+        );
+    }
 }
 
 function normalizeDriverInteger(input: unknown): unknown {
-  if (typeof input !== 'string' || !/^-?(0|[1-9]\d*)$/u.test(input)) {
-    return input;
-  }
-  const parsed = Number(input);
-  return Number.isSafeInteger(parsed) ? parsed : input;
+    if (typeof input !== 'string' || !/^-?(0|[1-9]\d*)$/u.test(input)) {
+        return input;
+    }
+    const parsed = Number(input);
+    return Number.isSafeInteger(parsed) ? parsed : input;
 }
 
 function isRecord(input: unknown): input is Readonly<Record<string, unknown>> {
-  return typeof input === 'object' && input !== null && !Array.isArray(input);
+    return typeof input === 'object' && input !== null && !Array.isArray(input);
 }

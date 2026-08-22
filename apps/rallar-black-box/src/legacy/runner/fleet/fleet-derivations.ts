@@ -2,20 +2,20 @@ import {
     deriveFleetReportAgentDetail,
     deriveFleetReportHeatmapRows,
     deriveFleetReportMissingLabelAgentIds,
-    deriveFleetReportRegionRows,
+    deriveFleetReportRegionRows
 } from '@shared-test/rallar-bb-test/fleet-report-analysis.ts';
 import type { ControlFleetRunReport } from '../../../control-run-manager.ts';
 import type { FleetAgentHeatmapRow } from './fleet-types.ts';
 
 export function fleetHeatmapRows(
     reports: readonly ControlFleetRunReport[],
-    runs: readonly ControlFleetRunReport[],
+    runs: readonly ControlFleetRunReport[]
 ): readonly FleetAgentHeatmapRow[] {
     return deriveFleetReportHeatmapRows(reports, runs, {
         reportOrder: 'input',
         timedOutAsFailed: false,
         stableTieBreaks: false,
-        textCollation: 'legacy-locale',
+        textCollation: 'legacy-locale'
     }).rows;
 }
 
@@ -24,24 +24,24 @@ export function fleetRegionRows(reports: readonly ControlFleetRunReport[]) {
         reportOrder: 'input',
         timedOutAsFailed: false,
         stableTieBreaks: false,
-        textCollation: 'legacy-locale',
+        textCollation: 'legacy-locale'
     });
 }
 
 export function fleetMissingLabelAgents(
-    reports: readonly ControlFleetRunReport[],
+    reports: readonly ControlFleetRunReport[]
 ): readonly string[] {
     return deriveFleetReportMissingLabelAgentIds(reports);
 }
 
 export function fleetAgentDetail(
     agentId: string,
-    reports: readonly ControlFleetRunReport[],
+    reports: readonly ControlFleetRunReport[]
 ) {
     return deriveFleetReportAgentDetail(agentId, reports, {
         reportOrder: 'input',
         timedOutAsFailed: false,
         stableTieBreaks: false,
-        textCollation: 'legacy-locale',
+        textCollation: 'legacy-locale'
     });
 }

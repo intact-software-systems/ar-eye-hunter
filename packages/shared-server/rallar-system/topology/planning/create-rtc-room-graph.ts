@@ -1,294 +1,290 @@
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import {
+    VertexState,
+    VertexType,
+    type EdgeProp,
+    type GraphProp,
+    type VertexProp,
+    type WeightedGraph
+} from '@shared-graph/graph-props.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
-import {
-  type EdgeProp,
-  type GraphProp,
-  type VertexProp,
-  VertexState,
-  VertexType,
-  type WeightedGraph,
-} from '@shared-graph/graph-props.ts';
 import { UndirectedGraph } from 'graphology';
 
-import {
-  compareRtcTopologyIdentifiers,
-  toCanonicalRtcTopologyPairIdentity,
-} from '../../rtc-topology-identifiers.ts';
-import { computeNoRttTopologyNextHops } from './compute-no-rtt-topology-next-hops.ts';
+import { compareRtcTopologyIdentifiers, toCanonicalRtcTopologyPairIdentity } from '../../rtc-topology-identifiers.ts';
 import { computeCanonicalTopologyPairWeight } from './canonical-topology-planning-input.ts';
+import { computeNoRttTopologyNextHops } from './compute-no-rtt-topology-next-hops.ts';
 
 export interface CreateRtcRoomGraphInput {
-  readonly group: GroupSnapshot;
-  readonly activeSessionIds: readonly string[];
-  readonly rttMeasurements: readonly RttMeasurementInfo[];
-  readonly degreeLimit: number;
-  readonly rttReportingDegreeLimit: number;
-  readonly seedTopology: RallarRtcTopologyKind;
-  readonly meshParamK: number;
+    readonly group: GroupSnapshot;
+    readonly activeSessionIds: readonly string[];
+    readonly rttMeasurements: readonly RttMeasurementInfo[];
+    readonly degreeLimit: number;
+    readonly rttReportingDegreeLimit: number;
+    readonly seedTopology: RallarRtcTopologyKind;
+    readonly meshParamK: number;
 }
 
 export interface RtcRoomGraphReady {
-  readonly outcome: 'ready';
-  readonly graph: WeightedGraph;
+    readonly outcome: 'ready';
+    readonly graph: WeightedGraph;
 }
 
 export interface RtcRoomGraphSparseFallback {
-  readonly outcome: 'sparse-fallback';
-  readonly group: GroupSnapshot;
-  readonly activeSessionIds: readonly string[];
-  readonly nextHopsBySessionId: Readonly<Record<string, readonly string[]>>;
-  readonly degreeLimit: number;
+    readonly outcome: 'sparse-fallback';
+    readonly group: GroupSnapshot;
+    readonly activeSessionIds: readonly string[];
+    readonly nextHopsBySessionId: Readonly<Record<string, readonly string[]>>;
+    readonly degreeLimit: number;
 }
 
 export type CreateRtcRoomGraphResult = RtcRoomGraphReady | RtcRoomGraphSparseFallback;
 
 interface PopulateSparseRoomGraphInput {
-  readonly graph: WeightedGraph;
-  readonly activeSessionIds: readonly string[];
-  readonly rttMeasurements: readonly RttMeasurementInfo[];
-  readonly fallbackNextHops: Readonly<Record<string, readonly string[]>>;
-  readonly degreeLimit: number;
+    readonly graph: WeightedGraph;
+    readonly activeSessionIds: readonly string[];
+    readonly rttMeasurements: readonly RttMeasurementInfo[];
+    readonly fallbackNextHops: Readonly<Record<string, readonly string[]>>;
+    readonly degreeLimit: number;
 }
 
 interface AddBoundedRoomEdgeInput {
-  readonly graph: WeightedGraph;
-  readonly from: string;
-  readonly to: string;
-  readonly weight: number;
-  readonly degreeLimit: number;
-  readonly maxEdges: number;
+    readonly graph: WeightedGraph;
+    readonly from: string;
+    readonly to: string;
+    readonly weight: number;
+    readonly degreeLimit: number;
+    readonly maxEdges: number;
 }
 
 interface AddRoomEdgeIfAbsentInput {
-  readonly graph: WeightedGraph;
-  readonly from: string;
-  readonly to: string;
-  readonly weight: number;
+    readonly graph: WeightedGraph;
+    readonly from: string;
+    readonly to: string;
+    readonly weight: number;
 }
 
 interface WeightedRoomEdge {
-  readonly from: string;
-  readonly to: string;
-  readonly weight: number;
-  readonly version: number;
+    readonly from: string;
+    readonly to: string;
+    readonly weight: number;
+    readonly version: number;
 }
 
 export function createRtcRoomGraph(input: CreateRtcRoomGraphInput): CreateRtcRoomGraphResult {
-  const graph = createRoomGraph(input.group, input.activeSessionIds, input.degreeLimit);
+    const graph = createRoomGraph(input.group, input.activeSessionIds, input.degreeLimit);
 
-  if (input.rttMeasurements.length === 0) {
-    addCompleteFallbackRoomEdges(graph, input.activeSessionIds);
+    if (input.rttMeasurements.length === 0) {
+        addCompleteFallbackRoomEdges(graph, input.activeSessionIds);
+        return { outcome: 'ready', graph };
+    }
+
+    const fallbackNextHops = computeNoRttTopologyNextHops({
+        topology: input.seedTopology,
+        activeSessionIds: input.activeSessionIds,
+        degreeLimit: input.degreeLimit,
+        meshParamK: input.meshParamK
+    });
+    const sparse = populateSparseRoomGraph({
+        graph,
+        activeSessionIds: input.activeSessionIds,
+        rttMeasurements: input.rttMeasurements,
+        fallbackNextHops,
+        degreeLimit: input.rttReportingDegreeLimit
+    });
+
+    if (!sparse.connected) {
+        return {
+            outcome: 'sparse-fallback',
+            group: input.group,
+            activeSessionIds: input.activeSessionIds,
+            nextHopsBySessionId: fallbackNextHops,
+            degreeLimit: input.degreeLimit
+        };
+    }
+
     return { outcome: 'ready', graph };
-  }
-
-  const fallbackNextHops = computeNoRttTopologyNextHops({
-    topology: input.seedTopology,
-    activeSessionIds: input.activeSessionIds,
-    degreeLimit: input.degreeLimit,
-    meshParamK: input.meshParamK,
-  });
-  const sparse = populateSparseRoomGraph({
-    graph,
-    activeSessionIds: input.activeSessionIds,
-    rttMeasurements: input.rttMeasurements,
-    fallbackNextHops,
-    degreeLimit: input.rttReportingDegreeLimit,
-  });
-
-  if (!sparse.connected) {
-    return {
-      outcome: 'sparse-fallback',
-      group: input.group,
-      activeSessionIds: input.activeSessionIds,
-      nextHopsBySessionId: fallbackNextHops,
-      degreeLimit: input.degreeLimit,
-    };
-  }
-
-  return { outcome: 'ready', graph };
 }
 
 export function materializeSparseRtcRoomGraphFallback(
-  fallback: RtcRoomGraphSparseFallback,
+    fallback: RtcRoomGraphSparseFallback
 ): WeightedGraph {
-  const graph = createRoomGraph(fallback.group, fallback.activeSessionIds, fallback.degreeLimit);
-  for (const [from, nextHops] of Object.entries(fallback.nextHopsBySessionId)) {
-    for (const to of nextHops) {
-      addRoomEdgeIfAbsent({
-        graph,
-        from,
-        to,
-        weight: computeCanonicalTopologyPairWeight(from, to),
-      });
+    const graph = createRoomGraph(fallback.group, fallback.activeSessionIds, fallback.degreeLimit);
+    for (const [from, nextHops] of Object.entries(fallback.nextHopsBySessionId)) {
+        for (const to of nextHops) {
+            addRoomEdgeIfAbsent({
+                graph,
+                from,
+                to,
+                weight: computeCanonicalTopologyPairWeight(from, to)
+            });
+        }
     }
-  }
-  return graph;
+    return graph;
 }
 
 function createRoomGraph(
-  group: GroupSnapshot,
-  activeSessionIds: readonly string[],
-  degreeLimit: number,
+    group: GroupSnapshot,
+    activeSessionIds: readonly string[],
+    degreeLimit: number
 ): WeightedGraph {
-  const graph = new UndirectedGraph<VertexProp, EdgeProp, GraphProp>();
-  graph.replaceAttributes({
-    id: toScopedOverlayId(group.group),
-    version: group.group.snapshotVersion,
-    degreeLimitMember: degreeLimit,
-    degreeLimitSteiner: degreeLimit,
-  });
-
-  for (const sessionId of activeSessionIds) {
-    graph.addNode(sessionId, {
-      id: sessionId,
-      type: VertexType.CLIENT,
-      state: VertexState.MEMBER,
-      degreeLimit,
+    const graph = new UndirectedGraph<VertexProp, EdgeProp, GraphProp>();
+    graph.replaceAttributes({
+        id: toScopedOverlayId(group.group),
+        version: group.group.snapshotVersion,
+        degreeLimitMember: degreeLimit,
+        degreeLimitSteiner: degreeLimit
     });
-  }
-  return graph;
+
+    for (const sessionId of activeSessionIds) {
+        graph.addNode(sessionId, {
+            id: sessionId,
+            type: VertexType.CLIENT,
+            state: VertexState.MEMBER,
+            degreeLimit
+        });
+    }
+    return graph;
 }
 
 function addCompleteFallbackRoomEdges(
-  graph: WeightedGraph,
-  activeSessionIds: readonly string[],
+    graph: WeightedGraph,
+    activeSessionIds: readonly string[]
 ): void {
-  for (let i = 0; i < activeSessionIds.length; i++) {
-    for (let j = i + 1; j < activeSessionIds.length; j++) {
-      const from = activeSessionIds[i];
-      const to = activeSessionIds[j];
-      graph.addEdge(from, to, {
-        from,
-        to,
-        weight: computeCanonicalTopologyPairWeight(from, to),
-      });
+    for (let i = 0; i < activeSessionIds.length; i++) {
+        for (let j = i + 1; j < activeSessionIds.length; j++) {
+            const from = activeSessionIds[i];
+            const to = activeSessionIds[j];
+            graph.addEdge(from, to, {
+                from,
+                to,
+                weight: computeCanonicalTopologyPairWeight(from, to)
+            });
+        }
     }
-  }
 }
 
 function populateSparseRoomGraph(
-  input: PopulateSparseRoomGraphInput,
-): Readonly<{ connected: boolean }> {
-  const maxEdges = Math.floor((input.activeSessionIds.length * input.degreeLimit) / 2);
-  for (const edge of createSortedRttEdges(input.rttMeasurements, input.activeSessionIds)) {
-    addBoundedRoomEdge({
-      graph: input.graph,
-      from: edge.from,
-      to: edge.to,
-      weight: edge.weight,
-      degreeLimit: input.degreeLimit,
-      maxEdges,
-    });
-  }
-  for (const [from, nextHops] of Object.entries(input.fallbackNextHops)) {
-    for (const to of nextHops) {
-      addBoundedRoomEdge({
-        graph: input.graph,
-        from,
-        to,
-        weight: computeCanonicalTopologyPairWeight(from, to),
-        degreeLimit: input.degreeLimit,
-        maxEdges,
-      });
+    input: PopulateSparseRoomGraphInput
+): Readonly<{ connected: boolean; }> {
+    const maxEdges = Math.floor((input.activeSessionIds.length * input.degreeLimit) / 2);
+    for (const edge of createSortedRttEdges(input.rttMeasurements, input.activeSessionIds)) {
+        addBoundedRoomEdge({
+            graph: input.graph,
+            from: edge.from,
+            to: edge.to,
+            weight: edge.weight,
+            degreeLimit: input.degreeLimit,
+            maxEdges
+        });
     }
-  }
-  if (!isConnectedRoomGraph(input.graph, input.activeSessionIds)) {
-    return { connected: false };
-  }
-  for (let i = 0; i < input.activeSessionIds.length; i++) {
-    for (let j = i + 1; j < input.activeSessionIds.length; j++) {
-      if (input.graph.size >= maxEdges) {
-        return { connected: true };
-      }
-      const from = input.activeSessionIds[i];
-      const to = input.activeSessionIds[j];
-      addBoundedRoomEdge({
-        graph: input.graph,
-        from,
-        to,
-        weight: computeCanonicalTopologyPairWeight(from, to),
-        degreeLimit: input.degreeLimit,
-        maxEdges,
-      });
+    for (const [from, nextHops] of Object.entries(input.fallbackNextHops)) {
+        for (const to of nextHops) {
+            addBoundedRoomEdge({
+                graph: input.graph,
+                from,
+                to,
+                weight: computeCanonicalTopologyPairWeight(from, to),
+                degreeLimit: input.degreeLimit,
+                maxEdges
+            });
+        }
     }
-  }
-  return { connected: true };
+    if (!isConnectedRoomGraph(input.graph, input.activeSessionIds)) {
+        return { connected: false };
+    }
+    for (let i = 0; i < input.activeSessionIds.length; i++) {
+        for (let j = i + 1; j < input.activeSessionIds.length; j++) {
+            if (input.graph.size >= maxEdges) {
+                return { connected: true };
+            }
+            const from = input.activeSessionIds[i];
+            const to = input.activeSessionIds[j];
+            addBoundedRoomEdge({
+                graph: input.graph,
+                from,
+                to,
+                weight: computeCanonicalTopologyPairWeight(from, to),
+                degreeLimit: input.degreeLimit,
+                maxEdges
+            });
+        }
+    }
+    return { connected: true };
 }
 
 function createSortedRttEdges(
-  rttMeasurements: readonly RttMeasurementInfo[],
-  activeSessionIds: readonly string[],
+    rttMeasurements: readonly RttMeasurementInfo[],
+    activeSessionIds: readonly string[]
 ): readonly WeightedRoomEdge[] {
-  const activeSessionIdSet = new Set(activeSessionIds);
-  const edgeByPair = new Map<string, WeightedRoomEdge>();
-  for (const rtt of rttMeasurements) {
-    if (
-      !activeSessionIdSet.has(rtt.sessionIdFrom) ||
-      !activeSessionIdSet.has(rtt.sessionIdTo) ||
-      !Number.isFinite(rtt.rttMs) ||
-      rtt.rttMs <= 0
-    ) {
-      continue;
+    const activeSessionIdSet = new Set(activeSessionIds);
+    const edgeByPair = new Map<string, WeightedRoomEdge>();
+    for (const rtt of rttMeasurements) {
+        if (
+            !activeSessionIdSet.has(rtt.sessionIdFrom) ||
+            !activeSessionIdSet.has(rtt.sessionIdTo) ||
+            !Number.isFinite(rtt.rttMs) ||
+            rtt.rttMs <= 0
+        ) {
+            continue;
+        }
+        const [from, to] = compareRtcTopologyIdentifiers(rtt.sessionIdFrom, rtt.sessionIdTo) <= 0
+            ? [rtt.sessionIdFrom, rtt.sessionIdTo]
+            : [rtt.sessionIdTo, rtt.sessionIdFrom];
+        const key = toCanonicalRtcTopologyPairIdentity(from, to);
+        const current = edgeByPair.get(key);
+        if (current && current.version >= rtt.version) {
+            continue;
+        }
+        edgeByPair.set(key, { from, to, weight: rtt.rttMs, version: rtt.version });
     }
-    const [from, to] =
-      compareRtcTopologyIdentifiers(rtt.sessionIdFrom, rtt.sessionIdTo) <= 0
-        ? [rtt.sessionIdFrom, rtt.sessionIdTo]
-        : [rtt.sessionIdTo, rtt.sessionIdFrom];
-    const key = toCanonicalRtcTopologyPairIdentity(from, to);
-    const current = edgeByPair.get(key);
-    if (current && current.version >= rtt.version) {
-      continue;
-    }
-    edgeByPair.set(key, { from, to, weight: rtt.rttMs, version: rtt.version });
-  }
-  return [...edgeByPair.values()].sort(
-    (left, right) =>
-      left.weight - right.weight ||
-      compareRtcTopologyIdentifiers(left.from, right.from) ||
-      compareRtcTopologyIdentifiers(left.to, right.to),
-  );
+    return [...edgeByPair.values()].sort(
+        (left, right) =>
+            left.weight - right.weight ||
+            compareRtcTopologyIdentifiers(left.from, right.from) ||
+            compareRtcTopologyIdentifiers(left.to, right.to)
+    );
 }
 
 function addBoundedRoomEdge(input: AddBoundedRoomEdgeInput): boolean {
-  if (
-    input.graph.size >= input.maxEdges ||
-    input.graph.hasEdge(input.from, input.to) ||
-    input.graph.degree(input.from) >= input.degreeLimit ||
-    input.graph.degree(input.to) >= input.degreeLimit
-  ) {
-    return false;
-  }
-  addRoomEdgeIfAbsent(input);
-  return true;
+    if (
+        input.graph.size >= input.maxEdges ||
+        input.graph.hasEdge(input.from, input.to) ||
+        input.graph.degree(input.from) >= input.degreeLimit ||
+        input.graph.degree(input.to) >= input.degreeLimit
+    ) {
+        return false;
+    }
+    addRoomEdgeIfAbsent(input);
+    return true;
 }
 
 function addRoomEdgeIfAbsent(input: AddRoomEdgeIfAbsentInput): void {
-  if (input.from === input.to || input.graph.hasEdge(input.from, input.to)) {
-    return;
-  }
-  input.graph.addEdge(input.from, input.to, {
-    from: input.from,
-    to: input.to,
-    weight: input.weight,
-  });
+    if (input.from === input.to || input.graph.hasEdge(input.from, input.to)) {
+        return;
+    }
+    input.graph.addEdge(input.from, input.to, {
+        from: input.from,
+        to: input.to,
+        weight: input.weight
+    });
 }
 
 function isConnectedRoomGraph(graph: WeightedGraph, activeSessionIds: readonly string[]): boolean {
-  if (activeSessionIds.length <= 1) {
-    return true;
-  }
-  const [first] = activeSessionIds;
-  const seen = new Set<string>([first]);
-  const queue = [first];
-  for (let index = 0; index < queue.length; index++) {
-    for (const neighbor of graph.neighbors(queue[index]) as string[]) {
-      if (!seen.has(neighbor)) {
-        seen.add(neighbor);
-        queue.push(neighbor);
-      }
+    if (activeSessionIds.length <= 1) {
+        return true;
     }
-  }
-  return seen.size === activeSessionIds.length;
+    const [first] = activeSessionIds;
+    const seen = new Set<string>([first]);
+    const queue = [first];
+    for (let index = 0; index < queue.length; index++) {
+        for (const neighbor of graph.neighbors(queue[index]) as string[]) {
+            if (!seen.has(neighbor)) {
+                seen.add(neighbor);
+                queue.push(neighbor);
+            }
+        }
+    }
+    return seen.size === activeSessionIds.length;
 }

@@ -12,7 +12,7 @@ export type ControlLazyCapabilityOptions<Value> = Readonly<{
 }>;
 
 export function createControlLazyCapability<Value>(
-    options: ControlLazyCapabilityOptions<Value>,
+    options: ControlLazyCapabilityOptions<Value>
 ): ControlLazyCapability<Value> {
     const generation = Symbol('control-lazy-generation');
     let cachedLoad: Promise<Value> | undefined;
@@ -35,33 +35,39 @@ export function createControlLazyCapability<Value>(
                 try {
                     assertControlContextActive(options.signal);
                     loading = options.load(options.signal);
-                } catch (error) {
+                }
+                catch (error) {
                     const failedLoad = cachedLoad;
                     rejectCached(error);
-                    if (!options.signal.aborted) cachedLoad = undefined;
+                    if (!options.signal.aborted) {
+                        cachedLoad = undefined;
+                    }
                     return failedLoad;
                 }
                 settleWithinControlContext(loading, options.signal)
-                    .then(value => {
+                    .then((value) => {
                         try {
                             assertControlContextActive(options.signal);
                             resolveCached(value);
-                        } catch (error) {
+                        }
+                        catch (error) {
                             rejectCached(error);
                         }
-                    }, error => {
-                        if (!options.signal.aborted) cachedLoad = undefined;
+                    }, (error) => {
+                        if (!options.signal.aborted) {
+                            cachedLoad = undefined;
+                        }
                         rejectCached(error);
                     });
             }
             return cachedLoad;
-        },
+        }
     };
 }
 
 function settleWithinControlContext<Value>(
     pending: Promise<Value>,
-    signal: AbortSignal,
+    signal: AbortSignal
 ): Promise<Value> {
     if (signal.aborted) {
         return Promise.reject(controlAbortError(signal));
@@ -74,14 +80,16 @@ function settleWithinControlContext<Value>(
         };
         signal.addEventListener('abort', onAbort, { once: true });
         pending.then(
-            value => finish(() => resolve(value)),
-            error => finish(() => reject(error)),
+            (value) => finish(() => resolve(value)),
+            (error) => finish(() => reject(error))
         );
     });
 }
 
 function assertControlContextActive(signal: AbortSignal): void {
-    if (signal.aborted) throw controlAbortError(signal);
+    if (signal.aborted) {
+        throw controlAbortError(signal);
+    }
 }
 
 function controlAbortError(signal: AbortSignal): Error {
@@ -94,6 +102,6 @@ function controlAbortError(signal: AbortSignal): Error {
     }
     return new DOMException(
         'The control connection is no longer current.',
-        'AbortError',
+        'AbortError'
     );
 }

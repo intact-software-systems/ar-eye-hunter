@@ -1,8 +1,8 @@
-import type { DynamicTreeAlgo } from './remove-dynamics-types.ts';
+import { TreeGraph, VertexId } from '../graph-props.ts';
+import { CoreSelectionAlgo } from '../graph/steiner-core-algorithms.ts';
 import type { SelectSteinerCandidate } from './remove-dynamics-mddl.ts';
 import { runRemoveAlgorithm } from './remove-dynamics-service.ts';
-import { CoreSelectionAlgo } from '../graph/steiner-core-algorithms.ts';
-import { TreeGraph, VertexId } from '../graph-props.ts';
+import type { DynamicTreeAlgo } from './remove-dynamics-types.ts';
 
 export type RemoveFacadeInput = {
     globalGraph: TreeGraph;
@@ -21,15 +21,15 @@ export function removeVertexFromTree(input: RemoveFacadeInput) {
             groupGraph: input.groupGraph,
             actionVertexId: input.actionVertexId,
             treeAlgo: input.treeAlgo,
-            steinerCandidates: input.steinerCandidates ?? new Set<VertexId>(),
+            steinerCandidates: input.steinerCandidates ?? new Set<VertexId>()
         },
         {
             selectSteinerCandidate: input.selectSteinerCandidate,
-            coreSelectionAlgo: input.coreSelectionAlgo ?? CoreSelectionAlgo.CENTER_SELECTION,
+            coreSelectionAlgo: input.coreSelectionAlgo ?? CoreSelectionAlgo.CENTER_SELECTION
         },
         {
             cleanupUnusedSteiner: true,
-            fallbackAlgo: 'REMOVE_TRY_REPLACE_MDDL_NAIVE',
-        },
+            fallbackAlgo: 'REMOVE_TRY_REPLACE_MDDL_NAIVE'
+        }
     );
 }

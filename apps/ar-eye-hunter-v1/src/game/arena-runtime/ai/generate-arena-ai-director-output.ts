@@ -3,21 +3,21 @@ import { rallar } from '@shared-web/browser/rallar.ts';
 import { transitionRallarAiResultLifecycle } from '@shared/rallar-ai/mod.ts';
 
 import {
-    type AiDirectorContext,
     createAiDirectorRequest,
     materializeAiArenaEvent,
     validateAiDirectorProposalValue,
+    type AiDirectorContext
 } from '../../aiDirector.ts';
 import { arenaRevisionKey, hydrateArenaSnapshot } from '../../simulation.ts';
-import type { ArenaAiDirectorScheduleInput } from './start-arena-ai-director-schedule.ts';
 import {
-    type AiDirectorProposal,
-    type AiDirectorProposalValue,
     GAME_AI_LANE_ID,
     GAME_AI_TOPIC_ID,
     GAME_PROTOCOL,
+    type AiDirectorProposal,
+    type AiDirectorProposalValue
 } from '../../types.ts';
 import { toErrorMessage } from '../arena-connection-helpers.ts';
+import type { ArenaAiDirectorScheduleInput } from './start-arena-ai-director-schedule.ts';
 
 interface GenerateArenaAiDirectorOutputInput extends
     Pick<
@@ -41,7 +41,7 @@ interface GenerateArenaAiDirectorOutputInput extends
 }
 
 export async function generateArenaAiDirectorOutput(
-    input: GenerateArenaAiDirectorOutputInput,
+    input: GenerateArenaAiDirectorOutputInput
 ): Promise<void> {
     const snapshot = input.arenaSnapshotRef.current;
     if (!snapshot || input.isCancelled() || !input.isCurrentNetworkGeneration(input.generation)) {
@@ -54,14 +54,16 @@ export async function generateArenaAiDirectorOutput(
             ? 'loading model'
             : input.providerFallback
             ? 'mock fallback'
-            : 'generating',
+            : 'generating'
     );
     input.setAiError(undefined);
     try {
         const draft = await input.ai.generateJson<AiDirectorProposalValue, AiDirectorContext>(
-            createAiDirectorRequest(state, input.roomId),
+            createAiDirectorRequest(state, input.roomId)
         );
-        if (input.isCancelled() || !input.isCurrentNetworkGeneration(input.generation)) return;
+        if (input.isCancelled() || !input.isCurrentNetworkGeneration(input.generation)) {
+            return;
+        }
         const validation = validateAiDirectorProposalValue(draft.value, snapshot);
         if (!validation.ok) {
             input.setAiStatus('error');
@@ -70,7 +72,7 @@ export async function generateArenaAiDirectorOutput(
         }
         const proposed = transitionRallarAiResultLifecycle({
             ...draft,
-            value: validation.value,
+            value: validation.value
         }, 'proposed');
         const accepted = transitionRallarAiResultLifecycle(proposed, 'accepted');
         const proposal: AiDirectorProposal = {
@@ -79,7 +81,7 @@ export async function generateArenaAiDirectorOutput(
             baseStateRevision: accepted.baseStateRevision ?? arenaRevisionKey(state),
             value: accepted.value,
             accepted: true,
-            sentAtEpochMs: Date.now(),
+            sentAtEpochMs: Date.now()
         };
         const event = materializeAiArenaEvent(proposal, snapshot.revision + 1, Date.now());
         await input.ai.broadcastJson({
@@ -87,17 +89,19 @@ export async function generateArenaAiDirectorOutput(
             transport: 'realtime',
             laneId: GAME_AI_LANE_ID,
             roomId: input.roomId,
-            topicId: GAME_AI_TOPIC_ID,
+            topicId: GAME_AI_TOPIC_ID
         });
         await rallar.data.open<AiDirectorProposal>('ar-eye-hunter-ai-replay', {
             scope: 'session',
             durability: 'write-behind',
-            schemaVersion: 1,
+            schemaVersion: 1
         }).then((store) => store.set(proposal.dedupeKey, proposal));
-        if (input.isCancelled() || !input.isCurrentNetworkGeneration(input.generation)) return;
+        if (input.isCancelled() || !input.isCurrentNetworkGeneration(input.generation)) {
+            return;
+        }
         input.setRemoteEvents((previous) => [
             ...previous.filter((item) => item.id !== event.id).slice(-12),
-            event,
+            event
         ]);
         input.setActiveEvent(event);
         input.setAiStatus(
@@ -105,22 +109,23 @@ export async function generateArenaAiDirectorOutput(
                 ? 'mock fallback'
                 : input.providerMode === 'webllm'
                 ? 'webllm'
-                : 'accepted',
+                : 'accepted'
         );
         input.runBestEffortNetworkTask(
             () =>
                 input.arenaMatchRef.current?.publishEvent({
                     protocol: GAME_PROTOCOL,
                     kind: 'arena-event',
-                    event,
+                    event
                 }),
-            input.generation,
+            input.generation
         );
-    } catch (error) {
+    }
+    catch (error) {
         if (!input.isCancelled() && input.isCurrentNetworkGeneration(input.generation)) {
             input.setAiStatus('error');
             input.setAiError(toErrorMessage(
-                error instanceof Error ? error : new Error(String(error)),
+                error instanceof Error ? error : new Error(String(error))
             ));
         }
     }

@@ -1,9 +1,5 @@
+import { DEFAULT_BOOTSTRAP_DEGREE, resolveBootstrapDegree, selectBootstrapPeers } from '@shared/rtc/bootstrap-peer-selection.ts';
 import { describe, expect, it } from 'vitest';
-import {
-    DEFAULT_BOOTSTRAP_DEGREE,
-    resolveBootstrapDegree,
-    selectBootstrapPeers,
-} from '@shared/rtc/bootstrap-peer-selection.ts';
 
 describe('resolveBootstrapDegree', () => {
     it('defaults to the bootstrap degree clamped by the connection budget', () => {
@@ -11,10 +7,10 @@ describe('resolveBootstrapDegree', () => {
         expect(resolveBootstrapDegree({ bootstrapDegree: 3 })).toBe(3);
         expect(resolveBootstrapDegree({ maxPeerConnections: 3 })).toBe(3);
         expect(
-            resolveBootstrapDegree({ bootstrapDegree: 8, maxPeerConnections: 6 }),
+            resolveBootstrapDegree({ bootstrapDegree: 8, maxPeerConnections: 6 })
         ).toBe(6);
         expect(
-            resolveBootstrapDegree({ bootstrapDegree: 4, maxPeerConnections: 20 }),
+            resolveBootstrapDegree({ bootstrapDegree: 4, maxPeerConnections: 20 })
         ).toBe(4);
     });
 
@@ -37,7 +33,7 @@ describe('selectBootstrapPeers', () => {
         'session-c',
         'session-d',
         'session-e',
-        'session-f',
+        'session-f'
     ];
 
     it('is deterministic per (groupKey, localSessionId) and self-excluding', () => {
@@ -45,13 +41,13 @@ describe('selectBootstrapPeers', () => {
             localSessionId: 'session-a',
             memberSessionIds,
             groupKey: 'app|ws|group-1',
-            bootstrapDegree: 3,
+            bootstrapDegree: 3
         };
 
         const first = selectBootstrapPeers(input);
         const second = selectBootstrapPeers({
             ...input,
-            memberSessionIds: [...memberSessionIds].reverse(),
+            memberSessionIds: [...memberSessionIds].reverse()
         });
 
         expect(first).toEqual(second);
@@ -65,24 +61,24 @@ describe('selectBootstrapPeers', () => {
                 localSessionId: 'session-a',
                 memberSessionIds: [...memberSessionIds, ...memberSessionIds],
                 groupKey: 'group',
-                bootstrapDegree: 2,
-            }),
+                bootstrapDegree: 2
+            })
         ).toHaveLength(2);
         expect(
             selectBootstrapPeers({
                 localSessionId: 'session-a',
                 memberSessionIds: ['session-a', 'session-b'],
                 groupKey: 'group',
-                bootstrapDegree: 5,
-            }),
+                bootstrapDegree: 5
+            })
         ).toEqual(['session-b']);
         expect(
             selectBootstrapPeers({
                 localSessionId: 'session-a',
                 memberSessionIds,
                 groupKey: 'group',
-                bootstrapDegree: 0,
-            }),
+                bootstrapDegree: 0
+            })
         ).toEqual([]);
     });
 
@@ -93,9 +89,9 @@ describe('selectBootstrapPeers', () => {
                     localSessionId,
                     memberSessionIds,
                     groupKey: 'group-vary',
-                    bootstrapDegree: 2,
+                    bootstrapDegree: 2
                 }).join(',')
-            ),
+            )
         );
 
         expect(bySession.size).toBeGreaterThan(1);
@@ -108,26 +104,26 @@ describe('selectBootstrapPeers', () => {
     it.each([
         { tier: 'small', memberCount: 6 },
         { tier: 'medium', memberCount: 20 },
-        { tier: 'large', memberCount: 50 },
+        { tier: 'large', memberCount: 50 }
     ])(
         'keeps the $tier tier (N=$memberCount) union bootstrap graph connected across seeds',
         ({ memberCount }) => {
             for (let seed = 0; seed < 100; seed++) {
                 const sessions = Array.from(
                     { length: memberCount },
-                    (_, index) => `seed${seed}-session-${index}`,
+                    (_, index) => `seed${seed}-session-${index}`
                 );
                 const groupKey = `app|ws|group-${seed}`;
 
                 const edges = new Map<string, Set<string>>(
-                    sessions.map((session) => [session, new Set<string>()]),
+                    sessions.map((session) => [session, new Set<string>()])
                 );
                 for (const localSessionId of sessions) {
                     const selected = selectBootstrapPeers({
                         localSessionId,
                         memberSessionIds: sessions,
                         groupKey,
-                        bootstrapDegree: DEFAULT_BOOTSTRAP_DEGREE,
+                        bootstrapDegree: DEFAULT_BOOTSTRAP_DEGREE
                     });
                     for (const peerId of selected) {
                         edges.get(localSessionId)?.add(peerId);
@@ -138,13 +134,13 @@ describe('selectBootstrapPeers', () => {
                 expect(countReachableSessions(sessions[0], edges))
                     .toBe(memberCount);
             }
-        },
+        }
     );
 });
 
 function countReachableSessions(
     start: string,
-    edges: ReadonlyMap<string, ReadonlySet<string>>,
+    edges: ReadonlyMap<string, ReadonlySet<string>>
 ): number {
     const visited = new Set<string>([start]);
     const queue = [start];

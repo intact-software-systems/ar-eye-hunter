@@ -1,10 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import {describe, expect, it} from 'vitest';
-import {executeBlackBox} from '../../shared-test/black-box-runner/execute-black-box.ts';
+import { describe, expect, it } from 'vitest';
+import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
 
 async function startHttpServer(
-    handler: (request: IncomingMessage, response: ServerResponse) => void,
-): Promise<{ url: string, close: () => Promise<void> }> {
+    handler: (request: IncomingMessage, response: ServerResponse) => void
+): Promise<{ url: string; close: () => Promise<void>; }> {
     const server = createServer(handler);
 
     await new Promise<void>((resolve, reject) => {
@@ -22,27 +22,29 @@ async function startHttpServer(
 
     return {
         url: `http://127.0.0.1:${address.port}`,
-        close: () => new Promise<void>((resolve, reject) => {
-            server.close(error => {
-                if (error) {
-                    reject(error);
-                    return;
-                }
+        close: () =>
+            new Promise<void>((resolve, reject) => {
+                server.close((error) => {
+                    if (error) {
+                        reject(error);
+                        return;
+                    }
 
-                resolve();
-            });
-        }),
+                    resolve();
+                });
+            })
     };
 }
 
 async function tryStartHttpServer(
-    handler: (request: IncomingMessage, response: ServerResponse) => void,
-): Promise<{ url: string, close: () => Promise<void> } | undefined> {
+    handler: (request: IncomingMessage, response: ServerResponse) => void
+): Promise<{ url: string; close: () => Promise<void>; } | undefined> {
     try {
         return await startHttpServer(handler);
-    } catch (error) {
+    }
+    catch (error) {
         const code = typeof error === 'object' && error !== null && 'code' in error
-            ? String((error as { code?: unknown }).code)
+            ? String((error as { code?: unknown; }).code)
             : '';
         if (code === 'EPERM' || code === 'EACCES') {
             return undefined;
@@ -53,7 +55,7 @@ async function tryStartHttpServer(
 
 function json(response: ServerResponse, statusCode: number, body: unknown): void {
     response.writeHead(statusCode, {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json'
     });
     response.end(JSON.stringify(body));
 }
@@ -73,14 +75,14 @@ function pollUntilStep(input: {
                 poll: input.poll,
                 nonBlockingFailure: input.nonBlockingFailure,
                 scenarioExecutionNumber: 1,
-                interactionExecutionNumber: 1,
+                interactionExecutionNumber: 1
             },
             response: {
                 status: 200,
-                body: input.expectBody,
-            },
+                body: input.expectBody
+            }
         },
-        pollUntilConverged: {},
+        pollUntilConverged: {}
     };
 }
 
@@ -104,10 +106,10 @@ describe('executeBlackBox http poll-until', () => {
                 [pollUntilStep({
                     path: `${server.url}/state`,
                     poll: { maxAttempts: 10, maxDurationMs: 5000, backoffMs: 10, backoffMultiplier: 1 },
-                    expectBody: { converged: true },
+                    expectBody: { converged: true }
                 })],
                 0,
-                { failFast: true },
+                { failFast: true }
             );
 
             expect(report.summary.failure).toBe(0);
@@ -117,7 +119,8 @@ describe('executeBlackBox http poll-until', () => {
             expect(result.pollExhausted).toBe(false);
             expect(result.actual.body.converged).toBe(true);
             expect(calls).toBe(3);
-        } finally {
+        }
+        finally {
             await server.close();
         }
     });
@@ -137,10 +140,10 @@ describe('executeBlackBox http poll-until', () => {
                 [pollUntilStep({
                     path: `${server.url}/state`,
                     poll: { maxAttempts: 4, maxDurationMs: 5000, backoffMs: 5, backoffMultiplier: 1 },
-                    expectBody: { converged: true },
+                    expectBody: { converged: true }
                 })],
                 0,
-                { failFast: true },
+                { failFast: true }
             );
 
             expect(report.summary.failure).toBe(1);
@@ -150,7 +153,8 @@ describe('executeBlackBox http poll-until', () => {
             expect(result.pollAttempts).toBe(4);
             expect(result.pollExhausted).toBe(true);
             expect(calls).toBe(4);
-        } finally {
+        }
+        finally {
             await server.close();
         }
     });
@@ -170,10 +174,10 @@ describe('executeBlackBox http poll-until', () => {
                 [pollUntilStep({
                     path: `${server.url}/state`,
                     poll: { maxAttempts: 100, maxDurationMs: 150, backoffMs: 60, backoffMultiplier: 2 },
-                    expectBody: { converged: true },
+                    expectBody: { converged: true }
                 })],
                 0,
-                { failFast: true },
+                { failFast: true }
             );
 
             expect(report.summary.failure).toBe(1);
@@ -183,7 +187,8 @@ describe('executeBlackBox http poll-until', () => {
             expect(result.pollAttempts).toBeLessThan(100);
             expect(result.pollElapsedMs).toBeLessThanOrEqual(1000);
             expect(calls).toBeLessThan(10);
-        } finally {
+        }
+        finally {
             await server.close();
         }
     });
@@ -195,7 +200,7 @@ describe('executeBlackBox http poll-until', () => {
                     path: 'http://127.0.0.1:1/unreachable',
                     poll: { maxAttempts: 2, maxDurationMs: 2000, backoffMs: 5, backoffMultiplier: 1 },
                     expectBody: { converged: true },
-                    nonBlockingFailure: true,
+                    nonBlockingFailure: true
                 }),
                 {
                     SET: {
@@ -203,15 +208,15 @@ describe('executeBlackBox http poll-until', () => {
                             output: 'afterPoll',
                             value: 'reached',
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 2,
+                            interactionExecutionNumber: 2
                         },
-                        response: {},
+                        response: {}
                     },
-                    continuesAfterNonBlockingPoll: {},
-                },
+                    continuesAfterNonBlockingPoll: {}
+                }
             ],
             0,
-            { failFast: true },
+            { failFast: true }
         );
 
         const result = report.resultsByName.pollUntilConverged[0];

@@ -1,14 +1,14 @@
 // ComputeAsyncTask.test.ts
-import { describe, expect, test } from 'vitest';
 import {
     filterOutFinishedTasks,
-    type LoopsInputDto,
     runLoopsWhileWork,
     runLoopWhileWork,
     submitAsyncTasks,
     TrackedTask,
     waitForAll,
+    type LoopsInputDto
 } from '@shared/resilience/ComputeAsyncTask.ts';
+import { describe, expect, test } from 'vitest';
 
 function sleep(ms: number): Promise<void> {
     return new Promise<void>((r) => setTimeout(r, ms));
@@ -29,7 +29,7 @@ describe('ComputeAsyncTask', () => {
             const computed = submitAsyncTasks({
                 runnable,
                 ongoingTasks: ongoing,
-                maxConcurrency: MAX_CONCURRENCY,
+                maxConcurrency: MAX_CONCURRENCY
             });
 
             ongoing = computed.tasksInFlight;
@@ -61,7 +61,7 @@ describe('ComputeAsyncTask', () => {
             // Yield a microtask so completed tasks are observed between loop iterations.
             sleep: async () => {
                 await Promise.resolve();
-            },
+            }
         });
 
         const remaining = await waitForAll(computed.tasksInFlight, 200);
@@ -85,7 +85,7 @@ describe('ComputeAsyncTask', () => {
                     runnable: async () => {
                         c1++;
                     },
-                    ongoingTasks: [],
+                    ongoingTasks: []
                 },
                 {
                     name: 'Task-2',
@@ -94,7 +94,7 @@ describe('ComputeAsyncTask', () => {
                     runnable: async () => {
                         c2++;
                     },
-                    ongoingTasks: [],
+                    ongoingTasks: []
                 },
                 {
                     name: 'Task-3',
@@ -103,14 +103,14 @@ describe('ComputeAsyncTask', () => {
                     runnable: async () => {
                         c3++;
                     },
-                    ongoingTasks: [],
-                },
+                    ongoingTasks: []
+                }
             ],
             maxBackoffMs: 10,
             maxIsWorkIterations: 5,
             maxSuccessiveNoTasksCreated: 0,
             sleep: async () => {
-            }, // keep test fast
+            } // keep test fast
         } satisfies LoopsInputDto;
 
         const computed = await runLoopsWhileWork(input);
@@ -140,15 +140,15 @@ describe('ComputeAsyncTask', () => {
                     runnable: async () => {
                         throw new Error('idle task should not run');
                     },
-                    ongoingTasks: [],
-                },
+                    ongoingTasks: []
+                }
             ],
             maxBackoffMs: 100,
             maxIsWorkIterations: 100,
             maxSuccessiveNoTasksCreated: 0,
             sleep: async () => {
                 sleepCalls++;
-            },
+            }
         });
 
         expect(checks).toBe(1);
@@ -174,15 +174,15 @@ describe('ComputeAsyncTask', () => {
                     runnable: async () => {
                         throw new Error('idle task should not run');
                     },
-                    ongoingTasks: [],
-                },
+                    ongoingTasks: []
+                }
             ],
             maxBackoffMs: 100,
             maxIsWorkIterations: 100,
             maxSuccessiveNoTasksCreated: 2,
             sleep: async (delayMs) => {
                 sleepDelays.push(delayMs);
-            },
+            }
         });
 
         expect(checks).toBe(3);
@@ -218,7 +218,7 @@ describe('ComputeAsyncTask', () => {
                         okCount++;
                         failures1 = 0;
                     },
-                    ongoingTasks: [],
+                    ongoingTasks: []
                 },
                 {
                     name: 'Task-2',
@@ -229,14 +229,14 @@ describe('ComputeAsyncTask', () => {
                         failCount++;
                         failures2++;
                     },
-                    ongoingTasks: [],
-                },
+                    ongoingTasks: []
+                }
             ],
             maxBackoffMs: 10,
             maxIsWorkIterations: 100,
             maxSuccessiveNoTasksCreated: 5,
             sleep: async () => {
-            },
+            }
         };
 
         const computed = await runLoopsWhileWork(input);

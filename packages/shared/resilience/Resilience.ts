@@ -72,7 +72,7 @@ export class SWBucket {
 
     constructor(
         from: number,
-        to: number,
+        to: number
     ) {
         this.from = from;
         this.to = to;
@@ -89,7 +89,7 @@ export class SWStatus {
 
     constructor(
         counter: AtomicLong,
-        createdTs: number,
+        createdTs: number
     ) {
         this.counter = counter;
         this.createdTs = createdTs;
@@ -106,7 +106,7 @@ export class SlidingWindowCounter {
         windowMs: number,
         bucketMs: number,
         counterByBucket: Map<SWBucket, SWStatus>,
-        createdTs: number,
+        createdTs: number
     ) {
         this.windowMs = windowMs;
         this.bucketMs = bucketMs;
@@ -123,7 +123,7 @@ export class SlidingWindowCounter {
             windowMs,
             bucketMs,
             SlidingWindowCounter.initialiseBuckets(windowMs, bucketMs, createdTs),
-            createdTs,
+            createdTs
         );
     }
 
@@ -155,11 +155,12 @@ export class SlidingWindowCounter {
         if (SlidingWindowCounter.isValidForUpdate(matchBucket, existingStatus, now)) {
             existingStatus.counter.addAndGet(count);
             windowCounter.counterByBucket.set(matchBucket, existingStatus);
-        } else {
+        }
+        else {
             // Outdated bucket found -> create new
             windowCounter.counterByBucket.set(
                 matchBucket,
-                new SWStatus(new AtomicLong(count), now),
+                new SWStatus(new AtomicLong(count), now)
             );
         }
 
@@ -196,12 +197,12 @@ export class SlidingWindowCounter {
 
     static resetWithNow(
         windowCounter: SlidingWindowCounter,
-        createdTs: number,
+        createdTs: number
     ): SlidingWindowCounter {
         for (const bucket of windowCounter.counterByBucket.keys()) {
             windowCounter.counterByBucket.set(
                 bucket,
-                new SWStatus(new AtomicLong(0), createdTs),
+                new SWStatus(new AtomicLong(0), createdTs)
             );
         }
 
@@ -212,7 +213,7 @@ export class SlidingWindowCounter {
     static isValidForUpdate(
         bucket: InstanceType<typeof SWBucket>,
         status: InstanceType<typeof SWStatus>,
-        now: number,
+        now: number
     ): boolean {
         const bucketDuration = bucket.to - bucket.from;
 
@@ -228,7 +229,7 @@ export class SlidingWindowCounter {
         windowMs: number,
         bucket: InstanceType<typeof SWBucket>,
         status: InstanceType<typeof SWStatus>,
-        now: number,
+        now: number
     ): boolean {
         return SlidingWindowCounter.isOverlap(
             // A: Sliding window range [now - windowMs, now]
@@ -236,7 +237,7 @@ export class SlidingWindowCounter {
             now,
             // B: Bucket window range: [status.createdTs, status.createdTs + (bucket.to - bucket.from)]
             status.createdTs,
-            status.createdTs + (bucket.to - bucket.from),
+            status.createdTs + (bucket.to - bucket.from)
         );
     }
 
@@ -247,22 +248,19 @@ export class SlidingWindowCounter {
     static initialiseBuckets(
         windowMs: number,
         bucketMs: number,
-        createdTs: number,
+        createdTs: number
     ): Map<InstanceType<typeof SWBucket>, InstanceType<typeof SWStatus>> {
         const buckets = PartitionRange.partition(
             new SWBucket(0, windowMs),
             0,
             windowMs,
             bucketMs,
-            (from, to) => new SWBucket(from, to),
+            (from, to) => new SWBucket(from, to)
         );
 
         // Java collector throws on duplicates; we guard by value
         const seen = new Set<string>();
-        const map = new Map<
-            InstanceType<typeof SWBucket>,
-            InstanceType<typeof SWStatus>
-        >();
+        const map = new Map<InstanceType<typeof SWBucket>, InstanceType<typeof SWStatus>>();
 
         for (const bucket of buckets) {
             const key = `${bucket.from}-${bucket.to}`;
@@ -284,7 +282,7 @@ export class RateAdjusterStatus {
 
     constructor(
         rate: number,
-        currentNumSuccesses: number,
+        currentNumSuccesses: number
     ) {
         this.rate = rate;
         this.currentNumSuccesses = currentNumSuccesses;
@@ -305,7 +303,7 @@ export class RateAdjusterPolicy {
         concurrencyIncreaseStep: number,
         concurrencyReduceStep: number,
         minConsecutiveSuccesses: number,
-        adjustWindowMs: number,
+        adjustWindowMs: number
     ) {
         this.initialRate = initialRate;
         this.maxRate = maxRate;
@@ -324,7 +322,7 @@ export class RateAdjuster {
     constructor(
         status: AtomicReference<RateAdjusterStatus>,
         slidingWindow: SlidingWindowCounter,
-        policy: RateAdjusterPolicy,
+        policy: RateAdjusterPolicy
     ) {
         this.status = status;
         this.slidingWindow = slidingWindow;
@@ -337,7 +335,7 @@ export class RateAdjuster {
         concurrencyIncreaseStep: number,
         concurrencyReduceStep: number,
         minConsecutiveSuccesses: number,
-        adjustWindowMs: number,
+        adjustWindowMs: number
     ): RateAdjusterPolicy {
         return new RateAdjusterPolicy(
             Math.max(1, Math.min(initialRate, maxRate)),
@@ -345,7 +343,7 @@ export class RateAdjuster {
             Math.max(1, Math.min(maxRate, concurrencyIncreaseStep)),
             Math.max(1, Math.min(maxRate, concurrencyReduceStep)),
             minConsecutiveSuccesses,
-            adjustWindowMs,
+            adjustWindowMs
         );
     }
 
@@ -359,9 +357,9 @@ export class RateAdjuster {
             SlidingWindowCounter.initWithTs(
                 policy.adjustWindowMs,
                 Math.floor(policy.adjustWindowMs / 4),
-                createdTs,
+                createdTs
             ),
-            policy,
+            policy
         );
     }
 
@@ -384,7 +382,7 @@ export class RateAdjuster {
         this.status.updateAndGet((existingStatus) => {
             return new RateAdjusterStatus(
                 Math.max(this.policy.initialRate, existingStatus.rate - this.policy.concurrencyReduceStep),
-                0,
+                0
             );
         });
 
@@ -399,7 +397,7 @@ export class RateAdjuster {
     calculateRateAt(nowEpochMs: number): number {
         const numSuccesses = SlidingWindowCounter.sumInWindowWithNow(
             this.slidingWindow,
-            nowEpochMs,
+            nowEpochMs
         );
         const existingStatus = this.status.get();
 
@@ -407,7 +405,7 @@ export class RateAdjuster {
             // new rate to apply
             const newStatus = new RateAdjusterStatus(
                 Math.min(this.policy.maxRate, existingStatus.rate + this.policy.concurrencyIncreaseStep),
-                numSuccesses,
+                numSuccesses
             );
 
             this.status.set(newStatus);
@@ -424,7 +422,7 @@ export class RateLimiterPolicy {
 
     constructor(
         timebasedFilterMs: number,
-        maxNumberToAllow: number,
+        maxNumberToAllow: number
     ) {
         this.timebasedFilterMs = timebasedFilterMs;
         this.maxNumberToAllow = maxNumberToAllow;
@@ -437,7 +435,7 @@ export class RateLimiter {
 
     constructor(
         slidingWindow: SlidingWindowCounter,
-        policy: RateLimiterPolicy,
+        policy: RateLimiterPolicy
     ) {
         this.slidingWindow = slidingWindow;
         this.policy = policy;
@@ -450,22 +448,22 @@ export class RateLimiter {
     static initWithTs(
         timebasedFilterMs: number,
         maxNumberToAllow: number,
-        createdTs: number,
+        createdTs: number
     ): RateLimiter {
         return new RateLimiter(
             SlidingWindowCounter.initWithTs(
                 timebasedFilterMs,
                 Math.floor(timebasedFilterMs / 4),
-                createdTs,
+                createdTs
             ),
-            new RateLimiterPolicy(timebasedFilterMs, maxNumberToAllow),
+            new RateLimiterPolicy(timebasedFilterMs, maxNumberToAllow)
         );
     }
 
     static async tryToExecuteOrDefault<T>(
         rateLimiter: RateLimiter,
         supplier: () => Promise<T>,
-        defaultValue: T,
+        defaultValue: T
     ): Promise<T> {
         if (!rateLimiter.allow()) {
             return defaultValue;
@@ -476,7 +474,7 @@ export class RateLimiter {
     static async tryToExecuteOrElse<T>(
         rateLimiter: RateLimiter,
         supplier: () => Promise<T>,
-        orElse: () => Promise<T>,
+        orElse: () => Promise<T>
     ): Promise<T> {
         if (!rateLimiter.allow()) {
             return await orElse();
@@ -505,7 +503,6 @@ export class RateLimiter {
         return this.slidingWindow.sumInWindow() < this.policy.maxNumberToAllow;
     }
 }
-
 
 export function toRateLimiter(
     windowDurationMs: number = 1_000,

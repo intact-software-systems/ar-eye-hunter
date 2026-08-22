@@ -183,7 +183,11 @@
       "expectedExitCode": 0,
       "artifactName": "crdt-admin-http-integrity-live",
       "requires": {
-        "env": ["RALLAR_API_BASE_URL", "RALLAR_ADMIN_ACCESS_TOKEN", "RALLAR_CRDT_DOCUMENT_KEY"],
+        "env": [
+          "RALLAR_API_BASE_URL",
+          "RALLAR_ADMIN_ACCESS_TOKEN",
+          "RALLAR_CRDT_DOCUMENT_KEY"
+        ],
         "httpServices": [
           {
             "name": "Rallar API",
@@ -1245,9 +1249,21 @@
       "requires": {
         "livePreflight": { "timeoutMs": 10000 },
         "httpServices": [
-          { "name": "Rallar API primary", "env": "RALLAR_API_BASE_URL", "default": "http://127.0.0.1:18080" },
-          { "name": "Rallar API secondary", "env": "RALLAR_API_BASE_URL_SECONDARY", "default": "http://127.0.0.1:18081" },
-          { "name": "Rallar API tertiary", "env": "RALLAR_API_BASE_URL_TERTIARY", "default": "http://127.0.0.1:18082" }
+          {
+            "name": "Rallar API primary",
+            "env": "RALLAR_API_BASE_URL",
+            "default": "http://127.0.0.1:18080"
+          },
+          {
+            "name": "Rallar API secondary",
+            "env": "RALLAR_API_BASE_URL_SECONDARY",
+            "default": "http://127.0.0.1:18081"
+          },
+          {
+            "name": "Rallar API tertiary",
+            "env": "RALLAR_API_BASE_URL_TERTIARY",
+            "default": "http://127.0.0.1:18082"
+          }
         ]
       },
       "description": "Three-node canonical HTTP idempotency contract gate for replay, conflict, isolation, single-use auth, CRDT, admin, topology, and exact durable completion."

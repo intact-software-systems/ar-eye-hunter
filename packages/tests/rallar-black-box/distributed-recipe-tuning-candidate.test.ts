@@ -3,10 +3,9 @@ import {
     createDistributedRunTuningCandidate,
     type DistributedRunTuningCandidateResult as CandidateResult,
     type DistributedRunTuningChange as CandidateChange,
-    type DistributedRunTuningPatchOperation as PatchOperation,
+    type DistributedRunTuningPatchOperation as PatchOperation
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run-tuning-candidate.ts';
-import type { RallarBlackBoxDistributedRunManifest } from
-    '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import type { RallarBlackBoxDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 
 const STREAM = '/recipes/0/recipe/commands/1';
 
@@ -16,7 +15,9 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
         distributedRunId: 'dist-candidate',
         controlRunId: 'control-candidate',
         group: {
-            applicationId: 'rallar-server', workspaceId: 'default', groupId: 'tune-group',
+            applicationId: 'rallar-server',
+            workspaceId: 'default',
+            groupId: 'tune-group'
         },
         targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'] },
         ackTimeoutMs: 1_000,
@@ -27,15 +28,21 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
                 schemaVersion: 1,
                 recipeId: 'candidate-recipe',
                 commands: [{
-                    kind: 'loop', commandId: 'loop-health', count: 2,
+                    kind: 'loop',
+                    commandId: 'loop-health',
+                    count: 2,
                     thresholds: { minAchievedRateHz: 1, failOnBackpressure: false },
-                    commands: [{ kind: 'health', commandId: 'health' }],
+                    commands: [{ kind: 'health', commandId: 'health' }]
                 }, {
-                    kind: 'rtc.stream', commandId: 'stream-position', send: {},
-                    count: 10, intervalMs: 50, rateHz: 20,
-                }],
-            },
-        }],
+                    kind: 'rtc.stream',
+                    commandId: 'stream-position',
+                    send: {},
+                    count: 10,
+                    intervalMs: 50,
+                    rateHz: 20
+                }]
+            }
+        }]
     };
 }
 
@@ -49,13 +56,11 @@ function deepFreeze<T>(value: T): T {
 
 function applyPatch(
     source: RallarBlackBoxDistributedRunManifest,
-    patch: readonly PatchOperation[],
+    patch: readonly PatchOperation[]
 ): RallarBlackBoxDistributedRunManifest {
     const clone = structuredClone(source) as unknown as Record<string, unknown>;
     for (const operation of patch) {
-        const tokens = operation.path.split('/').slice(1).map(token =>
-            token.replaceAll('~1', '/').replaceAll('~0', '~')
-        );
+        const tokens = operation.path.split('/').slice(1).map((token) => token.replaceAll('~1', '/').replaceAll('~0', '~'));
         const key = tokens.pop();
         let parent: unknown = clone;
         for (const token of tokens) {
@@ -75,7 +80,7 @@ function applyPatch(
 }
 
 function errorCodes(result: CandidateResult): readonly string[] {
-    return result.ok ? [] : result.errors.map(error => error.code);
+    return result.ok ? [] : result.errors.map((error) => error.code);
 }
 
 describe('distributed tuning candidate changes', () => {
@@ -88,26 +93,28 @@ describe('distributed tuning candidate changes', () => {
                 { pointer: `${STREAM}/thresholds/maxDroppedFrames`, value: 2, expectedValue: null },
                 { pointer: '/ackTimeoutMs', value: 1_500, expectedValue: 1_000 },
                 { pointer: `${STREAM}/maxInFlight`, value: 16, expectedValue: null },
-                { pointer: `${STREAM}/thresholds/minSendSuccessRatio`, value: 0.98, expectedValue: null },
-            ],
+                { pointer: `${STREAM}/thresholds/minSendSuccessRatio`, value: 0.98, expectedValue: null }
+            ]
         });
 
         expect(result.ok).toBe(true);
-        if (!result.ok) return;
+        if (!result.ok) {
+            return;
+        }
         expect(result.patch).toEqual([
             { op: 'replace', path: '/ackTimeoutMs', value: 1_500 },
             { op: 'add', path: `${STREAM}/maxInFlight`, value: 16 },
             { op: 'add', path: `${STREAM}/thresholds`, value: {} },
             { op: 'add', path: `${STREAM}/thresholds/minSendSuccessRatio`, value: 0.98 },
-            { op: 'add', path: `${STREAM}/thresholds/maxDroppedFrames`, value: 2 },
+            { op: 'add', path: `${STREAM}/thresholds/maxDroppedFrames`, value: 2 }
         ]);
         expect(applyPatch(source, result.patch)).toEqual(result.manifest);
         expect(JSON.parse(result.patchJson)).toEqual(result.patch);
-        expect(result.diff.map(row => row.pointer)).toEqual([
+        expect(result.diff.map((row) => row.pointer)).toEqual([
             '/ackTimeoutMs',
             `${STREAM}/maxInFlight`,
             `${STREAM}/thresholds/minSendSuccessRatio`,
-            `${STREAM}/thresholds/maxDroppedFrames`,
+            `${STREAM}/thresholds/maxDroppedFrames`
         ]);
         expect(result.diffText).toContain('/ackTimeoutMs: 1000 -> 1500');
         expect(result.diffText).toContain(`${STREAM}/maxInFlight: (unset) -> 16`);
@@ -123,30 +130,35 @@ describe('distributed tuning candidate changes', () => {
             path: string;
         }>[] = [{
             changes: [{ pointer: '/metadata/not-a-knob', value: 1 }],
-            code: 'unknown-pointer', path: '/metadata/not-a-knob',
+            code: 'unknown-pointer',
+            path: '/metadata/not-a-knob'
         }, {
             changes: [
                 { pointer: '/ackTimeoutMs', value: 2_000 },
-                { pointer: '/ackTimeoutMs', value: 3_000 },
+                { pointer: '/ackTimeoutMs', value: 3_000 }
             ],
-            code: 'duplicate-pointer', path: '/ackTimeoutMs',
+            code: 'duplicate-pointer',
+            path: '/ackTimeoutMs'
         }, {
             changes: [{ pointer: '/ackTimeoutMs', value: 2_000, expectedValue: 999 }],
-            code: 'stale-value', path: '/ackTimeoutMs',
+            code: 'stale-value',
+            path: '/ackTimeoutMs'
         }, {
             changes: [{ pointer: `${STREAM}/rateHz`, value: 10, expectedValue: 20 }],
-            code: 'blocked-knob', path: `${STREAM}/rateHz`,
+            code: 'blocked-knob',
+            path: `${STREAM}/rateHz`
         }];
 
         for (const entry of cases) {
             const result = createDistributedRunTuningCandidate({
-                manifest: source, changes: entry.changes,
+                manifest: source,
+                changes: entry.changes
             });
             expect(result).toMatchObject({
                 ok: false,
                 errors: expect.arrayContaining([
-                    expect.objectContaining({ code: entry.code, path: entry.path }),
-                ]),
+                    expect.objectContaining({ code: entry.code, path: entry.path })
+                ])
             });
         }
         expect(JSON.stringify(source)).toBe(before);
@@ -157,18 +169,19 @@ describe('distributed tuning candidate changes', () => {
             { pointer: '/ackTimeoutMs', value: Number.NaN },
             { pointer: `${STREAM}/maxInFlight`, value: 1.5 },
             { pointer: `${STREAM}/intervalMs`, value: 0 },
-            { pointer: `${STREAM}/thresholds/minSendSuccessRatio`, value: 1.1 },
+            { pointer: `${STREAM}/thresholds/minSendSuccessRatio`, value: 1.1 }
         ];
 
         for (const change of cases) {
             const result = createDistributedRunTuningCandidate({
-                manifest: manifest(), changes: [change],
+                manifest: manifest(),
+                changes: [change]
             });
             expect(result).toMatchObject({
                 ok: false,
                 errors: expect.arrayContaining([
-                    expect.objectContaining({ code: 'invalid-value', path: change.pointer }),
-                ]),
+                    expect.objectContaining({ code: 'invalid-value', path: change.pointer })
+                ])
             });
         }
     });
@@ -178,14 +191,15 @@ describe('distributed tuning candidate changes', () => {
             const source = { ...manifest(), barrier };
             const result = createDistributedRunTuningCandidate({
                 manifest: source,
-                changes: [{ pointer: '/barrier/timeoutMs', value: 3_000 }],
+                changes: [{ pointer: '/barrier/timeoutMs', value: 3_000 }]
             });
 
             expect(result).toMatchObject({
                 ok: false,
                 errors: expect.arrayContaining([expect.objectContaining({
-                    code: 'blocked-knob', path: '/barrier/timeoutMs',
-                })]),
+                    code: 'blocked-knob',
+                    path: '/barrier/timeoutMs'
+                })])
             });
         }
     });
@@ -194,7 +208,7 @@ describe('distributed tuning candidate changes', () => {
         const create = (source: RallarBlackBoxDistributedRunManifest) =>
             createDistributedRunTuningCandidate({
                 manifest: source,
-                changes: [{ pointer: '/ackTimeoutMs', value: 1_500 }],
+                changes: [{ pointer: '/ackTimeoutMs', value: 1_500 }]
             });
         const missingSend = structuredClone(manifest()) as unknown as Record<string, any>;
         delete missingSend.recipes[0].recipe.commands[1].send;
@@ -204,13 +218,13 @@ describe('distributed tuning candidate changes', () => {
         excessiveLoop.recipes[0].recipe.commands[0].count = 2_001;
 
         expect(errorCodes(create(missingSend as RallarBlackBoxDistributedRunManifest))).toEqual(
-            expect.arrayContaining(['manifest-validation', 'recipe-validation', 'agent-validation']),
+            expect.arrayContaining(['manifest-validation', 'recipe-validation', 'agent-validation'])
         );
         expect(errorCodes(create(invalidRoute as RallarBlackBoxDistributedRunManifest))).toContain(
-            'agent-validation',
+            'agent-validation'
         );
         expect(errorCodes(create(excessiveLoop as RallarBlackBoxDistributedRunManifest))).toContain(
-            'preflight-validation',
+            'preflight-validation'
         );
     });
 });

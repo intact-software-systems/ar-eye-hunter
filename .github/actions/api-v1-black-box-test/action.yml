@@ -2,21 +2,21 @@ name: API v1 black-box test
 description: Start apps/api-v1 and run no-browser black-box-runner recipes.
 inputs:
   backend:
-    description: "Backend to use: postgres or pglite-memory."
+    description: 'Backend to use: postgres or pglite-memory.'
     required: false
     default: postgres
   api-port:
     description: Local API port.
     required: false
-    default: "18080"
+    default: '18080'
   secondary-api-port:
     description: Optional second local API port for Postgres cluster recipes.
     required: false
-    default: ""
+    default: ''
   tertiary-api-port:
     description: Optional third local API port for Postgres cluster recipes.
     required: false
-    default: ""
+    default: ''
   artifact-dir:
     description: Directory for runner artifacts and API logs.
     required: false
@@ -28,7 +28,7 @@ inputs:
   run-migrations:
     description: Run Postgres migrations before starting API.
     required: false
-    default: "true"
+    default: 'true'
   run-id:
     description: Stable run id for test data isolation.
     required: false
@@ -39,7 +39,7 @@ runs:
     - name: Run API v1 black-box recipes
       shell: bash
       env:
-        RALLAR_BB_RUN_ID: "${{ inputs.run-id }}"
+        RALLAR_BB_RUN_ID: '${{ inputs.run-id }}'
       run: |
         set -euo pipefail
 

@@ -1,31 +1,31 @@
 import { lazy, Suspense } from 'react';
+import { RunnerAdvancedPanel } from '../../runner/advanced/RunnerAdvancedPanel.tsx';
 import type {
     LegacyShellAuth,
     LegacyShellGlobalContext,
     LegacyShellNavigation,
     LegacyShellRunnerSelection,
-    LegacyShellRuntime,
+    LegacyShellRuntime
 } from '../legacy-shell-contracts.ts';
-import { RunnerAdvancedPanel } from '../../runner/advanced/RunnerAdvancedPanel.tsx';
 
 const RunnerRecipesPanel = lazy(() =>
-    import('../../runner/recipes/RunnerRecipesPanel.tsx').then(module => ({
-        default: module.RunnerRecipesPanel,
+    import('../../runner/recipes/RunnerRecipesPanel.tsx').then((module) => ({
+        default: module.RunnerRecipesPanel
     }))
 );
 const RunnerRunsPanel = lazy(() =>
-    import('../../runner/runs/RunnerRunsPanel.tsx').then(module => ({
-        default: module.RunnerRunsPanel,
+    import('../../runner/runs/RunnerRunsPanel.tsx').then((module) => ({
+        default: module.RunnerRunsPanel
     }))
 );
 const RunnerFleetPanel = lazy(() =>
-    import('../../runner/fleet/RunnerFleetPanel.tsx').then(module => ({
-        default: module.RunnerFleetPanel,
+    import('../../runner/fleet/RunnerFleetPanel.tsx').then((module) => ({
+        default: module.RunnerFleetPanel
     }))
 );
 const FlowBuilderPanel = lazy(() =>
-    import('../../runner/builder/FlowBuilderPanel.tsx').then(module => ({
-        default: module.FlowBuilderPanel,
+    import('../../runner/builder/FlowBuilderPanel.tsx').then((module) => ({
+        default: module.FlowBuilderPanel
     }))
 );
 
@@ -34,7 +34,7 @@ export function RunnerWorkspaceTabPanels({
     auth,
     navigation,
     globalContext,
-    runnerSelection,
+    runnerSelection
 }: Readonly<{
     runtime: LegacyShellRuntime;
     auth: LegacyShellAuth;
@@ -49,7 +49,7 @@ export function RunnerWorkspaceTabPanels({
         busy,
         runState,
         loadedFixtureId,
-        lastError,
+        lastError
     } = runtime;
     const { authSession } = auth;
     const {
@@ -57,16 +57,15 @@ export function RunnerWorkspaceTabPanels({
         activeTab,
         activeAdvancedSurface,
         selectNavigation,
-        selectTab,
+        selectTab
     } = navigation;
-    const { globalValues, globalValuesEdited, updateGlobalValue } =
-        globalContext;
+    const { globalValues, globalValuesEdited, updateGlobalValue } = globalContext;
     const {
         queueRows,
         selectedCommandId,
         setSelectedCommandId,
         runnerDistributedSelection,
-        setRunnerDistributedSelection,
+        setRunnerDistributedSelection
     } = runnerSelection;
 
     return (
@@ -139,18 +138,18 @@ export function RunnerWorkspaceTabPanels({
                     aria-labelledby="tab-builder"
                 >
                     <Suspense fallback={<div role="status">Loading Builder…</div>}>
-                    <div
-                        id="panel-flow-builder"
-                        className="workspace-grid tab-workspace flow-builder-tab-grid"
-                    >
-                        <FlowBuilderPanel
-                            state={state}
-                            authSession={authSession}
-                            globalValues={globalValues}
-                            busy={busy}
-                            onSelectCommand={setSelectedCommandId}
-                        />
-                    </div>
+                        <div
+                            id="panel-flow-builder"
+                            className="workspace-grid tab-workspace flow-builder-tab-grid"
+                        >
+                            <FlowBuilderPanel
+                                state={state}
+                                authSession={authSession}
+                                globalValues={globalValues}
+                                busy={busy}
+                                onSelectCommand={setSelectedCommandId}
+                            />
+                        </div>
                     </Suspense>
                 </section>
             )}
@@ -182,7 +181,7 @@ export function RunnerWorkspaceTabPanels({
                         selectNavigation({
                             mode: 'black-box-runner',
                             tab: 'advanced',
-                            advancedSurface: surface,
+                            advancedSurface: surface
                         })}
                 />
             </section>

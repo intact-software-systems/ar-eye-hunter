@@ -26,13 +26,13 @@ One client-state persistence owner encodes workspace IDs for every physical
 client-state identity. The encoding is:
 
 | Workspace ID | Stored component |
-| --- | --- |
-| `_` | `%5F` |
-| `%5F` | `%255F` |
-| `a:b` | `a%3Ab` |
-| `a%b` | `a%25b` |
-| `a/b` | `a%2Fb` |
-| `default` | `default` |
+| ------------ | ---------------- |
+| `_`          | `%5F`            |
+| `%5F`        | `%255F`          |
+| `a:b`        | `a%3Ab`          |
+| `a%b`        | `a%25b`          |
+| `a/b`        | `a%2Fb`          |
+| `default`    | `default`        |
 
 The encoder accepts only nonempty strings. There is no encoded representation
 for an absent client workspace.

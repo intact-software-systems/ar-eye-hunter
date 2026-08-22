@@ -1,8 +1,4 @@
-import {
-    createRallarAiAcceptedResultTracker,
-    type RallarAiJsonResult,
-    validateRallarAiJsonValue,
-} from '@shared/rallar-ai/mod.ts';
+import { createRallarAiAcceptedResultTracker, validateRallarAiJsonValue, type RallarAiJsonResult } from '@shared/rallar-ai/mod.ts';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -10,12 +6,9 @@ import {
     createAiDirectorRequest,
     materializeAiArenaEvent,
     validateAiArenaLayoutProposal,
-    validateAiDirectorProposalValue,
+    validateAiDirectorProposalValue
 } from '../../../apps/ar-eye-hunter-v1/src/game/aiDirector.ts';
-import {
-    createInitialArenaState,
-    toArenaSnapshot,
-} from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
+import { createInitialArenaState, toArenaSnapshot } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
 import type { AiDirectorProposalValue } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
 
 describe('AR Eye Hunter AI director', () => {
@@ -28,10 +21,10 @@ describe('AR Eye Hunter AI director', () => {
                 kind: 'arena-shift',
                 intensity: 99,
                 durationMs: 999_999,
-                headline: 'Everything tilts',
+                headline: 'Everything tilts'
             },
             urgency: 'high',
-            reason: 'Push movement pressure.',
+            reason: 'Push movement pressure.'
         }, snapshot);
 
         expect(validation.ok).toBe(true);
@@ -50,10 +43,10 @@ describe('AR Eye Hunter AI director', () => {
             event: {
                 kind: 'combo-bounty',
                 targetId: 'missing-eye',
-                headline: 'Impossible bounty',
+                headline: 'Impossible bounty'
             },
             urgency: 'medium',
-            reason: 'Bad target id.',
+            reason: 'Bad target id.'
         }, snapshot);
 
         expect(validation.ok).toBe(false);
@@ -65,20 +58,24 @@ describe('AR Eye Hunter AI director', () => {
             event: {
                 kind: 'overdrive-window',
                 durationMs: 7_500,
-                headline: 'Open season',
+                headline: 'Open season'
             },
             urgency: 'medium',
-            reason: 'Reward aggressive play.',
+            reason: 'Reward aggressive play.'
         };
 
-        const event = materializeAiArenaEvent({
-            generationId: 'gen-1',
-            dedupeKey: 'dedupe-1',
-            baseStateRevision: 'rev-1',
-            value,
-            accepted: true,
-            sentAtEpochMs: now,
-        }, 4, now);
+        const event = materializeAiArenaEvent(
+            {
+                generationId: 'gen-1',
+                dedupeKey: 'dedupe-1',
+                baseStateRevision: 'rev-1',
+                value,
+                accepted: true,
+                sentAtEpochMs: now
+            },
+            4,
+            now
+        );
 
         expect(event.id).toBe('ai-event:gen-1');
         expect(event.kind).toBe('overdrive-window');
@@ -115,31 +112,31 @@ describe('AR Eye Hunter AI director', () => {
                 grid: '#49ff86',
                 accent: '#00e5ff',
                 warning: '#ff3df2',
-                reward: '#ffe66d',
+                reward: '#ffe66d'
             },
             spawnPoints: [
                 [-45, 1.72, -45],
-                [45, 1.72, 45],
+                [45, 1.72, 45]
             ],
             pickupAnchors: [
                 { id: 'pickup-a', position: [0, 1, 0] },
                 { id: 'pickup-b', position: [14, 1, 0] },
-                { id: 'pickup-c', position: [-14, 1, 0] },
+                { id: 'pickup-c', position: [-14, 1, 0] }
             ],
             props: [{
                 id: 'cover-a',
                 kind: 'cover',
                 position: [0, 1, 8],
                 size: [4, 2, 2],
-                blocksShots: true,
+                blocksShots: true
             }],
             signs: [{
                 id: 'sign-a',
                 title: 'MORALE PATCH',
                 detail: 'fun is mandatory and logged',
                 position: [0, 3, 57],
-                rotationY: Math.PI,
-            }],
+                rotationY: Math.PI
+            }]
         });
 
         expect(validation.ok).toBe(true);
@@ -154,7 +151,7 @@ describe('AR Eye Hunter AI director', () => {
         const layoutRequest = createAiArenaLayoutRequest(state, 'room-1');
         const chaosRequest = createAiDirectorRequest(state, 'room-1');
         const layoutSchema = layoutRequest.schema as {
-            properties: { halfSize: { minimum: number; maximum: number } };
+            properties: { halfSize: { minimum: number; maximum: number; }; };
         };
 
         expect(layoutSchema.properties.halfSize.minimum).toBe(32);
@@ -179,7 +176,7 @@ describe('AR Eye Hunter AI director', () => {
 
 function fakeResult(
     generationId: string,
-    dedupeKey: string,
+    dedupeKey: string
 ): RallarAiJsonResult<AiDirectorProposalValue> {
     return {
         protocolVersion: 1,
@@ -198,16 +195,16 @@ function fakeResult(
         value: {
             event: {
                 kind: 'combo-bounty',
-                headline: 'Bounty',
+                headline: 'Bounty'
             },
             urgency: 'medium',
-            reason: 'Test',
+            reason: 'Test'
         },
         validation: {
             ok: true,
             errors: [],
-            issues: [],
+            issues: []
         },
-        lifecycle: 'accepted',
+        lifecycle: 'accepted'
     };
 }

@@ -1,13 +1,13 @@
-import { degreeLimitOf, degreeOf, edgeWeightOf, } from './remove-dynamics-helpers.ts';
-import type { ConnectContext, ConnectResult, DiameterCandidate, EdgeCandidate } from './tree-dynamics-connect-types.ts';
-import { findMCEdge, findMDEdge, worstCaseDist, } from './tree-dynamics-search.ts';
 import { TreeGraph, VertexId } from '../graph-props.ts';
 import { cloneGraph } from '../graph/graph-algs.ts';
+import { degreeLimitOf, degreeOf, edgeWeightOf } from './remove-dynamics-helpers.ts';
+import type { ConnectContext, ConnectResult, DiameterCandidate, EdgeCandidate } from './tree-dynamics-connect-types.ts';
+import { findMCEdge, findMDEdge, worstCaseDist } from './tree-dynamics-search.ts';
 
 export function connectMCE(
     ctx: ConnectContext,
     remainingVertices: ReadonlySet<VertexId>,
-    connectedVertices: ReadonlySet<VertexId>,
+    connectedVertices: ReadonlySet<VertexId>
 ): ConnectResult {
     let graph = cloneGraph(ctx.groupGraph);
     const remaining = new Set(remainingVertices);
@@ -24,7 +24,7 @@ export function connectMCE(
         const availableOutDegConnected = getAvailableOutDegree(
             graph,
             ctx.globalGraph,
-            connected,
+            connected
         );
 
         for (const source of connected) {
@@ -33,15 +33,18 @@ export function connectMCE(
             }
 
             for (const target of remaining) {
-                if (!ctx.globalGraph.hasEdge(source, target)) continue;
+                if (!ctx.globalGraph.hasEdge(source, target)) {
+                    continue;
+                }
 
                 const weight = edgeWeightOf(ctx.globalGraph, source, target);
-                const od =
-                    availableOutDegConnected +
+                const od = availableOutDegConnected +
                     getAvailableOutDegree(graph, ctx.globalGraph, new Set([target])) -
                     avInc;
 
-                if (od <= 0) continue;
+                if (od <= 0) {
+                    continue;
+                }
 
                 if (
                     best === undefined ||
@@ -52,7 +55,7 @@ export function connectMCE(
                     best = {
                         from: source,
                         to: target,
-                        weight,
+                        weight
                     };
                     chosenTarget = target;
                 }
@@ -68,11 +71,12 @@ export function connectMCE(
             if (degInc >= Number.MAX_SAFE_INTEGER - 1) {
                 break;
             }
-        } else {
+        }
+        else {
             graph.addEdge(best.from, best.to, {
                 from: best.from,
                 to: best.to,
-                weight: best.weight,
+                weight: best.weight
             });
             connected.add(chosenTarget);
             remaining.delete(chosenTarget);
@@ -82,14 +86,14 @@ export function connectMCE(
     return {
         graph,
         connectedVertices: connected,
-        remainingVertices: remaining,
+        remainingVertices: remaining
     };
 }
 
 export function connectSearchMCE(
     ctx: ConnectContext,
     remainingVertices: ReadonlySet<VertexId>,
-    connectedVertices: ReadonlySet<VertexId>,
+    connectedVertices: ReadonlySet<VertexId>
 ): ConnectResult {
     let graph = cloneGraph(ctx.groupGraph);
     const remaining = new Set(remainingVertices);
@@ -106,7 +110,7 @@ export function connectSearchMCE(
         const availableOutDegConnected = getAvailableOutDegree(
             graph,
             ctx.globalGraph,
-            connected,
+            connected
         );
 
         for (const source of connected) {
@@ -115,15 +119,18 @@ export function connectSearchMCE(
             }
 
             for (const target of remaining) {
-                const od =
-                    availableOutDegConnected +
+                const od = availableOutDegConnected +
                     getAvailableOutDegree(graph, ctx.globalGraph, new Set([target])) -
                     avInc;
 
-                if (od <= 0) continue;
+                if (od <= 0) {
+                    continue;
+                }
 
                 const candidate = findMCEdge(ctx.globalGraph, graph, source, target);
-                if (!candidate) continue;
+                if (!candidate) {
+                    continue;
+                }
 
                 if (
                     best === undefined ||
@@ -146,11 +153,12 @@ export function connectSearchMCE(
             if (degInc >= Number.MAX_SAFE_INTEGER - 1) {
                 break;
             }
-        } else {
+        }
+        else {
             graph.addEdge(best.from, best.to, {
                 from: best.from,
                 to: best.to,
-                weight: best.weight,
+                weight: best.weight
             });
             connected.add(chosenTarget);
             remaining.delete(chosenTarget);
@@ -160,14 +168,14 @@ export function connectSearchMCE(
     return {
         graph,
         connectedVertices: connected,
-        remainingVertices: remaining,
+        remainingVertices: remaining
     };
 }
 
 export function connectMDE(
     ctx: ConnectContext,
     remainingVertices: ReadonlySet<VertexId>,
-    connectedVertices: ReadonlySet<VertexId>,
+    connectedVertices: ReadonlySet<VertexId>
 ): ConnectResult {
     let graph = cloneGraph(ctx.groupGraph);
     const remaining = new Set(remainingVertices);
@@ -184,23 +192,25 @@ export function connectMDE(
                 continue;
             }
 
-            const sourceEccentricity =
-                degreeOf(graph, source) > 0 ? worstCaseDist(graph, source) : 0;
+            const sourceEccentricity = degreeOf(graph, source) > 0 ? worstCaseDist(graph, source) : 0;
 
             for (const target of remaining) {
-                if (source === target) continue;
+                if (source === target) {
+                    continue;
+                }
                 if (degreeOf(graph, target) >= degreeLimitOf(ctx.globalGraph, target) + degInc) {
                     continue;
                 }
-                if (!ctx.globalGraph.hasEdge(source, target)) continue;
+                if (!ctx.globalGraph.hasEdge(source, target)) {
+                    continue;
+                }
 
-                const targetEccentricity =
-                    degreeOf(graph, target) > 0 ? worstCaseDist(graph, target) : 0;
+                const targetEccentricity = degreeOf(graph, target) > 0 ? worstCaseDist(graph, target) : 0;
 
                 const linkWeight = edgeWeightOf(ctx.globalGraph, source, target);
                 const newDiameter = Math.max(
                     sourceEccentricity,
-                    linkWeight + targetEccentricity,
+                    linkWeight + targetEccentricity
                 );
 
                 if (
@@ -212,7 +222,7 @@ export function connectMDE(
                     best = {
                         from: source,
                         to: target,
-                        diameter: newDiameter,
+                        diameter: newDiameter
                     };
                     bestTarget = target;
                 }
@@ -224,11 +234,12 @@ export function connectMDE(
             if (degInc >= Number.MAX_SAFE_INTEGER - 1) {
                 break;
             }
-        } else {
+        }
+        else {
             graph.addEdge(best.from, best.to, {
                 from: best.from,
                 to: best.to,
-                weight: edgeWeightOf(ctx.globalGraph, best.from, best.to),
+                weight: edgeWeightOf(ctx.globalGraph, best.from, best.to)
             });
 
             remaining.delete(bestTarget);
@@ -239,14 +250,14 @@ export function connectMDE(
     return {
         graph,
         connectedVertices: connected,
-        remainingVertices: remaining,
+        remainingVertices: remaining
     };
 }
 
 export function connectSearchMDE(
     ctx: ConnectContext,
     remainingVertices: ReadonlySet<VertexId>,
-    connectedVertices: ReadonlySet<VertexId>,
+    connectedVertices: ReadonlySet<VertexId>
 ): ConnectResult {
     let graph = cloneGraph(ctx.groupGraph);
     const remaining = new Set(remainingVertices);
@@ -263,11 +274,12 @@ export function connectSearchMDE(
                 continue;
             }
 
-            const sourceEccentricity =
-                degreeOf(graph, source) > 0 ? worstCaseDist(graph, source) : 0;
+            const sourceEccentricity = degreeOf(graph, source) > 0 ? worstCaseDist(graph, source) : 0;
 
             for (const target of remaining) {
-                if (source === target) continue;
+                if (source === target) {
+                    continue;
+                }
                 if (degreeOf(graph, target) >= degreeLimitOf(ctx.globalGraph, target) + degInc) {
                     continue;
                 }
@@ -277,9 +289,11 @@ export function connectSearchMDE(
                     graph,
                     source,
                     target,
-                    sourceEccentricity,
+                    sourceEccentricity
                 );
-                if (!candidate) continue;
+                if (!candidate) {
+                    continue;
+                }
 
                 if (
                     best === undefined ||
@@ -298,11 +312,12 @@ export function connectSearchMDE(
             if (degInc >= Number.MAX_SAFE_INTEGER - 1) {
                 break;
             }
-        } else {
+        }
+        else {
             graph.addEdge(best.from, best.to, {
                 from: best.from,
                 to: best.to,
-                weight: edgeWeightOf(ctx.globalGraph, best.from, best.to),
+                weight: edgeWeightOf(ctx.globalGraph, best.from, best.to)
             });
 
             remaining.delete(bestTarget);
@@ -313,14 +328,14 @@ export function connectSearchMDE(
     return {
         graph,
         connectedVertices: connected,
-        remainingVertices: remaining,
+        remainingVertices: remaining
     };
 }
 
 function getAvailableOutDegree(
     graph: TreeGraph,
     globalGraph: TreeGraph,
-    vertices: ReadonlySet<VertexId>,
+    vertices: ReadonlySet<VertexId>
 ): number {
     let total = 0;
 

@@ -1,8 +1,8 @@
 import { lazy, Suspense } from 'react';
 import { AuthCommandCenterPanel } from '../../diagnostics/auth/AuthCommandCenterPanel.tsx';
+import { StatsPanel } from '../../diagnostics/events/StatsPanel.tsx';
 import { QuickRallarTestPanel } from '../../diagnostics/quick-test/QuickRallarTestPanel.tsx';
 import { RtcRealtimePanel } from '../../diagnostics/rtc-realtime/RtcRealtimePanel.tsx';
-import { StatsPanel } from '../../diagnostics/events/StatsPanel.tsx';
 import { WebSocketCommandCenterPanel } from '../../diagnostics/websocket/WebSocketCommandCenterPanel.tsx';
 import { FailurePanel } from '../../runner/runs/FailurePanel.tsx';
 import type {
@@ -10,22 +10,22 @@ import type {
     LegacyShellGlobalContext,
     LegacyShellNavigation,
     LegacyShellRunnerSelection,
-    LegacyShellRuntime,
+    LegacyShellRuntime
 } from '../legacy-shell-contracts.ts';
 
 const RoomsClientsPanel = lazy(() =>
-    import('../../diagnostics/rooms-clients/RoomsClientsPanel.tsx').then(module => ({
-        default: module.RoomsClientsPanel,
+    import('../../diagnostics/rooms-clients/RoomsClientsPanel.tsx').then((module) => ({
+        default: module.RoomsClientsPanel
     }))
 );
 const TopologyGraphPanel = lazy(() =>
-    import('../../diagnostics/topology/TopologyGraphPanel.tsx').then(module => ({
-        default: module.TopologyGraphPanel,
+    import('../../diagnostics/topology/TopologyGraphPanel.tsx').then((module) => ({
+        default: module.TopologyGraphPanel
     }))
 );
 const RtcDiagnosticsPanel = lazy(() =>
-    import('../../diagnostics/rtc/RtcDiagnosticsPanel.tsx').then(module => ({
-        default: module.RtcDiagnosticsPanel,
+    import('../../diagnostics/rtc/RtcDiagnosticsPanel.tsx').then((module) => ({
+        default: module.RtcDiagnosticsPanel
     }))
 );
 
@@ -34,7 +34,7 @@ export function DirectConnectionTabPanels({
     auth,
     navigation,
     globalContext,
-    runnerSelection,
+    runnerSelection
 }: Readonly<{
     runtime: LegacyShellRuntime;
     auth: LegacyShellAuth;
@@ -48,7 +48,7 @@ export function DirectConnectionTabPanels({
     const {
         globalValues,
         browserStatus,
-        updateGlobalValue,
+        updateGlobalValue
     } = globalContext;
     const { setSelectedCommandId } = runnerSelection;
 

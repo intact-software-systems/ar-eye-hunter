@@ -1,21 +1,15 @@
-import { QueueBoxResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
-import {
-    type DequeueResourceEntryOptions,
-    ResilienceDto,
-} from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
+import { ResilienceDto, type DequeueResourceEntryOptions } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { QueueBoxResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
 import { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import {
-    createQueueMessageReader,
-    type QueueMessageReader,
-} from '@shared/services/QueueMessageReader.ts';
+import { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
+import { createQueueMessageReader, type QueueMessageReader } from '@shared/services/QueueMessageReader.ts';
 
 export class InboxQueueReader {
     public static readonly INBOX_ENQUEUE_TYPE = EnqueuedType.APP_INBOX;
     public static readonly INBOX_DEQUEUE_TYPES = new Set<string>([
-        this.INBOX_ENQUEUE_TYPE,
+        this.INBOX_ENQUEUE_TYPE
     ]);
 
     private readonly reader: QueueMessageReader;
@@ -24,14 +18,14 @@ export class InboxQueueReader {
 
     constructor(
         inbox: QueueBoxResourceEntryRepository,
-        dequeueOptions: DequeueResourceEntryOptions = {},
+        dequeueOptions: DequeueResourceEntryOptions = {}
     ) {
         this.inbox = inbox;
         this.reader = createQueueMessageReader({
             repository: inbox,
             enqueueType: InboxQueueReader.INBOX_ENQUEUE_TYPE,
             queueName: 'APP_INBOX',
-            dequeueOptions,
+            dequeueOptions
         });
     }
 
@@ -50,7 +44,7 @@ export class InboxQueueReader {
 
     async enqueueIf(
         message: ALMessage,
-        enqueueIf: (entry: ResourceEntry) => boolean,
+        enqueueIf: (entry: ResourceEntry) => boolean
     ): Promise<ResourceEntry | undefined> {
         return await this.reader.enqueueIf(message, enqueueIf);
     }

@@ -1,21 +1,16 @@
-import { useMemo, useState } from 'react';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { useMemo, useState } from 'react';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
-import {
-    runnerAgentId,
-    runnerNewAgentLaunchSuffix,
-} from '../../../runner-agent-launch.ts';
+import { runnerAgentId, runnerNewAgentLaunchSuffix } from '../../../runner-agent-launch.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { safeIdSegment } from '../../shared/safe-id-segment.ts';
-import {
-    runnerControlWsUrlFromHttpBaseUrl,
-} from './runner-endpoints.ts';
+import { runnerControlWsUrlFromHttpBaseUrl } from './runner-endpoints.ts';
 
 export function useRunnerAgentLaunchState({
     control,
     bootstrap,
     authSession,
-    controlBaseUrl,
+    controlBaseUrl
 }: Readonly<{
     control: RallarBlackBoxControlSnapshot;
     bootstrap: RallarBlackBoxBootstrapConfig;
@@ -23,23 +18,20 @@ export function useRunnerAgentLaunchState({
     controlBaseUrl: string;
 }>) {
     const [agentRunId, setAgentRunId] = useState(
-        control.runId ?? bootstrap.runId ?? 'manual-demo-run',
+        control.runId ?? bootstrap.runId ?? 'manual-demo-run'
     );
     const [agentPrefix, setAgentPrefix] = useState(
         bootstrap.runnerAgentPrefix ??
-        `${safeIdSegment(authSession?.username ?? bootstrap.actor ?? 'agent')}-agent`,
+            `${safeIdSegment(authSession?.username ?? bootstrap.actor ?? 'agent')}-agent`
     );
     const [agentCount, setAgentCount] = useState(
-        Math.min(6, Math.max(1, bootstrap.runnerAgentCount ?? 1)),
+        Math.min(6, Math.max(1, bootstrap.runnerAgentCount ?? 1))
     );
-    const [agentLaunchSuffix, setAgentLaunchSuffix] = useState(() =>
-        runnerNewAgentLaunchSuffix(),
-    );
+    const [agentLaunchSuffix, setAgentLaunchSuffix] = useState(() => runnerNewAgentLaunchSuffix());
     const [agentRestoreSession, setAgentRestoreSession] = useState(
-        bootstrap.providerMode === 'browser-rallar',
+        bootstrap.providerMode === 'browser-rallar'
     );
-    const [agentLaunchMessage, setAgentLaunchMessage] =
-        useState<string | undefined>();
+    const [agentLaunchMessage, setAgentLaunchMessage] = useState<string | undefined>();
     const agentControlWsUrl = runnerControlWsUrlFromHttpBaseUrl(controlBaseUrl);
     const agentIds = useMemo(
         () =>
@@ -48,10 +40,9 @@ export function useRunnerAgentLaunchState({
                     agentPrefix,
                     index,
                     agentCount,
-                    agentLaunchSuffix,
-                ),
-            ),
-        [agentCount, agentLaunchSuffix, agentPrefix],
+                    agentLaunchSuffix
+                )),
+        [agentCount, agentLaunchSuffix, agentPrefix]
     );
     return {
         agentRunId,
@@ -67,10 +58,8 @@ export function useRunnerAgentLaunchState({
         agentLaunchMessage,
         setAgentLaunchMessage,
         agentControlWsUrl,
-        agentIds,
+        agentIds
     };
 }
 
-export type RunnerAgentLaunchStateModel = ReturnType<
-    typeof useRunnerAgentLaunchState
->;
+export type RunnerAgentLaunchStateModel = ReturnType<typeof useRunnerAgentLaunchState>;

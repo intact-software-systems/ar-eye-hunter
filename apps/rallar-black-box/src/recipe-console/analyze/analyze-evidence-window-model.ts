@@ -1,6 +1,5 @@
 import type { ExplicitWindowModel } from '../ui/explicit-window-model.ts';
-import type { AnalyzeEvidenceWindowProjection } from
-    './analyze-worker-contract.ts';
+import type { AnalyzeEvidenceWindowProjection } from './analyze-worker-contract.ts';
 
 /**
  * Adapts the worker's one-based cursor range to the shared explicit-window
@@ -8,7 +7,7 @@ import type { AnalyzeEvidenceWindowProjection } from
  */
 export function deriveAnalyzeEvidenceWindowModel(
     window: AnalyzeEvidenceWindowProjection,
-    fingerprint: string,
+    fingerprint: string
 ): ExplicitWindowModel {
     const total = nonNegativeInteger(window.counts.retainedMatches);
     const displayStart = window.entries.length === 0
@@ -28,7 +27,7 @@ export function deriveAnalyzeEvidenceWindowModel(
         displayStart,
         displayEnd,
         canPrevious: Boolean(window.previousCursor),
-        canNext: Boolean(window.nextCursor),
+        canNext: Boolean(window.nextCursor)
     };
 }
 

@@ -17,7 +17,7 @@ const DYNAMIC_METADATA_KEYS = [
     'primeAction',
     'resolvedOnly',
     'playerId',
-    'relicId',
+    'relicId'
 ] as const;
 
 export function roomStaticBatchKey(candidate: RoomStaticBatchCandidate): string | undefined {
@@ -39,7 +39,7 @@ export function roomStaticBatchKey(candidate: RoomStaticBatchCandidate): string 
 }
 
 export function summarizeRoomStaticBatchPlan(
-    candidates: readonly RoomStaticBatchCandidate[],
+    candidates: readonly RoomStaticBatchCandidate[]
 ): RoomStaticBatchPlanSummary {
     const groups = new Map<string, number>();
     let unbatchedMeshCount = 0;
@@ -67,6 +67,6 @@ export function summarizeRoomStaticBatchPlan(
     return {
         batchCount,
         batchedMeshCount,
-        unbatchedMeshCount,
+        unbatchedMeshCount
     };
 }

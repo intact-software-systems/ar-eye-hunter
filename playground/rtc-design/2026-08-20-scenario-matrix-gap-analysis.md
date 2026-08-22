@@ -11,18 +11,18 @@ lane is untouched by slice 6 and still has no lifecycle artifact.
 
 ## Verdicts
 
-| Scenario               | Verdict   | Missing pins                                                                                                                          |
-| ---------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Scenario               | Verdict   | Missing pins                                                                                                                           |
+| ---------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `closed-after-active`  | covered   | — (deny outside FORMING, admit during FORMING, below-floor reopen all pinned)                                                          |
 | `deadline-join`        | partial   | Join-before-T admitted (only the deny-after-T half is pinned)                                                                          |
-| `capacity-join`        | partial   | Admit-under-capacity; N+1 deny at a non-degenerate N; leave-under-N reopens (no pin anywhere)                                           |
-| `leader-gated-join`    | partial   | Park while ACTIVE (all park pins fire in FORMING); `member-joined` event on grant; non-manager grant → `forbidden-role`                 |
+| `capacity-join`        | partial   | Admit-under-capacity; N+1 deny at a non-degenerate N; leave-under-N reopens (no pin anywhere)                                          |
+| `leader-gated-join`    | partial   | Park while ACTIVE (all park pins fire in FORMING); `member-joined` event on grant; non-manager grant → `forbidden-role`                |
 | `optimistic-baseline`  | partial   | Nothing sends `preset: 'optimistic'`; absent ≡ explicit-default equivalence unpinned                                                   |
 | `threshold-activation` | partial   | Activation via real fractional readiness (existing pin rides the zero-edge rate-1 case); `activated-degraded` at deadline; scale tiers |
-| `data-gating`          | partial   | `allowed`-during-FORMING flow; absent-policy-during-FORMING flow; **CRDT exemption has no recipe pin at all**                           |
-| `manager-succession`   | partial   | Zero-manager mid-ESTABLISHING (all zero-manager legs sit in FORMING); departure via voluntary leave; `selection: 'none'` never sent     |
+| `data-gating`          | partial   | `allowed`-during-FORMING flow; absent-policy-during-FORMING flow; **CRDT exemption has no recipe pin at all**                          |
+| `manager-succession`   | partial   | Zero-manager mid-ESTABLISHING (all zero-manager legs sit in FORMING); departure via voluntary leave; `selection: 'none'` never sent    |
 | `strict-confirmation`  | uncovered | No recipe sends `strictConfirmation: true`                                                                                             |
-| `managed-phased`       | partial   | Zero RTC signaling over WS during FORMING; typed body codes on the 403s; the non-manager leg aims at the wrong path (below)             |
+| `managed-phased`       | partial   | Zero RTC signaling over WS during FORMING; typed body codes on the 403s; the non-manager leg aims at the wrong path (below)            |
 
 ## Weak pins discovered
 
@@ -94,7 +94,7 @@ Building the managed threshold bursts surfaced three facts the fixed-size recipe
   timer's deadline evaluation queues behind the RTT mutation backlog on a loaded runner
   (activation never evaluated inside the poll window), and one RTT mutation exhausted its
   20 optimistic-retry attempts under all-pairs endpoint contention — a single terminal
-  completion that broke the *unrelated* `api-v1-admin-operations` recipe asserting the
+  completion that broke the _unrelated_ `api-v1-admin-operations` recipe asserting the
   shared `atomicCompletionFailures` counter is zero. A synthetic worst-case burst cannot
   share a server with recipes asserting a clean evidence counter, so both managed tiers
   live in `api-v1-black-box-formation-large` (the opt-in profile that already holds

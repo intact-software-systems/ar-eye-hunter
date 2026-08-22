@@ -1,24 +1,22 @@
 // deno-lint-ignore-file no-explicit-any
 import { isRallarBlackBoxAssertOperator } from '../assert/assert-value-operators.ts';
-import type { RallarBlackBoxTestAssertOperator } from '../types.ts';
 import type {
     RallarBlackBoxDistributedRunManifest,
-    RallarBlackBoxDistributedRunValidationIssue,
+    RallarBlackBoxDistributedRunValidationIssue
 } from '../distributed-run.ts';
+import type { RallarBlackBoxTestAssertOperator } from '../types.ts';
 
 export const RALLAR_BLACK_BOX_GROUP_ASSERTION_AGGREGATES = [
     'allMatch',
     'noneMatch',
     'countMatching',
     'allEqual',
-    'allEqualWithin',
+    'allEqualWithin'
 ] as const;
 
-export type RallarBlackBoxGroupAssertionAggregate =
-    typeof RALLAR_BLACK_BOX_GROUP_ASSERTION_AGGREGATES[number];
+export type RallarBlackBoxGroupAssertionAggregate = typeof RALLAR_BLACK_BOX_GROUP_ASSERTION_AGGREGATES[number];
 
-export const RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_FAILED =
-    'RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_FAILED';
+export const RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_FAILED = 'RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_FAILED';
 
 export const RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_EVIDENCE_MISSING =
     'RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_EVIDENCE_MISSING';
@@ -56,21 +54,24 @@ type GroupAssertionCommon = Readonly<{
 }>;
 
 export type RallarBlackBoxDistributedGroupAssertion =
-    | GroupAssertionCommon & Readonly<{
-        aggregate: 'allMatch';
-        predicate: RallarBlackBoxGroupAssertionPredicate;
-    }>
-    | GroupAssertionCommon & Readonly<{
-        aggregate: 'noneMatch';
-        predicate: RallarBlackBoxGroupAssertionPredicate;
-    }>
-    | GroupAssertionCommon & Readonly<{
-        aggregate: 'countMatching';
-        predicate: RallarBlackBoxGroupAssertionPredicate;
-        count: RallarBlackBoxGroupAssertionCountBounds;
-    }>
-    | GroupAssertionCommon & Readonly<{ aggregate: 'allEqual' }>
-    | GroupAssertionCommon & Readonly<{ aggregate: 'allEqualWithin'; tolerance: number }>;
+    | GroupAssertionCommon
+        & Readonly<{
+            aggregate: 'allMatch';
+            predicate: RallarBlackBoxGroupAssertionPredicate;
+        }>
+    | GroupAssertionCommon
+        & Readonly<{
+            aggregate: 'noneMatch';
+            predicate: RallarBlackBoxGroupAssertionPredicate;
+        }>
+    | GroupAssertionCommon
+        & Readonly<{
+            aggregate: 'countMatching';
+            predicate: RallarBlackBoxGroupAssertionPredicate;
+            count: RallarBlackBoxGroupAssertionCountBounds;
+        }>
+    | GroupAssertionCommon & Readonly<{ aggregate: 'allEqual'; }>
+    | GroupAssertionCommon & Readonly<{ aggregate: 'allEqualWithin'; tolerance: number; }>;
 
 export type RallarBlackBoxGroupAssertionEvidenceStatus =
     | 'resolved'
@@ -107,15 +108,15 @@ export type RallarBlackBoxDistributedGroupAssertionResult = Readonly<{
 }>;
 
 export function validateDistributedGroupAssertions(
-    manifest: RallarBlackBoxDistributedRunManifest,
+    manifest: RallarBlackBoxDistributedRunManifest
 ): readonly RallarBlackBoxDistributedRunValidationIssue[] {
     const groupAssertions = manifest.groupAssertions ?? [];
     const issues: RallarBlackBoxDistributedRunValidationIssue[] = [];
     const seenIds = new Set<string>();
     const recipeKeys = new Set(
         manifest.recipes
-            .map(selection => selection.recipeId ?? selection.recipe?.recipeId ?? selection.role)
-            .filter((key): key is string => typeof key === 'string' && key.trim().length > 0),
+            .map((selection) => selection.recipeId ?? selection.recipe?.recipeId ?? selection.role)
+            .filter((key): key is string => typeof key === 'string' && key.trim().length > 0)
     );
 
     groupAssertions.forEach((assertion, index) => {
@@ -137,20 +138,20 @@ interface GroupAssertionIdentityValidationInput {
 
 function validateGroupAssertionIdentity(
     input: GroupAssertionIdentityValidationInput,
-    issues: RallarBlackBoxDistributedRunValidationIssue[],
+    issues: RallarBlackBoxDistributedRunValidationIssue[]
 ): void {
     const id = input.assertion.groupAssertionId;
     if (typeof id !== 'string' || id.trim().length === 0) {
         issues.push({
             path: `${input.path}.groupAssertionId`,
-            message: 'A non-empty string is required.',
+            message: 'A non-empty string is required.'
         });
         return;
     }
     if (input.seenIds.has(id)) {
         issues.push({
             path: `${input.path}.groupAssertionId`,
-            message: `Group assertion ID ${id} is duplicated; IDs must be unique.`,
+            message: `Group assertion ID ${id} is duplicated; IDs must be unique.`
         });
     }
     input.seenIds.add(id);
@@ -165,21 +166,21 @@ interface GroupAssertionSourceValidationInput {
 
 function validateGroupAssertionSource(
     input: GroupAssertionSourceValidationInput,
-    issues: RallarBlackBoxDistributedRunValidationIssue[],
+    issues: RallarBlackBoxDistributedRunValidationIssue[]
 ): void {
     const source = input.assertion.source;
     for (const field of ['recipeId', 'commandId', 'path'] as const) {
         if (typeof source[field] !== 'string' || source[field].trim().length === 0) {
             issues.push({
                 path: `${input.path}.source.${field}`,
-                message: 'A non-empty string is required.',
+                message: 'A non-empty string is required.'
             });
         }
     }
     if (!source.recipeId || !input.recipeKeys.has(source.recipeId)) {
         issues.push({
             path: `${input.path}.source.recipeId`,
-            message: 'Source recipeId must reference a recipe selection in this manifest.',
+            message: 'Source recipeId must reference a recipe selection in this manifest.'
         });
         return;
     }
@@ -187,7 +188,7 @@ function validateGroupAssertionSource(
     if (inlineCommandIds !== undefined && !inlineCommandIds.has(source.commandId)) {
         issues.push({
             path: `${input.path}.source.commandId`,
-            message: 'Source commandId is not an authored commandId of the inline recipe.',
+            message: 'Source commandId is not an authored commandId of the inline recipe.'
         });
     }
 }
@@ -200,7 +201,7 @@ interface GroupAssertionScopeValidationInput {
 
 function validateGroupAssertionScope(
     input: GroupAssertionScopeValidationInput,
-    issues: RallarBlackBoxDistributedRunValidationIssue[],
+    issues: RallarBlackBoxDistributedRunValidationIssue[]
 ): void {
     const minParticipants = input.assertion.minParticipants;
     if (
@@ -209,7 +210,7 @@ function validateGroupAssertionScope(
     ) {
         issues.push({
             path: `${input.path}.minParticipants`,
-            message: 'minParticipants must be an integer >= 1.',
+            message: 'minParticipants must be an integer >= 1.'
         });
     }
 
@@ -220,13 +221,13 @@ function validateGroupAssertionScope(
     if (typeof role !== 'string' || role.trim().length === 0) {
         issues.push({
             path: `${input.path}.scope.role`,
-            message: 'A non-empty string is required.',
+            message: 'A non-empty string is required.'
         });
         return;
     }
     const declaredRoles = new Set([
-        ...(input.manifest.roleAssignments ?? []).map(assignment => assignment.role),
-        ...Object.keys(input.manifest.targetPolicy.roles ?? {}),
+        ...(input.manifest.roleAssignments ?? []).map((assignment) => assignment.role),
+        ...Object.keys(input.manifest.targetPolicy.roles ?? {})
     ]);
     if (declaredRoles.has(role)) {
         return;
@@ -238,20 +239,20 @@ function validateGroupAssertionScope(
     }
     issues.push({
         path: `${input.path}.scope.role`,
-        message: `Scope role ${role} is not declared by roleAssignments or targetPolicy.roles.`,
+        message: `Scope role ${role} is not declared by roleAssignments or targetPolicy.roles.`
     });
 }
 
 function validateGroupAssertionAggregate(
     assertion: RallarBlackBoxDistributedGroupAssertion,
     path: string,
-    issues: RallarBlackBoxDistributedRunValidationIssue[],
+    issues: RallarBlackBoxDistributedRunValidationIssue[]
 ): void {
     if (assertion.aggregate === 'allEqualWithin') {
         if (typeof assertion.tolerance !== 'number' || !(assertion.tolerance >= 0)) {
             issues.push({
                 path: `${path}.tolerance`,
-                message: 'allEqualWithin requires a finite tolerance >= 0.',
+                message: 'allEqualWithin requires a finite tolerance >= 0.'
             });
         }
         return;
@@ -262,7 +263,7 @@ function validateGroupAssertionAggregate(
     if (!isRallarBlackBoxAssertOperator(assertion.predicate?.operator)) {
         issues.push({
             path: `${path}.predicate.operator`,
-            message: 'Predicate operator is not a supported assert operator.',
+            message: 'Predicate operator is not a supported assert operator.'
         });
     }
     if (assertion.aggregate === 'countMatching') {
@@ -273,13 +274,13 @@ function validateGroupAssertionAggregate(
 function validateGroupAssertionCountBounds(
     count: RallarBlackBoxGroupAssertionCountBounds,
     path: string,
-    issues: RallarBlackBoxDistributedRunValidationIssue[],
+    issues: RallarBlackBoxDistributedRunValidationIssue[]
 ): void {
     const bounds = ['equals', 'gte', 'lte'] as const;
-    if (!count || bounds.every(bound => count[bound] === undefined)) {
+    if (!count || bounds.every((bound) => count[bound] === undefined)) {
         issues.push({
             path: `${path}.count`,
-            message: 'countMatching requires at least one of count.equals, count.gte, count.lte.',
+            message: 'countMatching requires at least one of count.equals, count.gte, count.lte.'
         });
         return;
     }
@@ -288,7 +289,7 @@ function validateGroupAssertionCountBounds(
         if (value !== undefined && (!Number.isInteger(value) || value < 0)) {
             issues.push({
                 path: `${path}.count.${bound}`,
-                message: `count.${bound} must be an integer >= 0.`,
+                message: `count.${bound} must be an integer >= 0.`
             });
         }
     }
@@ -296,9 +297,9 @@ function validateGroupAssertionCountBounds(
 
 function inlineRecipeCommandIds(
     manifest: RallarBlackBoxDistributedRunManifest,
-    recipeKey: string,
+    recipeKey: string
 ): ReadonlySet<string> | undefined {
-    const selection = manifest.recipes.find(candidate =>
+    const selection = manifest.recipes.find((candidate) =>
         (candidate.recipeId ?? candidate.recipe?.recipeId ?? candidate.role) === recipeKey
     );
     if (!selection?.recipe) {
@@ -314,7 +315,7 @@ function inlineRecipeCommandIds(
         pending.push(
             ...(command?.commands ?? []),
             ...toParallelGroupCommands(command),
-            ...(command?.recipe?.commands ?? []),
+            ...(command?.recipe?.commands ?? [])
         );
     }
     return commandIds;
@@ -322,5 +323,5 @@ function inlineRecipeCommandIds(
 
 function toParallelGroupCommands(command: any): readonly any[] {
     const groups: readonly any[] = command?.groups ?? [];
-    return groups.flatMap(group => group?.commands ?? []);
+    return groups.flatMap((group) => group?.commands ?? []);
 }

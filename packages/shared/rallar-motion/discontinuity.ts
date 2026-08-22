@@ -1,21 +1,14 @@
-import {
-    distanceRallarMotionVec3,
-    distanceRallarMotionWrappedVec3,
-} from './math.ts';
-import type {
-    RallarMotionDiscontinuityOptions,
-    RallarMotionDiscontinuityResult,
-    RallarMotionSample,
-} from './types.ts';
+import { distanceRallarMotionVec3, distanceRallarMotionWrappedVec3 } from './math.ts';
+import type { RallarMotionDiscontinuityOptions, RallarMotionDiscontinuityResult, RallarMotionSample } from './types.ts';
 
 export function classifyRallarMotionDiscontinuity<TMetadata>(
     source: RallarMotionSample<TMetadata>,
     target: RallarMotionSample<TMetadata>,
-    options: RallarMotionDiscontinuityOptions = {},
+    options: RallarMotionDiscontinuityOptions = {}
 ): RallarMotionDiscontinuityResult {
     const positionDistance = distanceRallarMotionVec3(
         source.position,
-        target.position,
+        target.position
     );
 
     if (
@@ -26,12 +19,11 @@ export function classifyRallarMotionDiscontinuity<TMetadata>(
             discontinuous: true,
             reason: 'position-distance',
             positionDistance,
-            threshold: options.maxPositionDelta,
+            threshold: options.maxPositionDelta
         };
     }
 
-    const deltaSeconds =
-        (target.observedAtEpochMs - source.observedAtEpochMs) / 1_000;
+    const deltaSeconds = (target.observedAtEpochMs - source.observedAtEpochMs) / 1_000;
     if (
         options.maxSpeed !== undefined &&
         deltaSeconds > 0 &&
@@ -42,7 +34,7 @@ export function classifyRallarMotionDiscontinuity<TMetadata>(
             reason: 'speed',
             positionDistance,
             speed: positionDistance / deltaSeconds,
-            threshold: options.maxSpeed,
+            threshold: options.maxSpeed
         };
     }
 
@@ -54,7 +46,7 @@ export function classifyRallarMotionDiscontinuity<TMetadata>(
         const rotationDistance = distanceRallarMotionWrappedVec3(
             source.rotation,
             target.rotation,
-            options.rotationWrap,
+            options.rotationWrap
         );
         if (rotationDistance > options.maxRotationDelta) {
             return {
@@ -62,13 +54,13 @@ export function classifyRallarMotionDiscontinuity<TMetadata>(
                 reason: 'rotation-distance',
                 positionDistance,
                 rotationDistance,
-                threshold: options.maxRotationDelta,
+                threshold: options.maxRotationDelta
             };
         }
     }
 
     return {
         discontinuous: false,
-        positionDistance,
+        positionDistance
     };
 }

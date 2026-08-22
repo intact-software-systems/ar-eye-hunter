@@ -4,7 +4,7 @@ const COLORS = [
     '#ff6b6b',
     '#84cc16',
     '#c084fc',
-    '#fb923c',
+    '#fb923c'
 ] as const;
 
 export function colorForId(id: string): string {

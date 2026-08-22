@@ -2,16 +2,9 @@
 
 import '../setup-browser-indexeddb.ts';
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-    type ALInboundAdmissionStore,
     ALInboundMessageRuntime,
-    type ALInboundPlanner,
-    type ALMessage,
-    type ALOutboundAdmissionStore,
-    type ALOutboundCommitBundle,
     ALOutboundMessageRuntime,
-    type ALOutboundPlanner,
     createIndexedDbALInboundRuntimeStores,
     createIndexedDbALOutboundRuntimeStores,
     IndexedDbQueueBox,
@@ -23,8 +16,15 @@ import {
     newALUnicastMessage,
     planALMessageHandling,
     QueueBoxUtilities,
-    type ResourceEntry,
+    type ALInboundAdmissionStore,
+    type ALInboundPlanner,
+    type ALMessage,
+    type ALOutboundAdmissionStore,
+    type ALOutboundCommitBundle,
+    type ALOutboundPlanner,
+    type ResourceEntry
 } from '@shared/mod.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('IndexedDB AL runtime stores', () => {
     afterEach(() => {
@@ -40,20 +40,20 @@ describe('IndexedDB AL runtime stores', () => {
             {
                 topicId: 'chat',
                 resourceId: 'msg-1',
-                contextId: 'conversation-1',
+                contextId: 'conversation-1'
             },
             'self',
             'chat.private-text.v1',
             {
-                text: 'hello',
+                text: 'hello'
             },
             {
                 qos: {
                     durability: {
-                        algo: 'volatile',
-                    },
-                },
-            },
+                        algo: 'volatile'
+                    }
+                }
+            }
         );
 
         const runtime1 = createInboundRuntime(dbName, namespace, dispatchedMsgIds);
@@ -87,7 +87,7 @@ describe('IndexedDB AL runtime stores', () => {
         const namespace = 'shared-browser-db';
         const inbox = new IndexedDbQueueBox({
             dbName,
-            storeName: 'queuebox:inbox',
+            storeName: 'queuebox:inbox'
         });
         const dispatchedMsgIds: string[] = [];
         const runtime = new ALInboundMessageRuntime({
@@ -95,7 +95,7 @@ describe('IndexedDB AL runtime stores', () => {
             inbox,
             stores: createIndexedDbALInboundRuntimeStores({
                 dbName,
-                namespace,
+                namespace
             }),
             planIncomingMessage: (msg, fromPeerId, runtime) =>
                 planALMessageHandling(msg, {
@@ -103,7 +103,7 @@ describe('IndexedDB AL runtime stores', () => {
                     fromPeerId,
                     dedupStore: runtime.dedupStore,
                     orderingStore: runtime.orderingStore,
-                    supersedenceStore: runtime.supersedenceStore,
+                    supersedenceStore: runtime.supersedenceStore
                 }),
             readStoredEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
             toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
@@ -111,20 +111,20 @@ describe('IndexedDB AL runtime stores', () => {
                 const msg = JSON.parse(entry.resource) as ALMessage;
                 dispatchedMsgIds.push(msg.id.msgId);
             },
-            sendControlMessage: async () => Promise.resolve(),
+            sendControlMessage: async () => Promise.resolve()
         });
         const msg = newALUnicastMessage(
             'peer-1',
             {
                 topicId: 'chat',
                 resourceId: 'msg-shared-db',
-                contextId: 'conversation-1',
+                contextId: 'conversation-1'
             },
             'self',
             'chat.private-text.v1',
             {
-                text: 'persist me',
-            },
+                text: 'persist me'
+            }
         );
 
         await inbox.getAllKeys();
@@ -140,42 +140,42 @@ describe('IndexedDB AL runtime stores', () => {
         const namespace = 'rtc-inbound-local-inbox';
         const stores = createIndexedDbALInboundRuntimeStores({
             dbName,
-            namespace,
+            namespace
         });
         const runtime = createInboundRuntime(dbName, namespace, [], {
             stores: {
                 ...stores,
                 admissionStore: createFlakyInboundAdmissionStore(stores.admissionStore, {
-                    claimReadyEffects: async () => [],
-                }),
-            },
+                    claimReadyEffects: async () => []
+                })
+            }
         });
         const msg = newALUnicastMessage(
             'peer-1',
             {
                 topicId: 'chat',
                 resourceId: 'msg-local-inbox',
-                contextId: 'conversation-1',
+                contextId: 'conversation-1'
             },
             'self',
             'chat.private-text.v1',
             {
-                text: 'persist me later',
+                text: 'persist me later'
             },
             {
                 qos: {
                     durability: {
-                        algo: 'local-inbox',
-                    },
-                },
-            },
+                        algo: 'local-inbox'
+                    }
+                }
+            }
         );
 
         await runtime.handleIncomingMessage(msg, 'peer-1');
         runtime.dispose();
 
         const claimed = await stores.admissionStore.claimReadyEffects('inspector', 10, 1_000);
-        const inboxEffect = claimed.find(effect => effect.payload.kind === 'enqueue-inbox');
+        const inboxEffect = claimed.find((effect) => effect.payload.kind === 'enqueue-inbox');
 
         expect(inboxEffect).toBeDefined();
         expect(inboxEffect?.payload.kind).toBe('enqueue-inbox');
@@ -185,8 +185,8 @@ describe('IndexedDB AL runtime stores', () => {
 
         expect(JSON.parse(inboxEffect.payload.entry.resource)).toMatchObject({
             id: {
-                msgId: msg.id.msgId,
-            },
+                msgId: msg.id.msgId
+            }
         });
         expect(typeof inboxEffect.payload.entry.audit.date).toBe('object');
         expect(typeof inboxEffect.payload.entry.audit.createdTs).toBe('object');
@@ -205,44 +205,46 @@ describe('IndexedDB AL runtime stores', () => {
             retention: {
                 controlHistoryTtlMs: 20,
                 msgOwnerTtlMs: 20,
-                versionTtlMs: 20,
-            },
+                versionTtlMs: 20
+            }
         });
         const msg = newALUnicastMessage(
             'peer-1',
             {
                 topicId: 'chat',
                 resourceId: 'msg-inbound-retention',
-                contextId: 'conversation-1',
+                contextId: 'conversation-1'
             },
             'self',
             'chat.private-text.v1',
             {
-                text: 'retained briefly',
-            },
+                text: 'retained briefly'
+            }
         );
         const planner = createInboundPlanner();
 
-        expect(await stores.admissionStore.commitMutations({
-            senderId: msg.id.senderId,
-            expectedVersion: undefined,
-            mutations: [
-                {
-                    kind: 'set-msg-owner',
-                    msgId: msg.id.msgId,
-                    senderId: msg.id.senderId,
-                },
-            ],
-        })).toBe('committed');
+        expect(
+            await stores.admissionStore.commitMutations({
+                senderId: msg.id.senderId,
+                expectedVersion: undefined,
+                mutations: [
+                    {
+                        kind: 'set-msg-owner',
+                        msgId: msg.id.msgId,
+                        senderId: msg.id.senderId
+                    }
+                ]
+            })
+        ).toBe('committed');
 
         await stores.admissionStore.acceptControlMessage(
-            newALAckControlMessage('peer-2', 'self', msg.id.msgId),
+            newALAckControlMessage('peer-2', 'self', msg.id.msgId)
         );
 
         const beforeExpiry = await stores.admissionStore.readIncomingMessage(
             msg,
             'peer-1',
-            planner,
+            planner
         );
         expect(beforeExpiry.clientRecord?.version).toBe(2);
         expect(beforeExpiry.acks).toHaveLength(1);
@@ -250,13 +252,13 @@ describe('IndexedDB AL runtime stores', () => {
         await vi.advanceTimersByTimeAsync(21);
 
         await stores.admissionStore.acceptControlMessage(
-            newALAckControlMessage('peer-3', 'self', msg.id.msgId),
+            newALAckControlMessage('peer-3', 'self', msg.id.msgId)
         );
 
         const afterExpiry = await stores.admissionStore.readIncomingMessage(
             msg,
             'peer-1',
-            planner,
+            planner
         );
         expect(afterExpiry.clientRecord).toBeUndefined();
         expect(afterExpiry.acks).toHaveLength(1);
@@ -272,11 +274,11 @@ describe('IndexedDB AL runtime stores', () => {
         const sent: Array<Record<string, unknown>> = [];
         const stores = createIndexedDbALOutboundRuntimeStores({
             dbName,
-            namespace,
+            namespace
         });
         const admissionStore = requireOutboundAdmissionStore(stores);
         const runtime = createOutboundRuntime(dbName, namespace, sent, {
-            stores,
+            stores
         });
         const msg = createOutboundUnicastMessage('msg-outbound-default-retention');
 
@@ -301,42 +303,44 @@ describe('IndexedDB AL runtime stores', () => {
             retention: {
                 controlHistoryTtlMs: 20,
                 repairAttemptTtlMs: 20,
-                repositoryTtlMs: 60_000,
-            },
+                repositoryTtlMs: 60_000
+            }
         });
         const admissionStore = requireOutboundAdmissionStore(stores);
         const msg = createOutboundUnicastMessage('msg-outbound-ephemeral-retention');
         const planner = createOutboundPlanner();
 
-        expect(await admissionStore.commitBundle({
-            senderId: msg.id.senderId,
-            expectedVersion: undefined,
-            mutations: [
-                {
-                    kind: 'set-msg-owner',
-                    msgId: msg.id.msgId,
-                    senderId: msg.id.senderId,
-                },
-                {
-                    kind: 'set-sent-message',
-                    snapshot: {
+        expect(
+            await admissionStore.commitBundle({
+                senderId: msg.id.senderId,
+                expectedVersion: undefined,
+                mutations: [
+                    {
+                        kind: 'set-msg-owner',
                         msgId: msg.id.msgId,
-                        msg,
+                        senderId: msg.id.senderId
                     },
-                },
-                {
-                    kind: 'set-repair-attempt',
-                    snapshot: {
-                        msgId: msg.id.msgId,
-                        attempts: 1,
+                    {
+                        kind: 'set-sent-message',
+                        snapshot: {
+                            msgId: msg.id.msgId,
+                            msg
+                        }
                     },
-                },
-            ],
-            durableEffects: [],
-        })).toBe('committed');
+                    {
+                        kind: 'set-repair-attempt',
+                        snapshot: {
+                            msgId: msg.id.msgId,
+                            attempts: 1
+                        }
+                    }
+                ],
+                durableEffects: []
+            })
+        ).toBe('committed');
 
         await admissionStore.acceptControlMessage(
-            newALNackControlMessage('peer-1', 'self', msg.id.msgId, 'gap'),
+            newALNackControlMessage('peer-1', 'self', msg.id.msgId, 'gap')
         );
 
         const beforeExpiry = await admissionStore.readOutgoingMessage(msg, planner);
@@ -363,19 +367,19 @@ describe('IndexedDB AL runtime stores', () => {
                 {
                     topicId: 'chat',
                     resourceId: 'msg-seq-1',
-                    contextId: 'conversation-1',
+                    contextId: 'conversation-1'
                 },
                 'peer-1',
                 'chat.private-text.v1',
                 {
-                    text: 'one',
-                },
+                    text: 'one'
+                }
             ),
             ordering: {
                 orderingKey: 'conversation-1',
                 epoch: 0,
-                seq: 1,
-            },
+                seq: 1
+            }
         };
         const seq2 = {
             ...newALUnicastMessage(
@@ -383,19 +387,19 @@ describe('IndexedDB AL runtime stores', () => {
                 {
                     topicId: 'chat',
                     resourceId: 'msg-seq-2',
-                    contextId: 'conversation-1',
+                    contextId: 'conversation-1'
                 },
                 'peer-1',
                 'chat.private-text.v1',
                 {
-                    text: 'two',
-                },
+                    text: 'two'
+                }
             ),
             ordering: {
                 orderingKey: 'conversation-1',
                 epoch: 0,
-                seq: 2,
-            },
+                seq: 2
+            }
         };
 
         await enqueueOutboundOrThrow(runtime1, seq1);
@@ -410,8 +414,8 @@ describe('IndexedDB AL runtime stores', () => {
                 expectedSeq: 1,
                 lastContiguousSeq: 0,
                 missingSeqs: [1],
-                releasableSeqs: [],
-            }),
+                releasableSeqs: []
+            })
         );
 
         expect(sent.filter((entry) => entry.msgId === seq1.id.msgId)).toHaveLength(2);
@@ -423,7 +427,7 @@ describe('IndexedDB AL runtime stores', () => {
         const sent: Array<Record<string, unknown>> = [];
         const stores = createIndexedDbALOutboundRuntimeStores({
             dbName,
-            namespace,
+            namespace
         });
         const admissionStore = requireOutboundAdmissionStore(stores);
         const msg = createOutboundUnicastMessage('msg-indexeddb-crash-before-drain');
@@ -431,9 +435,9 @@ describe('IndexedDB AL runtime stores', () => {
             stores: {
                 ...stores,
                 admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
-                    claimReadyEffects: async () => [],
-                }),
-            },
+                    claimReadyEffects: async () => []
+                })
+            }
         });
 
         await enqueueOutboundOrThrow(runtime1, msg);
@@ -444,7 +448,7 @@ describe('IndexedDB AL runtime stores', () => {
         await runtime2.ready();
 
         expect(sent).toEqual([
-            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
+            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
         runtime2.dispose();
     });
@@ -455,7 +459,7 @@ describe('IndexedDB AL runtime stores', () => {
         const sent: Array<Record<string, unknown>> = [];
         const stores = createIndexedDbALOutboundRuntimeStores({
             dbName,
-            namespace,
+            namespace
         });
         const admissionStore = requireOutboundAdmissionStore(stores);
         const msg = createOutboundUnicastMessage('msg-indexeddb-single-claim');
@@ -463,9 +467,9 @@ describe('IndexedDB AL runtime stores', () => {
             stores: {
                 ...stores,
                 admissionStore: createFlakyOutboundAdmissionStore(admissionStore, {
-                    claimReadyEffects: async () => [],
-                }),
-            },
+                    claimReadyEffects: async () => []
+                })
+            }
         });
 
         await enqueueOutboundOrThrow(runtime1, msg);
@@ -474,31 +478,32 @@ describe('IndexedDB AL runtime stores', () => {
 
         let releaseSend!: () => void;
         let resolveSendStarted!: () => void;
-        const sendStarted = new Promise<void>(resolve => {
+        const sendStarted = new Promise<void>((resolve) => {
             resolveSendStarted = resolve;
         });
-        const sendBarrier = new Promise<void>(resolve => {
+        const sendBarrier = new Promise<void>((resolve) => {
             releaseSend = resolve;
         });
-        const sendPreparedMessage: ConstructorParameters<
-            typeof ALOutboundMessageRuntime<Record<string, unknown>>
-        >[0]['sendPreparedMessage'] = async (prepared, phase) => {
+        const sendPreparedMessage: ConstructorParameters<typeof ALOutboundMessageRuntime<Record<string, unknown>>>[0]['sendPreparedMessage'] = async (
+            prepared,
+            phase
+        ) => {
             sent.push({ ...prepared, phase });
             resolveSendStarted();
             await sendBarrier;
         };
         const runtime2 = createOutboundRuntime(dbName, namespace, sent, {
-            sendPreparedMessage,
+            sendPreparedMessage
         });
         const runtime3 = createOutboundRuntime(dbName, namespace, sent, {
-            sendPreparedMessage,
+            sendPreparedMessage
         });
         const drain = Promise.all([runtime2.ready(), runtime3.ready()]);
 
         await sendStarted;
         await Promise.resolve();
         expect(sent).toEqual([
-            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
+            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
 
         releaseSend();
@@ -513,7 +518,7 @@ describe('IndexedDB AL runtime stores', () => {
         const sent: Array<Record<string, unknown>> = [];
         const stores = createIndexedDbALOutboundRuntimeStores({
             dbName,
-            namespace,
+            namespace
         });
         const admissionStore = requireOutboundAdmissionStore(stores);
         const msg = createOutboundUnicastMessage('msg-indexeddb-ack-during-timeout');
@@ -526,42 +531,42 @@ describe('IndexedDB AL runtime stores', () => {
                         workerId: string,
                         maxCount: number,
                         leaseMs: number,
-                        nowMs?: number,
+                        nowMs?: number
                     ) => {
                         const effects = await admissionStore.claimReadyEffects<TPrepared>(
                             workerId,
                             maxCount,
                             leaseMs,
-                            nowMs,
+                            nowMs
                         );
                         if (
-                            !acceptedAckDuringTimeout
-                            && effects.some(effect => effect.payload.kind === 'ack-timeout')
+                            !acceptedAckDuringTimeout &&
+                            effects.some((effect) => effect.payload.kind === 'ack-timeout')
                         ) {
                             acceptedAckDuringTimeout = true;
                             await admissionStore.acceptControlMessage(
-                                newALAckControlMessage('peer-1', 'self', msg.id.msgId),
+                                newALAckControlMessage('peer-1', 'self', msg.id.msgId)
                             );
                         }
 
                         return effects;
-                    },
-                }),
+                    }
+                })
             },
-            planOutgoingMessage: plannedMsg => ({
+            planOutgoingMessage: (plannedMsg) => ({
                 persist: false,
                 preparedMessages: [{ kind: 'send', msgId: plannedMsg.id.msgId }],
                 ackTracking: {
                     enabled: true,
                     timeoutMs: 10,
                     maxAttempts: 1,
-                    expectedPeerIds: ['peer-1'],
+                    expectedPeerIds: ['peer-1']
                 },
                 repairTracking: {
                     enabled: true,
                     algo: 'retransmit',
-                    maxAttempts: 1,
-                },
+                    maxAttempts: 1
+                }
             }),
             planRepairMessage: async (plannedMsg, request) => ({
                 persist: false,
@@ -569,22 +574,22 @@ describe('IndexedDB AL runtime stores', () => {
                     {
                         kind: 'repair',
                         msgId: plannedMsg.id.msgId,
-                        trigger: request.trigger,
-                    },
-                ],
-            }),
+                        trigger: request.trigger
+                    }
+                ]
+            })
         });
 
         await enqueueOutboundOrThrow(runtime, msg);
         expect(sent).toEqual([
-            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
+            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
 
-        await new Promise<void>(resolve => setTimeout(resolve, 30));
+        await new Promise<void>((resolve) => setTimeout(resolve, 30));
 
         expect(acceptedAckDuringTimeout).toBe(true);
         expect(sent).toEqual([
-            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
+            { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' }
         ]);
         runtime.dispose();
     });
@@ -600,19 +605,19 @@ describe('IndexedDB AL runtime stores', () => {
             namespace,
             retention: {
                 sentMessageTtlMs: 40,
-                repairAttemptTtlMs: 20,
-            },
+                repairAttemptTtlMs: 20
+            }
         });
         const stateStore = requireOutboundStateStore(stores);
         const msg = createOutboundUnicastMessage('msg-state-retention');
 
         await stateStore.setSentMessage({
             msgId: msg.id.msgId,
-            msg,
+            msg
         });
         await stateStore.setRepairAttempt({
             msgId: msg.id.msgId,
-            attempts: 1,
+            attempts: 1
         });
 
         expect(await stateStore.getAllSentMessages()).toHaveLength(1);
@@ -631,7 +636,7 @@ describe('IndexedDB AL runtime stores', () => {
 
 async function enqueueOutboundOrThrow(
     runtime: Pick<ALOutboundMessageRuntime<Record<string, unknown>>, 'enqueueIfAbsent'>,
-    msg: ALMessage,
+    msg: ALMessage
 ): Promise<readonly ResourceEntry[]> {
     const enqueued = await runtime.enqueueIfAbsent(msg);
     if (enqueued.status === 'failed') {
@@ -647,14 +652,14 @@ function createInboundRuntime(
     dispatchedMsgIds: string[],
     options: Readonly<{
         stores?: ConstructorParameters<typeof ALInboundMessageRuntime>[0]['stores'];
-    }> = {},
+    }> = {}
 ) {
     return new ALInboundMessageRuntime({
         selfPeerId: 'self',
         inbox: new InMemoryQueueBox(new Map()),
         stores: options.stores ?? createIndexedDbALInboundRuntimeStores({
             dbName,
-            namespace,
+            namespace
         }),
         planIncomingMessage: (msg, fromPeerId, runtime) =>
             planALMessageHandling(msg, {
@@ -662,7 +667,7 @@ function createInboundRuntime(
                 fromPeerId,
                 dedupStore: runtime.dedupStore,
                 orderingStore: runtime.orderingStore,
-                supersedenceStore: runtime.supersedenceStore,
+                supersedenceStore: runtime.supersedenceStore
             }),
         readStoredEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
         toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
@@ -670,50 +675,46 @@ function createInboundRuntime(
             const msg = JSON.parse(entry.resource) as ALMessage;
             dispatchedMsgIds.push(msg.id.msgId);
         },
-        sendControlMessage: async () => Promise.resolve(),
+        sendControlMessage: async () => Promise.resolve()
     });
 }
 
 function createInboundPlanner(): ALInboundPlanner {
-    return (msg, fromPeerId, runtime) => planALMessageHandling(msg, {
-        selfPeerId: 'self',
-        fromPeerId,
-        dedupStore: runtime.dedupStore,
-        orderingStore: runtime.orderingStore,
-        supersedenceStore: runtime.supersedenceStore,
-    });
+    return (msg, fromPeerId, runtime) =>
+        planALMessageHandling(msg, {
+            selfPeerId: 'self',
+            fromPeerId,
+            dedupStore: runtime.dedupStore,
+            orderingStore: runtime.orderingStore,
+            supersedenceStore: runtime.supersedenceStore
+        });
 }
 
 function createFlakyInboundAdmissionStore(
     inner: ALInboundAdmissionStore,
-    hooks: Partial<Pick<
-        ALInboundAdmissionStore,
-        'claimReadyEffects' | 'commitBundle' | 'commitMutations'
-    >>,
+    hooks: Partial<Pick<ALInboundAdmissionStore, 'claimReadyEffects' | 'commitBundle' | 'commitMutations'>>
 ): ALInboundAdmissionStore {
     return {
         ready: () => inner.ready(),
-        readIncomingMessage: (msg, fromPeerId, planner) =>
-            inner.readIncomingMessage(msg, fromPeerId, planner),
-        readBufferedRelease: (trackKey, seq) =>
-            inner.readBufferedRelease(trackKey, seq),
-        planStoredEntry: (msg, planner) =>
-            inner.planStoredEntry(msg, planner),
-        commitMutations: (request) => hooks.commitMutations
-            ? hooks.commitMutations(request)
-            : inner.commitMutations(request),
-        commitBundle: (bundle) => hooks.commitBundle
-            ? hooks.commitBundle(bundle)
-            : inner.commitBundle(bundle),
-        claimReadyEffects: (workerId, maxCount, leaseMs, nowMs) => hooks.claimReadyEffects
-            ? hooks.claimReadyEffects(workerId, maxCount, leaseMs, nowMs)
-            : inner.claimReadyEffects(workerId, maxCount, leaseMs, nowMs),
-        completeEffect: (effectId, workerId) =>
-            inner.completeEffect(effectId, workerId),
-        rescheduleEffect: (effectId, workerId, retryAtMs, lastError) =>
-            inner.rescheduleEffect(effectId, workerId, retryAtMs, lastError),
+        readIncomingMessage: (msg, fromPeerId, planner) => inner.readIncomingMessage(msg, fromPeerId, planner),
+        readBufferedRelease: (trackKey, seq) => inner.readBufferedRelease(trackKey, seq),
+        planStoredEntry: (msg, planner) => inner.planStoredEntry(msg, planner),
+        commitMutations: (request) =>
+            hooks.commitMutations
+                ? hooks.commitMutations(request)
+                : inner.commitMutations(request),
+        commitBundle: (bundle) =>
+            hooks.commitBundle
+                ? hooks.commitBundle(bundle)
+                : inner.commitBundle(bundle),
+        claimReadyEffects: (workerId, maxCount, leaseMs, nowMs) =>
+            hooks.claimReadyEffects
+                ? hooks.claimReadyEffects(workerId, maxCount, leaseMs, nowMs)
+                : inner.claimReadyEffects(workerId, maxCount, leaseMs, nowMs),
+        completeEffect: (effectId, workerId) => inner.completeEffect(effectId, workerId),
+        rescheduleEffect: (effectId, workerId, retryAtMs, lastError) => inner.rescheduleEffect(effectId, workerId, retryAtMs, lastError),
         peekNextEffectReadyAt: (nowMs) => inner.peekNextEffectReadyAt(nowMs),
-        acceptControlMessage: (msg) => inner.acceptControlMessage(msg),
+        acceptControlMessage: (msg) => inner.acceptControlMessage(msg)
     };
 }
 
@@ -722,25 +723,17 @@ function createOutboundRuntime(
     namespace: string,
     sent: Array<Record<string, unknown>>,
     options: Readonly<{
-        stores?: ConstructorParameters<
-            typeof ALOutboundMessageRuntime<Record<string, unknown>>
-        >[0]['stores'];
-        planOutgoingMessage?: ConstructorParameters<
-            typeof ALOutboundMessageRuntime<Record<string, unknown>>
-        >[0]['planOutgoingMessage'];
-        planRepairMessage?: ConstructorParameters<
-            typeof ALOutboundMessageRuntime<Record<string, unknown>>
-        >[0]['planRepairMessage'];
-        sendPreparedMessage?: ConstructorParameters<
-            typeof ALOutboundMessageRuntime<Record<string, unknown>>
-        >[0]['sendPreparedMessage'];
-    }> = {},
+        stores?: ConstructorParameters<typeof ALOutboundMessageRuntime<Record<string, unknown>>>[0]['stores'];
+        planOutgoingMessage?: ConstructorParameters<typeof ALOutboundMessageRuntime<Record<string, unknown>>>[0]['planOutgoingMessage'];
+        planRepairMessage?: ConstructorParameters<typeof ALOutboundMessageRuntime<Record<string, unknown>>>[0]['planRepairMessage'];
+        sendPreparedMessage?: ConstructorParameters<typeof ALOutboundMessageRuntime<Record<string, unknown>>>[0]['sendPreparedMessage'];
+    }> = {}
 ) {
     return new ALOutboundMessageRuntime<Record<string, unknown>>({
         outbox: new InMemoryQueueBox(new Map()),
         stores: options.stores ?? createIndexedDbALOutboundRuntimeStores({
             dbName,
-            namespace,
+            namespace
         }),
         toOutboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'outbox'),
         readMessageFromEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
@@ -750,8 +743,8 @@ function createOutboundRuntime(
             repairTracking: {
                 enabled: true,
                 algo: 'retransmit',
-                maxAttempts: 1,
-            },
+                maxAttempts: 1
+            }
         })),
         planRepairMessage: options.planRepairMessage ?? (async (msg, request) => ({
             persist: false,
@@ -759,13 +752,13 @@ function createOutboundRuntime(
                 {
                     kind: 'repair',
                     msgId: msg.id.msgId,
-                    trigger: request.trigger,
-                },
-            ],
+                    trigger: request.trigger
+                }
+            ]
         })),
         sendPreparedMessage: options.sendPreparedMessage ?? (async (prepared, phase) => {
             sent.push({ ...prepared, phase });
-        }),
+        })
     });
 }
 
@@ -776,15 +769,13 @@ function createOutboundPlanner(): ALOutboundPlanner<Record<string, unknown>> {
         repairTracking: {
             enabled: true,
             algo: 'retransmit',
-            maxAttempts: 1,
-        },
+            maxAttempts: 1
+        }
     });
 }
 
 function requireOutboundAdmissionStore(
-    stores: ConstructorParameters<
-        typeof ALOutboundMessageRuntime<Record<string, unknown>>
-    >[0]['stores'],
+    stores: ConstructorParameters<typeof ALOutboundMessageRuntime<Record<string, unknown>>>[0]['stores']
 ): ALOutboundAdmissionStore {
     const admissionStore = stores?.admissionStore;
     if (!admissionStore) {
@@ -795,9 +786,7 @@ function requireOutboundAdmissionStore(
 }
 
 function requireOutboundStateStore(
-    stores: ConstructorParameters<
-        typeof ALOutboundMessageRuntime<Record<string, unknown>>
-    >[0]['stores'],
+    stores: ConstructorParameters<typeof ALOutboundMessageRuntime<Record<string, unknown>>>[0]['stores']
 ) {
     const stateStore = stores?.stateStore;
     if (!stateStore) {
@@ -809,49 +798,47 @@ function requireOutboundStateStore(
 
 function createFlakyOutboundAdmissionStore(
     inner: ALOutboundAdmissionStore,
-    hooks: Partial<Pick<
-        ALOutboundAdmissionStore,
-        'claimReadyEffects' | 'commitBundle' | 'completeEffect' | 'rescheduleEffect'
-    >>,
+    hooks: Partial<Pick<ALOutboundAdmissionStore, 'claimReadyEffects' | 'commitBundle' | 'completeEffect' | 'rescheduleEffect'>>
 ): ALOutboundAdmissionStore {
     return {
         ready: () => inner.ready(),
         readOutgoingMessage: <TPrepared>(
             msg: ALMessage,
-            planner: ALOutboundPlanner<TPrepared>,
+            planner: ALOutboundPlanner<TPrepared>
         ) => inner.readOutgoingMessage<TPrepared>(msg, planner),
         readRepairMessage: <TPrepared>(
             msgId: string,
-            planner: ALOutboundPlanner<TPrepared>,
+            planner: ALOutboundPlanner<TPrepared>
         ) => inner.readRepairMessage<TPrepared>(msgId, planner),
         getSentMessage: (msgId: string) => inner.getSentMessage(msgId),
         getAllSentMessages: () => inner.getAllSentMessages(),
         getPendingAck: (msgId: string) => inner.getPendingAck(msgId),
-        commitBundle: <TPrepared>(bundle: ALOutboundCommitBundle<TPrepared>) => hooks.commitBundle
-            ? hooks.commitBundle<TPrepared>(bundle)
-            : inner.commitBundle<TPrepared>(bundle),
-        acceptControlMessage: <TPrepared>(msg: ALMessage) =>
-            inner.acceptControlMessage<TPrepared>(msg),
+        commitBundle: <TPrepared>(bundle: ALOutboundCommitBundle<TPrepared>) =>
+            hooks.commitBundle
+                ? hooks.commitBundle<TPrepared>(bundle)
+                : inner.commitBundle<TPrepared>(bundle),
+        acceptControlMessage: <TPrepared>(msg: ALMessage) => inner.acceptControlMessage<TPrepared>(msg),
         claimReadyEffects: <TPrepared>(
             workerId: string,
             maxCount: number,
             leaseMs: number,
-            nowMs?: number,
+            nowMs?: number
         ) => hooks.claimReadyEffects
             ? hooks.claimReadyEffects<TPrepared>(workerId, maxCount, leaseMs, nowMs)
             : inner.claimReadyEffects<TPrepared>(workerId, maxCount, leaseMs, nowMs),
-        completeEffect: (effectId: string, workerId: string) => hooks.completeEffect
-            ? hooks.completeEffect(effectId, workerId)
-            : inner.completeEffect(effectId, workerId),
+        completeEffect: (effectId: string, workerId: string) =>
+            hooks.completeEffect
+                ? hooks.completeEffect(effectId, workerId)
+                : inner.completeEffect(effectId, workerId),
         rescheduleEffect: (
             effectId: string,
             workerId: string,
             retryAtMs: number,
-            lastError?: string,
+            lastError?: string
         ) => hooks.rescheduleEffect
             ? hooks.rescheduleEffect(effectId, workerId, retryAtMs, lastError)
             : inner.rescheduleEffect(effectId, workerId, retryAtMs, lastError),
-        peekNextEffectReadyAt: (nowMs?: number) => inner.peekNextEffectReadyAt(nowMs),
+        peekNextEffectReadyAt: (nowMs?: number) => inner.peekNextEffectReadyAt(nowMs)
     };
 }
 
@@ -861,13 +848,13 @@ function createOutboundUnicastMessage(resourceId: string) {
         {
             topicId: 'chat',
             resourceId,
-            contextId: 'conversation-1',
+            contextId: 'conversation-1'
         },
         'peer-1',
         'chat.private-text.v1',
         {
-            text: resourceId,
-        },
+            text: resourceId
+        }
     );
 }
 
@@ -877,12 +864,12 @@ function createOrderedMulticastMessage(seq: number, text: string) {
         {
             topicId: 'chat',
             resourceId: `msg-${seq}`,
-            contextId: 'group-1',
+            contextId: 'group-1'
         },
         groupRef('group-1'),
         'chat.message.v1',
         {
-            text,
+            text
         },
         {
             seq,
@@ -890,10 +877,10 @@ function createOrderedMulticastMessage(seq: number, text: string) {
             ack: 'none',
             qos: {
                 durability: {
-                    algo: 'volatile',
-                },
-            },
-        },
+                    algo: 'volatile'
+                }
+            }
+        }
     );
 }
 
@@ -901,6 +888,6 @@ function groupRef(groupId: string) {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
-        groupId,
+        groupId
     };
 }

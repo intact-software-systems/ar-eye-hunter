@@ -1,23 +1,23 @@
 import { useCallback } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
 
+import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import {
     applyEyeAttackAccepted,
     applyPickupAccepted,
     applyPlayerHitAccepted,
     hydrateArenaSnapshot,
     startArenaMatch as startArenaMatchState,
-    toArenaSnapshot,
+    toArenaSnapshot
 } from '../../simulation.ts';
-import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import {
+    GAME_PROTOCOL,
     type ArenaEvent,
     type ArenaSnapshot,
     type EyeAttackAccepted,
-    GAME_PROTOCOL,
     type MatchStartIntent,
     type PickupAccepted,
-    type PlayerHitAccepted,
+    type PlayerHitAccepted
 } from '../../types.ts';
 
 interface ArenaStateAcceptanceInput {
@@ -39,7 +39,7 @@ export interface ArenaStateAcceptance {
 }
 
 export function useArenaStateAcceptance(
-    input: ArenaStateAcceptanceInput,
+    input: ArenaStateAcceptanceInput
 ): ArenaStateAcceptance {
     const {
         arenaMatchRef,
@@ -49,7 +49,7 @@ export function useArenaStateAcceptance(
         setArenaSnapshot,
         setPickupAcceptances,
         setRemoteEvents,
-        setRemotePlayerHits,
+        setRemotePlayerHits
     } = input;
 
     const acceptPlayerHit = useCallback((accepted: PlayerHitAccepted) => {
@@ -59,7 +59,7 @@ export function useArenaStateAcceptance(
                 item.target.sessionId !== accepted.target.sessionId ||
                 item.intent.shot.seq !== accepted.intent.shot.seq
             ).slice(-24),
-            accepted,
+            accepted
         ]);
         setArenaSnapshot((previous) => {
             if (!previous) {
@@ -68,7 +68,7 @@ export function useArenaStateAcceptance(
             const next = toArenaSnapshot(
                 applyPlayerHitAccepted(hydrateArenaSnapshot(previous), accepted),
                 previous.roomId ?? roomIdRef.current,
-                Date.now(),
+                Date.now()
             );
             arenaSnapshotRef.current = next;
             setActiveEvent(next.activeEvent);
@@ -83,7 +83,7 @@ export function useArenaStateAcceptance(
                 item.revision !== accepted.revision ||
                 item.pickup.id !== accepted.pickup.id
             ).slice(-24),
-            accepted,
+            accepted
         ]);
         setArenaSnapshot((previous) => {
             if (!previous) {
@@ -92,7 +92,7 @@ export function useArenaStateAcceptance(
             const next = toArenaSnapshot(
                 applyPickupAccepted(hydrateArenaSnapshot(previous), accepted),
                 previous.roomId ?? roomIdRef.current,
-                Date.now(),
+                Date.now()
             );
             arenaSnapshotRef.current = next;
             setActiveEvent(next.activeEvent);
@@ -109,7 +109,7 @@ export function useArenaStateAcceptance(
             const next = toArenaSnapshot(
                 applyEyeAttackAccepted(hydrateArenaSnapshot(previous), accepted),
                 previous.roomId ?? roomIdRef.current,
-                Date.now(),
+                Date.now()
             );
             arenaSnapshotRef.current = next;
             setActiveEvent(next.activeEvent);
@@ -127,7 +127,7 @@ export function useArenaStateAcceptance(
         const result = startArenaMatchState(
             hydrateArenaSnapshot(previous),
             intent,
-            Date.now(),
+            Date.now()
         );
         if (!result.accepted) {
             return;
@@ -135,7 +135,7 @@ export function useArenaStateAcceptance(
         const snapshot = toArenaSnapshot(
             result.state,
             previous.roomId ?? currentRoomId,
-            Date.now(),
+            Date.now()
         );
         arenaSnapshotRef.current = snapshot;
         setArenaSnapshot(snapshot);
@@ -144,10 +144,10 @@ export function useArenaStateAcceptance(
         await arenaMatchRef.current?.publishEvent({
             protocol: GAME_PROTOCOL,
             kind: 'director-match-started',
-            accepted: result.acceptedMatch,
+            accepted: result.acceptedMatch
         });
         await arenaMatchRef.current?.publishSnapshot(snapshot, {
-            reliable: false,
+            reliable: false
         });
     }, []);
 
@@ -155,6 +155,6 @@ export function useArenaStateAcceptance(
         acceptPlayerHit,
         acceptPickup,
         acceptEyeAttack,
-        acceptMatchStartIntent,
+        acceptMatchStartIntent
     };
 }

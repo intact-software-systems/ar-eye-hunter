@@ -1,447 +1,435 @@
 import { describe, expect, it } from 'vitest';
-import {
-  compareStateWriteArtifacts,
-  validateStateWriteArtifact,
-} from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
+import { compareStateWriteArtifacts, validateStateWriteArtifact } from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
 
 import {
-  STATE_WRITE_REASONS,
-} from '../../../scripts/perf/state-write/api-v1-state-write-regression-reasons.ts';
-import { classifyBenchmarkSql } from '../../../scripts/perf/create-instrumented-state-write-sql.ts';
-import {
-  computeProductionOutboxEvidence,
-  computeProductionOutboxLookupIds,
-  readAllCommandIds,
-  readCanonicalEffectCommandId,
-  readResourceEffectKind,
+    computeProductionOutboxEvidence,
+    computeProductionOutboxLookupIds,
+    readAllCommandIds,
+    readCanonicalEffectCommandId,
+    readResourceEffectKind
 } from '../../../scripts/perf/api-v1-state-write-outbox-evidence.ts';
+import { classifyBenchmarkSql } from '../../../scripts/perf/create-instrumented-state-write-sql.ts';
+import { STATE_WRITE_REASONS } from '../../../scripts/perf/state-write/api-v1-state-write-regression-reasons.ts';
 
-import {
-  parseBenchmarkOptions,
-} from '../../../scripts/perf/state-write/api-v1-state-write-benchmark-options.ts';
-import {
-  createStateWritePerformanceArtifact,
-  refreshStateWritePerformanceWorkload,
-} from './state-write-performance-artifact-fixture.ts';
+import { parseBenchmarkOptions } from '../../../scripts/perf/state-write/api-v1-state-write-benchmark-options.ts';
+import { createStateWritePerformanceArtifact, refreshStateWritePerformanceWorkload } from './state-write-performance-artifact-fixture.ts';
 import { binding, swapCompleteDurableResults } from './state-write-performance-result-fixture.ts';
 
 describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () => {
-  it('accepts a complete AppInbox/ResourceInbox artifact for both comparison roles', () => {
-    const candidate = createStateWritePerformanceArtifact();
-    const sample = artifactSample(candidate);
-    expect(candidate.measurement.counterSources.outbox).toBe('resource_inbox');
-    expect(candidate.measurement.counterSources.attempts).toBe(
-      'resource_inbox.release.telemetry+app_inbox.ri_attempts reconciliation',
-    );
-    expect(sample.durableEvidence.intermediateMutationIntents).toEqual([]);
-    expect(sample.correctness.atomicCompletionFailures).toBe(0);
-    expect(candidate.features).toBeUndefined();
-    expect(validateStateWriteArtifact(candidate)).toEqual([]);
-  });
-
-  it('tolerates equal throughput between baseline and candidate', () => {
-    expect(
-      compareStateWriteArtifacts(
-        createStateWritePerformanceArtifact(),
-        createStateWritePerformanceArtifact(),
-      ),
-    ).toEqual([]);
-  });
-
-  it('tolerates throughput variance within 5% and rejects beyond it', () => {
-    const withinTolerance = createStateWritePerformanceArtifact();
-    setThroughputAdverseRatio(withinTolerance, 0.04);
-    expect(
-      compareStateWriteArtifacts(createStateWritePerformanceArtifact(), withinTolerance),
-    ).toEqual([]);
-
-    const beyondTolerance = createStateWritePerformanceArtifact();
-    setThroughputAdverseRatio(beyondTolerance, 0.06);
-    expect(
-      compareStateWriteArtifacts(createStateWritePerformanceArtifact(), beyondTolerance),
-    ).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('shared throughput regressed by more than 5%'),
-        expect.stringContaining('hot throughput regressed by more than 5%'),
-      ]),
-    );
-  });
-
-  it('rejects intermediate intents and service-local attempt evidence', () => {
-    const candidate = createStateWritePerformanceArtifact();
-    const sample = candidate.workloads[0].samples[0];
-    sample.durableEvidence.intermediateMutationIntents.push({ intentId: 'forbidden' });
-    sample.attemptObservations[0].source = 'group-state-service.mutation.conflict';
-    expectStateWriteArtifactIssues(
-      candidate,
-      'intermediateMutationIntents must be exactly empty',
-      'production ResourceInbox release telemetry',
-    );
-  });
-
-  it('rejects missing same-observation completion components', () => {
-    for (const mutate of [
-      (sample: any) => sample.durableEvidence.appInbox.shift(),
-      (sample: any) => sample.durableEvidence.receipts.shift(),
-      (sample: any) => sample.durableEvidence.resourceOutbox.shift(),
-    ]) {
-      const candidate = createStateWritePerformanceArtifact();
-      mutate(artifactSample(candidate));
-      refreshStateWritePerformanceWorkload(candidate.workloads[0]);
-      expect(validateStateWriteArtifact(candidate)).not.toEqual([]);
-    }
-  });
-
-  it('rejects malformed retry delay, due age, lane, and transaction evidence', () => {
-    for (const field of ['retryDelayMs', 'dueAgeMs', 'transactionDurationMs'] as const) {
-      const candidate = createStateWritePerformanceArtifact();
-      durableEvidence(candidate).appInbox[0][field] = -1;
-      expectStateWriteArtifactIssues(candidate, 'appInbox[0] is malformed');
-    }
-    const lane = createStateWritePerformanceArtifact();
-    durableEvidence(lane).appInbox[0].selectedLane = 'unknown';
-    expect(validateStateWriteArtifact(lane)).not.toEqual([]);
-  });
-
-  it('rejects invented retry history and zero-delay nonterminal conflicts', () => {
-    const invented = createStateWritePerformanceArtifact();
-    const inventedSample = artifactSample(invented);
-    inventedSample.attemptObservations.splice(1, 0, {
-      ...inventedSample.attemptObservations[0],
-      attempt: 2,
+    it('accepts a complete AppInbox/ResourceInbox artifact for both comparison roles', () => {
+        const candidate = createStateWritePerformanceArtifact();
+        const sample = artifactSample(candidate);
+        expect(candidate.measurement.counterSources.outbox).toBe('resource_inbox');
+        expect(candidate.measurement.counterSources.attempts).toBe(
+            'resource_inbox.release.telemetry+app_inbox.ri_attempts reconciliation'
+        );
+        expect(sample.durableEvidence.intermediateMutationIntents).toEqual([]);
+        expect(sample.correctness.atomicCompletionFailures).toBe(0);
+        expect(candidate.features).toBeUndefined();
+        expect(validateStateWriteArtifact(candidate)).toEqual([]);
     });
-    expectStateWriteArtifactIssues(invented, 'must reconcile exactly to durable AppInbox attempts');
-    const zeroDelay = createStateWritePerformanceArtifact();
-    const sample = artifactSample(zeroDelay);
-    const first = sample.attemptObservations[0];
-    first.outcome = 'conflicted';
-    first.terminal = false;
-    first.retryDelayMs = 0;
-    sample.attemptObservations.splice(1, 0, {
-      ...first,
-      attempt: 2,
-      outcome: 'accepted',
-      terminal: true,
+
+    it('tolerates equal throughput between baseline and candidate', () => {
+        expect(
+            compareStateWriteArtifacts(
+                createStateWritePerformanceArtifact(),
+                createStateWritePerformanceArtifact()
+            )
+        ).toEqual([]);
     });
-    sample.durableEvidence.appInbox[0].attempts = 2;
-    expectStateWriteArtifactIssues(zeroDelay, 'nonterminal retryDelayMs must be positive');
-  });
 
-  it('distinguishes typed transient retries from optimistic conflicts', () => {
-    const candidate = createStateWritePerformanceArtifact();
-    const sample = artifactSample(candidate);
-    const first = sample.attemptObservations[0];
-    first.outcome = 'transient-retry';
-    first.terminal = false;
-    first.retryDelayMs = 2;
-    first.failure = { kind: 'retryable', code: 'ECONNRESET', name: 'Error' };
-    sample.attemptObservations.splice(1, 0, {
-      ...first,
-      attempt: 2,
-      outcome: 'accepted',
-      terminal: true,
-      failure: { kind: 'none' },
+    it('tolerates throughput variance within 5% and rejects beyond it', () => {
+        const withinTolerance = createStateWritePerformanceArtifact();
+        setThroughputAdverseRatio(withinTolerance, 0.04);
+        expect(
+            compareStateWriteArtifacts(createStateWritePerformanceArtifact(), withinTolerance)
+        ).toEqual([]);
+
+        const beyondTolerance = createStateWritePerformanceArtifact();
+        setThroughputAdverseRatio(beyondTolerance, 0.06);
+        expect(
+            compareStateWriteArtifacts(createStateWritePerformanceArtifact(), beyondTolerance)
+        ).toEqual(
+            expect.arrayContaining([
+                expect.stringContaining('shared throughput regressed by more than 5%'),
+                expect.stringContaining('hot throughput regressed by more than 5%')
+            ])
+        );
     });
-    sample.durableEvidence.appInbox[0].attempts = 2;
-    refreshStateWritePerformanceWorkload(candidate.workloads[0]);
-    expect(validateStateWriteArtifact(candidate)).toEqual([]);
-    first.outcome = 'conflicted';
-    expectStateWriteArtifactIssues(candidate, 'only recognized optimistic conflicts');
-  });
 
-  it('rejects malformed durable results and receipt/effect identity mismatches', () => {
-    for (const [mutate, expected] of malformedDurableResultCases) {
-      const artifact = createStateWritePerformanceArtifact();
-      mutate(artifact);
-      expectStateWriteArtifactIssues(artifact, expected);
-    }
-    for (const prefix of ['CLIENT_', 'GROUP_']) {
-      const swapped = createStateWritePerformanceArtifact();
-      swapCompleteDurableResults(swapped, prefix);
-      expect(validateStateWriteArtifact(swapped)).not.toEqual([]);
-    }
-    const missingTopologySibling = createStateWritePerformanceArtifact();
-    const missingEntry = durableEvidence(missingTopologySibling).appInbox.find(
-      (entry: any) => entry.commandType === 'TOPOLOGY_CONFIG_PUT',
-    );
-    delete missingEntry.durableResult.config;
-    expect(validateStateWriteArtifact(missingTopologySibling)).not.toEqual([]);
-    const swappedTopologySibling = createStateWritePerformanceArtifact();
-    const topologyEntries = durableEvidence(swappedTopologySibling).appInbox.filter(
-      (entry: any) => entry.commandType === 'TOPOLOGY_CONFIG_PUT',
-    );
-    [topologyEntries[0].durableResult.config, topologyEntries[1].durableResult.config] = [
-      topologyEntries[1].durableResult.config,
-      topologyEntries[0].durableResult.config,
-    ];
-    expect(validateStateWriteArtifact(swappedTopologySibling)).not.toEqual([]);
-  });
+    it('rejects intermediate intents and service-local attempt evidence', () => {
+        const candidate = createStateWritePerformanceArtifact();
+        const sample = candidate.workloads[0].samples[0];
+        sample.durableEvidence.intermediateMutationIntents.push({ intentId: 'forbidden' });
+        sample.attemptObservations[0].source = 'group-state-service.mutation.conflict';
+        expectStateWriteArtifactIssues(
+            candidate,
+            'intermediateMutationIntents must be exactly empty',
+            'production ResourceInbox release telemetry'
+        );
+    });
 
-  it('is total over malformed nested candidate evidence', () => {
-    for (const mutate of [
-      (candidate: any) => (artifactSample(candidate).durableEvidence = null),
-      (candidate: any) => delete durableEvidence(candidate).appInbox[0],
-      (candidate: any) => (durableEvidence(candidate).receipts[0] = null),
-      (candidate: any) => (durableEvidence(candidate).resourceOutbox[0] = null),
-    ]) {
-      const candidate = createStateWritePerformanceArtifact();
-      mutate(candidate);
-      expect(() => validateStateWriteArtifact(candidate)).not.toThrow();
-      expect(validateStateWriteArtifact(candidate)).not.toEqual([]);
-      expect(() =>
-        compareStateWriteArtifacts(createStateWritePerformanceArtifact(), candidate),
-      ).not.toThrow();
-    }
-  });
+    it('rejects missing same-observation completion components', () => {
+        for (
+            const mutate of [
+                (sample: any) => sample.durableEvidence.appInbox.shift(),
+                (sample: any) => sample.durableEvidence.receipts.shift(),
+                (sample: any) => sample.durableEvidence.resourceOutbox.shift()
+            ]
+        ) {
+            const candidate = createStateWritePerformanceArtifact();
+            mutate(artifactSample(candidate));
+            refreshStateWritePerformanceWorkload(candidate.workloads[0]);
+            expect(validateStateWriteArtifact(candidate)).not.toEqual([]);
+        }
+    });
 
-  // Resource counters follow retry attempt counts, which follow timing, so an
-  // identical-code control drifts (up to +2.7% measured, issue #157). The gate
-  // has to absorb that drift and still catch a real resource regression.
-  it('tolerates resource variance within 5% and rejects beyond it', () => {
-    const withinTolerance = createStateWritePerformanceArtifact();
-    setResourceAdverseRatio(withinTolerance, 0.04);
-    expect(
-      compareStateWriteArtifacts(createStateWritePerformanceArtifact(), withinTolerance),
-    ).toEqual([]);
+    it('rejects malformed retry delay, due age, lane, and transaction evidence', () => {
+        for (const field of ['retryDelayMs', 'dueAgeMs', 'transactionDurationMs'] as const) {
+            const candidate = createStateWritePerformanceArtifact();
+            durableEvidence(candidate).appInbox[0][field] = -1;
+            expectStateWriteArtifactIssues(candidate, 'appInbox[0] is malformed');
+        }
+        const lane = createStateWritePerformanceArtifact();
+        durableEvidence(lane).appInbox[0].selectedLane = 'unknown';
+        expect(validateStateWriteArtifact(lane)).not.toEqual([]);
+    });
 
-    const beyondTolerance = createStateWritePerformanceArtifact();
-    setResourceAdverseRatio(beyondTolerance, 0.06);
-    expect(
-      compareStateWriteArtifacts(createStateWritePerformanceArtifact(), beyondTolerance),
-    ).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining(
-          'uncontended median sql.serializedResultBytes regressed by more than 5% ' +
-            'without a recorded reason',
-        ),
-        expect.stringContaining(
-          'hot median sql.serializedResultBytes regressed by more than 5% ' +
-            'without a recorded reason',
-        ),
-      ]),
-    );
-  });
+    it('rejects invented retry history and zero-delay nonterminal conflicts', () => {
+        const invented = createStateWritePerformanceArtifact();
+        const inventedSample = artifactSample(invented);
+        inventedSample.attemptObservations.splice(1, 0, {
+            ...inventedSample.attemptObservations[0],
+            attempt: 2
+        });
+        expectStateWriteArtifactIssues(invented, 'must reconcile exactly to durable AppInbox attempts');
+        const zeroDelay = createStateWritePerformanceArtifact();
+        const sample = artifactSample(zeroDelay);
+        const first = sample.attemptObservations[0];
+        first.outcome = 'conflicted';
+        first.terminal = false;
+        first.retryDelayMs = 0;
+        sample.attemptObservations.splice(1, 0, {
+            ...first,
+            attempt: 2,
+            outcome: 'accepted',
+            terminal: true
+        });
+        sample.durableEvidence.appInbox[0].attempts = 2;
+        expectStateWriteArtifactIssues(zeroDelay, 'nonterminal retryDelayMs must be positive');
+    });
 
-  it('lets a recorded reason authorize a resource regression beyond the band', () => {
-    const authorized = createStateWritePerformanceArtifact();
-    setResourceAdverseRatio(authorized, 0.06);
-    authorized.regressionReasons = [...STATE_WRITE_REASONS];
-    expect(compareStateWriteArtifacts(createStateWritePerformanceArtifact(), authorized)).toEqual(
-      [],
-    );
-  });
+    it('distinguishes typed transient retries from optimistic conflicts', () => {
+        const candidate = createStateWritePerformanceArtifact();
+        const sample = artifactSample(candidate);
+        const first = sample.attemptObservations[0];
+        first.outcome = 'transient-retry';
+        first.terminal = false;
+        first.retryDelayMs = 2;
+        first.failure = { kind: 'retryable', code: 'ECONNRESET', name: 'Error' };
+        sample.attemptObservations.splice(1, 0, {
+            ...first,
+            attempt: 2,
+            outcome: 'accepted',
+            terminal: true,
+            failure: { kind: 'none' }
+        });
+        sample.durableEvidence.appInbox[0].attempts = 2;
+        refreshStateWritePerformanceWorkload(candidate.workloads[0]);
+        expect(validateStateWriteArtifact(candidate)).toEqual([]);
+        first.outcome = 'conflicted';
+        expectStateWriteArtifactIssues(candidate, 'only recognized optimistic conflicts');
+    });
 
-  it('preserves scale, retry-exhaustion, latency, throughput, and resource gates', () => {
-    const baseline = createStateWritePerformanceArtifact();
-    const candidate = createStateWritePerformanceArtifact();
-    candidate.workloads[0].scale.clients = 99;
-    candidate.workloads[0].summary.latencyMs.p95 *= 2;
-    candidate.workloads[1].summary.throughputPerSecond = 1;
-    candidate.workloads[1].summary.outcomes.exhausted = 1;
-    candidate.workloads[1].summary.sql.statements += 1;
-    expect(compareStateWriteArtifacts(baseline, candidate)).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('scale.clients must equal 100'),
-        expect.stringContaining('summary.latencyMs.p95 does not match raw samples'),
-        expect.stringContaining('summary.throughputPerSecond does not match raw samples'),
-        expect.stringContaining('summary.outcomes.exhausted does not match raw samples'),
-        expect.stringContaining('summary.sql.statements does not match sample median'),
-      ]),
-    );
-  });
+    it('rejects malformed durable results and receipt/effect identity mismatches', () => {
+        for (const [mutate, expected] of malformedDurableResultCases) {
+            const artifact = createStateWritePerformanceArtifact();
+            mutate(artifact);
+            expectStateWriteArtifactIssues(artifact, expected);
+        }
+        for (const prefix of ['CLIENT_', 'GROUP_']) {
+            const swapped = createStateWritePerformanceArtifact();
+            swapCompleteDurableResults(swapped, prefix);
+            expect(validateStateWriteArtifact(swapped)).not.toEqual([]);
+        }
+        const missingTopologySibling = createStateWritePerformanceArtifact();
+        const missingEntry = durableEvidence(missingTopologySibling).appInbox.find(
+            (entry: any) => entry.commandType === 'TOPOLOGY_CONFIG_PUT'
+        );
+        delete missingEntry.durableResult.config;
+        expect(validateStateWriteArtifact(missingTopologySibling)).not.toEqual([]);
+        const swappedTopologySibling = createStateWritePerformanceArtifact();
+        const topologyEntries = durableEvidence(swappedTopologySibling).appInbox.filter(
+            (entry: any) => entry.commandType === 'TOPOLOGY_CONFIG_PUT'
+        );
+        [topologyEntries[0].durableResult.config, topologyEntries[1].durableResult.config] = [
+            topologyEntries[1].durableResult.config,
+            topologyEntries[0].durableResult.config
+        ];
+        expect(validateStateWriteArtifact(swappedTopologySibling)).not.toEqual([]);
+    });
 
-  it('records durable append resource costs without weakening hard throughput gates', () => {
-    const reasons = STATE_WRITE_REASONS;
-    expect(reasons).toHaveLength(12);
-    expect(new Set(reasons.map(({ workload, metric }) => `${workload}:${metric}`))).toEqual(
-      new Set(
-        ['uncontended', 'shared', 'hot'].flatMap((workload) =>
-          [
-            'sql.statements',
-            'sql.rowsRead',
-            'sql.serializedResultBytes',
-            'postgres.transactionDurationMs',
-          ].map((metric) => `${workload}:${metric}`),
-        ),
-      ),
-    );
+    it('is total over malformed nested candidate evidence', () => {
+        for (
+            const mutate of [
+                (candidate: any) => (artifactSample(candidate).durableEvidence = null),
+                (candidate: any) => delete durableEvidence(candidate).appInbox[0],
+                (candidate: any) => (durableEvidence(candidate).receipts[0] = null),
+                (candidate: any) => (durableEvidence(candidate).resourceOutbox[0] = null)
+            ]
+        ) {
+            const candidate = createStateWritePerformanceArtifact();
+            mutate(candidate);
+            expect(() => validateStateWriteArtifact(candidate)).not.toThrow();
+            expect(validateStateWriteArtifact(candidate)).not.toEqual([]);
+            expect(() => compareStateWriteArtifacts(createStateWritePerformanceArtifact(), candidate)).not.toThrow();
+        }
+    });
 
-    const baseline = createStateWritePerformanceArtifact();
-    const candidate = createStateWritePerformanceArtifact();
-    candidate.regressionReasons = [...reasons];
-    setThroughputAdverseRatio(candidate, 0.06);
-    expect(compareStateWriteArtifacts(baseline, candidate)).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining('shared throughput regressed by more than 5%'),
-        expect.stringContaining('hot throughput regressed by more than 5%'),
-      ]),
-    );
-  });
+    // Resource counters follow retry attempt counts, which follow timing, so an
+    // identical-code control drifts (up to +2.7% measured, issue #157). The gate
+    // has to absorb that drift and still catch a real resource regression.
+    it('tolerates resource variance within 5% and rejects beyond it', () => {
+        const withinTolerance = createStateWritePerformanceArtifact();
+        setResourceAdverseRatio(withinTolerance, 0.04);
+        expect(
+            compareStateWriteArtifacts(createStateWritePerformanceArtifact(), withinTolerance)
+        ).toEqual([]);
 
-  it('keeps setup and evidence reads outside measured mutation timing', () => {
-    expect(classifyBenchmarkSql('select * from resource_inbox', [])).toBe('read');
-    expect(
-      readResourceEffectKind({
-        ri_resource_id: 'command:principal-state:event:revision=1',
-        ri_topic_id: 'client-state.event',
-        ri_type_id: 'WS_OUTBOX',
-        ri_resource: '{}',
-      }),
-    ).toBe('principal-state:event');
-    expect(
-      readAllCommandIds(queueResource({ request: { requestId: 'nested-command' } })),
-    ).toContain('nested-command');
-    expect(
-      readAllCommandIds(
-        queueResource(
-          { event: { requestId: 'stale-command' } },
-          'raw-command:rtc-topology-recompute:group-revision:group=1;presence=0',
-        ),
-      )[0],
-    ).toBe('raw-command');
-    expect(
-      readCanonicalEffectCommandId(
-        queueResource(
-          { event: { requestId: 'config-command' } },
-          'topology-command:rtc-topology-recompute:group-revision:group=1;presence=0',
-        ),
-      ),
-    ).toBe('topology-command');
-    const topologyCommand = {
-      kind: 'topology-source',
-      commandId: 'topology-command',
-      stackIndex: 0,
-      latencyMs: 1,
-      status: 'accepted',
-    } as const;
-    const topologyRecord = {
-      resourceId: 'stored-effect',
-      outboxId: 'topology-command:rtc-topology-recompute:group-revision:group=1;presence=0',
-      typeId: 'APP_OUTBOX',
-      topicId: 'app-outbox.rtc-topology',
-      effectKind: 'rtc-topology-recompute',
-      canonicalCommandId: 'topology-command',
-      commandIds: ['topology-command', 'config-command'],
-    } as const;
-    expect(
-      computeProductionOutboxEvidence({
-        commands: [topologyCommand],
-        receipts: [
-          {
+        const beyondTolerance = createStateWritePerformanceArtifact();
+        setResourceAdverseRatio(beyondTolerance, 0.06);
+        expect(
+            compareStateWriteArtifacts(createStateWritePerformanceArtifact(), beyondTolerance)
+        ).toEqual(
+            expect.arrayContaining([
+                expect.stringContaining(
+                    'uncontended median sql.serializedResultBytes regressed by more than 5% ' +
+                        'without a recorded reason'
+                ),
+                expect.stringContaining(
+                    'hot median sql.serializedResultBytes regressed by more than 5% ' +
+                        'without a recorded reason'
+                )
+            ])
+        );
+    });
+
+    it('lets a recorded reason authorize a resource regression beyond the band', () => {
+        const authorized = createStateWritePerformanceArtifact();
+        setResourceAdverseRatio(authorized, 0.06);
+        authorized.regressionReasons = [...STATE_WRITE_REASONS];
+        expect(compareStateWriteArtifacts(createStateWritePerformanceArtifact(), authorized)).toEqual(
+            []
+        );
+    });
+
+    it('preserves scale, retry-exhaustion, latency, throughput, and resource gates', () => {
+        const baseline = createStateWritePerformanceArtifact();
+        const candidate = createStateWritePerformanceArtifact();
+        candidate.workloads[0].scale.clients = 99;
+        candidate.workloads[0].summary.latencyMs.p95 *= 2;
+        candidate.workloads[1].summary.throughputPerSecond = 1;
+        candidate.workloads[1].summary.outcomes.exhausted = 1;
+        candidate.workloads[1].summary.sql.statements += 1;
+        expect(compareStateWriteArtifacts(baseline, candidate)).toEqual(
+            expect.arrayContaining([
+                expect.stringContaining('scale.clients must equal 100'),
+                expect.stringContaining('summary.latencyMs.p95 does not match raw samples'),
+                expect.stringContaining('summary.throughputPerSecond does not match raw samples'),
+                expect.stringContaining('summary.outcomes.exhausted does not match raw samples'),
+                expect.stringContaining('summary.sql.statements does not match sample median')
+            ])
+        );
+    });
+
+    it('records durable append resource costs without weakening hard throughput gates', () => {
+        const reasons = STATE_WRITE_REASONS;
+        expect(reasons).toHaveLength(12);
+        expect(new Set(reasons.map(({ workload, metric }) => `${workload}:${metric}`))).toEqual(
+            new Set(
+                ['uncontended', 'shared', 'hot'].flatMap((workload) =>
+                    [
+                        'sql.statements',
+                        'sql.rowsRead',
+                        'sql.serializedResultBytes',
+                        'postgres.transactionDurationMs'
+                    ].map((metric) => `${workload}:${metric}`)
+                )
+            )
+        );
+
+        const baseline = createStateWritePerformanceArtifact();
+        const candidate = createStateWritePerformanceArtifact();
+        candidate.regressionReasons = [...reasons];
+        setThroughputAdverseRatio(candidate, 0.06);
+        expect(compareStateWriteArtifacts(baseline, candidate)).toEqual(
+            expect.arrayContaining([
+                expect.stringContaining('shared throughput regressed by more than 5%'),
+                expect.stringContaining('hot throughput regressed by more than 5%')
+            ])
+        );
+    });
+
+    it('keeps setup and evidence reads outside measured mutation timing', () => {
+        expect(classifyBenchmarkSql('select * from resource_inbox', [])).toBe('read');
+        expect(
+            readResourceEffectKind({
+                ri_resource_id: 'command:principal-state:event:revision=1',
+                ri_topic_id: 'client-state.event',
+                ri_type_id: 'WS_OUTBOX',
+                ri_resource: '{}'
+            })
+        ).toBe('principal-state:event');
+        expect(
+            readAllCommandIds(queueResource({ request: { requestId: 'nested-command' } }))
+        ).toContain('nested-command');
+        expect(
+            readAllCommandIds(
+                queueResource(
+                    { event: { requestId: 'stale-command' } },
+                    'raw-command:rtc-topology-recompute:group-revision:group=1;presence=0'
+                )
+            )[0]
+        ).toBe('raw-command');
+        expect(
+            readCanonicalEffectCommandId(
+                queueResource(
+                    { event: { requestId: 'config-command' } },
+                    'topology-command:rtc-topology-recompute:group-revision:group=1;presence=0'
+                )
+            )
+        ).toBe('topology-command');
+        const topologyCommand = {
+            kind: 'topology-source',
             commandId: 'topology-command',
-            receiptIds: ['topology-command'],
-            outboxIds: [topologyRecord.outboxId],
-            identityKind: 'logical-msg-id',
-            resultBindings: [binding(topologyCommand, 'command')],
-          },
-        ],
-        records: [topologyRecord],
-      })[0],
-    ).toMatchObject({
-      commandId: 'topology-command',
-      effectId: topologyRecord.outboxId,
-      resourceId: 'stored-effect',
-      outboxId: topologyRecord.outboxId,
+            stackIndex: 0,
+            latencyMs: 1,
+            status: 'accepted'
+        } as const;
+        const topologyRecord = {
+            resourceId: 'stored-effect',
+            outboxId: 'topology-command:rtc-topology-recompute:group-revision:group=1;presence=0',
+            typeId: 'APP_OUTBOX',
+            topicId: 'app-outbox.rtc-topology',
+            effectKind: 'rtc-topology-recompute',
+            canonicalCommandId: 'topology-command',
+            commandIds: ['topology-command', 'config-command']
+        } as const;
+        expect(
+            computeProductionOutboxEvidence({
+                commands: [topologyCommand],
+                receipts: [
+                    {
+                        commandId: 'topology-command',
+                        receiptIds: ['topology-command'],
+                        outboxIds: [topologyRecord.outboxId],
+                        identityKind: 'logical-msg-id',
+                        resultBindings: [binding(topologyCommand, 'command')]
+                    }
+                ],
+                records: [topologyRecord]
+            })[0]
+        ).toMatchObject({
+            commandId: 'topology-command',
+            effectId: topologyRecord.outboxId,
+            resourceId: 'stored-effect',
+            outboxId: topologyRecord.outboxId
+        });
+        expect(
+            computeProductionOutboxEvidence({
+                commands: [topologyCommand],
+                receipts: [],
+                records: [topologyRecord]
+            })
+        ).toEqual([]);
+        expect(
+            computeProductionOutboxLookupIds({
+                command: {
+                    kind: 'topology-source',
+                    commandId: 'bench:topology-source:7'
+                },
+                scope: { applicationId: 'app', workspaceId: 'workspace' },
+                groupCount: 5,
+                receiptOutboxIds: [
+                    'bench:topology-source:7:rtc-topology-recompute:group-revision:group=1;presence=0'
+                ]
+            })[0]
+        ).toMatch(/^bench-topology-source--[a-z0-9]+$/);
+        expect(
+            parseBenchmarkOptions([
+                '--backend=postgres',
+                '--warmup=1',
+                '--runs=3',
+                '--concurrency=10',
+                '--out=tmp/perf/candidate.json'
+            ])
+        ).toEqual({
+            backend: 'postgres',
+            warmup: 1,
+            runs: 3,
+            concurrency: 10,
+            out: 'tmp/perf/candidate.json'
+        });
     });
-    expect(
-      computeProductionOutboxEvidence({
-        commands: [topologyCommand],
-        receipts: [],
-        records: [topologyRecord],
-      }),
-    ).toEqual([]);
-    expect(
-      computeProductionOutboxLookupIds({
-        command: {
-          kind: 'topology-source',
-          commandId: 'bench:topology-source:7',
-        },
-        scope: { applicationId: 'app', workspaceId: 'workspace' },
-        groupCount: 5,
-        receiptOutboxIds: [
-          'bench:topology-source:7:rtc-topology-recompute:group-revision:group=1;presence=0',
-        ],
-      })[0],
-    ).toMatch(/^bench-topology-source--[a-z0-9]+$/);
-    expect(
-      parseBenchmarkOptions([
-        '--backend=postgres',
-        '--warmup=1',
-        '--runs=3',
-        '--concurrency=10',
-        '--out=tmp/perf/candidate.json',
-      ]),
-    ).toEqual({
-      backend: 'postgres',
-      warmup: 1,
-      runs: 3,
-      concurrency: 10,
-      out: 'tmp/perf/candidate.json',
-    });
-  });
 });
 
 function expectStateWriteArtifactIssues(candidate: unknown, ...messages: readonly string[]): void {
-  expect(validateStateWriteArtifact(candidate)).toEqual(
-    expect.arrayContaining(messages.map((message) => expect.stringContaining(message))),
-  );
+    expect(validateStateWriteArtifact(candidate)).toEqual(
+        expect.arrayContaining(messages.map((message) => expect.stringContaining(message)))
+    );
 }
 
 const artifactSample = (artifact: any): any => artifact.workloads[0].samples[0];
 const durableEvidence = (artifact: any): any => artifactSample(artifact).durableEvidence;
 const malformedDurableResultCases: readonly [(artifact: any) => void, string][] = [
-  [
-    (artifact) => delete durableEvidence(artifact).appInbox[0].durableResult,
-    'persisted durable result is malformed',
-  ],
-  [
-    (artifact) => (durableEvidence(artifact).receipts[0].outboxIds = ['invented-effect']),
-    'receipt outbox IDs must match exact ResourceInbox effects',
-  ],
-  [
-    (artifact) => {
-      const entry = durableEvidence(artifact).appInbox.find((candidate: any) =>
-        candidate.commandType.startsWith('GROUP_PRESENCE_'),
-      );
-      entry.durableResult.outboxIds = ['invented-embedded-effect'];
-    },
-    'embedded result receipt must match authoritative receipt and effects',
-  ],
-  [
-    (artifact) => {
-      const entry = durableEvidence(artifact).appInbox.find((candidate: any) =>
-        candidate.commandType.startsWith('CLIENT_'),
-      );
-      entry.durableResult.unreceipted = true;
-    },
-    'persisted durable result is malformed',
-  ],
+    [
+        (artifact) => delete durableEvidence(artifact).appInbox[0].durableResult,
+        'persisted durable result is malformed'
+    ],
+    [
+        (artifact) => (durableEvidence(artifact).receipts[0].outboxIds = ['invented-effect']),
+        'receipt outbox IDs must match exact ResourceInbox effects'
+    ],
+    [
+        (artifact) => {
+            const entry = durableEvidence(artifact).appInbox.find((candidate: any) => candidate.commandType.startsWith('GROUP_PRESENCE_'));
+            entry.durableResult.outboxIds = ['invented-embedded-effect'];
+        },
+        'embedded result receipt must match authoritative receipt and effects'
+    ],
+    [
+        (artifact) => {
+            const entry = durableEvidence(artifact).appInbox.find((candidate: any) => candidate.commandType.startsWith('CLIENT_'));
+            entry.durableResult.unreceipted = true;
+        },
+        'persisted durable result is malformed'
+    ]
 ];
 
 function queueResource(data: object, msgId?: string): string {
-  return JSON.stringify({
-    ...(msgId === undefined ? {} : { id: { msgId } }),
-    payload: { resource: JSON.stringify({ data }) },
-  });
+    return JSON.stringify({
+        ...(msgId === undefined ? {} : { id: { msgId } }),
+        payload: { resource: JSON.stringify({ data }) }
+    });
 }
 
 // Scales serializedResultBytes rather than statements: the fixture's statement
 // count is 20, too coarse for 4% and 6% to land on different integers.
 function setResourceAdverseRatio(artifact: any, ratio: number): void {
-  for (const workload of artifact.workloads) {
-    for (const sample of workload.samples) {
-      sample.sql.serializedResultBytes = Math.round(sample.sql.serializedResultBytes * (1 + ratio));
+    for (const workload of artifact.workloads) {
+        for (const sample of workload.samples) {
+            sample.sql.serializedResultBytes = Math.round(sample.sql.serializedResultBytes * (1 + ratio));
+        }
+        refreshStateWritePerformanceWorkload(workload);
     }
-    refreshStateWritePerformanceWorkload(workload);
-  }
 }
 
 function setThroughputAdverseRatio(artifact: any, ratio: number): void {
-  for (const workload of artifact.workloads) {
-    for (const sample of workload.samples) {
-      sample.durationMs = 100 / (1 - ratio);
-      sample.throughputPerSecond = 700 / (sample.durationMs / 1000);
+    for (const workload of artifact.workloads) {
+        for (const sample of workload.samples) {
+            sample.durationMs = 100 / (1 - ratio);
+            sample.throughputPerSecond = 700 / (sample.durationMs / 1000);
+        }
+        refreshStateWritePerformanceWorkload(workload);
     }
-    refreshStateWritePerformanceWorkload(workload);
-  }
 }

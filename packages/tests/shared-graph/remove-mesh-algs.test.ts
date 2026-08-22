@@ -1,7 +1,7 @@
-import { describe, expect, it, type Mock, vi } from 'vitest';
-import { DynamicMeshAlgo } from '@shared-graph/mesh/group-dynamics-mesh-types.ts';
-import { type RemoveDynamicsLike, removeFromMesh, removeMeshAlgorithm, } from '@shared-graph/mesh/remove-mesh-algs.ts';
 import { VertexState } from '@shared-graph/graph/graph-props.ts';
+import { DynamicMeshAlgo } from '@shared-graph/mesh/group-dynamics-mesh-types.ts';
+import { removeFromMesh, removeMeshAlgorithm, type RemoveDynamicsLike } from '@shared-graph/mesh/remove-mesh-algs.ts';
+import { describe, expect, it, vi, type Mock } from 'vitest';
 import { createGraph } from './helpers.ts';
 
 describe('shared-graph remove mesh algorithms', () => {
@@ -9,9 +9,9 @@ describe('shared-graph remove mesh algorithms', () => {
         const groupGraph = createGraph(
             [
                 ['member-a', VertexState.MEMBER, 4],
-                ['steiner-1', VertexState.STEINER, 8],
+                ['steiner-1', VertexState.STEINER, 8]
             ],
-            [['member-a', 'steiner-1', 1]],
+            [['member-a', 'steiner-1', 1]]
         );
         const rd = createRemoveDynamicsMock();
         const groupInfo = createGroupInfo(groupGraph, ['member-a']);
@@ -23,7 +23,7 @@ describe('shared-graph remove mesh algorithms', () => {
             'member-a',
             1,
             DynamicMeshAlgo.K_REMOVE_MC,
-            () => rd.rd,
+            () => rd.rd
         );
 
         expect(result.validMesh).toBe(true);
@@ -36,9 +36,9 @@ describe('shared-graph remove mesh algorithms', () => {
         const groupGraph = createGraph(
             [
                 ['member-a', VertexState.MEMBER, 4],
-                ['member-b', VertexState.MEMBER, 4],
+                ['member-b', VertexState.MEMBER, 4]
             ],
-            [['member-a', 'member-b', 1]],
+            [['member-a', 'member-b', 1]]
         );
         const rd = createRemoveDynamicsMock();
         const groupInfo = createGroupInfo(groupGraph, ['member-a', 'member-b']);
@@ -50,7 +50,7 @@ describe('shared-graph remove mesh algorithms', () => {
             'member-a',
             1,
             DynamicMeshAlgo.K_REMOVE_MC,
-            () => rd.rd,
+            () => rd.rd
         );
 
         expect(rd.rvLeaf).toHaveBeenCalledOnce();
@@ -63,17 +63,17 @@ describe('shared-graph remove mesh algorithms', () => {
             [
                 ['member-a', VertexState.MEMBER, 4],
                 ['member-b', VertexState.MEMBER, 4],
-                ['member-c', VertexState.MEMBER, 4],
+                ['member-c', VertexState.MEMBER, 4]
             ],
             [
                 ['member-a', 'member-b', 1],
-                ['member-a', 'member-c', 1],
-            ],
+                ['member-a', 'member-c', 1]
+            ]
         );
         const rd = createRemoveDynamicsMock({
             rvTryReplace: vi.fn(() => {
                 throw new Error('boom');
-            }),
+            })
         });
         const groupInfo = createGroupInfo(groupGraph, ['member-a', 'member-b', 'member-c']);
 
@@ -84,7 +84,7 @@ describe('shared-graph remove mesh algorithms', () => {
             'member-a',
             1,
             DynamicMeshAlgo.K_REMOVE_TRY_REPLACE_PRUNE_MDDL,
-            () => rd.rd,
+            () => rd.rd
         );
 
         expect(rd.treeAlgo).toHaveBeenCalledWith('REMOVE_TRY_REPLACE_PRUNE_MDDL');
@@ -97,7 +97,7 @@ describe('shared-graph remove mesh algorithms', () => {
 function createGroupInfo(graph: ReturnType<typeof createGraph>, members: readonly string[]) {
     return {
         getMembers: () => new Set(members),
-        getTreeStructure: () => graph,
+        getTreeStructure: () => graph
     };
 }
 
@@ -112,8 +112,8 @@ type RemoveDynamicsMock = {
 };
 
 function createRemoveDynamicsMock(
-    overrides?: Partial<RemoveDynamicsMock>,
-): RemoveDynamicsMock & { rd: RemoveDynamicsLike } {
+    overrides?: Partial<RemoveDynamicsMock>
+): RemoveDynamicsMock & { rd: RemoveDynamicsLike; } {
     const calls: RemoveDynamicsMock = {
         rvLeaf: vi.fn(),
         rvTryReplaceNaive: vi.fn(),
@@ -122,7 +122,7 @@ function createRemoveDynamicsMock(
         rvUnusedSP: vi.fn(),
         removeVertex: vi.fn(),
         treeAlgo: vi.fn(),
-        ...overrides,
+        ...overrides
     };
 
     return {
@@ -134,7 +134,7 @@ function createRemoveDynamicsMock(
             rvTryReplace: () => calls.rvTryReplace(),
             rvUnusedSP: () => calls.rvUnusedSP(),
             removeVertex: (algo: string) => calls.removeVertex(algo),
-            treeAlgo: (algo: string) => calls.treeAlgo(algo),
-        },
+            treeAlgo: (algo: string) => calls.treeAlgo(algo)
+        }
     };
 }

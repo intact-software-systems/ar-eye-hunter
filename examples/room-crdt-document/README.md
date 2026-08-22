@@ -7,7 +7,7 @@ review notes. Do not use it for competitive live match truth.
 import { rallar } from '@shared-web/browser/rallar.ts';
 
 type Checklist = {
-    items?: Record<string, { text: string; done: boolean }>;
+    items?: Record<string, { text: string; done: boolean; }>;
 };
 
 const doc = await rallar.crdt.open<Checklist>('room-checklist', {
@@ -15,10 +15,10 @@ const doc = await rallar.crdt.open<Checklist>('room-checklist', {
     documentId: currentRoom.group.groupId,
     scope: {
         kind: 'room',
-        roomRef: currentRoom.group,
+        roomRef: currentRoom.group
     },
     transport: 'ws-then-rtc',
-    initialValue: { items: {} },
+    initialValue: { items: {} }
 });
 
 doc.subscribe((snapshot) => {
@@ -32,9 +32,9 @@ await doc.applyLocal({
         {
             kind: 'map.set',
             path: ['items', itemId],
-            value: { text: 'Check north entrance', done: false },
-        },
-    ],
+            value: { text: 'Check north entrance', done: false }
+        }
+    ]
 });
 
 await doc.applyLocal({
@@ -43,9 +43,9 @@ await doc.applyLocal({
         {
             kind: 'map.set',
             path: ['items', itemId, 'done'],
-            value: true,
-        },
-    ],
+            value: true
+        }
+    ]
 });
 
 const health = doc.health();
@@ -54,4 +54,3 @@ renderCrdtHealth(health);
 
 Use `roomRef` instead of a bare room ID when a browser can work across multiple
 applications or workspaces.
-

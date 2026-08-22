@@ -1,21 +1,7 @@
+import { newALBroadcastMessage, newALMulticastMessage, newALUnicastMessage, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
+import { ALQosInputProvider, normalizeALQosPolicy, planALMessageHandling, resolveALQosNormalizationInput } from '@shared/al-contracts/al-policy.ts';
+import { InMemoryALDedupStore, InMemoryALOrderingStore, InMemoryALSupersedenceStore } from '@shared/al-contracts/al-runtime.ts';
 import { describe, expect, it } from 'vitest';
-import {
-    newALBroadcastMessage,
-    newALMulticastMessage,
-    newALUnicastMessage,
-    newALUntargetedMessage,
-} from '@shared/al-contracts/al-contract.ts';
-import {
-    ALQosInputProvider,
-    normalizeALQosPolicy,
-    planALMessageHandling,
-    resolveALQosNormalizationInput
-} from '@shared/al-contracts/al-policy.ts';
-import {
-    InMemoryALDedupStore,
-    InMemoryALOrderingStore,
-    InMemoryALSupersedenceStore
-} from '@shared/al-contracts/al-runtime.ts';
 
 describe('AL QoS policy', () => {
     it('applies ttlMs to untargeted and unicast builders only when requested', () => {
@@ -26,33 +12,33 @@ describe('AL QoS policy', () => {
             {
                 topicId: 'rtt',
                 resourceId: '1',
-                contextId: 'peer-a:peer-b',
+                contextId: 'peer-a:peer-b'
             },
             'rtt.v1',
             { rttMs: 12 },
-            ttlOptions,
+            ttlOptions
         );
         const unicast = newALUnicastMessage(
             'sender-ttl',
             {
                 topicId: 'chat',
                 resourceId: 'msg-1',
-                contextId: 'room-1',
+                contextId: 'room-1'
             },
             'peer-b',
             'chat.v1',
             { text: 'hi' },
-            ttlOptions,
+            ttlOptions
         );
         const noTtl = newALUntargetedMessage(
             'sender-ttl',
             {
                 topicId: 'rtt',
                 resourceId: '2',
-                contextId: 'peer-a:peer-b',
+                contextId: 'peer-a:peer-b'
             },
             'rtt.v1',
-            { rttMs: 13 },
+            { rttMs: 13 }
         );
 
         expect(untargeted.constraints?.expiresAtMs).toBe(untargeted.id.ts + ttlOptions.ttlMs);
@@ -66,12 +52,12 @@ describe('AL QoS policy', () => {
             {
                 topicId: 'chat',
                 resourceId: 'msg-1',
-                contextId: 'group-1',
+                contextId: 'group-1'
             },
             groupRef('group-1'),
             'chat.message.v1',
             {
-                text: 'hello',
+                text: 'hello'
             },
             {
                 membershipEpoch: 7,
@@ -83,38 +69,38 @@ describe('AL QoS policy', () => {
                     forwarding: {
                         algo: 'target',
                         opts: {
-                            overlayId: 'group-1',
-                        },
+                            overlayId: 'group-1'
+                        }
                     },
                     repair: {
                         algo: 'retransmit',
                         opts: {
-                            maxRepairs: 3,
-                        },
+                            maxRepairs: 3
+                        }
                     },
                     ack: {
                         algo: 'subtree',
                         opts: {
-                            timeoutMs: 60_000,
-                        },
+                            timeoutMs: 60_000
+                        }
                     },
                     fanout: {
                         algo: 'limit',
                         opts: {
-                            limit: 12,
-                        },
+                            limit: 12
+                        }
                     },
                     retry: {
                         algo: 'exp-backoff',
                         opts: {
-                            maxAttempts: 12,
-                        },
+                            maxAttempts: 12
+                        }
                     },
                     durability: {
-                        algo: 'local-inbox',
-                    },
-                },
-            },
+                        algo: 'local-inbox'
+                    }
+                }
+            }
         );
 
         const result = normalizeALQosPolicy(
@@ -128,16 +114,16 @@ describe('AL QoS policy', () => {
                     maxTtlHops: 4,
                     maxFanout: 3,
                     maxRetryAttempts: 5,
-                    maxAckTimeoutMs: 2_500,
+                    maxAckTimeoutMs: 2_500
                 },
                 authorization: {
-                    maxDurability: 'local-inbox',
+                    maxDurability: 'local-inbox'
                 },
                 live: {
                     hasAlternateRoute: false,
-                    connectedNeighborCount: 2,
-                },
-            },
+                    connectedNeighborCount: 2
+                }
+            }
         );
 
         expect(result.effective.forwarding.algo).toBe('target');
@@ -157,12 +143,12 @@ describe('AL QoS policy', () => {
                 {
                     topicId: 'chat',
                     resourceId: 'msg-2',
-                    contextId: 'group-1',
+                    contextId: 'group-1'
                 },
                 groupRef('group-1'),
                 'chat.message.v1',
                 {
-                    text: 'group hello',
+                    text: 'group hello'
                 },
                 {
                     ttlHops: 2,
@@ -172,24 +158,24 @@ describe('AL QoS policy', () => {
                         forwarding: {
                             algo: 'target',
                             opts: {
-                                overlayId: 'group-1',
-                            },
+                                overlayId: 'group-1'
+                            }
                         },
                         fanout: {
                             algo: 'limit',
                             opts: {
-                                limit: 1,
-                            },
+                                limit: 1
+                            }
                         },
                         durability: {
-                            algo: 'local-inbox',
-                        },
-                    },
-                },
+                            algo: 'local-inbox'
+                        }
+                    }
+                }
             ),
             diagnostics: {
-                visitedPeerIds: ['peer-visited'],
-            },
+                visitedPeerIds: ['peer-visited']
+            }
         };
 
         const plan = planALMessageHandling(
@@ -199,8 +185,8 @@ describe('AL QoS policy', () => {
                 fromPeerId: 'peer-1',
                 connectedPeerIds: ['peer-1', 'peer-2', 'peer-visited'],
                 groupMemberPeerIds: ['self', 'peer-1', 'peer-2', 'peer-visited'],
-                overlayNeighborPeerIds: ['peer-1', 'peer-2', 'peer-visited', 'self'],
-            },
+                overlayNeighborPeerIds: ['peer-1', 'peer-2', 'peer-visited', 'self']
+            }
         );
 
         expect(plan.dropReason).toBeUndefined();
@@ -222,21 +208,21 @@ describe('AL QoS policy', () => {
             {
                 topicId: 'chat',
                 resourceId: 'msg-3',
-                contextId: 'conversation-1',
+                contextId: 'conversation-1'
             },
             'self',
             'chat.private-text.v1',
             {
-                text: 'private hello',
-            },
+                text: 'private hello'
+            }
         );
 
         const plan = planALMessageHandling(
             msg,
             {
                 selfPeerId: 'self',
-                seenDedupKeys: new Set([msg.id.msgId]),
-            },
+                seenDedupKeys: new Set([msg.id.msgId])
+            }
         );
 
         expect(plan.dropReason).toContain('Duplicate message');
@@ -252,60 +238,60 @@ describe('AL QoS policy', () => {
             {
                 topicId: 'presence',
                 resourceId: 'state',
-                contextId: 'room-1',
+                contextId: 'room-1'
             },
             'self',
             'presence.state.v1',
             {
-                text: 'first sender',
+                text: 'first sender'
             },
             {
                 qos: {
                     dedup: {
-                        algo: 'semantic-key',
-                    },
-                },
-            },
+                        algo: 'semantic-key'
+                    }
+                }
+            }
         );
         const second = newALUnicastMessage(
             'sender-semantic-2',
             {
                 topicId: 'presence',
                 resourceId: 'state',
-                contextId: 'room-1',
+                contextId: 'room-1'
             },
             'self',
             'presence.state.v1',
             {
-                text: 'second sender',
+                text: 'second sender'
             },
             {
                 qos: {
                     dedup: {
-                        algo: 'semantic-key',
-                    },
-                },
-            },
+                        algo: 'semantic-key'
+                    }
+                }
+            }
         );
 
         const firstPlan = planALMessageHandling(
             first,
             {
                 selfPeerId: 'self',
-                dedupStore,
-            },
+                dedupStore
+            }
         );
         await dedupStore.mark(
             firstPlan.dedupKey,
-            firstPlan.effective.dedup.opts.windowMs,
+            firstPlan.effective.dedup.opts.windowMs
         );
 
         const secondPlan = planALMessageHandling(
             second,
             {
                 selfPeerId: 'self',
-                dedupStore,
-            },
+                dedupStore
+            }
         );
 
         expect(secondPlan.dropReason).toBeUndefined();
@@ -319,61 +305,61 @@ describe('AL QoS policy', () => {
             {
                 topicId: 'presence',
                 resourceId: 'state',
-                contextId: 'room-1',
+                contextId: 'room-1'
             },
             'self',
             'presence.state.v1',
             {
-                text: 'first sender',
+                text: 'first sender'
             },
             {
                 qos: {
                     supersedence: {
-                        algo: 'latest-wins',
-                    },
-                },
-            },
+                        algo: 'latest-wins'
+                    }
+                }
+            }
         );
         const second = newALUnicastMessage(
             'sender-supersedence-2',
             {
                 topicId: 'presence',
                 resourceId: 'state',
-                contextId: 'room-1',
+                contextId: 'room-1'
             },
             'self',
             'presence.state.v1',
             {
-                text: 'second sender',
+                text: 'second sender'
             },
             {
                 qos: {
                     supersedence: {
-                        algo: 'latest-wins',
-                    },
-                },
-            },
+                        algo: 'latest-wins'
+                    }
+                }
+            }
         );
 
         const firstPlan = planALMessageHandling(
             first,
             {
                 selfPeerId: 'self',
-                supersedenceStore,
-            },
+                supersedenceStore
+            }
         );
         await supersedenceStore.accept({
             key: firstPlan.supersedence.key,
             msgId: first.id.msgId,
-            ts: first.id.ts,
+            ts: first.id.ts
         });
 
         const secondPlan = planALMessageHandling(
             second,
             {
                 selfPeerId: 'self',
-                supersedenceStore,
-            },
+                supersedenceStore
+            }
         );
 
         expect(secondPlan.dropReason).toBeUndefined();
@@ -388,17 +374,17 @@ describe('AL QoS policy', () => {
             {
                 topicId: 'chat',
                 resourceId: 'msg-4',
-                contextId: 'group-1',
+                contextId: 'group-1'
             },
             groupRef('group-1'),
             'chat.message.v1',
             {
-                text: 'first',
+                text: 'first'
             },
             {
                 seq: 1,
-                reliability: 'at-least-once',
-            },
+                reliability: 'at-least-once'
+            }
         );
 
         await orderingStore.accept(first);
@@ -408,17 +394,17 @@ describe('AL QoS policy', () => {
             {
                 topicId: 'chat',
                 resourceId: 'msg-5',
-                contextId: 'group-1',
+                contextId: 'group-1'
             },
             groupRef('group-1'),
             'chat.message.v1',
             {
-                text: 'third',
+                text: 'third'
             },
             {
                 seq: 3,
-                reliability: 'at-least-once',
-            },
+                reliability: 'at-least-once'
+            }
         );
 
         const plan = planALMessageHandling(
@@ -429,8 +415,8 @@ describe('AL QoS policy', () => {
                 connectedPeerIds: ['peer-1', 'peer-2'],
                 groupMemberPeerIds: ['self', 'peer-1', 'peer-2'],
                 overlayNeighborPeerIds: ['peer-2'],
-                orderingStore,
-            },
+                orderingStore
+            }
         );
 
         expect(plan.dropReason).toBeUndefined();
@@ -449,13 +435,13 @@ describe('AL QoS policy', () => {
             {
                 topicId: 'chat',
                 resourceId: 'msg-6',
-                contextId: 'conversation-1',
+                contextId: 'conversation-1'
             },
             'self',
             'chat.private-text.v1',
             {
-                text: 'private hello',
-            },
+                text: 'private hello'
+            }
         );
 
         await dedupStore.mark(msg.id.msgId, 60_000);
@@ -464,8 +450,8 @@ describe('AL QoS policy', () => {
             msg,
             {
                 selfPeerId: 'self',
-                dedupStore,
-            },
+                dedupStore
+            }
         );
 
         expect(plan.dropReason).toContain('Duplicate message');
@@ -477,13 +463,13 @@ describe('AL QoS policy', () => {
             {
                 topicId: 'alerts',
                 resourceId: 'alert-1',
-                contextId: 'room-1',
+                contextId: 'room-1'
             },
             'all',
             'alerts.notice.v1',
             {
-                text: 'system maintenance',
-            },
+                text: 'system maintenance'
+            }
         );
 
         const provider: ALQosInputProvider = {
@@ -491,13 +477,13 @@ describe('AL QoS policy', () => {
                 congestion: {
                     algo: 'reject',
                     opts: {
-                        priority: 1,
-                    },
-                },
+                        priority: 1
+                    }
+                }
             }),
             liveForMessage: () => ({
-                overloaded: true,
-            }),
+                overloaded: true
+            })
         };
 
         const normalizationInput = resolveALQosNormalizationInput(
@@ -505,18 +491,18 @@ describe('AL QoS policy', () => {
             {
                 direction: 'inbound',
                 selfPeerId: 'self',
-                overloaded: true,
+                overloaded: true
             },
-            provider,
+            provider
         );
         const normalized = normalizeALQosPolicy(msg, normalizationInput);
         const plan = planALMessageHandling(
             msg,
             {
                 selfPeerId: 'self',
-                overloaded: true,
+                overloaded: true
             },
-            normalizationInput,
+            normalizationInput
         );
 
         expect(normalized.effective.congestion.algo).toBe('reject');
@@ -530,23 +516,23 @@ describe('AL QoS policy', () => {
             {
                 topicId: 'presence',
                 resourceId: 'state-2',
-                contextId: 'room-1',
+                contextId: 'room-1'
             },
             'self',
             'presence.state.v1',
             {
-                text: 'newer',
+                text: 'newer'
             },
             {
                 qos: {
                     supersedence: {
                         algo: 'latest-wins',
                         opts: {
-                            supersedenceKey: 'presence:peer-1',
-                        },
-                    },
-                },
-            },
+                            supersedenceKey: 'presence:peer-1'
+                        }
+                    }
+                }
+            }
         );
         const older = {
             ...newALUnicastMessage(
@@ -554,47 +540,47 @@ describe('AL QoS policy', () => {
                 {
                     topicId: 'presence',
                     resourceId: 'state-1',
-                    contextId: 'room-1',
+                    contextId: 'room-1'
                 },
                 'self',
                 'presence.state.v1',
                 {
-                    text: 'older',
+                    text: 'older'
                 },
                 {
                     qos: {
                         supersedence: {
                             algo: 'latest-wins',
                             opts: {
-                                supersedenceKey: 'presence:peer-1',
-                            },
-                        },
-                    },
-                },
+                                supersedenceKey: 'presence:peer-1'
+                            }
+                        }
+                    }
+                }
             ),
             id: {
                 ...newer.id,
                 msgId: crypto.randomUUID(),
-                ts: newer.id.ts - 1_000,
+                ts: newer.id.ts - 1_000
             },
             audit: {
                 ...newer.audit,
-                createdTs: (newer.audit?.createdTs ?? newer.id.ts) - 1_000,
-            },
+                createdTs: (newer.audit?.createdTs ?? newer.id.ts) - 1_000
+            }
         };
 
         await supersedenceStore.accept({
             key: 'presence:peer-1',
             msgId: newer.id.msgId,
-            ts: newer.id.ts,
+            ts: newer.id.ts
         });
 
         const plan = planALMessageHandling(
             older,
             {
                 selfPeerId: 'self',
-                supersedenceStore,
-            },
+                supersedenceStore
+            }
         );
 
         expect(plan.dropReason).toContain('superseded');
@@ -607,13 +593,13 @@ describe('AL QoS policy', () => {
             {
                 topicId: 'chat',
                 resourceId: 'typing-1',
-                contextId: 'room-1',
+                contextId: 'room-1'
             },
             'self',
             'chat.typing.v1',
             {
-                text: 'typing',
-            },
+                text: 'typing'
+            }
         );
 
         const plan = planALMessageHandling(
@@ -621,8 +607,8 @@ describe('AL QoS policy', () => {
             {
                 selfPeerId: 'self',
                 fromPeerId: 'sender-8',
-                overloaded: true,
-            },
+                overloaded: true
+            }
         );
 
         expect(plan.dropReason).toContain('drops low-priority');
@@ -636,6 +622,6 @@ function groupRef(groupId: string) {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
-        groupId,
+        groupId
     };
 }

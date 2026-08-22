@@ -1,6 +1,6 @@
 export function fleetRegionProviderKey(
     region: string,
-    provider: string | undefined,
+    provider: string | undefined
 ): string {
     return JSON.stringify([region, provider ?? null]);
 }

@@ -1,116 +1,112 @@
-import assert from 'node:assert/strict';
-import { Hono } from 'jsr:@hono/hono@4.11.9';
+import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import { AppInboxService, SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import {
-  AppInboxService,
-  SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
-} from '@shared-server/rallar-system/services/AppInboxService.ts';
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import { Hono } from 'jsr:@hono/hono@4.11.9';
+import assert from 'node:assert/strict';
 import * as clientStateRoutes from '../../src/routes/client-state-routes.ts';
 
 type SqlValue = Parameters<PSqlSql>[0][number];
 
 Deno.test('HTTP wait timeout leaves its durable AppInbox row eligible', async () => {
-  const queue = new InMemoryQueueBox(new Map());
-  const service = new AppInboxService(
-    {
-      inboxQueueReader: new InboxQueueReader(queue),
-      resourceInboxRepository: {
-        isEntryWithStatus: async (key, statuses) => {
-          const entry = await queue.getItem(key);
-          return entry !== undefined && statuses.includes(entry.status);
+    const queue = new InMemoryQueueBox(new Map());
+    const service = new AppInboxService(
+        {
+            inboxQueueReader: new InboxQueueReader(queue),
+            resourceInboxRepository: {
+                isEntryWithStatus: async (key, statuses) => {
+                    const entry = await queue.getItem(key);
+                    return entry !== undefined && statuses.includes(entry.status);
+                }
+            },
+            resourceInboxResultsRepository: {
+                replace: (entry) => Promise.resolve(entry),
+                findByKey: () => Promise.resolve(undefined)
+            },
+            database: createUnusedDatabase()
         },
-      },
-      resourceInboxResultsRepository: {
-        replace: (entry) => Promise.resolve(entry),
-        findByKey: () => Promise.resolve(undefined),
-      },
-      database: createUnusedDatabase(),
-    },
-    {
-      serviceId: 'server-12345678',
-      defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
-      options: {
-        waitMaxElapsedMsecs: 0,
-        waitRetryIntervalMsecs: 0,
-        waitMaxRetryIntervalMsecs: 0,
-        waitJitterRatio: 0,
-      },
-    },
-  );
-  let directMutationFallbacks = 0;
-  const app = new Hono();
-  clientStateRoutes.registerClientStateRoutes(app, {
-    requireApiAuthSession: () =>
-      Promise.resolve({
-        clientId: 'alice',
-        accessToken: 'token',
-        username: 'alice',
-        sessionId: 'alice-session',
-        issuedAtEpochMs: 1,
-        expiresAtEpochMs: 60_000,
-      }),
-    clientStateService: {
-      listSnapshots: () => Promise.resolve([]),
-      readSnapshot: () => Promise.resolve(undefined),
-      readPresenceSnapshot: () => Promise.resolve(undefined),
-      listEvents: () => Promise.resolve([]),
-      listRecentEvents: () => Promise.resolve([]),
-      listEventPage: () => Promise.resolve({ events: [], hasMore: false }),
-    },
-    hydrateStateSyncSnapshotCaches: () =>
-      Promise.resolve({
-        clientSnapshotCount: 0,
-        groupSnapshotCount: 0,
-      }),
-    readClientSnapshot: () => Promise.resolve({ status: 'not-found', source: 'durable' }),
-    processClientAppInbox: async (input) => {
-      return await service.processEntryUntilCompletionResult(
-        input,
-        () => {
-          directMutationFallbacks += 1;
-          throw new Error('Unexpected direct mutation fallback');
+        {
+            serviceId: 'server-12345678',
+            defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
+            options: {
+                waitMaxElapsedMsecs: 0,
+                waitRetryIntervalMsecs: 0,
+                waitMaxRetryIntervalMsecs: 0,
+                waitJitterRatio: 0
+            }
+        }
+    );
+    let directMutationFallbacks = 0;
+    const app = new Hono();
+    clientStateRoutes.registerClientStateRoutes(app, {
+        requireApiAuthSession: () =>
+            Promise.resolve({
+                clientId: 'alice',
+                accessToken: 'token',
+                username: 'alice',
+                sessionId: 'alice-session',
+                issuedAtEpochMs: 1,
+                expiresAtEpochMs: 60_000
+            }),
+        clientStateService: {
+            listSnapshots: () => Promise.resolve([]),
+            readSnapshot: () => Promise.resolve(undefined),
+            readPresenceSnapshot: () => Promise.resolve(undefined),
+            listEvents: () => Promise.resolve([]),
+            listRecentEvents: () => Promise.resolve([]),
+            listEventPage: () => Promise.resolve({ events: [], hasMore: false })
         },
-      );
-    },
-  });
+        hydrateStateSyncSnapshotCaches: () =>
+            Promise.resolve({
+                clientSnapshotCount: 0,
+                groupSnapshotCount: 0
+            }),
+        readClientSnapshot: () => Promise.resolve({ status: 'not-found', source: 'durable' }),
+        processClientAppInbox: async (input) => {
+            return await service.processEntryUntilCompletionResult(
+                input,
+                () => {
+                    directMutationFallbacks += 1;
+                    throw new Error('Unexpected direct mutation fallback');
+                }
+            );
+        }
+    });
 
-  const response = await app.request(
-    '/api/state/apps/app-1/workspaces/workspace-1/clients/alice/principal/requests/' +
-      'TimeoutMutationRequest_0123',
-    {
-      method: 'PUT',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'alice' }),
-    },
-  );
+    const response = await app.request(
+        '/api/state/apps/app-1/workspaces/workspace-1/clients/alice/principal/requests/' +
+            'TimeoutMutationRequest_0123',
+        {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ username: 'alice' })
+        }
+    );
 
-  assert.equal(response.status, 503);
-  const failure = await response.json();
-  assert.equal(failure.code, 'app-inbox-unavailable');
-  assert.equal(failure.type, 'api-mutation-failure');
-  assert.equal(failure.version, 'canonical.v1');
-  assert.equal(failure.retry.kind, 'unavailable');
-  assert.equal(directMutationFallbacks, 0);
-  const [key] = await queue.getAllKeys();
-  if (key === undefined) {
-    throw new Error('Expected durable timeout AppInbox key');
-  }
-  const row = await queue.getItem(key);
-  assert.equal(row?.status, EntityStatus.NEW);
-  assert.equal(row?.dequeueAudit.attempts, 0);
+    assert.equal(response.status, 503);
+    const failure = await response.json();
+    assert.equal(failure.code, 'app-inbox-unavailable');
+    assert.equal(failure.type, 'api-mutation-failure');
+    assert.equal(failure.version, 'canonical.v1');
+    assert.equal(failure.retry.kind, 'unavailable');
+    assert.equal(directMutationFallbacks, 0);
+    const [key] = await queue.getAllKeys();
+    if (key === undefined) {
+        throw new Error('Expected durable timeout AppInbox key');
+    }
+    const row = await queue.getItem(key);
+    assert.equal(row?.status, EntityStatus.NEW);
+    assert.equal(row?.dequeueAudit.attempts, 0);
 });
 
 function createUnusedDatabase(): PSqlSql {
-  function query<T>(_strings: TemplateStringsArray, ..._values: SqlValue[]): Promise<T>;
-  function query(_values: readonly SqlValue[]): ReturnType<PSqlSql>;
-  function query(): never {
-    throw new Error('Timeout route test must not start a database write');
-  }
-  return Object.assign(query, {
-    begin: async <T>(): Promise<T> =>
-      await Promise.reject(new Error('Timeout route test must not start a transaction')),
-  });
+    function query<T>(_strings: TemplateStringsArray, ..._values: SqlValue[]): Promise<T>;
+    function query(_values: readonly SqlValue[]): ReturnType<PSqlSql>;
+    function query(): never {
+        throw new Error('Timeout route test must not start a database write');
+    }
+    return Object.assign(query, {
+        begin: async <T>(): Promise<T> => await Promise.reject(new Error('Timeout route test must not start a transaction'))
+    });
 }

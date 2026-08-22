@@ -1,11 +1,5 @@
 import type { AuthSession } from './api-config.ts';
-import type {
-    GroupMember,
-    GroupMemberStatus,
-    GroupRef,
-    GroupRole,
-    GroupSnapshot,
-} from './group-types.ts';
+import type { GroupMember, GroupMemberStatus, GroupRef, GroupRole, GroupSnapshot } from './group-types.ts';
 
 export const RALLAR_GROUP_DIRECTOR_METADATA_KEY = 'rallarDirector';
 export const RALLAR_GROUP_DIRECTOR_VERSION = 1;
@@ -46,7 +40,7 @@ export type RallarGroupDirectorMetadataPatch = Readonly<{
 }>;
 
 export function readRallarGroupDirectorAppointment(
-    metadata: Readonly<Record<string, unknown>> | undefined,
+    metadata: Readonly<Record<string, unknown>> | undefined
 ): RallarGroupDirectorAppointment | undefined {
     const value = metadata?.[RALLAR_GROUP_DIRECTOR_METADATA_KEY];
     if (!isRecord(value)) {
@@ -73,13 +67,13 @@ export function readRallarGroupDirectorAppointment(
         epoch: Math.max(0, Math.floor(value.epoch)),
         appointedAtEpochMs: value.appointedAtEpochMs,
         heartbeatTtlMs: normalizeRallarGroupDirectorHeartbeatTtlMs(
-            value.heartbeatTtlMs,
-        ),
+            value.heartbeatTtlMs
+        )
     };
 }
 
 export function readRallarGroupDirectorFromSnapshot(
-    snapshot: GroupSnapshot | undefined,
+    snapshot: GroupSnapshot | undefined
 ): RallarGroupDirectorAppointment | undefined {
     return readRallarGroupDirectorAppointment(snapshot?.group.metadata);
 }
@@ -90,7 +84,7 @@ export function createRallarGroupDirectorAppointment(
         previous?: RallarGroupDirectorAppointment;
         now?: number;
         heartbeatTtlMs?: number;
-    }>,
+    }>
 ): RallarGroupDirectorAppointment {
     return {
         version: RALLAR_GROUP_DIRECTOR_VERSION,
@@ -102,13 +96,13 @@ export function createRallarGroupDirectorAppointment(
         heartbeatTtlMs: normalizeRallarGroupDirectorHeartbeatTtlMs(
             input.heartbeatTtlMs ??
                 input.previous?.heartbeatTtlMs ??
-                DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS,
-        ),
+                DEFAULT_RALLAR_GROUP_DIRECTOR_HEARTBEAT_TTL_MS
+        )
     };
 }
 
 export function normalizeRallarGroupDirectorHeartbeatTtlMs(
-    value: unknown,
+    value: unknown
 ): number {
     if (!isValidRallarGroupDirectorHeartbeatTtlMs(value)) {
         throw new TypeError('Invalid director heartbeat TTL.');
@@ -119,12 +113,13 @@ export function normalizeRallarGroupDirectorHeartbeatTtlMs(
 
 export function mergeRallarGroupDirectorMetadata(
     metadata: Readonly<Record<string, unknown>> | undefined,
-    appointment: RallarGroupDirectorAppointment | undefined,
+    appointment: RallarGroupDirectorAppointment | undefined
 ): Record<string, unknown> {
     const next: Record<string, unknown> = { ...(metadata ?? {}) };
     if (appointment) {
         next[RALLAR_GROUP_DIRECTOR_METADATA_KEY] = appointment;
-    } else {
+    }
+    else {
         delete next[RALLAR_GROUP_DIRECTOR_METADATA_KEY];
     }
     return next;
@@ -132,7 +127,7 @@ export function mergeRallarGroupDirectorMetadata(
 
 export function isRallarGroupDirectorSessionActive(
     snapshot: GroupSnapshot | undefined,
-    appointment: RallarGroupDirectorAppointment | undefined,
+    appointment: RallarGroupDirectorAppointment | undefined
 ): boolean {
     if (!snapshot || !appointment) {
         return false;
@@ -149,7 +144,7 @@ export function resolveRallarGroupDirectorAppointmentEligibility(
         snapshot: GroupSnapshot | undefined;
         principalId?: string;
         sessionId?: string;
-    }>,
+    }>
 ): RallarGroupDirectorAppointmentEligibility {
     const localPrincipalId = input.principalId;
     const localPeerId = input.sessionId;
@@ -159,7 +154,7 @@ export function resolveRallarGroupDirectorAppointmentEligibility(
             status: 'no-local-peer',
             reason: 'Cannot appoint a director without a local session.',
             localPrincipalId,
-            localPeerId,
+            localPeerId
         };
     }
 
@@ -170,20 +165,18 @@ export function resolveRallarGroupDirectorAppointmentEligibility(
             status: 'not-ready',
             reason: 'Cannot confirm local room membership yet.',
             localPrincipalId,
-            localPeerId,
+            localPeerId
         };
     }
 
-    const member = snapshot.members.find((entry) =>
-        entry.principalId === localPrincipalId
-    );
+    const member = snapshot.members.find((entry) => entry.principalId === localPrincipalId);
     if (!member) {
         return {
             allowed: false,
             status: 'not-ready',
             reason: 'Cannot confirm local room membership yet.',
             localPrincipalId,
-            localPeerId,
+            localPeerId
         };
     }
 
@@ -199,7 +192,7 @@ export function resolveRallarGroupDirectorAppointmentEligibility(
             localPrincipalId,
             localPeerId,
             localRole: member.role,
-            localMemberStatus: member.status,
+            localMemberStatus: member.status
         };
     }
 
@@ -210,7 +203,7 @@ export function resolveRallarGroupDirectorAppointmentEligibility(
             localPrincipalId,
             localPeerId,
             localRole: member.role,
-            localMemberStatus: member.status,
+            localMemberStatus: member.status
         };
     }
 
@@ -222,7 +215,7 @@ export function resolveRallarGroupDirectorAppointmentEligibility(
             localPrincipalId,
             localPeerId,
             localRole: member.role,
-            localMemberStatus: member.status,
+            localMemberStatus: member.status
         };
     }
 
@@ -235,7 +228,7 @@ export function resolveRallarGroupDirectorAppointmentEligibility(
             localPrincipalId,
             localPeerId,
             localRole: member.role,
-            localMemberStatus: member.status,
+            localMemberStatus: member.status
         };
     }
 
@@ -245,25 +238,25 @@ export function resolveRallarGroupDirectorAppointmentEligibility(
         localPrincipalId,
         localPeerId,
         localRole: member.role,
-        localMemberStatus: member.status,
+        localMemberStatus: member.status
     };
 }
 
 export function isRallarGroupDirectorForSession(
     appointment: RallarGroupDirectorAppointment | undefined,
-    session: Pick<AuthSession, 'clientId' | 'sessionId'> | undefined,
+    session: Pick<AuthSession, 'clientId' | 'sessionId'> | undefined
 ): boolean {
     return Boolean(
         appointment &&
             session &&
             appointment.sessionId === session.sessionId &&
-            appointment.principalId === session.clientId,
+            appointment.principalId === session.clientId
     );
 }
 
 export function compareRallarGroupDirectorEpoch(
     left: RallarGroupDirectorAppointment | undefined,
-    right: RallarGroupDirectorAppointment | undefined,
+    right: RallarGroupDirectorAppointment | undefined
 ): number {
     return (left?.epoch ?? 0) - (right?.epoch ?? 0);
 }
@@ -271,7 +264,7 @@ export function compareRallarGroupDirectorEpoch(
 export function readRallarGroupDirectorFreshness(
     appointment: RallarGroupDirectorAppointment | undefined,
     lastHeartbeatAtEpochMs: number | undefined,
-    now: number = Date.now(),
+    now: number = Date.now()
 ): RallarGroupDirectorFreshness {
     if (!appointment) {
         return 'none';
@@ -282,7 +275,7 @@ export function readRallarGroupDirectorFreshness(
 }
 
 export function toRallarGroupDirectorRoomRef(
-    snapshot: GroupSnapshot | undefined,
+    snapshot: GroupSnapshot | undefined
 ): GroupRef | undefined {
     return snapshot?.group;
 }
@@ -299,13 +292,11 @@ function isValidRallarGroupDirectorHeartbeatTtlMs(value: unknown): value is numb
 
 function hasActiveOwnerOrAdminSession(snapshot: GroupSnapshot): boolean {
     return snapshot.activeSessions.some((session) => {
-        const member = snapshot.members.find((entry) =>
-            entry.principalId === session.principalId
-        );
+        const member = snapshot.members.find((entry) => entry.principalId === session.principalId);
         return Boolean(
             member &&
                 member.status === 'active' &&
-                isOwnerOrAdmin(member),
+                isOwnerOrAdmin(member)
         );
     });
 }

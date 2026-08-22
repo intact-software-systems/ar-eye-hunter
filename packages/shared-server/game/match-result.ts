@@ -1,33 +1,30 @@
+import type { RallarGameAuthorityRef } from '@shared/rallar-game/mod.ts';
 import type {
     RallarMatchServerAuthorityDescriptor,
-    RallarServerValidatedMatchResult,
+    RallarServerValidatedMatchResult
 } from '@shared/rallar-match/mod.ts';
 import { createRallarMatchResultIdempotencyKey } from '@shared/rallar-match/mod.ts';
-import type { RallarGameAuthorityRef } from '@shared/rallar-game/mod.ts';
 
 export type RallarServerValidatedMatchResultInput<TSummary = unknown> =
-    Omit<
-        RallarServerValidatedMatchResult<TSummary>,
-        'authority' | 'trust' | 'idempotencyKey'
-    > &
-    Readonly<{
-        authority: RallarGameAuthorityRef & Readonly<{ kind: 'server' }>;
+    & Omit<RallarServerValidatedMatchResult<TSummary>, 'authority' | 'trust' | 'idempotencyKey'>
+    & Readonly<{
+        authority: RallarGameAuthorityRef & Readonly<{ kind: 'server'; }>;
         idempotencyKey?: string;
     }>;
 
 export function createRallarServerValidatedMatchResult<TSummary>(
-    input: RallarServerValidatedMatchResultInput<TSummary>,
+    input: RallarServerValidatedMatchResultInput<TSummary>
 ): RallarServerValidatedMatchResult<TSummary> {
     if (input.authority.kind !== 'server') {
         throw new Error(
-            'Server-validated Rallar match results require server authority.',
+            'Server-validated Rallar match results require server authority.'
         );
     }
 
     const authority: RallarMatchServerAuthorityDescriptor = {
         kind: 'server',
         id: input.authority.id,
-        epoch: input.authority.epoch,
+        epoch: input.authority.epoch
     };
 
     return {
@@ -47,7 +44,7 @@ export function createRallarServerValidatedMatchResult<TSummary>(
                 protocol: input.protocol,
                 matchId: input.matchId,
                 authority,
-                finishedAtEpochMs: input.finishedAtEpochMs,
-            }),
+                finishedAtEpochMs: input.finishedAtEpochMs
+            })
     };
 }

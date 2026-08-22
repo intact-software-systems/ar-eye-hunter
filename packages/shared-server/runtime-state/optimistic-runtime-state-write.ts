@@ -1,6 +1,6 @@
 import type {
     RuntimeStateConditionalDeleteResult,
-    RuntimeStateConditionalWriteResult,
+    RuntimeStateConditionalWriteResult
 } from './RuntimeStateRepository.ts';
 
 export const DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS = 3;
@@ -21,7 +21,7 @@ export class RuntimeStateRetryExhaustedError extends Error {
     constructor(cause: RuntimeStateWriteConflictError) {
         super(
             `Runtime state write conflicted during ${DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS} attempts`,
-            { cause },
+            { cause }
         );
         this.name = 'RuntimeStateRetryExhaustedError';
     }
@@ -32,8 +32,8 @@ type RuntimeStateConditionalResult =
     | RuntimeStateConditionalDeleteResult;
 
 export function requireConditionalWrite<Result extends RuntimeStateConditionalResult>(
-    result: Result,
-): Extract<Result, Readonly<{ status: 'applied' }>> {
+    result: Result
+): Extract<Result, Readonly<{ status: 'applied'; }>> {
     if (typeof result !== 'object' || result === null || !('status' in result)) {
         throw new TypeError('Invalid runtime state conditional write result');
     }
@@ -44,14 +44,14 @@ export function requireConditionalWrite<Result extends RuntimeStateConditionalRe
         throw new TypeError('Invalid runtime state conditional write result');
     }
 
-    return result as Extract<Result, Readonly<{ status: 'applied' }>>;
+    return result as Extract<Result, Readonly<{ status: 'applied'; }>>;
 }
 
 export async function waitForRuntimeStateWriteRetry(
     attempt: 0 | 1 | 2,
     options: Readonly<{
         sleep?: (delayMs: number) => Promise<void>;
-    }> = {},
+    }> = {}
 ): Promise<number> {
     const delayMs = DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS[attempt];
     if (delayMs === undefined) {

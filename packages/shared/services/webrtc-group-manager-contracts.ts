@@ -47,7 +47,7 @@ export type RetainedPeerConnection = Readonly<{
 }>;
 
 export function clonePeerOwners(
-    peerOwners: ReadonlyMap<PeerId, readonly GroupId[]>,
+    peerOwners: ReadonlyMap<PeerId, readonly GroupId[]>
 ): ReadonlyMap<PeerId, readonly GroupId[]> {
     const copy = new Map<PeerId, readonly GroupId[]>();
     for (const [peerId, groupIds] of peerOwners.entries()) {
@@ -84,6 +84,6 @@ export function emptyGroupManagerDiagnostics(): MutableWebRtcGroupManagerDiagnos
         disconnectCount: 0,
         retainedCreatedCount: 0,
         retainedExpiredCount: 0,
-        retainedEvictionCount: 0,
+        retainedEvictionCount: 0
     };
 }

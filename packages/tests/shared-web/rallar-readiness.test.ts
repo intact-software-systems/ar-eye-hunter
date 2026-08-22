@@ -1,14 +1,11 @@
+import { evaluateRallarReadinessExpectation, normalizeRallarReadinessExpectation } from '@shared-web/browser/rallar.ts';
 import { describe, expect, it } from 'vitest';
-import {
-    evaluateRallarReadinessExpectation,
-    normalizeRallarReadinessExpectation,
-} from '@shared-web/browser/rallar.ts';
 
 describe('Rallar readiness expectations', () => {
     it('treats one active local session as ready for min one', () => {
         const result = evaluateRallarReadinessExpectation(
             ['session-local'],
-            normalizeRallarReadinessExpectation({ min: 1 }),
+            normalizeRallarReadinessExpectation({ min: 1 })
         );
 
         expect(result).toMatchObject({
@@ -16,34 +13,34 @@ describe('Rallar readiness expectations', () => {
             observedCount: 1,
             expectedCount: 1,
             missingSessionIds: [],
-            extraSessionIds: [],
+            extraSessionIds: []
         });
     });
 
     it('reports partial when exact count is not reached', () => {
         const result = evaluateRallarReadinessExpectation(
             ['session-local'],
-            normalizeRallarReadinessExpectation({ exact: 2 }),
+            normalizeRallarReadinessExpectation({ exact: 2 })
         );
 
         expect(result).toMatchObject({
             status: 'partial',
             observedCount: 1,
-            expectedCount: 2,
+            expectedCount: 2
         });
     });
 
     it('reports over-capacity when max is exceeded', () => {
         const result = evaluateRallarReadinessExpectation(
             ['a', 'b', 'c'],
-            normalizeRallarReadinessExpectation({ min: 1, max: 2 }),
+            normalizeRallarReadinessExpectation({ min: 1, max: 2 })
         );
 
         expect(result).toMatchObject({
             status: 'over-capacity',
             observedCount: 3,
             expectedCount: 1,
-            extraSessionIds: ['c'],
+            extraSessionIds: ['c']
         });
     });
 
@@ -51,8 +48,8 @@ describe('Rallar readiness expectations', () => {
         const result = evaluateRallarReadinessExpectation(
             ['director', 'player', 'spectator'],
             normalizeRallarReadinessExpectation({
-                sessionIds: ['director', 'player'],
-            }),
+                sessionIds: ['director', 'player']
+            })
         );
 
         expect(result).toMatchObject({
@@ -60,7 +57,7 @@ describe('Rallar readiness expectations', () => {
             observedCount: 3,
             expectedCount: 2,
             missingSessionIds: [],
-            extraSessionIds: ['spectator'],
+            extraSessionIds: ['spectator']
         });
     });
 
@@ -69,28 +66,28 @@ describe('Rallar readiness expectations', () => {
             ['director', 'player', 'spectator'],
             normalizeRallarReadinessExpectation({
                 sessionIds: ['director', 'player'],
-                allowExtras: false,
-            }),
+                allowExtras: false
+            })
         );
 
         expect(result).toMatchObject({
             status: 'over-capacity',
             observedCount: 3,
             expectedCount: 2,
-            extraSessionIds: ['spectator'],
+            extraSessionIds: ['spectator']
         });
     });
 
     it('normalizes exact zero as an empty satisfied expectation', () => {
         const result = evaluateRallarReadinessExpectation(
             [],
-            normalizeRallarReadinessExpectation({ exact: 0 }),
+            normalizeRallarReadinessExpectation({ exact: 0 })
         );
 
         expect(result).toMatchObject({
             status: 'empty',
             observedCount: 0,
-            expectedCount: 0,
+            expectedCount: 0
         });
     });
 });

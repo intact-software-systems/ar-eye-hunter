@@ -30,9 +30,9 @@ test.describe('AR Eye Hunter mobile controls', () => {
         await dispatchPointer(page, '.mobile-action--fire', 'pointerdown', 51, 18, 18);
         await page.waitForTimeout(180);
         await dispatchPointer(page, '.mobile-action--fire', 'pointerup', 51, 18, 18);
-        await expect.poll(async () =>
-            Number(await canvasDataset(page, 'arenaEffectCount'))
-        ).toBeGreaterThan(beforeEffects);
+        await expect.poll(async () => Number(await canvasDataset(page, 'arenaEffectCount'))).toBeGreaterThan(
+            beforeEffects
+        );
 
         await dispatchPointer(page, '.mobile-stick-zone', 'pointerup', 31, 144, 36);
         await dispatchPointer(page, '.mobile-look-zone', 'pointerup', 41, 150, 104);
@@ -53,9 +53,10 @@ test.describe('AR Eye Hunter mobile controls', () => {
 });
 
 async function canvasDataset(page: import('@playwright/test').Page, key: string): Promise<string | undefined> {
-    return page.locator('canvas.arena-canvas').evaluate((canvas, datasetKey) =>
-        (canvas as HTMLCanvasElement).dataset[datasetKey],
-    key);
+    return page.locator('canvas.arena-canvas').evaluate(
+        (canvas, datasetKey) => (canvas as HTMLCanvasElement).dataset[datasetKey],
+        key
+    );
 }
 
 async function dispatchPointer(
@@ -64,7 +65,7 @@ async function dispatchPointer(
     type: 'pointerdown' | 'pointermove' | 'pointerup' | 'pointercancel',
     pointerId: number,
     offsetX: number,
-    offsetY: number,
+    offsetY: number
 ): Promise<void> {
     const box = await page.locator(selector).boundingBox();
     if (!box) {
@@ -79,6 +80,6 @@ async function dispatchPointer(
         button: 0,
         buttons: type === 'pointerup' || type === 'pointercancel' ? 0 : 1,
         clientX: box.x + offsetX,
-        clientY: box.y + offsetY,
+        clientY: box.y + offsetY
     });
 }

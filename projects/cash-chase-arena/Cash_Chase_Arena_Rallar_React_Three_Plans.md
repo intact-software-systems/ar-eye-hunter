@@ -227,12 +227,12 @@ Renderer-neutral interface:
 
 ```ts
 export interface CashChaseRenderer {
-  mount(canvas: HTMLCanvasElement): Promise<void>;
-  loadArena(arena: ArenaLayout): Promise<void>;
-  render(frame: CashChasePresentationFrame): void;
-  resize(width: number, height: number, pixelRatio: number): void;
-  diagnostics(): CashChaseRendererDiagnostics;
-  dispose(): Promise<void>;
+    mount(canvas: HTMLCanvasElement): Promise<void>;
+    loadArena(arena: ArenaLayout): Promise<void>;
+    render(frame: CashChasePresentationFrame): void;
+    resize(width: number, height: number, pixelRatio: number): void;
+    diagnostics(): CashChaseRendererDiagnostics;
+    dispose(): Promise<void>;
 }
 ```
 
@@ -261,15 +261,15 @@ CCA payloads must not duplicate a trusted `playerId`, transport sequence, sender
 
 ```ts
 type CashChaseInput = Readonly<{
-  version: 1;
-  clientTick: number;
-  moveX: number;
-  moveY: number;
-  cameraYaw: number;
-  sprintHeld: boolean;
-  dashPressed: boolean;
-  vaultPressed: boolean;
-  interactPressed: boolean;
+    version: 1;
+    clientTick: number;
+    moveX: number;
+    moveY: number;
+    cameraYaw: number;
+    sprintHeld: boolean;
+    dashPressed: boolean;
+    vaultPressed: boolean;
+    interactPressed: boolean;
 }>;
 ```
 

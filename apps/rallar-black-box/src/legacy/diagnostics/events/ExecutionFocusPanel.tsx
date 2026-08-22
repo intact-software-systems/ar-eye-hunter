@@ -2,7 +2,7 @@ import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestRedactionOptions,
-    RallarBlackBoxTestResult,
+    RallarBlackBoxTestResult
 } from '@shared-test/rallar-bb-test/types.ts';
 import { statusTone } from '../../shared/command-presentation.ts';
 import { json } from '../../shared/json-presentation.ts';
@@ -10,9 +10,9 @@ import { formatDuration, formatTime } from '../../shared/time-format.ts';
 
 function activeDeadlineEpochMs(
     command:
-        | (RallarBlackBoxTestCommand & Readonly<{ commandId: string }>)
+        | (RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>)
         | undefined,
-    startedAtEpochMs: number | undefined,
+    startedAtEpochMs: number | undefined
 ): number | undefined {
     if (!command) {
         return undefined;
@@ -20,9 +20,9 @@ function activeDeadlineEpochMs(
 
     return (
         command.deadlineEpochMs ??
-        (startedAtEpochMs !== undefined && command.timeoutMs !== undefined
-            ? startedAtEpochMs + command.timeoutMs
-            : undefined)
+            (startedAtEpochMs !== undefined && command.timeoutMs !== undefined
+                ? startedAtEpochMs + command.timeoutMs
+                : undefined)
     );
 }
 
@@ -31,28 +31,25 @@ export function ExecutionFocusPanel({
     activeCommand,
     startedAtEpochMs,
     now,
-    redactionOptions,
+    redactionOptions
 }: {
     result?: RallarBlackBoxTestResult;
-    activeCommand?: RallarBlackBoxTestCommand & Readonly<{ commandId: string }>;
+    activeCommand?: RallarBlackBoxTestCommand & Readonly<{ commandId: string; }>;
     startedAtEpochMs?: number;
     now: number;
     redactionOptions: RallarBlackBoxTestRedactionOptions;
 }) {
     const deadlineEpochMs = activeDeadlineEpochMs(
         activeCommand,
-        startedAtEpochMs,
+        startedAtEpochMs
     );
-    const elapsedMs =
-        activeCommand && startedAtEpochMs !== undefined
-            ? Math.max(0, now - startedAtEpochMs)
-            : undefined;
-    const remainingMs =
-        deadlineEpochMs !== undefined
-            ? Math.max(0, deadlineEpochMs - now)
-            : undefined;
-    const retryState =
-        activeCommand?.metadata?.retry ??
+    const elapsedMs = activeCommand && startedAtEpochMs !== undefined
+        ? Math.max(0, now - startedAtEpochMs)
+        : undefined;
+    const remainingMs = deadlineEpochMs !== undefined
+        ? Math.max(0, deadlineEpochMs - now)
+        : undefined;
+    const retryState = activeCommand?.metadata?.retry ??
         activeCommand?.metadata?.retries ??
         'none';
 

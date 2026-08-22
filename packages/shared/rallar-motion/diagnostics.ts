@@ -3,7 +3,7 @@ import type {
     RallarMotionDiagnosticsTracker,
     RallarMotionDiagnosticsTrackerOptions,
     RallarMotionPushResult,
-    RallarMotionSample,
+    RallarMotionSample
 } from './types.ts';
 
 type DiagnosticsState = {
@@ -22,32 +22,34 @@ type DiagnosticsState = {
 };
 
 export function createRallarMotionDiagnosticsTracker(
-    _options: RallarMotionDiagnosticsTrackerOptions = {},
+    _options: RallarMotionDiagnosticsTrackerOptions = {}
 ): RallarMotionDiagnosticsTracker {
     const state = createState();
 
     return {
         recordPush(
             result: RallarMotionPushResult,
-            sample?: Pick<RallarMotionSample, 'entityId' | 'observedAtEpochMs'>,
+            sample?: Pick<RallarMotionSample, 'entityId' | 'observedAtEpochMs'>
         ): RallarMotionDiagnosticsSummary {
             if (result.status === 'accepted') {
                 state.acceptedCount += 1;
                 if (sample) {
                     recordInterval(state, sample);
                 }
-            } else if (result.status === 'duplicate-seq') {
+            }
+            else if (result.status === 'duplicate-seq') {
                 state.duplicateSeqCount += 1;
-            } else if (result.status === 'stale-seq') {
+            }
+            else if (result.status === 'stale-seq') {
                 state.staleSeqCount += 1;
-            } else if (result.status === 'dropped-old-sample') {
+            }
+            else if (result.status === 'dropped-old-sample') {
                 state.droppedOldSampleCount += 1;
             }
 
             if (result.sequenceGap) {
                 state.sequenceGapCount += 1;
-                state.droppedSequenceCount +=
-                    result.sequenceGap.droppedSeqCount;
+                state.droppedSequenceCount += result.sequenceGap.droppedSeqCount;
             }
 
             return toSummary(state);
@@ -73,7 +75,7 @@ export function createRallarMotionDiagnosticsTracker(
             state.maxIntervalMs = next.maxIntervalMs;
             state.lastObservedAtByEntity.clear();
             state.lastIntervalByEntity.clear();
-        },
+        }
     };
 }
 
@@ -89,13 +91,13 @@ function createState(): DiagnosticsState {
         totalIntervalMs: 0,
         totalJitterMs: 0,
         lastObservedAtByEntity: new Map<string, number>(),
-        lastIntervalByEntity: new Map<string, number>(),
+        lastIntervalByEntity: new Map<string, number>()
     };
 }
 
 function recordInterval(
     state: DiagnosticsState,
-    sample: Pick<RallarMotionSample, 'entityId' | 'observedAtEpochMs'>,
+    sample: Pick<RallarMotionSample, 'entityId' | 'observedAtEpochMs'>
 ): void {
     const previousObservedAt = state.lastObservedAtByEntity.get(sample.entityId);
     state.lastObservedAtByEntity.set(sample.entityId, sample.observedAtEpochMs);
@@ -133,6 +135,6 @@ function toSummary(state: DiagnosticsState): RallarMotionDiagnosticsSummary {
         averageJitterMs: state.intervalCount > 1
             ? state.totalJitterMs / (state.intervalCount - 1)
             : undefined,
-        maxIntervalMs: state.maxIntervalMs,
+        maxIntervalMs: state.maxIntervalMs
     };
 }

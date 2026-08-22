@@ -1,47 +1,44 @@
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { readGroupVersion } from '@shared/api/group-client-views.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     configureObservableLatestRepository,
     newObservableLatestRepositoryToken,
     readAllObservableLatestRepository,
     readObservableLatestRepositoryValue,
-    requireObservableLatestRepository,
+    requireObservableLatestRepository
 } from '@shared/cache/LatestRepositoryHelpers.ts';
 import {
     ObservableLatestRepository,
-    type ObservableLatestRepositoryOptions,
+    type ObservableLatestRepositoryOptions
 } from '@shared/cache/ObservableLatestRepository.ts';
-import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import {
-    type ObservableKeyedValueEvent,
     ObservableValueEventType,
-    type ReadableKeyedValues,
+    type ObservableKeyedValueEvent,
+    type ReadableKeyedValues
 } from '@shared/cache/RepositoryInterfaces.ts';
+import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
-import {
-    type StateSnapshotObservation,
-    type StateSnapshotRevisionDecision,
-    toStateSnapshotObservation,
-} from './state-snapshot-revision.ts';
 import { toGroupStateSnapshotRepositoryKey } from './group-state-snapshot-repository-key.ts';
 import {
     decideGroupSnapshotCausalRevision,
-    GroupStateSnapshotIncomparableError,
+    GroupStateSnapshotIncomparableError
 } from './group-state-snapshot-revision.ts';
+import {
+    toStateSnapshotObservation,
+    type StateSnapshotObservation,
+    type StateSnapshotRevisionDecision
+} from './state-snapshot-revision.ts';
 
 export {
     fromGroupStateSnapshotRepositoryKey,
-    toGroupStateSnapshotRepositoryKey,
     type GroupStateSnapshotRepositoryRef,
+    toGroupStateSnapshotRepositoryKey
 } from './group-state-snapshot-repository-key.ts';
 export { GroupStateSnapshotIncomparableError } from './group-state-snapshot-revision.ts';
 
 export type GroupStateSnapshotRepositoryOptions =
-    & Omit<
-        ObservableLatestRepositoryOptions<string, GroupSnapshot>,
-        'ttlMs' | 'equals'
-    >
-    & { ttlMs: number };
+    & Omit<ObservableLatestRepositoryOptions<string, GroupSnapshot>, 'ttlMs' | 'equals'>
+    & { ttlMs: number; };
 
 export type GroupStateSnapshotWriteKind = ObservableValueEventType;
 
@@ -56,35 +53,29 @@ export type GroupStateSnapshotChange = Readonly<{
 }>;
 
 export type GroupStateSnapshotChangeListener = (
-    change: GroupStateSnapshotChange,
+    change: GroupStateSnapshotChange
 ) => void | Promise<void>;
 
-export const groupStateSnapshotRepositoryToken = newObservableLatestRepositoryToken<
-    string,
-    GroupSnapshot
->(
+export const groupStateSnapshotRepositoryToken = newObservableLatestRepositoryToken<string, GroupSnapshot>(
     'shared.repository.group-state-snapshots',
-    'Group state snapshot repository is not configured',
+    'Group state snapshot repository is not configured'
 );
 
 type GroupSessionIndex = Map<string, Set<string>>;
 
-const groupSessionIndexes = new WeakMap<
-    ObservableLatestRepository<string, GroupSnapshot>,
-    GroupSessionIndex
->();
+const groupSessionIndexes = new WeakMap<ObservableLatestRepository<string, GroupSnapshot>, GroupSessionIndex>();
 
 export function configureGroupStateSnapshotRepository(
     options: GroupStateSnapshotRepositoryOptions,
-    manager?: RepositoryManager,
+    manager?: RepositoryManager
 ): ObservableLatestRepository<string, GroupSnapshot> {
     const repository = configureObservableLatestRepository(
         groupStateSnapshotRepositoryToken,
         {
             ...options,
-            equals: jsonEquals,
+            equals: jsonEquals
         },
-        manager,
+        manager
     );
     groupSessionIndexes.set(repository, new Map());
     return repository;
@@ -92,7 +83,7 @@ export function configureGroupStateSnapshotRepository(
 
 export function onGroupStateSnapshotChange(
     listener: GroupStateSnapshotChangeListener,
-    manager?: RepositoryManager,
+    manager?: RepositoryManager
 ): () => void {
     const subscription = requireGroupStateSnapshotRepository(manager)
         .onChangeDo(async (event) => {
@@ -104,48 +95,46 @@ export function onGroupStateSnapshotChange(
 }
 
 export async function waitForGroupStateSnapshotChangesIdle(
-    manager?: RepositoryManager,
+    manager?: RepositoryManager
 ): Promise<void> {
     await requireGroupStateSnapshotRepository(manager).whenIdle();
 }
 
 function requireGroupStateSnapshotRepository(
-    manager?: RepositoryManager,
+    manager?: RepositoryManager
 ): ObservableLatestRepository<string, GroupSnapshot> {
     return requireObservableLatestRepository(groupStateSnapshotRepositoryToken, manager);
 }
 
 export function readableGroupStateSnapshotCache(
-    manager?: RepositoryManager,
+    manager?: RepositoryManager
 ): ReadableKeyedValues<string, GroupSnapshot> {
     return requireGroupStateSnapshotRepository(manager).readable();
 }
 
 export function findGroupStateSnapshotByRef(
     ref: GroupRef,
-    manager?: RepositoryManager,
+    manager?: RepositoryManager
 ): GroupSnapshot | undefined {
     return readObservableLatestRepositoryValue(
         groupStateSnapshotRepositoryToken,
         toGroupStateSnapshotRepositoryKey(ref),
-        manager,
+        manager
     );
 }
 
 export function findFirstGroupStateSnapshotRefSessionIdIsIn(
     sessionId: string,
-    manager?: RepositoryManager,
+    manager?: RepositoryManager
 ): GroupRef | undefined {
     return readAllObservableLatestRepository(groupStateSnapshotRepositoryToken, manager)
-        .find((snapshot) =>
-            snapshot.activeSessions.some((activeSession) => activeSession.sessionId === sessionId)
-        )
+        .find((snapshot) => snapshot.activeSessions.some((activeSession) => activeSession.sessionId === sessionId))
         ?.group;
 }
 
 export function findGroupStateSnapshotsBySessionIds(
     sessionIds: readonly string[],
-    manager?: RepositoryManager,
+    manager?: RepositoryManager
 ): GroupSnapshot[] {
     const uniqueSessionIds = [...new Set(sessionIds)];
     if (uniqueSessionIds.length === 0) {
@@ -154,9 +143,7 @@ export function findGroupStateSnapshotsBySessionIds(
 
     const repository = requireGroupStateSnapshotRepository(manager);
     const index = groupSessionIndexForRepository(repository);
-    const sessionGroupKeys = uniqueSessionIds.map((sessionId) =>
-        index.get(sessionId)
-    );
+    const sessionGroupKeys = uniqueSessionIds.map((sessionId) => index.get(sessionId));
 
     if (sessionGroupKeys.some((keys) => keys === undefined || keys.size === 0)) {
         return [];
@@ -165,7 +152,7 @@ export function findGroupStateSnapshotsBySessionIds(
     const [smallest, ...rest] = sessionGroupKeys
         .toSorted((left, right) => (left?.size ?? 0) - (right?.size ?? 0)) as [
             Set<string>,
-            ...Set<string>[],
+            ...Set<string>[]
         ];
     const snapshots: GroupSnapshot[] = [];
 
@@ -190,7 +177,7 @@ export function findGroupStateSnapshotsBySessionIds(
 
 export function setGroupStateSnapshots(
     snapshots: readonly GroupSnapshot[],
-    manager?: RepositoryManager,
+    manager?: RepositoryManager
 ): boolean {
     let isAnyUpdated = false;
     for (const snapshot of snapshots) {
@@ -203,7 +190,7 @@ export function setGroupStateSnapshots(
 
 export function setGroupStateSnapshot(
     snapshot: GroupSnapshot,
-    manager?: RepositoryManager,
+    manager?: RepositoryManager
 ): boolean {
     const decision = writeGroupStateSnapshot(snapshot, manager);
     if (decision === 'incomparable') {
@@ -214,16 +201,16 @@ export function setGroupStateSnapshot(
 
 export function observeGroupStateSnapshot(
     snapshot: GroupSnapshot,
-    manager?: RepositoryManager,
+    manager?: RepositoryManager
 ): StateSnapshotObservation {
     return toStateSnapshotObservation(
-        writeGroupStateSnapshot(snapshot, manager),
+        writeGroupStateSnapshot(snapshot, manager)
     );
 }
 
 function writeGroupStateSnapshot(
     snapshot: GroupSnapshot,
-    manager?: RepositoryManager,
+    manager?: RepositoryManager
 ): StateSnapshotRevisionDecision {
     const repository = requireGroupStateSnapshotRepository(manager);
     const repositoryKey = toGroupStateSnapshotRepositoryKey(snapshot.group);
@@ -237,7 +224,7 @@ function writeGroupStateSnapshot(
             repository,
             repositoryKey,
             previousForIndex,
-            snapshot,
+            snapshot
         );
         if (decision === 'advanced') {
             console.log(`Received updated group snapshot: ${snapshot.group.groupId}`);
@@ -250,7 +237,7 @@ function writeGroupStateSnapshot(
 
 export function removeGroupStateSnapshotByRef(
     ref: GroupRef,
-    manager?: RepositoryManager,
+    manager?: RepositoryManager
 ): boolean {
     const repository = requireGroupStateSnapshotRepository(manager);
     const repositoryKey = toGroupStateSnapshotRepositoryKey(ref);
@@ -260,7 +247,7 @@ export function removeGroupStateSnapshotByRef(
         removeGroupSnapshotFromSessionIndex(
             groupSessionIndexForRepository(repository),
             repositoryKey,
-            previous,
+            previous
         );
     }
     return removed;
@@ -269,7 +256,7 @@ export function removeGroupStateSnapshotByRef(
 export function removeGroupStateSnapshotIfUnchanged(
     ref: GroupRef,
     expected: GroupSnapshot,
-    manager?: RepositoryManager,
+    manager?: RepositoryManager
 ): boolean {
     const repository = requireGroupStateSnapshotRepository(manager);
     const repositoryKey = toGroupStateSnapshotRepositoryKey(ref);
@@ -278,14 +265,14 @@ export function removeGroupStateSnapshotIfUnchanged(
         removeGroupSnapshotFromSessionIndex(
             groupSessionIndexForRepository(repository),
             repositoryKey,
-            expected,
+            expected
         );
     }
     return removed;
 }
 
 export function getAllGroupStateSnapshots(
-    manager?: RepositoryManager,
+    manager?: RepositoryManager
 ): GroupSnapshot[] {
     return readAllObservableLatestRepository(groupStateSnapshotRepositoryToken, manager);
 }
@@ -302,7 +289,7 @@ function toGroupSnapshotVersion(snapshot: GroupSnapshot): number {
 }
 
 function groupSessionIndexForRepository(
-    repository: ObservableLatestRepository<string, GroupSnapshot>,
+    repository: ObservableLatestRepository<string, GroupSnapshot>
 ): GroupSessionIndex {
     let index = groupSessionIndexes.get(repository);
     if (!index) {
@@ -313,7 +300,7 @@ function groupSessionIndexForRepository(
 }
 
 function buildGroupSessionIndex(
-    repository: ObservableLatestRepository<string, GroupSnapshot>,
+    repository: ObservableLatestRepository<string, GroupSnapshot>
 ): GroupSessionIndex {
     const index: GroupSessionIndex = new Map();
     for (const [key, entry] of repository.entriesView()) {
@@ -329,7 +316,7 @@ function replaceGroupSnapshotInSessionIndex(
     repository: ObservableLatestRepository<string, GroupSnapshot>,
     key: string,
     previous: GroupSnapshot | undefined,
-    next: GroupSnapshot,
+    next: GroupSnapshot
 ): void {
     const index = groupSessionIndexForRepository(repository);
     removeGroupSnapshotFromSessionIndex(index, key, previous);
@@ -339,7 +326,7 @@ function replaceGroupSnapshotInSessionIndex(
 function addGroupSnapshotToSessionIndex(
     index: GroupSessionIndex,
     key: string,
-    snapshot: GroupSnapshot,
+    snapshot: GroupSnapshot
 ): void {
     for (const session of snapshot.activeSessions) {
         let groupKeys = index.get(session.sessionId);
@@ -354,7 +341,7 @@ function addGroupSnapshotToSessionIndex(
 function removeGroupSnapshotFromSessionIndex(
     index: GroupSessionIndex,
     key: string,
-    snapshot: GroupSnapshot | undefined,
+    snapshot: GroupSnapshot | undefined
 ): void {
     if (!snapshot) {
         removeGroupKeyFromSessionIndex(index, key);
@@ -376,7 +363,7 @@ function removeGroupSnapshotFromSessionIndex(
 
 function removeGroupKeyFromSessionIndex(
     index: GroupSessionIndex,
-    key: string,
+    key: string
 ): void {
     for (const [sessionId, groupKeys] of index) {
         groupKeys.delete(key);
@@ -388,22 +375,22 @@ function removeGroupKeyFromSessionIndex(
 
 function groupSnapshotHasSessionIds(
     snapshot: GroupSnapshot,
-    sessionIds: readonly string[],
+    sessionIds: readonly string[]
 ): boolean {
     const activeSessionIds = new Set(
-        snapshot.activeSessions.map((session) => session.sessionId),
+        snapshot.activeSessions.map((session) => session.sessionId)
     );
     return sessionIds.every((sessionId) => activeSessionIds.has(sessionId));
 }
 
 function toGroupStateSnapshotChange(
     event: ObservableKeyedValueEvent<string, GroupSnapshot>,
-    manager?: RepositoryManager,
+    manager?: RepositoryManager
 ): GroupStateSnapshotChange {
     const snapshot = event.value ?? event.previous;
     if (!snapshot) {
         throw new Error(
-            `Cannot build group snapshot change without a snapshot for key ${event.key}`,
+            `Cannot build group snapshot change without a snapshot for key ${event.key}`
         );
     }
 
@@ -415,11 +402,11 @@ function toGroupStateSnapshotChange(
         version: event.value
             ? toGroupSnapshotVersion(event.value)
             : event.previous
-                ? toGroupSnapshotVersion(event.previous)
-                : 0,
+            ? toGroupSnapshotVersion(event.previous)
+            : 0,
         previousVersion: event.previous
             ? toGroupSnapshotVersion(event.previous)
             : undefined,
-        manager,
+        manager
     };
 }

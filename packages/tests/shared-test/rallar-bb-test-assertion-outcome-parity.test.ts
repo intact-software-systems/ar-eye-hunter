@@ -4,11 +4,9 @@ import {
     evaluateComparatorOutcomeParityRows,
     evaluateCompleteArrayOutcomeParityRows,
     evaluatePollingOutcomeParityRows,
-    type AssertionOutcomeParityRow,
+    type AssertionOutcomeParityRow
 } from '../../shared-test/rallar-bb-test/conformance/assertion-outcome-parity.ts';
-import {
-    analyzeDistributedRunArtifactFiles,
-} from '../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import { analyzeDistributedRunArtifactFiles } from '../../shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 
 function expectRowsHold(rows: readonly AssertionOutcomeParityRow[]): void {
     expect(rows.length).toBeGreaterThan(0);
@@ -25,7 +23,7 @@ function pollingFetch(succeedOnAttempt: number | undefined): typeof fetch {
         const converged = succeedOnAttempt !== undefined && attempt >= succeedOnAttempt;
         return new Response(JSON.stringify({ attempt, converged }), {
             status: converged ? 200 : 503,
-            headers: { 'content-type': 'application/json' },
+            headers: { 'content-type': 'application/json' }
         });
     }) as typeof fetch;
 }
@@ -43,16 +41,16 @@ function failingRunFiles(code: string, message: string): Record<string, string> 
                 summary: {
                     participants: 1,
                     failedParticipants: 1,
-                    blockingFailures: 1,
-                },
+                    blockingFailures: 1
+                }
             },
             manifest: {
                 group: {
                     applicationId: 'rallar-server',
                     workspaceId: 'default',
-                    groupId: 'bb-group',
-                },
-            },
+                    groupId: 'bb-group'
+                }
+            }
         }),
         'results.jsonl': JSON.stringify({
             resultKey: `controller-01:${code}`,
@@ -63,9 +61,9 @@ function failingRunFiles(code: string, message: string): Record<string, string> 
             commandId: 'assertion-command',
             actual: {
                 code,
-                message,
-            },
-        }),
+                message
+            }
+        })
     };
 }
 
@@ -90,8 +88,8 @@ describe('rallar-bb-test assertion outcome parity', () => {
         const analysis = analyzeDistributedRunArtifactFiles({
             files: failingRunFiles(
                 'RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED',
-                'Wait absence was violated: a runtime event matched before the window closed.',
-            ),
+                'Wait absence was violated: a runtime event matched before the window closed.'
+            )
         });
 
         expect(analysis.status).toBe('failed');
@@ -105,8 +103,8 @@ describe('rallar-bb-test assertion outcome parity', () => {
         const analysis = analyzeDistributedRunArtifactFiles({
             files: failingRunFiles(
                 'RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED',
-                'Loop until mode exhausted 3 attempt(s) without a fully passing iteration.',
-            ),
+                'Loop until mode exhausted 3 attempt(s) without a fully passing iteration.'
+            )
         });
 
         expect(analysis.status).toBe('failed');

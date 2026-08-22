@@ -3,19 +3,14 @@ import {
     fetchControlRunSnapshot,
     fetchControlServerSnapshot,
     fetchDistributedRun,
-    fetchDistributedRuns,
+    fetchDistributedRuns
 } from '../../../control-run-manager.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
-import { deriveDistributedDiagnosticSelection } from
-    '../../diagnostics/context/legacy-diagnostic-run-selection.ts';
-import { useLatestRequestGuard } from
-    '../shared/use-latest-request-guard.ts';
-import { RUN_MANAGER_SNAPSHOT_BOUNDS } from
-    '../shared/control-snapshot-bounds.ts';
-import type { DistributedRecipeBuilderModel } from
-    './use-distributed-recipe-builder.ts';
-import type { DistributedRecipesRemoteStateModel } from
-    './use-distributed-recipes-remote-state.ts';
+import { deriveDistributedDiagnosticSelection } from '../../diagnostics/context/legacy-diagnostic-run-selection.ts';
+import { RUN_MANAGER_SNAPSHOT_BOUNDS } from '../shared/control-snapshot-bounds.ts';
+import { useLatestRequestGuard } from '../shared/use-latest-request-guard.ts';
+import type { DistributedRecipeBuilderModel } from './use-distributed-recipe-builder.ts';
+import type { DistributedRecipesRemoteStateModel } from './use-distributed-recipes-remote-state.ts';
 
 type DistributedRecipesSelectionActionsInput = Readonly<{
     bootstrap: RallarBlackBoxBootstrapConfig;
@@ -28,7 +23,7 @@ export function useDistributedRecipesSelectionActions({
     bootstrap,
     control,
     remote,
-    builder,
+    builder
 }: DistributedRecipesSelectionActionsInput) {
     const requests = useLatestRequestGuard();
     const {
@@ -46,13 +41,13 @@ export function useDistributedRecipesSelectionActions({
         setLastAction,
         diagnosticControlRunId,
         diagnosticDistributedRunId,
-        diagnosticSelectionAuthority,
+        diagnosticSelectionAuthority
     } = remote;
     const { distributedRunId, setDistributedRunId } = builder;
 
     const refresh = async (
         preferredRunId = selectedRunId,
-        preferredDistributedRunId = distributedRunId,
+        preferredDistributedRunId = distributedRunId
     ): Promise<void> => {
         const request = requests.begin();
         setBusyAction('refresh');
@@ -62,11 +57,13 @@ export function useDistributedRecipesSelectionActions({
                 fetchControlServerSnapshot({
                     baseUrl,
                     token,
-                    bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
+                    bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
                 }),
-                fetchDistributedRuns({ baseUrl, token }),
+                fetchDistributedRuns({ baseUrl, token })
             ]);
-            if (!request.isCurrent()) return;
+            if (!request.isCurrent()) {
+                return;
+            }
 
             setSnapshot(serverSnapshot);
             setDistributedRuns(distributedList);
@@ -75,9 +72,9 @@ export function useDistributedRecipesSelectionActions({
                     requestedControlRunId: diagnosticControlRunId,
                     requestedDistributedRunId: diagnosticDistributedRunId,
                     availableControlRunIds: serverSnapshot.runs.map(
-                        run => run.runId,
+                        (run) => run.runId
                     ),
-                    distributedRuns: distributedList,
+                    distributedRuns: distributedList
                 })
                 : undefined;
             if (diagnosticSelection?.issue) {
@@ -86,23 +83,22 @@ export function useDistributedRecipesSelectionActions({
                 setSelectedDistributedRun(undefined);
                 setArtifactBundle(undefined);
                 diagnosticSelectionAuthority.reportIssue(
-                    diagnosticSelection.issue,
+                    diagnosticSelection.issue
                 );
                 setLastAction('Diagnostic run selection unavailable.');
                 return;
             }
 
             const knownRunIds = new Set(
-                serverSnapshot.runs.map(option => option.runId),
+                serverSnapshot.runs.map((option) => option.runId)
             );
             const nextRunId = diagnosticSelection?.controlRunId ?? [
                 preferredRunId,
                 control.runId,
                 bootstrap.runId,
-                serverSnapshot.runs[0]?.runId,
-            ].find(candidate => candidate && knownRunIds.has(candidate)) ?? '';
-            const nextDistributedRunId =
-                diagnosticSelection?.distributedRunId ??
+                serverSnapshot.runs[0]?.runId
+            ].find((candidate) => candidate && knownRunIds.has(candidate)) ?? '';
+            const nextDistributedRunId = diagnosticSelection?.distributedRunId ??
                 preferredDistributedRunId;
             setSelectedRunId(nextRunId);
             const nextRun = nextRunId
@@ -110,28 +106,35 @@ export function useDistributedRecipesSelectionActions({
                     baseUrl,
                     token,
                     runId: nextRunId,
-                    bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
+                    bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
                 })
                 : undefined;
-            if (!request.isCurrent()) return;
+            if (!request.isCurrent()) {
+                return;
+            }
 
             setRun(nextRun);
-            setSelectedDistributedRun(distributedList.find(item =>
+            setSelectedDistributedRun(distributedList.find((item) =>
                 item.distributedRunId === nextDistributedRunId &&
-                (!diagnosticSelection || item.controlRunId === nextRunId)));
+                (!diagnosticSelection || item.controlRunId === nextRunId)
+            ));
             setArtifactBundle(undefined);
             if (diagnosticSelection) {
                 diagnosticSelectionAuthority.finishInitialSelection();
             }
             setLastAction(
-                `Refreshed ${serverSnapshot.runs.length} run(s), ${distributedList.length} distributed run(s).`,
+                `Refreshed ${serverSnapshot.runs.length} run(s), ${distributedList.length} distributed run(s).`
             );
-        } catch (caught) {
+        }
+        catch (caught) {
             if (request.isCurrent()) {
                 setError(caught instanceof Error ? caught.message : String(caught));
             }
-        } finally {
-            if (request.isCurrent()) setBusyAction(undefined);
+        }
+        finally {
+            if (request.isCurrent()) {
+                setBusyAction(undefined);
+            }
         }
     };
 
@@ -146,27 +149,34 @@ export function useDistributedRecipesSelectionActions({
             return;
         }
         setBusyAction('load-run');
-        if (!diagnosticSelectionAuthority.active) setError(undefined);
+        if (!diagnosticSelectionAuthority.active) {
+            setError(undefined);
+        }
         try {
             const loaded = await fetchControlRunSnapshot({
                 baseUrl,
                 token,
                 runId,
-                bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
+                bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
-            if (!request.isCurrent()) return;
+            if (!request.isCurrent()) {
+                return;
+            }
             setRun(loaded);
-            setSelectedDistributedRun(current =>
-                current?.controlRunId === runId ? current : undefined);
+            setSelectedDistributedRun((current) => current?.controlRunId === runId ? current : undefined);
             diagnosticSelectionAuthority.acceptManualSelection();
             setError(undefined);
             setLastAction(`Loaded ${runId}.`);
-        } catch (caught) {
+        }
+        catch (caught) {
             if (request.isCurrent() && !diagnosticSelectionAuthority.active) {
                 setError(caught instanceof Error ? caught.message : String(caught));
             }
-        } finally {
-            if (request.isCurrent()) setBusyAction(undefined);
+        }
+        finally {
+            if (request.isCurrent()) {
+                setBusyAction(undefined);
+            }
         }
     };
 
@@ -174,21 +184,27 @@ export function useDistributedRecipesSelectionActions({
         const request = requests.begin();
         setDistributedRunId(id);
         setBusyAction('load-distributed-run');
-        if (!diagnosticSelectionAuthority.active) setError(undefined);
+        if (!diagnosticSelectionAuthority.active) {
+            setError(undefined);
+        }
         try {
             const loaded = await fetchDistributedRun({
                 baseUrl,
                 token,
-                distributedRunId: id,
+                distributedRunId: id
             });
-            if (!request.isCurrent()) return;
+            if (!request.isCurrent()) {
+                return;
+            }
             const controlRun = await fetchControlRunSnapshot({
                 baseUrl,
                 token,
                 runId: loaded.controlRunId,
-                bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
+                bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
-            if (!request.isCurrent()) return;
+            if (!request.isCurrent()) {
+                return;
+            }
 
             setSelectedDistributedRun(loaded);
             setSelectedRunId(loaded.controlRunId);
@@ -197,12 +213,16 @@ export function useDistributedRecipesSelectionActions({
             diagnosticSelectionAuthority.acceptManualSelection();
             setError(undefined);
             setLastAction(`Loaded ${id}.`);
-        } catch (caught) {
+        }
+        catch (caught) {
             if (request.isCurrent() && !diagnosticSelectionAuthority.active) {
                 setError(caught instanceof Error ? caught.message : String(caught));
             }
-        } finally {
-            if (request.isCurrent()) setBusyAction(undefined);
+        }
+        finally {
+            if (request.isCurrent()) {
+                setBusyAction(undefined);
+            }
         }
     };
 

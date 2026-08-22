@@ -1,10 +1,10 @@
-import { addMemberVertex, insertEdgeFromGlobal, makeMember, } from './complete-graph-helpers.ts';
 import { TreeGraph, VertexId } from '../graph-props.ts';
 import { cloneGraph } from '../graph/graph-algs.ts';
+import { addMemberVertex, insertEdgeFromGlobal, makeMember } from './complete-graph-helpers.ts';
 
 export function createCMGraph(
     globalGraph: TreeGraph,
-    groupMembers: ReadonlySet<VertexId>,
+    groupMembers: ReadonlySet<VertexId>
 ): TreeGraph {
     const inputT = cloneGraphEmpty(globalGraph);
 
@@ -26,14 +26,15 @@ export function updateCMTree(
     currentGraph: TreeGraph,
     globalGraph: TreeGraph,
     groupMembers: ReadonlySet<VertexId>,
-    newVertex: VertexId,
+    newVertex: VertexId
 ): TreeGraph {
     const inputT = cloneGraph(currentGraph);
 
     if (groupMembers.has(newVertex)) {
         if (inputT.hasNode(newVertex)) {
             makeMember(inputT, newVertex);
-        } else {
+        }
+        else {
             addMemberVertex(inputT, globalGraph, newVertex);
         }
 
@@ -42,7 +43,8 @@ export function updateCMTree(
                 insertEdgeFromGlobal(inputT, globalGraph, member, newVertex);
             }
         }
-    } else if (inputT.hasNode(newVertex)) {
+    }
+    else if (inputT.hasNode(newVertex)) {
         inputT.dropNode(newVertex);
     }
 

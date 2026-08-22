@@ -28,7 +28,7 @@ export type NormalizedALRuntimeStoreRetentionConfig = Readonly<{
 }>;
 
 export function normalizeALRuntimeStoreRetention(
-    config?: ALRuntimeStoreRetentionConfig,
+    config?: ALRuntimeStoreRetentionConfig
 ): NormalizedALRuntimeStoreRetentionConfig {
     const ephemeralTtlMs = normalizeTtlMs(config?.ephemeralTtlMs ?? DEFAULT_AL_EPHEMERAL_TTL_MS);
     const repositoryTtlMs = normalizeTtlMs(config?.repositoryTtlMs ?? DEFAULT_AL_REPOSITORY_TTL_MS);
@@ -43,13 +43,13 @@ export function normalizeALRuntimeStoreRetention(
         durableEffectTtlMs: normalizeTtlMs(config?.durableEffectTtlMs ?? ephemeralTtlMs),
         repairAttemptTtlMs: normalizeTtlMs(config?.repairAttemptTtlMs ?? ephemeralTtlMs),
         sentMessageTtlMs: normalizeTtlMs(config?.sentMessageTtlMs ?? repositoryTtlMs),
-        bufferedMessageTtlMs: normalizeTtlMs(config?.bufferedMessageTtlMs ?? repositoryTtlMs),
+        bufferedMessageTtlMs: normalizeTtlMs(config?.bufferedMessageTtlMs ?? repositoryTtlMs)
     };
 }
 
 export function toExpireAtTimestampFromNow(
     ttlMs: number,
-    nowMs = Date.now(),
+    nowMs = Date.now()
 ): number {
     return nowMs + normalizeTtlMs(ttlMs);
 }
@@ -57,7 +57,7 @@ export function toExpireAtTimestampFromNow(
 export function resolveExpireAtTimestampWithFallback(
     expireAtTimestamp: number | undefined,
     fallbackTtlMs: number,
-    nowMs = Date.now(),
+    nowMs = Date.now()
 ): number {
     return expireAtTimestamp ?? toExpireAtTimestampFromNow(fallbackTtlMs, nowMs);
 }

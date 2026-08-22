@@ -8,13 +8,10 @@ import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceI
 import type { RtcTopologyPublication } from '../rtc-topology-publication-contract.ts';
 import { validateRtcTopologyPublication } from '../rtc-topology-publication-validation.ts';
 import { validatePersistedALMessage } from './al-message-persistence-validation.ts';
-import {
-    toAppQueueCreatedBy,
-    toAppQueueKey,
-} from './app-inbox-queue-key.ts';
+import { toAppQueueCreatedBy, toAppQueueKey } from './app-inbox-queue-key.ts';
 
 export function computeRtcTopologyPublicationOutbox(
-    publication: RtcTopologyPublication,
+    publication: RtcTopologyPublication
 ): ResourceEntry {
     validateRtcTopologyPublication(publication, publication.groupRef);
     const publicationMessage = publication.message;
@@ -28,8 +25,8 @@ export function computeRtcTopologyPublicationOutbox(
         ...publicationMessage,
         targets: {
             ...publicationMessage.targets,
-            recipientPeerIds: [...publication.recipientSessionIds],
-        },
+            recipientPeerIds: [...publication.recipientSessionIds]
+        }
     };
     validatePersistedALMessage(message);
     const createdBy = message.audit?.createdBy;
@@ -50,7 +47,7 @@ export function computeRtcTopologyPublicationOutbox(
         key: toAppQueueKey({
             topicId: message.route.topicId,
             resourceId: message.id.msgId,
-            contextId: message.route.contextId,
+            contextId: message.route.contextId
         }),
         resource: JSON.stringify(message),
         typeId: EnqueuedType.WS_OUTBOX,
@@ -60,16 +57,16 @@ export function computeRtcTopologyPublicationOutbox(
             createdBy: toAppQueueCreatedBy(createdBy),
             createdTs,
             expiryTs: Temporal.Instant.fromEpochMilliseconds(
-                expiresAtMs,
-            ),
+                expiresAtMs
+            )
         },
-        dequeueAudit: { attempts: 0 },
+        dequeueAudit: { attempts: 0 }
     };
 }
 
 export async function writeRtcTopologyPublicationOutbox(
     transaction: PSqlTransactionSql,
-    publication: RtcTopologyPublication,
+    publication: RtcTopologyPublication
 ): Promise<ResourceEntry> {
     const entry = computeRtcTopologyPublicationOutbox(publication);
     await new ResourceInboxRepository(transaction).writeIfAbsentOrMatch(entry);

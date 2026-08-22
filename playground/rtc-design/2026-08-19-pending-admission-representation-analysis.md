@@ -41,7 +41,7 @@ authorization; the only cost at a new call site is having the policy and roster 
 
 **The mutation read is deliberately narrow.** `lifecyclePolicy` and the active roster load only for
 lifecycle-transition operations (`read-group-mutation.ts:110-115`), and
-`validate-group-mutation-read.ts:106-131` *forbids* the roster read on every other operation. The
+`validate-group-mutation-read.ts:106-131` _forbids_ the roster read on every other operation. The
 join path reads neither today — extending both, symmetrically with the validator, is part of this
 slice's wiring.
 
@@ -105,7 +105,7 @@ The honest costs:
   (`PUT .../members/{self}` with `status: 'active'`) re-runs `canJoinGroup` today; under
   `manager-approval` it must land `pending` exactly like the join route, or the park is bypassable
   by switching endpoints. Admin activation of another principal (`canActivateGroupMember`) stays
-  governance — it *is* a grant, expressed through the existing surface.
+  governance — it _is_ a grant, expressed through the existing surface.
 - Invite-row precedence: an invite and a request occupy the same row. The rule is the symmetry
   rule: whichever consent lands second completes to `active`; a governance invite issued to a
   `pending` member is a grant.
@@ -135,7 +135,7 @@ predicate or an added arm at an existing enforcement point.
 Two supporting rules ride along:
 
 - **Grant/decline authorization is manager-only** (`resolveGroupLifecycleManagers` at the command,
-  same zero-extra-cost resolution as 4b), *not* widened to owner/admin. Governance already has its
+  same zero-extra-cost resolution as 4b), _not_ widened to owner/admin. Governance already has its
   own consent channel — the invite — so an owner in a zero-manager group recovers by inviting (the
   group's consent), never by impersonating a manager. This keeps "manager-approval" meaning what it
   says while preserving the slice 4 invariant that manager absence blocks only manager-assigned
@@ -145,19 +145,19 @@ Two supporting rules ride along:
   'manager-approval'` with `manager.selection: 'none'` can never grant and is rejected at policy
   validation beside the `manager-initiator-without-manager` deadlock it rhymes with. Transient
   zero-manager states (assigned manager not yet joined, all managers departed) stay legal —
-  recoverable via invite — only the *permanently* granterless combination is invalid.
+  recoverable via invite — only the _permanently_ granterless combination is invalid.
 
 ## Admission binding phases (settling correction 5 per mode)
 
 Correction 5 says admission binds on entry to the phase it names, not on activation. The shipped
 vocabulary dropped the phase-suffixed names, so the binding phase must be fixed per mode:
 
-| Mode / field | Binds | Rationale |
-| --- | --- | --- |
-| `open` | never gates | — |
-| `manager-approval` | every state, from creation | The managed archetype is curated membership from the lobby onward; a mode with no phase in its name is a standing rule. |
-| `untilEpochMs` / `untilMemberCount` | every state, from creation | Absolute windows; correction 5's own example (drop-in social never activating) demands they bind without activation. When the window closes the mode degrades to `closed`. |
-| `closed` | **every state except FORMING** — *decision to confirm* | See below. |
+| Mode / field                        | Binds                                                  | Rationale                                                                                                                                                                  |
+| ----------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `open`                              | never gates                                            | —                                                                                                                                                                          |
+| `manager-approval`                  | every state, from creation                             | The managed archetype is curated membership from the lobby onward; a mode with no phase in its name is a standing rule.                                                    |
+| `untilEpochMs` / `untilMemberCount` | every state, from creation                             | Absolute windows; correction 5's own example (drop-in social never activating) demands they bind without activation. When the window closes the mode degrades to `closed`. |
+| `closed`                            | **every state except FORMING** — _decision to confirm_ | See below.                                                                                                                                                                 |
 
 `closed` is the one genuine choice. The design table said "no joins after activation"; binding at
 ACTIVE entry (design-literal) leaves ESTABLISHING joinable — exactly when the match preset
@@ -185,7 +185,7 @@ timers):
    entries stale-drop by epoch; pending rows are not timer entries and are unaffected.
 2. **Grant authorization is evaluated at grant time against the current epoch.** The pending row
    records no epoch (correctly — it is a consent, not a formation fact); the grant command resolves
-   managers from the *current* electorate, epoch, and live roster, exactly like any manager-gated
+   managers from the _current_ electorate, epoch, and live roster, exactly like any manager-gated
    command. A manager elected after the park can grant it; a manager who departed since cannot.
 3. **A grant in each lifecycle state means exactly what an ordinary join means there today:**
    - **FORMING**: the member becomes active; planning is held (decision 2.4), and they enter the
@@ -203,7 +203,7 @@ timers):
    already epoch-pinned (a granted member cannot enter the electorate mid-epoch; under
    `assigned`/`creator` they enter only the liveness filter, which is 4b's recorded
    joining-restores-the-manager semantics). And roster stability during establishment is what
-   `closed` admission is *for* — an archetype that wants a frozen mesh declares it; under
+   `closed` admission is _for_ — an archetype that wants a frozen mesh declares it; under
    `manager-approval` the timing judgment belongs to the manager holding the grant.
 
 In short: **it composes with no new machinery**, and each of the four statements above is pinned by
@@ -226,8 +226,8 @@ One added denial at the existing per-message policy predicate, plus acquisition:
   explicit classification the gate silently blocks pre-activation collaborative documents, which
   the terminology doctrine separates from match authority ("Rallar CRDT = collaborative authored
   documents, not competitive match authority"). The exemption is a visible topic-id classification
-  at the authorizer, not an accident of ordering. *(Default taken unless objected: the gate covers
-  plain WS-relayed app data only.)*
+  at the authorizer, not an accident of ordering. _(Default taken unless objected: the gate covers
+  plain WS-relayed app data only.)_
 - Out of scope, unchanged: RTC data-channel traffic (`realtime.room` is peer-to-peer; the server
   only signals), presence/state-sync/signaling/RTT reserved topics (activation must remain
   reachable), and the pre-existing ungated `scope: 'all'` broadcast hole.
@@ -251,7 +251,7 @@ different runtime surface (WS relay, no AppInbox mutation):
   the command census, routes in the existing admission route file under the `join-admission` quota;
   OpenAPI; the recipes below; the mandatory medium-scale gate.
 - **5c — data-policy gate and recipe.** The `canSendRoomMessage` predicate + authorizer policy read
-  + CRDT classification + its recipe. Small, independent, separately revertible.
+  - CRDT classification + its recipe. Small, independent, separately revertible.
 
 (A two-way split folding 5c into 5b is workable if three PRs feel heavy; the data gate's different
 blast radius is the argument for three.)

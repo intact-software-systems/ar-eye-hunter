@@ -28,10 +28,7 @@ export type RelicExpeditionSetupMetadata = Readonly<{
     blueprintId?: string;
 }>;
 
-export type RelicPublicSetupMetadata = Omit<
-    RelicExpeditionSetupMetadata,
-    'seed' | 'blueprintId'
->;
+export type RelicPublicSetupMetadata = Omit<RelicExpeditionSetupMetadata, 'seed' | 'blueprintId'>;
 
 export type RelicCharacterId =
     | 'kael-ironstride'
@@ -55,7 +52,7 @@ export const RELIC_CHARACTER_IDS: readonly RelicCharacterId[] = [
     'bronn-flintward',
     'ilyra-dawnshard',
     'marek-gloomglass',
-    'zaya-stormvein',
+    'zaya-stormvein'
 ];
 
 export type RelicEventType =
@@ -304,16 +301,14 @@ export function toPublicRelicSnapshot(state: RelicGameState): RelicPublicSnapsho
         submittedPlayerIds: state.pendingActions.map((action) => action.playerId),
         events: state.events.slice(-48),
         winnerIds: state.winnerIds,
-        setup: toPublicSetup(state.setup),
+        setup: toPublicSetup(state.setup)
     };
 }
 
 function toPublicRelics(
-    relics: readonly RelicDefinition[],
+    relics: readonly RelicDefinition[]
 ): readonly RelicDefinition[] {
-    const discovered = relics.filter((relic) =>
-        relic.foundBy || relic.carriedBy || relic.escapedBy
-    );
+    const discovered = relics.filter((relic) => relic.foundBy || relic.carriedBy || relic.escapedBy);
     const occupiedIds = new Set(discovered.map((relic) => relic.id));
     const hidden = Array.from(
         { length: relics.length - discovered.length },
@@ -327,9 +322,9 @@ function toPublicRelics(
                 id,
                 name: 'Unknown relic',
                 value: 0,
-                roomId: '',
+                roomId: ''
             };
-        },
+        }
     );
 
     // Preserve HUD cardinality without retaining a hidden relic's source index.
@@ -337,7 +332,7 @@ function toPublicRelics(
 }
 
 function toPublicSetup(
-    setup: RelicExpeditionSetupMetadata | undefined,
+    setup: RelicExpeditionSetupMetadata | undefined
 ): RelicPublicSetupMetadata | undefined {
     if (!setup) {
         return undefined;
@@ -447,7 +442,7 @@ function isRelicDefinition(value: unknown): value is RelicDefinition {
 }
 
 function isRelicRoomInvestigation(
-    value: unknown,
+    value: unknown
 ): value is RelicRoomInvestigation {
     return isRecord(value) &&
         typeof value.roomId === 'string' &&
@@ -465,7 +460,7 @@ function isRelicRoomInvestigation(
 }
 
 function isRelicRoomInvestigationEffect(
-    value: unknown,
+    value: unknown
 ): value is RelicRoomInvestigationEffect {
     return value === 'ordinary-search' || value === 'map-fragment' ||
         value === 'rune-reading' || value === 'safe-path' ||
@@ -525,7 +520,7 @@ function isRelicAnimationCue(value: unknown): value is RelicAnimationCue {
 }
 
 function isRelicAnimationCueType(
-    value: unknown,
+    value: unknown
 ): value is RelicAnimationCueType {
     return value === 'camera_move' || value === 'search_altar' ||
         value === 'relic_reveal' || value === 'relic_pickup' ||
@@ -535,7 +530,7 @@ function isRelicAnimationCueType(
 }
 
 function isRelicPublicSetupMetadata(
-    value: unknown,
+    value: unknown
 ): value is RelicPublicSetupMetadata {
     return isRecord(value) &&
         value.schemaVersion === 1 &&

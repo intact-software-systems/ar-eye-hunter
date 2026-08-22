@@ -4,7 +4,7 @@ import {
     RallarAiError,
     type RallarAiJsonProvider,
     type RallarAiJsonRequest,
-    type RallarAiJsonResult,
+    type RallarAiJsonResult
 } from '@shared/rallar-ai/mod.ts';
 
 export type RallarAiWebLlmMessage = Readonly<{
@@ -22,7 +22,7 @@ export type RallarAiWebLlmGenerateInput<TContext = unknown> = Readonly<{
 
 export type RallarAiWebLlmRuntime = Readonly<{
     generateJson?: <TContext = unknown>(
-        input: RallarAiWebLlmGenerateInput<TContext>,
+        input: RallarAiWebLlmGenerateInput<TContext>
     ) => Promise<unknown>;
     chat?: Readonly<{
         completions?: Readonly<{
@@ -44,7 +44,7 @@ export type CreateWebLlmRallarAiProviderOptions = Readonly<{
 }>;
 
 export function createWebLlmRallarAiProvider(
-    options: CreateWebLlmRallarAiProviderOptions,
+    options: CreateWebLlmRallarAiProviderOptions
 ): RallarAiJsonProvider {
     return {
         providerId: options.providerId ?? 'webllm',
@@ -57,16 +57,16 @@ export function createWebLlmRallarAiProvider(
             maxContextTokens: options.maxContextTokens,
             maxOutputTokens: options.maxOutputTokens,
             typicalColdStartMs: options.typicalColdStartMs,
-            target: 'browser',
+            target: 'browser'
         },
         async generateJson<TValue = unknown, TContext = unknown>(
-            request: RallarAiJsonRequest<TContext>,
+            request: RallarAiJsonRequest<TContext>
         ): Promise<RallarAiJsonResult<TValue>> {
             const runtime = options.runtime ?? await options.loadRuntime?.();
             if (!runtime) {
                 throw new RallarAiError(
                     'invalid-configuration',
-                    'A WebLLM runtime or lazy runtime loader is required.',
+                    'A WebLLM runtime or lazy runtime loader is required.'
                 );
             }
 
@@ -76,14 +76,14 @@ export function createWebLlmRallarAiProvider(
                 request,
                 messages: toWebLlmMessages(request, options.systemPrompt),
                 schema: request.schema,
-                signal: request.signal,
+                signal: request.signal
             });
             const parsed = parseRallarAiJson(rawText);
             if (!parsed.ok) {
                 throw new RallarAiError(
                     'invalid-json',
                     'WebLLM returned a response that was not valid JSON.',
-                    parsed.validation,
+                    parsed.validation
                 );
             }
 
@@ -93,45 +93,47 @@ export function createWebLlmRallarAiProvider(
                 value: parsed.value as TValue,
                 rawText,
                 startedAtEpochMs,
-                completedAtEpochMs: Date.now(),
+                completedAtEpochMs: Date.now()
             });
-        },
+        }
     };
 }
 
 async function runWebLlmRuntime<TContext>(
     runtime: RallarAiWebLlmRuntime,
-    input: RallarAiWebLlmGenerateInput<TContext>,
+    input: RallarAiWebLlmGenerateInput<TContext>
 ): Promise<string> {
     if (runtime.generateJson) {
         return extractWebLlmText(await runtime.generateJson(input));
     }
     if (runtime.chat?.completions?.create) {
-        return extractWebLlmText(await runtime.chat.completions.create({
-            model: input.modelId,
-            messages: input.messages,
-            response_format: {
-                type: 'json_schema',
-                json_schema: {
-                    name: input.request.schemaId,
-                    schema: input.schema,
+        return extractWebLlmText(
+            await runtime.chat.completions.create({
+                model: input.modelId,
+                messages: input.messages,
+                response_format: {
+                    type: 'json_schema',
+                    json_schema: {
+                        name: input.request.schemaId,
+                        schema: input.schema
+                    }
                 },
-            },
-            temperature: input.request.temperature,
-            max_tokens: input.request.maxOutputTokens,
-            signal: input.signal,
-        }));
+                temperature: input.request.temperature,
+                max_tokens: input.request.maxOutputTokens,
+                signal: input.signal
+            })
+        );
     }
 
     throw new RallarAiError(
         'invalid-configuration',
-        'WebLLM runtime must expose generateJson(...) or chat.completions.create(...).',
+        'WebLLM runtime must expose generateJson(...) or chat.completions.create(...).'
     );
 }
 
 function toWebLlmMessages<TContext>(
     request: RallarAiJsonRequest<TContext>,
-    systemPrompt?: string,
+    systemPrompt?: string
 ): readonly RallarAiWebLlmMessage[] {
     return [
         {
@@ -139,8 +141,8 @@ function toWebLlmMessages<TContext>(
             content: [
                 systemPrompt,
                 'Return only JSON that conforms to the provided JSON schema.',
-                `Schema JSON: ${JSON.stringify(request.schema)}`,
-            ].filter((part): part is string => Boolean(part)).join('\n\n'),
+                `Schema JSON: ${JSON.stringify(request.schema)}`
+            ].filter((part): part is string => Boolean(part)).join('\n\n')
         },
         {
             role: 'user',
@@ -148,9 +150,9 @@ function toWebLlmMessages<TContext>(
                 request.prompt,
                 request.context === undefined
                     ? undefined
-                    : `Context JSON: ${JSON.stringify(request.context)}`,
-            ].filter((part): part is string => Boolean(part)).join('\n\n'),
-        },
+                    : `Context JSON: ${JSON.stringify(request.context)}`
+            ].filter((part): part is string => Boolean(part)).join('\n\n')
+        }
     ];
 }
 

@@ -1,22 +1,16 @@
-import {
-    useCallback,
-    useLayoutEffect,
-    useMemo,
-    useRef,
-    useState,
-} from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import {
     createHistoryFilterPreset,
     removeHistoryFilterPreset,
     upsertHistoryFilterPreset,
-    type HistoryFilterPreset,
+    type HistoryFilterPreset
 } from './history-filter-contract.ts';
 import {
     readHistoryFilterPresets,
     writeHistoryFilterPresets,
     type HistoryFilterPresetReadStatus,
-    type HistoryFilterStorage,
+    type HistoryFilterStorage
 } from './history-filter-storage.ts';
 
 export type HistoryFilterPresetControllerStatus =
@@ -35,24 +29,29 @@ type HistoryFilterPresetModel = Readonly<{
     status: HistoryFilterPresetControllerStatus;
 }>;
 
-export function useHistoryFilterPresets(input: Readonly<{
-    committedUrlState: RecipeConsoleUrlState;
-    storage?: HistoryFilterStorage | null;
-}>): HistoryFilterPresetController {
+export function useHistoryFilterPresets(
+    input: Readonly<{
+        committedUrlState: RecipeConsoleUrlState;
+        storage?: HistoryFilterStorage | null;
+    }>
+): HistoryFilterPresetController {
     const storage = useMemo(
-        () => input.storage === undefined
-            ? browserHistoryFilterStorage()
-            : input.storage ?? undefined,
-        [input.storage],
+        () =>
+            input.storage === undefined
+                ? browserHistoryFilterStorage()
+                : input.storage ?? undefined,
+        [input.storage]
     );
     const [model, setModel] = useState<HistoryFilterPresetModel>(
-        () => readHistoryFilterPresets(storage),
+        () => readHistoryFilterPresets(storage)
     );
     const modelRef = useRef(model);
     const storageRef = useRef(storage);
 
     useLayoutEffect(() => {
-        if (storageRef.current === storage) return;
+        if (storageRef.current === storage) {
+            return;
+        }
         storageRef.current = storage;
         const next = readHistoryFilterPresets(storage);
         modelRef.current = next;
@@ -71,16 +70,18 @@ export function useHistoryFilterPresets(input: Readonly<{
         }
         const nextPreset = createHistoryFilterPreset(
             name,
-            input.committedUrlState,
+            input.committedUrlState
         );
         if (!nextPreset) {
             commitModel({ ...current, status: 'invalid' });
             return;
         }
         const presets = upsertHistoryFilterPreset(current.presets, nextPreset);
-        commitModel(writeHistoryFilterPresets(storage, presets)
-            ? { status: 'ready', presets }
-            : { ...current, status: 'write-failed' });
+        commitModel(
+            writeHistoryFilterPresets(storage, presets)
+                ? { status: 'ready', presets }
+                : { ...current, status: 'write-failed' }
+        );
     }, [commitModel, input.committedUrlState, storage]);
 
     const remove = useCallback((name: string): void => {
@@ -89,24 +90,29 @@ export function useHistoryFilterPresets(input: Readonly<{
             return;
         }
         const presets = removeHistoryFilterPreset(current.presets, name);
-        commitModel(writeHistoryFilterPresets(storage, presets)
-            ? { status: 'ready', presets }
-            : { ...current, status: 'write-failed' });
+        commitModel(
+            writeHistoryFilterPresets(storage, presets)
+                ? { status: 'ready', presets }
+                : { ...current, status: 'write-failed' }
+        );
     }, [commitModel, storage]);
 
     return {
         presets: model.presets,
         status: model.status,
         save,
-        remove,
+        remove
     };
 }
 
 function browserHistoryFilterStorage(): HistoryFilterStorage | undefined {
-    if (typeof window === 'undefined') return undefined;
+    if (typeof window === 'undefined') {
+        return undefined;
+    }
     try {
         return window.localStorage;
-    } catch {
+    }
+    catch {
         return undefined;
     }
 }

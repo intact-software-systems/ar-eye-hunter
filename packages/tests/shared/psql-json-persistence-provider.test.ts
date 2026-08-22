@@ -1,28 +1,25 @@
-import { describe, expect, it } from 'vitest';
-import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { PSqlJsonPersistenceProvider } from '@shared-server/postgres/runtime-state/PSqlJsonPersistenceProvider.ts';
-import type {
-    RuntimeStateEntry,
-    RuntimeStateRepositoryLike,
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+import { describe, expect, it } from 'vitest';
 
 describe('PSqlJsonPersistenceProvider', () => {
     it('stores, lists, and removes values within a namespace', async () => {
         const repository = createRepository();
-        const provider = new PSqlJsonPersistenceProvider<{ value: number }>(
+        const provider = new PSqlJsonPersistenceProvider<{ value: number; }>(
             repository,
-            'al-runtime:inbound:dedup',
+            'al-runtime:inbound:dedup'
         );
 
         await provider.setItem(
             'msg-1',
             { value: 1 },
-            { expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP },
+            { expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
         );
         await provider.setItem(
             'msg-2',
             { value: 2 },
-            { expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP },
+            { expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
         );
 
         expect(await provider.getItem('msg-1')).toEqual({ value: 1 });
@@ -35,9 +32,9 @@ describe('PSqlJsonPersistenceProvider', () => {
 
     it('lazy-evicts expired values', async () => {
         const repository = createRepository();
-        const provider = new PSqlJsonPersistenceProvider<{ value: number }>(
+        const provider = new PSqlJsonPersistenceProvider<{ value: number; }>(
             repository,
-            'al-runtime:outbound:repair-attempts',
+            'al-runtime:outbound:repair-attempts'
         );
         const now = Date.now();
 
@@ -50,13 +47,13 @@ describe('PSqlJsonPersistenceProvider', () => {
 
     it('deleteExpired only removes expired values in the current namespace', async () => {
         const repository = createRepository();
-        const inbound = new PSqlJsonPersistenceProvider<{ value: number }>(
+        const inbound = new PSqlJsonPersistenceProvider<{ value: number; }>(
             repository,
-            'al-runtime:inbound:ordering',
+            'al-runtime:inbound:ordering'
         );
-        const outbound = new PSqlJsonPersistenceProvider<{ value: number }>(
+        const outbound = new PSqlJsonPersistenceProvider<{ value: number; }>(
             repository,
-            'al-runtime:outbound:ordering',
+            'al-runtime:outbound:ordering'
         );
         const now = Date.now();
 
@@ -71,24 +68,24 @@ describe('PSqlJsonPersistenceProvider', () => {
 
     it('isolates values by namespace', async () => {
         const repository = createRepository();
-        const inbound = new PSqlJsonPersistenceProvider<{ value: number }>(
+        const inbound = new PSqlJsonPersistenceProvider<{ value: number; }>(
             repository,
-            'al-runtime:inbound:supersedence',
+            'al-runtime:inbound:supersedence'
         );
-        const outbound = new PSqlJsonPersistenceProvider<{ value: number }>(
+        const outbound = new PSqlJsonPersistenceProvider<{ value: number; }>(
             repository,
-            'al-runtime:outbound:supersedence',
+            'al-runtime:outbound:supersedence'
         );
 
         await inbound.setItem(
             'presence:room-1',
             { value: 1 },
-            { expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP },
+            { expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
         );
         await outbound.setItem(
             'presence:room-1',
             { value: 2 },
-            { expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP },
+            { expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP }
         );
 
         expect(await inbound.getItem('presence:room-1')).toEqual({ value: 1 });
@@ -119,7 +116,7 @@ function createRepository(): RuntimeStateRepositoryLike {
                 value,
                 expireAtTimestamp,
                 updatedTimestamp: new Date().toISOString(),
-                revision: previousRevision + 1,
+                revision: previousRevision + 1
             });
         },
         async deleteByKey(namespace, key) {
@@ -142,6 +139,6 @@ function createRepository(): RuntimeStateRepositoryLike {
             }
 
             return deleted;
-        },
+        }
     };
 }

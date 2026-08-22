@@ -1,7 +1,4 @@
-import type {
-    ControlFleetAgentRunOutcome,
-    ControlFleetTimingDistribution,
-} from '../../../control-run-manager.ts';
+import type { ControlFleetAgentRunOutcome, ControlFleetTimingDistribution } from '../../../control-run-manager.ts';
 
 export type FleetFilterState = Readonly<{
     region: string;

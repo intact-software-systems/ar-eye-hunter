@@ -1,12 +1,6 @@
 import type { OverlayInfo } from '@shared/api/api-config.ts';
+import { isOverlayForGroupRef, toScopedOverlayId, toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import {
-    isOverlayForGroupRef,
-    toScopedOverlayId,
-    toWebRtcGroupKey,
-} from '@shared/api/api-type-utils.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
-import {
-    type AnyGroupPresence,
     readGroupCausalRevision,
     readGroupCreatedAtEpochMs,
     readGroupCreatedByPrincipalId,
@@ -14,16 +8,14 @@ import {
     readGroupMemberSessionIds,
     readGroupUpdatedAtEpochMs,
     readGroupVersion,
+    type AnyGroupPresence
 } from '@shared/api/group-client-views.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import { readObservableLatestRepositoryValue } from '@shared/cache/LatestRepositoryHelpers.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import type { RtcGroupFormationMode } from '@shared/rtc/group-formation-mode.ts';
 import { selectBootstrapPeers } from '@shared/rtc/bootstrap-peer-selection.ts';
-import {
-    createAndSetStarOverlays,
-    overlayRepositoryToken,
-    setOverlayById,
-} from './overlays-repository.ts';
+import type { RtcGroupFormationMode } from '@shared/rtc/group-formation-mode.ts';
+import { createAndSetStarOverlays, overlayRepositoryToken, setOverlayById } from './overlays-repository.ts';
 
 /**
  * Resolved at the composition root: the local session identity, the rollback
@@ -48,7 +40,7 @@ export type BootstrapOverlayPolicy = Readonly<{
 export function createAndSetBootstrapOverlays(
     groups: readonly AnyGroupPresence[],
     policy: BootstrapOverlayPolicy,
-    manager?: RepositoryManager,
+    manager?: RepositoryManager
 ): void {
     if (policy.mode === 'legacy-star') {
         createAndSetStarOverlays(groups, manager);
@@ -67,14 +59,14 @@ export function createAndSetBootstrapOverlays(
 
 export function toBoundedBootstrapOverlay(
     group: AnyGroupPresence,
-    policy: BootstrapOverlayPolicy,
+    policy: BootstrapOverlayPolicy
 ): OverlayInfo {
     const memberSessionIds = readGroupMemberSessionIds(group);
     const nextHopSessionIds = selectBootstrapPeers({
         localSessionId: policy.localSessionId,
         memberSessionIds,
         groupKey: toWebRtcGroupKey(group.group),
-        bootstrapDegree: policy.bootstrapDegree,
+        bootstrapDegree: policy.bootstrapDegree
     });
 
     return {
@@ -90,16 +82,16 @@ export function toBoundedBootstrapOverlay(
         nextHopSessionIds,
         degreeLimit: Math.max(
             1,
-            Math.min(policy.bootstrapDegree, memberSessionIds.length - 1),
+            Math.min(policy.bootstrapDegree, memberSessionIds.length - 1)
         ),
         overlayVersion: readGroupVersion(group),
-        updatedAtEpochMs: readGroupUpdatedAtEpochMs(group),
+        updatedAtEpochMs: readGroupUpdatedAtEpochMs(group)
     };
 }
 
 function hasServerOverlayRecordForGroup(
     groupRef: GroupRef,
-    manager?: RepositoryManager,
+    manager?: RepositoryManager
 ): boolean {
     const scoped = readOverlayRecordById(toScopedOverlayId(groupRef), manager);
     if (scoped?.provenance === 'server') {
@@ -116,11 +108,11 @@ function hasServerOverlayRecordForGroup(
 // it even though value readers filter removed records out.
 function readOverlayRecordById(
     overlayId: string,
-    manager?: RepositoryManager,
+    manager?: RepositoryManager
 ): OverlayInfo | undefined {
     return readObservableLatestRepositoryValue(
         overlayRepositoryToken,
         overlayId,
-        manager,
+        manager
     );
 }

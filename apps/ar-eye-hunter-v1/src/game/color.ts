@@ -6,7 +6,7 @@ const PALETTE = [
     '#b8f35f',
     '#f08cff',
     '#ff8f3d',
-    '#6ea8ff',
+    '#6ea8ff'
 ];
 
 export function colorForId(id: string): string {

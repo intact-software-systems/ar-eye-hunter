@@ -19,8 +19,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             outbox,
             socket as never,
             {
-                sessionId: 'self',
-            },
+                sessionId: 'self'
+            }
         );
 
         const msg = shared.newALUnicastMessage(
@@ -28,13 +28,13 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             {
                 topicId: 'chat',
                 resourceId: 'msg-1',
-                contextId: 'conversation-1',
+                contextId: 'conversation-1'
             },
             'peer-1',
             'chat.private-text.v1',
             {
-                text: 'hello',
-            },
+                text: 'hello'
+            }
         );
 
         const result = await service.enqueueOutboxIfAbsent(msg);
@@ -53,21 +53,21 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             new shared.InMemoryQueueBox(new Map()),
             socket as never,
             {
-                sessionId: 'self',
-            },
+                sessionId: 'self'
+            }
         );
         const msg = shared.newALUnicastMessage(
             'self',
             {
                 topicId: 'chat',
                 resourceId: 'msg-duplicate',
-                contextId: 'conversation-1',
+                contextId: 'conversation-1'
             },
             'peer-1',
             'chat.private-text.v1',
             {
-                text: 'hello once',
-            },
+                text: 'hello once'
+            }
         );
 
         const first = await service.enqueueOutboxIfAbsent(msg);
@@ -87,21 +87,22 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             outbox,
             socket as never,
             {
-                sessionId: 'self',
+                sessionId: 'self'
             },
             {
                 qosProvider: {
-                    defaultsForMessage: (msg) => msg.payload.typeId === 'chat.private-text.v1'
-                        ? {
-                            durability: {
-                                algo: 'local-outbox',
-                                opts: {},
-                            },
-                        }
-                        : undefined,
+                    defaultsForMessage: (msg) =>
+                        msg.payload.typeId === 'chat.private-text.v1'
+                            ? {
+                                durability: {
+                                    algo: 'local-outbox',
+                                    opts: {}
+                                }
+                            }
+                            : undefined
                 },
-                reconnect: shared.DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
-            },
+                reconnect: shared.DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS
+            }
         );
 
         const msg = shared.newALUnicastMessage(
@@ -109,13 +110,13 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             {
                 topicId: 'chat',
                 resourceId: 'msg-defaulted',
-                contextId: 'conversation-1',
+                contextId: 'conversation-1'
             },
             'peer-1',
             'chat.private-text.v1',
             {
-                text: 'persist me',
-            },
+                text: 'persist me'
+            }
         );
 
         const result = await service.enqueueOutboxIfAbsent(msg);
@@ -137,8 +138,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                 outbox,
                 socket as never,
                 {
-                    sessionId: 'self',
-                },
+                    sessionId: 'self'
+                }
             );
 
             const msg = shared.newALUnicastMessage(
@@ -146,38 +147,38 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                 {
                     topicId: 'chat',
                     resourceId: 'msg-timeout',
-                    contextId: 'conversation-1',
+                    contextId: 'conversation-1'
                 },
                 'peer-1',
                 'chat.private-text.v1',
                 {
-                    text: 'retry me',
+                    text: 'retry me'
                 },
                 {
                     qos: {
                         delivery: {
-                            algo: 'at-least-once',
+                            algo: 'at-least-once'
                         },
                         ack: {
                             algo: 'hop',
                             opts: {
-                                timeoutMs: 100,
-                            },
+                                timeoutMs: 100
+                            }
                         },
                         retry: {
                             algo: 'exp-backoff',
                             opts: {
-                                maxAttempts: 1,
-                            },
-                        },
-                    },
-                },
+                                maxAttempts: 1
+                            }
+                        }
+                    }
+                }
             );
 
             await service.enqueueOutboxIfAbsent(msg);
             await service.dequeueOutbox(
                 shared.WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,
-                createResilienceDto(),
+                createResilienceDto()
             );
 
             expect(socket.sentJsonStrings).toHaveLength(1);
@@ -188,9 +189,10 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             expect(JSON.parse(socket.sentJsonStrings[1]).id.msgId).toBe(msg.id.msgId);
 
             await (service as any).handleIncomingWsMessage(
-                shared.newALAckControlMessage('peer-1', 'self', msg.id.msgId, 'delivered'),
+                shared.newALAckControlMessage('peer-1', 'self', msg.id.msgId, 'delivered')
             );
-        } finally {
+        }
+        finally {
             vi.useRealTimers();
         }
     });
@@ -202,8 +204,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             new shared.InMemoryQueueBox(new Map()),
             socket as never,
             {
-                sessionId: 'self',
-            },
+                sessionId: 'self'
+            }
         );
 
         const seq1 = {
@@ -212,19 +214,19 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                 {
                     topicId: 'chat',
                     resourceId: 'msg-seq-1',
-                    contextId: 'conversation-1',
+                    contextId: 'conversation-1'
                 },
                 'peer-1',
                 'chat.private-text.v1',
                 {
-                    text: 'one',
-                },
+                    text: 'one'
+                }
             ),
             ordering: {
                 orderingKey: 'conversation-1',
                 epoch: 0,
-                seq: 1,
-            },
+                seq: 1
+            }
         };
         const seq2 = {
             ...shared.newALUnicastMessage(
@@ -232,19 +234,19 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                 {
                     topicId: 'chat',
                     resourceId: 'msg-seq-2',
-                    contextId: 'conversation-1',
+                    contextId: 'conversation-1'
                 },
                 'peer-1',
                 'chat.private-text.v1',
                 {
-                    text: 'two',
-                },
+                    text: 'two'
+                }
             ),
             ordering: {
                 orderingKey: 'conversation-1',
                 epoch: 0,
-                seq: 2,
-            },
+                seq: 2
+            }
         };
 
         await service.enqueueOutboxIfAbsent(seq1);
@@ -262,8 +264,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                 expectedSeq: 1,
                 lastContiguousSeq: 0,
                 missingSeqs: [1],
-                releasableSeqs: [],
-            },
+                releasableSeqs: []
+            }
         );
 
         await (service as any).handleIncomingWsMessage(repair);
@@ -280,8 +282,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             outbox,
             socket as never,
             {
-                sessionId: 'self',
-            },
+                sessionId: 'self'
+            }
         );
 
         const first = shared.newALUnicastMessage(
@@ -289,52 +291,52 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             {
                 topicId: 'presence',
                 resourceId: 'presence-1',
-                contextId: 'room-1',
+                contextId: 'room-1'
             },
             'peer-1',
             'presence.state.v1',
             {
-                text: 'older',
+                text: 'older'
             },
             {
                 qos: {
                     durability: {
-                        algo: 'local-outbox',
+                        algo: 'local-outbox'
                     },
                     supersedence: {
                         algo: 'latest-wins',
                         opts: {
-                            supersedenceKey: 'presence:peer-1',
-                        },
-                    },
-                },
-            },
+                            supersedenceKey: 'presence:peer-1'
+                        }
+                    }
+                }
+            }
         );
         const second = shared.newALUnicastMessage(
             'self',
             {
                 topicId: 'presence',
                 resourceId: 'presence-2',
-                contextId: 'room-1',
+                contextId: 'room-1'
             },
             'peer-1',
             'presence.state.v1',
             {
-                text: 'newer',
+                text: 'newer'
             },
             {
                 qos: {
                     durability: {
-                        algo: 'local-outbox',
+                        algo: 'local-outbox'
                     },
                     supersedence: {
                         algo: 'latest-wins',
                         opts: {
-                            supersedenceKey: 'presence:peer-1',
-                        },
-                    },
-                },
-            },
+                            supersedenceKey: 'presence:peer-1'
+                        }
+                    }
+                }
+            }
         );
 
         const firstResult = await service.enqueueOutboxIfAbsent(first);
@@ -344,12 +346,12 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         expect(secondResult.status).toBe('enqueued');
         expect((outbox as any).data.size).toBe(1);
 
-        const stored = [...((outbox as any).data.values() as Iterable<{ resource: string }>)][0];
+        const stored = [...((outbox as any).data.values() as Iterable<{ resource: string; }>)][0];
         expect(JSON.parse(stored.resource).id.msgId).toBe(second.id.msgId);
 
         await service.dequeueOutbox(
             shared.WsQueueBoxClientService.OUTBOX_DEQUEUE_TYPES,
-            createResilienceDto(),
+            createResilienceDto()
         );
 
         expect(socket.sentJsonStrings).toHaveLength(1);
@@ -363,8 +365,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             new shared.InMemoryQueueBox(new Map()),
             socket as never,
             {
-                sessionId: 'self',
-            },
+                sessionId: 'self'
+            }
         );
 
         const receivedByFirst: string[] = [];
@@ -374,15 +376,15 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             {
                 onMessage: async (message) => {
                     receivedByFirst.push(message.id.msgId);
-                },
-            },
+                }
+            }
         );
         service.onAllInboxMessagesDo(
             {
                 onMessage: async (message) => {
                     receivedBySecond.push(message.id.msgId);
-                },
-            },
+                }
+            }
         );
 
         const msg = shared.newALUnicastMessage(
@@ -390,20 +392,20 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             {
                 topicId: 'tasks',
                 resourceId: 'job-1',
-                contextId: 'queue-1',
+                contextId: 'queue-1'
             },
             'self',
             'tasks.job.v1',
             {
-                text: 'claim me',
+                text: 'claim me'
             },
             {
                 qos: {
                     ownership: {
-                        algo: 'exclusive',
-                    },
-                },
-            },
+                        algo: 'exclusive'
+                    }
+                }
+            }
         );
 
         await (service as any).handleIncomingWsMessage(msg);
@@ -419,8 +421,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             new shared.InMemoryQueueBox(new Map()),
             socket as never,
             {
-                sessionId: 'self',
-            },
+                sessionId: 'self'
+            }
         );
 
         const deliveredTexts: string[] = [];
@@ -428,10 +430,10 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             'presence.state.v1',
             {
                 onMessage: async (message) => {
-                    const payload = JSON.parse(message.payload.resource) as { text: string };
+                    const payload = JSON.parse(message.payload.resource) as { text: string; };
                     deliveredTexts.push(payload.text);
-                },
-            },
+                }
+            }
         );
 
         const newer = shared.newALUnicastMessage(
@@ -439,23 +441,23 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             {
                 topicId: 'presence',
                 resourceId: 'state-2',
-                contextId: 'room-1',
+                contextId: 'room-1'
             },
             'self',
             'presence.state.v1',
             {
-                text: 'newer',
+                text: 'newer'
             },
             {
                 qos: {
                     supersedence: {
                         algo: 'latest-wins',
                         opts: {
-                            supersedenceKey: 'presence:peer-1',
-                        },
-                    },
-                },
-            },
+                            supersedenceKey: 'presence:peer-1'
+                        }
+                    }
+                }
+            }
         );
         const older = {
             ...shared.newALUnicastMessage(
@@ -463,33 +465,33 @@ describe('WsQueueBoxClientService QoS runtime', () => {
                 {
                     topicId: 'presence',
                     resourceId: 'state-1',
-                    contextId: 'room-1',
+                    contextId: 'room-1'
                 },
                 'self',
                 'presence.state.v1',
                 {
-                    text: 'older',
+                    text: 'older'
                 },
                 {
                     qos: {
                         supersedence: {
                             algo: 'latest-wins',
                             opts: {
-                                supersedenceKey: 'presence:peer-1',
-                            },
-                        },
-                    },
-                },
+                                supersedenceKey: 'presence:peer-1'
+                            }
+                        }
+                    }
+                }
             ),
             id: {
                 ...newer.id,
                 msgId: crypto.randomUUID(),
-                ts: newer.id.ts - 1_000,
+                ts: newer.id.ts - 1_000
             },
             audit: {
                 ...newer.audit,
-                createdTs: (newer.audit?.createdTs ?? newer.id.ts) - 1_000,
-            },
+                createdTs: (newer.audit?.createdTs ?? newer.id.ts) - 1_000
+            }
         };
 
         await (service as any).handleIncomingWsMessage(newer);
@@ -507,16 +509,16 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             new shared.InMemoryQueueBox(new Map()),
             socket as never,
             {
-                sessionId: 'self',
+                sessionId: 'self'
             },
             {
                 qosProvider: {
                     liveForMessage: () => ({
-                        overloaded,
-                    }),
+                        overloaded
+                    })
                 },
-                reconnect: shared.DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
-            },
+                reconnect: shared.DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS
+            }
         );
 
         let callbackCount = 0;
@@ -525,8 +527,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             {
                 onMessage: async () => {
                     callbackCount += 1;
-                },
-            },
+                }
+            }
         );
 
         const msg = shared.newALUnicastMessage(
@@ -534,23 +536,23 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             {
                 topicId: 'chat',
                 resourceId: 'defer-1',
-                contextId: 'conversation-1',
+                contextId: 'conversation-1'
             },
             'self',
             'chat.private-text.v1',
             {
-                text: 'defer me',
+                text: 'defer me'
             },
             {
                 qos: {
                     congestion: {
                         algo: 'defer',
                         opts: {
-                            priority: 2,
-                        },
-                    },
-                },
-            },
+                            priority: 2
+                        }
+                    }
+                }
+            }
         );
 
         await (service as any).handleIncomingWsMessage(msg);
@@ -560,7 +562,7 @@ describe('WsQueueBoxClientService QoS runtime', () => {
 
         await service.dequeueInbox(
             shared.WsQueueBoxClientService.INBOX_DEQUEUE_TYPES,
-            createResilienceDto(),
+            createResilienceDto()
         );
 
         const storedEntry = [...((inbox as any).data.values() as Iterable<SharedResourceEntry>)][0] as SharedResourceEntry;
@@ -570,12 +572,12 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         overloaded = false;
         storedEntry.dequeueAudit = {
             ...storedEntry.dequeueAudit,
-            nextTs: Temporal.Now.instant().subtract({ seconds: 1 }),
+            nextTs: Temporal.Now.instant().subtract({ seconds: 1 })
         };
 
         await service.dequeueInbox(
             shared.WsQueueBoxClientService.INBOX_DEQUEUE_TYPES,
-            createResilienceDto(),
+            createResilienceDto()
         );
 
         expect(callbackCount).toBe(1);
@@ -589,8 +591,8 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             outbox,
             socket as never,
             {
-                sessionId: 'self',
-            },
+                sessionId: 'self'
+            }
         );
 
         const deliveredTexts: string[] = [];
@@ -598,10 +600,10 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             'chat.message.v1',
             {
                 onMessage: async (message) => {
-                    const payload = JSON.parse(message.payload.resource) as { text: string };
+                    const payload = JSON.parse(message.payload.resource) as { text: string; };
                     deliveredTexts.push(payload.text);
-                },
-            },
+                }
+            }
         );
 
         const seq2 = shared.newALMulticastMessage(
@@ -609,17 +611,17 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             {
                 topicId: 'chat',
                 resourceId: 'msg-2',
-                contextId: 'group-1',
+                contextId: 'group-1'
             },
             groupRef('group-1'),
             'chat.message.v1',
             {
-                text: 'two',
+                text: 'two'
             },
             {
                 seq: 2,
-                reliability: 'at-least-once',
-            },
+                reliability: 'at-least-once'
+            }
         );
 
         const seq1 = shared.newALMulticastMessage(
@@ -627,17 +629,17 @@ describe('WsQueueBoxClientService QoS runtime', () => {
             {
                 topicId: 'chat',
                 resourceId: 'msg-3',
-                contextId: 'group-1',
+                contextId: 'group-1'
             },
             groupRef('group-1'),
             'chat.message.v1',
             {
-                text: 'one',
+                text: 'one'
             },
             {
                 seq: 1,
-                reliability: 'at-least-once',
-            },
+                reliability: 'at-least-once'
+            }
         );
 
         await (service as any).handleIncomingWsMessage(seq2);
@@ -645,13 +647,13 @@ describe('WsQueueBoxClientService QoS runtime', () => {
         expect(deliveredTexts).toEqual([]);
         expect((outbox as any).data.size).toBe(2);
 
-        const queuedTypeIds = [...((outbox as any).data.values() as Iterable<{ resource: string }>)]
-            .map(entry => JSON.parse(entry.resource).payload.typeId)
+        const queuedTypeIds = [...((outbox as any).data.values() as Iterable<{ resource: string; }>)]
+            .map((entry) => JSON.parse(entry.resource).payload.typeId)
             .sort();
 
         expect(queuedTypeIds).toEqual([
             shared.AL_CONTROL_NACK_TYPE_ID,
-            shared.AL_CONTROL_REPAIR_TYPE_ID,
+            shared.AL_CONTROL_REPAIR_TYPE_ID
         ].sort());
 
         await (service as any).handleIncomingWsMessage(seq1);
@@ -665,7 +667,7 @@ function createFakeWsSocket() {
 
     return {
         ws: {
-            readyState: 1,
+            readyState: 1
         },
         sentJsonStrings,
         onWebSocketMessageDo() {
@@ -680,7 +682,7 @@ function createFakeWsSocket() {
         send(data: unknown) {
             sentJsonStrings.push(JSON.stringify(data));
         },
-        connect: async () => Promise.resolve(),
+        connect: async () => Promise.resolve()
     };
 }
 
@@ -688,7 +690,7 @@ function groupRef(groupId: string) {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
-        groupId,
+        groupId
     };
 }
 
@@ -698,11 +700,11 @@ function createResilienceDto() {
             10,
             Temporal.Duration.from({ seconds: 10 }),
             Temporal.Duration.from({ seconds: 10 }),
-            Temporal.Duration.from({ seconds: 10 }),
+            Temporal.Duration.from({ seconds: 10 })
         ),
         1,
         10,
         1,
-        1,
+        1
     );
 }

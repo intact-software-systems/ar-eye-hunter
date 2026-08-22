@@ -1,10 +1,6 @@
-import { describe, expect, it } from 'vitest';
 import type { RelicPublicSnapshot } from '@relic-hunters/mod.ts';
-import {
-    AVATAR_ARRIVAL_SETTLE_MS,
-    avatarPoseOffsets,
-    deriveRelicAvatarPresentation,
-} from '../src/game/scene/avatarPresentation.ts';
+import { describe, expect, it } from 'vitest';
+import { AVATAR_ARRIVAL_SETTLE_MS, avatarPoseOffsets, deriveRelicAvatarPresentation } from '../src/game/scene/avatarPresentation.ts';
 
 describe('avatar presentation', () => {
     it('uses faster arrival timing for snappier hunters', () => {
@@ -16,12 +12,12 @@ describe('avatar presentation', () => {
             phase: 'lobby',
             player: player(),
             submittedPlayerIds: ['alice-session'],
-            isMoving: true,
+            isMoving: true
         })).toMatchObject({
             status: 'lobby',
             visible: true,
             opacity: 1,
-            emissiveRole: 'idle',
+            emissiveRole: 'idle'
         });
     });
 
@@ -30,57 +26,65 @@ describe('avatar presentation', () => {
             phase: 'planning',
             player: player({ defeated: true }),
             submittedPlayerIds: ['alice-session'],
-            isMoving: true,
+            isMoving: true
         })).toMatchObject({
             status: 'defeated',
             visible: true,
             opacity: 0.48,
-            emissiveRole: 'defeated',
+            emissiveRole: 'defeated'
         });
 
         expect(deriveRelicAvatarPresentation({
             phase: 'planning',
             player: player({ escaped: true }),
             submittedPlayerIds: ['alice-session'],
-            isMoving: true,
+            isMoving: true
         })).toMatchObject({
             status: 'escaped',
             visible: true,
             opacity: 0.56,
-            emissiveRole: 'escaped',
+            emissiveRole: 'escaped'
         });
     });
 
     it('uses locked, moving, arriving, and idle states for active hunters', () => {
-        expect(deriveRelicAvatarPresentation({
-            phase: 'planning',
-            player: player(),
-            submittedPlayerIds: ['alice-session'],
-            isMoving: true,
-        }).status).toBe('locked');
+        expect(
+            deriveRelicAvatarPresentation({
+                phase: 'planning',
+                player: player(),
+                submittedPlayerIds: ['alice-session'],
+                isMoving: true
+            }).status
+        ).toBe('locked');
 
-        expect(deriveRelicAvatarPresentation({
-            phase: 'planning',
-            player: player(),
-            submittedPlayerIds: [],
-            isMoving: true,
-        }).status).toBe('moving');
+        expect(
+            deriveRelicAvatarPresentation({
+                phase: 'planning',
+                player: player(),
+                submittedPlayerIds: [],
+                isMoving: true
+            }).status
+        ).toBe('moving');
 
-        expect(deriveRelicAvatarPresentation({
-            phase: 'planning',
-            player: player(),
-            submittedPlayerIds: [],
-            isMoving: false,
-            lastMovedAgoMs: AVATAR_ARRIVAL_SETTLE_MS - 1,
-        }).status).toBe('arriving');
+        expect(
+            deriveRelicAvatarPresentation({
+                phase: 'planning',
+                player: player(),
+                submittedPlayerIds: [],
+                isMoving: false,
+                lastMovedAgoMs: AVATAR_ARRIVAL_SETTLE_MS - 1
+            }).status
+        ).toBe('arriving');
 
-        expect(deriveRelicAvatarPresentation({
-            phase: 'planning',
-            player: player(),
-            submittedPlayerIds: [],
-            isMoving: false,
-            lastMovedAgoMs: AVATAR_ARRIVAL_SETTLE_MS,
-        }).status).toBe('idle');
+        expect(
+            deriveRelicAvatarPresentation({
+                phase: 'planning',
+                player: player(),
+                submittedPlayerIds: [],
+                isMoving: false,
+                lastMovedAgoMs: AVATAR_ARRIVAL_SETTLE_MS
+            }).status
+        ).toBe('idle');
     });
 
     it('returns larger motion offsets while moving and downed offsets when defeated', () => {
@@ -89,9 +93,9 @@ describe('avatar presentation', () => {
                 phase: 'planning',
                 player: player(),
                 submittedPlayerIds: [],
-                isMoving: true,
+                isMoving: true
             }),
-            nowMs: 125,
+            nowMs: 125
         });
         expect(moving.yOffset).toBeGreaterThan(0.04);
         expect(moving.pitch).toBeLessThanOrEqual(-0.16);
@@ -102,9 +106,9 @@ describe('avatar presentation', () => {
                 phase: 'planning',
                 player: player({ defeated: true }),
                 submittedPlayerIds: [],
-                isMoving: false,
+                isMoving: false
             }),
-            nowMs: 250,
+            nowMs: 250
         });
         expect(defeated.yOffset).toBeLessThan(0);
         expect(defeated.scaleY).toBeLessThan(1);
@@ -112,12 +116,12 @@ describe('avatar presentation', () => {
 });
 
 function player(
-    overrides: Partial<Pick<RelicPublicSnapshot['players'][number], 'escaped' | 'defeated'>> = {},
+    overrides: Partial<Pick<RelicPublicSnapshot['players'][number], 'escaped' | 'defeated'>> = {}
 ): Pick<RelicPublicSnapshot['players'][number], 'playerId' | 'escaped' | 'defeated'> {
     return {
         playerId: 'alice-session',
         escaped: false,
         defeated: false,
-        ...overrides,
+        ...overrides
     };
 }

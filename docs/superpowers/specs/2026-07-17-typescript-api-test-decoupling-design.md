@@ -10,16 +10,16 @@ fingerprint extracted source.
 
 The current eight files contain 162 passing tests. Their value is uneven:
 
-| Test file | Protected contract | Decision |
-| --- | --- | --- |
-| `packages/tests/shared-web/shared-web-app-import-boundaries.test.ts` | Application imports stay on intentional browser/package surfaces | Retain and port |
-| `packages/tests/shared-web/shared-web-browser-entrypoints.test.ts` | Browser entrypoints expose narrow runtime APIs and avoid internal runtime coupling | Retain and port |
-| `packages/tests/shared-web/shared-web-public-api-snapshots.test.ts` | Shared-web public exports remain intentional and reviewable | Retain and port |
-| `packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts` | Retention protocol, authorization, abort, validation, and lazy-loading behavior | Retain; replace only its source-analysis helper |
-| `packages/tests/rallar-black-box/recipe-console-history-storage.test.ts` | History persistence, validation, failure isolation, and local-storage ownership | Retain; replace only its source-analysis helper |
-| `packages/tests/rallar-black-box/legacy-shell-composition.test.ts` | Exact legacy JSX composition, source inventory, and stylesheet bytes | Replace with narrow boundary coverage |
-| `packages/tests/rallar-black-box/legacy-shell-structure.test.ts` | Exact AST fingerprints and extraction topology | Remove after replacement coverage exists |
-| `packages/tests/rallar-black-box/app-structure.test.ts` | Historical extraction ownership plus a few useful legacy/Recipe Console boundaries | Replace with narrow boundary coverage |
+| Test file                                                                      | Protected contract                                                                 | Decision                                        |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `packages/tests/shared-web/shared-web-app-import-boundaries.test.ts`           | Application imports stay on intentional browser/package surfaces                   | Retain and port                                 |
+| `packages/tests/shared-web/shared-web-browser-entrypoints.test.ts`             | Browser entrypoints expose narrow runtime APIs and avoid internal runtime coupling | Retain and port                                 |
+| `packages/tests/shared-web/shared-web-public-api-snapshots.test.ts`            | Shared-web public exports remain intentional and reviewable                        | Retain and port                                 |
+| `packages/tests/rallar-black-box/recipe-console-control-retention-api.test.ts` | Retention protocol, authorization, abort, validation, and lazy-loading behavior    | Retain; replace only its source-analysis helper |
+| `packages/tests/rallar-black-box/recipe-console-history-storage.test.ts`       | History persistence, validation, failure isolation, and local-storage ownership    | Retain; replace only its source-analysis helper |
+| `packages/tests/rallar-black-box/legacy-shell-composition.test.ts`             | Exact legacy JSX composition, source inventory, and stylesheet bytes               | Replace with narrow boundary coverage           |
+| `packages/tests/rallar-black-box/legacy-shell-structure.test.ts`               | Exact AST fingerprints and extraction topology                                     | Remove after replacement coverage exists        |
+| `packages/tests/rallar-black-box/app-structure.test.ts`                        | Historical extraction ownership plus a few useful legacy/Recipe Console boundaries | Replace with narrow boundary coverage           |
 
 ## Goals
 

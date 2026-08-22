@@ -1,11 +1,9 @@
+import { consumeAgentSessionTicketAt } from '@shared-web/browser/auth/agent-session-ticket-http-api.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import {
-    consumeAgentSessionTicketAt,
-} from '@shared-web/browser/auth/agent-session-ticket-http-api.ts';
 
 const BOOTSTRAP_FRAGMENT_SECRET_FIELDS = [
     'agentSessionTicket',
-    'controlToken',
+    'controlToken'
 ] as const;
 
 let pendingAgentSessionTicketConsume:
@@ -18,19 +16,23 @@ let pendingAgentSessionTicketConsume:
     | undefined;
 
 export function scrubBrowserAgentBootstrapSecretsFromUrl(): void {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined') {
+        return;
+    }
 
     const nextUrl = new URL(window.location.href);
     let changed = nextUrl.searchParams.has('controlToken');
     nextUrl.searchParams.delete('controlToken');
     const fragment = new URLSearchParams(
-        nextUrl.hash.startsWith('#') ? nextUrl.hash.slice(1) : nextUrl.hash,
+        nextUrl.hash.startsWith('#') ? nextUrl.hash.slice(1) : nextUrl.hash
     );
     for (const field of BOOTSTRAP_FRAGMENT_SECRET_FIELDS) {
         changed = fragment.has(field) || changed;
         fragment.delete(field);
     }
-    if (!changed) return;
+    if (!changed) {
+        return;
+    }
 
     nextUrl.hash = fragment.toString();
     window.history.replaceState(null, document.title, nextUrl.toString());
@@ -42,7 +44,7 @@ export function scrubAgentSessionTicketFromUrl(): void {
 
 export function consumeBootstrapAgentSessionTicket(
     ticket: string,
-    apiBaseUrl: string,
+    apiBaseUrl: string
 ): Promise<AuthSession> {
     const normalizedApiBaseUrl = apiBaseUrl.trim().replace(/\/+$/, '');
     const current = pendingAgentSessionTicketConsume;
@@ -56,7 +58,7 @@ export function consumeBootstrapAgentSessionTicket(
     const promise = consumeAgentSessionTicketAt(
         normalizedApiBaseUrl,
         { ticket },
-        { requestId },
+        { requestId }
     ).then((session) => {
         if (pendingAgentSessionTicketConsume?.promise === promise) {
             pendingAgentSessionTicketConsume = undefined;
@@ -67,7 +69,7 @@ export function consumeBootstrapAgentSessionTicket(
             pendingAgentSessionTicketConsume = {
                 ticket,
                 apiBaseUrl: normalizedApiBaseUrl,
-                requestId,
+                requestId
             };
         }
         throw error;
@@ -76,7 +78,7 @@ export function consumeBootstrapAgentSessionTicket(
         ticket,
         apiBaseUrl: normalizedApiBaseUrl,
         requestId,
-        promise,
+        promise
     };
     return promise;
 }

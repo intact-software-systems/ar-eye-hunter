@@ -1,38 +1,31 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { AuthSession } from '../../shared/api/api-config.ts';
-import {
-    resolveRallarBlackBoxBootstrapConfig,
-} from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
-import {
-    appModeFromValue,
-    appTabFromValue,
-} from '../../../apps/rallar-black-box/src/app-tabs.ts';
-import {
-    normalizeAppNavigation,
-} from '../../../apps/rallar-black-box/src/legacy/shell/navigation.ts';
+import { appModeFromValue, appTabFromValue } from '../../../apps/rallar-black-box/src/app-tabs.ts';
+import { normalizeAppNavigation } from '../../../apps/rallar-black-box/src/legacy/shell/navigation.ts';
 import {
     createRunnerAgentLaunchUrl,
-    readRunnerControlTokenFromHash,
     readRunnerAgentSessionTicketFromHash,
+    readRunnerControlTokenFromHash
 } from '../../../apps/rallar-black-box/src/runner-agent-launch.ts';
+import { resolveRallarBlackBoxBootstrapConfig } from '../../shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import type { AuthSession } from '../../shared/api/api-config.ts';
 
 const ticketMocks = vi.hoisted(() => ({
     configureApiClient: vi.fn(),
     consumeAgentSessionTicket: vi.fn(),
-    consumeAgentSessionTicketAt: vi.fn(),
+    consumeAgentSessionTicketAt: vi.fn()
 }));
 
 vi.mock('@shared-web/browser/api-client-config.ts', () => ({
-    configureApiClient: ticketMocks.configureApiClient,
+    configureApiClient: ticketMocks.configureApiClient
 }));
 vi.mock('@shared-web/browser/auth/agent-session-ticket-http-api.ts', () => ({
     consumeAgentSessionTicket: ticketMocks.consumeAgentSessionTicket,
-    consumeAgentSessionTicketAt: ticketMocks.consumeAgentSessionTicketAt,
+    consumeAgentSessionTicketAt: ticketMocks.consumeAgentSessionTicketAt
 }));
 
 import {
     consumeBootstrapAgentSessionTicket,
-    scrubBrowserAgentBootstrapSecretsFromUrl,
+    scrubBrowserAgentBootstrapSecretsFromUrl
 } from '../../../apps/rallar-black-box/src/legacy/shell/auth/agent-session-ticket.ts';
 
 afterEach(() => {
@@ -56,7 +49,7 @@ describe('rallar-black-box runner agent launch links', () => {
             sessionId: 'controller-01-session',
             authStorage: 'session',
             agentSessionTicket: 'secret-agent-ticket',
-            controlToken: 'control-token',
+            controlToken: 'control-token'
         });
 
         const url = new URL(launchUrl);
@@ -84,7 +77,7 @@ describe('rallar-black-box runner agent launch links', () => {
             accessToken: 'controller-01-access-token',
             username: 'alice',
             sessionId: 'controller-01-session',
-            expiresAtEpochMs: 9_999,
+            expiresAtEpochMs: 9_999
         };
         ticketMocks.consumeAgentSessionTicketAt.mockResolvedValue(session);
 
@@ -101,7 +94,7 @@ describe('rallar-black-box runner agent launch links', () => {
             actor: 'alice',
             sessionId: 'controller-01-session',
             authStorage: 'session',
-            agentSessionTicket: 'secret-agent-ticket',
+            agentSessionTicket: 'secret-agent-ticket'
         });
         const launchUrl = new URL(generated);
         const fragment = new URLSearchParams(launchUrl.hash.slice(1));
@@ -112,14 +105,14 @@ describe('rallar-black-box runner agent launch links', () => {
         const bootstrap = resolveRallarBlackBoxBootstrapConfig(
             launchUrl.search,
             {},
-            launchUrl.hash,
+            launchUrl.hash
         );
         const requestedTab = appTabFromValue(
-            launchUrl.searchParams.get('tab'),
+            launchUrl.searchParams.get('tab')
         );
         const navigation = normalizeAppNavigation({
             mode: appModeFromValue(launchUrl.searchParams.get('workspace')),
-            tab: requestedTab,
+            tab: requestedTab
         });
 
         expect(bootstrap).toMatchObject({
@@ -137,22 +130,22 @@ describe('rallar-black-box runner agent launch links', () => {
             controlToken: undefined,
             rallarAuthStorage: 'session',
             rallarAgentSessionTicket: 'secret-agent-ticket',
-            rallarRestoreSession: true,
+            rallarRestoreSession: true
         });
         expect(requestedTab).toBe('local-workbench');
         expect(navigation).toEqual({
             mode: 'black-box-runner',
             tab: 'advanced',
-            advancedSurface: 'workbench',
+            advancedSurface: 'workbench'
         });
 
         const firstConsume = consumeBootstrapAgentSessionTicket(
             bootstrap.rallarAgentSessionTicket!,
-            bootstrap.apiBaseUrl,
+            bootstrap.apiBaseUrl
         );
         const duplicateConsume = consumeBootstrapAgentSessionTicket(
             bootstrap.rallarAgentSessionTicket!,
-            bootstrap.apiBaseUrl,
+            bootstrap.apiBaseUrl
         );
 
         expect(duplicateConsume).toBe(firstConsume);
@@ -162,16 +155,16 @@ describe('rallar-black-box runner agent launch links', () => {
         expect(ticketMocks.consumeAgentSessionTicketAt).toHaveBeenCalledWith(
             'https://api.example.test',
             { ticket: 'secret-agent-ticket' },
-            { requestId: expect.any(String) },
+            { requestId: expect.any(String) }
         );
 
         const replaceState = vi.fn();
         vi.stubGlobal('window', {
             location: {
                 hash: launchUrl.hash,
-                href: launchUrl.toString(),
+                href: launchUrl.toString()
             },
-            history: { replaceState },
+            history: { replaceState }
         });
         vi.stubGlobal('document', { title: 'Rallar Black Box' });
 
@@ -185,14 +178,16 @@ describe('rallar-black-box runner agent launch links', () => {
     });
 
     it('scrubs legacy query control tokens and new fragment secrets without removing public context', () => {
-        const launchUrl = new URL('https://blackbox.example.test/?mode=control&runId=run-1&agentId=agent-1&controlToken=legacy-token#controlToken=new-token&agentSessionTicket=api-ticket&trace=keep');
+        const launchUrl = new URL(
+            'https://blackbox.example.test/?mode=control&runId=run-1&agentId=agent-1&controlToken=legacy-token#controlToken=new-token&agentSessionTicket=api-ticket&trace=keep'
+        );
         const replaceState = vi.fn();
         vi.stubGlobal('window', {
             location: {
                 hash: launchUrl.hash,
-                href: launchUrl.toString(),
+                href: launchUrl.toString()
             },
-            history: { replaceState },
+            history: { replaceState }
         });
         vi.stubGlobal('document', { title: 'Rallar Black Box' });
 

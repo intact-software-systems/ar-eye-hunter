@@ -1,16 +1,16 @@
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
-import path from 'node:path';
 import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import {
+    applyWorldFleetControlRunIdOverride,
+    runWorldFleetDistributedRecipe
+} from '../../../apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts';
 import type { ControlDistributedRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import type {
     RallarBlackBoxDistributedRunManifest,
-    RallarBlackBoxDistributedTargetResolution,
+    RallarBlackBoxDistributedTargetResolution
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
-import {
-    applyWorldFleetControlRunIdOverride,
-    runWorldFleetDistributedRecipe,
-} from '../../../apps/rallar-black-box/scripts/run-world-fleet-distributed-recipe.ts';
 
 function manifest(): RallarBlackBoxDistributedRunManifest {
     return {
@@ -21,7 +21,7 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
         group: {
             applicationId: 'rallar-server',
             workspaceId: 'default',
-            groupId: 'bb-group',
+            groupId: 'bb-group'
         },
         recipes: [
             {
@@ -30,15 +30,15 @@ function manifest(): RallarBlackBoxDistributedRunManifest {
                 recipe: {
                     schemaVersion: 1,
                     recipeId: 'health-recipe',
-                    commands: [{ kind: 'health', commandId: 'health' }],
-                },
-            },
+                    commands: [{ kind: 'health', commandId: 'health' }]
+                }
+            }
         ],
         targetPolicy: {
             mode: 'all-online-group-members',
-            expectedParticipantCount: 1,
+            expectedParticipantCount: 1
         },
-        startMode: 'manual',
+        startMode: 'manual'
     };
 }
 
@@ -63,14 +63,14 @@ function resolution(input: RallarBlackBoxDistributedRunManifest): RallarBlackBox
             agentsWithoutIdentity: 0,
             roleCounts: {},
             regions: {},
-            providers: {},
-        },
+            providers: {}
+        }
     };
 }
 
 function snapshot(
     input: RallarBlackBoxDistributedRunManifest,
-    state: ControlDistributedRunSnapshot['state'],
+    state: ControlDistributedRunSnapshot['state']
 ): ControlDistributedRunSnapshot {
     return {
         distributedRunId: input.distributedRunId,
@@ -97,17 +97,17 @@ function snapshot(
                 groupAssertions: 0,
                 passedGroupAssertions: 0,
                 failedGroupAssertions: 0,
-                blockingFailures: state === 'failed' ? 1 : 0,
+                blockingFailures: state === 'failed' ? 1 : 0
             },
-            failures: [],
-        },
+            failures: []
+        }
     };
 }
 
 function jsonResponse(value: unknown, status = 200): Response {
     return new Response(JSON.stringify(value), {
         status,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' }
     });
 }
 
@@ -150,18 +150,18 @@ describe('world-fleet no-spawn distributed recipe runner', () => {
                         distributedRunId: overridden.distributedRunId,
                         generatedAtEpochMs: 3_000,
                         files: {
-                            'target-resolution.json': JSON.stringify(resolution(overridden)),
-                        },
+                            'target-resolution.json': JSON.stringify(resolution(overridden))
+                        }
                     });
                 }
                 getCount += 1;
                 return jsonResponse(snapshot(overridden, getCount === 1 ? 'ready' : 'passed'));
-            },
+            }
         });
 
-        expect(requestBodies.map((body) =>
-            (body as { manifest?: RallarBlackBoxDistributedRunManifest }).manifest?.controlRunId
-        )).toContain('live-control-run');
+        expect(requestBodies.map((body) => (body as { manifest?: RallarBlackBoxDistributedRunManifest; }).manifest?.controlRunId)).toContain(
+            'live-control-run'
+        );
     });
 
     it('exports artifacts before throwing on a pre-start terminal state', async () => {
@@ -196,12 +196,12 @@ describe('world-fleet no-spawn distributed recipe runner', () => {
                         distributedRunId: testManifest.distributedRunId,
                         generatedAtEpochMs: 3_000,
                         files: {
-                            'target-resolution.json': JSON.stringify(resolution(testManifest)),
-                        },
+                            'target-resolution.json': JSON.stringify(resolution(testManifest))
+                        }
                     });
                 }
                 return jsonResponse(snapshot(testManifest, 'failed'));
-            },
+            }
         })).rejects.toThrow('Distributed run reached failed before start.');
 
         expect(requests).toContain('GET /distributed-runs/world-fleet-test-run/artifacts');
@@ -245,13 +245,13 @@ describe('world-fleet no-spawn distributed recipe runner', () => {
                         generatedAtEpochMs: 3_000,
                         files: {
                             'target-resolution.json': JSON.stringify(resolution(testManifest)),
-                            '../escaped.txt': 'escaped',
-                        },
+                            '../escaped.txt': 'escaped'
+                        }
                     });
                 }
                 getCount += 1;
                 return jsonResponse(snapshot(testManifest, getCount === 1 ? 'ready' : 'passed'));
-            },
+            }
         });
 
         await expect(readFile(path.join(artifactDir, 'target-resolution.json'), 'utf8'))

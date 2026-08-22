@@ -3,7 +3,7 @@ export const DIAGNOSTIC_BRIDGE_URL_QUERY_MAX_BYTES = 4_096;
 
 export const DIAGNOSTIC_BRIDGE_PROVIDERS = [
     'simulated',
-    'browser-rallar',
+    'browser-rallar'
 ] as const;
 
 export const DIAGNOSTIC_BRIDGE_LEGACY_SURFACE_IDS = [
@@ -28,7 +28,7 @@ export const DIAGNOSTIC_BRIDGE_LEGACY_SURFACE_IDS = [
     'legacy.local-workbench',
     'legacy.run-manager',
     'legacy.distributed-recipes',
-    'legacy.shared-test-catalog',
+    'legacy.shared-test-catalog'
 ] as const;
 
 export const DIAGNOSTIC_BRIDGE_SOURCE_VIEWS = [
@@ -37,7 +37,7 @@ export const DIAGNOSTIC_BRIDGE_SOURCE_VIEWS = [
     'analyze',
     'tune',
     'fleet',
-    'advanced',
+    'advanced'
 ] as const;
 
 export const DIAGNOSTIC_BRIDGE_TRANSPORTS = [
@@ -46,17 +46,13 @@ export const DIAGNOSTIC_BRIDGE_TRANSPORTS = [
     'rtc',
     'ws',
     'http',
-    'runtime',
+    'runtime'
 ] as const;
 
-export type DiagnosticBridgeSourceView =
-    typeof DIAGNOSTIC_BRIDGE_SOURCE_VIEWS[number];
+export type DiagnosticBridgeSourceView = typeof DIAGNOSTIC_BRIDGE_SOURCE_VIEWS[number];
 
-export type DiagnosticBridgeTransport =
-    typeof DIAGNOSTIC_BRIDGE_TRANSPORTS[number];
+export type DiagnosticBridgeTransport = typeof DIAGNOSTIC_BRIDGE_TRANSPORTS[number];
 
-export type DiagnosticBridgeProvider =
-    typeof DIAGNOSTIC_BRIDGE_PROVIDERS[number];
+export type DiagnosticBridgeProvider = typeof DIAGNOSTIC_BRIDGE_PROVIDERS[number];
 
-export type DiagnosticBridgeLegacySurfaceId =
-    typeof DIAGNOSTIC_BRIDGE_LEGACY_SURFACE_IDS[number];
+export type DiagnosticBridgeLegacySurfaceId = typeof DIAGNOSTIC_BRIDGE_LEGACY_SURFACE_IDS[number];

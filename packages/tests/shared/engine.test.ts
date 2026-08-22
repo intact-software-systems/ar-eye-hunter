@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('engine', () => {
     it('executes a task once when work is available', async () => {
@@ -19,8 +19,8 @@ describe('engine', () => {
                         runCount += 1;
                         remainingWork -= 1;
                     },
-                    ongoingTasks: [],
-                },
+                    ongoingTasks: []
+                }
             );
 
             const firstRunPromise = engine.executeOnce();
@@ -34,7 +34,8 @@ describe('engine', () => {
             expect(firstRun).toBe(true);
             expect(secondRun).toBe(false);
             expect(runCount).toBe(1);
-        } finally {
+        }
+        finally {
             vi.useRealTimers();
         }
     });
@@ -56,8 +57,8 @@ describe('engine', () => {
                         runCount += 1;
                         remainingWork -= 1;
                     },
-                    ongoingTasks: [],
-                },
+                    ongoingTasks: []
+                }
             );
 
             for (let i = 0; i < 20; i++) {
@@ -68,7 +69,8 @@ describe('engine', () => {
 
             expect(await executeOnceWithTimers(engine)).toBe(true);
             expect(runCount).toBe(1);
-        } finally {
+        }
+        finally {
             vi.useRealTimers();
         }
     });
@@ -95,8 +97,8 @@ describe('engine', () => {
                         remainingWork -= 1;
                         await taskGate;
                     },
-                    ongoingTasks: [],
-                },
+                    ongoingTasks: []
+                }
             );
 
             expect(await executeOnceWithTimers(engine)).toBe(true);
@@ -113,7 +115,8 @@ describe('engine', () => {
             expect(await executeOnceWithTimers(engine)).toBe(true);
             expect(runCount).toBe(2);
             expect(remainingWork).toBe(0);
-        } finally {
+        }
+        finally {
             vi.useRealTimers();
         }
     });
@@ -143,8 +146,8 @@ describe('engine', () => {
                         return await isWorkGate;
                     },
                     runnable: async () => undefined,
-                    ongoingTasks: [],
-                },
+                    ongoingTasks: []
+                }
             );
 
             engine.start();
@@ -159,7 +162,8 @@ describe('engine', () => {
             await vi.advanceTimersByTimeAsync(60_000);
 
             expect(isWorkCalls).toBe(callsAfterStoppedRun);
-        } finally {
+        }
+        finally {
             vi.useRealTimers();
         }
     });
@@ -185,8 +189,8 @@ describe('engine', () => {
                         runCount += 1;
                         remainingWork -= 1;
                     },
-                    ongoingTasks: [],
-                },
+                    ongoingTasks: []
+                }
             );
 
             engine.start();
@@ -204,14 +208,15 @@ describe('engine', () => {
             expect(runCount).toBe(1);
 
             engine.stop();
-        } finally {
+        }
+        finally {
             vi.useRealTimers();
         }
     });
 });
 
 async function executeOnceWithTimers(
-    engine: InboxOutboxEngine,
+    engine: InboxOutboxEngine
 ): Promise<boolean> {
     const runPromise = engine.executeOnce();
     await vi.runAllTimersAsync();

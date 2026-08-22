@@ -1,653 +1,656 @@
-export type HeadlessWorkerTransport = "realtime" | "messages.rtc";
-export type HeadlessWorkerBrowserLogLevel = "warning" | "info" | "debug";
-export type HeadlessWorkerEntry = "operator-spa" | "headless";
-export type HeadlessWorkerBrowserEngine = "chromium" | "firefox" | "webkit";
+export type HeadlessWorkerTransport = 'realtime' | 'messages.rtc';
+export type HeadlessWorkerBrowserLogLevel = 'warning' | 'info' | 'debug';
+export type HeadlessWorkerEntry = 'operator-spa' | 'headless';
+export type HeadlessWorkerBrowserEngine = 'chromium' | 'firefox' | 'webkit';
 export type HeadlessWorkerExitMode =
-  | "signal"
-  | "after-target-distributed-run-terminal"
-  | "after-idle-ms";
+    | 'signal'
+    | 'after-target-distributed-run-terminal'
+    | 'after-idle-ms';
 
 export type HeadlessWorkerCredentials = Readonly<{
-  username: string;
-  password: string;
+    username: string;
+    password: string;
 }>;
 
 export type HeadlessWorkerAgentConfig = Readonly<{
-  agentId: string;
-  actor: string;
-  sessionId: string;
-  credentials: HeadlessWorkerCredentials;
-  controlToken?: string;
-  url: string;
+    agentId: string;
+    actor: string;
+    sessionId: string;
+    credentials: HeadlessWorkerCredentials;
+    controlToken?: string;
+    url: string;
 }>;
 
 export type HeadlessWorkerConfig = Readonly<{
-  spaUrl: string;
-  controlUrl: string;
-  apiBaseUrl: string;
-  headlessEntry: HeadlessWorkerEntry;
-  browserEngine: HeadlessWorkerBrowserEngine;
-  runId: string;
-  agentPrefix: string;
-  agentCount: number;
-  agentStartIndex: number;
-  roomId: string;
-  applicationId?: string;
-  workspaceId?: string;
-  transport: HeadlessWorkerTransport;
-  statsIntervalMs?: number;
-  heartbeatIntervalMs?: number;
-  controlToken?: string;
-  controlReadToken?: string;
-  reportUploadUrl?: string;
-  environment?: string;
-  fleetRegion?: string;
-  fleetProvider?: string;
-  fleetDatacenter?: string;
-  fleetHostId?: string;
-  fleetAgentPoolId?: string;
-  fleetDeploymentId?: string;
-  fleetBrowserName?: string;
-  fleetBrowserVersion?: string;
-  fleetOs?: string;
-  fleetTags?: readonly string[];
-  fleetLatitude?: number;
-  fleetLongitude?: number;
-  fleetLocationLabel?: string;
-  register: boolean;
-  restoreSession: boolean;
-  logoutOnClose: boolean;
-  leaveRoomOnClose: boolean;
-  browserLogLevel: HeadlessWorkerBrowserLogLevel;
-  headless: boolean;
-  launchTimeoutMs: number;
-  readyTimeoutMs: number;
-  exitMode: HeadlessWorkerExitMode;
-  targetDistributedRunId?: string;
-  controlHttpUrl?: string;
-  idleExitMs?: number;
-  distributedPollIntervalMs: number;
-  agentCredentials: readonly HeadlessWorkerCredentials[];
-  agentControlTokens: readonly (string | undefined)[];
-  agents: readonly HeadlessWorkerAgentConfig[];
+    spaUrl: string;
+    controlUrl: string;
+    apiBaseUrl: string;
+    headlessEntry: HeadlessWorkerEntry;
+    browserEngine: HeadlessWorkerBrowserEngine;
+    runId: string;
+    agentPrefix: string;
+    agentCount: number;
+    agentStartIndex: number;
+    roomId: string;
+    applicationId?: string;
+    workspaceId?: string;
+    transport: HeadlessWorkerTransport;
+    statsIntervalMs?: number;
+    heartbeatIntervalMs?: number;
+    controlToken?: string;
+    controlReadToken?: string;
+    reportUploadUrl?: string;
+    environment?: string;
+    fleetRegion?: string;
+    fleetProvider?: string;
+    fleetDatacenter?: string;
+    fleetHostId?: string;
+    fleetAgentPoolId?: string;
+    fleetDeploymentId?: string;
+    fleetBrowserName?: string;
+    fleetBrowserVersion?: string;
+    fleetOs?: string;
+    fleetTags?: readonly string[];
+    fleetLatitude?: number;
+    fleetLongitude?: number;
+    fleetLocationLabel?: string;
+    register: boolean;
+    restoreSession: boolean;
+    logoutOnClose: boolean;
+    leaveRoomOnClose: boolean;
+    browserLogLevel: HeadlessWorkerBrowserLogLevel;
+    headless: boolean;
+    launchTimeoutMs: number;
+    readyTimeoutMs: number;
+    exitMode: HeadlessWorkerExitMode;
+    targetDistributedRunId?: string;
+    controlHttpUrl?: string;
+    idleExitMs?: number;
+    distributedPollIntervalMs: number;
+    agentCredentials: readonly HeadlessWorkerCredentials[];
+    agentControlTokens: readonly (string | undefined)[];
+    agents: readonly HeadlessWorkerAgentConfig[];
 }>;
 
 export type HeadlessWorkerConfigInput = Readonly<{
-  env?: Readonly<Record<string, string | undefined>>;
+    env?: Readonly<Record<string, string | undefined>>;
 }>;
 
 export type HeadlessWorkerAgentUrlInput =
-  & Omit<
-    HeadlessWorkerConfig,
-    "agents" | "agentCredentials" | "browserLogLevel"
-      | "agentControlTokens"
-      | "controlReadToken"
-      | "exitMode"
-      | "targetDistributedRunId"
-      | "controlHttpUrl"
-      | "idleExitMs"
-      | "distributedPollIntervalMs"
-  >
-  & Omit<HeadlessWorkerAgentConfig, "url">;
+    & Omit<
+        HeadlessWorkerConfig,
+        | 'agents'
+        | 'agentCredentials'
+        | 'browserLogLevel'
+        | 'agentControlTokens'
+        | 'controlReadToken'
+        | 'exitMode'
+        | 'targetDistributedRunId'
+        | 'controlHttpUrl'
+        | 'idleExitMs'
+        | 'distributedPollIntervalMs'
+    >
+    & Omit<HeadlessWorkerAgentConfig, 'url'>;
 
 const DEFAULT_AGENT_COUNT = 1;
 const DEFAULT_AGENT_START_INDEX = 1;
-const DEFAULT_AGENT_PREFIX = "hetzner-agent";
-const DEFAULT_TRANSPORT: HeadlessWorkerTransport = "realtime";
-const DEFAULT_BROWSER_LOG_LEVEL: HeadlessWorkerBrowserLogLevel = "warning";
-const DEFAULT_BROWSER_ENGINE: HeadlessWorkerBrowserEngine = "chromium";
-const DEFAULT_EXIT_MODE: HeadlessWorkerExitMode = "signal";
+const DEFAULT_AGENT_PREFIX = 'hetzner-agent';
+const DEFAULT_TRANSPORT: HeadlessWorkerTransport = 'realtime';
+const DEFAULT_BROWSER_LOG_LEVEL: HeadlessWorkerBrowserLogLevel = 'warning';
+const DEFAULT_BROWSER_ENGINE: HeadlessWorkerBrowserEngine = 'chromium';
+const DEFAULT_EXIT_MODE: HeadlessWorkerExitMode = 'signal';
 const DEFAULT_DISTRIBUTED_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_LAUNCH_TIMEOUT_MS = 30_000;
 const DEFAULT_READY_TIMEOUT_MS = 45_000;
 
 const REQUIRED_ENV = [
-  "RALLAR_BLACK_BOX_SPA_URL",
-  "RALLAR_BLACK_BOX_CONTROL_URL",
-  "RALLAR_API_BASE_URL",
-  "RALLAR_BLACK_BOX_RUN_ID",
-  "RALLAR_BLACK_BOX_ROOM_ID",
+    'RALLAR_BLACK_BOX_SPA_URL',
+    'RALLAR_BLACK_BOX_CONTROL_URL',
+    'RALLAR_API_BASE_URL',
+    'RALLAR_BLACK_BOX_RUN_ID',
+    'RALLAR_BLACK_BOX_ROOM_ID'
 ] as const;
 
 export function readHeadlessWorkerConfig(
-  input: HeadlessWorkerConfigInput = {},
+    input: HeadlessWorkerConfigInput = {}
 ): HeadlessWorkerConfig {
-  const env = input.env ?? {};
-  const missing = REQUIRED_ENV.filter((key) => !envValue(env, key));
-  if (missing.length > 0) {
-    throw new Error(
-      `Missing required headless worker env: ${missing.join(", ")}`,
-    );
-  }
+    const env = input.env ?? {};
+    const missing = REQUIRED_ENV.filter((key) => !envValue(env, key));
+    if (missing.length > 0) {
+        throw new Error(
+            `Missing required headless worker env: ${missing.join(', ')}`
+        );
+    }
 
-  const agentCount = positiveIntegerEnv(
-    env,
-    "RALLAR_BLACK_BOX_AGENT_COUNT",
-    DEFAULT_AGENT_COUNT,
-  );
-  const agentStartIndex = positiveIntegerEnv(
-    env,
-    "RALLAR_BLACK_BOX_AGENT_START_INDEX",
-    DEFAULT_AGENT_START_INDEX,
-  );
-  const controlUrl = requireEnv(env, "RALLAR_BLACK_BOX_CONTROL_URL");
-  const exitMode = exitModeEnv(env);
-  const targetDistributedRunId = envValue(
-    env,
-    "RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID",
-  );
-  const idleExitMs = optionalPositiveIntegerEnv(
-    env,
-    "RALLAR_BLACK_BOX_IDLE_EXIT_MS",
-  );
-  if (
-    exitMode === "after-target-distributed-run-terminal" &&
-    !targetDistributedRunId
-  ) {
-    throw new Error(
-      "RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID is required when " +
-        "RALLAR_BLACK_BOX_EXIT_MODE=after-target-distributed-run-terminal",
+    const agentCount = positiveIntegerEnv(
+        env,
+        'RALLAR_BLACK_BOX_AGENT_COUNT',
+        DEFAULT_AGENT_COUNT
     );
-  }
-  if (exitMode === "after-idle-ms" && idleExitMs === undefined) {
-    throw new Error("RALLAR_BLACK_BOX_IDLE_EXIT_MS must be a positive integer");
-  }
-  const browserEngine = browserEngineEnv(env);
-  const agentCredentials = readAgentCredentials(env, agentCount);
-  const controlToken = envValue(env, "RALLAR_BLACK_BOX_CONTROL_TOKEN");
-  const agentControlTokens = readAgentControlTokens(
-    env,
-    agentCount,
-    controlToken,
-  );
-  const baseConfig = {
-    spaUrl: normalizeBaseUrl(requireEnv(env, "RALLAR_BLACK_BOX_SPA_URL")),
-    controlUrl,
-    apiBaseUrl: normalizeBaseUrl(requireEnv(env, "RALLAR_API_BASE_URL")),
-    headlessEntry: headlessEntryEnv(env),
-    browserEngine,
-    runId: requireEnv(env, "RALLAR_BLACK_BOX_RUN_ID"),
-    agentPrefix: envValue(env, "RALLAR_BLACK_BOX_AGENT_PREFIX") ??
-      DEFAULT_AGENT_PREFIX,
-    agentCount,
-    agentStartIndex,
-    roomId: requireEnv(env, "RALLAR_BLACK_BOX_ROOM_ID"),
-    applicationId: envValue(env, "RALLAR_APPLICATION_ID") ??
-      envValue(env, "RALLAR_BLACK_BOX_APPLICATION_ID"),
-    workspaceId: envValue(env, "RALLAR_WORKSPACE_ID") ??
-      envValue(env, "RALLAR_BLACK_BOX_WORKSPACE_ID"),
-    transport: transportEnv(
-      env,
-      "RALLAR_BLACK_BOX_TRANSPORT",
-      DEFAULT_TRANSPORT,
-    ),
-    statsIntervalMs: optionalPositiveIntegerEnv(
-      env,
-      "RALLAR_BLACK_BOX_STATS_INTERVAL_MS",
-    ),
-    heartbeatIntervalMs: optionalPositiveIntegerEnv(
-      env,
-      "RALLAR_BLACK_BOX_HEARTBEAT_INTERVAL_MS",
-    ),
-    controlToken,
-    controlReadToken: envValue(env, "RALLAR_BLACK_BOX_CONTROL_READ_TOKEN"),
-    reportUploadUrl: envValue(env, "RALLAR_BLACK_BOX_REPORT_UPLOAD_URL"),
-    environment: envValue(env, "RALLAR_BLACK_BOX_ENVIRONMENT"),
-    fleetRegion: envValue(env, "RALLAR_AGENT_REGION") ??
-      envValue(env, "RALLAR_BLACK_BOX_AGENT_REGION"),
-    fleetProvider: envValue(env, "RALLAR_AGENT_PROVIDER") ??
-      envValue(env, "RALLAR_BLACK_BOX_AGENT_PROVIDER"),
-    fleetDatacenter: envValue(env, "RALLAR_AGENT_DATACENTER") ??
-      envValue(env, "RALLAR_BLACK_BOX_AGENT_DATACENTER"),
-    fleetHostId: envValue(env, "RALLAR_AGENT_HOST_ID") ??
-      envValue(env, "RALLAR_BLACK_BOX_AGENT_HOST_ID"),
-    fleetAgentPoolId: envValue(env, "RALLAR_AGENT_POOL_ID") ??
-      envValue(env, "RALLAR_BLACK_BOX_AGENT_POOL_ID"),
-    fleetDeploymentId: envValue(env, "RALLAR_AGENT_DEPLOYMENT_ID") ??
-      envValue(env, "RALLAR_BLACK_BOX_AGENT_DEPLOYMENT_ID"),
-    fleetBrowserName: envValue(env, "RALLAR_AGENT_BROWSER_NAME") ??
-      envValue(env, "RALLAR_BLACK_BOX_AGENT_BROWSER_NAME") ??
-      browserEngine,
-    fleetBrowserVersion: envValue(env, "RALLAR_AGENT_BROWSER_VERSION") ??
-      envValue(env, "RALLAR_BLACK_BOX_AGENT_BROWSER_VERSION"),
-    fleetOs: envValue(env, "RALLAR_AGENT_OS") ??
-      envValue(env, "RALLAR_BLACK_BOX_AGENT_OS"),
-    fleetTags: csvEnv(env, "RALLAR_AGENT_TAGS") ??
-      csvEnv(env, "RALLAR_BLACK_BOX_AGENT_TAGS"),
-    fleetLatitude: optionalCoordinateEnv(
-      env,
-      "RALLAR_AGENT_LATITUDE",
-      "RALLAR_BLACK_BOX_AGENT_LATITUDE",
-      -90,
-      90,
-    ),
-    fleetLongitude: optionalCoordinateEnv(
-      env,
-      "RALLAR_AGENT_LONGITUDE",
-      "RALLAR_BLACK_BOX_AGENT_LONGITUDE",
-      -180,
-      180,
-    ),
-    fleetLocationLabel: envValue(env, "RALLAR_AGENT_LOCATION_LABEL") ??
-      envValue(env, "RALLAR_BLACK_BOX_AGENT_LOCATION_LABEL"),
-    register: booleanEnv(env, "RALLAR_BLACK_BOX_REGISTER", false),
-    restoreSession: booleanEnv(env, "RALLAR_BLACK_BOX_RESTORE_SESSION", false),
-    logoutOnClose: booleanEnv(env, "RALLAR_BLACK_BOX_LOGOUT_ON_CLOSE", false),
-    leaveRoomOnClose: booleanEnv(
-      env,
-      "RALLAR_BLACK_BOX_LEAVE_ROOM_ON_CLOSE",
-      false,
-    ),
-    browserLogLevel: browserLogLevelEnv(
-      env,
-      "RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL",
-      DEFAULT_BROWSER_LOG_LEVEL,
-    ),
-    headless: booleanEnv(env, "RALLAR_BLACK_BOX_HEADLESS", true),
-    launchTimeoutMs: positiveIntegerEnv(
-      env,
-      "RALLAR_BLACK_BOX_LAUNCH_TIMEOUT_MS",
-      DEFAULT_LAUNCH_TIMEOUT_MS,
-    ),
-    readyTimeoutMs: positiveIntegerEnv(
-      env,
-      "RALLAR_BLACK_BOX_READY_TIMEOUT_MS",
-      DEFAULT_READY_TIMEOUT_MS,
-    ),
-    exitMode,
-    targetDistributedRunId,
-    controlHttpUrl: normalizeBaseUrl(
-      envValue(env, "RALLAR_CONTROL_HTTP_URL") ??
-        controlHttpUrlFromControlUrl(controlUrl),
-    ),
-    idleExitMs,
-    distributedPollIntervalMs: positiveIntegerEnv(
-      env,
-      "RALLAR_BLACK_BOX_DISTRIBUTED_POLL_INTERVAL_MS",
-      DEFAULT_DISTRIBUTED_POLL_INTERVAL_MS,
-    ),
-    agentCredentials,
-    agentControlTokens,
-  };
+    const agentStartIndex = positiveIntegerEnv(
+        env,
+        'RALLAR_BLACK_BOX_AGENT_START_INDEX',
+        DEFAULT_AGENT_START_INDEX
+    );
+    const controlUrl = requireEnv(env, 'RALLAR_BLACK_BOX_CONTROL_URL');
+    const exitMode = exitModeEnv(env);
+    const targetDistributedRunId = envValue(
+        env,
+        'RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID'
+    );
+    const idleExitMs = optionalPositiveIntegerEnv(
+        env,
+        'RALLAR_BLACK_BOX_IDLE_EXIT_MS'
+    );
+    if (
+        exitMode === 'after-target-distributed-run-terminal' &&
+        !targetDistributedRunId
+    ) {
+        throw new Error(
+            'RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID is required when ' +
+                'RALLAR_BLACK_BOX_EXIT_MODE=after-target-distributed-run-terminal'
+        );
+    }
+    if (exitMode === 'after-idle-ms' && idleExitMs === undefined) {
+        throw new Error('RALLAR_BLACK_BOX_IDLE_EXIT_MS must be a positive integer');
+    }
+    const browserEngine = browserEngineEnv(env);
+    const agentCredentials = readAgentCredentials(env, agentCount);
+    const controlToken = envValue(env, 'RALLAR_BLACK_BOX_CONTROL_TOKEN');
+    const agentControlTokens = readAgentControlTokens(
+        env,
+        agentCount,
+        controlToken
+    );
+    const baseConfig = {
+        spaUrl: normalizeBaseUrl(requireEnv(env, 'RALLAR_BLACK_BOX_SPA_URL')),
+        controlUrl,
+        apiBaseUrl: normalizeBaseUrl(requireEnv(env, 'RALLAR_API_BASE_URL')),
+        headlessEntry: headlessEntryEnv(env),
+        browserEngine,
+        runId: requireEnv(env, 'RALLAR_BLACK_BOX_RUN_ID'),
+        agentPrefix: envValue(env, 'RALLAR_BLACK_BOX_AGENT_PREFIX') ??
+            DEFAULT_AGENT_PREFIX,
+        agentCount,
+        agentStartIndex,
+        roomId: requireEnv(env, 'RALLAR_BLACK_BOX_ROOM_ID'),
+        applicationId: envValue(env, 'RALLAR_APPLICATION_ID') ??
+            envValue(env, 'RALLAR_BLACK_BOX_APPLICATION_ID'),
+        workspaceId: envValue(env, 'RALLAR_WORKSPACE_ID') ??
+            envValue(env, 'RALLAR_BLACK_BOX_WORKSPACE_ID'),
+        transport: transportEnv(
+            env,
+            'RALLAR_BLACK_BOX_TRANSPORT',
+            DEFAULT_TRANSPORT
+        ),
+        statsIntervalMs: optionalPositiveIntegerEnv(
+            env,
+            'RALLAR_BLACK_BOX_STATS_INTERVAL_MS'
+        ),
+        heartbeatIntervalMs: optionalPositiveIntegerEnv(
+            env,
+            'RALLAR_BLACK_BOX_HEARTBEAT_INTERVAL_MS'
+        ),
+        controlToken,
+        controlReadToken: envValue(env, 'RALLAR_BLACK_BOX_CONTROL_READ_TOKEN'),
+        reportUploadUrl: envValue(env, 'RALLAR_BLACK_BOX_REPORT_UPLOAD_URL'),
+        environment: envValue(env, 'RALLAR_BLACK_BOX_ENVIRONMENT'),
+        fleetRegion: envValue(env, 'RALLAR_AGENT_REGION') ??
+            envValue(env, 'RALLAR_BLACK_BOX_AGENT_REGION'),
+        fleetProvider: envValue(env, 'RALLAR_AGENT_PROVIDER') ??
+            envValue(env, 'RALLAR_BLACK_BOX_AGENT_PROVIDER'),
+        fleetDatacenter: envValue(env, 'RALLAR_AGENT_DATACENTER') ??
+            envValue(env, 'RALLAR_BLACK_BOX_AGENT_DATACENTER'),
+        fleetHostId: envValue(env, 'RALLAR_AGENT_HOST_ID') ??
+            envValue(env, 'RALLAR_BLACK_BOX_AGENT_HOST_ID'),
+        fleetAgentPoolId: envValue(env, 'RALLAR_AGENT_POOL_ID') ??
+            envValue(env, 'RALLAR_BLACK_BOX_AGENT_POOL_ID'),
+        fleetDeploymentId: envValue(env, 'RALLAR_AGENT_DEPLOYMENT_ID') ??
+            envValue(env, 'RALLAR_BLACK_BOX_AGENT_DEPLOYMENT_ID'),
+        fleetBrowserName: envValue(env, 'RALLAR_AGENT_BROWSER_NAME') ??
+            envValue(env, 'RALLAR_BLACK_BOX_AGENT_BROWSER_NAME') ??
+            browserEngine,
+        fleetBrowserVersion: envValue(env, 'RALLAR_AGENT_BROWSER_VERSION') ??
+            envValue(env, 'RALLAR_BLACK_BOX_AGENT_BROWSER_VERSION'),
+        fleetOs: envValue(env, 'RALLAR_AGENT_OS') ??
+            envValue(env, 'RALLAR_BLACK_BOX_AGENT_OS'),
+        fleetTags: csvEnv(env, 'RALLAR_AGENT_TAGS') ??
+            csvEnv(env, 'RALLAR_BLACK_BOX_AGENT_TAGS'),
+        fleetLatitude: optionalCoordinateEnv(
+            env,
+            'RALLAR_AGENT_LATITUDE',
+            'RALLAR_BLACK_BOX_AGENT_LATITUDE',
+            -90,
+            90
+        ),
+        fleetLongitude: optionalCoordinateEnv(
+            env,
+            'RALLAR_AGENT_LONGITUDE',
+            'RALLAR_BLACK_BOX_AGENT_LONGITUDE',
+            -180,
+            180
+        ),
+        fleetLocationLabel: envValue(env, 'RALLAR_AGENT_LOCATION_LABEL') ??
+            envValue(env, 'RALLAR_BLACK_BOX_AGENT_LOCATION_LABEL'),
+        register: booleanEnv(env, 'RALLAR_BLACK_BOX_REGISTER', false),
+        restoreSession: booleanEnv(env, 'RALLAR_BLACK_BOX_RESTORE_SESSION', false),
+        logoutOnClose: booleanEnv(env, 'RALLAR_BLACK_BOX_LOGOUT_ON_CLOSE', false),
+        leaveRoomOnClose: booleanEnv(
+            env,
+            'RALLAR_BLACK_BOX_LEAVE_ROOM_ON_CLOSE',
+            false
+        ),
+        browserLogLevel: browserLogLevelEnv(
+            env,
+            'RALLAR_BLACK_BOX_BROWSER_LOG_LEVEL',
+            DEFAULT_BROWSER_LOG_LEVEL
+        ),
+        headless: booleanEnv(env, 'RALLAR_BLACK_BOX_HEADLESS', true),
+        launchTimeoutMs: positiveIntegerEnv(
+            env,
+            'RALLAR_BLACK_BOX_LAUNCH_TIMEOUT_MS',
+            DEFAULT_LAUNCH_TIMEOUT_MS
+        ),
+        readyTimeoutMs: positiveIntegerEnv(
+            env,
+            'RALLAR_BLACK_BOX_READY_TIMEOUT_MS',
+            DEFAULT_READY_TIMEOUT_MS
+        ),
+        exitMode,
+        targetDistributedRunId,
+        controlHttpUrl: normalizeBaseUrl(
+            envValue(env, 'RALLAR_CONTROL_HTTP_URL') ??
+                controlHttpUrlFromControlUrl(controlUrl)
+        ),
+        idleExitMs,
+        distributedPollIntervalMs: positiveIntegerEnv(
+            env,
+            'RALLAR_BLACK_BOX_DISTRIBUTED_POLL_INTERVAL_MS',
+            DEFAULT_DISTRIBUTED_POLL_INTERVAL_MS
+        ),
+        agentCredentials,
+        agentControlTokens
+    };
 
-  return {
-    ...baseConfig,
-    agents: createHeadlessWorkerAgents(baseConfig),
-  };
+    return {
+        ...baseConfig,
+        agents: createHeadlessWorkerAgents(baseConfig)
+    };
 }
 
 export function createHeadlessWorkerAgents(
-  config: Omit<HeadlessWorkerConfig, "agents">,
+    config: Omit<HeadlessWorkerConfig, 'agents'>
 ): readonly HeadlessWorkerAgentConfig[] {
-  return Array.from({ length: config.agentCount }, (_, index) => {
-    const ordinal = config.agentStartIndex + index;
-    const agentId = `${config.agentPrefix}-${String(ordinal).padStart(2, "0")}`;
-    const actor = agentId;
-    return {
-      agentId,
-      actor,
-      sessionId: agentId,
-      credentials: config.agentCredentials[index],
-      controlToken: config.agentControlTokens[index],
-      url: createHeadlessWorkerAgentUrl({
-        ...config,
-        agentId,
-        actor,
-        sessionId: agentId,
-        credentials: config.agentCredentials[index],
-        controlToken: config.agentControlTokens[index],
-      }),
-    };
-  });
+    return Array.from({ length: config.agentCount }, (_, index) => {
+        const ordinal = config.agentStartIndex + index;
+        const agentId = `${config.agentPrefix}-${String(ordinal).padStart(2, '0')}`;
+        const actor = agentId;
+        return {
+            agentId,
+            actor,
+            sessionId: agentId,
+            credentials: config.agentCredentials[index],
+            controlToken: config.agentControlTokens[index],
+            url: createHeadlessWorkerAgentUrl({
+                ...config,
+                agentId,
+                actor,
+                sessionId: agentId,
+                credentials: config.agentCredentials[index],
+                controlToken: config.agentControlTokens[index]
+            })
+        };
+    });
 }
 
 export function createHeadlessWorkerAgentUrl(
-  input: HeadlessWorkerAgentUrlInput,
+    input: HeadlessWorkerAgentUrlInput
 ): string {
-  const url = agentSpaUrl(input.spaUrl, input.headlessEntry);
-  const params = url.searchParams;
-  params.set("mode", "control");
-  params.set("provider", "browser-rallar");
-  params.set("autoConnect", "1");
-  if (input.headlessEntry === "operator-spa") {
-    params.set("tab", "local-workbench");
-  } else {
-    params.delete("tab");
-  }
-  params.set("controlUrl", input.controlUrl);
-  params.set("runId", input.runId);
-  params.set("agentId", input.agentId);
-  params.set("apiBaseUrl", input.apiBaseUrl);
-  params.set("roomId", input.roomId);
-  params.set("actor", input.actor);
-  params.set("sessionId", input.sessionId);
-  params.set("transport", input.transport);
-  params.set("rallarUsername", input.credentials.username);
-  params.set("rallarPassword", input.credentials.password);
-  params.set("rallarLeaveRoomOnClose", input.leaveRoomOnClose ? "1" : "0");
-  params.set("rallarLogoutOnClose", input.logoutOnClose ? "1" : "0");
+    const url = agentSpaUrl(input.spaUrl, input.headlessEntry);
+    const params = url.searchParams;
+    params.set('mode', 'control');
+    params.set('provider', 'browser-rallar');
+    params.set('autoConnect', '1');
+    if (input.headlessEntry === 'operator-spa') {
+        params.set('tab', 'local-workbench');
+    }
+    else {
+        params.delete('tab');
+    }
+    params.set('controlUrl', input.controlUrl);
+    params.set('runId', input.runId);
+    params.set('agentId', input.agentId);
+    params.set('apiBaseUrl', input.apiBaseUrl);
+    params.set('roomId', input.roomId);
+    params.set('actor', input.actor);
+    params.set('sessionId', input.sessionId);
+    params.set('transport', input.transport);
+    params.set('rallarUsername', input.credentials.username);
+    params.set('rallarPassword', input.credentials.password);
+    params.set('rallarLeaveRoomOnClose', input.leaveRoomOnClose ? '1' : '0');
+    params.set('rallarLogoutOnClose', input.logoutOnClose ? '1' : '0');
 
-  setOptionalParam(params, "applicationId", input.applicationId);
-  setOptionalParam(params, "workspaceId", input.workspaceId);
-  setOptionalParam(
-    params,
-    "statsIntervalMs",
-    numberString(input.statsIntervalMs),
-  );
-  setOptionalParam(
-    params,
-    "heartbeatIntervalMs",
-    numberString(input.heartbeatIntervalMs),
-  );
-  setOptionalParam(params, "controlToken", input.controlToken);
-  setOptionalParam(params, "reportUploadUrl", input.reportUploadUrl);
-  setOptionalParam(params, "environment", input.environment);
-  setOptionalParam(params, "fleetRegion", input.fleetRegion);
-  setOptionalParam(params, "fleetProvider", input.fleetProvider);
-  setOptionalParam(params, "fleetDatacenter", input.fleetDatacenter);
-  setOptionalParam(params, "fleetHostId", input.fleetHostId);
-  setOptionalParam(params, "fleetAgentPoolId", input.fleetAgentPoolId);
-  setOptionalParam(params, "fleetDeploymentId", input.fleetDeploymentId);
-  setOptionalParam(params, "fleetBrowserName", input.fleetBrowserName);
-  setOptionalParam(params, "fleetBrowserVersion", input.fleetBrowserVersion);
-  setOptionalParam(params, "fleetOs", input.fleetOs);
-  setOptionalParam(params, "fleetTags", input.fleetTags?.join(","));
-  setOptionalParam(params, "fleetLatitude", numberString(input.fleetLatitude));
-  setOptionalParam(params, "fleetLongitude", numberString(input.fleetLongitude));
-  setOptionalParam(params, "fleetLocationLabel", input.fleetLocationLabel);
-
-  if (input.register) {
-    params.set(
-      "rallarRegister",
-      input.headlessEntry === "headless" ? "if-needed" : "1",
+    setOptionalParam(params, 'applicationId', input.applicationId);
+    setOptionalParam(params, 'workspaceId', input.workspaceId);
+    setOptionalParam(
+        params,
+        'statsIntervalMs',
+        numberString(input.statsIntervalMs)
     );
-  }
-  if (input.restoreSession) {
-    params.set("rallarRestoreSession", "1");
-  }
+    setOptionalParam(
+        params,
+        'heartbeatIntervalMs',
+        numberString(input.heartbeatIntervalMs)
+    );
+    setOptionalParam(params, 'controlToken', input.controlToken);
+    setOptionalParam(params, 'reportUploadUrl', input.reportUploadUrl);
+    setOptionalParam(params, 'environment', input.environment);
+    setOptionalParam(params, 'fleetRegion', input.fleetRegion);
+    setOptionalParam(params, 'fleetProvider', input.fleetProvider);
+    setOptionalParam(params, 'fleetDatacenter', input.fleetDatacenter);
+    setOptionalParam(params, 'fleetHostId', input.fleetHostId);
+    setOptionalParam(params, 'fleetAgentPoolId', input.fleetAgentPoolId);
+    setOptionalParam(params, 'fleetDeploymentId', input.fleetDeploymentId);
+    setOptionalParam(params, 'fleetBrowserName', input.fleetBrowserName);
+    setOptionalParam(params, 'fleetBrowserVersion', input.fleetBrowserVersion);
+    setOptionalParam(params, 'fleetOs', input.fleetOs);
+    setOptionalParam(params, 'fleetTags', input.fleetTags?.join(','));
+    setOptionalParam(params, 'fleetLatitude', numberString(input.fleetLatitude));
+    setOptionalParam(params, 'fleetLongitude', numberString(input.fleetLongitude));
+    setOptionalParam(params, 'fleetLocationLabel', input.fleetLocationLabel);
 
-  return url.toString();
+    if (input.register) {
+        params.set(
+            'rallarRegister',
+            input.headlessEntry === 'headless' ? 'if-needed' : '1'
+        );
+    }
+    if (input.restoreSession) {
+        params.set('rallarRestoreSession', '1');
+    }
+
+    return url.toString();
 }
 
 function agentSpaUrl(spaUrl: string, entry: HeadlessWorkerEntry): URL {
-  const url = new URL(spaUrl);
-  if (entry === "headless") {
-    const basePath = url.pathname.endsWith("/")
-      ? url.pathname
-      : `${url.pathname}/`;
-    url.pathname = basePath.endsWith("/headless/")
-      ? basePath
-      : `${basePath.replace(/\/+$/, "")}/headless/`;
-  }
-  return url;
+    const url = new URL(spaUrl);
+    if (entry === 'headless') {
+        const basePath = url.pathname.endsWith('/')
+            ? url.pathname
+            : `${url.pathname}/`;
+        url.pathname = basePath.endsWith('/headless/')
+            ? basePath
+            : `${basePath.replace(/\/+$/, '')}/headless/`;
+    }
+    return url;
 }
 
 export function controlRunSnapshotUrlFromControlUrl(
-  controlUrl: string,
-  runId: string,
+    controlUrl: string,
+    runId: string
 ): string {
-  const url = new URL(controlUrl);
-  normalizeControlHttpProtocol(url, controlUrl);
+    const url = new URL(controlUrl);
+    normalizeControlHttpProtocol(url, controlUrl);
 
-  url.pathname = `/runs/${encodeURIComponent(runId)}`;
-  url.search = "";
-  url.hash = "";
-  return url.toString();
+    url.pathname = `/runs/${encodeURIComponent(runId)}`;
+    url.search = '';
+    url.hash = '';
+    return url.toString();
 }
 
 function controlHttpUrlFromControlUrl(controlUrl: string): string {
-  const url = new URL(controlUrl);
-  normalizeControlHttpProtocol(url, controlUrl);
-  url.search = "";
-  url.hash = "";
-  return url.toString();
+    const url = new URL(controlUrl);
+    normalizeControlHttpProtocol(url, controlUrl);
+    url.search = '';
+    url.hash = '';
+    return url.toString();
 }
 
 function normalizeControlHttpProtocol(url: URL, originalValue: string): void {
-  if (url.protocol === "ws:") {
-    url.protocol = "http:";
-  } else if (url.protocol === "wss:") {
-    url.protocol = "https:";
-  } else if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error(
-      `Control URL must use ws, wss, http, or https. Received: ${originalValue}`,
-    );
-  }
+    if (url.protocol === 'ws:') {
+        url.protocol = 'http:';
+    }
+    else if (url.protocol === 'wss:') {
+        url.protocol = 'https:';
+    }
+    else if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        throw new Error(
+            `Control URL must use ws, wss, http, or https. Received: ${originalValue}`
+        );
+    }
 }
 
 function readAgentCredentials(
-  env: Readonly<Record<string, string | undefined>>,
-  agentCount: number,
+    env: Readonly<Record<string, string | undefined>>,
+    agentCount: number
 ): readonly HeadlessWorkerCredentials[] {
-  const genericUsername = envValue(env, "RALLAR_BLACK_BOX_USERNAME");
-  const genericPassword = envValue(env, "RALLAR_BLACK_BOX_PASSWORD");
-  const credentials: HeadlessWorkerCredentials[] = [];
-  for (let index = 0; index < agentCount; index += 1) {
-    const ordinal = index + 1;
-    const username =
-      envValue(env, `RALLAR_BLACK_BOX_AGENT_${ordinal}_USERNAME`) ??
-        genericUsername;
-    const password =
-      envValue(env, `RALLAR_BLACK_BOX_AGENT_${ordinal}_PASSWORD`) ??
-        genericPassword;
-    if (!username || !password) {
-      throw new Error(
-        `Missing credentials for headless worker agent ${ordinal}. ` +
-          `Set RALLAR_BLACK_BOX_USERNAME/PASSWORD or ` +
-          `RALLAR_BLACK_BOX_AGENT_${ordinal}_USERNAME/PASSWORD.`,
-      );
+    const genericUsername = envValue(env, 'RALLAR_BLACK_BOX_USERNAME');
+    const genericPassword = envValue(env, 'RALLAR_BLACK_BOX_PASSWORD');
+    const credentials: HeadlessWorkerCredentials[] = [];
+    for (let index = 0; index < agentCount; index += 1) {
+        const ordinal = index + 1;
+        const username = envValue(env, `RALLAR_BLACK_BOX_AGENT_${ordinal}_USERNAME`) ??
+            genericUsername;
+        const password = envValue(env, `RALLAR_BLACK_BOX_AGENT_${ordinal}_PASSWORD`) ??
+            genericPassword;
+        if (!username || !password) {
+            throw new Error(
+                `Missing credentials for headless worker agent ${ordinal}. ` +
+                    `Set RALLAR_BLACK_BOX_USERNAME/PASSWORD or ` +
+                    `RALLAR_BLACK_BOX_AGENT_${ordinal}_USERNAME/PASSWORD.`
+            );
+        }
+        credentials.push({ username, password });
     }
-    credentials.push({ username, password });
-  }
-  return credentials;
+    return credentials;
 }
 
 function readAgentControlTokens(
-  env: Readonly<Record<string, string | undefined>>,
-  agentCount: number,
-  fallback: string | undefined,
+    env: Readonly<Record<string, string | undefined>>,
+    agentCount: number,
+    fallback: string | undefined
 ): readonly (string | undefined)[] {
-  const tokens: (string | undefined)[] = [];
-  for (let index = 0; index < agentCount; index += 1) {
-    const ordinal = index + 1;
-    tokens.push(
-      envValue(env, `RALLAR_BLACK_BOX_AGENT_${ordinal}_CONTROL_TOKEN`) ??
-        fallback,
-    );
-  }
-  return tokens;
+    const tokens: (string | undefined)[] = [];
+    for (let index = 0; index < agentCount; index += 1) {
+        const ordinal = index + 1;
+        tokens.push(
+            envValue(env, `RALLAR_BLACK_BOX_AGENT_${ordinal}_CONTROL_TOKEN`) ??
+                fallback
+        );
+    }
+    return tokens;
 }
 
 function setOptionalParam(
-  params: URLSearchParams,
-  key: string,
-  value: string | undefined,
+    params: URLSearchParams,
+    key: string,
+    value: string | undefined
 ): void {
-  if (value && value.length > 0) {
-    params.set(key, value);
-  }
+    if (value && value.length > 0) {
+        params.set(key, value);
+    }
 }
 
 function numberString(value: number | undefined): string | undefined {
-  return value === undefined ? undefined : String(value);
+    return value === undefined ? undefined : String(value);
 }
 
 function requireEnv(
-  env: Readonly<Record<string, string | undefined>>,
-  key: string,
+    env: Readonly<Record<string, string | undefined>>,
+    key: string
 ): string {
-  const value = envValue(env, key);
-  if (!value) {
-    throw new Error(`Missing required headless worker env: ${key}`);
-  }
-  return value;
+    const value = envValue(env, key);
+    if (!value) {
+        throw new Error(`Missing required headless worker env: ${key}`);
+    }
+    return value;
 }
 
 function envValue(
-  env: Readonly<Record<string, string | undefined>>,
-  key: string,
+    env: Readonly<Record<string, string | undefined>>,
+    key: string
 ): string | undefined {
-  const value = env[key]?.trim();
-  return value && value.length > 0 ? value : undefined;
+    const value = env[key]?.trim();
+    return value && value.length > 0 ? value : undefined;
 }
 
 function csvEnv(
-  env: Readonly<Record<string, string | undefined>>,
-  key: string,
+    env: Readonly<Record<string, string | undefined>>,
+    key: string
 ): readonly string[] | undefined {
-  const value = envValue(env, key);
-  if (!value) {
-    return undefined;
-  }
-  const entries = value.split(",").map((entry) => entry.trim()).filter(Boolean);
-  return entries.length > 0 ? entries : undefined;
+    const value = envValue(env, key);
+    if (!value) {
+        return undefined;
+    }
+    const entries = value.split(',').map((entry) => entry.trim()).filter(Boolean);
+    return entries.length > 0 ? entries : undefined;
 }
 
 function positiveIntegerEnv(
-  env: Readonly<Record<string, string | undefined>>,
-  key: string,
-  fallback: number,
+    env: Readonly<Record<string, string | undefined>>,
+    key: string,
+    fallback: number
 ): number {
-  const value = optionalPositiveIntegerEnv(env, key);
-  return value ?? fallback;
+    const value = optionalPositiveIntegerEnv(env, key);
+    return value ?? fallback;
 }
 
 function optionalPositiveIntegerEnv(
-  env: Readonly<Record<string, string | undefined>>,
-  key: string,
+    env: Readonly<Record<string, string | undefined>>,
+    key: string
 ): number | undefined {
-  const raw = envValue(env, key);
-  if (!raw) {
-    return undefined;
-  }
+    const raw = envValue(env, key);
+    if (!raw) {
+        return undefined;
+    }
 
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new Error(`${key} must be a positive integer. Received: ${raw}`);
-  }
-  return parsed;
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+        throw new Error(`${key} must be a positive integer. Received: ${raw}`);
+    }
+    return parsed;
 }
 
 function optionalCoordinateEnv(
-  env: Readonly<Record<string, string | undefined>>,
-  primaryKey: string,
-  fallbackKey: string,
-  min: number,
-  max: number,
+    env: Readonly<Record<string, string | undefined>>,
+    primaryKey: string,
+    fallbackKey: string,
+    min: number,
+    max: number
 ): number | undefined {
-  const raw = envValue(env, primaryKey) ?? envValue(env, fallbackKey);
-  if (!raw) {
-    return undefined;
-  }
+    const raw = envValue(env, primaryKey) ?? envValue(env, fallbackKey);
+    if (!raw) {
+        return undefined;
+    }
 
-  const parsed = isStrictDecimalNumber(raw) ? Number(raw) : Number.NaN;
-  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
-    throw new Error(`${primaryKey} must be between ${min} and ${max}. Received: ${raw}`);
-  }
-  return parsed;
+    const parsed = isStrictDecimalNumber(raw) ? Number(raw) : Number.NaN;
+    if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+        throw new Error(`${primaryKey} must be between ${min} and ${max}. Received: ${raw}`);
+    }
+    return parsed;
 }
 
 function isStrictDecimalNumber(value: string): boolean {
-  return /^[+-]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))(?:e[+-]?\d+)?$/i.test(value);
+    return /^[+-]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))(?:e[+-]?\d+)?$/i.test(value);
 }
 
 function booleanEnv(
-  env: Readonly<Record<string, string | undefined>>,
-  key: string,
-  fallback: boolean,
+    env: Readonly<Record<string, string | undefined>>,
+    key: string,
+    fallback: boolean
 ): boolean {
-  const raw = envValue(env, key);
-  if (!raw) {
-    return fallback;
-  }
-  const normalized = raw.toLowerCase();
-  return normalized === "1" ||
-    normalized === "true" ||
-    normalized === "yes" ||
-    normalized === "on";
+    const raw = envValue(env, key);
+    if (!raw) {
+        return fallback;
+    }
+    const normalized = raw.toLowerCase();
+    return normalized === '1' ||
+        normalized === 'true' ||
+        normalized === 'yes' ||
+        normalized === 'on';
 }
 
 function transportEnv(
-  env: Readonly<Record<string, string | undefined>>,
-  key: string,
-  fallback: HeadlessWorkerTransport,
+    env: Readonly<Record<string, string | undefined>>,
+    key: string,
+    fallback: HeadlessWorkerTransport
 ): HeadlessWorkerTransport {
-  const raw = envValue(env, key);
-  if (!raw) {
-    return fallback;
-  }
-  if (raw === "realtime" || raw === "messages.rtc") {
-    return raw;
-  }
-  throw new Error(`${key} must be realtime or messages.rtc. Received: ${raw}`);
+    const raw = envValue(env, key);
+    if (!raw) {
+        return fallback;
+    }
+    if (raw === 'realtime' || raw === 'messages.rtc') {
+        return raw;
+    }
+    throw new Error(`${key} must be realtime or messages.rtc. Received: ${raw}`);
 }
 
 function headlessEntryEnv(
-  env: Readonly<Record<string, string | undefined>>,
+    env: Readonly<Record<string, string | undefined>>
 ): HeadlessWorkerEntry {
-  const value = envValue(env, "RALLAR_BLACK_BOX_HEADLESS_ENTRY");
-  if (!value || value === "headless") {
-    return "headless";
-  }
-  if (value === "operator-spa") {
-    return "operator-spa";
-  }
-  throw new Error(
-    "RALLAR_BLACK_BOX_HEADLESS_ENTRY must be operator-spa or headless",
-  );
+    const value = envValue(env, 'RALLAR_BLACK_BOX_HEADLESS_ENTRY');
+    if (!value || value === 'headless') {
+        return 'headless';
+    }
+    if (value === 'operator-spa') {
+        return 'operator-spa';
+    }
+    throw new Error(
+        'RALLAR_BLACK_BOX_HEADLESS_ENTRY must be operator-spa or headless'
+    );
 }
 
 function browserLogLevelEnv(
-  env: Readonly<Record<string, string | undefined>>,
-  key: string,
-  fallback: HeadlessWorkerBrowserLogLevel,
+    env: Readonly<Record<string, string | undefined>>,
+    key: string,
+    fallback: HeadlessWorkerBrowserLogLevel
 ): HeadlessWorkerBrowserLogLevel {
-  const raw = envValue(env, key);
-  if (!raw) {
-    return fallback;
-  }
-  if (raw === "warning" || raw === "info" || raw === "debug") {
-    return raw;
-  }
-  throw new Error(
-    `${key} must be warning, info, or debug. Received: ${raw}`,
-  );
+    const raw = envValue(env, key);
+    if (!raw) {
+        return fallback;
+    }
+    if (raw === 'warning' || raw === 'info' || raw === 'debug') {
+        return raw;
+    }
+    throw new Error(
+        `${key} must be warning, info, or debug. Received: ${raw}`
+    );
 }
 
 function exitModeEnv(
-  env: Readonly<Record<string, string | undefined>>,
+    env: Readonly<Record<string, string | undefined>>
 ): HeadlessWorkerExitMode {
-  const raw = envValue(env, "RALLAR_BLACK_BOX_EXIT_MODE");
-  if (!raw) {
-    return DEFAULT_EXIT_MODE;
-  }
-  if (
-    raw === "signal" ||
-    raw === "after-target-distributed-run-terminal" ||
-    raw === "after-idle-ms"
-  ) {
-    return raw;
-  }
-  throw new Error(
-    "RALLAR_BLACK_BOX_EXIT_MODE must be signal, after-target-distributed-run-terminal, or after-idle-ms",
-  );
+    const raw = envValue(env, 'RALLAR_BLACK_BOX_EXIT_MODE');
+    if (!raw) {
+        return DEFAULT_EXIT_MODE;
+    }
+    if (
+        raw === 'signal' ||
+        raw === 'after-target-distributed-run-terminal' ||
+        raw === 'after-idle-ms'
+    ) {
+        return raw;
+    }
+    throw new Error(
+        'RALLAR_BLACK_BOX_EXIT_MODE must be signal, after-target-distributed-run-terminal, or after-idle-ms'
+    );
 }
 
 function browserEngineEnv(
-  env: Readonly<Record<string, string | undefined>>,
+    env: Readonly<Record<string, string | undefined>>
 ): HeadlessWorkerBrowserEngine {
-  const value = envValue(env, "RALLAR_BLACK_BOX_BROWSER_ENGINE");
-  if (!value) {
-    return DEFAULT_BROWSER_ENGINE;
-  }
-  if (value === "chromium" || value === "firefox" || value === "webkit") {
-    return value;
-  }
-  throw new Error(
-    "RALLAR_BLACK_BOX_BROWSER_ENGINE must be chromium, firefox, or webkit",
-  );
+    const value = envValue(env, 'RALLAR_BLACK_BOX_BROWSER_ENGINE');
+    if (!value) {
+        return DEFAULT_BROWSER_ENGINE;
+    }
+    if (value === 'chromium' || value === 'firefox' || value === 'webkit') {
+        return value;
+    }
+    throw new Error(
+        'RALLAR_BLACK_BOX_BROWSER_ENGINE must be chromium, firefox, or webkit'
+    );
 }
 
 function normalizeBaseUrl(value: string): string {
-  return value.endsWith("/") ? value.slice(0, -1) : value;
+    return value.endsWith('/') ? value.slice(0, -1) : value;
 }

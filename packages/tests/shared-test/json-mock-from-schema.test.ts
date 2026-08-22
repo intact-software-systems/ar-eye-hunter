@@ -1,11 +1,11 @@
-import {describe, expect, it} from 'vitest';
-import {SchemaType, toJsonMock, toSchemaType} from '../../shared-test/black-box-runner/json-mock-from-schema.ts';
+import { describe, expect, it } from 'vitest';
+import { SchemaType, toJsonMock, toSchemaType } from '../../shared-test/black-box-runner/json-mock-from-schema.ts';
 
 describe('toSchemaType', () => {
     it('detects OpenAPI documents', () => {
         const document = {
             openapi: '3.0.0',
-            components: {},
+            components: {}
         };
 
         expect(toSchemaType(document)).toBe(SchemaType.OPENAPI);
@@ -14,7 +14,7 @@ describe('toSchemaType', () => {
     it('detects Swagger documents', () => {
         const document = {
             swagger: '2.0',
-            definitions: {},
+            definitions: {}
         };
 
         expect(toSchemaType(document)).toBe(SchemaType.SWAGGER);
@@ -23,7 +23,7 @@ describe('toSchemaType', () => {
     it('defaults to JSON schema', () => {
         const schema = {
             type: 'object',
-            properties: {},
+            properties: {}
         };
 
         expect(toSchemaType(schema)).toBe(SchemaType.JSON);
@@ -36,28 +36,28 @@ describe('toJsonMock', () => {
             type: 'object',
             properties: {
                 id: {
-                    type: 'integer',
+                    type: 'integer'
                 },
                 name: {
-                    type: 'string',
+                    type: 'string'
                 },
                 active: {
-                    type: 'boolean',
-                },
-            },
+                    type: 'boolean'
+                }
+            }
         };
 
         expect(toJsonMock(SchemaType.JSON, schema)).toEqual({
             id: 1,
             name: 'string',
-            active: true,
+            active: true
         });
     });
 
     it('uses enum first value', () => {
         const schema = {
             type: 'string',
-            enum: ['A', 'B', 'C'],
+            enum: ['A', 'B', 'C']
         };
 
         expect(toJsonMock(SchemaType.JSON, schema)).toBe('A');
@@ -66,7 +66,7 @@ describe('toJsonMock', () => {
     it('uses const before generated type mock', () => {
         const schema = {
             type: 'string',
-            const: 'fixed-value',
+            const: 'fixed-value'
         };
 
         expect(toJsonMock(SchemaType.JSON, schema)).toBe('fixed-value');
@@ -75,7 +75,7 @@ describe('toJsonMock', () => {
     it('uses example before generated type mock', () => {
         const schema = {
             type: 'string',
-            example: 'example-value',
+            example: 'example-value'
         };
 
         expect(toJsonMock(SchemaType.JSON, schema)).toBe('example-value');
@@ -85,8 +85,8 @@ describe('toJsonMock', () => {
         const schema = {
             type: 'array',
             items: {
-                type: 'string',
-            },
+                type: 'string'
+            }
         };
 
         expect(toJsonMock(SchemaType.JSON, schema)).toEqual(['string']);
@@ -95,17 +95,17 @@ describe('toJsonMock', () => {
     it('supports string formats', () => {
         expect(toJsonMock(SchemaType.JSON, {
             type: 'string',
-            format: 'uuid',
+            format: 'uuid'
         })).toBe('00000000-0000-4000-8000-000000000000');
 
         expect(toJsonMock(SchemaType.JSON, {
             type: 'string',
-            format: 'date',
+            format: 'date'
         })).toBe('2026-05-11');
 
         expect(toJsonMock(SchemaType.JSON, {
             type: 'string',
-            format: 'date-time',
+            format: 'date-time'
         })).toBe('2026-05-11T00:00:00.000Z');
     });
 
@@ -118,24 +118,24 @@ describe('toJsonMock', () => {
                         type: 'object',
                         properties: {
                             id: {
-                                type: 'integer',
+                                type: 'integer'
                             },
                             name: {
-                                type: 'string',
-                            },
-                        },
-                    },
-                },
-            },
+                                type: 'string'
+                            }
+                        }
+                    }
+                }
+            }
         };
 
         const schema = {
-            $ref: '#/components/schemas/User',
+            $ref: '#/components/schemas/User'
         };
 
         expect(toJsonMock(toSchemaType(document), schema, document)).toEqual({
             id: 1,
-            name: 'string',
+            name: 'string'
         });
     });
 });

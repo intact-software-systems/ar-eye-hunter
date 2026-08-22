@@ -1,17 +1,13 @@
 import type {
     DistributedArtifactEvidenceEntry,
-    DistributedArtifactEvidenceWindowQuery,
+    DistributedArtifactEvidenceWindowQuery
 } from '@shared-test/rallar-bb-test/mod.ts';
-import type {
-    AnalyzeArtifactIgnoredFile,
-    AnalyzeArtifactSource,
-} from './analyze-artifact-model.ts';
-import type { AnalyzeControlIdentityDigest } from
-    './analyze-control-identity-digest.ts';
+import type { AnalyzeArtifactIgnoredFile, AnalyzeArtifactSource } from './analyze-artifact-model.ts';
+import type { AnalyzeControlIdentityDigest } from './analyze-control-identity-digest.ts';
 import type {
     AnalyzeArtifactProjection,
     AnalyzeEvidenceWindowProjection,
-    AnalyzeTuneArtifactFacade,
+    AnalyzeTuneArtifactFacade
 } from './analyze-worker-projection-contract.ts';
 
 export type {
@@ -19,7 +15,7 @@ export type {
     AnalyzeArtifactWorkspaceProjection,
     AnalyzeEvidenceWindowProjection,
     AnalyzeTuneArtifactFacade,
-    AnalyzeWorkerAnalysisProjection,
+    AnalyzeWorkerAnalysisProjection
 } from './analyze-worker-projection-contract.ts';
 
 export const ANALYZE_WORKER_EVIDENCE_WINDOW_SIZE = 64;
@@ -178,7 +174,7 @@ export type AnalyzeWorkerResponse =
         requestId?: number;
         error: AnalyzeWorkerErrorProjection;
     }>
-    | Readonly<{ type: 'disposed' }>;
+    | Readonly<{ type: 'disposed'; }>;
 
 export type AnalyzeWorkerEnvelope = Readonly<{
     message: AnalyzeWorkerResponse;

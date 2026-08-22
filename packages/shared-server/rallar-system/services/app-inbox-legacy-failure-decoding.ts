@@ -1,7 +1,4 @@
-import type {
-    AppInboxFailure,
-    LegacyAppInboxRetryExhaustionWire,
-} from './app-inbox-failure.ts';
+import type { AppInboxFailure, LegacyAppInboxRetryExhaustionWire } from './app-inbox-failure.ts';
 
 const BASE_OBJECT_KEYS = ['error', 'code', 'message', 'status'] as const;
 const BASE_OBJECT_WITH_DETAILS_KEYS = [...BASE_OBJECT_KEYS, 'details'] as const;
@@ -9,7 +6,7 @@ const POLICY_DENIAL_KEYS = ['error', 'code', 'message'] as const;
 const POLICY_DENIAL_WITH_DETAILS_KEYS = [...POLICY_DENIAL_KEYS, 'details'] as const;
 
 export function readLegacyPersistedAppInboxFailure(
-    value: unknown,
+    value: unknown
 ): AppInboxFailure | null {
     if (typeof value === 'string') {
         return {
@@ -20,7 +17,7 @@ export function readLegacyPersistedAppInboxFailure(
             message: value,
             issues: null,
             denial: null,
-            retry: null,
+            retry: null
         };
     }
     if (!isRecord(value)) {
@@ -46,7 +43,7 @@ export function readLegacyPersistedAppInboxFailure(
 
 function readLegacyBaseObject(
     record: Record<string, unknown>,
-    hasDetails: boolean,
+    hasDetails: boolean
 ): AppInboxFailure {
     requireNonEmptyString(record.error, 'legacy AppInbox error');
     const code = requireNonEmptyString(record.code, 'legacy AppInbox code');
@@ -63,13 +60,13 @@ function readLegacyBaseObject(
         message,
         issues: null,
         denial: status === 403 ? { code, message, details } : null,
-        retry: null,
+        retry: null
     };
 }
 
 function readLegacyPolicyDenial(
     record: Record<string, unknown>,
-    hasDetails: boolean,
+    hasDetails: boolean
 ): AppInboxFailure {
     const error = requireNonEmptyString(record.error, 'legacy AppInbox denial error');
     if (!error.startsWith('Forbidden:')) {
@@ -88,12 +85,12 @@ function readLegacyPolicyDenial(
         message,
         issues: null,
         denial: { code, message, details },
-        retry: null,
+        retry: null
     };
 }
 
 function readLegacyRetryExhaustion(
-    value: Record<string, unknown>,
+    value: Record<string, unknown>
 ): AppInboxFailure | null {
     if (Object.hasOwn(value, 'status')) {
         return null;
@@ -112,14 +109,14 @@ function readLegacyRetryExhaustion(
             attempts: value.processingAttempts,
             lane: value.selectedLane,
             queueAgeMs: value.queueAgeMs,
-            dueAgeMs: value.dueAgeMs,
+            dueAgeMs: value.dueAgeMs
         },
-        legacyWire: value,
+        legacyWire: value
     };
 }
 
 function validateLegacyRetryExhaustionWire(
-    value: unknown,
+    value: unknown
 ): asserts value is LegacyAppInboxRetryExhaustionWire {
     if (!isRecord(value)) {
         throw new TypeError('Legacy AppInbox retry exhaustion is invalid');
@@ -136,7 +133,7 @@ function validateLegacyRetryExhaustionWire(
         'lastError',
         'queueAgeMs',
         'dueAgeMs',
-        ...timingKeys,
+        ...timingKeys
     ], 'legacy AppInbox retry exhaustion');
     if (record.type !== 'app-inbox-retry-exhausted') {
         throw new TypeError('Legacy AppInbox retry exhaustion type is invalid');
@@ -146,11 +143,11 @@ function validateLegacyRetryExhaustionWire(
     requireNonEmptyString(record.selectedLane, 'legacy AppInbox retry lane');
     const attempts = requirePositiveInteger(
         record.processingAttempts,
-        'legacy AppInbox processing attempts',
+        'legacy AppInbox processing attempts'
     );
     const reservationAttempt = requirePositiveInteger(
         record.reservationAttempt,
-        'legacy AppInbox reservation attempt',
+        'legacy AppInbox reservation attempt'
     );
     if (reservationAttempt < attempts) {
         throw new TypeError('Legacy AppInbox reservation attempt is invalid');
@@ -166,7 +163,7 @@ function readRetryExhaustionIdentity(value: unknown): void {
     const record = requireExactRecord(
         value,
         ['contextId', 'resourceId', 'topicId', 'operation', 'operationSource'],
-        'legacy AppInbox retry identity',
+        'legacy AppInbox retry identity'
     );
     for (const key of ['contextId', 'resourceId', 'topicId', 'operation'] as const) {
         requireNonEmptyString(record[key], `legacy AppInbox identity ${key}`);
@@ -180,7 +177,7 @@ function readRetryExhaustionError(value: unknown): void {
     const record = requireExactRecord(
         value,
         ['source', 'code', 'message'],
-        'legacy AppInbox retry error',
+        'legacy AppInbox retry error'
     );
     if (!['processing', 'finalization-recovery'].includes(String(record.source))) {
         throw new TypeError('Legacy AppInbox retry error source is invalid');
@@ -192,7 +189,7 @@ function readRetryExhaustionError(value: unknown): void {
 function requireExactRecord(
     value: unknown,
     expectedKeys: readonly string[],
-    label: string,
+    label: string
 ): Record<string, unknown> {
     if (!isRecord(value) || !hasExactKeys(value, expectedKeys)) {
         throw new TypeError(`${label} fields are invalid`);
@@ -202,7 +199,7 @@ function requireExactRecord(
 
 function hasExactKeys(
     value: Record<string, unknown>,
-    expectedKeys: readonly string[],
+    expectedKeys: readonly string[]
 ): boolean {
     return JSON.stringify(Object.keys(value).toSorted()) ===
         JSON.stringify([...expectedKeys].toSorted());
@@ -238,7 +235,7 @@ function requireNonNegativeNumber(value: unknown, label: string): number {
 
 function requireRecord(
     value: unknown,
-    label: string,
+    label: string
 ): Readonly<Record<string, unknown>> {
     if (!isRecord(value)) {
         throw new TypeError(`${label} is invalid`);

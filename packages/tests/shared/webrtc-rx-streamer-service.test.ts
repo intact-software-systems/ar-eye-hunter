@@ -1,25 +1,22 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import {
-    type RttMeasurementCallbacks,
-    WebRtcRxStreamerService,
-} from '@shared/services/WebRtcRxStreamerService.ts';
+import { WebRtcRxStreamerService, type RttMeasurementCallbacks } from '@shared/services/WebRtcRxStreamerService.ts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockState = vi.hoisted(() => ({
-    heartbeats: [] as MockHeartbeatService[],
+    heartbeats: [] as MockHeartbeatService[]
 }));
 
 vi.mock('@shared/services/WebRtcHeartbeatService.ts', () => {
     class MockHeartbeatService {
         public callbacks:
             | {
-            onHeartbeat: (result: {
-                peerSessionId: string;
-                rttMsecs: number;
-                version: number;
-            }) => Promise<void>;
-            onMissedHeartbeat: (peerId: string) => Promise<void>;
-        }
+                onHeartbeat: (result: {
+                    peerSessionId: string;
+                    rttMsecs: number;
+                    version: number;
+                }) => Promise<void>;
+                onMissedHeartbeat: (peerId: string) => Promise<void>;
+            }
             | undefined;
         public readonly start = vi.fn((callbacks) => {
             this.callbacks = callbacks;
@@ -37,7 +34,7 @@ vi.mock('@shared/services/WebRtcHeartbeatService.ts', () => {
     return {
         WebRtcHeartbeatService: MockHeartbeatService,
         defaultMaxMissedPings: 5,
-        defaultPingFrequencyMsecs: 5_000,
+        defaultPingFrequencyMsecs: 5_000
     };
 });
 
@@ -52,24 +49,24 @@ describe('WebRtcRxStreamerService', () => {
             new InMemoryQueueBox(new Map()),
             createFakeMulticastManager() as never,
             {
-                sessionId: 'self',
-            },
+                sessionId: 'self'
+            }
         );
 
         const localStream = createMediaStream('local-1');
         const policy = {
             maxVideoBitrateBps: 120_000,
-            maxAudioBitrateBps: 48_000,
+            maxAudioBitrateBps: 48_000
         };
         const onRemoteStream = vi.fn(async () => {
         });
         const onRtcMessage = {
             onMessage: vi.fn(async () => {
-            }),
+            })
         };
         const onRttMeasurement = {
             onHeartbeat: vi.fn(async () => {
-            }),
+            })
         };
 
         await service.setLocalMediaStream(localStream);
@@ -88,16 +85,16 @@ describe('WebRtcRxStreamerService', () => {
         expect(peer.media.setParameters).toHaveBeenCalledWith(localStream, true, false);
         expect(peer.channel.onRtcCallbacksDo).toHaveBeenCalledWith(
             'self-peer-1-rtc-datachannel-lifecycle',
-            expect.any(Object),
+            expect.any(Object)
         );
         expect(peer.channel.onRtcMessageDo).toHaveBeenCalledWith(
             'self-peer-1-rtc-inbox',
-            expect.any(Object),
+            expect.any(Object)
         );
         expect(peer.channel.onRtcMessageDo).toHaveBeenCalledWith('tap', onRtcMessage);
 
         const lifecycle = peer.channel.lifecycleCallbacks.get(
-            'self-peer-1-rtc-datachannel-lifecycle',
+            'self-peer-1-rtc-datachannel-lifecycle'
         );
         await lifecycle?.onOpen?.();
 
@@ -113,7 +110,7 @@ describe('WebRtcRxStreamerService', () => {
         await mockState.heartbeats[0].callbacks?.onHeartbeat({
             peerSessionId: 'peer-1',
             rttMsecs: 42,
-            version: 3,
+            version: 3
         });
 
         expect(onRttMeasurement.onHeartbeat).toHaveBeenCalledWith({
@@ -121,7 +118,7 @@ describe('WebRtcRxStreamerService', () => {
             sessionIdTo: 'peer-1',
             rttMs: 42,
             createdAtEpochMs: expect.any(Number),
-            version: 3,
+            version: 3
         });
 
         service.addPeer(peer as never);
@@ -133,22 +130,22 @@ describe('WebRtcRxStreamerService', () => {
             new InMemoryQueueBox(new Map()),
             createFakeMulticastManager() as never,
             {
-                sessionId: 'self',
-            },
+                sessionId: 'self'
+            }
         );
 
         const peer = createPeerDto('peer-1');
         service.addPeer(peer as never);
 
         const lifecycle = peer.channel.lifecycleCallbacks.get(
-            'self-peer-1-rtc-datachannel-lifecycle',
+            'self-peer-1-rtc-datachannel-lifecycle'
         );
         expect(lifecycle).toBeDefined();
         expect(mockState.heartbeats).toHaveLength(0);
 
         const localStream = createMediaStream('local-2');
         const policy = {
-            preferredVideoCodecs: ['video/VP8'],
+            preferredVideoCodecs: ['video/VP8']
         };
 
         await service.setLocalMediaStream(localStream);
@@ -180,13 +177,13 @@ describe('WebRtcRxStreamerService', () => {
         service.removePeer(peer as never);
 
         expect(peer.media.removeOnRemoteStreamCallbackById).toHaveBeenCalledWith(
-            'self-peer-1-rtc-media-remote-stream',
+            'self-peer-1-rtc-media-remote-stream'
         );
         expect(peer.channel.removeOnRtcMessageCallbackById).toHaveBeenCalledWith(
-            'self-peer-1-rtc-inbox',
+            'self-peer-1-rtc-inbox'
         );
         expect(peer.channel.removeOnRtcMessageCallbackById).toHaveBeenCalledWith(
-            'self-peer-1-rtc-datachannel-lifecycle',
+            'self-peer-1-rtc-datachannel-lifecycle'
         );
     });
 
@@ -194,31 +191,31 @@ describe('WebRtcRxStreamerService', () => {
         const service = new WebRtcRxStreamerService(
             new InMemoryQueueBox(new Map()),
             createFakeMulticastManager() as never,
-            { sessionId: 'self' },
+            { sessionId: 'self' }
         );
         const onHeartbeat = vi.fn<RttMeasurementCallbacks['onHeartbeat']>(
             async () => {
-            },
+            }
         );
         service.onRttMeasurementDo('rtt', { onHeartbeat });
 
         const peer = createPeerDto('peer-1');
         service.addPeer(peer as never);
         const lifecycle = peer.channel.lifecycleCallbacks.get(
-            'self-peer-1-rtc-datachannel-lifecycle',
+            'self-peer-1-rtc-datachannel-lifecycle'
         );
 
         await lifecycle?.onOpen?.();
         await mockState.heartbeats[0].callbacks?.onHeartbeat({
             peerSessionId: 'peer-1',
             rttMsecs: 10,
-            version: 2,
+            version: 2
         });
         await lifecycle?.onOpen?.();
         await mockState.heartbeats[1].callbacks?.onHeartbeat({
             peerSessionId: 'peer-1',
             rttMsecs: 11,
-            version: 2,
+            version: 2
         });
 
         expect(onHeartbeat.mock.calls.map(([rtt]) => rtt.version)).toEqual([2, 3]);
@@ -228,7 +225,7 @@ describe('WebRtcRxStreamerService', () => {
         const service = new WebRtcRxStreamerService(
             new InMemoryQueueBox(new Map()),
             createFakeMulticastManager() as never,
-            { sessionId: 'self' },
+            { sessionId: 'self' }
         );
         service.setRttReportingPeerIds(['peer-1']);
 
@@ -243,7 +240,7 @@ describe('WebRtcRxStreamerService', () => {
             .get('self-peer-2-rtc-datachannel-lifecycle')?.onOpen?.();
 
         expect(mockState.heartbeats).toHaveLength(1);
-        expect((mockState.heartbeats[0].input as { peerSessionId: string }).peerSessionId)
+        expect((mockState.heartbeats[0].input as { peerSessionId: string; }).peerSessionId)
             .toBe('peer-1');
     });
 
@@ -251,7 +248,7 @@ describe('WebRtcRxStreamerService', () => {
         const service = new WebRtcRxStreamerService(
             new InMemoryQueueBox(new Map()),
             createFakeMulticastManager() as never,
-            { sessionId: 'self' },
+            { sessionId: 'self' }
         );
         service.setRttReportingPeerIds(['peer-1']);
 
@@ -269,7 +266,7 @@ describe('WebRtcRxStreamerService', () => {
         const service = new WebRtcRxStreamerService(
             new InMemoryQueueBox(new Map()),
             createFakeMulticastManager() as never,
-            { sessionId: 'self' },
+            { sessionId: 'self' }
         );
         service.setRttReportingPeerIds([]);
 
@@ -287,14 +284,11 @@ describe('WebRtcRxStreamerService', () => {
 });
 
 class FakeRtcChannel {
-    public readonly lifecycleCallbacks = new Map<
-        string,
-        {
-            onOpen?: () => Promise<void>;
-            onError?: () => Promise<void>;
-            onClose?: () => Promise<void>;
-        }
-    >();
+    public readonly lifecycleCallbacks = new Map<string, {
+        onOpen?: () => Promise<void>;
+        onError?: () => Promise<void>;
+        onClose?: () => Promise<void>;
+    }>();
     public readonly messageCallbacks = new Map<string, unknown>();
     public readonly onRtcCallbacksDo = vi.fn(
         (
@@ -303,11 +297,11 @@ class FakeRtcChannel {
                 onOpen?: () => Promise<void>;
                 onError?: () => Promise<void>;
                 onClose?: () => Promise<void>;
-            },
+            }
         ) => {
             this.lifecycleCallbacks.set(id, callbacks);
             return this;
-        },
+        }
     );
     public readonly onRtcMessageDo = vi.fn((id: string, callback: unknown) => {
         this.messageCallbacks.set(id, callback);
@@ -329,7 +323,7 @@ class FakeRtcMedia {
         (id: string, cb: RemoteStreamCallback) => {
             this.remoteStreamCallbacks.set(id, cb);
             return this;
-        },
+        }
     );
     public readonly removeOnRemoteStreamCallbackById = vi.fn((id: string) => {
         return this.remoteStreamCallbacks.delete(id);
@@ -355,19 +349,19 @@ type MockHeartbeatService = {
     readonly stop: ReturnType<typeof vi.fn>;
     callbacks?:
         | {
-        onHeartbeat: (result: {
-            peerSessionId: string;
-            rttMsecs: number;
-            version: number;
-        }) => Promise<void>;
-        onMissedHeartbeat: (peerId: string) => Promise<void>;
-    }
+            onHeartbeat: (result: {
+                peerSessionId: string;
+                rttMsecs: number;
+                version: number;
+            }) => Promise<void>;
+            onMissedHeartbeat: (peerId: string) => Promise<void>;
+        }
         | undefined;
 };
 
 type RemoteStreamCallback = (
     stream: MediaStream,
-    event: RTCTrackEvent,
+    event: RTCTrackEvent
 ) => Promise<void>;
 
 function createPeerDto(peerId: string) {
@@ -376,8 +370,8 @@ function createPeerDto(peerId: string) {
         channel: new FakeRtcChannel(),
         media: new FakeRtcMedia(),
         connection: {
-            applyMediaPolicy: vi.fn(),
-        },
+            applyMediaPolicy: vi.fn()
+        }
     };
 }
 
@@ -387,7 +381,7 @@ function createFakeMulticastManager() {
         enqueueIfAbsent: vi.fn(async () => []),
         acceptControlMessage: vi.fn(async () => {
         }),
-        forwardIfRequired: vi.fn(async () => []),
+        forwardIfRequired: vi.fn(async () => [])
     };
 }
 
@@ -397,6 +391,6 @@ function createMediaStream(id: string): MediaStream {
 
 function createTrackEvent(stream: MediaStream): RTCTrackEvent {
     return {
-        streams: [stream],
+        streams: [stream]
     } as unknown as RTCTrackEvent;
 }

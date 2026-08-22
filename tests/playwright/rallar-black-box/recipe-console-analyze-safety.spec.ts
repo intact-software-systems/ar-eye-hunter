@@ -6,7 +6,7 @@ import {
     createAnalyzeLooseFiles,
     createAnalyzeLooseFilesForIdentity,
     createDuplicateAnalyzeFiles,
-    createMalformedAnalyzeFiles,
+    createMalformedAnalyzeFiles
 } from './recipe-console-analyze-artifacts.ts';
 import { installRecipeConsoleAnalyzeFixture } from './recipe-console-analyze-fixture.ts';
 import {
@@ -23,14 +23,14 @@ import {
     installDeferredAnalyzeFileRead,
     pushAnalyzeContext,
     releaseDeferredAnalyzeFileRead,
-    waitForDeferredAnalyzeFileRead,
+    waitForDeferredAnalyzeFileRead
 } from './recipe-console-analyze-helpers.ts';
 import {
-    ANALYZE_CONTROL_RUN_ID,
     ANALYZE_CONTROL_ROUTE,
+    ANALYZE_CONTROL_RUN_ID,
     ANALYZE_DISTRIBUTED_RUN_ID,
     ANALYZE_FAILURE_MESSAGE,
-    ANALYZE_ROUTE,
+    ANALYZE_ROUTE
 } from './recipe-console-analyze-run-data.ts';
 
 function artifactStatus(page: Page) {
@@ -76,15 +76,17 @@ test('keeps future-schema evidence usable and rejects an over-limit replacement 
     await expect(unknownVersion).toContainText('$artifactSchemaVersion');
     await expect(unknownVersion).toContainText('Unknown Version');
     await expect(unknownVersion).toContainText(
-        'Artifact schema version 99 is not supported.',
+        'Artifact schema version 99 is not supported.'
     );
 
-    for (const [query, kind] of [
-        ['rtc.route.prior', 'event'],
-        ['rallar.browser.rtc.no_relay', 'diagnostic'],
-        ['expectedcandidate', 'result'],
-        ['command', 'failure'],
-    ] as const) {
+    for (
+        const [query, kind] of [
+            ['rtc.route.prior', 'event'],
+            ['rallar.browser.rtc.no_relay', 'diagnostic'],
+            ['expectedcandidate', 'result'],
+            ['command', 'failure']
+        ] as const
+    ) {
         await analyzeSearch(page).getByLabel('Search evidence').fill(query);
         await analyzeSearch(page).getByRole('button', { name: 'Apply search' }).click();
         await expect(analyzeSearch(page).locator(`[data-evidence-kind="${kind}"]`))
@@ -94,20 +96,17 @@ test('keeps future-schema evidence usable and rejects an over-limit replacement 
     await chooseAnalyzeFiles(page, createAnalyzeCandidateFiles(25));
     await expect(artifactStatus(page)).toHaveText('Needs attention');
     await expect(operationError(page)).toHaveText(
-        'Previous analysis retained. Select at most 24 files; received 25.',
+        'Previous analysis retained. Select at most 24 files; received 25.'
     );
     await expect(analyzePoliteAnnouncement(page)).toHaveText(
-        'Artifact selection rejected. Previous analysis retained.',
+        'Artifact selection rejected. Previous analysis retained.'
     );
     await expect(analyzeVerdict(page)).toHaveAttribute('data-artifact-support', 'unsupported');
     await expect(analyzeVerdict(page)).toContainText(ANALYZE_FAILURE_MESSAGE);
     await expect(unknownVersion).toContainText('Artifact schema version 99 is not supported.');
 });
 
-test('rejects a multibyte search over the URL byte budget without stale filter authority', async ({
-    context,
-    page,
-}) => {
+test('rejects a multibyte search over the URL byte budget without stale filter authority', async ({ context, page }) => {
     await installRecipeConsoleAnalyzeFixture(context);
     await page.goto(ANALYZE_ROUTE);
     await chooseAnalyzeFiles(page, createAnalyzeLooseFiles());
@@ -122,7 +121,7 @@ test('rejects a multibyte search over the URL byte budget without stale filter a
     await search.getByRole('button', { name: 'Apply search' }).click();
 
     await expect(search.locator('[data-analyze-search-error]')).toContainText(
-        'Search evidence exceeds the 4096-byte limit',
+        'Search evidence exceeds the 4096-byte limit'
     );
     expect(new URL(page.url()).searchParams.get('historyQuery')).toBeNull();
     await expect(search.locator('[data-evidence-result]')).toHaveCount(priorEvidenceCount);
@@ -141,17 +140,15 @@ test('announces Control artifact loading and ready completion', async ({ context
     await fixture.waitForDeferredArtifactRequest();
     try {
         await expect(analyzePoliteAnnouncement(page)).toContainText('Control artifact load started');
-    } finally {
+    }
+    finally {
         fixture.releaseDeferredArtifactResponse();
     }
     await expect(artifactStatus(page)).toHaveText('Artifact ready');
     await expect(analyzePoliteAnnouncement(page)).toContainText('Control artifact ready');
 });
 
-test('retains prior Control evidence when its artifact disappears without exposing response details', async ({
-    context,
-    page,
-}) => {
+test('retains prior Control evidence when its artifact disappears without exposing response details', async ({ context, page }) => {
     const fixture = await installRecipeConsoleAnalyzeFixture(context);
     await page.goto(ANALYZE_CONTROL_ROUTE);
     const loadArtifact = page.locator('[data-analyze-load-artifact]');
@@ -162,7 +159,7 @@ test('retains prior Control evidence when its artifact disappears without exposi
     const verdict = analyzeVerdict(page);
     const evidence = analyzeSearch(page).locator('[data-evidence-result]');
     await expect(provenance).toContainText(
-        `Control artifact ${ANALYZE_DISTRIBUTED_RUN_ID}`,
+        `Control artifact ${ANALYZE_DISTRIBUTED_RUN_ID}`
     );
     await expect(verdict).toContainText(ANALYZE_FAILURE_MESSAGE);
     await expect(evidence).not.toHaveCount(0);
@@ -178,7 +175,7 @@ test('retains prior Control evidence when its artifact disappears without exposi
     fixture.failNextArtifactResponse(404, {
         error: `${privateSentinel}: ${fabricatedControlRunId}/${fabricatedDistributedRunId}`,
         controlRunId: fabricatedControlRunId,
-        distributedRunId: fabricatedDistributedRunId,
+        distributedRunId: fabricatedDistributedRunId
     });
     fixture.deferNextArtifactResponse();
     const readsBeforeFailure = fixture.artifactRequestCount();
@@ -187,22 +184,23 @@ test('retains prior Control evidence when its artifact disappears without exposi
     try {
         await expect(artifactStatus(page)).toHaveText('Loading');
         await expect(analyzePoliteAnnouncement(page)).toContainText(
-            'Control artifact load started',
+            'Control artifact load started'
         );
-    } finally {
+    }
+    finally {
         fixture.releaseDeferredArtifactResponse();
     }
     await expect.poll(fixture.artifactRequestCount).toBeGreaterThan(
-        readsBeforeFailure,
+        readsBeforeFailure
     );
 
     await expect(artifactStatus(page)).toHaveText('Needs attention');
     await expect(operationError(page)).toHaveAttribute('role', 'alert');
     await expect(operationError(page)).toHaveText(
-        'Previous analysis retained. The selected Control artifact is unavailable. It may have expired or been removed.',
+        'Previous analysis retained. The selected Control artifact is unavailable. It may have expired or been removed.'
     );
     await expect(analyzePoliteAnnouncement(page)).toHaveText(
-        'Control artifact load failed. Previous analysis retained.',
+        'Control artifact load failed. Previous analysis retained.'
     );
     expect(await provenance.innerText()).toBe(retainedProvenance);
     expect(await verdict.innerText()).toBe(retainedVerdict);
@@ -229,11 +227,12 @@ test('rejects a dropped artifact without reading it while Control loading is bus
     try {
         await dropAnalyzeFilesWithReadProbe(page, createAnalyzeLooseFiles());
         await expect(analyzePoliteAnnouncement(page)).toContainText(
-            'Artifact selection rejected while Control artifact loading is in progress',
+            'Artifact selection rejected while Control artifact loading is in progress'
         );
         await expect.poll(() => analyzeDroppedFileReadCount(page)).toBe(0);
         await expect(analyzePoliteAnnouncement(page)).not.toContainText('Artifact selection processed');
-    } finally {
+    }
+    finally {
         fixture.releaseDeferredArtifactResponse();
     }
     await expect(artifactStatus(page)).toHaveText('Artifact ready');
@@ -248,7 +247,7 @@ test('keeps prior evidence stale when a late Control request loses URL authority
     fixture.setArtifactResponse(createAnalyzeArtifactEnvelopeForIdentity({
         outerDistributedRunId: 'distributed-x',
         fileDistributedRunId: 'distributed-x',
-        fileControlRunId: 'control-x',
+        fileControlRunId: 'control-x'
     }));
     await pushAnalyzeContext(page, { controlRunId: 'control-x', distributedRunId: 'distributed-x' });
     fixture.deferNextArtifactResponse();
@@ -256,13 +255,14 @@ test('keeps prior evidence stale when a late Control request loses URL authority
     await fixture.waitForDeferredArtifactRequest();
     try {
         await pushAnalyzeContext(page, { controlRunId: 'control-b', distributedRunId: 'distributed-b' });
-    } finally {
+    }
+    finally {
         fixture.releaseDeferredArtifactResponse();
     }
     await expect(artifactStatus(page)).toHaveText('Needs attention');
     await expect(operationError(page)).toContainText('interrupted by a context change');
     await expect(analyzePoliteAnnouncement(page)).toHaveText(
-        'Control artifact load failed. Previous analysis retained.',
+        'Control artifact load failed. Previous analysis retained.'
     );
     const selected = new URL(page.url()).searchParams;
     expect(selected.get('controlRunId')).toBe('control-b');
@@ -284,7 +284,7 @@ test('marks retained evidence stale across URL context history and keeps legacy 
     await pushAnalyzeContext(page, { controlRunId: 'control-b', distributedRunId: 'distributed-b' });
     await expect(artifactStatus(page)).toHaveText('Needs attention');
     await expect(operationError(page)).toContainText(
-        `Loaded artifact ${ANALYZE_DISTRIBUTED_RUN_ID} does not match selected distributed run distributed-b`,
+        `Loaded artifact ${ANALYZE_DISTRIBUTED_RUN_ID} does not match selected distributed run distributed-b`
     );
     await expect(analyzeVerdict(page)).toContainText(ANALYZE_FAILURE_MESSAGE);
     const staleHref = new URL(await analyzeLegacyRunsLink(page).getAttribute('href') ?? '', page.url());
@@ -306,7 +306,7 @@ test('rejects internally consistent Control files from the wrong control run wit
     fixture.setArtifactResponse(createAnalyzeArtifactEnvelopeForIdentity({
         outerDistributedRunId: 'distributed-x',
         fileDistributedRunId: 'distributed-x',
-        fileControlRunId: 'control-b',
+        fileControlRunId: 'control-b'
     }));
     await page.goto(ANALYZE_ROUTE);
     await chooseAnalyzeFiles(page, createAnalyzeLooseFiles());
@@ -319,7 +319,7 @@ test('rejects internally consistent Control files from the wrong control run wit
     await expect.poll(fixture.artifactRequestCount).toBe(1);
     await expect(artifactStatus(page)).toHaveText('Needs attention');
     await expect(operationError(page)).toContainText(
-        'The artifact identity does not match the active control selection.',
+        'The artifact identity does not match the active control selection.'
     );
     await expect(operationError(page)).not.toContainText('control-b');
     await expect(analyzeVerdict(page)).toContainText(ANALYZE_FAILURE_MESSAGE);
@@ -356,19 +356,24 @@ test('rejects a second drop during a deferred local import without reading it', 
     await chooseAnalyzeFiles(page, createAnalyzeLooseFiles());
     await waitForDeferredAnalyzeFileRead(page);
     try {
-        await dropAnalyzeFiles(page, createAnalyzeLooseFilesForIdentity({
-            distributedRunId: 'distributed-b', controlRunId: 'control-b',
-        }));
+        await dropAnalyzeFiles(
+            page,
+            createAnalyzeLooseFilesForIdentity({
+                distributedRunId: 'distributed-b',
+                controlRunId: 'control-b'
+            })
+        );
         await expect.soft(analyzePoliteAnnouncement(page)).toContainText(
-            'Artifact selection rejected while artifact import is in progress',
+            'Artifact selection rejected while artifact import is in progress'
         );
         await expect.poll(() => deferredAnalyzeFileReadCount(page)).toBe(1);
-    } finally {
+    }
+    finally {
         await releaseDeferredAnalyzeFileRead(page);
     }
     await expect(artifactStatus(page)).toHaveText('Artifact ready');
     await expect.soft(analyzePoliteAnnouncement(page)).toContainText(
-        'Artifact selection rejected while artifact import is in progress',
+        'Artifact selection rejected while artifact import is in progress'
     );
     expect(new URL(page.url()).searchParams.get('distributedRunId'))
         .toBe(ANALYZE_DISTRIBUTED_RUN_ID);

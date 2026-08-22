@@ -7,7 +7,7 @@ export type LegacyRunsUrlSelection = Readonly<{
 }>;
 
 export function parseLegacyRunsUrlSelection(
-    search: string,
+    search: string
 ): LegacyRunsUrlSelection | undefined {
     const params = new URLSearchParams(search);
     if (

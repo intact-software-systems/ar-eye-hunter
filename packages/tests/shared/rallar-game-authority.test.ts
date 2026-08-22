@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest';
 import {
     createRallarGameAuthorityEnvelope,
     createRallarGameAuthoritySequenceTracker,
@@ -7,13 +6,14 @@ import {
     resolveRallarGameAuthorityTypeIds,
     type RallarGameAuthorityClientStatus,
     type RallarGameAuthorityEnvelope,
-    type RallarGameAuthorityRef,
+    type RallarGameAuthorityRef
 } from '@shared/rallar-game/mod.ts';
+import { describe, expect, it } from 'vitest';
 
 const authority: RallarGameAuthorityRef = {
     kind: 'server',
     id: 'server-1',
-    epoch: 3,
+    epoch: 3
 };
 
 describe('Rallar Game Authority shared contracts', () => {
@@ -24,13 +24,13 @@ describe('Rallar Game Authority shared contracts', () => {
             event: 'cash.match.event.v1',
             snapshot: 'cash.match.snapshot.v1',
             syncRequest: 'cash.match.sync-request.v1',
-            presence: 'cash.match.presence.v1',
+            presence: 'cash.match.presence.v1'
         });
 
         expect(
             resolveRallarGameAuthorityTypeIds('cash.match', {
-                snapshot: 'custom.snapshot.v2',
-            }).snapshot,
+                snapshot: 'custom.snapshot.v2'
+            }).snapshot
         ).toBe('custom.snapshot.v2');
     });
 
@@ -45,10 +45,10 @@ describe('Rallar Game Authority shared contracts', () => {
             seq: 7,
             sentAtEpochMs: 1_007,
             authority,
-            payload: { action: 'move' },
+            payload: { action: 'move' }
         });
         expect(isRallarGameAuthorityEnvelope(envelope, 'test.authority.v1')).toBe(
-            true,
+            true
         );
         expect(isRallarGameAuthorityEnvelope(envelope, 'other.v1')).toBe(false);
     });
@@ -64,10 +64,10 @@ describe('Rallar Game Authority shared contracts', () => {
                     seq: -1,
                     sentAtEpochMs: 1_000,
                     authority,
-                    payload: {},
+                    payload: {}
                 },
-                'test.authority.v1',
-            ),
+                'test.authority.v1'
+            )
         ).toBe(false);
         expect(
             isRallarGameAuthorityEnvelope(
@@ -79,10 +79,10 @@ describe('Rallar Game Authority shared contracts', () => {
                     seq: 1,
                     sentAtEpochMs: 1_000,
                     authority,
-                    payload: {},
+                    payload: {}
                 },
-                'test.authority.v1',
-            ),
+                'test.authority.v1'
+            )
         ).toBe(false);
         expect(
             isRallarGameAuthorityEnvelope(
@@ -94,10 +94,10 @@ describe('Rallar Game Authority shared contracts', () => {
                     seq: 1,
                     sentAtEpochMs: 1_000,
                     authority: { kind: 'server', id: 'server-1', epoch: -1 },
-                    payload: {},
+                    payload: {}
                 },
-                'test.authority.v1',
-            ),
+                'test.authority.v1'
+            )
         ).toBe(false);
     });
 
@@ -113,8 +113,8 @@ describe('Rallar Game Authority shared contracts', () => {
                 authorityKind: 'server',
                 authorityId: 'server-1',
                 minAuthorityEpoch: 3,
-                kinds: ['snapshot'],
-            }),
+                kinds: ['snapshot']
+            })
         ).toMatchObject({ accepted: false, reason: 'wrong-protocol' });
 
         expect(
@@ -125,8 +125,8 @@ describe('Rallar Game Authority shared contracts', () => {
                 authorityKind: 'server',
                 authorityId: 'server-1',
                 minAuthorityEpoch: 3,
-                kinds: ['snapshot'],
-            }),
+                kinds: ['snapshot']
+            })
         ).toMatchObject({ accepted: false, reason: 'wrong-room' });
 
         expect(
@@ -137,8 +137,8 @@ describe('Rallar Game Authority shared contracts', () => {
                 authorityKind: 'server',
                 authorityId: 'server-1',
                 minAuthorityEpoch: 3,
-                kinds: ['snapshot'],
-            }),
+                kinds: ['snapshot']
+            })
         ).toMatchObject({ accepted: false, reason: 'wrong-sender' });
 
         expect(
@@ -149,8 +149,8 @@ describe('Rallar Game Authority shared contracts', () => {
                 authorityKind: 'browser-director',
                 authorityId: 'server-1',
                 minAuthorityEpoch: 3,
-                kinds: ['snapshot'],
-            }),
+                kinds: ['snapshot']
+            })
         ).toMatchObject({ accepted: false, reason: 'wrong-authority-kind' });
 
         expect(
@@ -161,8 +161,8 @@ describe('Rallar Game Authority shared contracts', () => {
                 authorityKind: 'server',
                 authorityId: 'server-2',
                 minAuthorityEpoch: 3,
-                kinds: ['snapshot'],
-            }),
+                kinds: ['snapshot']
+            })
         ).toMatchObject({ accepted: false, reason: 'wrong-authority-id' });
 
         expect(
@@ -173,8 +173,8 @@ describe('Rallar Game Authority shared contracts', () => {
                 authorityKind: 'server',
                 authorityId: 'server-1',
                 minAuthorityEpoch: 4,
-                kinds: ['snapshot'],
-            }),
+                kinds: ['snapshot']
+            })
         ).toMatchObject({ accepted: false, reason: 'stale-authority-epoch' });
 
         expect(
@@ -185,8 +185,8 @@ describe('Rallar Game Authority shared contracts', () => {
                 authorityKind: 'server',
                 authorityId: 'server-1',
                 minAuthorityEpoch: 3,
-                kinds: ['event'],
-            }),
+                kinds: ['event']
+            })
         ).toMatchObject({ accepted: false, reason: 'wrong-kind' });
 
         expect(
@@ -197,8 +197,8 @@ describe('Rallar Game Authority shared contracts', () => {
                 authorityKind: 'server',
                 authorityId: 'server-1',
                 minAuthorityEpoch: 3,
-                kinds: ['snapshot'],
-            }),
+                kinds: ['snapshot']
+            })
         ).toMatchObject({ accepted: true });
         expect(
             tracker.accept(envelope, {
@@ -208,8 +208,8 @@ describe('Rallar Game Authority shared contracts', () => {
                 authorityKind: 'server',
                 authorityId: 'server-1',
                 minAuthorityEpoch: 3,
-                kinds: ['snapshot'],
-            }),
+                kinds: ['snapshot']
+            })
         ).toMatchObject({ accepted: false, reason: 'duplicate-sequence' });
         expect(
             tracker.accept({ ...envelope, seq: 9 }, {
@@ -219,8 +219,8 @@ describe('Rallar Game Authority shared contracts', () => {
                 authorityKind: 'server',
                 authorityId: 'server-1',
                 minAuthorityEpoch: 3,
-                kinds: ['snapshot'],
-            }),
+                kinds: ['snapshot']
+            })
         ).toMatchObject({ accepted: false, reason: 'stale-sequence' });
     });
 
@@ -232,15 +232,15 @@ describe('Rallar Game Authority shared contracts', () => {
         expect(
             tracker.accept({
                 ...createEnvelope('event', 'server-1', {}, 1),
-                authority: { ...authority, epoch: 4 },
-            }),
+                authority: { ...authority, epoch: 4 }
+            })
         ).toMatchObject({ accepted: true });
         expect(tracker.accept(createEnvelope('snapshot', 'server-1', {}, 1)))
             .toMatchObject({ accepted: true });
         expect(tracker.accept(createEnvelope('event', 'server-2', {}, 1)))
             .toMatchObject({ accepted: true });
         expect(
-            tracker.accept({ ...createEnvelope('event', 'server-1', {}, 1), roomId: 'room-2' }),
+            tracker.accept({ ...createEnvelope('event', 'server-1', {}, 1), roomId: 'room-2' })
         ).toMatchObject({ accepted: true });
     });
 
@@ -256,9 +256,9 @@ describe('Rallar Game Authority shared contracts', () => {
                 peerAssist: {
                     enabled: true,
                     snapshotRepairEnabled: true,
-                    readyPeerIds: [],
-                },
-            }),
+                    readyPeerIds: []
+                }
+            })
         });
 
         expect(diagnostics.issues).toEqual([
@@ -266,7 +266,7 @@ describe('Rallar Game Authority shared contracts', () => {
             'no-room',
             'peer-assist-not-ready',
             'pending-commands',
-            'stale-authority',
+            'stale-authority'
         ]);
         expect(diagnostics.pendingCommandCount).toBe(2);
         expect(diagnostics.peerAssist.snapshotRepairEnabled).toBe(true);
@@ -277,7 +277,7 @@ function createEnvelope<T>(
     kind: RallarGameAuthorityEnvelope<T>['kind'],
     senderId: string,
     payload: T,
-    seq: number,
+    seq: number
 ): RallarGameAuthorityEnvelope<T> {
     return createRallarGameAuthorityEnvelope({
         protocol: 'test.authority.v1',
@@ -287,12 +287,12 @@ function createEnvelope<T>(
         seq,
         sentAtEpochMs: 1_000 + seq,
         authority,
-        payload,
+        payload
     });
 }
 
 function createStatus(
-    overrides: Partial<RallarGameAuthorityClientStatus>,
+    overrides: Partial<RallarGameAuthorityClientStatus>
 ): RallarGameAuthorityClientStatus {
     return {
         phase: 'ready',
@@ -307,9 +307,9 @@ function createStatus(
         peerAssist: {
             enabled: false,
             snapshotRepairEnabled: false,
-            readyPeerIds: [],
+            readyPeerIds: []
         },
         updatedAtEpochMs: 10_000,
-        ...overrides,
+        ...overrides
     };
 }

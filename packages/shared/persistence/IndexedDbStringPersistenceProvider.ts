@@ -1,5 +1,5 @@
-import type { PersistenceProvider, PersistenceSetItemOptions, } from './PersistenceProvider.ts';
 import { openIndexedDbWithStore } from './openIndexedDb.ts';
+import type { PersistenceProvider, PersistenceSetItemOptions } from './PersistenceProvider.ts';
 
 type StoredIndexedDbValue<V> = Readonly<{
     key: string;
@@ -54,7 +54,8 @@ export class IndexedDbStringPersistenceProvider<V> implements PersistenceProvide
 
                 if (this.isExpired(result.expireAtTimestamp)) {
                     const deleteRequest = store.delete(storedKey);
-                    deleteRequest.onerror = () => reject(deleteRequest.error ?? new Error('IndexedDB delete failed during getItem'));
+                    deleteRequest.onerror = () =>
+                        reject(deleteRequest.error ?? new Error('IndexedDB delete failed during getItem'));
                     return;
                 }
 
@@ -66,7 +67,7 @@ export class IndexedDbStringPersistenceProvider<V> implements PersistenceProvide
     async setItem(
         key: string,
         value: V,
-        options: PersistenceSetItemOptions,
+        options: PersistenceSetItemOptions
     ): Promise<void> {
         const db = await this.openDb();
         const storedKey = this.toStoredKey(key);
@@ -74,11 +75,13 @@ export class IndexedDbStringPersistenceProvider<V> implements PersistenceProvide
         await new Promise<void>((resolve, reject) => {
             const tx = db.transaction(this.storeName, 'readwrite');
             const store = tx.objectStore(this.storeName);
-            const request = store.put({
-                key: storedKey,
-                value,
-                expireAtTimestamp: this.toExpireAtTimestamp(options.expireAtTimestamp),
-            } satisfies StoredIndexedDbValue<V>);
+            const request = store.put(
+                {
+                    key: storedKey,
+                    value,
+                    expireAtTimestamp: this.toExpireAtTimestamp(options.expireAtTimestamp)
+                } satisfies StoredIndexedDbValue<V>
+            );
 
             tx.oncomplete = () => resolve();
             tx.onabort = () => reject(tx.error ?? new Error('IndexedDB setItem aborted'));
@@ -131,7 +134,8 @@ export class IndexedDbStringPersistenceProvider<V> implements PersistenceProvide
 
                 if (this.isExpired(stored.expireAtTimestamp)) {
                     const deleteRequest = cursor.delete();
-                    deleteRequest.onerror = () => reject(deleteRequest.error ?? new Error('IndexedDB delete failed during getAllKeys'));
+                    deleteRequest.onerror = () =>
+                        reject(deleteRequest.error ?? new Error('IndexedDB delete failed during getAllKeys'));
                     deleteRequest.onsuccess = () => cursor.continue();
                     return;
                 }
@@ -170,7 +174,8 @@ export class IndexedDbStringPersistenceProvider<V> implements PersistenceProvide
 
                 deleted += 1;
                 const deleteRequest = cursor.delete();
-                deleteRequest.onerror = () => reject(deleteRequest.error ?? new Error('IndexedDB delete failed during deleteExpired'));
+                deleteRequest.onerror = () =>
+                    reject(deleteRequest.error ?? new Error('IndexedDB delete failed during deleteExpired'));
                 deleteRequest.onsuccess = () => cursor.continue();
             };
         });
@@ -186,9 +191,9 @@ export class IndexedDbStringPersistenceProvider<V> implements PersistenceProvide
                 this.dbName,
                 {
                     name: this.storeName,
-                    keyPath: 'key',
-                },
-            ).then(db => {
+                    keyPath: 'key'
+                }
+            ).then((db) => {
                 db.onversionchange = () => {
                     db.close();
                     this.dbPromise = undefined;

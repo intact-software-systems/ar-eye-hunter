@@ -11,13 +11,13 @@ import {
     toRallarBlackBoxCompositeResultTimeline,
     toRallarBlackBoxCompositeResultTree,
     type RallarBlackBoxCompositeResultTreeNode,
-    type RallarBlackBoxTestResult,
+    type RallarBlackBoxTestResult
 } from '../../shared-test/rallar-bb-test/mod.ts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const fixturePath = path.join(
     repoRoot,
-    'packages/tests/shared-test/fixtures/rallar-bb-test/composite-result-summary-v1.json',
+    'packages/tests/shared-test/fixtures/rallar-bb-test/composite-result-summary-v1.json'
 );
 
 function readFixture(): Record<string, unknown> {
@@ -25,9 +25,9 @@ function readFixture(): Record<string, unknown> {
 }
 
 function treeShape(nodes: readonly RallarBlackBoxCompositeResultTreeNode[]): unknown {
-    return nodes.map(node => ({
+    return nodes.map((node) => ({
         path: node.entry.path,
-        children: treeShape(node.children),
+        children: treeShape(node.children)
     }));
 }
 
@@ -40,7 +40,7 @@ async function executeNestedCompositeResult(): Promise<RallarBlackBoxTestResult>
                 return undefined;
             }
 
-            const loop = command.metadata?.loop as { iteration?: number } | undefined;
+            const loop = command.metadata?.loop as { iteration?: number; } | undefined;
             if (loop?.iteration === 2) {
                 return {
                     status: 'failed',
@@ -49,10 +49,10 @@ async function executeNestedCompositeResult(): Promise<RallarBlackBoxTestResult>
                         message: 'Synthetic send failure.',
                         details: {
                             token: 'secret-token',
-                            body: 'contains hidden-body',
-                        },
+                            body: 'contains hidden-body'
+                        }
                     },
-                    nextStatus: 'failed',
+                    nextStatus: 'failed'
                 };
             }
 
@@ -61,11 +61,11 @@ async function executeNestedCompositeResult(): Promise<RallarBlackBoxTestResult>
                 value: {
                     sent: true,
                     password: 'secret-token',
-                    metadata: command.metadata,
+                    metadata: command.metadata
                 },
-                nextStatus: context.state().status,
+                nextStatus: context.state().status
             };
-        },
+        }
     });
 
     await runtime.execute({
@@ -73,16 +73,16 @@ async function executeNestedCompositeResult(): Promise<RallarBlackBoxTestResult>
         commandId: 'configure-redaction',
         config: {
             redaction: {
-                secretValues: ['secret-token', 'hidden-body'],
-            },
-        },
+                secretValues: ['secret-token', 'hidden-body']
+            }
+        }
     });
     runtime.recordEvent({
         kind: 'message',
         topic: 'rallar.test.ready',
         payload: {
-            state: 'ready',
-        },
+            state: 'ready'
+        }
     });
 
     return await runtime.execute({
@@ -104,12 +104,12 @@ async function executeNestedCompositeResult(): Promise<RallarBlackBoxTestResult>
                                 kind: 'rtc.send',
                                 commandId: 'position-send',
                                 send: {
-                                    frame: '{loop.iteration}',
-                                },
-                            },
-                        ],
-                    },
-                ],
+                                    frame: '{loop.iteration}'
+                                }
+                            }
+                        ]
+                    }
+                ]
             },
             {
                 groupId: 'right',
@@ -120,19 +120,19 @@ async function executeNestedCompositeResult(): Promise<RallarBlackBoxTestResult>
                         match: {
                             topic: 'rallar.test.ready',
                             payloadPath: 'state',
-                            equals: 'ready',
-                        },
+                            equals: 'ready'
+                        }
                     },
                     {
                         kind: 'assert',
                         commandId: 'assert-event-count',
                         source: 'events.length',
                         operator: 'gte',
-                        expected: 1,
-                    },
-                ],
-            },
-        ],
+                        expected: 1
+                    }
+                ]
+            }
+        ]
     });
 }
 
@@ -145,8 +145,8 @@ describe('rallar-bb-test composite result helpers', () => {
         const summary = summarizeRallarBlackBoxCompositeResults(result);
         const firstFailure = findFirstFailedRallarBlackBoxCompositeResult(result);
 
-        expect(entries.map(entry => entry.path)).toEqual(fixture.paths);
-        expect(entries.map(entry => entry.sourceRecipePath)).toEqual(fixture.sourceRecipePaths);
+        expect(entries.map((entry) => entry.path)).toEqual(fixture.paths);
+        expect(entries.map((entry) => entry.sourceRecipePath)).toEqual(fixture.sourceRecipePaths);
         expect(summary).toEqual(fixture.summary);
         expect(treeShape(tree)).toEqual(fixture.tree);
         expect(firstFailure?.path).toBe('$.groups[0=left].commands[0].iterations[2].commands[0]');
@@ -160,13 +160,13 @@ describe('rallar-bb-test composite result helpers', () => {
         const timeline = toRallarBlackBoxCompositeResultTimeline(result);
         const display = toRallarBlackBoxCompositeDisplayResults(result, {
             redaction: {
-                secretValues: ['secret-token', 'hidden-body'],
-            },
+                secretValues: ['secret-token', 'hidden-body']
+            }
         });
-        const redactedFailure = display.find(entry => entry.status === 'failed');
+        const redactedFailure = display.find((entry) => entry.status === 'failed');
 
-        expect(timeline.map(entry => entry.startedAtEpochMs)).toEqual(
-            [...timeline.map(entry => entry.startedAtEpochMs)].sort((left, right) => left - right),
+        expect(timeline.map((entry) => entry.startedAtEpochMs)).toEqual(
+            [...timeline.map((entry) => entry.startedAtEpochMs)].sort((left, right) => left - right)
         );
         expect(redactedFailure).toMatchObject(fixture.redactedFailure as Record<string, unknown>);
         expect(JSON.stringify(display)).not.toContain('secret-token');
@@ -186,25 +186,25 @@ describe('rallar-bb-test composite result helpers', () => {
                         status: 'failed',
                         error: {
                             code: 'SEND_FAILED',
-                            message: 'Synthetic child failure.',
+                            message: 'Synthetic child failure.'
                         },
-                        nextStatus: 'failed',
+                        nextStatus: 'failed'
                     }
                     : {
                         status: 'ok',
                         value: {
-                            sent: true,
+                            sent: true
                         },
-                        nextStatus: context.state().status,
+                        nextStatus: context.state().status
                     };
-            },
+            }
         });
 
         const result = await runtime.execute({
             kind: 'loop',
             commandId: 'fail-fast-loop',
             count: 3,
-            commands: [{ kind: 'rtc.send', commandId: 'send-frame' }],
+            commands: [{ kind: 'rtc.send', commandId: 'send-frame' }]
         });
         const firstFailure = findFirstFailedRallarBlackBoxCompositeResult(result);
 

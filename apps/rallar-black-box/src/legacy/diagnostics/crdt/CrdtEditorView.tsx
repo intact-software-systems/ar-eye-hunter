@@ -1,24 +1,17 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
-import {
-    CRDT_EDITOR_TRANSPORTS,
-    crdtEditorOperationGroupId,
-    type CrdtEditorTransport,
-} from '../../../crdt-editor.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { CRDT_EDITOR_TRANSPORTS, crdtEditorOperationGroupId, type CrdtEditorTransport } from '../../../crdt-editor.ts';
 import { Metric } from '../../shared/Metric.tsx';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
+import type { CrdtPanelInput } from './crdt-contracts.ts';
 import { CrdtEditorBoardView } from './CrdtEditorBoardView.tsx';
 import { CrdtEditorEntitiesView } from './CrdtEditorEntitiesView.tsx';
-import type { CrdtPanelInput } from './crdt-contracts.ts';
-import {
-    useCrdtEditorController,
-    type CrdtEditorControllerModel,
-} from './use-crdt-editor-controller.ts';
+import { useCrdtEditorController, type CrdtEditorControllerModel } from './use-crdt-editor-controller.ts';
 
 export function CrdtEditorView({
     state,
     authSession,
-    model,
+    model
 }: Readonly<{
     state: RallarBlackBoxTestState;
     authSession?: AuthSession;
@@ -51,7 +44,7 @@ export function CrdtEditorView({
         columns,
         runEditorAction,
         closeDocument,
-        destroyDocument,
+        destroyDocument
     } = model;
     return (
         <section className="crdt-editor-panel">
@@ -70,11 +63,9 @@ export function CrdtEditorView({
                 <Metric
                     label="Live Auth"
                     value={canUseLiveTransport ? 'ready' : 'local-only'}
-                    tone={
-                        transport === 'local-only' || canUseLiveTransport
-                            ? 'good'
-                            : 'warn'
-                    }
+                    tone={transport === 'local-only' || canUseLiveTransport
+                        ? 'good'
+                        : 'warn'}
                 />
             </div>
             <div className="form-grid crdt-editor-controls">
@@ -82,9 +73,7 @@ export function CrdtEditorView({
                     Document name
                     <input
                         value={documentName}
-                        onChange={(event) =>
-                            setDocumentName(event.target.value)
-                        }
+                        onChange={(event) => setDocumentName(event.target.value)}
                         disabled={opened}
                     />
                 </label>
@@ -102,9 +91,8 @@ export function CrdtEditorView({
                         value={transport}
                         onChange={(event) =>
                             setTransport(
-                                event.target.value as CrdtEditorTransport,
-                            )
-                        }
+                                event.target.value as CrdtEditorTransport
+                            )}
                         disabled={opened}
                     >
                         {CRDT_EDITOR_TRANSPORTS.map((option) => (
@@ -142,9 +130,8 @@ export function CrdtEditorView({
                             action: 'open',
                             document: document.ref,
                             value: document.read(),
-                            health: document.health(),
-                        }))
-                    }
+                            health: document.health()
+                        }))}
                 >
                     Open
                 </button>
@@ -156,10 +143,9 @@ export function CrdtEditorView({
                             action: 'sync',
                             result: await document.sync({
                                 reason: 'black-box-crdt-editor',
-                                transport,
-                            }),
-                        }))
-                    }
+                                transport
+                            })
+                        }))}
                 >
                     Sync
                 </button>
@@ -170,9 +156,8 @@ export function CrdtEditorView({
                         void runEditorAction('read', async (document) => ({
                             action: 'read',
                             value: document.read(),
-                            health: document.health(),
-                        }))
-                    }
+                            health: document.health()
+                        }))}
                 >
                     Read
                 </button>
@@ -183,14 +168,11 @@ export function CrdtEditorView({
                         void runEditorAction('undo', async (document) => ({
                             action: 'undo',
                             update: await document.undoOperationGroup({
-                                targetOperationGroupId:
-                                    lastOperationGroupId ?? '',
+                                targetOperationGroupId: lastOperationGroupId ?? '',
                                 operations: lastBatch?.operations ?? [],
-                                operationGroupId:
-                                    crdtEditorOperationGroupId('undo'),
-                            }),
-                        }))
-                    }
+                                operationGroupId: crdtEditorOperationGroupId('undo')
+                            })
+                        }))}
                 >
                     Undo
                 </button>
@@ -201,14 +183,11 @@ export function CrdtEditorView({
                         void runEditorAction('redo', async (document) => ({
                             action: 'redo',
                             update: await document.redoOperationGroup({
-                                targetOperationGroupId:
-                                    lastOperationGroupId ?? '',
+                                targetOperationGroupId: lastOperationGroupId ?? '',
                                 operations: lastBatch?.operations ?? [],
-                                operationGroupId:
-                                    crdtEditorOperationGroupId('redo'),
-                            }),
-                        }))
-                    }
+                                operationGroupId: crdtEditorOperationGroupId('redo')
+                            })
+                        }))}
                 >
                     Redo
                 </button>
@@ -227,13 +206,11 @@ export function CrdtEditorView({
                     Destroy
                 </button>
             </div>
-            {busyAction && (
-                <div className="status-line">CRDT editor action: {busyAction}</div>
-            )}
+            {busyAction && <div className="status-line">CRDT editor action: {busyAction}</div>}
             {transport !== 'local-only' && !canUseLiveTransport && (
                 <div className="workbench-error" role="status">
-                    Live CRDT transports require provider=browser-rallar and a
-                    login session. Switch to local-only for offline sandboxing.
+                    Live CRDT transports require provider=browser-rallar and a login session. Switch to local-only for
+                    offline sandboxing.
                 </div>
             )}
             {error && (
@@ -257,11 +234,7 @@ export function CrdtEditorView({
                     Entities
                 </button>
             </div>
-            {view === 'board' ? (
-                <CrdtEditorBoardView model={model} />
-            ) : (
-                <CrdtEditorEntitiesView model={model} />
-            )}
+            {view === 'board' ? <CrdtEditorBoardView model={model} /> : <CrdtEditorEntitiesView model={model} />}
             <div className="crdt-editor-diagnostics">
                 <section>
                     <div className="section-heading">

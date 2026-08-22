@@ -1,14 +1,11 @@
-import type {
-    PSqlSql,
-    PSqlTransactionSql,
-} from '@shared-server/postgres/PostgresSqlClient.ts';
-import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import {
     ResourceInboxResultsRow,
     toPgTimestamp,
     toResultsDomain,
-    toSystemDate,
+    toSystemDate
 } from '@shared-server/postgres/resource-inbox/repository-utils.ts';
+import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 export class ResourceInboxResultsRepository {
     private readonly sql: PSqlSql;
@@ -22,19 +19,19 @@ export class ResourceInboxResultsRepository {
      * Required for SELECT ... FOR UPDATE SKIP LOCKED to be meaningful.
      */
     async begin<T>(
-        fn: (repo: ResourceInboxResultsRepository) => Promise<T>,
+        fn: (repo: ResourceInboxResultsRepository) => Promise<T>
     ): Promise<T> {
         const newVar = await this.sql.begin<T>(
             async (sql: PSqlTransactionSql) => {
                 return await fn(new ResourceInboxResultsRepository(sql));
-            },
+            }
         );
 
         return newVar as T;
     }
 
     async writeIfAbsentOrReplaceExpired(
-        entry: ResourceEntry,
+        entry: ResourceEntry
     ): Promise<ResourceEntry> {
         const systemDate = toSystemDate(entry);
 
@@ -81,7 +78,7 @@ export class ResourceInboxResultsRepository {
         }
 
         throw new Error(
-            'Write-if-absent failed: conflicting row was not returned and no active row exists',
+            'Write-if-absent failed: conflicting row was not returned and no active row exists'
         );
     }
 
@@ -157,7 +154,7 @@ export class ResourceInboxResultsRepository {
     }
 
     async deleteExpired(): Promise<number> {
-        const rows = await this.sql<{ ris_row_id: bigint }[]>`
+        const rows = await this.sql<{ ris_row_id: bigint; }[]>`
             delete
             from resource_inbox_results
             where expire_ts <= (now() at time zone 'UTC')

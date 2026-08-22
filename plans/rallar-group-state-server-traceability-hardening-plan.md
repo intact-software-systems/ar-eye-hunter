@@ -324,45 +324,45 @@ Declare the existing 17-way relationship beside the AppInbox payload contracts:
 
 ```ts
 export interface AuthenticatedGroupMutationPayloadByType {
-  [AppInboxType.GROUP_CREATE]: GroupCreateAppInboxPayload;
-  [AppInboxType.GROUP_UPDATE]: GroupUpdateAppInboxPayload;
-  [AppInboxType.GROUP_DIRECTOR_APPOINT]: GroupDirectorAppointAppInboxPayload;
-  [AppInboxType.GROUP_JOIN]: GroupJoinAppInboxPayload;
-  [AppInboxType.GROUP_INVITE_CREATE]: GroupInviteCreateAppInboxPayload;
-  [AppInboxType.GROUP_INVITE_REVOKE]: GroupInviteRevokeAppInboxPayload;
-  [AppInboxType.GROUP_INVITE_ACCEPT]: GroupInviteAcceptAppInboxPayload;
-  [AppInboxType.GROUP_JOIN_CODE_ROTATE]: GroupJoinCodeRotateAppInboxPayload;
-  [AppInboxType.GROUP_MEMBER_REMOVE]: GroupMemberRemoveAppInboxPayload;
-  [AppInboxType.GROUP_MEMBER_BAN]: GroupMemberBanAppInboxPayload;
-  [AppInboxType.GROUP_MEMBER_UNBAN]: GroupMemberUnbanAppInboxPayload;
-  [AppInboxType.GROUP_MEMBER_ROLE_SET]: GroupMemberRoleSetAppInboxPayload;
-  [AppInboxType.GROUP_OWNERSHIP_TRANSFER]: GroupOwnershipTransferAppInboxPayload;
-  [AppInboxType.GROUP_MEMBER_UPSERT]: GroupMemberUpsertAppInboxPayload;
-  [AppInboxType.GROUP_PRESENCE_CONNECT]: GroupPresenceConnectAppInboxPayload;
-  [AppInboxType.GROUP_PRESENCE_HEARTBEAT]: GroupPresenceHeartbeatAppInboxPayload;
-  [AppInboxType.GROUP_PRESENCE_DISCONNECT]: GroupPresenceDisconnectAppInboxPayload;
+    [AppInboxType.GROUP_CREATE]: GroupCreateAppInboxPayload;
+    [AppInboxType.GROUP_UPDATE]: GroupUpdateAppInboxPayload;
+    [AppInboxType.GROUP_DIRECTOR_APPOINT]: GroupDirectorAppointAppInboxPayload;
+    [AppInboxType.GROUP_JOIN]: GroupJoinAppInboxPayload;
+    [AppInboxType.GROUP_INVITE_CREATE]: GroupInviteCreateAppInboxPayload;
+    [AppInboxType.GROUP_INVITE_REVOKE]: GroupInviteRevokeAppInboxPayload;
+    [AppInboxType.GROUP_INVITE_ACCEPT]: GroupInviteAcceptAppInboxPayload;
+    [AppInboxType.GROUP_JOIN_CODE_ROTATE]: GroupJoinCodeRotateAppInboxPayload;
+    [AppInboxType.GROUP_MEMBER_REMOVE]: GroupMemberRemoveAppInboxPayload;
+    [AppInboxType.GROUP_MEMBER_BAN]: GroupMemberBanAppInboxPayload;
+    [AppInboxType.GROUP_MEMBER_UNBAN]: GroupMemberUnbanAppInboxPayload;
+    [AppInboxType.GROUP_MEMBER_ROLE_SET]: GroupMemberRoleSetAppInboxPayload;
+    [AppInboxType.GROUP_OWNERSHIP_TRANSFER]: GroupOwnershipTransferAppInboxPayload;
+    [AppInboxType.GROUP_MEMBER_UPSERT]: GroupMemberUpsertAppInboxPayload;
+    [AppInboxType.GROUP_PRESENCE_CONNECT]: GroupPresenceConnectAppInboxPayload;
+    [AppInboxType.GROUP_PRESENCE_HEARTBEAT]: GroupPresenceHeartbeatAppInboxPayload;
+    [AppInboxType.GROUP_PRESENCE_DISCONNECT]: GroupPresenceDisconnectAppInboxPayload;
 }
 
 export type AuthenticatedGroupMutationInboxType = keyof AuthenticatedGroupMutationPayloadByType;
 
-export type AuthenticatedGroupMutationEnqueue = Readonly<{
-  [Type in AuthenticatedGroupMutationInboxType]: Omit<
-    AppInboxEnqueueInput<AuthenticatedGroupMutationPayloadByType[Type]>,
-    'type'
-  > &
-    Readonly<{ type: Type }>;
-}>[AuthenticatedGroupMutationInboxType];
+export type AuthenticatedGroupMutationEnqueue = Readonly<
+    {
+        [Type in AuthenticatedGroupMutationInboxType]:
+            & Omit<AppInboxEnqueueInput<AuthenticatedGroupMutationPayloadByType[Type]>, 'type'>
+            & Readonly<{ type: Type; }>;
+    }
+>[AuthenticatedGroupMutationInboxType];
 
 interface AuthenticatedGroupMutationEnqueueCandidate {
-  readonly type: AppInboxType;
+    readonly type: AppInboxType;
 }
 
 export function isAuthenticatedGroupMutationEnqueue(
-  enqueue: AuthenticatedGroupMutationEnqueueCandidate,
+    enqueue: AuthenticatedGroupMutationEnqueueCandidate
 ): enqueue is AuthenticatedGroupMutationEnqueue;
 
 export function toGroupMutationDescriptor(
-  enqueue: AuthenticatedGroupMutationEnqueue,
+    enqueue: AuthenticatedGroupMutationEnqueue
 ): GroupMutationDescriptor;
 ```
 
@@ -385,17 +385,17 @@ Declare beside `AppInboxTransactionWriter`:
 
 ```ts
 export interface AppInboxMutationTransactionWriter {
-  writeMutation<Result>(
-    context: AppInboxMessageContext,
-    write: (transaction: PSqlTransactionSql) => Promise<Result>,
-  ): Promise<Result>;
+    writeMutation<Result>(
+        context: AppInboxMessageContext,
+        write: (transaction: PSqlTransactionSql) => Promise<Result>
+    ): Promise<Result>;
 
-  writeMutationWithAfterCommitResult<DurableResult, AfterCommitResult>(
-    context: AppInboxMessageContext,
-    write: (
-      transaction: PSqlTransactionSql,
-    ) => Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>>,
-  ): Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>>;
+    writeMutationWithAfterCommitResult<DurableResult, AfterCommitResult>(
+        context: AppInboxMessageContext,
+        write: (
+            transaction: PSqlTransactionSql
+        ) => Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>>
+    ): Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>>;
 }
 ```
 
@@ -409,11 +409,11 @@ The handler contract becomes:
 
 ```ts
 export interface GroupStateInboxHandlerDependencies {
-  readonly mutationService: GroupStateMutationService;
-  readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
-  readonly snapshotObserver: Pick<GroupStateService, 'observeSnapshot'>;
-  readonly transactionWriter: AppInboxMutationTransactionWriter;
-  readonly wakeQueue?: () => void;
+    readonly mutationService: GroupStateMutationService;
+    readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
+    readonly snapshotObserver: Pick<GroupStateService, 'observeSnapshot'>;
+    readonly transactionWriter: AppInboxMutationTransactionWriter;
+    readonly wakeQueue?: () => void;
 }
 ```
 
@@ -427,17 +427,17 @@ Replace callback-based presence-connect commit ownership with:
 
 ```ts
 export type GroupPresenceConnectOutcome =
-  | InactiveGroupPresenceResult
-  | Readonly<{
-      status: 'ready-to-commit';
-      computed: GroupMutationComputed;
-      lifecycleGuard: WsSessionGenerationLifecycleComputed;
+    | InactiveGroupPresenceResult
+    | Readonly<{
+        status: 'ready-to-commit';
+        computed: GroupMutationComputed;
+        lifecycleGuard: WsSessionGenerationLifecycleComputed;
     }>;
 
 interface ProcessGroupPresenceConnectInput {
-  readonly command: GroupStateMutationCommand;
-  readonly mutationService: GroupStateMutationService;
-  readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
+    readonly command: GroupStateMutationCommand;
+    readonly mutationService: GroupStateMutationService;
+    readonly sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
 }
 ```
 
@@ -454,8 +454,8 @@ Declare:
 
 ```ts
 type GroupStateTimedOperation = Exclude<
-  keyof GroupStateService,
-  'compute' | 'validate' | 'sessionGenerationLifecycle'
+    keyof GroupStateService,
+    'compute' | 'validate' | 'sessionGenerationLifecycle'
 >;
 ```
 

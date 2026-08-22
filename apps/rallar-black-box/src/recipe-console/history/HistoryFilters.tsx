@@ -1,32 +1,35 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import {
-    HISTORY_FILTER_PRESET_LIMITS,
-    historyFilterPresetApplyPatch,
-    type HistoryFilterValues,
-} from './history-filter-contract.ts';
-import {
     RECIPE_CONSOLE_FAILURE_CATEGORIES,
     RECIPE_CONSOLE_RUN_STATUSES,
-    type RecipeConsoleFailureCategory, type RecipeConsoleRunStatus,
-    type RecipeConsoleUrlState,
+    type RecipeConsoleFailureCategory,
+    type RecipeConsoleRunStatus,
+    type RecipeConsoleUrlState
 } from '../routing/url-state-contract.ts';
-import styles from './HistoryFilters.module.css';
 import {
-    historyUtcInputEpoch,
-    historyUtcInputValue,
-} from './history-utc.ts';
+    HISTORY_FILTER_PRESET_LIMITS,
+    historyFilterPresetApplyPatch,
+    type HistoryFilterValues
+} from './history-filter-contract.ts';
+import { historyUtcInputEpoch, historyUtcInputValue } from './history-utc.ts';
+import styles from './HistoryFilters.module.css';
 
 export type HistoryFiltersProps = Readonly<{
-    urlState: RecipeConsoleUrlState; resetRevision: number;
+    urlState: RecipeConsoleUrlState;
+    resetRevision: number;
     onApply(patch: Partial<RecipeConsoleUrlState>): void;
     onReset(patch: Partial<RecipeConsoleUrlState>): void;
 }>;
 
 type HistoryFilterDraft = Readonly<{
-    historyQuery: string; historyGroup: string;
-    historyRecipeId: string; historyProfile: string;
-    failureCategory: string; status: string;
-    from: string; to: string;
+    historyQuery: string;
+    historyGroup: string;
+    historyRecipeId: string;
+    historyProfile: string;
+    failureCategory: string;
+    status: string;
+    from: string;
+    to: string;
 }>;
 
 const EMPTY_DRAFT: HistoryFilterDraft = {
@@ -37,17 +40,17 @@ const EMPTY_DRAFT: HistoryFilterDraft = {
     failureCategory: '',
     status: '',
     from: '',
-    to: '',
+    to: ''
 };
 
 export function HistoryFilters({
     urlState,
     resetRevision,
     onApply,
-    onReset,
+    onReset
 }: HistoryFiltersProps) {
     const [draft, setDraft] = useState<HistoryFilterDraft>(
-        () => draftFromUrlState(urlState),
+        () => draftFromUrlState(urlState)
     );
 
     useEffect(() => {
@@ -61,11 +64,11 @@ export function HistoryFilters({
         urlState.status,
         urlState.from,
         urlState.to,
-        resetRevision,
+        resetRevision
     ]);
 
     function updateDraft(key: keyof HistoryFilterDraft, value: string): void {
-        setDraft(current => ({ ...current, [key]: value }));
+        setDraft((current) => ({ ...current, [key]: value }));
     }
 
     function apply(event: FormEvent<HTMLFormElement>): void {
@@ -97,7 +100,7 @@ export function HistoryFilters({
                     <TextField
                         label="Query"
                         maxLength={HISTORY_FILTER_PRESET_LIMITS.query}
-                        onChange={value => updateDraft('historyQuery', value)}
+                        onChange={(value) => updateDraft('historyQuery', value)}
                         placeholder="Failure, run, agent…"
                         type="search"
                         value={draft.historyQuery}
@@ -105,45 +108,45 @@ export function HistoryFilters({
                     <TextField
                         label="Group"
                         maxLength={HISTORY_FILTER_PRESET_LIMITS.string}
-                        onChange={value => updateDraft('historyGroup', value)}
+                        onChange={(value) => updateDraft('historyGroup', value)}
                         value={draft.historyGroup}
                     />
                     <TextField
                         label="Recipe"
                         maxLength={HISTORY_FILTER_PRESET_LIMITS.string}
-                        onChange={value => updateDraft('historyRecipeId', value)}
+                        onChange={(value) => updateDraft('historyRecipeId', value)}
                         value={draft.historyRecipeId}
                     />
                     <TextField
                         label="Profile"
                         maxLength={HISTORY_FILTER_PRESET_LIMITS.string}
-                        onChange={value => updateDraft('historyProfile', value)}
+                        onChange={(value) => updateDraft('historyProfile', value)}
                         value={draft.historyProfile}
                     />
                     <SelectField
                         label="Failure category"
-                        onChange={value => updateDraft('failureCategory', value)}
+                        onChange={(value) => updateDraft('failureCategory', value)}
                         options={RECIPE_CONSOLE_FAILURE_CATEGORIES}
                         placeholder="All categories"
                         value={draft.failureCategory}
                     />
                     <SelectField
                         label="Run status"
-                        onChange={value => updateDraft('status', value)}
+                        onChange={(value) => updateDraft('status', value)}
                         options={RECIPE_CONSOLE_RUN_STATUSES}
                         placeholder="All statuses"
                         value={draft.status}
                     />
                     <TextField
                         label="From (UTC)"
-                        onChange={value => updateDraft('from', value)}
+                        onChange={(value) => updateDraft('from', value)}
                         step="0.001"
                         type="datetime-local"
                         value={draft.from}
                     />
                     <TextField
                         label="To (UTC)"
-                        onChange={value => updateDraft('to', value)}
+                        onChange={(value) => updateDraft('to', value)}
                         step="0.001"
                         type="datetime-local"
                         value={draft.to}
@@ -165,7 +168,7 @@ function TextField({
     placeholder,
     step,
     type = 'text',
-    value,
+    value
 }: Readonly<{
     label: string;
     maxLength?: number;
@@ -180,7 +183,7 @@ function TextField({
             <span>{label}</span>
             <input
                 maxLength={maxLength}
-                onChange={event => onChange(event.currentTarget.value)}
+                onChange={(event) => onChange(event.currentTarget.value)}
                 placeholder={placeholder}
                 step={step}
                 type={type}
@@ -195,7 +198,7 @@ function SelectField({
     onChange,
     options,
     placeholder,
-    value,
+    value
 }: Readonly<{
     label: string;
     onChange(value: string): void;
@@ -207,13 +210,11 @@ function SelectField({
         <label className={styles.field}>
             <span>{label}</span>
             <select
-                onChange={event => onChange(event.currentTarget.value)}
+                onChange={(event) => onChange(event.currentTarget.value)}
                 value={value}
             >
                 <option value="">{placeholder}</option>
-                {options.map(option => (
-                    <option key={option} value={option}>{displayEnum(option)}</option>
-                ))}
+                {options.map((option) => <option key={option} value={option}>{displayEnum(option)}</option>)}
             </select>
         </label>
     );
@@ -228,7 +229,7 @@ function draftFromUrlState(state: RecipeConsoleUrlState): HistoryFilterDraft {
         failureCategory: state.failureCategory ?? '',
         status: state.status ?? '',
         from: historyUtcInputValue(state.from),
-        to: historyUtcInputValue(state.to),
+        to: historyUtcInputValue(state.to)
     };
 }
 
@@ -241,7 +242,7 @@ function replacementPatch(draft: HistoryFilterDraft): Partial<RecipeConsoleUrlSt
         failureCategory: optionalFailureCategory(draft.failureCategory),
         status: optionalRunStatus(draft.status),
         from: historyUtcInputEpoch(draft.from),
-        to: historyUtcInputEpoch(draft.to),
+        to: historyUtcInputEpoch(draft.to)
     };
     return historyFilterPresetApplyPatch({ name: 'Transient draft', filters });
 }
@@ -252,11 +253,13 @@ function normalizedText(value: string): string | undefined {
 }
 
 function optionalFailureCategory(
-    value: string,
+    value: string
 ): RecipeConsoleFailureCategory | undefined {
     return RECIPE_CONSOLE_FAILURE_CATEGORIES.includes(
-        value as RecipeConsoleFailureCategory,
-    ) ? value as RecipeConsoleFailureCategory : undefined;
+            value as RecipeConsoleFailureCategory
+        )
+        ? value as RecipeConsoleFailureCategory
+        : undefined;
 }
 
 function optionalRunStatus(value: string): RecipeConsoleRunStatus | undefined {
@@ -267,8 +270,9 @@ function optionalRunStatus(value: string): RecipeConsoleRunStatus | undefined {
 
 function displayEnum(value: string): string {
     return value.split('-').map(
-        (part, index) => index === 0
-            ? `${part.charAt(0).toUpperCase()}${part.slice(1)}`
-            : part,
+        (part, index) =>
+            index === 0
+                ? `${part.charAt(0).toUpperCase()}${part.slice(1)}`
+                : part
     ).join(' ');
 }

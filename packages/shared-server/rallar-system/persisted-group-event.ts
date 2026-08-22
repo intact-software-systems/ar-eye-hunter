@@ -1,14 +1,20 @@
-import type {
-    GroupEvent,
-    GroupEventType,
-    GroupRef,
-} from '@shared/api/group-types.ts';
+import type { GroupEvent, GroupEventType, GroupRef } from '@shared/api/group-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
 
 const GROUP_EVENT_KEYS = [
-    'applicationId', 'workspaceId', 'groupId', 'eventId', 'eventType',
-    'snapshotVersion', 'causalRevision', 'occurredAtEpochMs', 'actor',
-    'reason', 'traceId', 'requestId', 'payload',
+    'applicationId',
+    'workspaceId',
+    'groupId',
+    'eventId',
+    'eventType',
+    'snapshotVersion',
+    'causalRevision',
+    'occurredAtEpochMs',
+    'actor',
+    'reason',
+    'traceId',
+    'requestId',
+    'payload'
 ] as const;
 
 const GROUP_EVENT_TYPES: Readonly<Record<GroupEventType, true>> = {
@@ -27,7 +33,7 @@ const GROUP_EVENT_TYPES: Readonly<Record<GroupEventType, true>> = {
     'ownership-transferred': true,
     'session-connected': true,
     'session-heartbeat': true,
-    'session-disconnected': true,
+    'session-disconnected': true
 };
 
 /**
@@ -37,7 +43,7 @@ const GROUP_EVENT_TYPES: Readonly<Record<GroupEventType, true>> = {
  */
 export function normalizePersistedGroupEvent(
     value: unknown,
-    expected: GroupRef,
+    expected: GroupRef
 ): GroupEvent {
     const legacy = requireRecord(value, 'Stored group event');
     rejectUnexpectedKeys(legacy, GROUP_EVENT_KEYS, 'Stored group event');
@@ -54,14 +60,14 @@ export function normalizePersistedGroupEvent(
             ? legacy.causalRevision
             : {
                 groupRevision: legacy.snapshotVersion,
-                presenceRevision: 0,
+                presenceRevision: 0
             },
         occurredAtEpochMs: legacy.occurredAtEpochMs,
         actor: normalizePersistedGroupEventActor(legacy.actor),
         reason: legacy.reason ?? null,
         traceId: legacy.traceId ?? null,
         requestId: legacy.requestId ?? null,
-        payload: Object.hasOwn(legacy, 'payload') ? legacy.payload : {},
+        payload: Object.hasOwn(legacy, 'payload') ? legacy.payload : {}
     };
     validatePersistedGroupEvent(canonical, expected);
     return canonical;
@@ -69,7 +75,7 @@ export function normalizePersistedGroupEvent(
 
 export function validatePersistedGroupEvent(
     value: unknown,
-    expected: GroupRef,
+    expected: GroupRef
 ): asserts value is GroupEvent {
     validateGroupEvent(value, expected, 'Stored group event');
 }
@@ -77,7 +83,7 @@ export function validatePersistedGroupEvent(
 export function validateGroupEvent(
     value: unknown,
     expected: GroupRef,
-    label: string,
+    label: string
 ): asserts value is GroupEvent {
     const event = requireRecord(value, label);
     requireExactKeys(event, GROUP_EVENT_KEYS, label);
@@ -114,18 +120,20 @@ function normalizePersistedGroupEventActor(value: unknown): MutationActor {
     rejectUnexpectedKeys(
         actor,
         ['principalId', 'sessionId', 'serviceId'],
-        'Stored group event actor',
+        'Stored group event actor'
     );
     let canonical: unknown;
     if (actor.sessionId !== undefined) {
         canonical = {
             kind: 'session',
             sessionId: actor.sessionId,
-            principalId: actor.principalId,
+            principalId: actor.principalId
         };
-    } else if (actor.principalId !== undefined) {
+    }
+    else if (actor.principalId !== undefined) {
         canonical = { kind: 'principal', principalId: actor.principalId };
-    } else {
+    }
+    else {
         canonical = { kind: 'service', serviceId: actor.serviceId };
     }
     validateActor(canonical, 'Stored group event actor');
@@ -174,21 +182,25 @@ function isUnknownRecord(value: unknown): value is Record<string, unknown> {
 function requireExactKeys(
     value: Record<string, unknown>,
     expected: readonly string[],
-    label: string,
+    label: string
 ): void {
     rejectUnexpectedKeys(value, expected, label);
     const missing = expected.find((key) => !Object.hasOwn(value, key));
-    if (missing) throw new TypeError(`${label} is missing key: ${missing}`);
+    if (missing) {
+        throw new TypeError(`${label} is missing key: ${missing}`);
+    }
 }
 
 function rejectUnexpectedKeys(
     value: Record<string, unknown>,
     allowed: readonly string[],
-    label: string,
+    label: string
 ): void {
     const allowedKeys = new Set(allowed);
     const unexpected = Object.keys(value).find((key) => !allowedKeys.has(key));
-    if (unexpected) throw new TypeError(`${label} has unexpected key: ${unexpected}`);
+    if (unexpected) {
+        throw new TypeError(`${label} has unexpected key: ${unexpected}`);
+    }
 }
 
 function requireNonEmptyString(value: unknown, label: string): void {
@@ -198,7 +210,9 @@ function requireNonEmptyString(value: unknown, label: string): void {
 }
 
 function requireNullableNonEmptyString(value: unknown, label: string): void {
-    if (value !== null) requireNonEmptyString(value, label);
+    if (value !== null) {
+        requireNonEmptyString(value, label);
+    }
 }
 
 function requireNonNegativeInteger(value: unknown, label: string): void {

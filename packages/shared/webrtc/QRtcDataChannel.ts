@@ -1,16 +1,13 @@
 import { OnQRtcMessageCallback, QRtcClientCallbacks } from './QRtcClientCallbacks.ts';
 import { QRtcPeerConnection } from './QRtcPeerConnection.ts';
-import {
-    RtcDataChannelSendQueue,
-    type RtcDataChannelQueuedSend,
-} from './RtcDataChannelSendQueue.ts';
+import { RtcDataChannelSendQueue, type RtcDataChannelQueuedSend } from './RtcDataChannelSendQueue.ts';
 
 const RtcSessionState = {
     Idle: 'Idle',
     Connecting: 'Connecting',
     Open: 'Open',
     Closed: 'Closed',
-    Failed: 'Failed',
+    Failed: 'Failed'
 } as const;
 
 type RtcSessionState = (typeof RtcSessionState)[keyof typeof RtcSessionState];
@@ -18,18 +15,18 @@ type RtcSessionState = (typeof RtcSessionState)[keyof typeof RtcSessionState];
 const RtcRole = {
     None: 'None',
     Initiator: 'Initiator',
-    Receiver: 'Receiver',
+    Receiver: 'Receiver'
 } as const;
 
 type RtcRole = (typeof RtcRole)[keyof typeof RtcRole];
 
 export type RtcDataChannelInputDto = {
-    readonly peerId: string
-    readonly dataChannelName: string
-    readonly dataChannelInit?: RTCDataChannelInit
-    readonly binaryType?: BinaryType
-    readonly flowControl?: RtcDataChannelFlowControlPolicy
-}
+    readonly peerId: string;
+    readonly dataChannelName: string;
+    readonly dataChannelInit?: RTCDataChannelInit;
+    readonly binaryType?: BinaryType;
+    readonly flowControl?: RtcDataChannelFlowControlPolicy;
+};
 
 export type RtcDataChannelPayload =
     | string
@@ -99,22 +96,22 @@ export type RtcRawMessageCallback = {
 };
 
 type QRtcDataChannelStatus = {
-    state: RtcSessionState | undefined
-    role: RtcRole
-    dc: RTCDataChannel | undefined
-}
+    state: RtcSessionState | undefined;
+    role: RtcRole;
+    dc: RTCDataChannel | undefined;
+};
 
 type QRtcMessageCallbackDto = {
-    readonly callback: OnQRtcMessageCallback,
-    readonly type: string
-}
+    readonly callback: OnQRtcMessageCallback;
+    readonly type: string;
+};
 
 type QueuedSend = RtcDataChannelQueuedSend<RtcDataChannelPayload>;
 
 type RtcDataChannelOpenWaiter = {
     resolve: (isOpen: boolean) => void;
     timeout: ReturnType<typeof setTimeout> | undefined;
-}
+};
 
 export const DEFAULT_RTC_DATA_CHANNEL_OPEN_TIMEOUT_MS = 5_000;
 
@@ -122,7 +119,7 @@ const DEFAULT_FLOW_CONTROL: Required<RtcDataChannelFlowControlPolicy> = {
     highWatermarkBytes: 64 * 1024,
     lowWatermarkBytes: 16 * 1024,
     overflow: 'drop-new',
-    maxQueueItems: 32,
+    maxQueueItems: 32
 };
 
 const emptyCounters = (): Record<keyof RtcDataChannelCounters, number> => ({
@@ -136,7 +133,7 @@ const emptyCounters = (): Record<keyof RtcDataChannelCounters, number> => ({
     droppedStale: 0,
     receivedRaw: 0,
     receivedString: 0,
-    receivedBinary: 0,
+    receivedBinary: 0
 });
 
 export class QRtcDataChannel {
@@ -185,7 +182,8 @@ export class QRtcDataChannel {
 
                 dc.close();
                 this.clearDataChannelReference(dc);
-            } catch (e) {
+            }
+            catch (e) {
                 console.error('Error closing data channel. Ignoring ...', e);
             }
         }
@@ -245,21 +243,21 @@ export class QRtcDataChannel {
 
     sendJson(
         data: unknown,
-        options: RtcDataChannelSendOptions = {},
+        options: RtcDataChannelSendOptions = {}
     ): RtcDataChannelSendResult {
         return this.sendRaw(JSON.stringify(data), options);
     }
 
     sendBinary(
         data: ArrayBuffer | ArrayBufferView<ArrayBuffer>,
-        options: RtcDataChannelSendOptions = {},
+        options: RtcDataChannelSendOptions = {}
     ): RtcDataChannelSendResult {
         return this.sendRaw(data, options);
     }
 
     sendRaw(
         data: RtcDataChannelPayload,
-        options: RtcDataChannelSendOptions = {},
+        options: RtcDataChannelSendOptions = {}
     ): RtcDataChannelSendResult {
         const dc = this.status.dc;
         if (!dc || dc.readyState !== 'open') {
@@ -278,7 +276,7 @@ export class QRtcDataChannel {
 
     onRawMessageDo(
         id: string,
-        callback: RtcRawMessageCallback,
+        callback: RtcRawMessageCallback
     ): QRtcDataChannel {
         this.onRawMessageCallbacks.set(id, callback);
         return this;
@@ -305,12 +303,12 @@ export class QRtcDataChannel {
             messageCallbackCount: this.onMessageCallbacks.size,
             lifecycleCallbackCount: this.clientCallbacks.size,
             flowControl: this.flowControl(),
-            counters: { ...this.counters },
+            counters: { ...this.counters }
         };
     }
 
     waitUntilOpen(
-        timeoutMs: number = DEFAULT_RTC_DATA_CHANNEL_OPEN_TIMEOUT_MS,
+        timeoutMs: number = DEFAULT_RTC_DATA_CHANNEL_OPEN_TIMEOUT_MS
     ): Promise<boolean> {
         if (this.status.dc?.readyState === 'open') {
             this.status.state = RtcSessionState.Open;
@@ -330,12 +328,12 @@ export class QRtcDataChannel {
         return new Promise<boolean>((resolve) => {
             const waiter: RtcDataChannelOpenWaiter = {
                 resolve,
-                timeout: undefined,
+                timeout: undefined
             };
 
             waiter.timeout = setTimeout(
                 () => this.resolveOpenWaiter(waiter, false),
-                timeoutMs,
+                timeoutMs
             );
             this.openWaiters.push(waiter);
         });
@@ -347,8 +345,11 @@ export class QRtcDataChannel {
 
     connect(isInitiator: boolean) {
         if (this.isOpen() || !this.isReadyToConnect()) {
-            console.log('Ignoring connect, data connection is in progress and not ready to connect: ' + this.status.state + ' role ' + this.status.role +
-                ' peerId ' + this.input.peerId + ' dataChannelName ' + this.input.dataChannelName);
+            console.log(
+                'Ignoring connect, data connection is in progress and not ready to connect: ' + this.status.state +
+                    ' role ' + this.status.role +
+                    ' peerId ' + this.input.peerId + ' dataChannelName ' + this.input.dataChannelName
+            );
             return;
         }
 
@@ -360,8 +361,7 @@ export class QRtcDataChannel {
         this.peerConnection
             .onDataChannelDo(
                 this.dataChannelCallbackId(),
-                event => {
-
+                (event) => {
                     if (event.channel.label !== this.input.dataChannelName) {
                         return Promise.resolve();
                     }
@@ -383,13 +383,18 @@ export class QRtcDataChannel {
                 ? this.peerConnection.createDataChannel(this.input.dataChannelName)
                 : this.peerConnection.createDataChannel(
                     this.input.dataChannelName,
-                    this.input.dataChannelInit,
+                    this.input.dataChannelInit
                 );
             console.log('Data channel created: ' + this.status.dc.label);
 
             this.setupDataChannelCallbacks(this.status.dc);
-        } else {
-            console.log('Waiting for data channel to be created for ' + this.input.dataChannelName + ' and ' + this.input.peerId + ' peer');
+        }
+        else {
+            console.log(
+                'Waiting for data channel to be created for ' + this.input.dataChannelName + ' and ' +
+                    this.input.peerId +
+                    ' peer'
+            );
         }
     }
 
@@ -398,7 +403,10 @@ export class QRtcDataChannel {
 
         dc.onopen = () => {
             if (this.status.dc !== dc) {
-                console.warn('Received data channel open event for different data channel: ' + dc.label + ' vs ' + this.status.dc?.label);
+                console.warn(
+                    'Received data channel open event for different data channel: ' + dc.label + ' vs ' +
+                        this.status.dc?.label
+                );
                 return;
             }
 
@@ -410,15 +418,18 @@ export class QRtcDataChannel {
             for (const callback of this.clientCallbacks.values()) {
                 try {
                     callback.onOpen?.();
-                } catch (e) {
+                }
+                catch (e) {
                     console.error('Callback onOpen failed:', e);
                 }
             }
         };
 
-        dc.onmessage = async event => {
+        dc.onmessage = async (event) => {
             if (this.status.dc !== dc) {
-                console.warn('Received data message for a different channel: ' + dc.label + ' vs ' + this.status.dc?.label);
+                console.warn(
+                    'Received data message for a different channel: ' + dc.label + ' vs ' + this.status.dc?.label
+                );
                 return;
             }
 
@@ -433,10 +444,9 @@ export class QRtcDataChannel {
                 return;
             }
 
-            const msg =
-                typeof event.data == 'string'
-                    ? this.parseJsonMessage(event.data, isProcessed)
-                    : event.data;
+            const msg = typeof event.data == 'string'
+                ? this.parseJsonMessage(event.data, isProcessed)
+                : event.data;
             if (msg === undefined) {
                 return;
             }
@@ -446,11 +456,13 @@ export class QRtcDataChannel {
                     if (dto.type === msg.type) {
                         await dto.callback.onMessage(msg, event);
                         isProcessed = true;
-                    } else if (!msg.type) {
+                    }
+                    else if (!msg.type) {
                         await dto.callback.onMessage(msg, event);
                         isProcessed = true;
                     }
-                } catch (e) {
+                }
+                catch (e) {
                     console.error('Callback onMessage failed:', e);
                 }
             }
@@ -462,11 +474,17 @@ export class QRtcDataChannel {
 
         dc.onclose = async () => {
             if (this.status.dc !== dc) {
-                console.warn('Received data channel close event for different data channel: ' + dc.label + ' vs ' + this.status.dc?.label);
+                console.warn(
+                    'Received data channel close event for different data channel: ' + dc.label + ' vs ' +
+                        this.status.dc?.label
+                );
                 return;
             }
 
-            console.error('Data channel closed for ' + this.input.dataChannelName + ' and ' + this.input.peerId + ' peer', new Error().stack ?? '');
+            console.error(
+                'Data channel closed for ' + this.input.dataChannelName + ' and ' + this.input.peerId + ' peer',
+                new Error().stack ?? ''
+            );
 
             this.status.state = RtcSessionState.Closed;
             this.resolveOpenWaiters(false);
@@ -478,7 +496,10 @@ export class QRtcDataChannel {
 
         dc.onerror = async () => {
             if (this.status.dc !== dc) {
-                console.warn('Received data channel error event for different data channel: ' + dc.label + ' vs ' + this.status.dc?.label);
+                console.warn(
+                    'Received data channel error event for different data channel: ' + dc.label + ' vs ' +
+                        this.status.dc?.label
+                );
                 return;
             }
 
@@ -537,7 +558,8 @@ export class QRtcDataChannel {
         for (const callback of this.clientCallbacks.values()) {
             try {
                 await callback.onClose?.();
-            } catch (e) {
+            }
+            catch (e) {
                 console.error('Callback onClose failed:', e);
             }
         }
@@ -547,7 +569,8 @@ export class QRtcDataChannel {
         for (const callback of this.clientCallbacks.values()) {
             try {
                 await callback.onError?.();
-            } catch (e) {
+            }
+            catch (e) {
                 console.error('Callback onError failed:', e);
             }
         }
@@ -569,7 +592,7 @@ export class QRtcDataChannel {
 
     private resolveOpenWaiter(
         waiter: RtcDataChannelOpenWaiter,
-        isOpen: boolean,
+        isOpen: boolean
     ): void {
         const index = this.openWaiters.indexOf(waiter);
         if (index < 0) {
@@ -586,7 +609,10 @@ export class QRtcDataChannel {
     private sendRawOrThrow(data: RtcDataChannelPayload): void {
         const result = this.sendRaw(data, { now: () => Date.now() });
         if (result.status === 'closed') {
-            console.error('Data channel not open for ' + this.input.dataChannelName + ' and ' + this.input.peerId + ' peer', new Error().stack ?? '');
+            console.error(
+                'Data channel not open for ' + this.input.dataChannelName + ' and ' + this.input.peerId + ' peer',
+                new Error().stack ?? ''
+            );
             throw new Error('Data channel not open');
         }
     }
@@ -607,7 +633,8 @@ export class QRtcDataChannel {
             try {
                 await callback.onMessage(event.data, event);
                 isProcessed = true;
-            } catch (e) {
+            }
+            catch (e) {
                 console.error('Callback onRawMessage failed:', e);
             }
         }
@@ -617,11 +644,12 @@ export class QRtcDataChannel {
 
     private parseJsonMessage(
         data: string,
-        alreadyProcessed: boolean,
+        alreadyProcessed: boolean
     ): unknown | undefined {
         try {
             return JSON.parse(data);
-        } catch (error) {
+        }
+        catch (error) {
             if (!alreadyProcessed) {
                 console.error('Failed to parse WebRTC JSON message', error);
             }
@@ -631,7 +659,7 @@ export class QRtcDataChannel {
 
     private handleBackPressure(
         payload: RtcDataChannelPayload,
-        options: RtcDataChannelSendOptions,
+        options: RtcDataChannelSendOptions
     ): RtcDataChannelSendResult {
         const policy = this.flowControl();
         const createdAtEpochMs = (options.now ?? (() => Date.now()))();
@@ -639,7 +667,7 @@ export class QRtcDataChannel {
             payload,
             key: options.key,
             maxAgeMs: options.maxAgeMs,
-            createdAtEpochMs,
+            createdAtEpochMs
         };
 
         const offerResult = this.sendQueue.offer(queued, policy);
@@ -650,7 +678,7 @@ export class QRtcDataChannel {
         return this.toSendResult(
             offerResult.status,
             offerResult.reason,
-            offerResult.key,
+            offerResult.key
         );
     }
 
@@ -679,7 +707,7 @@ export class QRtcDataChannel {
 
     private sendPayload(
         dc: RTCDataChannel,
-        payload: RtcDataChannelPayload,
+        payload: RtcDataChannelPayload
     ): void {
         if (typeof payload === 'string') {
             dc.send(payload);
@@ -714,21 +742,21 @@ export class QRtcDataChannel {
     private flowControl(): Required<RtcDataChannelFlowControlPolicy> {
         return {
             ...DEFAULT_FLOW_CONTROL,
-            ...(this.input.flowControl ?? {}),
+            ...(this.input.flowControl ?? {})
         };
     }
 
     private toSendResult(
         status: RtcDataChannelSendResult['status'],
         reason: string | undefined,
-        key: string | undefined,
+        key: string | undefined
     ): RtcDataChannelSendResult {
         this.counters[status] += 1;
         return {
             status,
             reason,
             key,
-            bufferedAmount: this.status.dc?.bufferedAmount ?? 0,
+            bufferedAmount: this.status.dc?.bufferedAmount ?? 0
         };
     }
 

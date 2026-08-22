@@ -1,9 +1,6 @@
 import { Either } from '../../resilience/Either.ts';
 
-import type {
-    GroupLifecyclePolicy,
-    GroupLifecyclePolicyIssue,
-} from './group-lifecycle-policy.ts';
+import type { GroupLifecyclePolicy, GroupLifecyclePolicyIssue } from './group-lifecycle-policy.ts';
 
 /**
  * Contradictions between fields, which clamping cannot catch: a clamp keeps one
@@ -12,11 +9,11 @@ import type {
  * fixes one policy document once.
  */
 export function validateGroupLifecyclePolicy(
-    policy: GroupLifecyclePolicy,
+    policy: GroupLifecyclePolicy
 ): Either<readonly GroupLifecyclePolicyIssue[], GroupLifecyclePolicy> {
     const issues: GroupLifecyclePolicyIssue[] = [
         ...toManagerIssues(policy),
-        ...toActivationIssues(policy),
+        ...toActivationIssues(policy)
     ];
 
     return issues.length === 0
@@ -25,7 +22,7 @@ export function validateGroupLifecyclePolicy(
 }
 
 function toManagerIssues(
-    policy: GroupLifecyclePolicy,
+    policy: GroupLifecyclePolicy
 ): readonly GroupLifecyclePolicyIssue[] {
     const issues: GroupLifecyclePolicyIssue[] = [];
     const { manager, establishment } = policy;
@@ -36,9 +33,8 @@ function toManagerIssues(
         issues.push({
             code: 'manager-initiator-without-manager',
             field: 'establishment.initiator',
-            message:
-                'establishment.initiator is manager but manager.selection is none, ' +
-                'so no principal can ever start establishment',
+            message: 'establishment.initiator is manager but manager.selection is none, ' +
+                'so no principal can ever start establishment'
         });
     }
 
@@ -46,7 +42,7 @@ function toManagerIssues(
         issues.push({
             code: 'assigned-selection-requires-principals',
             field: 'manager.assignedPrincipalIds',
-            message: 'manager.selection is assigned but no principals were assigned',
+            message: 'manager.selection is assigned but no principals were assigned'
         });
     }
 
@@ -58,7 +54,7 @@ function toManagerIssues(
         issues.push({
             code: 'manager-count-exceeds-assigned-principals',
             field: 'manager.count',
-            message: 'manager.count exceeds the number of assigned principals',
+            message: 'manager.count exceeds the number of assigned principals'
         });
     }
 
@@ -69,9 +65,8 @@ function toManagerIssues(
         issues.push({
             code: 'manager-approval-without-manager',
             field: 'admission.mode',
-            message:
-                'admission.mode is manager-approval but manager.selection is none, ' +
-                'so no principal could ever grant a pending admission',
+            message: 'admission.mode is manager-approval but manager.selection is none, ' +
+                'so no principal could ever grant a pending admission'
         });
     }
 
@@ -79,7 +74,7 @@ function toManagerIssues(
 }
 
 function toActivationIssues(
-    policy: GroupLifecyclePolicy,
+    policy: GroupLifecyclePolicy
 ): readonly GroupLifecyclePolicyIssue[] {
     const issues: GroupLifecyclePolicyIssue[] = [];
     const { activation } = policy;
@@ -88,9 +83,8 @@ function toActivationIssues(
         issues.push({
             code: 'viable-rate-above-success-rate',
             field: 'activation.minimumViableRate',
-            message:
-                'activation.minimumViableRate is above activation.successRate, ' +
-                'which leaves no rate at which the group activates degraded',
+            message: 'activation.minimumViableRate is above activation.successRate, ' +
+                'which leaves no rate at which the group activates degraded'
         });
     }
 
@@ -98,7 +92,7 @@ function toActivationIssues(
         issues.push({
             code: 'threshold-mode-requires-positive-rate',
             field: 'activation.successRate',
-            message: 'activation.mode requires a threshold but successRate is not positive',
+            message: 'activation.mode requires a threshold but successRate is not positive'
         });
     }
 
@@ -106,7 +100,7 @@ function toActivationIssues(
         issues.push({
             code: 'deadline-mode-requires-positive-deadline',
             field: 'activation.deadlineMs',
-            message: 'activation.mode requires a deadline but deadlineMs is not positive',
+            message: 'activation.mode requires a deadline but deadlineMs is not positive'
         });
     }
 
@@ -117,7 +111,7 @@ function toActivationIssues(
         issues.push({
             code: 'strict-confirmation-unsupported',
             field: 'activation.strictConfirmation',
-            message: 'activation.strictConfirmation is not supported in this release',
+            message: 'activation.strictConfirmation is not supported in this release'
         });
     }
 

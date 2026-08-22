@@ -4,11 +4,9 @@ import {
     createControlQueryService,
     createInitialControlQueryState,
     observeControlQueryFreshness,
-    transitionControlQueryState,
+    transitionControlQueryState
 } from '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
-import {
-    CONTROL_QUERY_DEFAULT_REQUEST_TIMEOUT_MS,
-} from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
+import { CONTROL_QUERY_DEFAULT_REQUEST_TIMEOUT_MS } from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
 
 type TestSnapshot = Readonly<{
     runIds: readonly string[];
@@ -30,12 +28,12 @@ type Deferred<T> = Readonly<{
 
 const LIVE_SNAPSHOT: TestSnapshot = {
     runIds: ['run-a'],
-    distributedRunIds: ['distributed-a'],
+    distributedRunIds: ['distributed-a']
 };
 
 const RECOVERED_SNAPSHOT: TestSnapshot = {
     runIds: ['run-b'],
-    distributedRunIds: ['distributed-b'],
+    distributedRunIds: ['distributed-b']
 };
 
 function deferred<T>(): Deferred<T> {
@@ -51,14 +49,14 @@ function deferred<T>(): Deferred<T> {
 function complete(snapshot: TestSnapshot = LIVE_SNAPSHOT) {
     return {
         completeness: 'complete' as const,
-        snapshot,
+        snapshot
     };
 }
 
 function partial(snapshot: TestSnapshot = LIVE_SNAPSHOT) {
     return {
         completeness: 'partial' as const,
-        snapshot,
+        snapshot
     };
 }
 
@@ -69,7 +67,7 @@ function fakeTimerScheduler() {
         },
         clearTimeout(handle: ReturnType<typeof setTimeout>): void {
             clearTimeout(handle);
-        },
+        }
     };
 }
 
@@ -94,24 +92,24 @@ describe('Recipe Console control query state', () => {
             status: 'connecting',
             reachability: 'unknown',
             authorization: 'unknown',
-            isRefreshing: false,
+            isRefreshing: false
         });
         expect(initial.snapshot).toBeUndefined();
 
         const attempting = transitionControlQueryState(initial, {
             type: 'attempt-started',
-            atEpochMs: 1_000,
+            atEpochMs: 1_000
         });
         const succeeded = transitionControlQueryState(attempting, {
             type: 'attempt-succeeded',
             atEpochMs: 1_125,
-            result: complete(),
+            result: complete()
         });
 
         expect(attempting).toMatchObject({
             status: 'connecting',
             attemptedAtEpochMs: 1_000,
-            isRefreshing: true,
+            isRefreshing: true
         });
         expect(succeeded).toMatchObject({
             status: 'live',
@@ -120,7 +118,7 @@ describe('Recipe Console control query state', () => {
             snapshot: LIVE_SNAPSHOT,
             attemptedAtEpochMs: 1_000,
             receivedAtEpochMs: 1_125,
-            isRefreshing: false,
+            isRefreshing: false
         });
         expect(succeeded.lastError).toBeUndefined();
     });
@@ -129,59 +127,58 @@ describe('Recipe Console control query state', () => {
         const succeeded = transitionControlQueryState(
             transitionControlQueryState(createInitialControlQueryState<TestSnapshot>(), {
                 type: 'attempt-started',
-                atEpochMs: 2_000,
+                atEpochMs: 2_000
             }),
             {
                 type: 'attempt-succeeded',
                 atEpochMs: 2_050,
-                result: partial({ runIds: ['run-a'], distributedRunIds: [] }),
-            },
+                result: partial({ runIds: ['run-a'], distributedRunIds: [] })
+            }
         );
 
         expect(succeeded).toMatchObject({
             status: 'partial',
             reachability: 'reachable',
             authorization: 'ready',
-            snapshot: { runIds: ['run-a'], distributedRunIds: [] },
+            snapshot: { runIds: ['run-a'], distributedRunIds: [] }
         });
     });
 
-    it.each([
-        ['complete', 'canonical-fallback'],
-        ['partial', 'unavailable'],
-    ] as const)(
+    it.each(
+        [
+            ['complete', 'canonical-fallback'],
+            ['partial', 'unavailable']
+        ] as const
+    )(
         'retains last successful %s completeness and %s provenance while stale',
         (completeness, distributedRunsSource) => {
-            const initial = createInitialControlQueryState<
-                TestSnapshot,
-                TestQueryProvenance
-            >();
+            const initial = createInitialControlQueryState<TestSnapshot, TestQueryProvenance>();
             const succeeded = transitionControlQueryState(initial, {
                 type: 'attempt-succeeded',
                 atEpochMs: 2_075,
                 result: {
                     completeness,
                     snapshot: LIVE_SNAPSHOT,
-                    provenance: { distributedRunsSource },
-                },
+                    provenance: { distributedRunsSource }
+                }
             });
             const stale = transitionControlQueryState(succeeded, {
                 type: 'attempt-failed',
                 atEpochMs: 2_100,
-                error: { kind: 'network', message: 'connection refused' },
+                error: { kind: 'network', message: 'connection refused' }
             });
 
             expect(succeeded).toMatchObject({
                 completeness,
-                provenance: { distributedRunsSource },
+                provenance: { distributedRunsSource }
             });
             expect(stale).toMatchObject({
                 status: 'stale',
                 completeness,
                 provenance: { distributedRunsSource },
-                snapshot: LIVE_SNAPSHOT,
+                snapshot: LIVE_SNAPSHOT
             });
-        },
+        }
     );
 
     it('keeps partial snapshot authorization orthogonal to usable data', () => {
@@ -192,16 +189,16 @@ describe('Recipe Console control query state', () => {
                 atEpochMs: 2_100,
                 result: {
                     ...partial({ runIds: ['run-a'], distributedRunIds: [] }),
-                    authorization: 'required',
-                },
-            },
+                    authorization: 'required'
+                }
+            }
         );
 
         expect(succeeded).toMatchObject({
             status: 'partial',
             reachability: 'reachable',
             authorization: 'required',
-            snapshot: { runIds: ['run-a'], distributedRunIds: [] },
+            snapshot: { runIds: ['run-a'], distributedRunIds: [] }
         });
     });
 
@@ -209,25 +206,25 @@ describe('Recipe Console control query state', () => {
         const live = transitionControlQueryState(
             transitionControlQueryState(createInitialControlQueryState<TestSnapshot>(), {
                 type: 'attempt-started',
-                atEpochMs: 3_000,
+                atEpochMs: 3_000
             }),
             {
                 type: 'attempt-succeeded',
                 atEpochMs: 3_100,
-                result: complete(),
-            },
+                result: complete()
+            }
         );
         const refreshing = transitionControlQueryState(live, {
             type: 'attempt-started',
-            atEpochMs: 8_100,
+            atEpochMs: 8_100
         });
         const failed = transitionControlQueryState(refreshing, {
             type: 'attempt-failed',
             atEpochMs: 8_200,
             error: {
                 kind: 'network',
-                message: 'connection refused',
-            },
+                message: 'connection refused'
+            }
         });
 
         expect(refreshing.status).toBe('live');
@@ -241,8 +238,8 @@ describe('Recipe Console control query state', () => {
             isRefreshing: false,
             lastError: {
                 kind: 'network',
-                message: 'connection refused',
-            },
+                message: 'connection refused'
+            }
         });
     });
 
@@ -250,23 +247,23 @@ describe('Recipe Console control query state', () => {
         const failed = transitionControlQueryState(
             transitionControlQueryState(createInitialControlQueryState<TestSnapshot>(), {
                 type: 'attempt-started',
-                atEpochMs: 4_000,
+                atEpochMs: 4_000
             }),
             {
                 type: 'attempt-failed',
                 atEpochMs: 4_100,
                 error: {
                     kind: 'network',
-                    message: 'ECONNREFUSED',
-                },
-            },
+                    message: 'ECONNREFUSED'
+                }
+            }
         );
 
         expect(failed).toMatchObject({
             status: 'offline',
             reachability: 'unreachable',
             authorization: 'unknown',
-            isRefreshing: false,
+            isRefreshing: false
         });
         expect(failed.snapshot).toBeUndefined();
         expect(failed.receivedAtEpochMs).toBeUndefined();
@@ -280,26 +277,26 @@ describe('Recipe Console control query state', () => {
                 atEpochMs: 4_200,
                 error: {
                     kind: 'protocol',
-                    message: 'Control server snapshot runs must be an array.',
-                },
-            },
+                    message: 'Control server snapshot runs must be an array.'
+                }
+            }
         );
 
         expect(failed).toMatchObject({
             status: 'offline',
             reachability: 'reachable',
             authorization: 'unknown',
-            lastError: { kind: 'protocol' },
+            lastError: { kind: 'protocol' }
         });
     });
 
     it.each([401, 403])(
         'keeps HTTP %s reachability separate from authorization',
-        status => {
+        (status) => {
             const failed = transitionControlQueryState(
                 transitionControlQueryState(createInitialControlQueryState<TestSnapshot>(), {
                     type: 'attempt-started',
-                    atEpochMs: 5_000,
+                    atEpochMs: 5_000
                 }),
                 {
                     type: 'attempt-failed',
@@ -307,42 +304,42 @@ describe('Recipe Console control query state', () => {
                     error: {
                         kind: 'http',
                         status,
-                        message: `Control server request failed with HTTP ${status}`,
-                    },
-                },
+                        message: `Control server request failed with HTTP ${status}`
+                    }
+                }
             );
 
             expect(failed).toMatchObject({
                 status: 'offline',
                 reachability: 'reachable',
                 authorization: 'required',
-                lastError: { kind: 'http', status },
+                lastError: { kind: 'http', status }
             });
-        },
+        }
     );
 
     it('retains last-good data as stale when authorization becomes required', () => {
         const live = transitionControlQueryState(
             transitionControlQueryState(createInitialControlQueryState<TestSnapshot>(), {
                 type: 'attempt-started',
-                atEpochMs: 5_100,
+                atEpochMs: 5_100
             }),
             {
                 type: 'attempt-succeeded',
                 atEpochMs: 5_125,
-                result: complete(),
-            },
+                result: complete()
+            }
         );
         const unauthorized = transitionControlQueryState(
             transitionControlQueryState(live, {
                 type: 'attempt-started',
-                atEpochMs: 10_125,
+                atEpochMs: 10_125
             }),
             {
                 type: 'attempt-failed',
                 atEpochMs: 10_150,
-                error: { kind: 'http', status: 401, message: 'Unauthorized' },
-            },
+                error: { kind: 'http', status: 401, message: 'Unauthorized' }
+            }
         );
 
         expect(unauthorized).toMatchObject({
@@ -350,7 +347,7 @@ describe('Recipe Console control query state', () => {
             reachability: 'reachable',
             authorization: 'required',
             snapshot: LIVE_SNAPSHOT,
-            receivedAtEpochMs: 5_125,
+            receivedAtEpochMs: 5_125
         });
     });
 
@@ -367,9 +364,9 @@ describe('Recipe Console control query state', () => {
                     reachability: 'reachable',
                     authorizationRequired: true,
                     controlStatus: 401,
-                    brokerStatus: 503,
-                },
-            },
+                    brokerStatus: 503
+                }
+            }
         );
 
         expect(failed).toMatchObject({
@@ -381,8 +378,8 @@ describe('Recipe Console control query state', () => {
                 status: 503,
                 authorizationRequired: true,
                 controlStatus: 401,
-                brokerStatus: 503,
-            },
+                brokerStatus: 503
+            }
         });
     });
 
@@ -391,24 +388,24 @@ describe('Recipe Console control query state', () => {
         const unauthorized = transitionControlQueryState(
             transitionControlQueryState(initial, {
                 type: 'attempt-started',
-                atEpochMs: 6_000,
+                atEpochMs: 6_000
             }),
             {
                 type: 'attempt-failed',
                 atEpochMs: 6_010,
-                error: { kind: 'http', status: 401, message: 'Unauthorized' },
-            },
+                error: { kind: 'http', status: 401, message: 'Unauthorized' }
+            }
         );
         const recovered = transitionControlQueryState(
             transitionControlQueryState(unauthorized, {
                 type: 'attempt-started',
-                atEpochMs: 11_010,
+                atEpochMs: 11_010
             }),
             {
                 type: 'attempt-succeeded',
                 atEpochMs: 11_100,
-                result: complete(RECOVERED_SNAPSHOT),
-            },
+                result: complete(RECOVERED_SNAPSHOT)
+            }
         );
 
         expect(recovered).toMatchObject({
@@ -416,7 +413,7 @@ describe('Recipe Console control query state', () => {
             reachability: 'reachable',
             authorization: 'ready',
             snapshot: RECOVERED_SNAPSHOT,
-            receivedAtEpochMs: 11_100,
+            receivedAtEpochMs: 11_100
         });
         expect(recovered.lastError).toBeUndefined();
     });
@@ -426,22 +423,22 @@ describe('Recipe Console control query state', () => {
         const live = transitionControlQueryState(
             transitionControlQueryState(createInitialControlQueryState<TestSnapshot>(), {
                 type: 'attempt-started',
-                atEpochMs: 10_000,
+                atEpochMs: 10_000
             }),
             {
                 type: 'attempt-succeeded',
                 atEpochMs: 10_100,
-                result: complete(),
-            },
+                result: complete()
+            }
         );
 
         const boundary = observeControlQueryFreshness(
             live,
-            10_100 + CONTROL_QUERY_FRESHNESS_MS,
+            10_100 + CONTROL_QUERY_FRESHNESS_MS
         );
         const overdue = observeControlQueryFreshness(
             live,
-            10_100 + CONTROL_QUERY_FRESHNESS_MS + 1,
+            10_100 + CONTROL_QUERY_FRESHNESS_MS + 1
         );
 
         expect(boundary).toBe(live);
@@ -449,7 +446,7 @@ describe('Recipe Console control query state', () => {
         expect(overdue).toMatchObject({
             status: 'stale',
             snapshot: LIVE_SNAPSHOT,
-            receivedAtEpochMs: 10_100,
+            receivedAtEpochMs: 10_100
         });
     });
 
@@ -457,22 +454,22 @@ describe('Recipe Console control query state', () => {
         const live = transitionControlQueryState(
             transitionControlQueryState(createInitialControlQueryState<TestSnapshot>(), {
                 type: 'attempt-started',
-                atEpochMs: 20_000,
+                atEpochMs: 20_000
             }),
             {
                 type: 'attempt-succeeded',
                 atEpochMs: 20_100,
-                result: complete(),
-            },
+                result: complete()
+            }
         );
         const regressedAttempt = transitionControlQueryState(live, {
             type: 'attempt-started',
-            atEpochMs: 19_000,
+            atEpochMs: 19_000
         });
         const regressedSuccess = transitionControlQueryState(regressedAttempt, {
             type: 'attempt-succeeded',
             atEpochMs: 19_050,
-            result: complete(RECOVERED_SNAPSHOT),
+            result: complete(RECOVERED_SNAPSHOT)
         });
 
         expect(regressedAttempt.attemptedAtEpochMs).toBe(20_100);
@@ -497,7 +494,7 @@ describe('Recipe Console serialized control query service', () => {
             scheduler: fakeTimerScheduler(),
             pollIntervalMs: 5_000,
             requestTimeoutMs: 60_000,
-            freshnessMs: CONTROL_QUERY_FRESHNESS_MS,
+            freshnessMs: CONTROL_QUERY_FRESHNESS_MS
         });
 
         service.start();
@@ -506,7 +503,7 @@ describe('Recipe Console serialized control query service', () => {
         expect(service.getSnapshot()).toMatchObject({
             status: 'connecting',
             attemptedAtEpochMs: 30_000,
-            isRefreshing: true,
+            isRefreshing: true
         });
 
         await vi.advanceTimersByTimeAsync(12_000);
@@ -517,7 +514,7 @@ describe('Recipe Console serialized control query service', () => {
         expect(service.getSnapshot()).toMatchObject({
             status: 'live',
             receivedAtEpochMs: 42_000,
-            isRefreshing: false,
+            isRefreshing: false
         });
 
         await vi.advanceTimersByTimeAsync(4_999);
@@ -541,7 +538,7 @@ describe('Recipe Console serialized control query service', () => {
             now: Date.now,
             scheduler: fakeTimerScheduler(),
             pollIntervalMs: 5_000,
-            requestTimeoutMs: 60_000,
+            requestTimeoutMs: 60_000
         });
 
         service.start();
@@ -579,7 +576,7 @@ describe('Recipe Console serialized control query service', () => {
             now: Date.now,
             scheduler: fakeTimerScheduler(),
             pollIntervalMs: 5_000,
-            requestTimeoutMs: 60_000,
+            requestTimeoutMs: 60_000
         });
 
         service.start();
@@ -609,7 +606,7 @@ describe('Recipe Console serialized control query service', () => {
             now: Date.now,
             scheduler: fakeTimerScheduler(),
             pollIntervalMs: 5_000,
-            requestTimeoutMs: 4_000,
+            requestTimeoutMs: 4_000
         });
 
         service.start();
@@ -624,8 +621,8 @@ describe('Recipe Console serialized control query service', () => {
             isRefreshing: false,
             lastError: {
                 kind: 'timeout',
-                message: expect.stringContaining('4000'),
-            },
+                message: expect.stringContaining('4000')
+            }
         });
 
         service.stop();
@@ -635,15 +632,16 @@ describe('Recipe Console serialized control query service', () => {
         vi.useFakeTimers();
         vi.setSystemTime(75_000);
         const service = createControlQueryService<TestSnapshot>({
-            query: ({ signal }) => new Promise((_resolve, reject) => {
-                signal.addEventListener('abort', () => {
-                    reject(new DOMException('The operation was aborted.', 'AbortError'));
-                }, { once: true });
-            }),
+            query: ({ signal }) =>
+                new Promise((_resolve, reject) => {
+                    signal.addEventListener('abort', () => {
+                        reject(new DOMException('The operation was aborted.', 'AbortError'));
+                    }, { once: true });
+                }),
             now: Date.now,
             scheduler: fakeTimerScheduler(),
             pollIntervalMs: 5_000,
-            requestTimeoutMs: 4_000,
+            requestTimeoutMs: 4_000
         });
 
         service.start();
@@ -653,7 +651,7 @@ describe('Recipe Console serialized control query service', () => {
         expect(service.getSnapshot()).toMatchObject({
             status: 'offline',
             reachability: 'unreachable',
-            lastError: { kind: 'timeout' },
+            lastError: { kind: 'timeout' }
         });
 
         service.stop();
@@ -669,7 +667,7 @@ describe('Recipe Console serialized control query service', () => {
             now: Date.now,
             scheduler: fakeTimerScheduler(),
             pollIntervalMs: 5_000,
-            requestTimeoutMs: 4_000,
+            requestTimeoutMs: 4_000
         });
 
         service.start();
@@ -679,7 +677,7 @@ describe('Recipe Console serialized control query service', () => {
             status: 'offline',
             reachability: 'reachable',
             authorization: 'required',
-            lastError: { kind: 'http', status: 401 },
+            lastError: { kind: 'http', status: 401 }
         });
 
         service.stop();
@@ -690,7 +688,7 @@ describe('Recipe Console serialized control query service', () => {
         vi.setSystemTime(85_000);
         const brokerError = Object.assign(
             new Error('Token broker unavailable.'),
-            { status: 503, statusText: 'Service Unavailable' },
+            { status: 503, statusText: 'Service Unavailable' }
         );
         const authorizationError = Object.assign(
             new Error('Token broker unavailable.'),
@@ -701,8 +699,8 @@ describe('Recipe Console serialized control query service', () => {
                 controlStatusText: 'Unauthorized',
                 brokerStatus: 503,
                 brokerStatusText: 'Service Unavailable',
-                brokerError,
-            },
+                brokerError
+            }
         );
         const service = createControlQueryService<TestSnapshot>({
             query: async () => {
@@ -711,7 +709,7 @@ describe('Recipe Console serialized control query service', () => {
             now: Date.now,
             scheduler: fakeTimerScheduler(),
             pollIntervalMs: 5_000,
-            requestTimeoutMs: 4_000,
+            requestTimeoutMs: 4_000
         });
 
         service.start();
@@ -728,8 +726,8 @@ describe('Recipe Console serialized control query service', () => {
                 reachability: 'reachable',
                 authorizationRequired: true,
                 controlStatus: 401,
-                brokerStatus: 503,
-            },
+                brokerStatus: 503
+            }
         });
 
         service.stop();
@@ -747,14 +745,14 @@ describe('Recipe Console serialized control query service', () => {
                         statusText: 'Unauthorized',
                         reachable: true,
                         authorizationRequired: true,
-                        credentialTrustRequired: true,
-                    },
+                        credentialTrustRequired: true
+                    }
                 );
             },
             now: Date.now,
             scheduler: fakeTimerScheduler(),
             pollIntervalMs: 5_000,
-            requestTimeoutMs: 4_000,
+            requestTimeoutMs: 4_000
         });
 
         service.start();
@@ -770,8 +768,8 @@ describe('Recipe Console serialized control query service', () => {
                 status: 401,
                 controlStatus: 401,
                 controlStatusText: 'Unauthorized',
-                credentialTrustRequired: true,
-            },
+                credentialTrustRequired: true
+            }
         });
         expect(snapshot.lastError?.brokerStatus).toBeUndefined();
 
@@ -792,7 +790,7 @@ describe('Recipe Console serialized control query service', () => {
             now: Date.now,
             scheduler: fakeTimerScheduler(),
             pollIntervalMs: 5_000,
-            requestTimeoutMs: 4_000,
+            requestTimeoutMs: 4_000
         });
         service.subscribe(listener);
 
@@ -829,7 +827,7 @@ describe('Recipe Console serialized control query service', () => {
             now: Date.now,
             scheduler: fakeTimerScheduler(),
             pollIntervalMs: 5_000,
-            requestTimeoutMs: 4_000,
+            requestTimeoutMs: 4_000
         });
 
         service.start();
@@ -846,7 +844,7 @@ describe('Recipe Console serialized control query service', () => {
         expect(service.getSnapshot()).toMatchObject({
             status: 'live',
             snapshot: RECOVERED_SNAPSHOT,
-            isRefreshing: false,
+            isRefreshing: false
         });
 
         service.stop();
@@ -860,7 +858,7 @@ describe('Recipe Console serialized control query service', () => {
         let restartedSignal: AbortSignal | undefined;
         const query = vi.fn()
             .mockImplementationOnce(() => oldRequest.promise)
-            .mockImplementationOnce(({ signal }: { signal: AbortSignal }) => {
+            .mockImplementationOnce(({ signal }: { signal: AbortSignal; }) => {
                 restartedSignal = signal;
                 return restartedRequest.promise;
             });
@@ -869,7 +867,7 @@ describe('Recipe Console serialized control query service', () => {
             now: Date.now,
             scheduler: fakeTimerScheduler(),
             pollIntervalMs: 5_000,
-            requestTimeoutMs: 4_000,
+            requestTimeoutMs: 4_000
         });
 
         service.start();
@@ -883,7 +881,7 @@ describe('Recipe Console serialized control query service', () => {
         expect(restartedSignal?.aborted).toBe(true);
         expect(service.getSnapshot()).toMatchObject({
             status: 'offline',
-            lastError: { kind: 'timeout' },
+            lastError: { kind: 'timeout' }
         });
 
         service.stop();
@@ -902,14 +900,14 @@ describe('Recipe Console serialized control query service', () => {
                 if (handle === reusedHandle) {
                     callback = undefined;
                 }
-            },
+            }
         };
         const oldRequest = deferred<ReturnType<typeof complete>>();
         const restartedRequest = deferred<ReturnType<typeof complete>>();
         let restartedSignal: AbortSignal | undefined;
         const query = vi.fn()
             .mockImplementationOnce(() => oldRequest.promise)
-            .mockImplementationOnce(({ signal }: { signal: AbortSignal }) => {
+            .mockImplementationOnce(({ signal }: { signal: AbortSignal; }) => {
                 restartedSignal = signal;
                 return restartedRequest.promise;
             });
@@ -918,7 +916,7 @@ describe('Recipe Console serialized control query service', () => {
             now: () => 115_000,
             scheduler,
             pollIntervalMs: 5_000,
-            requestTimeoutMs: 4_000,
+            requestTimeoutMs: 4_000
         });
 
         service.start();
@@ -933,7 +931,7 @@ describe('Recipe Console serialized control query service', () => {
         expect(restartedSignal?.aborted).toBe(true);
         expect(service.getSnapshot()).toMatchObject({
             status: 'offline',
-            lastError: { kind: 'timeout' },
+            lastError: { kind: 'timeout' }
         });
 
         service.stop();
@@ -952,7 +950,7 @@ describe('Recipe Console serialized control query service', () => {
             now: Date.now,
             scheduler: fakeTimerScheduler(),
             pollIntervalMs: 5_000,
-            requestTimeoutMs: 4_000,
+            requestTimeoutMs: 4_000
         });
         const listener = vi.fn();
         const unsubscribe = service.subscribe(listener);

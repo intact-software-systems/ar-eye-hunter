@@ -1,7 +1,7 @@
-import { AdvancedContextSummary } from './AdvancedContextSummary.tsx';
-import { AdvancedSurfaceSections } from './AdvancedSurfaceSections.tsx';
 import type { AdvancedWorkspaceProps } from './advanced-workspace-contract.ts';
 import { createAdvancedWorkspaceModel } from './advanced-workspace-model.ts';
+import { AdvancedContextSummary } from './AdvancedContextSummary.tsx';
+import { AdvancedSurfaceSections } from './AdvancedSurfaceSections.tsx';
 import styles from './AdvancedWorkspace.module.css';
 
 export default function AdvancedWorkspace(props: AdvancedWorkspaceProps) {

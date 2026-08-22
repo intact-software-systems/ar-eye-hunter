@@ -1,5 +1,5 @@
 const NUMBER = new Intl.NumberFormat('en-US', {
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 2
 });
 
 export function tuneNumber(value: number | undefined): string {
@@ -16,16 +16,18 @@ export function tuneHertz(value: number | undefined): string {
 
 export function tuneSigned(
     value: number | undefined,
-    unit = '',
+    unit = ''
 ): string {
-    if (value === undefined) return 'Unavailable';
+    if (value === undefined) {
+        return 'Unavailable';
+    }
     const sign = value > 0 ? '+' : '';
     return `${sign}${NUMBER.format(value)}${unit ? ` ${unit}` : ''}`;
 }
 
 export function tuneList(
     values: readonly string[],
-    empty = 'None',
+    empty = 'None'
 ): string {
     return values.length > 0 ? values.join(' · ') : empty;
 }

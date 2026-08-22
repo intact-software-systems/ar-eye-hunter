@@ -1,5 +1,4 @@
-import type { ControlRunToken } from
-    '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { ControlRunToken } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { ControlRunManagerHttpError } from '../../control-run-manager.ts';
 import type { ControlAuthorizedEndpoint } from './control-authorized-transport.ts';
 
@@ -13,27 +12,29 @@ export type RecipeConsoleControlAgentLaunchApi = Readonly<{
     issueRunToken(input: IssueRunTokenInput): Promise<ControlRunToken>;
 }>;
 
-export function createRecipeConsoleControlAgentLaunchApi(input: Readonly<{
-    baseUrl: string;
-    endpoint: ControlAuthorizedEndpoint;
-}>): RecipeConsoleControlAgentLaunchApi {
+export function createRecipeConsoleControlAgentLaunchApi(
+    input: Readonly<{
+        baseUrl: string;
+        endpoint: ControlAuthorizedEndpoint;
+    }>
+): RecipeConsoleControlAgentLaunchApi {
     const baseUrl = input.baseUrl.trim().replace(/\/+$/, '');
     return {
         async issueRunToken(request) {
-            const result = await input.endpoint.response(async fetchFn => {
+            const result = await input.endpoint.response(async (fetchFn) => {
                 const path = `/runs/${encodeURIComponent(request.runId)}` +
                     `/agents/${encodeURIComponent(request.agentId)}/tokens`;
                 const response = await fetchFn(`${baseUrl}${path}`, {
                     method: 'POST',
                     headers: { 'content-type': 'application/json' },
                     body: '{}',
-                    signal: request.signal,
+                    signal: request.signal
                 });
                 if (!response.ok) {
                     throw new ControlRunManagerHttpError(
                         await response.text(),
                         response.status,
-                        response.statusText,
+                        response.statusText
                     );
                 }
                 return await response.json() as unknown;
@@ -41,16 +42,16 @@ export function createRecipeConsoleControlAgentLaunchApi(input: Readonly<{
             return validateControlRunToken(
                 result.value,
                 request.runId,
-                request.agentId,
+                request.agentId
             );
-        },
+        }
     };
 }
 
 function validateControlRunToken(
     value: unknown,
     runId: string,
-    agentId: string,
+    agentId: string
 ): ControlRunToken {
     const token = value && typeof value === 'object'
         ? value as Partial<ControlRunToken>
@@ -67,7 +68,7 @@ function validateControlRunToken(
         token.expiresAtEpochMs <= token.issuedAtEpochMs
     ) {
         throw new Error(
-            `Control token response does not match requested run ${runId} and agent ${agentId}.`,
+            `Control token response does not match requested run ${runId} and agent ${agentId}.`
         );
     }
     return token as ControlRunToken;

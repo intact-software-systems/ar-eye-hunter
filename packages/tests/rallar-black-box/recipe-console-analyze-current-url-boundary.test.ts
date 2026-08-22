@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { resolveAnalyzeOperationContext } from
-    '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-current-url-boundary.ts';
-import { createAnalyzeWorkspaceContext } from
-    '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-workspace-state.ts';
+import { resolveAnalyzeOperationContext } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-current-url-boundary.ts';
+import { createAnalyzeWorkspaceContext } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-workspace-state.ts';
 
 const renderedContext = createAnalyzeWorkspaceContext({
     baseUrl: 'https://control.test',
     controlRunId: 'rendered-control',
-    distributedRunId: 'rendered-run',
+    distributedRunId: 'rendered-run'
 });
 
 describe('Recipe Console Analyze current URL boundary', () => {
@@ -16,11 +14,11 @@ describe('Recipe Console Analyze current URL boundary', () => {
             baseUrl: 'https://control.test',
             renderedContext,
             search: '?v=1&experience=recipe-console&view=analyze' +
-                '&controlRunId=current-control&distributedRunId=current-run',
+                '&controlRunId=current-control&distributedRunId=current-run'
         })).toEqual(createAnalyzeWorkspaceContext({
             baseUrl: 'https://control.test',
             controlRunId: 'current-control',
-            distributedRunId: 'current-run',
+            distributedRunId: 'current-run'
         }));
     });
 
@@ -28,11 +26,11 @@ describe('Recipe Console Analyze current URL boundary', () => {
         expect(resolveAnalyzeOperationContext({
             baseUrl: 'https://control.test',
             renderedContext,
-            search: '?v=1&experience=recipe-console&view=analyze',
+            search: '?v=1&experience=recipe-console&view=analyze'
         })).toBe(renderedContext);
         expect(resolveAnalyzeOperationContext({
             baseUrl: 'https://control.test',
-            renderedContext,
+            renderedContext
         })).toBe(renderedContext);
     });
 
@@ -41,13 +39,13 @@ describe('Recipe Console Analyze current URL boundary', () => {
             baseUrl: 'https://control.test',
             renderedContext,
             search: '?v=1&experience=recipe-console&view=analyze' +
-                '&distributedRunId=rendered-run',
+                '&distributedRunId=rendered-run'
         })).toBe(renderedContext);
         expect(resolveAnalyzeOperationContext({
             baseUrl: 'https://control.test',
             renderedContext,
             search: '?v=1&experience=recipe-console&view=analyze' +
-                '&distributedRunId=new-run',
+                '&distributedRunId=new-run'
         })).toBeUndefined();
     });
 });

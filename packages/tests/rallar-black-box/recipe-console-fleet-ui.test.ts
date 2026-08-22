@@ -2,71 +2,41 @@
 import { act, createElement, Fragment } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type {
-    FleetReportAnalysis,
-    FleetReportAgentDetail,
-    FleetReportHeatmap,
-} from '../../../packages/shared-test/rallar-bb-test/fleet-report-analysis.ts';
+import type { ControlAgentBoardRow } from '../../../apps/rallar-black-box/src/control-agent-board.ts';
+import { rememberControlResponseDocument } from '../../../apps/rallar-black-box/src/control-response-document.ts';
+import type { RecipeConsoleControlSelection } from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection-contract.ts';
+import {
+    controlSnapshotRevisionOf,
+    createControlSnapshotRevisionSession
+} from '../../../apps/rallar-black-box/src/recipe-console/control/control-snapshot-revision.ts';
+import type { RecipeConsoleControlConnection } from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
+import { createFleetWindowFingerprint, FLEET_WINDOW_BUDGETS } from '../../../apps/rallar-black-box/src/recipe-console/fleet/fleet-window-contract.ts';
+import type { FleetWorkspaceProps } from '../../../apps/rallar-black-box/src/recipe-console/fleet/fleet-workspace-contract.ts';
+import { FleetEvidenceDetail } from '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetEvidenceDetail.tsx';
+import { FleetEvidenceQuality } from '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetEvidenceQuality.tsx';
+import { FleetFailures } from '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetFailures.tsx';
+import { FleetHeatmap } from '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetHeatmap.tsx';
+import { FleetLiveBoard } from '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetLiveBoard.tsx';
+import { FleetOperationalState } from '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetOperationalState.tsx';
+import { FleetRegions } from '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetRegions.tsx';
+import { FleetSourceBar } from '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetSourceBar.tsx';
+import { FleetSummary } from '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetSummary.tsx';
+import { FleetTiming } from '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetTiming.tsx';
+import { FleetWindowControls } from '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetWindowControls.tsx';
+import { FleetWindowTruth } from '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetWindowTruth.tsx';
+import FleetWorkspace from '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetWorkspace.tsx';
+import { useFleetWindow } from '../../../apps/rallar-black-box/src/recipe-console/fleet/use-fleet-window.ts';
+import { useFleetWorkspace, type FleetWorkspaceController } from '../../../apps/rallar-black-box/src/recipe-console/fleet/use-fleet-workspace.ts';
+import { ExplicitWindowControls } from '../../../apps/rallar-black-box/src/recipe-console/ui/ExplicitWindowControls.tsx';
+import type { FleetReportAgentDetail, FleetReportAnalysis, FleetReportHeatmap } from '../../../packages/shared-test/rallar-bb-test/fleet-report-analysis.ts';
 import type {
     ControlFleetAgentRunOutcome,
     ControlFleetFailureSignature,
     ControlFleetRegionSummary,
-    ControlFleetRunReport,
+    ControlFleetRunReport
 } from '../../../packages/shared-test/rallar-bb-test/fleet-report.ts';
-import type { ControlAgentBoardRow } from
-    '../../../apps/rallar-black-box/src/control-agent-board.ts';
-import { rememberControlResponseDocument } from
-    '../../../apps/rallar-black-box/src/control-response-document.ts';
-import type { RecipeConsoleControlConnection } from
-    '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
-import {
-    controlSnapshotRevisionOf,
-    createControlSnapshotRevisionSession,
-} from '../../../apps/rallar-black-box/src/recipe-console/control/control-snapshot-revision.ts';
-import type { RecipeConsoleControlSelection } from
-    '../../../apps/rallar-black-box/src/recipe-console/control/control-selection-contract.ts';
-import { FleetFailures } from
-    '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetFailures.tsx';
-import { FleetEvidenceDetail } from
-    '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetEvidenceDetail.tsx';
-import { FleetHeatmap } from
-    '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetHeatmap.tsx';
-import { FleetLiveBoard } from
-    '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetLiveBoard.tsx';
-import { FleetOperationalState } from
-    '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetOperationalState.tsx';
-import { FleetEvidenceQuality } from
-    '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetEvidenceQuality.tsx';
-import { FleetRegions } from
-    '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetRegions.tsx';
-import { FleetSummary } from
-    '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetSummary.tsx';
-import { FleetSourceBar } from
-    '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetSourceBar.tsx';
-import { FleetTiming } from
-    '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetTiming.tsx';
-import { FleetWindowTruth } from
-    '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetWindowTruth.tsx';
-import { FleetWindowControls } from
-    '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetWindowControls.tsx';
-import FleetWorkspace from
-    '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetWorkspace.tsx';
-import {
-    FLEET_WINDOW_BUDGETS,
-    createFleetWindowFingerprint,
-} from '../../../apps/rallar-black-box/src/recipe-console/fleet/fleet-window-contract.ts';
-import { useFleetWindow } from
-    '../../../apps/rallar-black-box/src/recipe-console/fleet/use-fleet-window.ts';
-import {
-    useFleetWorkspace,
-    type FleetWorkspaceController,
-} from '../../../apps/rallar-black-box/src/recipe-console/fleet/use-fleet-workspace.ts';
-import type { FleetWorkspaceProps } from
-    '../../../apps/rallar-black-box/src/recipe-console/fleet/fleet-workspace-contract.ts';
-import { ExplicitWindowControls } from
-    '../../../apps/rallar-black-box/src/recipe-console/ui/ExplicitWindowControls.tsx';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
     .IS_REACT_ACT_ENVIRONMENT = true;
 
 const BIDI_AGENT = 'agent-\u202e]exact';
@@ -76,7 +46,7 @@ const BIDI_RECIPE = 'recipe-\u202e]exact';
 function outcome(
     agentId: string,
     state: ControlFleetAgentRunOutcome['state'],
-    region = 'eu-north',
+    region = 'eu-north'
 ): ControlFleetAgentRunOutcome {
     return {
         agentId,
@@ -93,14 +63,14 @@ function outcome(
         diagnosticCount: state === 'failed' ? 2 : 0,
         reconnectCount: 1,
         durationMs: state === 'failed' ? 900 : 300,
-        failureSignatureIds: state === 'failed' ? ['sig-runtime'] : [],
+        failureSignatureIds: state === 'failed' ? ['sig-runtime'] : []
     };
 }
 
 function report(
     distributedRunId: string,
     generatedAtEpochMs: number,
-    agent: ControlFleetAgentRunOutcome,
+    agent: ControlFleetAgentRunOutcome
 ): ControlFleetRunReport {
     return {
         fleetReportSchemaVersion: 1,
@@ -112,7 +82,7 @@ function report(
         group: {
             applicationId: 'rallar-server',
             workspaceId: 'default',
-            groupId: 'fleet-group',
+            groupId: 'fleet-group'
         },
         recipeIds: ['rtc-smoke'],
         runDurationMs: 1_200,
@@ -125,11 +95,11 @@ function report(
             flaky: 0,
             stale: 0,
             passRate: agent.ok ? 1 : 0,
-            failureGroups: agent.ok ? 0 : 1,
+            failureGroups: agent.ok ? 0 : 1
         },
         timing: {
             run: { count: 1, p95Ms: 1_200 },
-            commands: { count: 3, p95Ms: agent.durationMs },
+            commands: { count: 3, p95Ms: agent.durationMs }
         },
         agents: [agent],
         regions: [],
@@ -137,14 +107,14 @@ function report(
         artifactRefs: {
             distributedRun: `opaque:${distributedRunId}`,
             controlRun: `opaque:control-${distributedRunId}`,
-            fleetReport: `opaque:fleet-${distributedRunId}`,
-        },
+            fleetReport: `opaque:fleet-${distributedRunId}`
+        }
     };
 }
 
 function liveRow(
     agentId: string,
-    connected: boolean,
+    connected: boolean
 ): ControlAgentBoardRow {
     return {
         agentId,
@@ -163,7 +133,7 @@ function liveRow(
         receivedResultCount: 3,
         receivedEventCount: 5,
         reconnectCount: 0,
-        activeRuns: [],
+        activeRuns: []
     } as unknown as ControlAgentBoardRow;
 }
 
@@ -183,7 +153,7 @@ const REGION: ControlFleetRegionSummary = {
     stale: 0,
     passRate: 0.5,
     timing: { count: 2, p50Ms: 300, p95Ms: 900, maxMs: 900 },
-    dominantFailureSignatureId: 'sig-runtime',
+    dominantFailureSignatureId: 'sig-runtime'
 };
 
 const FAILURE: ControlFleetFailureSignature = {
@@ -196,7 +166,7 @@ const FAILURE: ControlFleetFailureSignature = {
     affectedRegions: ['eu-north'],
     affectedRuns: [RUN_FAILED.distributedRunId],
     likelyCause: 'The receiver lost the expected RTC payload.',
-    nextAction: 'Inspect the affected agent and exact run.',
+    nextAction: 'Inspect the affected agent and exact run.'
 };
 
 const HEATMAP: FleetReportHeatmap = {
@@ -205,12 +175,12 @@ const HEATMAP: FleetReportHeatmap = {
         agent: FAILED,
         region: 'eu-north',
         provider: 'provider-a',
-        cells: [FAILED, undefined],
+        cells: [FAILED, undefined]
     }],
     totalAgentRows: 1,
     omittedAgentRows: 0,
     totalRunColumns: 2,
-    omittedRunColumns: 0,
+    omittedRunColumns: 0
 };
 
 const ANALYSIS = {
@@ -222,7 +192,7 @@ const ANALYSIS = {
         passRate: 0.5,
         failureGroups: 1,
         p95DurationMs: 1_200,
-        stale: 0,
+        stale: 0
     },
     heatmap: HEATMAP,
     regions: { items: [REGION], total: 1, omitted: 0 },
@@ -230,12 +200,12 @@ const ANALYSIS = {
     regionTiming: {
         items: [{ id: 'region-eu', label: 'eu-north / provider-a', timing: REGION.timing }],
         total: 1,
-        omitted: 0,
+        omitted: 0
     },
     recipeTiming: {
         items: [{ id: 'recipe-rtc', label: 'rtc-smoke', timing: { count: 2, p95Ms: 1_200 } }],
         total: 1,
-        omitted: 0,
+        omitted: 0
     },
     missingLabelAgentIds: { items: [], total: 0, omitted: 0 },
     work: {
@@ -243,8 +213,8 @@ const ANALYSIS = {
         outcomeVisits: 2,
         indexInserts: 2,
         cellLookups: 2,
-        failureSignatureVisits: 1,
-    },
+        failureSignatureVisits: 1
+    }
 } as FleetReportAnalysis;
 
 describe('Recipe Console Fleet explicit windows', () => {
@@ -267,16 +237,16 @@ describe('Recipe Console Fleet explicit windows', () => {
             mapRoutes: 32,
             unresolvedAgents: 40,
             unresolvedRouteEndpoints: 40,
-            liveAgents: 40,
+            liveAgents: 40
         });
         const fingerprint = createFleetWindowFingerprint({
             contextKey: 'run\u0000,]\u202e["failures',
-            section: 'failures',
+            section: 'failures'
         });
         expect(JSON.parse(fingerprint)).toEqual([
             'fleet-window-v1',
             'run\u0000,]\u202e["failures',
-            'failures',
+            'failures'
         ]);
     });
 
@@ -289,34 +259,44 @@ describe('Recipe Console Fleet explicit windows', () => {
             const window = useFleetWindow({
                 contextKey: 'fleet-context',
                 section: 'failures',
-                total: 61,
+                total: 61
             });
             const ordinals = Array.from({
-                length: window.model.endIndexExclusive - window.model.startIndex,
+                length: window.model.endIndexExclusive - window.model.startIndex
             }, (_, offset) => window.model.startIndex + offset);
-            return createElement(Fragment, {},
-                createElement('div', window.controlsFocusProps,
+            return createElement(
+                Fragment,
+                {},
+                createElement(
+                    'div',
+                    window.controlsFocusProps,
                     createElement(ExplicitWindowControls, {
                         contentId: 'fleet-window-content',
                         itemLabel: 'failures',
                         label: 'Fleet failures',
                         model: window.model,
                         onNext: window.next,
-                        onPrevious: window.previous,
-                    }),
+                        onPrevious: window.previous
+                    })
                 ),
                 createElement(FleetWindowTruth, {
                     itemLabel: 'failures',
                     label: 'Fleet failures',
-                    window,
+                    window
                 }),
-                createElement('ol', {
-                    id: 'fleet-window-content',
-                    ...window.contentFocusProps,
-                }, ordinals.map(ordinal => createElement('li', {
-                    'data-window-ordinal': ordinal,
-                    key: ordinal,
-                }, ordinal))),
+                createElement(
+                    'ol',
+                    {
+                        id: 'fleet-window-content',
+                        ...window.contentFocusProps
+                    },
+                    ordinals.map((ordinal) =>
+                        createElement('li', {
+                            'data-window-ordinal': ordinal,
+                            key: ordinal
+                        }, ordinal)
+                    )
+                )
             );
         }
 
@@ -324,11 +304,13 @@ describe('Recipe Console Fleet explicit windows', () => {
         const visited: number[] = [];
         while (true) {
             visited.push(...[...container.querySelectorAll<HTMLElement>(
-                '[data-window-ordinal]',
-            )].map(row => Number(row.dataset.windowOrdinal)));
+                '[data-window-ordinal]'
+            )].map((row) => Number(row.dataset.windowOrdinal)));
             const next = [...container.querySelectorAll<HTMLButtonElement>('button')]
-                .find(button => button.textContent === 'Next');
-            if (!next || next.disabled) break;
+                .find((button) => button.textContent === 'Next');
+            if (!next || next.disabled) {
+                break;
+            }
             await act(async () => next.click());
         }
 
@@ -351,7 +333,9 @@ describe('Recipe Console Fleet evidence UI', () => {
     });
 
     afterEach(async () => {
-        if (root) await act(async () => root?.unmount());
+        if (root) {
+            await act(async () => root?.unmount());
+        }
         root = undefined;
         container.remove();
     });
@@ -361,54 +345,59 @@ describe('Recipe Console Fleet evidence UI', () => {
         await act(async () => root?.render(node));
     }
 
-    it.each([
-        ['connecting', 'Connecting to Fleet evidence'],
-        ['partial', 'Fleet evidence is partial'],
-        ['stale', 'Showing last-known Fleet evidence'],
-        ['offline', 'Fleet control is offline'],
-        ['empty', 'No Fleet reports yet'],
-        ['schema-error', 'Some Fleet reports were quarantined'],
-    ] as const)('keeps valid evidence and recovery actions visible in %s state',
-        async (status, title) => {
-            const refresh = vi.fn();
-            await render(createElement(FleetOperationalState, {
-                acceptedCount: 1,
-                children: createElement(
-                    'p',
-                    { 'data-valid-evidence': true },
-                    'Retained evidence',
-                ),
-                isRefreshing: false,
-                legacyHref: '/?workspace=black-box-runner&tab=fleet',
-                onRefresh: refresh,
-                sourceCount: 2,
-                status,
-            }));
+    it.each(
+        [
+            ['connecting', 'Connecting to Fleet evidence'],
+            ['partial', 'Fleet evidence is partial'],
+            ['stale', 'Showing last-known Fleet evidence'],
+            ['offline', 'Fleet control is offline'],
+            ['empty', 'No Fleet reports yet'],
+            ['schema-error', 'Some Fleet reports were quarantined']
+        ] as const
+    )('keeps valid evidence and recovery actions visible in %s state', async (status, title) => {
+        const refresh = vi.fn();
+        await render(createElement(FleetOperationalState, {
+            acceptedCount: 1,
+            children: createElement(
+                'p',
+                { 'data-valid-evidence': true },
+                'Retained evidence'
+            ),
+            isRefreshing: false,
+            legacyHref: '/?workspace=black-box-runner&tab=fleet',
+            onRefresh: refresh,
+            sourceCount: 2,
+            status
+        }));
 
-            expect(container.textContent).toContain(title);
-            expect(container.textContent).toContain('1 of 2 reports accepted');
-            expect(container.querySelector('[data-valid-evidence]')).not.toBeNull();
-            const refreshButton = [...container.querySelectorAll('button')]
-                .find(button => button.textContent === 'Refresh');
-            await act(async () => refreshButton?.click());
-            expect(refresh).toHaveBeenCalledTimes(1);
-            expect(container.querySelector<HTMLAnchorElement>(
-                'a[href="/?workspace=black-box-runner&tab=fleet"]',
-            )?.textContent).toContain('Legacy Fleet');
-        });
+        expect(container.textContent).toContain(title);
+        expect(container.textContent).toContain('1 of 2 reports accepted');
+        expect(container.querySelector('[data-valid-evidence]')).not.toBeNull();
+        const refreshButton = [...container.querySelectorAll('button')]
+            .find((button) => button.textContent === 'Refresh');
+        await act(async () => refreshButton?.click());
+        expect(refresh).toHaveBeenCalledTimes(1);
+        expect(
+            container.querySelector<HTMLAnchorElement>(
+                'a[href="/?workspace=black-box-runner&tab=fleet"]'
+            )?.textContent
+        ).toContain('Legacy Fleet');
+    });
 
     it('renders exact summary and live-board truth with bidi-safe agent selection', async () => {
         const selectAgent = vi.fn();
-        await render(createElement('div', {},
+        await render(createElement(
+            'div',
+            {},
             createElement(FleetSummary, {
                 analysis: ANALYSIS,
-                live: { total: 2, connected: 1, targetable: 1, active: 0 },
+                live: { total: 2, connected: 1, targetable: 1, active: 0 }
             }),
             createElement(FleetLiveBoard, {
                 onSelectAgent: selectAgent,
                 rows: [liveRow(BIDI_AGENT, false), liveRow('agent-pass', true)],
-                selectedAgentId: BIDI_AGENT,
-            }),
+                selectedAgentId: BIDI_AGENT
+            })
         ));
 
         expect(container.querySelector('h2')?.textContent).toBe('Fleet status');
@@ -418,7 +407,7 @@ describe('Recipe Console Fleet evidence UI', () => {
         const exact = container.querySelector<HTMLElement>('[data-exact-identifier]');
         expect(exact?.getAttribute('dir')).toBe('ltr');
         const selected = container.querySelector<HTMLButtonElement>(
-            `button[data-agent-id="${CSS.escape(BIDI_AGENT)}"]`,
+            `button[data-agent-id="${CSS.escape(BIDI_AGENT)}"]`
         );
         expect(selected?.getAttribute('aria-pressed')).toBe('true');
         await act(async () => selected?.click());
@@ -431,27 +420,29 @@ describe('Recipe Console Fleet evidence UI', () => {
         const selectRegion = vi.fn();
         const openHistory = vi.fn();
         const openRun = vi.fn();
-        await render(createElement('div', {},
+        await render(createElement(
+            'div',
+            {},
             createElement(FleetHeatmap, {
                 heatmap: HEATMAP,
                 onSelectAgent: selectAgent,
-                onSelectReport: selectReport,
+                onSelectReport: selectReport
             }),
             createElement(FleetRegions, {
                 onSelectRegion: selectRegion,
                 regions: ANALYSIS.regions,
-                selectedRegion: 'eu-north',
+                selectedRegion: 'eu-north'
             }),
             createElement(FleetFailures, {
                 failures: ANALYSIS.failures,
                 onOpenHistory: openHistory,
                 onOpenRun: openRun,
-                onSelectAgent: selectAgent,
+                onSelectAgent: selectAgent
             }),
             createElement(FleetTiming, {
                 recipeTiming: ANALYSIS.recipeTiming,
-                regionTiming: ANALYSIS.regionTiming,
-            }),
+                regionTiming: ANALYSIS.regionTiming
+            })
         ));
 
         expect(container.querySelector('table[aria-label="Fleet agent by run heatmap"]'))
@@ -461,30 +452,32 @@ describe('Recipe Console Fleet evidence UI', () => {
         expect(container.textContent).toContain('Region and recipe timing');
 
         const reportButton = container.querySelector<HTMLButtonElement>(
-            `button[data-report-id="${CSS.escape(RUN_FAILED.distributedRunId)}"]`,
+            `button[data-report-id="${CSS.escape(RUN_FAILED.distributedRunId)}"]`
         );
         await act(async () => reportButton?.click());
         expect(selectReport).toHaveBeenCalledWith(RUN_FAILED, reportButton);
 
         const regionButton = container.querySelector<HTMLButtonElement>(
-            'button[data-fleet-region="eu-north"]',
+            'button[data-fleet-region="eu-north"]'
         );
         expect(regionButton?.getAttribute('aria-pressed')).toBe('true');
         await act(async () => regionButton?.click());
         expect(selectRegion).toHaveBeenCalledWith(undefined, regionButton);
 
         const affectedAgent = [...container.querySelectorAll<HTMLButtonElement>('button')]
-            .find(button => button.textContent?.includes(BIDI_AGENT) &&
-                button.closest('[data-fleet-failure]'));
+            .find((button) =>
+                button.textContent?.includes(BIDI_AGENT) &&
+                button.closest('[data-fleet-failure]')
+            );
         await act(async () => affectedAgent?.click());
         expect(selectAgent).toHaveBeenCalledWith(BIDI_AGENT, affectedAgent);
 
         const run = [...container.querySelectorAll<HTMLButtonElement>('button')]
-            .find(button => button.textContent === 'Open proving run');
+            .find((button) => button.textContent === 'Open proving run');
         await act(async () => run?.click());
         expect(openRun).toHaveBeenCalledWith(FAILURE, RUN_FAILED.distributedRunId, run);
         const history = [...container.querySelectorAll<HTMLButtonElement>('button')]
-            .find(button => button.textContent === 'Filter History');
+            .find((button) => button.textContent === 'Filter History');
         await act(async () => history?.click());
         expect(openHistory).toHaveBeenCalledWith(FAILURE, history);
     });
@@ -492,50 +485,60 @@ describe('Recipe Console Fleet evidence UI', () => {
     it('keeps delimiter-bearing region/provider React identities collision-safe', async () => {
         const regions = [
             { ...REGION, region: 'a\u0000b', provider: 'c' },
-            { ...REGION, region: 'a', provider: 'b\u0000c' },
+            { ...REGION, region: 'a', provider: 'b\u0000c' }
         ];
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        await render(createElement('div', {},
+        await render(createElement(
+            'div',
+            {},
             createElement(FleetRegions, {
                 onSelectRegion: vi.fn(),
-                regions: { items: regions, total: 2, omitted: 0 },
+                regions: { items: regions, total: 2, omitted: 0 }
             }),
             createElement(FleetEvidenceDetail, {
                 onOpenAnalyze: vi.fn(),
                 onOpenMonitor: vi.fn(),
                 selectedRegionRows: regions,
-                selectionIssues: [],
-            }),
+                selectionIssues: []
+            })
         ));
-        await act(async () => root?.render(createElement('div', {},
-            createElement(FleetRegions, {
-                onSelectRegion: vi.fn(),
-                regions: { items: [...regions].reverse(), total: 2, omitted: 0 },
-            }),
-            createElement(FleetEvidenceDetail, {
-                onOpenAnalyze: vi.fn(),
-                onOpenMonitor: vi.fn(),
-                selectedRegionRows: [...regions].reverse(),
-                selectionIssues: [],
-            }),
-        )));
+        await act(async () =>
+            root?.render(createElement(
+                'div',
+                {},
+                createElement(FleetRegions, {
+                    onSelectRegion: vi.fn(),
+                    regions: { items: [...regions].reverse(), total: 2, omitted: 0 }
+                }),
+                createElement(FleetEvidenceDetail, {
+                    onOpenAnalyze: vi.fn(),
+                    onOpenMonitor: vi.fn(),
+                    selectedRegionRows: [...regions].reverse(),
+                    selectionIssues: []
+                })
+            ))
+        );
 
-        expect(error.mock.calls.some(call => String(call[0]).includes(
-            'same key',
-        ))).toBe(false);
+        expect(error.mock.calls.some((call) =>
+            String(call[0]).includes(
+                'same key'
+            )
+        )).toBe(false);
         error.mockRestore();
     });
 
     it('uses a complete searchable report picker and exposes bounded quality truth', async () => {
         const selectReport = vi.fn();
-        await render(createElement('div', {},
+        await render(createElement(
+            'div',
+            {},
             createElement(FleetSourceBar, {
                 contextKey: 'fleet-reports',
                 onSelectReport: selectReport,
                 reports: [RUN_FAILED, RUN_PASSED],
                 revision: ANALYSIS,
                 selectedReportId: RUN_FAILED.distributedRunId,
-                snapshotReceivedAtEpochMs: 2_500,
+                snapshotReceivedAtEpochMs: 2_500
             }),
             createElement(FleetEvidenceQuality, {
                 acceptedCount: 1,
@@ -544,31 +547,31 @@ describe('Recipe Console Fleet evidence UI', () => {
                     code: 'unsupported-schema-version',
                     path: '$[1].fleetReportSchemaVersion',
                     message: 'Unsupported Fleet report schema version.',
-                    distributedRunId: 'run-invalid',
+                    distributedRunId: 'run-invalid'
                 }],
                 missingLabelAgentIds: {
                     items: [BIDI_AGENT],
                     total: 3,
-                    omitted: 2,
+                    omitted: 2
                 },
                 omittedIssueCount: 4,
                 quarantinedCount: 1,
-                sourceCount: 2,
-            }),
+                sourceCount: 2
+            })
         ));
 
         expect(container.textContent).toContain('Historical report');
         expect(container.textContent).toContain('Snapshot received');
         const trigger = container.querySelector<HTMLButtonElement>(
-            '[data-searchable-listbox-trigger]',
+            '[data-searchable-listbox-trigger]'
         );
         await act(async () => trigger?.click());
         expect(container.querySelectorAll('[role="option"]')).toHaveLength(2);
         expect(container.querySelector('[role="option"]')?.textContent)
             .toContain('report generated');
         const passOption = [...container.querySelectorAll<HTMLButtonElement>(
-            '[role="option"]',
-        )].find(option => option.textContent?.includes(RUN_PASSED.distributedRunId));
+            '[role="option"]'
+        )].find((option) => option.textContent?.includes(RUN_PASSED.distributedRunId));
         await act(async () => passOption?.click());
         expect(selectReport).toHaveBeenCalledWith(RUN_PASSED);
 
@@ -588,23 +591,25 @@ describe('Recipe Console Fleet evidence UI', () => {
                     recipeProjectionReads += 1;
                 }
                 return Reflect.get(target, property, receiver);
-            },
+            }
         });
         const reports = [{ ...RUN_FAILED, recipeIds }];
         await render(createElement(FleetSourceBar, {
             contextKey: 'stable-source-options',
             onSelectReport: vi.fn(),
             reports,
-            snapshotReceivedAtEpochMs: 1_000,
+            snapshotReceivedAtEpochMs: 1_000
         }));
         const readsAfterProjection = recipeProjectionReads;
 
-        await act(async () => root?.render(createElement(FleetSourceBar, {
-            contextKey: 'stable-source-options',
-            onSelectReport: vi.fn(),
-            reports,
-            snapshotReceivedAtEpochMs: 2_000,
-        })));
+        await act(async () =>
+            root?.render(createElement(FleetSourceBar, {
+                contextKey: 'stable-source-options',
+                onSelectReport: vi.fn(),
+                reports,
+                snapshotReceivedAtEpochMs: 2_000
+            }))
+        );
 
         expect(readsAfterProjection).toBeGreaterThan(0);
         expect(recipeProjectionReads).toBe(readsAfterProjection);
@@ -614,26 +619,28 @@ describe('Recipe Console Fleet evidence UI', () => {
         const farFuture = {
             ...RUN_FAILED,
             distributedRunId: 'run-max-safe-time',
-            generatedAtEpochMs: Number.MAX_SAFE_INTEGER,
+            generatedAtEpochMs: Number.MAX_SAFE_INTEGER
         };
-        await render(createElement('div', {},
+        await render(createElement(
+            'div',
+            {},
             createElement(FleetSourceBar, {
                 contextKey: 'max-safe-fleet-time',
                 onSelectReport: vi.fn(),
                 reports: [farFuture],
-                selectedReportId: farFuture.distributedRunId,
+                selectedReportId: farFuture.distributedRunId
             }),
             createElement(FleetEvidenceDetail, {
                 onOpenAnalyze: vi.fn(),
                 onOpenMonitor: vi.fn(),
                 selectedRegionRows: [],
                 selectedReport: farFuture,
-                selectionIssues: [],
-            }),
+                selectionIssues: []
+            })
         ));
 
         const trigger = container.querySelector<HTMLButtonElement>(
-            '[data-searchable-listbox-trigger]',
+            '[data-searchable-listbox-trigger]'
         );
         await act(async () => trigger?.click());
         expect(container.querySelector('[role="option"]')?.textContent)
@@ -643,12 +650,14 @@ describe('Recipe Console Fleet evidence UI', () => {
     });
 
     it('does not collapse an absent optional report collection into green zero truth', async () => {
-        await render(createElement('div', {},
+        await render(createElement(
+            'div',
+            {},
             createElement(FleetSourceBar, {
                 collection: 'absent',
                 contextKey: 'absent-fleet-reports',
                 onSelectReport: vi.fn(),
-                reports: [],
+                reports: []
             }),
             createElement(FleetOperationalState, {
                 acceptedCount: 0,
@@ -658,12 +667,12 @@ describe('Recipe Console Fleet evidence UI', () => {
                 legacyHref: '/?workspace=black-box-runner&tab=fleet',
                 onRefresh: vi.fn(),
                 sourceCount: 0,
-                status: 'partial',
+                status: 'partial'
             }),
             createElement(FleetSummary, {
                 analysis: undefined,
                 collection: 'absent',
-                live: { total: 0, connected: 0, targetable: 0, active: 0 },
+                live: { total: 0, connected: 0, targetable: 0, active: 0 }
             }),
             createElement(FleetEvidenceQuality, {
                 acceptedCount: 0,
@@ -672,8 +681,8 @@ describe('Recipe Console Fleet evidence UI', () => {
                 missingLabelAgentIds: { items: [], total: 0, omitted: 0 },
                 omittedIssueCount: 0,
                 quarantinedCount: 0,
-                sourceCount: 0,
-            }),
+                sourceCount: 0
+            })
         ));
 
         expect(container.textContent).toContain('Report evidence unavailable');
@@ -693,13 +702,15 @@ describe('Recipe Console Fleet evidence UI', () => {
                 regions: 0,
                 passRate: 0,
                 failureGroups: 0,
-                stale: 0,
-            },
+                stale: 0
+            }
         } as FleetReportAnalysis;
-        await render(createElement('div', {},
+        await render(createElement(
+            'div',
+            {},
             createElement(FleetSummary, {
                 analysis: emptyAnalysis,
-                live: { total: 0, connected: 0, targetable: 0, active: 0 },
+                live: { total: 0, connected: 0, targetable: 0, active: 0 }
             }),
             createElement(FleetEvidenceQuality, {
                 acceptedCount: 0,
@@ -707,16 +718,18 @@ describe('Recipe Console Fleet evidence UI', () => {
                 missingLabelAgentIds: { items: [], total: 0, omitted: 0 },
                 omittedIssueCount: 0,
                 quarantinedCount: 0,
-                sourceCount: 0,
-            }),
+                sourceCount: 0
+            })
         ));
 
         expect(container.textContent).toContain('No source reports were available');
         expect(container.textContent).not.toContain('All source reports passed');
         for (const label of ['Pass rate', 'Repeated failures']) {
-            expect([...container.querySelectorAll('dt')]
-                .find(term => term.textContent === label)?.parentElement
-                ?.hasAttribute('data-tone')).toBe(false);
+            expect(
+                [...container.querySelectorAll('dt')]
+                    .find((term) => term.textContent === label)?.parentElement
+                    ?.hasAttribute('data-tone')
+            ).toBe(false);
         }
     });
 
@@ -729,17 +742,25 @@ describe('Recipe Console Fleet evidence UI', () => {
                 completeness: 'partial',
                 receivedAtEpochMs: 2_500,
                 isRefreshing: false,
-                snapshot: { runs: [], distributedRuns: [] },
+                snapshot: { runs: [], distributedRuns: [] }
             },
-            refresh: vi.fn(async () => undefined),
+            refresh: vi.fn(async () => undefined)
         } as unknown as RecipeConsoleControlConnection;
         const selection = {
             boardRows: [liveRow('live-only-agent', true)],
             boardSummary: {
-                total: 1, connected: 1, targetable: 1, active: 0,
-                selected: 0, stale: 0, offline: 0, wrongGroup: 0,
-                missingIdentity: 0, missingCapability: 0, synthetic: 0,
-            },
+                total: 1,
+                connected: 1,
+                targetable: 1,
+                active: 0,
+                selected: 0,
+                stale: 0,
+                offline: 0,
+                wrongGroup: 0,
+                missingIdentity: 0,
+                missingCapability: 0,
+                synthetic: 0
+            }
         } as unknown as RecipeConsoleControlSelection;
 
         await render(createElement(FleetWorkspace, {
@@ -750,7 +771,7 @@ describe('Recipe Console Fleet evidence UI', () => {
             onSelectionLabelChange: vi.fn(),
             replace: vi.fn(),
             selection,
-            urlState: { v: 1, experience: 'recipe-console', view: 'fleet' },
+            urlState: { v: 1, experience: 'recipe-console', view: 'fleet' }
         }));
 
         expect(container.textContent).toContain('Fleet report collection unavailable');
@@ -771,11 +792,11 @@ describe('Recipe Console Fleet evidence UI', () => {
             requestedReportId: RUN_FAILED.distributedRunId,
             selectionIssue: 'The requested report belongs to another control run.',
             selectionIssueValue: issueValue,
-            snapshotReceivedAtEpochMs: 2_500,
+            snapshotReceivedAtEpochMs: 2_500
         }));
 
         const trigger = container.querySelector<HTMLButtonElement>(
-            '[data-searchable-listbox-trigger]',
+            '[data-searchable-listbox-trigger]'
         );
         expect(trigger?.textContent).toContain('Newest accepted report');
         expect(trigger?.textContent).not.toContain(RUN_FAILED.distributedRunId);
@@ -784,13 +805,12 @@ describe('Recipe Console Fleet evidence UI', () => {
         expect(issue?.querySelector('[data-exact-identifier]')?.getAttribute('dir'))
             .toBe('ltr');
         expect([...issue?.querySelectorAll('[data-exact-identifier]') ?? []]
-            .map(node => node.textContent)).toEqual([
+            .map((node) => node.textContent)).toEqual([
                 RUN_FAILED.distributedRunId,
-                issueValue,
+                issueValue
             ]);
         for (const value of [RUN_FAILED.distributedRunId, issueValue]) {
-            const unsafe = [...issue?.childNodes ?? []].some(node =>
-                node.nodeType === Node.TEXT_NODE && node.textContent?.includes(value));
+            const unsafe = [...issue?.childNodes ?? []].some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.includes(value));
             expect(unsafe).toBe(false);
         }
     });
@@ -799,32 +819,34 @@ describe('Recipe Console Fleet evidence UI', () => {
         const bidiReport = {
             ...RUN_FAILED,
             group: { ...RUN_FAILED.group, groupId: BIDI_GROUP },
-            recipeIds: [BIDI_RECIPE],
+            recipeIds: [BIDI_RECIPE]
         };
-        await render(createElement('div', {},
+        await render(createElement(
+            'div',
+            {},
             createElement(FleetSourceBar, {
                 contextKey: 'bidi-fleet-source',
                 onSelectReport: vi.fn(),
                 reports: [bidiReport],
-                selectedReportId: bidiReport.distributedRunId,
+                selectedReportId: bidiReport.distributedRunId
             }),
             createElement(FleetEvidenceDetail, {
                 onOpenAnalyze: vi.fn(),
                 onOpenMonitor: vi.fn(),
                 selectedRegionRows: [],
                 selectedReport: bidiReport,
-                selectionIssues: [],
-            }),
+                selectionIssues: []
+            })
         ));
 
         const exact = [...container.querySelectorAll<HTMLElement>(
-            '[data-exact-identifier]',
+            '[data-exact-identifier]'
         )];
-        expect(exact.filter(node => node.textContent === BIDI_GROUP)).toHaveLength(2);
-        expect(exact.filter(node => node.textContent === BIDI_RECIPE)).toHaveLength(2);
-        expect(exact.every(node => node.getAttribute('dir') === 'ltr')).toBe(true);
+        expect(exact.filter((node) => node.textContent === BIDI_GROUP)).toHaveLength(2);
+        expect(exact.filter((node) => node.textContent === BIDI_RECIPE)).toHaveLength(2);
+        expect(exact.every((node) => node.getAttribute('dir') === 'ltr')).toBe(true);
         const trigger = container.querySelector<HTMLButtonElement>(
-            '[data-searchable-listbox-trigger]',
+            '[data-searchable-listbox-trigger]'
         );
         await act(async () => trigger?.click());
         const optionDetail = container.querySelector('[role="option"] small');
@@ -838,19 +860,19 @@ describe('Recipe Console Fleet evidence UI', () => {
                 items: [{
                     id: BIDI_RECIPE,
                     label: BIDI_RECIPE,
-                    timing: { count: 1, p50Ms: 10, p95Ms: 20, maxMs: 20 },
+                    timing: { count: 1, p50Ms: 10, p95Ms: 20, maxMs: 20 }
                 }],
                 total: 1,
-                omitted: 0,
+                omitted: 0
             },
-            regionTiming: { items: [], total: 0, omitted: 0 },
+            regionTiming: { items: [], total: 0, omitted: 0 }
         }));
 
         const occurrences = [...container.querySelectorAll('[data-exact-identifier]')]
-            .filter(node => node.textContent === BIDI_RECIPE);
+            .filter((node) => node.textContent === BIDI_RECIPE);
         expect(occurrences).toHaveLength(1);
         const unsafe = [...container.querySelectorAll('span')]
-            .some(node => node.textContent === BIDI_RECIPE);
+            .some((node) => node.textContent === BIDI_RECIPE);
         expect(unsafe).toBe(false);
     });
 
@@ -873,10 +895,10 @@ describe('Recipe Console Fleet evidence UI', () => {
                 snapshot: {
                     runs: [],
                     distributedRuns: [],
-                    fleetReports: [RUN_FAILED, RUN_PASSED],
-                },
+                    fleetReports: [RUN_FAILED, RUN_PASSED]
+                }
             },
-            refresh,
+            refresh
         } as unknown as RecipeConsoleControlConnection;
         const selection = {
             boardRows: rows,
@@ -891,8 +913,8 @@ describe('Recipe Console Fleet evidence UI', () => {
                 wrongGroup: 0,
                 missingIdentity: 0,
                 missingCapability: 0,
-                synthetic: 0,
-            },
+                synthetic: 0
+            }
         } as unknown as RecipeConsoleControlSelection;
 
         await render(createElement(FleetWorkspace, {
@@ -906,13 +928,13 @@ describe('Recipe Console Fleet evidence UI', () => {
             urlState: {
                 v: 1,
                 experience: 'recipe-console',
-                view: 'fleet',
-            },
+                view: 'fleet'
+            }
         }));
 
         expect(container.querySelector('[data-fleet-workspace][data-preview-view="fleet"]'))
             .not.toBeNull();
-        expect([...container.querySelectorAll('h2')].map(heading => heading.textContent))
+        expect([...container.querySelectorAll('h2')].map((heading) => heading.textContent))
             .toEqual(expect.arrayContaining([
                 'Fleet status',
                 'Live agent board',
@@ -922,7 +944,7 @@ describe('Recipe Console Fleet evidence UI', () => {
                 'Fleet evidence map',
                 'Region and recipe timing',
                 'Selected report artifact',
-                'Evidence quality',
+                'Evidence quality'
             ]));
         expect(navigate).not.toHaveBeenCalled();
         expect(replace).not.toHaveBeenCalled();
@@ -930,15 +952,15 @@ describe('Recipe Console Fleet evidence UI', () => {
         expect(refresh).not.toHaveBeenCalled();
         expect(container.textContent).toContain('2 of 2 reports accepted');
         const liveLayer = container.querySelector<HTMLButtonElement>(
-            '[data-fleet-map-layer="live-agents"]',
+            '[data-fleet-map-layer="live-agents"]'
         );
         await act(async () => liveLayer?.click());
         expect(navigate).toHaveBeenCalledWith({
             fleetMapLayers: [
                 'historical-regions',
                 'failures',
-                'observed-routes',
-            ],
+                'observed-routes'
+            ]
         });
     });
 
@@ -956,18 +978,26 @@ describe('Recipe Console Fleet evidence UI', () => {
                 snapshot: {
                     runs: [],
                     distributedRuns: [],
-                    fleetReports: [RUN_FAILED, RUN_PASSED],
-                },
+                    fleetReports: [RUN_FAILED, RUN_PASSED]
+                }
             },
-            refresh: vi.fn(async () => undefined),
+            refresh: vi.fn(async () => undefined)
         } as unknown as RecipeConsoleControlConnection;
         const selection = {
             boardRows: [],
             boardSummary: {
-                total: 0, connected: 0, targetable: 0, active: 0,
-                selected: 0, stale: 0, offline: 0, wrongGroup: 0,
-                missingIdentity: 0, missingCapability: 0, synthetic: 0,
-            },
+                total: 0,
+                connected: 0,
+                targetable: 0,
+                active: 0,
+                selected: 0,
+                stale: 0,
+                offline: 0,
+                wrongGroup: 0,
+                missingIdentity: 0,
+                missingCapability: 0,
+                synthetic: 0
+            }
         } as unknown as RecipeConsoleControlSelection;
 
         await render(createElement(FleetWorkspace, {
@@ -982,23 +1012,24 @@ describe('Recipe Console Fleet evidence UI', () => {
                 v: 1,
                 experience: 'recipe-console',
                 view: 'fleet',
-                controlRunId: RUN_FAILED.controlRunId,
-            },
+                controlRunId: RUN_FAILED.controlRunId
+            }
         }));
 
-        const detail = inspectorChange.mock.calls.at(-1)?.[0] as
-            ReturnType<typeof createElement> | undefined;
+        const detail = inspectorChange.mock.calls.at(-1)?.[0] as ReturnType<typeof createElement> | undefined;
         expect(detail?.type).toBe(FleetEvidenceDetail);
-        expect((detail?.props as { selectedReport?: ControlFleetRunReport })
-            .selectedReport).toMatchObject({
-                controlRunId: RUN_FAILED.controlRunId,
-                distributedRunId: RUN_FAILED.distributedRunId,
-            });
+        expect(
+            (detail?.props as { selectedReport?: ControlFleetRunReport; })
+                .selectedReport
+        ).toMatchObject({
+            controlRunId: RUN_FAILED.controlRunId,
+            distributedRunId: RUN_FAILED.distributedRunId
+        });
         expect(selectionLabelChange).toHaveBeenLastCalledWith(
-            'Fleet run selected',
+            'Fleet run selected'
         );
         expect(selectionLabelChange.mock.calls.at(-1)?.[0]).not.toMatch(
-            /[\u202a-\u202e\u2066-\u2069]/u,
+            /[\u202a-\u202e\u2066-\u2069]/u
         );
     });
 
@@ -1016,7 +1047,7 @@ describe('Recipe Console Fleet evidence UI', () => {
             failed: 3,
             missing: 0,
             reconnectCount: 1,
-            diagnosticCount: 6,
+            diagnosticCount: 6
         } as FleetReportAgentDetail;
         await render(createElement(FleetEvidenceDetail, {
             onOpenAnalyze: analyze,
@@ -1029,8 +1060,8 @@ describe('Recipe Console Fleet evidence UI', () => {
                 field: 'fleetRegion',
                 code: 'unavailable',
                 message: 'Selected region is unavailable.',
-                value: 'missing-region',
-            }],
+                value: 'missing-region'
+            }]
         }));
 
         expect(container.querySelector('h2')?.textContent).toBe('Fleet evidence detail');
@@ -1039,23 +1070,23 @@ describe('Recipe Console Fleet evidence UI', () => {
         expect(container.querySelectorAll('[data-exact-identifier]')).not.toHaveLength(0);
         for (const reference of Object.values(RUN_FAILED.artifactRefs)) {
             expect([...container.querySelectorAll('[data-exact-identifier]')]
-                .some(node => node.textContent === reference)).toBe(true);
+                .some((node) => node.textContent === reference)).toBe(true);
             expect(container.querySelector(`a[href="${CSS.escape(reference)}"]`))
                 .toBeNull();
         }
         const copyFleetReference = [...container.querySelectorAll<HTMLButtonElement>(
-            'button',
-        )].find(button => button.textContent === 'Copy Fleet report reference');
+            'button'
+        )].find((button) => button.textContent === 'Copy Fleet report reference');
         await act(async () => copyFleetReference?.click());
         expect(writeText).toHaveBeenCalledWith(RUN_FAILED.artifactRefs.fleetReport);
         expect(container.querySelector('[data-fleet-reference-copy-status]')?.textContent)
             .toContain('Fleet report reference copied');
         const monitorButton = [...container.querySelectorAll<HTMLButtonElement>('button')]
-            .find(button => button.textContent === 'Open Monitor');
+            .find((button) => button.textContent === 'Open Monitor');
         await act(async () => monitorButton?.click());
         expect(monitor).toHaveBeenCalledWith(RUN_FAILED, BIDI_AGENT);
         const analyzeButton = [...container.querySelectorAll<HTMLButtonElement>('button')]
-            .find(button => button.textContent === 'Open Analyze');
+            .find((button) => button.textContent === 'Open Analyze');
         await act(async () => analyzeButton?.click());
         expect(analyze).toHaveBeenCalledWith(RUN_FAILED, BIDI_AGENT);
     });
@@ -1063,20 +1094,20 @@ describe('Recipe Console Fleet evidence UI', () => {
     it('renders and traverses every selected-agent historical run', async () => {
         const runs = Array.from({ length: 25 }, (_, index) => ({
             run: report(`agent-run-${String(index).padStart(2, '0')}`, index, FAILED),
-            outcome: FAILED,
+            outcome: FAILED
         }));
 
         function Harness() {
             const window = useFleetWindow({
                 contextKey: 'selected-agent-runs',
                 section: 'agentRuns',
-                total: runs.length,
+                total: runs.length
             });
             const detail = {
                 agent: FAILED,
                 runs: runs.slice(
                     window.model.startIndex,
-                    window.model.endIndexExclusive,
+                    window.model.endIndexExclusive
                 ),
                 totalRuns: runs.length,
                 omittedRuns: runs.length - (
@@ -1086,7 +1117,7 @@ describe('Recipe Console Fleet evidence UI', () => {
                 failed: runs.length,
                 missing: 0,
                 reconnectCount: 1,
-                diagnosticCount: runs.length,
+                diagnosticCount: runs.length
             } as FleetReportAgentDetail;
             return createElement(FleetEvidenceDetail, {
                 agentRunWindow: window,
@@ -1094,7 +1125,7 @@ describe('Recipe Console Fleet evidence UI', () => {
                 onOpenMonitor: vi.fn(),
                 selectedAgent: detail,
                 selectedRegionRows: [],
-                selectionIssues: [],
+                selectionIssues: []
             });
         }
 
@@ -1104,35 +1135,37 @@ describe('Recipe Console Fleet evidence UI', () => {
         const visited: string[] = [];
         while (true) {
             visited.push(...[...container.querySelectorAll<HTMLElement>(
-                '[data-fleet-agent-run]',
-            )].map(row => row.dataset.fleetAgentRun ?? ''));
+                '[data-fleet-agent-run]'
+            )].map((row) => row.dataset.fleetAgentRun ?? ''));
             const next = [...container.querySelectorAll<HTMLButtonElement>('button')]
-                .find(button => button.textContent === 'Next');
-            if (!next || next.disabled) break;
+                .find((button) => button.textContent === 'Next');
+            if (!next || next.disabled) {
+                break;
+            }
             await act(async () => next.click());
         }
-        expect(visited).toEqual(runs.map(entry => entry.run.distributedRunId));
+        expect(visited).toEqual(runs.map((entry) => entry.run.distributedRunId));
         expect(new Set(visited).size).toBe(25);
     });
 
     it('renders and traverses every selected-region provider row', async () => {
         const rows = Array.from({ length: 55 }, (_, index) => ({
             ...REGION,
-            provider: `provider-${String(index).padStart(2, '0')}`,
+            provider: `provider-${String(index).padStart(2, '0')}`
         }));
 
         function Harness() {
             const window = useFleetWindow({
                 contextKey: 'selected-region-providers',
                 section: 'regionProviders',
-                total: rows.length,
+                total: rows.length
             });
             return createElement(FleetEvidenceDetail, {
                 onOpenAnalyze: vi.fn(),
                 onOpenMonitor: vi.fn(),
                 regionProviderWindow: window,
                 selectedRegionRows: rows,
-                selectionIssues: [],
+                selectionIssues: []
             });
         }
 
@@ -1140,21 +1173,23 @@ describe('Recipe Console Fleet evidence UI', () => {
         const visited: string[] = [];
         while (true) {
             visited.push(...[...container.querySelectorAll<HTMLElement>(
-                '[data-fleet-region-provider]',
-            )].map(row => row.dataset.fleetRegionProvider ?? ''));
+                '[data-fleet-region-provider]'
+            )].map((row) => row.dataset.fleetRegionProvider ?? ''));
             const next = [...container.querySelectorAll<HTMLButtonElement>('button')]
-                .find(button => button.textContent === 'Next');
-            if (!next || next.disabled) break;
+                .find((button) => button.textContent === 'Next');
+            if (!next || next.disabled) {
+                break;
+            }
             await act(async () => next.click());
         }
-        expect(visited).toEqual(rows.map(row => row.provider ?? ''));
+        expect(visited).toEqual(rows.map((row) => row.provider ?? ''));
         expect(new Set(visited).size).toBe(55);
     });
 
     it('bounds and traverses every selected-report recipe identity', async () => {
         const recipeIds = Array.from(
             { length: 55 },
-            (_, index) => `recipe-${String(index).padStart(2, '0')}`,
+            (_, index) => `recipe-${String(index).padStart(2, '0')}`
         );
         const selectedReport = { ...RUN_FAILED, recipeIds };
 
@@ -1162,14 +1197,14 @@ describe('Recipe Console Fleet evidence UI', () => {
             const window = useFleetWindow({
                 contextKey: 'selected-report-recipes',
                 section: 'reportRecipes',
-                total: recipeIds.length,
+                total: recipeIds.length
             });
             return createElement(FleetSourceBar, {
                 contextKey: 'selected-report-source',
                 onSelectReport: vi.fn(),
                 recipeWindow: window,
                 reports: [selectedReport],
-                selectedReportId: selectedReport.distributedRunId,
+                selectedReportId: selectedReport.distributedRunId
             });
         }
 
@@ -1177,17 +1212,19 @@ describe('Recipe Console Fleet evidence UI', () => {
         const visited: string[] = [];
         while (true) {
             const mounted = [...container.querySelectorAll<HTMLElement>(
-                '[data-fleet-source-recipe]',
+                '[data-fleet-source-recipe]'
             )];
             expect(mounted.length).toBeLessThanOrEqual(24);
-            visited.push(...mounted.map(row => row.dataset.fleetSourceRecipe ?? ''));
+            visited.push(...mounted.map((row) => row.dataset.fleetSourceRecipe ?? ''));
             const group = container.querySelector<HTMLElement>(
-                '[aria-label="Selected Fleet report recipes window"]',
+                '[aria-label="Selected Fleet report recipes window"]'
             );
             const next = group?.querySelector<HTMLButtonElement>(
-                '[data-explicit-window-direction="next"]',
+                '[data-explicit-window-direction="next"]'
             );
-            if (!next || next.disabled) break;
+            if (!next || next.disabled) {
+                break;
+            }
             await act(async () => next.click());
         }
         expect(visited).toEqual(recipeIds);
@@ -1195,11 +1232,12 @@ describe('Recipe Console Fleet evidence UI', () => {
     });
 
     it('preserves evidence work and traversal across clone-equivalent control polls', async () => {
-        const agents = Array.from({ length: 30 }, (_, index) => outcome(
-            `agent-${String(index).padStart(2, '0')}`,
-            'passed',
-            `region-${String(index).padStart(2, '0')}`,
-        ));
+        const agents = Array.from({ length: 30 }, (_, index) =>
+            outcome(
+                `agent-${String(index).padStart(2, '0')}`,
+                'passed',
+                `region-${String(index).padStart(2, '0')}`
+            ));
         const pressureReport = {
             ...RUN_PASSED,
             agents,
@@ -1207,13 +1245,13 @@ describe('Recipe Console Fleet evidence UI', () => {
                 ...RUN_PASSED.summary,
                 agents: agents.length,
                 regions: agents.length,
-                passed: agents.length,
-            },
+                passed: agents.length
+            }
         } as ControlFleetRunReport;
         const firstSnapshot = {
             runs: [],
             distributedRuns: [],
-            fleetReports: [pressureReport],
+            fleetReports: [pressureReport]
         };
         const sameSnapshot = structuredClone(firstSnapshot);
         Object.assign(sameSnapshot, { unrelatedLiveRevision: 1 });
@@ -1225,7 +1263,7 @@ describe('Recipe Console Fleet evidence UI', () => {
                 get: () => {
                     nestedExtensionVisits += 1;
                     return { ignored: true };
-                },
+                }
             });
         }
         const connection = {
@@ -1236,22 +1274,30 @@ describe('Recipe Console Fleet evidence UI', () => {
                 completeness: 'complete',
                 receivedAtEpochMs: 2_500,
                 isRefreshing: false,
-                snapshot: firstSnapshot,
+                snapshot: firstSnapshot
             },
-            refresh: vi.fn(async () => undefined),
+            refresh: vi.fn(async () => undefined)
         } as unknown as RecipeConsoleControlConnection;
         const liveRows = Array.from(
             { length: 55 },
-            (_, index) => liveRow(`live-agent-${String(index).padStart(2, '0')}`, true),
+            (_, index) => liveRow(`live-agent-${String(index).padStart(2, '0')}`, true)
         );
         const selection = {
             controlRunId: 'stable-live-control',
             boardRows: liveRows,
             boardSummary: {
-                total: 55, connected: 55, targetable: 55, active: 0,
-                selected: 0, stale: 0, offline: 0, wrongGroup: 0,
-                missingIdentity: 0, missingCapability: 0, synthetic: 0,
-            },
+                total: 55,
+                connected: 55,
+                targetable: 55,
+                active: 0,
+                selected: 0,
+                stale: 0,
+                offline: 0,
+                wrongGroup: 0,
+                missingIdentity: 0,
+                missingCapability: 0,
+                synthetic: 0
+            }
         } as unknown as RecipeConsoleControlSelection;
         const props = {
             connection,
@@ -1261,13 +1307,13 @@ describe('Recipe Console Fleet evidence UI', () => {
             replace: vi.fn(),
             onInspect: vi.fn(),
             onInspectorChange: vi.fn(),
-            onSelectionLabelChange: vi.fn(),
+            onSelectionLabelChange: vi.fn()
         } as FleetWorkspaceProps;
         let latest: FleetWorkspaceController | undefined;
 
         function Harness({
             fleetMapLayers,
-            snapshot = firstSnapshot,
+            snapshot = firstSnapshot
         }: Readonly<{
             fleetMapLayers?: readonly ['failures'];
             snapshot?: typeof firstSnapshot;
@@ -1281,10 +1327,10 @@ describe('Recipe Console Fleet evidence UI', () => {
                         receivedAtEpochMs: snapshot === firstSnapshot
                             ? 2_500
                             : 7_500,
-                        snapshot,
-                    },
+                        snapshot
+                    }
                 } as RecipeConsoleControlConnection,
-                urlState: { ...props.urlState, fleetMapLayers },
+                urlState: { ...props.urlState, fleetMapLayers }
             });
             return null;
         }
@@ -1299,15 +1345,17 @@ describe('Recipe Console Fleet evidence UI', () => {
         expect(latest?.windows.liveAgents.model.startIndex).toBe(40);
         expect(latest?.model.analysisCollection?.work.cellLookups).toBe(30);
         expect(nestedExtensionVisits).toBe(extensionVisitsAfterInitialIndex);
-        await act(async () => root?.render(createElement(Harness, {
-            fleetMapLayers: ['failures'],
-            snapshot: sameSnapshot,
-        })));
+        await act(async () =>
+            root?.render(createElement(Harness, {
+                fleetMapLayers: ['failures'],
+                snapshot: sameSnapshot
+            }))
+        );
         expect(latest?.model.analysisCollection).toBe(collection);
         expect(latest?.geographyHistory).toBe(geographyHistory);
         expect(latest?.geographyHistory.work).toEqual({
             reportVisits: 1,
-            outcomeVisits: 30,
+            outcomeVisits: 30
         });
         expect(latest?.model.analysisCollection?.work.cellLookups).toBe(30);
         expect(latest?.windows.regions.model.startIndex).toBe(24);
@@ -1315,256 +1363,263 @@ describe('Recipe Console Fleet evidence UI', () => {
         expect(nestedExtensionVisits).toBe(extensionVisitsAfterInitialIndex);
     });
 
-    it('refreshes live projections without resetting historical evidence for the same raw revision',
-        async () => {
-            const selectedAgentId = 'agent-00';
-            const agents = Array.from({ length: 30 }, (_, index) => outcome(
+    it('refreshes live projections without resetting historical evidence for the same raw revision', async () => {
+        const selectedAgentId = 'agent-00';
+        const agents = Array.from({ length: 30 }, (_, index) =>
+            outcome(
                 `agent-${String(index).padStart(2, '0')}`,
                 'passed',
-                `region-${String(index).padStart(2, '0')}`,
+                `region-${String(index).padStart(2, '0')}`
             ));
-            const pressureReport = {
-                ...RUN_PASSED,
-                agents,
-                summary: {
-                    ...RUN_PASSED.summary,
-                    agents: agents.length,
-                    regions: agents.length,
-                    passed: agents.length,
-                },
-            } as ControlFleetRunReport;
-            const firstSnapshot = {
-                runs: [],
-                distributedRuns: [],
-                fleetReports: [pressureReport],
-            };
-            const sameSnapshot = structuredClone(firstSnapshot);
-            const rawDocument = JSON.stringify(firstSnapshot);
-            const revisions = createControlSnapshotRevisionSession();
-            for (const snapshot of [firstSnapshot, sameSnapshot]) {
-                rememberControlResponseDocument(snapshot, rawDocument);
-                revisions.associate(snapshot, {
-                    source: 'root-snapshot',
-                    rootDocument: snapshot,
-                });
+        const pressureReport = {
+            ...RUN_PASSED,
+            agents,
+            summary: {
+                ...RUN_PASSED.summary,
+                agents: agents.length,
+                regions: agents.length,
+                passed: agents.length
             }
-            expect(controlSnapshotRevisionOf(sameSnapshot)).toBe(
-                controlSnapshotRevisionOf(firstSnapshot),
-            );
-
-            const liveRowAt = (connected: boolean): ControlAgentBoardRow => ({
-                ...liveRow(selectedAgentId, connected),
-                identity: {
-                    region: 'eu-north',
-                    provider: 'provider-a',
-                    location: {
-                        latitude: 59.9139,
-                        longitude: 10.7522,
-                        label: 'Explicit live location',
-                        precision: 'exact',
-                    },
-                },
+        } as ControlFleetRunReport;
+        const firstSnapshot = {
+            runs: [],
+            distributedRuns: [],
+            fleetReports: [pressureReport]
+        };
+        const sameSnapshot = structuredClone(firstSnapshot);
+        const rawDocument = JSON.stringify(firstSnapshot);
+        const revisions = createControlSnapshotRevisionSession();
+        for (const snapshot of [firstSnapshot, sameSnapshot]) {
+            rememberControlResponseDocument(snapshot, rawDocument);
+            revisions.associate(snapshot, {
+                source: 'root-snapshot',
+                rootDocument: snapshot
             });
-            const connection = {
-                query: {
-                    status: 'live',
-                    reachability: 'reachable',
-                    authorization: 'ready',
-                    completeness: 'complete',
-                    receivedAtEpochMs: 2_500,
-                    isRefreshing: false,
-                    snapshot: firstSnapshot,
-                },
-                refresh: vi.fn(async () => undefined),
-            } as unknown as RecipeConsoleControlConnection;
-            let latest: FleetWorkspaceController | undefined;
+        }
+        expect(controlSnapshotRevisionOf(sameSnapshot)).toBe(
+            controlSnapshotRevisionOf(firstSnapshot)
+        );
 
-            function Harness({
-                boardRows,
-                receivedAtEpochMs,
-                snapshot,
-            }: Readonly<{
-                boardRows: readonly ControlAgentBoardRow[];
-                receivedAtEpochMs: number;
-                snapshot: typeof firstSnapshot;
-            }>) {
-                latest = useFleetWorkspace({
-                    connection: {
-                        ...connection,
-                        query: {
-                            ...connection.query,
-                            receivedAtEpochMs,
-                            snapshot,
-                        },
-                    } as RecipeConsoleControlConnection,
-                    selection: {
-                        agentId: selectedAgentId,
-                        boardRows,
-                        boardSummary: {
-                            total: 1,
-                            connected: boardRows[0]?.connected ? 1 : 0,
-                            targetable: boardRows[0]?.targetable ? 1 : 0,
-                            active: 0,
-                            selected: 0,
-                            stale: 0,
-                            offline: boardRows[0]?.connected ? 0 : 1,
-                            wrongGroup: 0,
-                            missingIdentity: 0,
-                            missingCapability: 0,
-                            synthetic: 0,
-                        },
-                    } as RecipeConsoleControlSelection,
-                    urlState: {
-                        v: 1,
-                        experience: 'recipe-console',
-                        view: 'fleet',
-                        agentId: selectedAgentId,
-                    },
-                    navigate: vi.fn(),
-                    replace: vi.fn(),
-                    onInspect: vi.fn(),
-                    onInspectorChange: vi.fn(),
-                    onSelectionLabelChange: vi.fn(),
-                });
-                return createElement(FleetEvidenceDetail, {
-                    onOpenAnalyze: vi.fn(),
-                    onOpenMonitor: vi.fn(),
-                    selectedAgent: latest.evidence?.selectedAgent,
-                    selectedLiveAgent: latest.model.selectedLiveAgent,
-                    selectedRegionRows: latest.model.selectedRegionRows,
-                    selectedReport: latest.model.selectedReport,
-                    selectionIssues: latest.model.selectionIssues,
-                });
+        const liveRowAt = (connected: boolean): ControlAgentBoardRow => ({
+            ...liveRow(selectedAgentId, connected),
+            identity: {
+                region: 'eu-north',
+                provider: 'provider-a',
+                location: {
+                    latitude: 59.9139,
+                    longitude: 10.7522,
+                    label: 'Explicit live location',
+                    precision: 'exact'
+                }
             }
-
-            const connectedRows = [liveRowAt(true)];
-            const offlineRows = [liveRowAt(false)];
-            await render(createElement(Harness, {
-                boardRows: connectedRows,
+        });
+        const connection = {
+            query: {
+                status: 'live',
+                reachability: 'reachable',
+                authorization: 'ready',
+                completeness: 'complete',
                 receivedAtEpochMs: 2_500,
-                snapshot: firstSnapshot,
-            }));
-            const historicalCollection = latest?.model.analysisCollection;
-            const geographyHistory = latest?.geographyHistory;
-            await act(async () => latest?.windows.regions.next());
-            expect(latest?.windows.regions.model.startIndex).toBe(24);
-            expect(latest?.model.selectedLiveAgent?.connected).toBe(true);
-            expect(latest?.map.resolvedEvidence.agentMarkers.find(marker =>
-                marker.agent.agentId === selectedAgentId
-            )).toMatchObject({
-                severity: 'neutral',
-                agent: { live: { state: 'connected' } },
-            });
-            expect(container.textContent).toContain('Connected live');
+                isRefreshing: false,
+                snapshot: firstSnapshot
+            },
+            refresh: vi.fn(async () => undefined)
+        } as unknown as RecipeConsoleControlConnection;
+        let latest: FleetWorkspaceController | undefined;
 
-            await act(async () => root?.render(createElement(Harness, {
+        function Harness({
+            boardRows,
+            receivedAtEpochMs,
+            snapshot
+        }: Readonly<{
+            boardRows: readonly ControlAgentBoardRow[];
+            receivedAtEpochMs: number;
+            snapshot: typeof firstSnapshot;
+        }>) {
+            latest = useFleetWorkspace({
+                connection: {
+                    ...connection,
+                    query: {
+                        ...connection.query,
+                        receivedAtEpochMs,
+                        snapshot
+                    }
+                } as RecipeConsoleControlConnection,
+                selection: {
+                    agentId: selectedAgentId,
+                    boardRows,
+                    boardSummary: {
+                        total: 1,
+                        connected: boardRows[0]?.connected ? 1 : 0,
+                        targetable: boardRows[0]?.targetable ? 1 : 0,
+                        active: 0,
+                        selected: 0,
+                        stale: 0,
+                        offline: boardRows[0]?.connected ? 0 : 1,
+                        wrongGroup: 0,
+                        missingIdentity: 0,
+                        missingCapability: 0,
+                        synthetic: 0
+                    }
+                } as RecipeConsoleControlSelection,
+                urlState: {
+                    v: 1,
+                    experience: 'recipe-console',
+                    view: 'fleet',
+                    agentId: selectedAgentId
+                },
+                navigate: vi.fn(),
+                replace: vi.fn(),
+                onInspect: vi.fn(),
+                onInspectorChange: vi.fn(),
+                onSelectionLabelChange: vi.fn()
+            });
+            return createElement(FleetEvidenceDetail, {
+                onOpenAnalyze: vi.fn(),
+                onOpenMonitor: vi.fn(),
+                selectedAgent: latest.evidence?.selectedAgent,
+                selectedLiveAgent: latest.model.selectedLiveAgent,
+                selectedRegionRows: latest.model.selectedRegionRows,
+                selectedReport: latest.model.selectedReport,
+                selectionIssues: latest.model.selectionIssues
+            });
+        }
+
+        const connectedRows = [liveRowAt(true)];
+        const offlineRows = [liveRowAt(false)];
+        await render(createElement(Harness, {
+            boardRows: connectedRows,
+            receivedAtEpochMs: 2_500,
+            snapshot: firstSnapshot
+        }));
+        const historicalCollection = latest?.model.analysisCollection;
+        const geographyHistory = latest?.geographyHistory;
+        await act(async () => latest?.windows.regions.next());
+        expect(latest?.windows.regions.model.startIndex).toBe(24);
+        expect(latest?.model.selectedLiveAgent?.connected).toBe(true);
+        expect(latest?.map.resolvedEvidence.agentMarkers.find((marker) => marker.agent.agentId === selectedAgentId)).toMatchObject({
+            severity: 'neutral',
+            agent: { live: { state: 'connected' } }
+        });
+        expect(container.textContent).toContain('Connected live');
+
+        await act(async () =>
+            root?.render(createElement(Harness, {
                 boardRows: offlineRows,
                 receivedAtEpochMs: 7_500,
-                snapshot: sameSnapshot,
-            })));
+                snapshot: sameSnapshot
+            }))
+        );
 
-            expect(latest?.model.analysisCollection).toBe(historicalCollection);
-            expect(latest?.geographyHistory).toBe(geographyHistory);
-            expect(latest?.windows.regions.model.startIndex).toBe(24);
-            expect(latest?.model.selectedLiveAgent?.connected).toBe(false);
-            expect(latest?.map.resolvedEvidence.agentMarkers.find(marker =>
-                marker.agent.agentId === selectedAgentId
-            )).toMatchObject({
-                severity: 'critical',
-                agent: { live: { state: 'offline' } },
-            });
-            expect(container.textContent).toContain('Not connected live');
+        expect(latest?.model.analysisCollection).toBe(historicalCollection);
+        expect(latest?.geographyHistory).toBe(geographyHistory);
+        expect(latest?.windows.regions.model.startIndex).toBe(24);
+        expect(latest?.model.selectedLiveAgent?.connected).toBe(false);
+        expect(latest?.map.resolvedEvidence.agentMarkers.find((marker) => marker.agent.agentId === selectedAgentId)).toMatchObject({
+            severity: 'critical',
+            agent: { live: { state: 'offline' } }
+        });
+        expect(container.textContent).toContain('Not connected live');
 
-            await act(async () => root?.render(createElement(Harness, {
+        await act(async () =>
+            root?.render(createElement(Harness, {
                 boardRows: offlineRows,
                 receivedAtEpochMs: 9_000,
-                snapshot: sameSnapshot,
-            })));
+                snapshot: sameSnapshot
+            }))
+        );
 
-            expect(latest?.model.analysisCollection).toBe(historicalCollection);
-            expect(latest?.geographyHistory).toBe(geographyHistory);
-            expect(latest?.windows.regions.model.startIndex).toBe(24);
-            expect(latest?.map.resolvedEvidence.agentMarkers.find(marker =>
-                marker.agent.agentId === selectedAgentId
-            )?.agent.live?.observedAtEpochMs).toBe(9_000);
-        });
+        expect(latest?.model.analysisCollection).toBe(historicalCollection);
+        expect(latest?.geographyHistory).toBe(geographyHistory);
+        expect(latest?.windows.regions.model.startIndex).toBe(24);
+        expect(latest?.map.resolvedEvidence.agentMarkers.find((marker) => marker.agent.agentId === selectedAgentId)?.agent.live?.observedAtEpochMs).toBe(9_000);
+    });
 
     it('bounds and traverses affected agents inside each failure group', async () => {
         const affectedAgents = Array.from(
             { length: 85 },
-            (_, index) => `failure-agent-${String(index).padStart(2, '0')}`,
+            (_, index) => `failure-agent-${String(index).padStart(2, '0')}`
         );
         await render(createElement(FleetFailures, {
             failures: {
                 items: [{ ...FAILURE, affectedAgents }],
                 total: 1,
-                omitted: 0,
+                omitted: 0
             },
             onOpenHistory: vi.fn(),
             onOpenRun: vi.fn(),
-            onSelectAgent: vi.fn(),
+            onSelectAgent: vi.fn()
         }));
         const visited: string[] = [];
         while (true) {
             const mounted = [...container.querySelectorAll<HTMLElement>(
-                '[data-failure-agent-id]',
+                '[data-failure-agent-id]'
             )];
             expect(mounted.length).toBeLessThanOrEqual(40);
-            visited.push(...mounted.map(row => row.dataset.failureAgentId ?? ''));
+            visited.push(...mounted.map((row) => row.dataset.failureAgentId ?? ''));
             const next = [...container.querySelectorAll<HTMLButtonElement>('button')]
-                .find(button => button.textContent === 'Next');
-            if (!next || next.disabled) break;
+                .find((button) => button.textContent === 'Next');
+            if (!next || next.disabled) {
+                break;
+            }
             await act(async () => next.click());
         }
         expect(visited).toEqual(affectedAgents);
         expect(new Set(visited).size).toBe(85);
     });
 
-    it('keeps boundary focus with the owning nested failure-agent window',
-        async () => {
-            const affectedAgents = Array.from(
-                { length: 45 },
-                (_, index) => `failure-agent-${String(index).padStart(2, '0')}`,
-            );
+    it('keeps boundary focus with the owning nested failure-agent window', async () => {
+        const affectedAgents = Array.from(
+            { length: 45 },
+            (_, index) => `failure-agent-${String(index).padStart(2, '0')}`
+        );
 
-            function NestedFailureWindows() {
-                const outer = useFleetWindow({
-                    contextKey: 'fleet-failure-groups-test',
-                    section: 'failures',
-                    total: 30,
-                });
-                return createElement(Fragment, null,
-                    createElement(FleetWindowControls, {
-                        contentId: 'fleet-failure-groups-test',
-                        itemLabel: 'failure groups',
-                        label: 'Fleet failure groups',
-                        window: outer,
-                    }),
-                    createElement('div', {
+        function NestedFailureWindows() {
+            const outer = useFleetWindow({
+                contextKey: 'fleet-failure-groups-test',
+                section: 'failures',
+                total: 30
+            });
+            return createElement(
+                Fragment,
+                null,
+                createElement(FleetWindowControls, {
+                    contentId: 'fleet-failure-groups-test',
+                    itemLabel: 'failure groups',
+                    label: 'Fleet failure groups',
+                    window: outer
+                }),
+                createElement(
+                    'div',
+                    {
                         id: 'fleet-failure-groups-test',
-                        ...outer.contentFocusProps,
-                    }, createElement(FleetFailures, {
+                        ...outer.contentFocusProps
+                    },
+                    createElement(FleetFailures, {
                         failures: {
                             items: [{ ...FAILURE, affectedAgents }],
                             total: 30,
-                            omitted: 29,
+                            omitted: 29
                         },
                         onOpenHistory: vi.fn(),
                         onOpenRun: vi.fn(),
-                        onSelectAgent: vi.fn(),
-                    })),
-                );
-            }
+                        onSelectAgent: vi.fn()
+                    })
+                )
+            );
+        }
 
-            await render(createElement(NestedFailureWindows));
-            const next = [...container.querySelectorAll<HTMLButtonElement>(
-                'button[data-explicit-window-direction="next"]',
-            )].at(-1)!;
-            next.focus();
-            await act(async () => next.click());
+        await render(createElement(NestedFailureWindows));
+        const next = [...container.querySelectorAll<HTMLButtonElement>(
+            'button[data-explicit-window-direction="next"]'
+        )].at(-1)!;
+        next.focus();
+        await act(async () => next.click());
 
-            expect(document.activeElement?.getAttribute(
-                'data-fleet-window-focus-anchor',
-            )).toBe(`${FAILURE.title} affected agents`);
-        });
+        expect(
+            document.activeElement?.getAttribute(
+                'data-fleet-window-focus-anchor'
+            )
+        ).toBe(`${FAILURE.title} affected agents`);
+    });
 });

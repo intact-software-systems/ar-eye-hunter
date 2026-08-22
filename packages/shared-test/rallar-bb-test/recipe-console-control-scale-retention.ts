@@ -1,15 +1,6 @@
-import {
-    CONTROL_RETENTION_PLAN_LIMITS,
-    type ControlRetentionCandidate,
-} from './control-retention.ts';
-import {
-    canonicalControlRetentionJson,
-    controlRetentionLimitError,
-} from './control-retention-canonical.ts';
-import type {
-    ControlDistributedRunSnapshot,
-    ControlRunSnapshot,
-} from './control-snapshots.ts';
+import { canonicalControlRetentionJson, controlRetentionLimitError } from './control-retention-canonical.ts';
+import { CONTROL_RETENTION_PLAN_LIMITS, type ControlRetentionCandidate } from './control-retention.ts';
+import type { ControlDistributedRunSnapshot, ControlRunSnapshot } from './control-snapshots.ts';
 
 export type ControlScaleRetentionOptions = Readonly<{
     candidateCount?: number;
@@ -27,25 +18,25 @@ export type ControlScaleRetentionFixture = Readonly<{
 export function createControlScaleRetention(
     options: ControlScaleRetentionOptions | undefined,
     runs: readonly ControlRunSnapshot[],
-    distributedRuns: readonly ControlDistributedRunSnapshot[],
+    distributedRuns: readonly ControlDistributedRunSnapshot[]
 ): ControlScaleRetentionFixture {
     const candidateCount = boundedInteger(
         options?.candidateCount ?? 0,
         'retention.candidateCount',
         0,
-        Math.min(runs.length, CONTROL_RETENTION_PLAN_LIMITS.candidates),
+        Math.min(runs.length, CONTROL_RETENTION_PLAN_LIMITS.candidates)
     );
     const distributedCount = boundedInteger(
         options?.distributedRunsPerCandidate ?? 1,
         'retention.distributedRunsPerCandidate',
         0,
-        CONTROL_RETENTION_PLAN_LIMITS.collectionItems,
+        CONTROL_RETENTION_PLAN_LIMITS.collectionItems
     );
     const fleetCount = boundedInteger(
         options?.fleetReportsPerCandidate ?? Math.min(1, distributedCount),
         'retention.fleetReportsPerCandidate',
         0,
-        distributedCount,
+        distributedCount
     );
     assertPreviewEnvelopeNodes(candidateCount, distributedCount, fleetCount);
     if (candidateCount * distributedCount > CONTROL_RETENTION_PLAN_LIMITS.collectionItems) {
@@ -56,7 +47,7 @@ export function createControlScaleRetention(
             distributedRunId: linkOrdinal === 0
                 ? distributedRuns[ordinal]!.distributedRunId
                 : `${distributedRuns[ordinal]!.distributedRunId}-linked-${padded(linkOrdinal)}`,
-            state: 'passed' as const,
+            state: 'passed' as const
         }));
         return {
             runId: runs[ordinal]!.runId,
@@ -65,16 +56,16 @@ export function createControlScaleRetention(
             connectedAgentCount: runs[ordinal]!.agents.length,
             issuedRunTokenCount: 0,
             distributedRuns: linked,
-            fleetReportIds: linked.slice(0, fleetCount).map(row => row.distributedRunId),
+            fleetReportIds: linked.slice(0, fleetCount).map((row) => row.distributedRunId)
         };
     });
     const fixture = {
         candidates,
-        wouldDeleteRunIds: candidates.map(candidate => candidate.runId),
-        wouldDeleteDistributedRunIds: candidates.flatMap(candidate =>
-            candidate.distributedRuns.map(run => run.distributedRunId)
+        wouldDeleteRunIds: candidates.map((candidate) => candidate.runId),
+        wouldDeleteDistributedRunIds: candidates.flatMap((candidate) =>
+            candidate.distributedRuns.map((run) => run.distributedRunId)
         ),
-        wouldDeleteFleetReportIds: candidates.flatMap(candidate => candidate.fleetReportIds),
+        wouldDeleteFleetReportIds: candidates.flatMap((candidate) => candidate.fleetReportIds)
     };
     assertPreviewCanonicalBudget(fixture);
     return fixture;
@@ -84,7 +75,7 @@ export function boundedInteger(
     value: number,
     label: string,
     minimum: number,
-    maximum: number,
+    maximum: number
 ): number {
     if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
         throw new Error(`${label} must be a safe integer from ${minimum} through ${maximum}.`);
@@ -95,12 +86,12 @@ export function boundedInteger(
 function assertPreviewEnvelopeNodes(
     candidates: number,
     distributedPerCandidate: number,
-    fleetPerCandidate: number,
+    fleetPerCandidate: number
 ): void {
     // Includes the wrapper, candidate records, and duplicated global ID arrays.
     const nodes = 27 + candidates * (
-        16 + 6 * distributedPerCandidate + 2 * fleetPerCandidate
-    );
+                16 + 6 * distributedPerCandidate + 2 * fleetPerCandidate
+            );
     if (nodes > CONTROL_RETENTION_PLAN_LIMITS.canonicalNodes) {
         throw controlRetentionLimitError('canonicalNodes');
     }
@@ -118,7 +109,7 @@ function assertPreviewCanonicalBudget(fixture: ControlScaleRetentionFixture): vo
         wouldDeleteFleetReportIds: fixture.wouldDeleteFleetReportIds,
         projectedRetainedRuns: 1,
         preserves: { connectedAgentSockets: true, storedArtifactFiles: true },
-        planToken: 'scale-fixture-plan-token',
+        planToken: 'scale-fixture-plan-token'
     });
 }
 

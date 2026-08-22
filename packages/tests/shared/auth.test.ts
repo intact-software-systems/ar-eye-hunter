@@ -1,12 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-    configureAuthSessionStorage,
-    readAuthSessionStorageKind,
-    readSession,
-    resetAuthSessionStorage,
-    writeSession,
-} from '@shared/api/auth.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { configureAuthSessionStorage, readAuthSessionStorageKind, readSession, resetAuthSessionStorage, writeSession } from '@shared/api/auth.ts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('browser auth session storage', () => {
     beforeEach(() => {
@@ -29,7 +23,7 @@ describe('browser auth session storage', () => {
             sessionId: 'session-1',
             username: 'principal-1',
             accessToken: 'token-1',
-            expiresAtEpochMs: 999,
+            expiresAtEpochMs: 999
         };
         writeSession(expiredSession);
 
@@ -43,7 +37,7 @@ describe('browser auth session storage', () => {
             sessionId: 'session-2',
             username: 'principal-2',
             accessToken: 'token-2',
-            expiresAtEpochMs: 2_000,
+            expiresAtEpochMs: 2_000
         };
 
         configureAuthSessionStorage('session');
@@ -70,6 +64,6 @@ function memoryStorage(): Storage {
         }),
         setItem: vi.fn((key: string, value: string) => {
             values.set(key, value);
-        }),
+        })
     };
 }

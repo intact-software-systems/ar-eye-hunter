@@ -1,8 +1,5 @@
 import { RallarServerView } from './RallarServerView.tsx';
-import {
-    useRallarServerController,
-    type UseRallarServerControllerInput,
-} from './use-rallar-server-controller.ts';
+import { useRallarServerController, type UseRallarServerControllerInput } from './use-rallar-server-controller.ts';
 
 export function RallarServerPanel(props: UseRallarServerControllerInput) {
     const model = useRallarServerController(props);

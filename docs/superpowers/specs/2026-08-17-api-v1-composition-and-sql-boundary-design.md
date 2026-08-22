@@ -132,9 +132,9 @@ The capability has three operations:
 
 ```ts
 export interface ApiV1BackgroundTaskLifecycle {
-  beginStartupGeneration(): RuntimeStateExpiryStartupGeneration;
-  register(stop: () => void | Promise<void>): () => void;
-  stop(): Promise<void>;
+    beginStartupGeneration(): RuntimeStateExpiryStartupGeneration;
+    register(stop: () => void | Promise<void>): () => void;
+    stop(): Promise<void>;
 }
 ```
 
@@ -215,21 +215,21 @@ Owns only final required-input application assembly:
 
 ```ts
 export interface ApiV1RouteInstallers {
-  readonly ws: RallarServerRouteInstaller<Hono>;
-  readonly rest: readonly RallarServerRouteInstaller<Hono>[];
+    readonly ws: RallarServerRouteInstaller<Hono>;
+    readonly rest: readonly RallarServerRouteInstaller<Hono>[];
 }
 
 export interface CreateRallarServerInput {
-  readonly runtime: ApiV1Runtime;
-  readonly repositories: RepositoryManager;
-  readonly appDataRepository: AppDataRepositoryLike;
-  readonly ws: RallarServerWsFacadeOptions;
-  readonly systemInstallers: RallarServerSystemInstallers<ApiV1Runtime>;
-  readonly routeInstallers: ApiV1RouteInstallers;
+    readonly runtime: ApiV1Runtime;
+    readonly repositories: RepositoryManager;
+    readonly appDataRepository: AppDataRepositoryLike;
+    readonly ws: RallarServerWsFacadeOptions;
+    readonly systemInstallers: RallarServerSystemInstallers<ApiV1Runtime>;
+    readonly routeInstallers: ApiV1RouteInstallers;
 }
 
 export function createRallarServer(
-  input: CreateRallarServerInput,
+    input: CreateRallarServerInput
 ): RallarServerApplication<ApiV1Runtime, Hono>;
 ```
 
@@ -249,11 +249,11 @@ configuration used by the Relic server:
 
 ```ts
 export interface CreateDefaultRallarServerOptions {
-  readonly ws?: RallarServerWsFacadeOptions;
+    readonly ws?: RallarServerWsFacadeOptions;
 }
 
 export function createDefaultRallarServer(
-  options?: CreateDefaultRallarServerOptions,
+    options?: CreateDefaultRallarServerOptions
 ): RallarServerApplication<ApiV1Runtime, Hono>;
 ```
 

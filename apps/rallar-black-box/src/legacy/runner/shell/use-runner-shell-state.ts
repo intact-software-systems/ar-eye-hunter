@@ -1,50 +1,37 @@
 import {
-    type Dispatch,
-    type SetStateAction,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-} from 'react';
-import {
     selectRallarBlackBoxActiveCommand,
-    selectRallarBlackBoxCommandHistory,
+    selectRallarBlackBoxCommandHistory
 } from '@shared-test/rallar-bb-test/selectors.ts';
-import type {
-    RallarBlackBoxTestResult,
-    RallarBlackBoxTestState,
-} from '@shared-test/rallar-bb-test/types.ts';
-import {
-    readStoredSelectedCommandId,
-    writeStoredSelectedCommandId,
-} from '../../../ui-persistence.ts';
+import type { RallarBlackBoxTestResult, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { readStoredSelectedCommandId, writeStoredSelectedCommandId } from '../../../ui-persistence.ts';
+import type { LegacyDiagnosticContext } from '../../diagnostics/context/legacy-diagnostic-context.ts';
 import { useNow } from '../../shared/use-now.ts';
 import { browserUiStorage } from '../../shell/browser-ui-storage.ts';
 import type { RunnerDistributedRunSelection } from '../runner-contracts.ts';
 import { deriveQueue, findSelectedResult } from './runner-shell-model.ts';
-import type { LegacyDiagnosticContext } from
-    '../../diagnostics/context/legacy-diagnostic-context.ts';
 
 export function useRunnerShellState(
     state: RallarBlackBoxTestState,
-    diagnosticContext?: LegacyDiagnosticContext,
+    diagnosticContext?: LegacyDiagnosticContext
 ) {
     const queueRows = useMemo(() => deriveQueue(state), [state]);
     const history = selectRallarBlackBoxCommandHistory(state);
     const activeCommand = selectRallarBlackBoxActiveCommand(state);
     const now = useNow(250);
-    const [selectedCommandId, setSelectedCommandId] = useState<
-        string | undefined
-    >(() => initialRunnerCommandId(
-        diagnosticContext,
-        readStoredSelectedCommandId(browserUiStorage()),
-    ));
-    const [runnerDistributedSelection, setRunnerDistributedSelection] =
-        useState<RunnerDistributedRunSelection | undefined>();
+    const [selectedCommandId, setSelectedCommandId] = useState<string | undefined>(() =>
+        initialRunnerCommandId(
+            diagnosticContext,
+            readStoredSelectedCommandId(browserUiStorage())
+        )
+    );
+    const [runnerDistributedSelection, setRunnerDistributedSelection] = useState<
+        RunnerDistributedRunSelection | undefined
+    >();
     const selectedResult = selectedRunnerResult(
         history,
         selectedCommandId,
-        diagnosticContext,
+        diagnosticContext
     );
     const diagnosticCommandId = diagnosticContext?.commandId;
     const lastDiagnosticCommandId = useRef(diagnosticCommandId);
@@ -57,8 +44,8 @@ export function useRunnerShellState(
         setSelectedCommandId(
             initialRunnerCommandId(
                 diagnosticContext,
-                readStoredSelectedCommandId(browserUiStorage()),
-            ),
+                readStoredSelectedCommandId(browserUiStorage())
+            )
         );
     }, [diagnosticCommandId]);
 
@@ -72,7 +59,7 @@ export function useRunnerShellState(
         runnerDistributedSelection,
         setRunnerDistributedSelection,
         selectedResult,
-        diagnosticCommandId,
+        diagnosticCommandId
     };
 }
 
@@ -81,7 +68,7 @@ export function useRunnerShellSelectionSync({
     history,
     selectedCommandId,
     setSelectedCommandId,
-    diagnosticCommandId,
+    diagnosticCommandId
 }: Readonly<{
     activeCommand: RallarBlackBoxTestState['activeCommand'];
     history: readonly RallarBlackBoxTestResult[];
@@ -96,10 +83,8 @@ export function useRunnerShellSelectionSync({
 
     useEffect(() => {
         const initialSync = !didInitializeSync.current;
-        const diagnosticContextChanged =
-            diagnosticCommandId !== lastDiagnosticCommandId.current;
-        const activeCommandChanged =
-            activeCommandId !== lastActiveCommandId.current;
+        const diagnosticContextChanged = diagnosticCommandId !== lastDiagnosticCommandId.current;
+        const activeCommandChanged = activeCommandId !== lastActiveCommandId.current;
 
         didInitializeSync.current = true;
         lastDiagnosticCommandId.current = diagnosticCommandId;
@@ -128,7 +113,7 @@ export function useRunnerShellSelectionSync({
 
 export function initialRunnerCommandId(
     diagnosticContext: LegacyDiagnosticContext | undefined,
-    storedCommandId: string | undefined,
+    storedCommandId: string | undefined
 ): string | undefined {
     return diagnosticContext?.commandId ?? storedCommandId;
 }
@@ -136,14 +121,14 @@ export function initialRunnerCommandId(
 export function selectedRunnerResult(
     history: readonly RallarBlackBoxTestResult[],
     selectedCommandId: string | undefined,
-    diagnosticContext: LegacyDiagnosticContext | undefined,
+    diagnosticContext: LegacyDiagnosticContext | undefined
 ): RallarBlackBoxTestResult | undefined {
     if (
         diagnosticContext?.commandId &&
         selectedCommandId === diagnosticContext.commandId
     ) {
         return history.find(
-            result => result.commandId === diagnosticContext.commandId,
+            (result) => result.commandId === diagnosticContext.commandId
         );
     }
     return findSelectedResult(history, selectedCommandId);

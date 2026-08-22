@@ -1,44 +1,42 @@
+import type { DistributedArtifactEvidenceWindowQuery } from '@shared-test/rallar-bb-test/mod.ts';
 import { useEffect, useMemo } from 'react';
-import type { DistributedArtifactEvidenceWindowQuery } from
-    '@shared-test/rallar-bb-test/mod.ts';
-import type { RecipeConsoleControlConnection } from
-    '../control/ControlConnectionProvider.tsx';
-import type { RecipeConsoleControlSelection } from
-    '../control/control-selection.ts';
+import type { RecipeConsoleControlSelection } from '../control/control-selection.ts';
+import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
+import { analyzeEvidenceQueryFingerprint } from './analyze-evidence-query-fingerprint.ts';
 import { createAnalyzeWorkspaceContext } from './analyze-workspace-state.ts';
 import { useAnalyzeOperations } from './use-analyze-operations.ts';
-import { useAnalyzeWorkspaceController } from
-    './use-analyze-workspace-controller.ts';
-import { analyzeEvidenceQueryFingerprint } from
-    './analyze-evidence-query-fingerprint.ts';
+import { useAnalyzeWorkspaceController } from './use-analyze-workspace-controller.ts';
 
-export function useAnalyzeWorkspace(input: Readonly<{
-    connection: RecipeConsoleControlConnection;
-    selection: RecipeConsoleControlSelection;
-    urlState: RecipeConsoleUrlState;
-    navigate(patch: Partial<RecipeConsoleUrlState>): void;
-    replace(patch: Partial<RecipeConsoleUrlState>): void;
-}>) {
+export function useAnalyzeWorkspace(
+    input: Readonly<{
+        connection: RecipeConsoleControlConnection;
+        selection: RecipeConsoleControlSelection;
+        urlState: RecipeConsoleUrlState;
+        navigate(patch: Partial<RecipeConsoleUrlState>): void;
+        replace(patch: Partial<RecipeConsoleUrlState>): void;
+    }>
+) {
     const requestedDistributedRunId = input.urlState.distributedRunId ??
         input.selection.distributedRunId;
-    const context = useMemo(() => requestedDistributedRunId
-        ? createAnalyzeWorkspaceContext({
-            baseUrl: input.connection.baseUrl,
-            controlRunId: input.urlState.controlRunId ??
-                input.selection.controlRunId,
-            distributedRunId: requestedDistributedRunId,
-        })
-        : undefined, [
+    const context = useMemo(() =>
+        requestedDistributedRunId
+            ? createAnalyzeWorkspaceContext({
+                baseUrl: input.connection.baseUrl,
+                controlRunId: input.urlState.controlRunId ??
+                    input.selection.controlRunId,
+                distributedRunId: requestedDistributedRunId
+            })
+            : undefined, [
         input.connection.baseUrl,
         input.selection.controlRunId,
         input.urlState.controlRunId,
-        requestedDistributedRunId,
+        requestedDistributedRunId
     ]);
     const operations = useAnalyzeOperations({
         connection: input.connection,
         context,
-        navigate: input.navigate,
+        navigate: input.navigate
     });
     const query = useMemo((): DistributedArtifactEvidenceWindowQuery => ({
         query: input.urlState.historyQuery,
@@ -49,7 +47,7 @@ export function useAnalyzeWorkspace(input: Readonly<{
         severity: input.urlState.diagnosticSeverity,
         transport: input.urlState.transport,
         fromEpochMs: input.urlState.from,
-        toEpochMs: input.urlState.to,
+        toEpochMs: input.urlState.to
     }), [
         input.urlState.agentId,
         input.urlState.commandId,
@@ -59,12 +57,13 @@ export function useAnalyzeWorkspace(input: Readonly<{
         input.urlState.recipeId,
         input.urlState.status,
         input.urlState.to,
-        input.urlState.transport,
+        input.urlState.transport
     ]);
-    const queryFingerprint = useMemo(() => analyzeEvidenceQueryFingerprint(
-        operations.state.operationGeneration,
-        query,
-    ), [operations.state.operationGeneration, query]);
+    const queryFingerprint = useMemo(() =>
+        analyzeEvidenceQueryFingerprint(
+            operations.state.operationGeneration,
+            query
+        ), [operations.state.operationGeneration, query]);
 
     useEffect(() => {
         if (input.urlState.view !== 'analyze' || !operations.state.artifact) {
@@ -76,17 +75,19 @@ export function useAnalyzeWorkspace(input: Readonly<{
         operations.search,
         operations.state.artifact,
         query,
-        queryFingerprint,
+        queryFingerprint
     ]);
 
     useEffect(() => {
-        if (input.urlState.view !== 'tune' || !operations.state.artifact) return;
+        if (input.urlState.view !== 'tune' || !operations.state.artifact) {
+            return;
+        }
         operations.requestTune({
             focusRunId: input.urlState.compareRight ??
                 input.urlState.distributedRunId,
             compareLeft: input.urlState.compareLeft,
             compareRight: input.urlState.compareRight,
-            timingMetric: input.urlState.timingMetric,
+            timingMetric: input.urlState.timingMetric
         });
     }, [
         input.urlState.compareLeft,
@@ -95,7 +96,7 @@ export function useAnalyzeWorkspace(input: Readonly<{
         input.urlState.timingMetric,
         input.urlState.view,
         operations.requestTune,
-        operations.state.artifact,
+        operations.state.artifact
     ]);
 
     return useAnalyzeWorkspaceController({
@@ -116,14 +117,15 @@ export function useAnalyzeWorkspace(input: Readonly<{
         importFiles: operations.importFiles,
         loadControlArtifact: operations.loadControlArtifact,
         exportArtifact: operations.exportArtifact,
-        requestWindow: cursor => operations.requestWindow(
-            query,
-            cursor,
-            queryFingerprint,
-        ),
+        requestWindow: (cursor) =>
+            operations.requestWindow(
+                query,
+                cursor,
+                queryFingerprint
+            ),
         retryEvidenceSearch: () => operations.search(query, queryFingerprint),
         selectEvidence: operations.selectEvidence,
-        clearArtifact: operations.clearArtifact,
+        clearArtifact: operations.clearArtifact
     });
 }
 

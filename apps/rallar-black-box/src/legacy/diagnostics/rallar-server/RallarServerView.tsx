@@ -1,20 +1,14 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
-import {
-    redactRallarServerUrl,
-    redactRallarServerValue,
-} from '../../../rallar-server-workbench.ts';
+import { redactRallarServerUrl, redactRallarServerValue } from '../../../rallar-server-workbench.ts';
 import type {
     RallarServerResponseBodyMode,
-    RallarServerRestMethod,
+    RallarServerRestMethod
 } from '../../../rallar-server-workbench/rallar-server-workbench-contracts.ts';
 import { CollapsiblePanelSection } from '../../shared/CollapsiblePanelSection.tsx';
-import {
-    redactedJson,
-    uiRedactionOptions,
-} from '../../shared/redaction-presentation.ts';
+import { redactedJson, uiRedactionOptions } from '../../shared/redaction-presentation.ts';
 import { formatDuration } from '../../shared/time-format.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { RallarServerRequestFeedbackPanel } from './RallarServerRequestFeedbackPanel.tsx';
@@ -25,14 +19,14 @@ export function RallarServerView({
     authSession,
     control,
     onGlobalValueChange,
-    model,
+    model
 }: Readonly<{
     state: RallarBlackBoxTestState;
     authSession?: AuthSession;
     control: RallarBlackBoxControlSnapshot;
     onGlobalValueChange?<K extends keyof CommandCenterGlobalValues>(
         key: K,
-        value: CommandCenterGlobalValues[K],
+        value: CommandCenterGlobalValues[K]
     ): void;
     model: RallarServerControllerModel;
 }>) {
@@ -91,7 +85,7 @@ export function RallarServerView({
         response,
         responseBodyText,
         responseHeadersText,
-        commandPreview,
+        commandPreview
     } = model;
     return (
         <section className="panel rallar-server-panel">
@@ -154,8 +148,7 @@ export function RallarServerView({
                             value={selectedPresetId}
                             onChange={(event) => {
                                 const nextPreset = allPresets.find(
-                                    (preset) =>
-                                        preset.presetId === event.target.value,
+                                    (preset) => preset.presetId === event.target.value
                                 );
                                 if (nextPreset) {
                                     applyPreset(nextPreset);
@@ -190,7 +183,7 @@ export function RallarServerView({
                                 setServerDraftEdited(true);
                                 setMethod(
                                     event.target
-                                        .value as RallarServerRestMethod,
+                                        .value as RallarServerRestMethod
                                 );
                             }}
                         >
@@ -199,7 +192,7 @@ export function RallarServerView({
                                     <option key={entry} value={entry}>
                                         {entry}
                                     </option>
-                                ),
+                                )
                             )}
                         </select>
                     </label>
@@ -233,7 +226,7 @@ export function RallarServerView({
                                 setServerDraftEdited(true);
                                 setResponseBodyMode(
                                     event.target
-                                        .value as RallarServerResponseBodyMode,
+                                        .value as RallarServerResponseBodyMode
                                 );
                             }}
                         >
@@ -242,7 +235,7 @@ export function RallarServerView({
                                     <option key={entry} value={entry}>
                                         {entry}
                                     </option>
-                                ),
+                                )
                             )}
                         </select>
                     </label>
@@ -328,8 +321,7 @@ export function RallarServerView({
                     disabled={!latestGroupId || !onGlobalValueChange}
                     onClick={() =>
                         latestGroupId &&
-                        onGlobalValueChange?.('roomId', latestGroupId)
-                    }
+                        onGlobalValueChange?.('roomId', latestGroupId)}
                 >
                     Use group in Quick Test
                 </button>
@@ -338,8 +330,7 @@ export function RallarServerView({
                     disabled={!latestClientId || !onGlobalValueChange}
                     onClick={() =>
                         latestClientId &&
-                        onGlobalValueChange?.('clientId', latestClientId)
-                    }
+                        onGlobalValueChange?.('clientId', latestClientId)}
                 >
                     Use client globally
                 </button>
@@ -348,8 +339,7 @@ export function RallarServerView({
                     disabled={!latestSessionId || !onGlobalValueChange}
                     onClick={() =>
                         latestSessionId &&
-                        onGlobalValueChange?.('sessionId', latestSessionId)
-                    }
+                        onGlobalValueChange?.('sessionId', latestSessionId)}
                 >
                     Use session globally
                 </button>
@@ -362,7 +352,7 @@ export function RallarServerView({
                 <div className="workbench-error" role="status">
                     {redactRallarBlackBoxValue(
                         localError,
-                        uiRedactionOptions(state, authSession),
+                        uiRedactionOptions(state, authSession)
                     )}
                 </div>
             )}
@@ -376,9 +366,7 @@ export function RallarServerView({
                         <span>Collection Template</span>
                         <select
                             value={selectedCollectionId}
-                            onChange={(event) =>
-                                applyCollectionTemplate(event.target.value)
-                            }
+                            onChange={(event) => applyCollectionTemplate(event.target.value)}
                         >
                             {collectionTemplates.map((template) => (
                                 <option
@@ -417,9 +405,7 @@ export function RallarServerView({
                         <span>Variables JSON</span>
                         <textarea
                             value={collectionVariablesText}
-                            onChange={(event) =>
-                                setCollectionVariablesText(event.target.value)
-                            }
+                            onChange={(event) => setCollectionVariablesText(event.target.value)}
                             spellCheck={false}
                         />
                     </label>
@@ -427,9 +413,7 @@ export function RallarServerView({
                         <span>Collection JSON</span>
                         <textarea
                             value={collectionText}
-                            onChange={(event) =>
-                                setCollectionText(event.target.value)
-                            }
+                            onChange={(event) => setCollectionText(event.target.value)}
                             spellCheck={false}
                         />
                     </label>
@@ -438,7 +422,7 @@ export function RallarServerView({
                     <div className="workbench-error" role="status">
                         {redactRallarBlackBoxValue(
                             collectionError,
-                            uiRedactionOptions(state, authSession),
+                            uiRedactionOptions(state, authSession)
                         )}
                     </div>
                 )}
@@ -456,8 +440,7 @@ export function RallarServerView({
                             <div>
                                 <strong>{result.label}</strong>
                                 <small>
-                                    {result.stepId} -{' '}
-                                    {formatDuration(result.response.durationMs)}
+                                    {result.stepId} - {formatDuration(result.response.durationMs)}
                                 </small>
                             </div>
                             <span
@@ -530,7 +513,7 @@ export function RallarServerView({
                         <div className="workbench-error" role="status">
                             {redactRallarServerValue(
                                 response.error.message,
-                                authSession,
+                                authSession
                             )}
                         </div>
                     )}
@@ -542,9 +525,9 @@ export function RallarServerView({
                         <span>
                             {response
                                 ? redactRallarServerUrl(
-                                      response.url,
-                                      authSession,
-                                  )
+                                    response.url,
+                                    authSession
+                                )
                                 : '-'}
                         </span>
                     </div>

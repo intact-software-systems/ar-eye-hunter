@@ -1,8 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { createRelicGame, RELIC_PROTOCOL_VERSION, toPublicRelicSnapshot } from '@ar-eye-hunter/relic-hunters/mod.ts';
 import type { RallarRoomState } from '@ar-eye-hunter/shared-web/browser/rallar.ts';
 import type { AuthSession } from 'api/api-config.ts';
-import { createRelicGame, RELIC_PROTOCOL_VERSION, toPublicRelicSnapshot, } from '@ar-eye-hunter/relic-hunters/mod.ts';
-import { RelicHuntersRuntime, type RelicHuntersRuntimeDeps, } from '../src/game/relic-hunters-runtime.ts';
+import { describe, expect, it, vi } from 'vitest';
+import { RelicHuntersRuntime, type RelicHuntersRuntimeDeps } from '../src/game/relic-hunters-runtime.ts';
 
 describe('RelicHuntersRuntime', () => {
     it('starts, installs scoped listeners, and fetches the current snapshot', async () => {
@@ -16,7 +16,7 @@ describe('RelicHuntersRuntime', () => {
             onSnapshotMessage: vi.fn(() => unsubscribeSnapshot),
             onRtcSnapshotMessage: vi.fn(() => unsubscribeRtcSnapshot),
             onAuthoritySnapshotMessage: vi.fn(() => unsubscribeAuthoritySnapshot),
-            onRoomsChange: vi.fn(() => unsubscribeRooms),
+            onRoomsChange: vi.fn(() => unsubscribeRooms)
         });
         const runtime = new RelicHuntersRuntime(deps);
 
@@ -37,7 +37,7 @@ describe('RelicHuntersRuntime', () => {
             snapshotListenerReady: true,
             rtcSnapshotListenerReady: true,
             authorityListenerReady: true,
-            roomListenerReady: true,
+            roomListenerReady: true
         });
 
         hydration?.unsubscribe();
@@ -52,7 +52,7 @@ describe('RelicHuntersRuntime', () => {
         const deps = runtimeDeps({
             fetchSnapshot: vi.fn(async () => {
                 throw new Error('snapshot unavailable');
-            }),
+            })
         });
         const runtime = new RelicHuntersRuntime(deps);
 
@@ -69,7 +69,7 @@ describe('RelicHuntersRuntime', () => {
     it('publishes accepted snapshots through the configured RTC snapshot transport', async () => {
         const snapshot = toPublicRelicSnapshot(createRelicGame('game-1', 'room-1', 1_700_000_000_000));
         const deps = runtimeDeps({
-            publishRtcSnapshot: vi.fn(async () => true),
+            publishRtcSnapshot: vi.fn(async () => true)
         });
         const runtime = new RelicHuntersRuntime(deps);
 
@@ -88,7 +88,7 @@ describe('RelicHuntersRuntime', () => {
             protocolVersion: RELIC_PROTOCOL_VERSION,
             gameId: 'room-42',
             username: 'Alice',
-            kind: 'start-expedition',
+            kind: 'start-expedition'
         });
     });
 
@@ -102,7 +102,7 @@ describe('RelicHuntersRuntime', () => {
             protocolVersion: RELIC_PROTOCOL_VERSION,
             gameId: 'room-42',
             username: 'Alice',
-            kind: 'force-resolve-round',
+            kind: 'force-resolve-round'
         });
     });
 
@@ -110,8 +110,8 @@ describe('RelicHuntersRuntime', () => {
         const deps = runtimeDeps({
             start: vi.fn(async () => ({
                 session: undefined,
-                connected: false,
-            })),
+                connected: false
+            }))
         });
         const runtime = new RelicHuntersRuntime(deps);
 
@@ -128,7 +128,7 @@ describe('RelicHuntersRuntime', () => {
 
     it('hydrates the created room with its current snapshot and refreshed room state', async () => {
         const deps = runtimeDeps({
-            createRoom: vi.fn(async () => ({ group: { groupId: 'created-room' } })),
+            createRoom: vi.fn(async () => ({ group: { groupId: 'created-room' } }))
         });
         const runtime = new RelicHuntersRuntime(deps);
 
@@ -136,14 +136,14 @@ describe('RelicHuntersRuntime', () => {
 
         expect(deps.createRoom).toHaveBeenCalledWith(
             expect.stringMatching(/^Relic Hunters Expedition: .+ #[0-9A-F]{6}/),
-            { joinMode: 'open' },
+            { joinMode: 'open' }
         );
         expect(deps.createRoom).not.toHaveBeenCalledWith('Relic Hunters Expedition');
         expect(deps.fetchSnapshot).toHaveBeenCalledWith('created-room');
         expect(deps.refreshRooms).toHaveBeenCalledTimes(1);
         expect(hydration).toMatchObject({
             roomId: 'created-room',
-            roomState: roomState(),
+            roomState: roomState()
         });
         expect(hydration.snapshot?.roomId).toBe('room-1');
     });
@@ -156,13 +156,13 @@ describe('RelicHuntersRuntime', () => {
 
         expect(deps.createRoom).toHaveBeenCalledWith(
             expect.stringMatching(/^Relic Hunters Expedition: .+ #[0-9A-F]{6}/),
-            { joinMode: 'open' },
+            { joinMode: 'open' }
         );
     });
 
     it('hydrates a joined room and delegates resets to the game reset transport', async () => {
         const deps = runtimeDeps({
-            joinRoom: vi.fn(async () => ({ roomId: 'joined-room' })),
+            joinRoom: vi.fn(async () => ({ roomId: 'joined-room' }))
         });
         const runtime = new RelicHuntersRuntime(deps);
 
@@ -177,7 +177,7 @@ describe('RelicHuntersRuntime', () => {
 });
 
 function runtimeDeps(
-    overrides: Partial<RelicHuntersRuntimeDeps> = {},
+    overrides: Partial<RelicHuntersRuntimeDeps> = {}
 ): RelicHuntersRuntimeDeps {
     return {
         restoreSession: vi.fn(() => session()),
@@ -190,7 +190,7 @@ function runtimeDeps(
         start: vi.fn(async () => ({
             session: session(),
             connected: true,
-            roomState: roomState(),
+            roomState: roomState()
         })),
         subscriptions: vi.fn(() => subscriptionScope()),
         refreshRooms: vi.fn(async () => roomState()),
@@ -207,7 +207,7 @@ function runtimeDeps(
             authority: {
                 kind: 'server',
                 id: 'relic-hunter-server-v1',
-                epoch: RELIC_PROTOCOL_VERSION,
+                epoch: RELIC_PROTOCOL_VERSION
             },
             started: true,
             stopped: false,
@@ -215,23 +215,17 @@ function runtimeDeps(
             peerAssist: {
                 enabled: true,
                 snapshotRepairEnabled: true,
-                readyPeerIds: [],
+                readyPeerIds: []
             },
-            updatedAtEpochMs: 1_700_000_000_000,
+            updatedAtEpochMs: 1_700_000_000_000
         })),
         publishRtcSnapshot: vi.fn(async () => true),
         createRoom: vi.fn(async () => ({ group: { groupId: 'room-1' } })),
         joinRoom: vi.fn(async () => ({ roomId: 'room-1' })),
-        fetchSnapshot: vi.fn(async () =>
-            toPublicRelicSnapshot(createRelicGame('game-1', 'room-1', 1_700_000_000_000))
-        ),
-        sendCommand: vi.fn(async () =>
-            toPublicRelicSnapshot(createRelicGame('game-1', 'room-1', 1_700_000_000_000))
-        ),
-        resetGame: vi.fn(async () =>
-            toPublicRelicSnapshot(createRelicGame('game-1', 'room-1', 1_700_000_000_000))
-        ),
-        ...overrides,
+        fetchSnapshot: vi.fn(async () => toPublicRelicSnapshot(createRelicGame('game-1', 'room-1', 1_700_000_000_000))),
+        sendCommand: vi.fn(async () => toPublicRelicSnapshot(createRelicGame('game-1', 'room-1', 1_700_000_000_000))),
+        resetGame: vi.fn(async () => toPublicRelicSnapshot(createRelicGame('game-1', 'room-1', 1_700_000_000_000))),
+        ...overrides
     };
 }
 
@@ -250,7 +244,7 @@ function subscriptionScope(): ReturnType<RelicHuntersRuntimeDeps['subscriptions'
                 unsubscribe();
             }
         }),
-        size: vi.fn(() => callbacks.length),
+        size: vi.fn(() => callbacks.length)
     };
     return scope;
 }
@@ -261,7 +255,7 @@ function session(): AuthSession {
         accessToken: 'token-1',
         username: 'Alice',
         sessionId: 'alice-session',
-        expiresAtEpochMs: 1_700_000_060_000,
+        expiresAtEpochMs: 1_700_000_060_000
     };
 }
 
@@ -269,6 +263,6 @@ function roomState(): RallarRoomState {
     return {
         rooms: [],
         currentRoomId: 'room-1',
-        members: [],
+        members: []
     };
 }

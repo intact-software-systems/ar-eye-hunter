@@ -2,32 +2,32 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-type JsonRecord = Record<string, unknown>
+type JsonRecord = Record<string, unknown>;
 
 export type BlackBoxTrafficPlanReductionInput = Readonly<{
-    expandedPlan: JsonRecord
-    artifactIndex?: JsonRecord
-    failures?: JsonRecord
-    report?: JsonRecord
-    firstFailureName?: string
-}>
+    expandedPlan: JsonRecord;
+    artifactIndex?: JsonRecord;
+    failures?: JsonRecord;
+    report?: JsonRecord;
+    firstFailureName?: string;
+}>;
 
 export type BlackBoxTrafficPlanReductionResult = Readonly<{
-    plan: JsonRecord
-    summary: JsonRecord
-}>
+    plan: JsonRecord;
+    summary: JsonRecord;
+}>;
 
 type CliOptions = {
-    artifactDir?: string
-    expandedPlan?: string
-    artifactIndex?: string
-    failures?: string
-    report?: string
-    firstFailure?: string
-    out?: string
-    summaryOut?: string
-    help?: boolean
-}
+    artifactDir?: string;
+    expandedPlan?: string;
+    artifactIndex?: string;
+    failures?: string;
+    report?: string;
+    firstFailure?: string;
+    out?: string;
+    summaryOut?: string;
+    help?: boolean;
+};
 
 function isRecord(value: unknown): value is JsonRecord {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -64,7 +64,7 @@ function firstFailureEvidence(input: BlackBoxTrafficPlanReductionInput): JsonRec
     if (input.firstFailureName) {
         return {
             name: input.firstFailureName,
-            source: 'explicit',
+            source: 'explicit'
         };
     }
 
@@ -72,7 +72,7 @@ function firstFailureEvidence(input: BlackBoxTrafficPlanReductionInput): JsonRec
     if (Object.keys(artifactIndexFailure).length > 0) {
         return {
             ...artifactIndexFailure,
-            source: 'artifact-index',
+            source: 'artifact-index'
         };
     }
 
@@ -80,7 +80,7 @@ function firstFailureEvidence(input: BlackBoxTrafficPlanReductionInput): JsonRec
     if (failureBundleFailure) {
         return {
             ...failureBundleFailure,
-            source: 'failures',
+            source: 'failures'
         };
     }
 
@@ -88,20 +88,22 @@ function firstFailureEvidence(input: BlackBoxTrafficPlanReductionInput): JsonRec
     if (Object.keys(summaryFailure).length > 0) {
         return {
             ...summaryFailure,
-            source: 'report-summary',
+            source: 'report-summary'
         };
     }
 
     const failedResult = asRecordArray(input.report?.resultsList)
-        .find(result => result.status === 'FAILURE');
+        .find((result) => result.status === 'FAILURE');
     if (failedResult) {
         return {
             ...failedResult,
-            source: 'report-results',
+            source: 'report-results'
         };
     }
 
-    throw new Error('Traffic plan reduction requires first-failure evidence from --first-failure, artifact-index.json, failures.json, or report.json.');
+    throw new Error(
+        'Traffic plan reduction requires first-failure evidence from --first-failure, artifact-index.json, failures.json, or report.json.'
+    );
 }
 
 function stepName(step: JsonRecord, index: number): string {
@@ -140,7 +142,7 @@ function shouldKeepStep(
     failureIndex: number,
     failureSequence: number | undefined,
     firstTrafficIndex: number,
-    lastTrafficIndex: number,
+    lastTrafficIndex: number
 ): boolean {
     const sequence = trafficSequence(step);
     if (failureSequence !== undefined) {
@@ -174,18 +176,24 @@ function toRemovedOperations(decisions: readonly JsonRecord[], removedSteps: rea
     }, {});
 
     return decisions
-        .filter(decision => removedStepCountsBySequence[String(numberValue(decision.sequence))])
-        .map(decision => ({
+        .filter((decision) => removedStepCountsBySequence[String(numberValue(decision.sequence))])
+        .map((decision) => ({
             sequence: numberValue(decision.sequence),
             operation: stringValue(decision.operation),
             operationIndex: numberValue(decision.operationIndex),
-            stepCount: removedStepCountsBySequence[String(numberValue(decision.sequence))] || 0,
+            stepCount: removedStepCountsBySequence[String(numberValue(decision.sequence))] || 0
         }));
 }
 
-function toReplayRecipe(expandedPlan: JsonRecord, seed: number, decisions: JsonRecord[], steps: JsonRecord[], reduction: JsonRecord): JsonRecord {
+function toReplayRecipe(
+    expandedPlan: JsonRecord,
+    seed: number,
+    decisions: JsonRecord[],
+    steps: JsonRecord[],
+    reduction: JsonRecord
+): JsonRecord {
     const baseRecipe = cloneJson(firstRecord(expandedPlan.replayRecipe, {
-        steps,
+        steps
     }));
     const execution = asRecord(baseRecipe.execution);
     const trafficPlan = asRecord(execution.trafficPlan);
@@ -196,8 +204,8 @@ function toReplayRecipe(expandedPlan: JsonRecord, seed: number, decisions: JsonR
             seed,
             decisions,
             steps,
-            reduction,
-        },
+            reduction
+        }
     };
 
     delete nextTrafficPlan.replayFrom;
@@ -208,13 +216,13 @@ function toReplayRecipe(expandedPlan: JsonRecord, seed: number, decisions: JsonR
         steps,
         execution: {
             ...execution,
-            trafficPlan: nextTrafficPlan,
-        },
+            trafficPlan: nextTrafficPlan
+        }
     };
 }
 
 export function reduceBlackBoxTrafficPlanFailure(
-    input: BlackBoxTrafficPlanReductionInput,
+    input: BlackBoxTrafficPlanReductionInput
 ): BlackBoxTrafficPlanReductionResult {
     const expandedPlan = input.expandedPlan;
     const steps = asRecordArray(expandedPlan.steps);
@@ -227,7 +235,10 @@ export function reduceBlackBoxTrafficPlanFailure(
     const failure = firstFailureEvidence(input);
     const failureIndex = findFailureStepIndex(steps, failure);
     if (failureIndex < 0) {
-        throw new Error('Could not find first failure step in expanded plan: ' + String(failure.name ?? failure.interactionExecutionNumber));
+        throw new Error(
+            'Could not find first failure step in expanded plan: ' +
+                String(failure.name ?? failure.interactionExecutionNumber)
+        );
     }
 
     const failureStep = steps[failureIndex];
@@ -238,20 +249,22 @@ export function reduceBlackBoxTrafficPlanFailure(
     const keptSteps = steps.filter((step, index) =>
         shouldKeepStep(step, index, failureIndex, failureSequence, firstTrafficIndex, lastTrafficIndex)
     );
-    const removedSteps = steps.filter(step => !keptSteps.includes(step));
-    const keptSequences = new Set(keptSteps
-        .map(trafficSequence)
-        .filter((sequence): sequence is number => sequence !== undefined)
-        .map(String));
+    const removedSteps = steps.filter((step) => !keptSteps.includes(step));
+    const keptSequences = new Set(
+        keptSteps
+            .map(trafficSequence)
+            .filter((sequence): sequence is number => sequence !== undefined)
+            .map(String)
+    );
     const keptDecisions = failureSequence !== undefined
-        ? decisions.filter(decision => {
+        ? decisions.filter((decision) => {
             const sequence = numberValue(decision.sequence);
             return sequence === undefined || keptSequences.has(String(sequence));
         })
         : firstTrafficIndex >= 0 && failureIndex < firstTrafficIndex
-            ? []
-            : decisions;
-    const removedDecisions = decisions.filter(decision => !keptDecisions.includes(decision));
+        ? []
+        : decisions;
+    const removedDecisions = decisions.filter((decision) => !keptDecisions.includes(decision));
     const removedOperations = toRemovedOperations(removedDecisions, removedSteps);
     const reduction = {
         schemaVersion: 1,
@@ -260,23 +273,23 @@ export function reduceBlackBoxTrafficPlanFailure(
             ...failure,
             stepIndex: failureIndex,
             stepName: stepName(failureStep, failureIndex),
-            trafficSequence: failureSequence,
+            trafficSequence: failureSequence
         },
         original: {
             seed,
             replay: expandedPlan.replay === true,
             stepCount: steps.length,
-            decisionCount: decisions.length,
+            decisionCount: decisions.length
         },
         reduced: {
             stepCount: keptSteps.length,
-            decisionCount: keptDecisions.length,
+            decisionCount: keptDecisions.length
         },
         removed: {
             stepCount: removedSteps.length,
             decisionCount: removedDecisions.length,
-            operations: removedOperations,
-        },
+            operations: removedOperations
+        }
     };
     const plan = {
         ...cloneJson(expandedPlan),
@@ -291,14 +304,14 @@ export function reduceBlackBoxTrafficPlanFailure(
             reducedFrom: {
                 seed,
                 stepCount: steps.length,
-                decisionCount: decisions.length,
+                decisionCount: decisions.length
             },
-            reductionStrategy: 'truncate-after-first-failure',
+            reductionStrategy: 'truncate-after-first-failure'
         },
         decisions: keptDecisions,
         steps: keptSteps,
         reduction,
-        replayRecipe: toReplayRecipe(expandedPlan, seed, keptDecisions, keptSteps, reduction),
+        replayRecipe: toReplayRecipe(expandedPlan, seed, keptDecisions, keptSteps, reduction)
     };
     const summary = {
         kind: 'black-box-runner.reduction-summary',
@@ -308,17 +321,17 @@ export function reduceBlackBoxTrafficPlanFailure(
             recipe: {
                 execution: {
                     trafficPlan: {
-                        replayFrom: 'reduced-plan.json',
-                    },
+                        replayFrom: 'reduced-plan.json'
+                    }
                 },
-                steps: [],
-            },
-        },
+                steps: []
+            }
+        }
     };
 
     return {
         plan,
-        summary,
+        summary
     };
 }
 
@@ -358,38 +371,54 @@ function parseCliOptions(args: readonly string[]): CliOptions {
             case '--artifact-dir':
             case '--artifacts':
                 options.artifactDir = inlineValue ?? readOptionValue(args, index, option);
-                if (inlineValue === undefined) index++;
+                if (inlineValue === undefined) {
+                    index++;
+                }
                 break;
             case '--expanded-plan':
             case '--plan':
                 options.expandedPlan = inlineValue ?? readOptionValue(args, index, option);
-                if (inlineValue === undefined) index++;
+                if (inlineValue === undefined) {
+                    index++;
+                }
                 break;
             case '--artifact-index':
                 options.artifactIndex = inlineValue ?? readOptionValue(args, index, option);
-                if (inlineValue === undefined) index++;
+                if (inlineValue === undefined) {
+                    index++;
+                }
                 break;
             case '--failures':
                 options.failures = inlineValue ?? readOptionValue(args, index, option);
-                if (inlineValue === undefined) index++;
+                if (inlineValue === undefined) {
+                    index++;
+                }
                 break;
             case '--report':
                 options.report = inlineValue ?? readOptionValue(args, index, option);
-                if (inlineValue === undefined) index++;
+                if (inlineValue === undefined) {
+                    index++;
+                }
                 break;
             case '--first-failure':
             case '--failure':
                 options.firstFailure = inlineValue ?? readOptionValue(args, index, option);
-                if (inlineValue === undefined) index++;
+                if (inlineValue === undefined) {
+                    index++;
+                }
                 break;
             case '--out':
             case '--output':
                 options.out = inlineValue ?? readOptionValue(args, index, option);
-                if (inlineValue === undefined) index++;
+                if (inlineValue === undefined) {
+                    index++;
+                }
                 break;
             case '--summary-out':
                 options.summaryOut = inlineValue ?? readOptionValue(args, index, option);
-                if (inlineValue === undefined) index++;
+                if (inlineValue === undefined) {
+                    index++;
+                }
                 break;
             default:
                 break;
@@ -416,13 +445,16 @@ function printHelp(): void {
         '  --report <file>            Optional report.json fallback.',
         '  --first-failure <name>     Explicit first failing step name.',
         '  --out <file>               Reduced plan output. Defaults to reduced-plan.json next to the input plan.',
-        '  --summary-out <file>       Summary output. Defaults to reduced-plan-summary.json next to --out.',
+        '  --summary-out <file>       Summary output. Defaults to reduced-plan-summary.json next to --out.'
     ].join('\n'));
 }
 
-function resolveInputPaths(options: CliOptions): Required<Pick<CliOptions, 'expandedPlan' | 'out' | 'summaryOut'>> & CliOptions {
+function resolveInputPaths(
+    options: CliOptions
+): Required<Pick<CliOptions, 'expandedPlan' | 'out' | 'summaryOut'>> & CliOptions {
     const artifactDir = options.artifactDir;
-    const expandedPlan = options.expandedPlan ?? (artifactDir ? path.join(artifactDir, 'expanded-plan.json') : undefined);
+    const expandedPlan = options.expandedPlan ??
+        (artifactDir ? path.join(artifactDir, 'expanded-plan.json') : undefined);
     if (!expandedPlan) {
         throw new Error('Missing --expanded-plan or --artifact-dir.');
     }
@@ -433,11 +465,12 @@ function resolveInputPaths(options: CliOptions): Required<Pick<CliOptions, 'expa
     return {
         ...options,
         expandedPlan,
-        artifactIndex: options.artifactIndex ?? (artifactDir ? path.join(artifactDir, 'artifact-index.json') : undefined),
+        artifactIndex: options.artifactIndex ??
+            (artifactDir ? path.join(artifactDir, 'artifact-index.json') : undefined),
         failures: options.failures ?? (artifactDir ? path.join(artifactDir, 'failures.json') : undefined),
         report: options.report ?? (artifactDir ? path.join(artifactDir, 'report.json') : undefined),
         out,
-        summaryOut,
+        summaryOut
     };
 }
 
@@ -460,18 +493,23 @@ if (isCliEntrypoint()) {
             artifactIndex: readOptionalJsonFile(paths.artifactIndex),
             failures: readOptionalJsonFile(paths.failures),
             report: readOptionalJsonFile(paths.report),
-            firstFailureName: paths.firstFailure,
+            firstFailureName: paths.firstFailure
         });
 
         writeFileSync(paths.out, JSON.stringify(result.plan, null, 2));
         writeFileSync(paths.summaryOut, JSON.stringify(result.summary, null, 2));
-        console.log(JSON.stringify({
-            ok: true,
-            reducedPlan: paths.out,
-            summary: paths.summaryOut,
-            reduction: result.summary,
-        }, null, 2));
-    } catch (error) {
+        console.log(JSON.stringify(
+            {
+                ok: true,
+                reducedPlan: paths.out,
+                summary: paths.summaryOut,
+                reduction: result.summary
+            },
+            null,
+            2
+        ));
+    }
+    catch (error) {
         console.error(error instanceof Error ? error.message : String(error));
         process.exit(1);
     }

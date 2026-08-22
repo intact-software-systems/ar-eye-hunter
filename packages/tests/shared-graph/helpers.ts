@@ -1,25 +1,13 @@
-import { UndirectedGraph } from 'graphology';
-import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import type {
-    AuditStamp,
-    GroupMember,
-    GroupPresenceSession,
-    GroupSnapshot,
-} from '@shared/api/group-types.ts';
 import { DEFAULT_GRAPH_PROP } from '@shared-graph/algo-props.ts';
-import {
-    type EdgeProp,
-    type GraphProp,
-    type VertexProp,
-    VertexState,
-    VertexType,
-    type WeightedGraph,
-} from '@shared-graph/graph/graph-props.ts';
+import { VertexState, VertexType, type EdgeProp, type GraphProp, type VertexProp, type WeightedGraph } from '@shared-graph/graph/graph-props.ts';
+import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
+import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
+import { UndirectedGraph } from 'graphology';
 import { createTestGroup } from '../create-test-group.ts';
 
 export function createGraph(
     nodes: ReadonlyArray<readonly [string, VertexState, number]>,
-    edges: ReadonlyArray<readonly [string, string, number]>,
+    edges: ReadonlyArray<readonly [string, string, number]>
 ): WeightedGraph {
     const graph = new UndirectedGraph<VertexProp, EdgeProp, GraphProp>();
     graph.replaceAttributes(DEFAULT_GRAPH_PROP);
@@ -29,7 +17,7 @@ export function createGraph(
             id,
             type: VertexType.CLIENT,
             state,
-            degreeLimit,
+            degreeLimit
         });
     }
 
@@ -37,7 +25,7 @@ export function createGraph(
         graph.addEdge(from, to, {
             from,
             to,
-            weight,
+            weight
         });
     }
 
@@ -47,7 +35,7 @@ export function createGraph(
 export function createGroupSnapshot(
     groupId: string,
     memberSessionIds: readonly string[],
-    membershipVersion = 1,
+    membershipVersion = 1
 ): GroupSnapshot {
     const applicationId = 'app-1';
     const workspaceId = 'workspace-1';
@@ -60,7 +48,7 @@ export function createGroupSnapshot(
         stateRevision: membershipVersion,
         causalRevision: {
             groupRevision: membershipVersion,
-            presenceRevision: membershipVersion,
+            presenceRevision: membershipVersion
         },
         group: createTestGroup({
             applicationId,
@@ -75,7 +63,7 @@ export function createGroupSnapshot(
             rosterVersion: membershipVersion,
             presenceVersion: 0,
             created: createAuditStamp(1, ownerPrincipalId),
-            updated: createAuditStamp(membershipVersion, ownerPrincipalId),
+            updated: createAuditStamp(membershipVersion, ownerPrincipalId)
         }),
         members: memberSessionIds.map((sessionId): GroupMember => ({
             applicationId,
@@ -90,7 +78,7 @@ export function createGroupSnapshot(
             invitationExpiresAtEpochMs: null,
             left: null,
             removed: null,
-            banned: null,
+            banned: null
         })),
         activeSessions: memberSessionIds.map((sessionId): GroupPresenceSession => ({
             applicationId,
@@ -105,10 +93,10 @@ export function createGroupSnapshot(
             lastHeartbeatAtEpochMs: membershipVersion,
             expiresAtEpochMs: membershipVersion + 60_000,
             disconnectedAtEpochMs: null,
-            disconnectReason: null,
+            disconnectReason: null
         })),
         memberCount: memberSessionIds.length,
-        onlineMemberCount: memberSessionIds.length,
+        onlineMemberCount: memberSessionIds.length
     };
 }
 
@@ -118,7 +106,7 @@ function createAuditStamp(atEpochMs: number, principalId: string): AuditStamp {
         actor: { kind: 'principal', principalId },
         reason: null,
         traceId: null,
-        requestId: null,
+        requestId: null
     };
 }
 
@@ -126,13 +114,13 @@ export function createRtt(
     sessionIdFrom: string,
     sessionIdTo: string,
     rttMs: number,
-    version: number,
+    version: number
 ): RttMeasurementInfo {
     return {
         sessionIdFrom,
         sessionIdTo,
         rttMs,
         createdAtEpochMs: version,
-        version,
+        version
     };
 }

@@ -1,14 +1,13 @@
 import { useEffect } from 'react';
-import { FleetEvidenceDetail } from './FleetEvidenceDetail.tsx';
 import type { FleetWorkspaceProps } from './fleet-workspace-contract.ts';
+import { FleetEvidenceDetail } from './FleetEvidenceDetail.tsx';
+import type { useFleetWorkspaceActions } from './use-fleet-workspace-actions.ts';
 import type { FleetWorkspaceController } from './use-fleet-workspace.ts';
-import type { useFleetWorkspaceActions } from
-    './use-fleet-workspace-actions.ts';
 
 export function useFleetInspectionHost(
     input: FleetWorkspaceProps,
     workspace: FleetWorkspaceController,
-    actions: ReturnType<typeof useFleetWorkspaceActions>,
+    actions: ReturnType<typeof useFleetWorkspaceActions>
 ): void {
     const explicitSelection = input.urlState.agentId !== undefined ||
         input.urlState.controlRunId !== undefined ||
@@ -20,19 +19,21 @@ export function useFleetInspectionHost(
             input.onSelectionLabelChange(undefined);
             return;
         }
-        input.onInspectorChange((
-            <FleetEvidenceDetail
-                agentRunWindow={workspace.windows.agentRuns}
-                onOpenAnalyze={actions.openAnalyze}
-                onOpenMonitor={actions.openMonitor}
-                regionProviderWindow={workspace.windows.regionProviders}
-                selectedAgent={workspace.evidence?.selectedAgent}
-                selectedLiveAgent={workspace.model.selectedLiveAgent}
-                selectedRegionRows={workspace.model.selectedRegionRows}
-                selectedReport={workspace.model.selectedReport}
-                selectionIssues={workspace.model.selectionIssues}
-            />
-        ));
+        input.onInspectorChange(
+            (
+                <FleetEvidenceDetail
+                    agentRunWindow={workspace.windows.agentRuns}
+                    onOpenAnalyze={actions.openAnalyze}
+                    onOpenMonitor={actions.openMonitor}
+                    regionProviderWindow={workspace.windows.regionProviders}
+                    selectedAgent={workspace.evidence?.selectedAgent}
+                    selectedLiveAgent={workspace.model.selectedLiveAgent}
+                    selectedRegionRows={workspace.model.selectedRegionRows}
+                    selectedReport={workspace.model.selectedReport}
+                    selectionIssues={workspace.model.selectionIssues}
+                />
+            )
+        );
         input.onSelectionLabelChange(selectionLabel(input, workspace));
     }, [
         actions.openAnalyze,
@@ -49,7 +50,7 @@ export function useFleetInspectionHost(
         workspace.model.selectedRegionRows,
         workspace.windows.regionProviders.model.startIndex,
         workspace.model.selectedReport,
-        workspace.model.selectionIssues,
+        workspace.model.selectionIssues
     ]);
     useEffect(() => () => {
         input.onInspectorChange(undefined);
@@ -59,7 +60,7 @@ export function useFleetInspectionHost(
 
 function selectionLabel(
     input: FleetWorkspaceProps,
-    workspace: FleetWorkspaceController,
+    workspace: FleetWorkspaceController
 ): string {
     if (input.urlState.agentId) {
         return 'Fleet agent selected';

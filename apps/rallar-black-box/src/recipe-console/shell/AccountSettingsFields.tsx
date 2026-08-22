@@ -1,8 +1,8 @@
 import type { RefObject } from 'react';
 import type {
     RecipeConsoleManagedPreferenceField,
-    RecipeConsolePreferences,
     RecipeConsolePreferenceLocks,
+    RecipeConsolePreferences
 } from '../app/recipe-console-preferences.ts';
 import styles from './AccountSettingsPanel.module.css';
 
@@ -20,14 +20,14 @@ const FIELDS = [
     ['apiBaseUrl', 'API URL'],
     ['applicationId', 'Application'],
     ['workspaceId', 'Workspace'],
-    ['groupId', 'Group'],
+    ['groupId', 'Group']
 ] as const;
 
 export function AccountSettingsFields({
     draft,
     initialFocusRef,
     locks,
-    onChange,
+    onChange
 }: Readonly<{
     draft: AccountSettingsDraft;
     initialFocusRef: RefObject<HTMLInputElement | null>;
@@ -44,7 +44,7 @@ export function AccountSettingsFields({
                     key={field}
                     label={label}
                     lock={locks[field]}
-                    onChange={value => onChange({ ...draft, [field]: value })}
+                    onChange={(value) => onChange({ ...draft, [field]: value })}
                 />
             ))}
             <label className={styles.field}>
@@ -53,10 +53,11 @@ export function AccountSettingsFields({
                     inputMode="numeric"
                     max={120_000}
                     min={1_000}
-                    onChange={event => onChange({
-                        ...draft,
-                        controlReadTimeoutMs: event.target.value,
-                    })}
+                    onChange={(event) =>
+                        onChange({
+                            ...draft,
+                            controlReadTimeoutMs: event.target.value
+                        })}
                     step={1_000}
                     type="number"
                     value={draft.controlReadTimeoutMs}
@@ -73,7 +74,7 @@ function PreferenceField({
     initialFocusRef,
     label,
     lock,
-    onChange,
+    onChange
 }: Readonly<{
     draft: AccountSettingsDraft;
     field: RecipeConsoleManagedPreferenceField;
@@ -87,7 +88,7 @@ function PreferenceField({
             <span>{label}</span>
             <input
                 disabled={Boolean(lock)}
-                onChange={event => onChange(event.target.value)}
+                onChange={(event) => onChange(event.target.value)}
                 ref={initialFocusRef}
                 spellCheck={false}
                 type={field === 'controlUrl' || field === 'apiBaseUrl'
@@ -95,15 +96,13 @@ function PreferenceField({
                     : 'text'}
                 value={draft[field]}
             />
-            {lock ? (
-                <small>Managed by {lock === 'url' ? 'URL' : 'deployment'}</small>
-            ) : null}
+            {lock ? <small>Managed by {lock === 'url' ? 'URL' : 'deployment'}</small> : null}
         </label>
     );
 }
 
 export function accountSettingsDraftFromValues(
-    values: Required<RecipeConsolePreferences>,
+    values: Required<RecipeConsolePreferences>
 ): AccountSettingsDraft {
     return {
         controlUrl: values.controlUrl,
@@ -111,6 +110,6 @@ export function accountSettingsDraftFromValues(
         applicationId: values.applicationId,
         workspaceId: values.workspaceId,
         groupId: values.groupId,
-        controlReadTimeoutMs: String(values.controlReadTimeoutMs),
+        controlReadTimeoutMs: String(values.controlReadTimeoutMs)
     };
 }

@@ -1,18 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import type { RecipeConsoleControlRetentionCapability } from
-    '../control/control-api.ts';
-import type {
-    ControlQueryAuthorization,
-    ControlQueryError,
-} from '../control/control-query.ts';
-import type { RecipeConsoleUrlState } from
-    '../routing/url-state-contract.ts';
-import { RetentionConfirmDialog } from './RetentionConfirmDialog.tsx';
-import { RetentionPanel } from './RetentionPanel.tsx';
+import type { RecipeConsoleControlRetentionCapability } from '../control/control-api.ts';
+import type { ControlQueryAuthorization, ControlQueryError } from '../control/control-query.ts';
+import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import {
     captureRetentionSelectionBeforeCleanup,
-    retentionSelectionPatchAfterCleanup,
+    retentionSelectionPatchAfterCleanup
 } from './retention-selection-patch.ts';
+import { RetentionConfirmDialog } from './RetentionConfirmDialog.tsx';
+import { RetentionPanel } from './RetentionPanel.tsx';
 import { useRetentionCleanup } from './use-retention-cleanup.ts';
 
 export function HistoryRetentionWorkspace({
@@ -21,7 +16,7 @@ export function HistoryRetentionWorkspace({
     lastError,
     refreshAfterCurrent,
     replace,
-    urlState,
+    urlState
 }: Readonly<{
     authorization: ControlQueryAuthorization;
     capability?: RecipeConsoleControlRetentionCapability;
@@ -33,7 +28,7 @@ export function HistoryRetentionWorkspace({
     const availability = retentionAvailability(
         capability,
         authorization,
-        lastError,
+        lastError
     );
     const cleanup = useRetentionCleanup(availability);
     const [dialogOpen, setDialogOpen] = useState(false);
@@ -45,7 +40,7 @@ export function HistoryRetentionWorkspace({
         if (
             dialogOpen &&
             ['drift', 'error', 'unavailable', 'succeeded'].includes(
-                cleanup.state.status,
+                cleanup.state.status
             )
         ) {
             setDialogOpen(false);
@@ -53,27 +48,35 @@ export function HistoryRetentionWorkspace({
     }, [cleanup.state.status, dialogOpen]);
 
     function requestConfirm(returnFocus: HTMLButtonElement): void {
-        if (!cleanup.canConfirm) return;
+        if (!cleanup.canConfirm) {
+            return;
+        }
         restoreFocusRef.current = returnFocus;
         setDialogOpen(true);
     }
 
     function confirm(): void {
         const preview = cleanup.state.preview;
-        if (!preview?.current || !cleanup.canConfirm) return;
+        if (!preview?.current || !cleanup.canConfirm) {
+            return;
+        }
         const capture = captureRetentionSelectionBeforeCleanup({
             urlState,
-            candidates: preview.candidates,
+            candidates: preview.candidates
         });
         void cleanup.confirm(async (confirmation, _preview, signal) => {
             await refreshAfterCurrent();
-            if (signal.aborted) return;
+            if (signal.aborted) {
+                return;
+            }
             const patch = retentionSelectionPatchAfterCleanup({
                 capture,
                 currentUrlState: latestUrlStateRef.current,
-                deletedRunIds: confirmation.deletedRunIds,
+                deletedRunIds: confirmation.deletedRunIds
             });
-            if (Object.keys(patch).length > 0) replace(patch);
+            if (Object.keys(patch).length > 0) {
+                replace(patch);
+            }
         });
     }
 
@@ -102,7 +105,7 @@ export function HistoryRetentionWorkspace({
 function retentionAvailability(
     capability: RecipeConsoleControlRetentionCapability | undefined,
     authorization: ControlQueryAuthorization,
-    lastError: ControlQueryError | undefined,
+    lastError: ControlQueryError | undefined
 ): Readonly<{
     capability?: RecipeConsoleControlRetentionCapability;
     unavailableReason?: string;

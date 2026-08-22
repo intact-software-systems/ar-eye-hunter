@@ -3,14 +3,14 @@ export function resolvePublicServerUrl(request: Request): string {
     const forwarded = parseForwardedHeader(firstHeaderValue(request.headers.get('forwarded')));
     const protocol = normalizeProtocol(
         firstHeaderValue(request.headers.get('x-forwarded-proto')) ??
-        forwarded.proto ??
-        requestUrl.protocol,
+            forwarded.proto ??
+            requestUrl.protocol
     );
     const host = normalizeHost(
         firstHeaderValue(request.headers.get('x-forwarded-host')) ??
-        forwarded.host ??
-        request.headers.get('host') ??
-        requestUrl.host,
+            forwarded.host ??
+            request.headers.get('host') ??
+            requestUrl.host
     );
 
     return `${protocol}://${host}`;
@@ -19,7 +19,7 @@ export function resolvePublicServerUrl(request: Request): string {
 export function withPublicOpenApiServer(
     spec: unknown,
     request: Request,
-    description: string,
+    description: string
 ): unknown {
     if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
         return spec;
@@ -30,9 +30,9 @@ export function withPublicOpenApiServer(
         servers: [
             {
                 url: resolvePublicServerUrl(request),
-                description,
-            },
-        ],
+                description
+            }
+        ]
     };
 }
 
@@ -41,12 +41,12 @@ function firstHeaderValue(value: string | null): string | undefined {
     return first ? stripQuotes(first) : undefined;
 }
 
-function parseForwardedHeader(value: string | undefined): { proto?: string; host?: string } {
+function parseForwardedHeader(value: string | undefined): { proto?: string; host?: string; } {
     if (!value) {
         return {};
     }
 
-    const result: { proto?: string; host?: string } = {};
+    const result: { proto?: string; host?: string; } = {};
     for (const segment of value.split(';')) {
         const [rawKey, ...rawValue] = segment.split('=');
         const key = rawKey?.trim().toLowerCase();
@@ -56,7 +56,8 @@ function parseForwardedHeader(value: string | undefined): { proto?: string; host
         }
         if (key === 'proto') {
             result.proto = headerValue;
-        } else if (key === 'host') {
+        }
+        else if (key === 'host') {
             result.host = headerValue;
         }
     }

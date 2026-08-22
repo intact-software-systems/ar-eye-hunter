@@ -1,23 +1,20 @@
 import { describe, expect, it } from 'vitest';
+import { rememberControlResponseDocument } from '../../../apps/rallar-black-box/src/control-response-document.ts';
+import { isControlSelectionIndexBoundToSnapshot } from '../../../apps/rallar-black-box/src/control-selection-index-binding.ts';
+import {
+    controlSelectionIndexCacheWorkForTest,
+    createControlSelectionIndexCache
+} from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection-index-cache.ts';
+import { createControlSnapshotRevisionSession } from '../../../apps/rallar-black-box/src/recipe-console/control/control-snapshot-revision.ts';
+import {
+    rebindControlRunFromSelectionIndex,
+    rebindDistributedRunFromSelectionIndex
+} from '../../../packages/shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
 import type {
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
-    ControlServerSnapshot,
+    ControlServerSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
-import {
-    rebindControlRunFromSelectionIndex,
-    rebindDistributedRunFromSelectionIndex,
-} from '../../../packages/shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
-import { rememberControlResponseDocument } from
-    '../../../apps/rallar-black-box/src/control-response-document.ts';
-import {
-    createControlSelectionIndexCache,
-    controlSelectionIndexCacheWorkForTest,
-} from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection-index-cache.ts';
-import { createControlSnapshotRevisionSession } from
-    '../../../apps/rallar-black-box/src/recipe-console/control/control-snapshot-revision.ts';
-import { isControlSelectionIndexBoundToSnapshot } from
-    '../../../apps/rallar-black-box/src/control-selection-index-binding.ts';
 
 const SCALE = 5_000;
 
@@ -31,11 +28,11 @@ describe('Recipe Console control selection index cache', () => {
         rememberControlResponseDocument(second, raw);
         revisions.associate(first, {
             source: 'root-snapshot',
-            rootDocument: first,
+            rootDocument: first
         });
         revisions.associate(second, {
             source: 'root-snapshot',
-            rootDocument: second,
+            rootDocument: second
         });
         const cache = createControlSelectionIndexCache();
 
@@ -51,8 +48,8 @@ describe('Recipe Console control selection index cache', () => {
                 indexBuildCount: 1,
                 controlRunVisitCount: SCALE,
                 distributedRunVisitCount: SCALE,
-                selectionIndexLoopVisitCount: SCALE * 8,
-            },
+                selectionIndexLoopVisitCount: SCALE * 8
+            }
         });
 
         const secondIndex = cache.get(second);
@@ -68,24 +65,24 @@ describe('Recipe Console control selection index cache', () => {
                 indexBuildCount: 0,
                 controlRunVisitCount: 0,
                 distributedRunVisitCount: 0,
-                selectionIndexLoopVisitCount: 0,
-            },
+                selectionIndexLoopVisitCount: 0
+            }
         });
         const lateOrdinal = SCALE - 1;
         expect(rebindControlRunFromSelectionIndex(
             secondIndex,
             second,
-            `control-first-${lateOrdinal}`,
+            `control-first-${lateOrdinal}`
         )).toBe(second.runs[lateOrdinal]);
         expect(rebindDistributedRunFromSelectionIndex(
             secondIndex,
             second,
-            `distributed-first-${lateOrdinal}`,
+            `distributed-first-${lateOrdinal}`
         )).toBe(second.distributedRuns![lateOrdinal]);
         expect(rebindControlRunFromSelectionIndex(
             secondIndex,
             second,
-            `control-first-${lateOrdinal}`,
+            `control-first-${lateOrdinal}`
         )).not.toBe(first.runs[lateOrdinal]);
     });
 
@@ -103,7 +100,7 @@ describe('Recipe Console control selection index cache', () => {
             lookupCount: 4,
             hitCount: 1,
             missCount: 3,
-            indexBuildCount: 3,
+            indexBuildCount: 3
         });
     });
 
@@ -114,19 +111,19 @@ describe('Recipe Console control selection index cache', () => {
             ...second.runs[1]!,
             agents: [{
                 ...second.runs[1]!.agents[0]!,
-                status: 'changed-with-same-identities-and-timestamps',
-            }],
+                status: 'changed-with-same-identities-and-timestamps'
+            }]
         };
         const revisions = createControlSnapshotRevisionSession();
         rememberControlResponseDocument(first, JSON.stringify(first));
         rememberControlResponseDocument(second, JSON.stringify(second));
         revisions.associate(first, {
             source: 'root-snapshot',
-            rootDocument: first,
+            rootDocument: first
         });
         revisions.associate(second, {
             source: 'root-snapshot',
-            rootDocument: second,
+            rootDocument: second
         });
         const cache = createControlSelectionIndexCache();
 
@@ -141,19 +138,18 @@ describe('Recipe Console control selection index cache', () => {
             lookupCount: 3,
             hitCount: 0,
             missCount: 3,
-            indexBuildCount: 3,
+            indexBuildCount: 3
         });
     });
 });
 
 function snapshot(suffix: string, size = 2): MutableSnapshot {
-    const runs = Array.from({ length: size }, (_, ordinal) =>
-        controlRun(`control-${suffix}-${ordinal}`, ordinal));
+    const runs = Array.from({ length: size }, (_, ordinal) => controlRun(`control-${suffix}-${ordinal}`, ordinal));
     const distributedRuns = Array.from({ length: size }, (_, ordinal) =>
         distributedRun(
             `distributed-${suffix}-${ordinal}`,
             runs[ordinal]!.runId,
-            ordinal,
+            ordinal
         ));
     return { runs, distributedRuns };
 }
@@ -177,21 +173,21 @@ function controlRun(runId: string, updatedAtEpochMs: number): ControlRunSnapshot
             receivedResultCount: 0,
             receivedEventCount: 0,
             completedCommandIds: [],
-            resumeCompletedCommandIds: [],
+            resumeCompletedCommandIds: []
         }],
         commands: [],
         results: [],
         events: [],
         stats: [],
         reports: [],
-        heartbeats: [],
+        heartbeats: []
     };
 }
 
 function distributedRun(
     distributedRunId: string,
     controlRunId: string,
-    updatedAtEpochMs: number,
+    updatedAtEpochMs: number
 ): ControlDistributedRunSnapshot {
     return {
         distributedRunId,
@@ -202,10 +198,10 @@ function distributedRun(
             group: {
                 applicationId: 'test',
                 workspaceId: 'test',
-                groupId: 'test',
+                groupId: 'test'
             },
             recipes: [],
-            targetPolicy: { mode: 'selected-agents', agentIds: [] },
+            targetPolicy: { mode: 'selected-agents', agentIds: [] }
         },
         state: 'running',
         createdAtEpochMs: updatedAtEpochMs,
@@ -228,9 +224,9 @@ function distributedRun(
                 groupAssertions: 0,
                 passedGroupAssertions: 0,
                 failedGroupAssertions: 0,
-                blockingFailures: 0,
+                blockingFailures: 0
             },
-            failures: [],
-        },
+            failures: []
+        }
     };
 }

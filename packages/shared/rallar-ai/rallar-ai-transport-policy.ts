@@ -4,14 +4,14 @@ export const RALLAR_AI_DEFAULT_TRANSPORT_POLICY: RallarAiTransportPolicy = {
     delivery: 'ephemeral',
     ordering: 'none',
     acknowledgement: 'none',
-    conflictPolicy: 'app-defined',
+    conflictPolicy: 'app-defined'
 };
 
 export function defineRallarAiTransportPolicy(
-    policy: Partial<RallarAiTransportPolicy> = {},
+    policy: Partial<RallarAiTransportPolicy> = {}
 ): RallarAiTransportPolicy {
     return {
         ...RALLAR_AI_DEFAULT_TRANSPORT_POLICY,
-        ...policy,
+        ...policy
     };
 }

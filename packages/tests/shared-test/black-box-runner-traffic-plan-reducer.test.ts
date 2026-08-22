@@ -1,7 +1,5 @@
-import {describe, expect, it} from 'vitest';
-import {
-    reduceBlackBoxTrafficPlanFailure,
-} from '../../shared-test/black-box-runner/traffic-plan-reducer.ts';
+import { describe, expect, it } from 'vitest';
+import { reduceBlackBoxTrafficPlanFailure } from '../../shared-test/black-box-runner/traffic-plan-reducer.ts';
 
 function isJsonRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -11,10 +9,12 @@ function step(name: string, sequence?: number): Record<string, unknown> {
     return {
         name,
         type: name.startsWith('wait') ? 'rtc.wait' : 'rtc.send',
-        ...(sequence ? {
-            trafficSequence: sequence,
-            trafficOperation: `operation-${sequence}`,
-        } : {}),
+        ...(sequence
+            ? {
+                trafficSequence: sequence,
+                trafficOperation: `operation-${sequence}`
+            }
+            : {})
     };
 }
 
@@ -22,7 +22,7 @@ function deterministicExpandedPlan(): Record<string, unknown> {
     const steps = [
         {
             name: 'connectActors',
-            type: 'rtc.connect',
+            type: 'rtc.connect'
         },
         step('send1', 1),
         step('wait1', 1),
@@ -36,8 +36,8 @@ function deterministicExpandedPlan(): Record<string, unknown> {
         step('wait5', 5),
         {
             name: 'closeActors',
-            type: 'rtc.close',
-        },
+            type: 'rtc.close'
+        }
     ];
 
     return {
@@ -46,12 +46,12 @@ function deterministicExpandedPlan(): Record<string, unknown> {
         seed: 20260601,
         replay: false,
         generator: {
-            count: 5,
+            count: 5
         },
-        decisions: [1, 2, 3, 4, 5].map(sequence => ({
+        decisions: [1, 2, 3, 4, 5].map((sequence) => ({
             sequence,
             operation: `operation-${sequence}`,
-            operationIndex: sequence,
+            operationIndex: sequence
         })),
         steps,
         replayRecipe: {
@@ -60,12 +60,12 @@ function deterministicExpandedPlan(): Record<string, unknown> {
                     expandedPlan: {
                         version: 1,
                         seed: 20260601,
-                        steps,
-                    },
-                },
+                        steps
+                    }
+                }
             },
-            steps,
-        },
+            steps
+        }
     };
 }
 
@@ -77,14 +77,14 @@ describe('black-box traffic-plan reducer', () => {
                 firstFailure: {
                     name: 'wait3',
                     status: 'FAILURE',
-                    interactionExecutionNumber: 7,
-                },
-            },
+                    interactionExecutionNumber: 7
+                }
+            }
         });
 
         expect(result.plan.kind).toBe('black-box-runner.reduced-plan');
         expect(result.plan.replay).toBe(true);
-        expect((result.plan.steps as Array<{ name: string }>).map(item => item.name)).toEqual([
+        expect((result.plan.steps as Array<{ name: string; }>).map((item) => item.name)).toEqual([
             'connectActors',
             'send1',
             'wait1',
@@ -92,27 +92,27 @@ describe('black-box traffic-plan reducer', () => {
             'wait2',
             'send3',
             'wait3',
-            'closeActors',
+            'closeActors'
         ]);
-        expect((result.plan.decisions as Array<{ sequence: number }>).map(item => item.sequence)).toEqual([1, 2, 3]);
+        expect((result.plan.decisions as Array<{ sequence: number; }>).map((item) => item.sequence)).toEqual([1, 2, 3]);
         expect(result.summary).toMatchObject({
             strategy: 'truncate-after-first-failure',
             firstFailure: {
                 stepName: 'wait3',
-                trafficSequence: 3,
+                trafficSequence: 3
             },
             original: {
                 stepCount: 12,
-                decisionCount: 5,
+                decisionCount: 5
             },
             reduced: {
                 stepCount: 8,
-                decisionCount: 3,
+                decisionCount: 3
             },
             removed: {
                 stepCount: 4,
-                decisionCount: 2,
-            },
+                decisionCount: 2
+            }
         });
         const removed = result.summary.removed;
         if (!isJsonRecord(removed)) {
@@ -123,14 +123,14 @@ describe('black-box traffic-plan reducer', () => {
                 sequence: 4,
                 operation: 'operation-4',
                 operationIndex: 4,
-                stepCount: 2,
+                stepCount: 2
             },
             {
                 sequence: 5,
                 operation: 'operation-5',
                 operationIndex: 5,
-                stepCount: 2,
-            },
+                stepCount: 2
+            }
         ]);
         expect(result.plan.replayRecipe).toMatchObject({
             execution: {
@@ -138,11 +138,11 @@ describe('black-box traffic-plan reducer', () => {
                     expandedPlan: {
                         seed: 20260601,
                         reduction: {
-                            strategy: 'truncate-after-first-failure',
-                        },
-                    },
-                },
-            },
+                            strategy: 'truncate-after-first-failure'
+                        }
+                    }
+                }
+            }
         });
     });
 
@@ -153,21 +153,21 @@ describe('black-box traffic-plan reducer', () => {
                 failures: [
                     {
                         name: 'send2',
-                        status: 'FAILURE',
-                    },
-                ],
-            },
+                        status: 'FAILURE'
+                    }
+                ]
+            }
         });
 
-        expect((result.plan.steps as Array<{ name: string }>).map(item => item.name)).toEqual([
+        expect((result.plan.steps as Array<{ name: string; }>).map((item) => item.name)).toEqual([
             'connectActors',
             'send1',
             'wait1',
             'send2',
             'wait2',
-            'closeActors',
+            'closeActors'
         ]);
-        expect((result.plan.decisions as Array<{ sequence: number }>).map(item => item.sequence)).toEqual([1, 2]);
+        expect((result.plan.decisions as Array<{ sequence: number; }>).map((item) => item.sequence)).toEqual([1, 2]);
     });
 
     it('keeps decisions when legacy expanded-plan steps have no traffic sequence metadata', () => {
@@ -178,14 +178,14 @@ describe('black-box traffic-plan reducer', () => {
                 decisions: [
                     {
                         sequence: 1,
-                        operation: 'legacy',
-                    },
+                        operation: 'legacy'
+                    }
                 ],
                 steps: [
                     {
                         name: 'legacyTrafficStep',
-                        type: 'rtc.send',
-                    },
+                        type: 'rtc.send'
+                    }
                 ],
                 replayRecipe: {
                     execution: {
@@ -195,33 +195,35 @@ describe('black-box traffic-plan reducer', () => {
                                 steps: [
                                     {
                                         name: 'legacyTrafficStep',
-                                        type: 'rtc.send',
-                                    },
-                                ],
-                            },
-                        },
+                                        type: 'rtc.send'
+                                    }
+                                ]
+                            }
+                        }
                     },
                     steps: [
                         {
                             name: 'legacyTrafficStep',
-                            type: 'rtc.send',
-                        },
-                    ],
-                },
+                            type: 'rtc.send'
+                        }
+                    ]
+                }
             },
-            firstFailureName: 'legacyTrafficStep',
+            firstFailureName: 'legacyTrafficStep'
         });
 
         expect(result.summary.removed).toMatchObject({
             stepCount: 0,
-            decisionCount: 0,
+            decisionCount: 0
         });
-        expect((result.plan.decisions as Array<{ sequence: number }>).map(item => item.sequence)).toEqual([1]);
+        expect((result.plan.decisions as Array<{ sequence: number; }>).map((item) => item.sequence)).toEqual([1]);
     });
 
     it('reports actionable errors when first-failure evidence is missing', () => {
-        expect(() => reduceBlackBoxTrafficPlanFailure({
-            expandedPlan: deterministicExpandedPlan(),
-        })).toThrow('requires first-failure evidence');
+        expect(() =>
+            reduceBlackBoxTrafficPlanFailure({
+                expandedPlan: deterministicExpandedPlan()
+            })
+        ).toThrow('requires first-failure evidence');
     });
 });

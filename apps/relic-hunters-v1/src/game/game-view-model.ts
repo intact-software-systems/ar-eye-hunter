@@ -3,7 +3,7 @@ import type {
     RelicActionKind,
     RelicEvent,
     RelicPlayer,
-    RelicPublicSnapshot,
+    RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
 import { legalMoveTargets } from '@relic-hunters/mod.ts';
 import { UI, type Lang } from './lang.ts';
@@ -81,51 +81,47 @@ export const RELIC_ACTION_KINDS: readonly RelicActionKind[] = [
     'move',
     'search',
     'steal',
-    'escape',
+    'escape'
 ];
 
 export const RELIC_ACTION_INFO: Readonly<Record<RelicActionKind, RelicActionInfo>> = {
     move: {
         label: 'Move',
         noise: 'quiet',
-        description: 'Step into an adjacent room to reach relics or race toward the exit.',
+        description: 'Step into an adjacent room to reach relics or race toward the exit.'
     },
     search: {
         label: 'Search',
         noise: 'noisy',
-        description: 'Look for relics in this room. Searching creates danger but wins games.',
+        description: 'Look for relics in this room. Searching creates danger but wins games.'
     },
     steal: {
         label: 'Steal',
         noise: 'loud',
-        description: 'Take a relic from another hunter in your room. Failed attempts still make noise.',
+        description: 'Take a relic from another hunter in your room. Failed attempts still make noise.'
     },
     escape: {
         label: 'Escape',
         noise: 'silent',
-        description: 'Leave from the Exit with your relics. Escaped hunters keep their score safe.',
-    },
+        description: 'Leave from the Exit with your relics. Escaped hunters keep their score safe.'
+    }
 };
 
 export function deriveRelicGameViewModel({
-                                             snapshot,
-                                             localPlayerId,
-                                             draft,
-                                             lang,
-                                             revealedEvents = [],
-                                         }: Readonly<{
+    snapshot,
+    localPlayerId,
+    draft,
+    lang,
+    revealedEvents = []
+}: Readonly<{
     snapshot?: RelicPublicSnapshot;
     localPlayerId?: string;
     draft: ActionDraft;
     lang: Lang;
     revealedEvents?: readonly RelicEvent[];
 }>): RelicGameViewModel {
-    const currentPlayer = snapshot?.players.find((player) =>
-        player.playerId === localPlayerId
-    );
-    const currentRoom = snapshot?.map.find((room) =>
-        room.id === currentPlayer?.roomId
-    );
+    const currentPlayer = snapshot?.players.find((player) => player.playerId === localPlayerId);
+    const currentRoom = snapshot?.map.find((room) => room.id === currentPlayer?.roomId);
     const moveTargets = snapshot && currentPlayer
         ? legalMoveTargets(snapshot, currentPlayer)
         : [];
@@ -164,7 +160,7 @@ export function deriveRelicGameViewModel({
         roundLimitWarning: warnings.find((warning) => warning.kind === 'round-limit'),
         actionBriefDanger: warnings.find((warning) => warning.kind === 'search-danger')?.message,
         isAdmin: currentPlayer?.playerId === adminPlayerId,
-        roundNoiseCount: roundNoiseCount(snapshot, revealedEvents),
+        roundNoiseCount: roundNoiseCount(snapshot, revealedEvents)
     };
 }
 
@@ -173,7 +169,7 @@ function deriveActionOptions(
     currentPlayer: RelicPlayer | undefined,
     currentRoom: RelicPublicSnapshot['map'][number] | undefined,
     moveTargets: readonly string[],
-    stealTargets: readonly RelicPlayer[],
+    stealTargets: readonly RelicPlayer[]
 ): Readonly<Record<RelicActionKind, RelicActionOption>> {
     return Object.fromEntries(RELIC_ACTION_KINDS.map((kind) => {
         const blocker = snapshot && currentPlayer
@@ -190,11 +186,11 @@ function deriveActionOptions(
                     currentRoom,
                     moveTargets,
                     stealTargets,
-                    currentPlayer,
+                    currentPlayer
                 ),
                 legal: !blocker,
-                blocker,
-            },
+                blocker
+            }
         ];
     })) as Record<RelicActionKind, RelicActionOption>;
 }
@@ -202,7 +198,7 @@ function deriveActionOptions(
 function deriveTurnStatus(
     snapshot: RelicPublicSnapshot | undefined,
     currentPlayer: RelicPlayer | undefined,
-    submitBlocker: string | undefined,
+    submitBlocker: string | undefined
 ): RelicTurnStatus {
     const activeCount = snapshot ? activePlayerCount(snapshot) : 0;
     const submittedCount = snapshot?.submittedPlayerIds.length ?? 0;
@@ -220,7 +216,7 @@ function deriveTurnStatus(
             !!currentPlayer &&
             !isLocked &&
             !submitBlocker,
-        isLocked,
+        isLocked
     };
 }
 
@@ -229,16 +225,18 @@ function deriveWarnings(
     currentPlayer: RelicPlayer | undefined,
     currentRoom: RelicPublicSnapshot['map'][number] | undefined,
     draft: ActionDraft,
-    revealedEvents: readonly RelicEvent[],
+    revealedEvents: readonly RelicEvent[]
 ): readonly RelicGameWarning[] {
-    if (!snapshot) return [];
+    if (!snapshot) {
+        return [];
+    }
 
     const warnings: RelicGameWarning[] = [];
     if (currentPlayer?.health === 1 && !currentPlayer.escaped && !currentPlayer.defeated) {
         warnings.push({
             kind: 'low-health',
             severity: 'danger',
-            message: 'One hit from defeat - move carefully.',
+            message: 'One hit from defeat - move carefully.'
         });
     }
 
@@ -248,20 +246,20 @@ function deriveWarnings(
             severity: snapshot.round >= snapshot.maxRounds ? 'danger' : 'warning',
             message: snapshot.round >= snapshot.maxRounds
                 ? 'Final round - escape or be lost to the ruin.'
-                : `${snapshot.maxRounds - snapshot.round} round${snapshot.maxRounds - snapshot.round === 1 ? '' : 's'} remaining - the ruin closes soon.`,
+                : `${snapshot.maxRounds - snapshot.round} round${
+                    snapshot.maxRounds - snapshot.round === 1 ? '' : 's'
+                } remaining - the ruin closes soon.`
         });
     }
 
     const danger = currentRoom && draft.kind === 'search'
-        ? snapshot.roomInvestigations?.find((investigation) =>
-            investigation.roomId === currentRoom.id
-        )?.danger
+        ? snapshot.roomInvestigations?.find((investigation) => investigation.roomId === currentRoom.id)?.danger
         : undefined;
     if (danger) {
         warnings.push({
             kind: 'search-danger',
             severity: 'warning',
-            message: danger,
+            message: danger
         });
     }
 
@@ -270,7 +268,7 @@ function deriveWarnings(
         warnings.push({
             kind: 'round-noise',
             severity: 'warning',
-            message: 'Rooms destabilising',
+            message: 'Rooms destabilising'
         });
     }
 
@@ -283,9 +281,11 @@ export function actionConsequence(
     currentRoom: RelicPublicSnapshot['map'][number] | undefined,
     moveTargets: readonly string[],
     stealTargets: readonly RelicPlayer[],
-    currentPlayer: RelicPlayer | undefined,
+    currentPlayer: RelicPlayer | undefined
 ): ActionConsequence {
-    if (!snapshot || !currentPlayer) return { text: '-', status: 'ok' };
+    if (!snapshot || !currentPlayer) {
+        return { text: '-', status: 'ok' };
+    }
     switch (kind) {
         case 'move':
             return moveTargets.length > 0
@@ -293,7 +293,7 @@ export function actionConsequence(
                 : { text: 'all paths blocked', status: 'block' };
         case 'search': {
             const searched = snapshot.roomInvestigations?.some(
-                (investigation) => investigation.roomId === currentPlayer.roomId,
+                (investigation) => investigation.roomId === currentPlayer.roomId
             );
             return searched
                 ? { text: 'already searched here', status: 'warn' }
@@ -312,7 +312,7 @@ export function actionConsequence(
 
 export function toProgress(
     snapshot: RelicPublicSnapshot,
-    localPlayerId: string | undefined,
+    localPlayerId: string | undefined
 ): RelicProgressSummary {
     const foundCount = snapshot.relics.filter((relic) => relic.foundBy).length;
     const escapedCount = snapshot.players.filter((player) => player.escaped).length;
@@ -322,14 +322,14 @@ export function toProgress(
         relics: `${foundCount}/${snapshot.relics.length}`,
         escape: localPlayer?.escaped
             ? 'safe'
-            : `${escapedCount}/${Math.max(snapshot.players.length, 1)}`,
+            : `${escapedCount}/${Math.max(snapshot.players.length, 1)}`
     };
 }
 
 export function toObjective(
     snapshot: RelicPublicSnapshot,
     currentPlayer: RelicPlayer | undefined,
-    lang: Lang,
+    lang: Lang
 ): string {
     const u = UI[lang];
     if (snapshot.phase === 'finished') {
@@ -383,7 +383,7 @@ export function actionBlocker(
     draft: ActionDraft,
     moveTargets: readonly string[],
     stealTargets: readonly RelicPlayer[],
-    currentRoom?: RelicPublicSnapshot['map'][number],
+    currentRoom?: RelicPublicSnapshot['map'][number]
 ): string | undefined {
     if (snapshot.phase !== 'planning') {
         return 'Start the expedition before locking plans.';
@@ -414,11 +414,11 @@ export function actionBlocker(
 
 function roundNoiseCount(
     snapshot: RelicPublicSnapshot | undefined,
-    revealedEvents: readonly RelicEvent[],
+    revealedEvents: readonly RelicEvent[]
 ): number {
     return snapshot
         ? revealedEvents.filter(
-            (event) => event.round === snapshot.round - 1 && event.type === 'noise_pulse',
+            (event) => event.round === snapshot.round - 1 && event.type === 'noise_pulse'
         ).length
         : 0;
 }

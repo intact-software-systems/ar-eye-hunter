@@ -1,10 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { BROWSER_RTT_HEARTBEAT_TTL_MS, toBrowserRtcInboundPeerCreationDecision, toBrowserRttHeartbeatMessage } from '@shared-web/browser/middleware.ts';
 import { AppTopics, type RttMeasurementInfo } from '@shared/api/api-config.ts';
-import {
-    BROWSER_RTT_HEARTBEAT_TTL_MS,
-    toBrowserRtcInboundPeerCreationDecision,
-    toBrowserRttHeartbeatMessage,
-} from '@shared-web/browser/middleware.ts';
+import { describe, expect, it } from 'vitest';
 
 describe('browser middleware RTT heartbeat messages', () => {
     it('uses short-lived versioned AL messages for RTT observations', () => {
@@ -26,10 +22,10 @@ describe('browser middleware RTC inbound peer admission', () => {
     it('treats unknown group ownership as tentative instead of denied', () => {
         expect(toBrowserRtcInboundPeerCreationDecision(false)).toEqual({
             decision: 'tentative',
-            reason: 'group-state-eventually-consistent',
+            reason: 'group-state-eventually-consistent'
         });
         expect(toBrowserRtcInboundPeerCreationDecision(true)).toEqual({
-            decision: 'allow',
+            decision: 'allow'
         });
     });
 });
@@ -40,6 +36,6 @@ function rtt(version: number): RttMeasurementInfo {
         sessionIdTo: 'session-b',
         rttMs: 25 + version,
         createdAtEpochMs: 1_000 + version,
-        version,
+        version
     };
 }

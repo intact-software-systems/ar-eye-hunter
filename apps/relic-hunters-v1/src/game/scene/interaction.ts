@@ -5,33 +5,36 @@ import { computeScenePrompt, roomClueHotspot, roomClueHotspots, samePrompt } fro
 import type { InspectionFocus, ScenePrompt } from './types.ts';
 
 export type SceneInteractionState = Readonly<{
-    snapshot: { value?: RelicPublicSnapshot };
-    localPlayerId: { value?: string };
-    cameraYaw: { value: number };
+    snapshot: { value?: RelicPublicSnapshot; };
+    localPlayerId: { value?: string; };
+    cameraYaw: { value: number; };
     roamOffset: Vector3;
-    prompt: { value?: ScenePrompt };
-    onPromptChange: { value(prompt?: ScenePrompt): void };
-    inspection: { value?: InspectionFocus };
+    prompt: { value?: ScenePrompt; };
+    onPromptChange: { value(prompt?: ScenePrompt): void; };
+    inspection: { value?: InspectionFocus; };
 }>;
 
 export function updateScenePrompt(
     state: SceneInteractionState,
     room: RelicRoom,
-    forward: Vector3,
+    forward: Vector3
 ): void {
-    setRuntimePrompt(state, computeScenePrompt({
-        snapshot: state.snapshot.value,
-        localPlayerId: state.localPlayerId.value,
-        room,
-        roamOffset: state.roamOffset,
-        forward,
-        inspection: state.inspection.value,
-    }));
+    setRuntimePrompt(
+        state,
+        computeScenePrompt({
+            snapshot: state.snapshot.value,
+            localPlayerId: state.localPlayerId.value,
+            room,
+            roamOffset: state.roamOffset,
+            forward,
+            inspection: state.inspection.value
+        })
+    );
 }
 
 export function startInspection(
     state: SceneInteractionState,
-    hotspotId?: string,
+    hotspotId?: string
 ): boolean {
     const local = localPlayerRoom(state.snapshot.value, state.localPlayerId.value);
     if (!local) {
@@ -47,13 +50,13 @@ export function startInspection(
     const promptHotspotId = state.prompt.value?.kind === 'search'
         ? state.prompt.value.hotspotId
         : undefined;
-    const focusedHotspot = roomClueHotspots(local.room).find((hotspot) =>
-        hotspot.id === (hotspotId ?? promptHotspotId)
-    ) ?? roomClueHotspot(local.room);
+    const focusedHotspot =
+        roomClueHotspots(local.room).find((hotspot) => hotspot.id === (hotspotId ?? promptHotspotId)) ??
+            roomClueHotspot(local.room);
 
     state.inspection.value = {
         roomId: local.room.id,
-        hotspot: focusedHotspot,
+        hotspot: focusedHotspot
     };
     updateScenePrompt(state, local.room, yawToForward(state.cameraYaw.value));
     return true;
@@ -61,7 +64,7 @@ export function startInspection(
 
 export function shouldExitInspection(
     state: SceneInteractionState,
-    room: RelicRoom,
+    room: RelicRoom
 ): boolean {
     const inspection = state.inspection.value;
     if (!inspection) {
@@ -75,7 +78,7 @@ export function shouldExitInspection(
     const distance = new Vector3(
         inspection.hotspot.x - state.roamOffset.x,
         0,
-        inspection.hotspot.z - state.roamOffset.z,
+        inspection.hotspot.z - state.roamOffset.z
     ).length();
 
     return distance > 2.55;
@@ -83,7 +86,7 @@ export function shouldExitInspection(
 
 export function setRuntimePrompt(
     state: SceneInteractionState,
-    prompt: ScenePrompt | undefined,
+    prompt: ScenePrompt | undefined
 ): void {
     if (samePrompt(state.prompt.value, prompt)) {
         return;
@@ -95,12 +98,14 @@ export function setRuntimePrompt(
 
 function localPlayerRoom(
     snapshot: RelicPublicSnapshot | undefined,
-    localPlayerId: string | undefined,
-): Readonly<{
-    snapshot: RelicPublicSnapshot;
-    player: RelicPublicSnapshot['players'][number];
-    room: RelicRoom;
-}> | undefined {
+    localPlayerId: string | undefined
+):
+    | Readonly<{
+        snapshot: RelicPublicSnapshot;
+        player: RelicPublicSnapshot['players'][number];
+        room: RelicRoom;
+    }>
+    | undefined {
     const player = snapshot?.players.find((candidate) => candidate.playerId === localPlayerId);
     if (!snapshot || !player || player.escaped || player.defeated) {
         return undefined;

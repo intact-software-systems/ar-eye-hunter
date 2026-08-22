@@ -1,9 +1,8 @@
+import { LoanedMementoOptions, LoanedMementoValue } from './LoanedMementoValue.ts';
 import { LoanedValue, LoanedValueOptions, LoanedValueRefresh } from './LoanedValue.ts';
-import { LoanedMementoOptions, LoanedMementoValue, } from './LoanedMementoValue.ts';
 import { LoanedRepositoryRefresh, PullMementoKeyedValues } from './RepositoryInterfaces.ts';
 
-export interface LoanedMementoRepositoryOptions<V>
-    extends LoanedMementoOptions<V> {
+export interface LoanedMementoRepositoryOptions<V> extends LoanedMementoOptions<V> {
 }
 
 export class LoanedMementoRepository<K, V> implements PullMementoKeyedValues<K, V> {
@@ -13,7 +12,7 @@ export class LoanedMementoRepository<K, V> implements PullMementoKeyedValues<K, 
 
     public constructor(
         refresher: LoanedRepositoryRefresh<K, V>,
-        options: LoanedMementoRepositoryOptions<V> = {},
+        options: LoanedMementoRepositoryOptions<V> = {}
     ) {
         if (!refresher) {
             throw new Error('refresher is required');
@@ -24,7 +23,7 @@ export class LoanedMementoRepository<K, V> implements PullMementoKeyedValues<K, 
             ttlMs: options.ttlMs,
             isValid: options.isValid,
             undoDepth: options.undoDepth,
-            redoDepth: options.redoDepth,
+            redoDepth: options.redoDepth
         };
     }
 
@@ -46,7 +45,7 @@ export class LoanedMementoRepository<K, V> implements PullMementoKeyedValues<K, 
 
     public async getWith(
         key: K,
-        refresher: LoanedRepositoryRefresh<K, V>,
+        refresher: LoanedRepositoryRefresh<K, V>
     ): Promise<V> {
         return this.getOrCreate(key).getWith((current) => refresher(key, current));
     }
@@ -57,7 +56,7 @@ export class LoanedMementoRepository<K, V> implements PullMementoKeyedValues<K, 
 
     public async refreshWith(
         key: K,
-        refresher: LoanedRepositoryRefresh<K, V>,
+        refresher: LoanedRepositoryRefresh<K, V>
     ): Promise<V> {
         return this.getOrCreate(key).refreshWith((current) => refresher(key, current));
     }
@@ -119,7 +118,7 @@ export class LoanedMementoRepository<K, V> implements PullMementoKeyedValues<K, 
 
     public setLoan(
         key: K,
-        loan: LoanedValue<V> | undefined,
+        loan: LoanedValue<V> | undefined
     ): this {
         this.getOrCreate(key).setLoan(loan);
         return this;
@@ -127,7 +126,7 @@ export class LoanedMementoRepository<K, V> implements PullMementoKeyedValues<K, 
 
     public commitLoan(
         key: K,
-        loan: LoanedValue<V> | undefined,
+        loan: LoanedValue<V> | undefined
     ): this {
         this.getOrCreate(key).commitLoan(loan);
         return this;
@@ -136,7 +135,7 @@ export class LoanedMementoRepository<K, V> implements PullMementoKeyedValues<K, 
     public setRefresher(
         key: K,
         refresher: LoanedValueRefresh<V>,
-        options: LoanedValueOptions<V> = this.defaultOptions,
+        options: LoanedValueOptions<V> = this.defaultOptions
     ): this {
         this.getOrCreate(key).setRefresher(refresher, options);
         return this;
@@ -145,7 +144,7 @@ export class LoanedMementoRepository<K, V> implements PullMementoKeyedValues<K, 
     public commitRefresher(
         key: K,
         refresher: LoanedValueRefresh<V>,
-        options: LoanedValueOptions<V> = this.defaultOptions,
+        options: LoanedValueOptions<V> = this.defaultOptions
     ): this {
         this.getOrCreate(key).commitRefresher(refresher, options);
         return this;
@@ -154,7 +153,7 @@ export class LoanedMementoRepository<K, V> implements PullMementoKeyedValues<K, 
     public setValue(
         key: K,
         value: V,
-        options: LoanedValueOptions<V> = this.defaultOptions,
+        options: LoanedValueOptions<V> = this.defaultOptions
     ): this {
         this.getOrCreate(key).setValue(value, options);
         return this;
@@ -163,7 +162,7 @@ export class LoanedMementoRepository<K, V> implements PullMementoKeyedValues<K, 
     public commitValue(
         key: K,
         value: V,
-        options: LoanedValueOptions<V> = this.defaultOptions,
+        options: LoanedValueOptions<V> = this.defaultOptions
     ): this {
         this.getOrCreate(key).commitValue(value, options);
         return this;
@@ -172,14 +171,14 @@ export class LoanedMementoRepository<K, V> implements PullMementoKeyedValues<K, 
     public compareAndSetLoan(
         key: K,
         expect: LoanedValue<V> | undefined,
-        update: LoanedValue<V> | undefined,
+        update: LoanedValue<V> | undefined
     ): boolean {
         return this.getOrCreate(key).compareAndSetLoan(expect, update);
     }
 
     public getAndSetLoan(
         key: K,
-        loan: LoanedValue<V> | undefined,
+        loan: LoanedValue<V> | undefined
     ): LoanedValue<V> | undefined {
         return this.getOrCreate(key).getAndSetLoan(loan);
     }
@@ -319,7 +318,7 @@ export class LoanedMementoRepository<K, V> implements PullMementoKeyedValues<K, 
             entry = LoanedMementoValue.empty<V>(this.defaultOptions);
             entry.setRefresher(
                 (current) => this.refresher(key, current),
-                this.defaultOptions,
+                this.defaultOptions
             );
             this.entries.set(key, entry);
         }

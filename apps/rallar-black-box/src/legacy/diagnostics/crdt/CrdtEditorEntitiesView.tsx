@@ -4,13 +4,13 @@ import {
     changeCrdtEditorEntityHealthBatch,
     crdtEditorOperationGroupId,
     setCrdtEditorCooldownMinBatch,
-    updateCrdtEditorEntityBatch,
+    updateCrdtEditorEntityBatch
 } from '../../../crdt-editor.ts';
 import type { CrdtEditorControllerModel } from './use-crdt-editor-controller.ts';
 
 export function CrdtEditorEntitiesView({
-    model,
-}: Readonly<{ model: CrdtEditorControllerModel }>) {
+    model
+}: Readonly<{ model: CrdtEditorControllerModel; }>) {
     const {
         entityId,
         setEntityId,
@@ -30,7 +30,7 @@ export function CrdtEditorEntitiesView({
         value,
         health,
         entities,
-        applyBatch,
+        applyBatch
     } = model;
     return (
         <section className="crdt-editor-workbench">
@@ -54,9 +54,7 @@ export function CrdtEditorEntitiesView({
                     <input
                         type="number"
                         value={entityX}
-                        onChange={(event) =>
-                            setEntityX(Number(event.target.value))
-                        }
+                        onChange={(event) => setEntityX(Number(event.target.value))}
                     />
                 </label>
                 <label>
@@ -64,18 +62,14 @@ export function CrdtEditorEntitiesView({
                     <input
                         type="number"
                         value={entityY}
-                        onChange={(event) =>
-                            setEntityY(Number(event.target.value))
-                        }
+                        onChange={(event) => setEntityY(Number(event.target.value))}
                     />
                 </label>
                 <label>
                     Status
                     <input
                         value={entityStatus}
-                        onChange={(event) =>
-                            setEntityStatus(event.target.value)
-                        }
+                        onChange={(event) => setEntityStatus(event.target.value)}
                     />
                 </label>
                 <label>
@@ -83,9 +77,7 @@ export function CrdtEditorEntitiesView({
                     <input
                         type="number"
                         value={entityDelta}
-                        onChange={(event) =>
-                            setEntityDelta(Number(event.target.value))
-                        }
+                        onChange={(event) => setEntityDelta(Number(event.target.value))}
                     />
                 </label>
                 <label>
@@ -93,9 +85,7 @@ export function CrdtEditorEntitiesView({
                     <input
                         type="number"
                         value={cooldownMin}
-                        onChange={(event) =>
-                            setCooldownMin(Number(event.target.value))
-                        }
+                        onChange={(event) => setCooldownMin(Number(event.target.value))}
                     />
                 </label>
             </div>
@@ -111,11 +101,9 @@ export function CrdtEditorEntitiesView({
                                 type: entityType,
                                 x: entityX,
                                 y: entityY,
-                                operationGroupId:
-                                    crdtEditorOperationGroupId('add-entity'),
-                            }),
-                        )
-                    }
+                                operationGroupId: crdtEditorOperationGroupId('add-entity')
+                            })
+                        )}
                 >
                     Add Entity
                 </button>
@@ -130,11 +118,9 @@ export function CrdtEditorEntitiesView({
                                 x: entityX,
                                 y: entityY,
                                 status: entityStatus,
-                                operationGroupId:
-                                    crdtEditorOperationGroupId('update-entity'),
-                            }),
-                        )
-                    }
+                                operationGroupId: crdtEditorOperationGroupId('update-entity')
+                            })
+                        )}
                 >
                     Update Entity
                 </button>
@@ -147,11 +133,9 @@ export function CrdtEditorEntitiesView({
                             changeCrdtEditorEntityHealthBatch({
                                 entityId,
                                 delta: entityDelta,
-                                operationGroupId:
-                                    crdtEditorOperationGroupId('entity-health'),
-                            }),
-                        )
-                    }
+                                operationGroupId: crdtEditorOperationGroupId('entity-health')
+                            })
+                        )}
                 >
                     Health Delta
                 </button>
@@ -164,11 +148,9 @@ export function CrdtEditorEntitiesView({
                             addCrdtEditorEntityScoreBatch({
                                 entityId,
                                 delta: entityDelta,
-                                operationGroupId:
-                                    crdtEditorOperationGroupId('entity-score'),
-                            }),
-                        )
-                    }
+                                operationGroupId: crdtEditorOperationGroupId('entity-score')
+                            })
+                        )}
                 >
                     Add Score
                 </button>
@@ -181,11 +163,9 @@ export function CrdtEditorEntitiesView({
                             setCrdtEditorCooldownMinBatch({
                                 entityId,
                                 value: cooldownMin,
-                                operationGroupId:
-                                    crdtEditorOperationGroupId('cooldown-min'),
-                            }),
-                        )
-                    }
+                                operationGroupId: crdtEditorOperationGroupId('cooldown-min')
+                            })
+                        )}
                 >
                     Min Cooldown
                 </button>
@@ -206,9 +186,7 @@ export function CrdtEditorEntitiesView({
                         {entities.map((entity) => (
                             <tr
                                 key={entity.id}
-                                className={
-                                    entity.id === entityId ? 'selected' : ''
-                                }
+                                className={entity.id === entityId ? 'selected' : ''}
                                 onClick={() => {
                                     setEntityId(entity.id);
                                     setEntityType(entity.type);

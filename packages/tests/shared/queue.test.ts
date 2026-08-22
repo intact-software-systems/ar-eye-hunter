@@ -1,40 +1,38 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it, vi } from 'vitest';
-import { DequeueResourceEntryController, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { Reservator } from '@shared/queuebox/DequeueController.ts';
+import { DequeueResourceEntryController, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
-import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
+import { toResourceInboxFairnessReservationOptions, type DequeueResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
+import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import {
-    type DequeueResourceEntryRepository,
-    toResourceInboxFairnessReservationOptions,
-} from '@shared/queuebox/QueueBoxTypes.ts';
+import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('enqueue and dequeue', () => {
-
     it('runs exhausted AppInbox finalization recovery without invoking the domain computer or generic release', async () => {
         const finalizedAtEpochMs = Date.parse('2026-07-22T12:00:00Z');
         const selectedDueTs = Temporal.Instant.fromEpochMilliseconds(
-            finalizedAtEpochMs - 6 * 60 * 1000,
+            finalizedAtEpochMs - 6 * 60 * 1000
         );
         const exhausted = createQueueEntry(
             'finalization-recovery',
             EntityStatus.RESERVED,
-            21,
+            21
         );
         const reserveFinalizations = vi.fn()
-            .mockResolvedValueOnce(new Map([[exhausted.key, {
-                entry: exhausted,
-                selectedDueTs,
-            }]]))
+            .mockResolvedValueOnce(
+                new Map([[exhausted.key, {
+                    entry: exhausted,
+                    selectedDueTs
+                }]])
+            )
             .mockResolvedValue(new Map());
         const releaseEntries = vi.fn();
         const recoverFinalization = vi.fn(async () => undefined);
         const domainComputer = vi.fn(async () => 'domain-result');
         const repository = createDequeueRepository({
             reserveRetryExhaustionFinalizations: reserveFinalizations,
-            releaseEntries,
+            releaseEntries
         });
 
         const dequeued = await DequeueResourceEntryController.toDequeuer<string>(
@@ -46,8 +44,8 @@ describe('enqueue and dequeue', () => {
             toTestResilience(),
             {
                 nowEpochMs: () => finalizedAtEpochMs,
-                onRetryExhaustionRecovery: recoverFinalization,
-            } as never,
+                onRetryExhaustionRecovery: recoverFinalization
+            } as never
         )
             .withReturnDequeuedEntries(true)
             .dequeueForCompute(domainComputer);
@@ -57,8 +55,8 @@ describe('enqueue and dequeue', () => {
             {
                 processingAttempts: 20,
                 maxToReserve: 1,
-                staleAfterMs: 5 * 60 * 1000,
-            },
+                staleAfterMs: 5 * 60 * 1000
+            }
         );
         expect(recoverFinalization).toHaveBeenCalledWith(expect.objectContaining({
             entry: exhausted,
@@ -68,11 +66,11 @@ describe('enqueue and dequeue', () => {
             failure: { source: 'finalization-recovery' },
             selectedDueAtEpochMs: Number(selectedDueTs.epochMilliseconds),
             dueAgeMs: 6 * 60 * 1000,
-            finalizedAtEpochMs,
+            finalizedAtEpochMs
         }));
         expect(domainComputer).not.toHaveBeenCalled();
         expect(releaseEntries).not.toHaveBeenCalled();
-        expect(dequeued.get((Reservator as unknown as { FINALIZATION: Reservator }).FINALIZATION))
+        expect(dequeued.get((Reservator as unknown as { FINALIZATION: Reservator; }).FINALIZATION))
             .toBeDefined();
     });
 
@@ -80,17 +78,21 @@ describe('enqueue and dequeue', () => {
         const attempt21 = createQueueEntry('repeated-finalization', EntityStatus.RESERVED, 21);
         const attempt22 = {
             ...attempt21,
-            dequeueAudit: { ...attempt21.dequeueAudit, attempts: 22 },
+            dequeueAudit: { ...attempt21.dequeueAudit, attempts: 22 }
         };
         const reserveFinalizations = vi.fn()
-            .mockResolvedValueOnce(new Map([[attempt21.key, {
-                entry: attempt21,
-                selectedDueTs: Temporal.Instant.from('2026-01-01T00:00:00Z'),
-            }]]))
-            .mockResolvedValueOnce(new Map([[attempt22.key, {
-                entry: attempt22,
-                selectedDueTs: Temporal.Instant.from('2026-01-01T00:00:00Z'),
-            }]]));
+            .mockResolvedValueOnce(
+                new Map([[attempt21.key, {
+                    entry: attempt21,
+                    selectedDueTs: Temporal.Instant.from('2026-01-01T00:00:00Z')
+                }]])
+            )
+            .mockResolvedValueOnce(
+                new Map([[attempt22.key, {
+                    entry: attempt22,
+                    selectedDueTs: Temporal.Instant.from('2026-01-01T00:00:00Z')
+                }]])
+            );
         const releaseEntries = vi.fn();
         const domainComputer = vi.fn(async () => 'domain-result');
         const recoverFinalization = vi.fn()
@@ -98,17 +100,18 @@ describe('enqueue and dequeue', () => {
             .mockResolvedValueOnce(attempt22);
         const repository = createDequeueRepository({
             reserveRetryExhaustionFinalizations: reserveFinalizations,
-            releaseEntries,
+            releaseEntries
         });
-        const createController = () => DequeueResourceEntryController.toDequeuer<string>(
-            repository as never,
-            () => new Set(['APP_INBOX']),
-            () => 1,
-            20,
-            1,
-            toTestResilience(),
-            { onRetryExhaustionRecovery: recoverFinalization },
-        ).withReturnDequeuedEntries(true);
+        const createController = () =>
+            DequeueResourceEntryController.toDequeuer<string>(
+                repository as never,
+                () => new Set(['APP_INBOX']),
+                () => 1,
+                20,
+                1,
+                toTestResilience(),
+                { onRetryExhaustionRecovery: recoverFinalization }
+            ).withReturnDequeuedEntries(true);
 
         const first = await createController().dequeueForCompute(domainComputer);
         const second = await createController().dequeueForCompute(domainComputer);
@@ -132,31 +135,28 @@ describe('enqueue and dequeue', () => {
         const concurrencyIncreaseStep = 1;
         const concurrencyReduceStep = 1;
 
-        const circuitBreakerPolicy =
-            new CircuitBreakerPolicy(
-                10,
-                duration,
-                duration,
-                duration
-            );
+        const circuitBreakerPolicy = new CircuitBreakerPolicy(
+            10,
+            duration,
+            duration,
+            duration
+        );
 
-        const resilienceDto =
-            ResilienceDto.toResilienceDto(
-                circuitBreakerPolicy,
-                initialRate,
-                maxRate,
-                concurrencyIncreaseStep,
-                concurrencyReduceStep
-            );
+        const resilienceDto = ResilienceDto.toResilienceDto(
+            circuitBreakerPolicy,
+            initialRate,
+            maxRate,
+            concurrencyIncreaseStep,
+            concurrencyReduceStep
+        );
 
         const helloWorld = 'hello world';
-
 
         class TestData {
             readonly name: string;
 
             constructor(
-                name: string,
+                name: string
             ) {
                 this.name = name;
             }
@@ -174,7 +174,7 @@ describe('enqueue and dequeue', () => {
                 date: Temporal.Now.plainTimeISO(),
                 createdBy: 'test',
                 createdTs: Temporal.Now.plainDateTimeISO(),
-                expiryTs: NEVER_EXPIRE_TS,
+                expiryTs: NEVER_EXPIRE_TS
             },
             status: EntityStatus.NEW,
             dequeueAudit: {
@@ -185,37 +185,36 @@ describe('enqueue and dequeue', () => {
 
         await queue.enqueue(newEntry);
 
-        const dequeued =
-            await DequeueResourceEntryController.toDequeuer<string>(
-                    queue,
-                    () => types,
-                    () => 1,
-                    20,
-                    100,
-                    resilienceDto
-                )
-                .withReturnDequeuedEntries(true)
-                .dequeueForCompute(
-                    async (_: Key, entry: ResourceEntry) => {
-                        const testData: TestData = await JSON.parse(entry.resource);
+        const dequeued = await DequeueResourceEntryController.toDequeuer<string>(
+            queue,
+            () => types,
+            () => 1,
+            20,
+            100,
+            resilienceDto
+        )
+            .withReturnDequeuedEntries(true)
+            .dequeueForCompute(
+                async (_: Key, entry: ResourceEntry) => {
+                    const testData: TestData = await JSON.parse(entry.resource);
 
-                        expect(testData.name).toEqual(helloWorld);
+                    expect(testData.name).toEqual(helloWorld);
 
-                        return helloWorld;
-                    }
-                );
-
-        const logicalSuccesses =
-            new Map(
-                DequeueResourceEntryController
-                    .toSuccesses(dequeued)
-                    .map(
-                        success => [
-                            `${success.key.topicId}/${success.key.resourceId}/${success.key.contextId}`,
-                            success,
-                        ] as const,
-                    ),
+                    return helloWorld;
+                }
             );
+
+        const logicalSuccesses = new Map(
+            DequeueResourceEntryController
+                .toSuccesses(dequeued)
+                .map(
+                    (success) =>
+                        [
+                            `${success.key.topicId}/${success.key.resourceId}/${success.key.contextId}`,
+                            success
+                        ] as const
+                )
+        );
 
         expect(logicalSuccesses.size).toEqual(1);
 
@@ -230,7 +229,7 @@ describe('resource inbox retry and fairness lanes', () => {
         const duration = Temporal.Duration.from({ seconds: 10 });
         const retryPolicy = {
             ...DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
-            maxAttempts: 2,
+            maxAttempts: 2
         };
         const custom = ResilienceDto.toResilienceDto(
             new CircuitBreakerPolicy(10, duration, duration, duration),
@@ -239,7 +238,7 @@ describe('resource inbox retry and fairness lanes', () => {
             1,
             1,
             ResilienceDto.MAX_NUM_DEQUEUE_IN_WINDOW,
-            retryPolicy,
+            retryPolicy
         );
 
         expect(custom.toWorkAdvertisementOptions().maxAttempts).toBe(2);
@@ -249,11 +248,11 @@ describe('resource inbox retry and fairness lanes', () => {
     it('saturates the legacy fairness scan budget at MAX_SAFE_INTEGER', () => {
         expect(toResourceInboxFairnessReservationOptions(
             Number.MAX_SAFE_INTEGER,
-            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         )).toEqual({
             maxToReserve: Number.MAX_SAFE_INTEGER,
             maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
-            maxToScan: Number.MAX_SAFE_INTEGER,
+            maxToScan: Number.MAX_SAFE_INTEGER
         });
     });
 
@@ -271,12 +270,12 @@ describe('resource inbox retry and fairness lanes', () => {
             reserveTimeoutEntries: async (_types, options) => {
                 optionsSeen.push(options);
                 return new Map();
-            },
+            }
         });
 
         const retryPolicy = {
             ...DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
-            maxAttempts: 2,
+            maxAttempts: 2
         };
         await DequeueResourceEntryController.toDequeuer<string>(
             repository as never,
@@ -286,8 +285,8 @@ describe('resource inbox retry and fairness lanes', () => {
             10,
             toTestResilience(retryPolicy),
             {
-                retryPolicy,
-            },
+                retryPolicy
+            }
         ).dequeueForCompute(async () => 'done');
 
         expect(optionsSeen).toHaveLength(4);
@@ -295,7 +294,7 @@ describe('resource inbox retry and fairness lanes', () => {
             { maxToReserve: 1, maxAttempts: 2 },
             { maxToReserve: 1, maxAttempts: 2, maxToScan: 8 },
             { maxToReserve: 1, maxAttempts: 2 },
-            { maxToReserve: 1, maxAttempts: 2 },
+            { maxToReserve: 1, maxAttempts: 2 }
         ]);
     });
 
@@ -305,7 +304,7 @@ describe('resource inbox retry and fairness lanes', () => {
             reserveOverdueRetryEntries: async (_types, _cutoff, options) => {
                 fairnessOptions.push(options);
                 return new Map();
-            },
+            }
         });
         const types = new Set(Array.from({ length: 9 }, (_, index) => `TYPE_${index}`));
 
@@ -315,43 +314,45 @@ describe('resource inbox retry and fairness lanes', () => {
             () => 1,
             20,
             10,
-            toTestResilience(),
+            toTestResilience()
         ).dequeueForCompute(async () => 'done');
 
         expect(fairnessOptions).toEqual([{
             maxToReserve: 1,
             maxAttempts: 20,
-            maxToScan: types.size,
+            maxToScan: types.size
         }]);
     });
 
     it('rejects a retry policy override that differs from engine advertisement policy', () => {
         const resilience = toTestResilience({
             ...DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
-            maxAttempts: 2,
+            maxAttempts: 2
         });
 
-        expect(() => DequeueResourceEntryController.toDequeuer<string>(
-            createDequeueRepository() as never,
-            () => new Set(['APP_INBOX']),
-            () => 1,
-            2,
-            10,
-            resilience,
-            {
-                retryPolicy: {
-                    ...resilience.retryPolicy,
-                    staleDueThresholdMs: resilience.retryPolicy.staleDueThresholdMs + 1,
-                },
-            },
-        )).toThrow(/must match resilience retry policy/u);
+        expect(() =>
+            DequeueResourceEntryController.toDequeuer<string>(
+                createDequeueRepository() as never,
+                () => new Set(['APP_INBOX']),
+                () => 1,
+                2,
+                10,
+                resilience,
+                {
+                    retryPolicy: {
+                        ...resilience.retryPolicy,
+                        staleDueThresholdMs: resilience.retryPolicy.staleDueThresholdMs + 1
+                    }
+                }
+            )
+        ).toThrow(/must match resilience retry policy/u);
     });
 
     it('releases a first failed attempt with the exact one-millisecond delay', async () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
         const entry = createQueueEntry('first-failure', EntityStatus.NEW, 0);
-        const releaseCalls: Array<{ status: EntityStatus; delayMs: number | null }> = [];
+        const releaseCalls: Array<{ status: EntityStatus; delayMs: number | null; }> = [];
         let newReserved = false;
         const repository = createDequeueRepository({
             reserveEntries: async (_types, statuses) => {
@@ -362,8 +363,8 @@ describe('resource inbox retry and fairness lanes', () => {
                         status: EntityStatus.RESERVED,
                         dequeueAudit: {
                             attempts: 1,
-                            startTs: Temporal.Now.instant(),
-                        },
+                            startTs: Temporal.Now.instant()
+                        }
                     }]]);
                 }
                 return new Map();
@@ -372,9 +373,9 @@ describe('resource inbox retry and fairness lanes', () => {
                 releaseCalls.push(disposition);
                 return new Map(entries.map((released) => [released.key, {
                     ...released,
-                    status: disposition.status,
+                    status: disposition.status
                 }]));
-            },
+            }
         });
 
         await DequeueResourceEntryController.toDequeuer<string>(
@@ -386,15 +387,15 @@ describe('resource inbox retry and fairness lanes', () => {
             toTestResilience(),
             {
                 jitterUnit: () => 0.5,
-                nowEpochMs: () => Date.now(),
-            },
+                nowEpochMs: () => Date.now()
+            }
         ).dequeueForCompute(async () => {
             throw new Error('transient');
         });
 
         expect(releaseCalls).toContainEqual({
             status: EntityStatus.RETRY,
-            delayMs: 1,
+            delayMs: 1
         });
     });
 
@@ -413,12 +414,12 @@ describe('resource inbox retry and fairness lanes', () => {
                         status: EntityStatus.RESERVED,
                         dequeueAudit: {
                             attempts: 20,
-                            startTs: Temporal.Now.instant(),
-                        },
+                            startTs: Temporal.Now.instant()
+                        }
                     }]]);
                 }
                 return new Map();
-            },
+            }
         });
 
         await DequeueResourceEntryController.toDequeuer<string>(
@@ -428,7 +429,7 @@ describe('resource inbox retry and fairness lanes', () => {
             20,
             10,
             toTestResilience(),
-            { jitterUnit: () => 0.5 },
+            { jitterUnit: () => 0.5 }
         ).dequeueForCompute(async () => {
             computeCalls += 1;
             throw new Error('still transient');
@@ -448,8 +449,8 @@ describe('resource inbox retry and fairness lanes', () => {
                 attempts: 6,
                 startTs: Temporal.Instant.from('2026-01-01T00:00:00.000Z'),
                 endTs: undefined,
-                nextTs: undefined,
-            },
+                nextTs: undefined
+            }
         } satisfies ResourceEntry;
         const telemetry: unknown[] = [];
         const fairnessCalls: Array<{
@@ -460,10 +461,12 @@ describe('resource inbox retry and fairness lanes', () => {
         const repository = createDequeueRepository({
             reserveOverdueRetryEntries: async (_types, overdueBeforeEpochMs, options) => {
                 fairnessCalls.push({ overdueBeforeEpochMs, options });
-                if (fairnessReserved) return new Map();
+                if (fairnessReserved) {
+                    return new Map();
+                }
                 fairnessReserved = true;
                 return new Map([[entry.key, { entry, selectedDueTs: nextTs }]]);
-            },
+            }
         });
 
         const dequeued = await DequeueResourceEntryController.toDequeuer<string>(
@@ -475,15 +478,15 @@ describe('resource inbox retry and fairness lanes', () => {
             toTestResilience(),
             {
                 nowEpochMs: () => Date.now(),
-                onReservationTelemetry: (event: unknown) => telemetry.push(event),
-            },
+                onReservationTelemetry: (event: unknown) => telemetry.push(event)
+            }
         )
             .withReturnDequeuedEntries(true)
             .dequeueForCompute(async () => 'done');
 
         expect(fairnessCalls[0]).toEqual({
             overdueBeforeEpochMs: Date.parse('2026-01-01T00:00:30.000Z'),
-            options: { maxToReserve: 1, maxAttempts: 20, maxToScan: 8 },
+            options: { maxToReserve: 1, maxAttempts: 20, maxToScan: 8 }
         });
         expect(dequeued.get(Reservator.FAIRNESS)?.size).toBe(1);
         expect(telemetry).toContainEqual({
@@ -491,7 +494,7 @@ describe('resource inbox retry and fairness lanes', () => {
             dueAgeMs: 31_000,
             attempt: 6,
             type: 'APP_INBOX',
-            lane: Reservator.FAIRNESS,
+            lane: Reservator.FAIRNESS
         });
     });
 
@@ -502,7 +505,7 @@ describe('resource inbox retry and fairness lanes', () => {
         }
         const fairnessSelector = vi.fn(async () => new Map());
         const repository = createDequeueRepository({
-            reserveOverdueRetryEntries: fairnessSelector,
+            reserveOverdueRetryEntries: fairnessSelector
         });
 
         await DequeueResourceEntryController.toDequeuer<string>(
@@ -511,7 +514,7 @@ describe('resource inbox retry and fairness lanes', () => {
             () => 1,
             20,
             10,
-            resilience,
+            resilience
         ).dequeueForCompute(async () => 'done');
 
         expect(fairnessSelector).not.toHaveBeenCalled();
@@ -526,25 +529,24 @@ describe('resource inbox retry and fairness lanes', () => {
             10,
             1,
             1,
-            1,
+            1
         );
 
         expect(resilience.checkFairness.lockEntryRateLimiter.allow()).toBe(true);
         expect(resilience.checkFairness.lockEntryRateLimiter.allow()).toBe(false);
     });
-
 });
 
 function createQueueEntry(
     resourceId: string,
     status: EntityStatus,
-    attempts: number,
+    attempts: number
 ): ResourceEntry {
     return {
         key: {
             topicId: 'APP_INBOX',
             resourceId,
-            contextId: 'ctx-1',
+            contextId: 'ctx-1'
         },
         resource: JSON.stringify({ resourceId }),
         typeId: 'APP_INBOX',
@@ -552,15 +554,15 @@ function createQueueEntry(
             date: Temporal.PlainTime.from('00:00:00'),
             createdBy: 'test',
             createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00'),
-            expiryTs: Temporal.Instant.from('2026-01-01T01:00:00Z'),
+            expiryTs: Temporal.Instant.from('2026-01-01T01:00:00Z')
         },
         status,
-        dequeueAudit: { attempts },
+        dequeueAudit: { attempts }
     };
 }
 
 function createDequeueRepository(
-    overrides: Partial<DequeueResourceEntryRepository> = {},
+    overrides: Partial<DequeueResourceEntryRepository> = {}
 ) {
     return {
         isAnyEntryToLock: async () => false,
@@ -569,17 +571,17 @@ function createDequeueRepository(
         reserveTimeoutEntries: async () => new Map(),
         releaseEntries: async (
             entries: ResourceEntry[],
-            disposition: Readonly<{ status: EntityStatus }>,
+            disposition: Readonly<{ status: EntityStatus; }>
         ) => new Map(entries.map((entry) => [entry.key, {
             ...entry,
-            status: disposition.status,
+            status: disposition.status
         }])),
-        ...overrides,
+        ...overrides
     };
 }
 
 function toTestResilience(
-    retryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+    retryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY
 ): ResilienceDto {
     const duration = Temporal.Duration.from({ seconds: 10 });
     return ResilienceDto.toResilienceDto(
@@ -589,6 +591,6 @@ function toTestResilience(
         1,
         1,
         ResilienceDto.MAX_NUM_DEQUEUE_IN_WINDOW,
-        retryPolicy,
+        retryPolicy
     );
 }

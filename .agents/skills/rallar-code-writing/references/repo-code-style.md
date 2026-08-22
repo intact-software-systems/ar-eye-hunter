@@ -507,27 +507,26 @@ Do not make every factory input optional and hide production decisions inside th
 contract and a separate default factory:
 
 ```ts
-interface CreateRallarServerInput
-{
-   readonly middleware: Middleware;
-   readonly repositories: RallarRepositoryRegistry;
-   readonly appDataRepository: AppDataRepositoryLike;
+interface CreateRallarServerInput {
+    readonly middleware: Middleware;
+    readonly repositories: RallarRepositoryRegistry;
+    readonly appDataRepository: AppDataRepositoryLike;
 }
 
 function createRallarServer(input: CreateRallarServerInput): RallarServerApplication {
-   return createRallarServerApplication({
-      runtime: input.middleware,
-      repositories: input.repositories,
-      appData: { repository: input.appDataRepository }
-   });
+    return createRallarServerApplication({
+        runtime: input.middleware,
+        repositories: input.repositories,
+        appData: { repository: input.appDataRepository }
+    });
 }
 
 function createDefaultRallarServer(): RallarServerApplication {
-   return createRallarServer({
-      middleware: initialiseMiddleware(),
-      repositories: createDefaultRallarRepositoryRegistry(),
-      appDataRepository: createDefaultAppDataRepository()
-   });
+    return createRallarServer({
+        middleware: initialiseMiddleware(),
+        repositories: createDefaultRallarRepositoryRegistry(),
+        appDataRepository: createDefaultAppDataRepository()
+    });
 }
 ```
 
@@ -671,33 +670,28 @@ owned by the new stage. Use the predictable chain `input -> read -> computed -> 
 from prior stages into later records.
 
 ```ts
-interface InvoiceInputDto
-{
-   readonly invoiceId: InvoiceId;
+interface InvoiceInputDto {
+    readonly invoiceId: InvoiceId;
 }
 
-interface InvoiceRead
-{
-   readonly input: InvoiceInputDto;
-   readonly invoice: InvoiceRecord;
+interface InvoiceRead {
+    readonly input: InvoiceInputDto;
+    readonly invoice: InvoiceRecord;
 }
 
-interface InvoiceComputed
-{
-   readonly read: InvoiceRead;
-   readonly totals: InvoiceTotals;
+interface InvoiceComputed {
+    readonly read: InvoiceRead;
+    readonly totals: InvoiceTotals;
 }
 
-interface InvoiceWritten
-{
-   readonly computed: InvoiceComputed;
-   readonly writeResult: InvoiceWriteResult;
+interface InvoiceWritten {
+    readonly computed: InvoiceComputed;
+    readonly writeResult: InvoiceWriteResult;
 }
 
-interface InvoiceValidationFailure
-{
-   readonly computed: InvoiceComputed;
-   readonly issues: readonly InvoiceValidationIssue[];
+interface InvoiceValidationFailure {
+    readonly computed: InvoiceComputed;
+    readonly issues: readonly InvoiceValidationIssue[];
 }
 
 type InvoiceComputationResult = Either<InvoiceValidationFailure, InvoiceComputed>;
@@ -716,10 +710,10 @@ const computed = computeInvoice(read);
 const issues = validateInvoice(computed);
 
 if (issues.length > 0) {
-   return Either.ofLeft<InvoiceValidationFailure, InvoiceWritten>({
-      computed,
-      issues
-   });
+    return Either.ofLeft<InvoiceValidationFailure, InvoiceWritten>({
+        computed,
+        issues
+    });
 }
 
 return Either.ofRight<InvoiceValidationFailure, InvoiceWritten>(writeInvoice(computed));
@@ -797,7 +791,7 @@ Normalize caught values once:
 
 ```ts
 function toError(value: unknown): Error {
-   return value instanceof Error ? value : new Error(String(value));
+    return value instanceof Error ? value : new Error(String(value));
 }
 ```
 
@@ -810,9 +804,9 @@ Domain error contracts carry `Error` or a named serializable cause, not
 
 ```ts
 function validateCreateReport(input: CreateReportInput): readonly ValidationIssue[] {
-   return input.retentionDays > 0
-      ? []
-      : [{ code: 'invalid-retention-days', message: 'Retention days must be positive' }];
+    return input.retentionDays > 0
+        ? []
+        : [{ code: 'invalid-retention-days', message: 'Retention days must be positive' }];
 }
 ```
 
@@ -837,11 +831,10 @@ Catch operational exceptions at the nearest side-effect boundary and return a ty
 every pure helper.
 
 ```ts
-interface RuntimeFailure
-{
-   readonly code: string;
-   readonly operation: string;
-   readonly cause: Error;
+interface RuntimeFailure {
+    readonly code: string;
+    readonly operation: string;
+    readonly cause: Error;
 }
 
 type FailureDisposition = 'retryable' | 'non-retryable' | 'manual';

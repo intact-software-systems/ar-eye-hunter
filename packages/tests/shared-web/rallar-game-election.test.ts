@@ -1,9 +1,5 @@
+import { electRallarGameHost, RALLAR_GAME_MISSING_CAPABILITY_SCORE, scoreRallarGameHostCapability } from '@shared-web/game/mod.ts';
 import { describe, expect, it } from 'vitest';
-import {
-    electRallarGameHost,
-    RALLAR_GAME_MISSING_CAPABILITY_SCORE,
-    scoreRallarGameHostCapability,
-} from '@shared-web/game/mod.ts';
 
 describe('Rallar Game host election', () => {
     it('scores stronger fresh host capability above weaker capability', () => {
@@ -14,8 +10,8 @@ describe('Rallar Game host election', () => {
                 fps: 120,
                 rttMs: 20,
                 hardwareConcurrency: 12,
-                deviceMemoryGb: 16,
-            }),
+                deviceMemoryGb: 16
+            })
         ).toBeGreaterThan(
             scoreRallarGameHostCapability({
                 peerId: 'slow',
@@ -24,8 +20,8 @@ describe('Rallar Game host election', () => {
                 rttMs: 350,
                 hardwareConcurrency: 2,
                 deviceMemoryGb: 2,
-                isMobile: true,
-            }),
+                isMobile: true
+            })
         );
     });
 
@@ -36,9 +32,9 @@ describe('Rallar Game host election', () => {
             capabilities: [
                 { peerId: 'peer-b', reportedAtEpochMs: 1_900, scoreBias: 10 },
                 { peerId: 'peer-a', reportedAtEpochMs: 1_900, scoreBias: 10 },
-                { peerId: 'peer-c', reportedAtEpochMs: 1_900, scoreBias: 1 },
+                { peerId: 'peer-c', reportedAtEpochMs: 1_900, scoreBias: 1 }
             ],
-            scoreHost: (capability) => capability.scoreBias ?? 0,
+            scoreHost: (capability) => capability.scoreBias ?? 0
         });
 
         expect(result.host?.peerId).toBe('peer-a');
@@ -46,7 +42,7 @@ describe('Rallar Game host election', () => {
         expect(result.candidates.map((candidate) => candidate.peerId)).toEqual([
             'peer-a',
             'peer-b',
-            'peer-c',
+            'peer-c'
         ]);
     });
 
@@ -55,9 +51,9 @@ describe('Rallar Game host election', () => {
             peerIds: ['peer-a', 'peer-b'],
             nowEpochMs: 2_000,
             capabilities: [
-                { peerId: 'peer-b', reportedAtEpochMs: 1_900, scoreBias: 0 },
+                { peerId: 'peer-b', reportedAtEpochMs: 1_900, scoreBias: 0 }
             ],
-            scoreHost: () => 0,
+            scoreHost: () => 0
         });
 
         expect(result.host?.peerId).toBe('peer-b');
@@ -73,9 +69,9 @@ describe('Rallar Game host election', () => {
             capabilityTtlMs: 5_000,
             capabilities: [
                 { peerId: 'peer-a', reportedAtEpochMs: 1_000, scoreBias: 10_000 },
-                { peerId: 'peer-b', reportedAtEpochMs: 19_000, scoreBias: 1 },
+                { peerId: 'peer-b', reportedAtEpochMs: 19_000, scoreBias: 1 }
             ],
-            scoreHost: (capability) => capability.scoreBias ?? 0,
+            scoreHost: (capability) => capability.scoreBias ?? 0
         });
 
         expect(result.host?.peerId).toBe('peer-b');
@@ -93,18 +89,18 @@ describe('Rallar Game host election', () => {
                     peerId: 'peer-a',
                     reportedAtEpochMs: 1_900,
                     canHost: false,
-                    scoreBias: 100_000,
+                    scoreBias: 100_000
                 },
-                { peerId: 'peer-b', reportedAtEpochMs: 1_900, scoreBias: 1 },
+                { peerId: 'peer-b', reportedAtEpochMs: 1_900, scoreBias: 1 }
             ],
-            scoreHost: (capability) => capability.scoreBias ?? 0,
+            scoreHost: (capability) => capability.scoreBias ?? 0
         });
 
         expect(result.host?.peerId).toBe('peer-b');
         expect(result.candidates.find((candidate) => candidate.peerId === 'peer-a'))
             .toMatchObject({
                 eligible: false,
-                reason: 'cannot-host',
+                reason: 'cannot-host'
             });
     });
 });

@@ -1,24 +1,24 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { isKeysEqual, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
+import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import {
     DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
-    type ResourceInboxRetryPolicy,
+    type ResourceInboxRetryPolicy
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import {
     recordRallarTiming,
     timeRallarAsync,
     type RallarTimingDetails,
-    type RallarTimingSink,
+    type RallarTimingSink
 } from '../services/timing.ts';
-import { requeueRemoteWsOutboxDeliveryFailure } from './RemoteWsOutboxDeliveryFailure.ts';
 import {
     isValidQueueBoxPubSubMessage,
     type QueueBoxPubSubBridge,
     type QueueBoxPubSubDelivery,
     type QueueBoxPubSubMessage,
-    type QueueBoxPubSubMessageKey,
+    type QueueBoxPubSubMessageKey
 } from './queuebox-pubsub-contracts.ts';
+import { requeueRemoteWsOutboxDeliveryFailure } from './RemoteWsOutboxDeliveryFailure.ts';
 import { toResourceEntryFromPubSubMessage } from './to-resource-entry-from-pub-sub-message.ts';
 
 export {
@@ -27,7 +27,7 @@ export {
     type QueueBoxPubSubEntryMessage,
     type QueueBoxPubSubKeyMessage,
     type QueueBoxPubSubMessage,
-    type QueueBoxPubSubMessageKey,
+    type QueueBoxPubSubMessageKey
 } from './queuebox-pubsub-contracts.ts';
 export { toResourceEntryFromPubSubMessage } from './to-resource-entry-from-pub-sub-message.ts';
 
@@ -44,7 +44,7 @@ export type InstallQueueBoxPubSubBridgeOptions = Readonly<{
 }>;
 
 export function installQueueBoxPubSubBridge(
-    options: InstallQueueBoxPubSubBridgeOptions,
+    options: InstallQueueBoxPubSubBridgeOptions
 ): Promise<void> {
     const {
         wsQBoxServerService,
@@ -54,7 +54,7 @@ export function installQueueBoxPubSubBridge(
         delivery = 'entry',
         timing,
         retryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
-        jitterUnit = Math.random,
+        jitterUnit = Math.random
     } = options;
 
     registerQueueBoxInboxPublisher({
@@ -62,21 +62,21 @@ export function installQueueBoxPubSubBridge(
         bridge,
         channel,
         publisherId,
-        delivery,
+        delivery
     });
     registerQueueBoxOutboxPublisher({
         wsQBoxServerService,
         bridge,
         channel,
         publisherId,
-        timing,
+        timing
     });
     const readiness = timeRallarAsync(
         timing,
         {
             component: 'queuebox-pubsub',
             operation: 'listener-subscribe',
-            details: { channel },
+            details: { channel }
         },
         async () => {
             await bridge.subscribe(channel, async (message) => {
@@ -87,11 +87,10 @@ export function installQueueBoxPubSubBridge(
                     timing,
                     retryPolicy,
                     jitterUnit,
-                    onValidatedOutboxKeyReceived:
-                        options.onValidatedOutboxKeyReceived,
+                    onValidatedOutboxKeyReceived: options.onValidatedOutboxKeyReceived
                 });
             });
-        },
+        }
     );
     void readiness.catch((error) => {
         console.error('QueueBox pub/sub bridge listener failed:', error);
@@ -107,7 +106,7 @@ function registerQueueBoxInboxPublisher(
         channel: string;
         publisherId: string;
         delivery: QueueBoxPubSubDelivery;
-    }>,
+    }>
 ): void {
     options.wsQBoxServerService.onAllInboxMessagesDo({
         onMessage: async (_, entry: ResourceEntry, __) => {
@@ -117,10 +116,10 @@ function registerQueueBoxInboxPublisher(
                     options.channel,
                     options.publisherId,
                     entry,
-                    { delivery: options.delivery },
-                ),
+                    { delivery: options.delivery }
+                )
             );
-        },
+        }
     });
 }
 
@@ -131,18 +130,18 @@ function registerQueueBoxOutboxPublisher(
         channel: string;
         publisherId: string;
         timing?: RallarTimingSink;
-    }>,
+    }>
 ): void {
     options.wsQBoxServerService.onOutboxClusterPublishDo(async (message, entry) => {
         const envelope = toPubSubMessage(
             options.channel,
             options.publisherId,
             entry,
-            { delivery: 'key' },
+            { delivery: 'key' }
         );
         await options.bridge.publish(
             options.channel,
-            envelope,
+            envelope
         );
         recordPubSubTiming(options.timing, 'outbox-cluster-publish', envelope);
         const result = options.wsQBoxServerService.sendToTargetsWithResult(message);
@@ -151,7 +150,7 @@ function registerQueueBoxOutboxPublisher(
             deliveryStatus: result.status,
             recipientCount: result.recipientCount,
             sentCount: result.sentCount,
-            failedCount: result.failedCount,
+            failedCount: result.failedCount
         });
         if (result.failedCount > 0) {
             throw new Error(`Failed ${result.failedCount} local WS outbox sends`);
@@ -169,7 +168,7 @@ async function receiveQueueBoxPubSubMessage(
         retryPolicy: ResourceInboxRetryPolicy;
         jitterUnit: () => number;
         onValidatedOutboxKeyReceived?: (entry: ResourceEntry) => void;
-    }>,
+    }>
 ): Promise<void> {
     if (
         message.typeId === WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE &&
@@ -185,20 +184,21 @@ async function receiveQueueBoxPubSubMessage(
             details: {
                 channel: options.channel,
                 delivery: message.delivery ?? 'entry',
-                entryKind: toQueueBoxPubSubEntryKind(message.typeId),
-            },
+                entryKind: toQueueBoxPubSubEntryKind(message.typeId)
+            }
         },
         'ok',
-        0,
+        0
     );
     const entry = await resolveResourceEntryFromPubSubMessage(message, {
         expectedChannel: options.channel,
-        loadByKey: async (key) => await (
-            message.typeId === WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE
-                ? options.wsQBoxServerService.outbox
-                : options.wsQBoxServerService.inbox
-        ).getItem(key),
-        timing: options.timing,
+        loadByKey: async (key) =>
+            await (
+                message.typeId === WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE
+                    ? options.wsQBoxServerService.outbox
+                    : options.wsQBoxServerService.inbox
+            ).getItem(key),
+        timing: options.timing
     });
     if (!entry) {
         return;
@@ -207,7 +207,7 @@ async function receiveQueueBoxPubSubMessage(
         if (message.delivery === 'key') {
             notifyValidatedOutboxKey(
                 entry,
-                options.onValidatedOutboxKeyReceived,
+                options.onValidatedOutboxKeyReceived
             );
         }
         await sendRemoteQueueBoxOutboxEntry(message, entry, {
@@ -215,7 +215,7 @@ async function receiveQueueBoxPubSubMessage(
             publisherId: options.publisherId,
             timing: options.timing,
             retryPolicy: options.retryPolicy,
-            jitterUnit: options.jitterUnit,
+            jitterUnit: options.jitterUnit
         });
         return;
     }
@@ -225,11 +225,12 @@ async function receiveQueueBoxPubSubMessage(
 
 function notifyValidatedOutboxKey(
     entry: ResourceEntry,
-    callback: ((entry: ResourceEntry) => void) | undefined,
+    callback: ((entry: ResourceEntry) => void) | undefined
 ): void {
     try {
         callback?.(entry);
-    } catch (error) {
+    }
+    catch (error) {
         console.error('QueueBox validated outbox-key callback failed:', error);
     }
 }
@@ -243,17 +244,17 @@ async function sendRemoteQueueBoxOutboxEntry(
         timing?: RallarTimingSink;
         retryPolicy: ResourceInboxRetryPolicy;
         jitterUnit: () => number;
-    }>,
+    }>
 ): Promise<void> {
     const result = options.wsQBoxServerService.sendToTargetsWithResult(
-        JSON.parse(entry.resource) as ALMessage,
+        JSON.parse(entry.resource) as ALMessage
     );
     recordPubSubTiming(options.timing, 'outbox-direct-send', message, {
         localPublisherId: options.publisherId,
         deliveryStatus: result.status,
         recipientCount: result.recipientCount,
         sentCount: result.sentCount,
-        failedCount: result.failedCount,
+        failedCount: result.failedCount
     });
     if (result.failedCount === 0) {
         return;
@@ -264,8 +265,8 @@ async function sendRemoteQueueBoxOutboxEntry(
         entry,
         {
             retryPolicy: options.retryPolicy,
-            jitterUnit: options.jitterUnit,
-        },
+            jitterUnit: options.jitterUnit
+        }
     );
     recordPubSubTiming(
         options.timing,
@@ -276,8 +277,8 @@ async function sendRemoteQueueBoxOutboxEntry(
             recipientCount: result.recipientCount,
             failedCount: result.failedCount,
             durableStatus: requeued?.status ?? 'stale',
-            reservationAttempt: entry.dequeueAudit.attempts,
-        },
+            reservationAttempt: entry.dequeueAudit.attempts
+        }
     );
 }
 
@@ -298,7 +299,7 @@ export function toPubSubMessage(
     entry: ResourceEntry,
     options: Readonly<{
         delivery?: QueueBoxPubSubDelivery;
-    }> = {},
+    }> = {}
 ): QueueBoxPubSubMessage {
     if (options.delivery === 'key') {
         return {
@@ -306,7 +307,7 @@ export function toPubSubMessage(
             channel,
             publisherId,
             typeId: entry.typeId,
-            delivery: 'key',
+            delivery: 'key'
         };
     }
 
@@ -316,7 +317,7 @@ export function toPubSubMessage(
         publisherId,
         typeId: entry.typeId,
         delivery: 'entry',
-        payload: entry.resource,
+        payload: entry.resource
     };
 }
 
@@ -326,7 +327,7 @@ async function resolveResourceEntryFromPubSubMessage(
         expectedChannel: string;
         loadByKey: (key: QueueBoxPubSubMessageKey) => Promise<ResourceEntry | undefined>;
         timing?: RallarTimingSink;
-    }>,
+    }>
 ): Promise<ResourceEntry | undefined> {
     if (!isValidQueueBoxPubSubMessage(message, options.expectedChannel)) {
         recordPubSubTiming(options.timing, 'drop-malformed', message);
@@ -355,7 +356,7 @@ function recordPubSubTiming(
     timing: RallarTimingSink | undefined,
     operation: string,
     message: Partial<QueueBoxPubSubMessage> | undefined,
-    details: RallarTimingDetails = {},
+    details: RallarTimingDetails = {}
 ): void {
     recordRallarTiming(
         timing,
@@ -363,15 +364,15 @@ function recordPubSubTiming(
             component: 'queuebox-pubsub',
             operation,
             serviceId: message?.publisherId,
-            details: { ...toPubSubTimingDetails(message), ...details },
+            details: { ...toPubSubTimingDetails(message), ...details }
         },
         'ok',
-        0,
+        0
     );
 }
 
 function toPubSubTimingDetails(
-    message: Partial<QueueBoxPubSubMessage> | undefined,
+    message: Partial<QueueBoxPubSubMessage> | undefined
 ): RallarTimingDetails {
     return {
         channel: message?.channel,
@@ -379,6 +380,6 @@ function toPubSubTimingDetails(
         topicId: message?.key?.topicId,
         resourceId: message?.key?.resourceId,
         contextId: message?.key?.contextId,
-        typeId: message?.typeId,
+        typeId: message?.typeId
     };
 }

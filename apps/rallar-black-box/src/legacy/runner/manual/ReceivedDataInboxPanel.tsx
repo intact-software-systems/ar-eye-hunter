@@ -1,20 +1,20 @@
-import { useMemo } from 'react';
 import { selectRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/selectors.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import { useMemo } from 'react';
 import { deriveManualReceivedMessages } from '../../../manual-workbench.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 import { formatTime } from '../../shared/time-format.ts';
 
 export function ReceivedDataInboxPanel({
     state,
-    onSelectCommand,
+    onSelectCommand
 }: {
     state: RallarBlackBoxTestState;
     onSelectCommand(commandId: string): void;
 }) {
     const received = useMemo(
         () => deriveManualReceivedMessages(selectRallarBlackBoxEvents(state)),
-        [state],
+        [state]
     );
 
     return (
@@ -24,9 +24,7 @@ export function ReceivedDataInboxPanel({
                 <span>{received.length} messages</span>
             </div>
             <div className="received-list">
-                {received.length === 0 && (
-                    <div className="empty-state">No received data</div>
-                )}
+                {received.length === 0 && <div className="empty-state">No received data</div>}
                 {received
                     .slice(-24)
                     .reverse()
@@ -43,9 +41,7 @@ export function ReceivedDataInboxPanel({
                                 {message.commandId && (
                                     <button
                                         type="button"
-                                        onClick={() =>
-                                            onSelectCommand(message.commandId!)
-                                        }
+                                        onClick={() => onSelectCommand(message.commandId!)}
                                     >
                                         {message.commandId}
                                     </button>

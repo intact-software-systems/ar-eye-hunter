@@ -1,9 +1,6 @@
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-    analyzeSourceFile,
-    type SourceAnalysis,
-} from '../helpers/source-analysis';
+import { analyzeSourceFile, type SourceAnalysis } from '../helpers/source-analysis';
 
 type ExportSnapshot = Readonly<{
     values: readonly string[];
@@ -31,7 +28,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'matchesRallarMessageSelector',
                 'normalizeRallarMessageSelector',
                 'normalizeRallarReadinessExpectation',
-                'rallar',
+                'rallar'
             ],
             types: [
                 'RallarAuthChangeListener',
@@ -235,11 +232,11 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarWsStatus',
                 'RallarWsStatusListener',
                 'RallarWsStatusSubscriptionOptions',
-                'RallarWsWaitForOpenResult',
+                'RallarWsWaitForOpenResult'
             ],
             starExports: [],
-            namespaceExports: [],
-        },
+            namespaceExports: []
+        }
     },
     {
         filePath: 'packages/shared-web/browser/rallar-core.ts',
@@ -255,7 +252,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'matchesRallarMessageSelector',
                 'normalizeApiBaseUrl',
                 'normalizeRallarMessageSelector',
-                'readApiBaseUrl',
+                'readApiBaseUrl'
             ],
             types: [
                 'CreateRallarAuthFacadeOptions',
@@ -334,18 +331,18 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarTypedRtcSendOptions',
                 'RallarTypedWsSendOptions',
                 'RallarUnsubscribe',
-                'RallarWsSendInput',
+                'RallarWsSendInput'
             ],
             starExports: [],
-            namespaceExports: [],
-        },
+            namespaceExports: []
+        }
     },
     {
         filePath: 'packages/shared-web/browser/rallar-realtime.ts',
         expected: {
             values: [
                 'createRallarRealtimeFacade',
-                'createRallarRtcFacade',
+                'createRallarRtcFacade'
             ],
             types: [
                 'CreateRallarRealtimeFacadeOptions',
@@ -397,20 +394,20 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarRtcWaitForOpenOptions',
                 'RallarRtcWaitForOpenResult',
                 'RallarWaitForOpenOptions',
-                'RallarWaitForOpenStatus',
+                'RallarWaitForOpenStatus'
             ],
             starExports: [
-                '@shared-web/browser/rallar-core.ts',
+                '@shared-web/browser/rallar-core.ts'
             ],
-            namespaceExports: [],
-        },
+            namespaceExports: []
+        }
     },
     {
         filePath: 'packages/shared-web/browser/rallar-media-calls.ts',
         expected: {
             values: [
                 'createRallarCallsFacade',
-                'createRallarMediaFacade',
+                'createRallarMediaFacade'
             ],
             types: [
                 'CreateRallarCallsFacadeOptions',
@@ -447,18 +444,18 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarMicrophoneSourceStartOptions',
                 'RallarRemoteStream',
                 'RallarScreenSourceStartOptions',
-                'RallarUnsubscribe',
+                'RallarUnsubscribe'
             ],
             starExports: [],
-            namespaceExports: [],
-        },
+            namespaceExports: []
+        }
     },
     {
         filePath: 'packages/shared-web/browser/rallar-data.ts',
         expected: {
             values: [
                 'createRallarDataFacade',
-                'defineRallarDataStore',
+                'defineRallarDataStore'
             ],
             types: [
                 'RallarDataChangeEvent',
@@ -474,17 +471,17 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarDataStore',
                 'RallarDataStoreDefinition',
                 'RallarDataStoreOptions',
-                'RallarUnsubscribe',
+                'RallarUnsubscribe'
             ],
             starExports: [],
-            namespaceExports: [],
-        },
+            namespaceExports: []
+        }
     },
     {
         filePath: 'packages/shared-web/browser/rallar-crdt.ts',
         expected: {
             values: [
-                'createRallarCrdtFacade',
+                'createRallarCrdtFacade'
             ],
             types: [
                 'RallarCrdtCounterAddInput',
@@ -502,11 +499,11 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarCrdtSequenceMoveInput',
                 'RallarCrdtSequenceMutationOptions',
                 'RallarCrdtSnapshotListener',
-                'RallarCrdtUndoRedoGroupInput',
+                'RallarCrdtUndoRedoGroupInput'
             ],
             starExports: [],
-            namespaceExports: [],
-        },
+            namespaceExports: []
+        }
     },
     {
         filePath: 'packages/shared-web/game/mod.ts',
@@ -529,7 +526,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'isRallarGameEnvelope',
                 'resolveRallarGameLaneIds',
                 'resolveRallarGameTypeIds',
-                'scoreRallarGameHostCapability',
+                'scoreRallarGameHostCapability'
             ],
             types: [
                 'RallarAuthorityBrowserMatchConfig',
@@ -583,7 +580,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarGameSequenceAcceptResult',
                 'RallarGameSequenceTracker',
                 'RallarGameStatusHandler',
-                'RallarGameTypeIds',
+                'RallarGameTypeIds'
             ],
             starExports: [
                 './authority-client.ts',
@@ -594,10 +591,10 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 './lanes.ts',
                 './match-support.ts',
                 './match.ts',
-                './types.ts',
+                './types.ts'
             ],
-            namespaceExports: [],
-        },
+            namespaceExports: []
+        }
     },
     {
         filePath: 'packages/shared-web/browser/api/state-mutation-http-contracts.ts',
@@ -625,11 +622,11 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'TransferStateGroupOwnershipBody',
                 'UnbanStateGroupMemberBody',
                 'UpdateStateGroupBody',
-                'UpsertStateGroupMemberBody',
+                'UpsertStateGroupMemberBody'
             ],
             starExports: [],
-            namespaceExports: [],
-        },
+            namespaceExports: []
+        }
     },
     {
         filePath: 'packages/shared-web/browser/state-read/point-read.ts',
@@ -639,11 +636,11 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'ReadStateClientSnapshotOptions',
                 'ReadStateGroupSnapshotOptions',
                 'StateClientSnapshotRead',
-                'StateGroupSnapshotRead',
+                'StateGroupSnapshotRead'
             ],
             starExports: [],
-            namespaceExports: [],
-        },
+            namespaceExports: []
+        }
     },
     {
         filePath: 'packages/shared-web/browser/state-read/diagnostics.ts',
@@ -651,8 +648,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
             values: ['emitBrowserStateReadDiagnostic', 'setBrowserStateReadDiagnosticsSink'],
             types: ['BrowserStateReadDiagnosticEvent', 'BrowserStateReadDiagnosticsSink'],
             starExports: [],
-            namespaceExports: [],
-        },
+            namespaceExports: []
+        }
     },
     {
         filePath: 'packages/shared-web/mod.ts',
@@ -673,7 +670,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'transferStateGroupOwnership',
                 'unbanStateGroupMember',
                 'updateStateGroupDetails',
-                'updateStateGroupMetadata',
+                'updateStateGroupMetadata'
             ],
             types: [
                 'ApiMutationRequestOptions',
@@ -683,7 +680,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'StateGroupWorkflowValue',
                 'StateHeartbeatWorkflowValue',
                 'StateSnapshots',
-                'StateSnapshotsWorkflowValue',
+                'StateSnapshotsWorkflowValue'
             ],
             starExports: [
                 './browser/api-client-config.ts',
@@ -708,22 +705,22 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 './browser/rtc-message-router.ts',
                 './browser/state-read/diagnostics.ts',
                 './browser/ws-message-router.ts',
-                './game/mod.ts',
+                './game/mod.ts'
             ],
             namespaceExports: [
                 'dataCaches from ./browser/data-caches.ts',
                 'qboxEngine from ./browser/qbox-engine.ts',
-                'wsEngine from ./browser/ws-engine.ts',
-            ],
-        },
-    },
+                'wsEngine from ./browser/ws-engine.ts'
+            ]
+        }
+    }
 ];
 
 describe('shared-web public API snapshots', () => {
     for (const surface of PUBLIC_SURFACES) {
         it(`keeps ${surface.filePath} exports intentional`, () => {
             expect(collectExportSnapshot(surface.filePath, {
-                resolveStarExports: surface.resolveStarExports === true,
+                resolveStarExports: surface.resolveStarExports === true
             })).toEqual(surface.expected);
         });
     }
@@ -731,7 +728,7 @@ describe('shared-web public API snapshots', () => {
 
 function collectExportSnapshot(
     filePath: string,
-    options: Readonly<{ resolveStarExports: boolean }>,
+    options: Readonly<{ resolveStarExports: boolean; }>
 ): ExportSnapshot {
     const analysis = readSourceAnalysis(filePath);
     const direct = collectDirectExports(analysis);
@@ -744,13 +741,13 @@ function collectExportSnapshot(
         values: sortUnique([...direct.values, ...resolved.values]),
         types: sortUnique([...direct.types, ...resolved.types]),
         starExports: direct.starExports,
-        namespaceExports: direct.namespaceExports,
+        namespaceExports: direct.namespaceExports
     };
 }
 
 function collectResolvedExports(
     filePath: string,
-    seen: Set<string>,
+    seen: Set<string>
 ): Pick<ExportSnapshot, 'values' | 'types'> {
     const analysis = readSourceAnalysis(filePath);
     const direct = collectDirectExports(analysis);
@@ -771,7 +768,7 @@ function collectResolvedExports(
 
     return {
         values: sortUnique(values),
-        types: sortUnique(types),
+        types: sortUnique(types)
     };
 }
 
@@ -793,7 +790,7 @@ function collectDirectExports(analysis: SourceAnalysis): ExportSnapshot {
             entry.specifier
         ) {
             namespaceExports.push(
-                `${entry.exportedName} from ${entry.specifier}`,
+                `${entry.exportedName} from ${entry.specifier}`
             );
             continue;
         }
@@ -807,7 +804,8 @@ function collectDirectExports(analysis: SourceAnalysis): ExportSnapshot {
 
         if (entry.typeOnly) {
             types.push(exportName);
-        } else {
+        }
+        else {
             values.push(exportName);
         }
     }
@@ -816,7 +814,7 @@ function collectDirectExports(analysis: SourceAnalysis): ExportSnapshot {
         values: sortUnique(values),
         types: sortUnique(types),
         starExports: sortUnique(starExports),
-        namespaceExports: sortUnique(namespaceExports),
+        namespaceExports: sortUnique(namespaceExports)
     };
 }
 
@@ -830,7 +828,7 @@ function resolveLocalModule(filePath: string, specifier: string): string | undef
     }
     return path.relative(
         process.cwd(),
-        path.resolve(path.dirname(toAbsolutePath(filePath)), specifier),
+        path.resolve(path.dirname(toAbsolutePath(filePath)), specifier)
     );
 }
 

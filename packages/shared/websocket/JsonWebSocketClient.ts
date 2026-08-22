@@ -14,7 +14,7 @@ export type WebSocketConnectOptions = Readonly<{
 }>;
 
 export type WebSocketUrlProvider = (
-    options: WebSocketConnectOptions,
+    options: WebSocketConnectOptions
 ) => string | Promise<string>;
 
 export class JsonWebSocketClient {
@@ -23,14 +23,8 @@ export class JsonWebSocketClient {
     private connectPromise?: Promise<void> = undefined;
     private readonly urlProvider: WebSocketUrlProvider;
 
-    private readonly webSocketClientCallbacks = new Map<
-        string,
-        WebSocketClientCallbacks
-    >();
-    private readonly onMessageCallbacks = new Map<
-        string,
-        OnWebSocketMessageCallback
-    >();
+    private readonly webSocketClientCallbacks = new Map<string, WebSocketClientCallbacks>();
+    private readonly onMessageCallbacks = new Map<string, OnWebSocketMessageCallback>();
 
     constructor(url: string | WebSocketUrlProvider) {
         if (typeof url === 'string') {
@@ -49,7 +43,7 @@ export class JsonWebSocketClient {
 
     onWebSocketMessageDo(
         id: string,
-        onMessage: OnWebSocketMessageCallback,
+        onMessage: OnWebSocketMessageCallback
     ) {
         this.onMessageCallbacks.set(id, onMessage);
         return this;
@@ -57,7 +51,7 @@ export class JsonWebSocketClient {
 
     onWebsocketCallbacksDo(
         id: string,
-        webSocketClientCallbacks: WebSocketClientCallbacks,
+        webSocketClientCallbacks: WebSocketClientCallbacks
     ) {
         this.webSocketClientCallbacks.set(id, webSocketClientCallbacks);
         return this;
@@ -132,7 +126,7 @@ export class JsonWebSocketClient {
                 };
 
                 options.signal?.addEventListener('abort', abortConnect, {
-                    once: true,
+                    once: true
                 });
                 if (options.signal?.aborted) {
                     abortConnect();
@@ -147,12 +141,13 @@ export class JsonWebSocketClient {
                         for (const callback of this.webSocketClientCallbacks.values()) {
                             try {
                                 callback?.onOpen?.(ev);
-                            } catch (e) {
+                            }
+                            catch (e) {
                                 console.error('Callback onOpen failed:', e);
                             }
                         }
                         resolve();
-                    },
+                    }
                 );
 
                 socket.addEventListener(
@@ -165,11 +160,12 @@ export class JsonWebSocketClient {
                         for (const callback of this.onMessageCallbacks.values()) {
                             try {
                                 await callback.onMessage(JSON.parse(ev.data), ev);
-                            } catch (e) {
+                            }
+                            catch (e) {
                                 console.error('Callback onMessage failed:', e);
                             }
                         }
-                    },
+                    }
                 );
 
                 socket.addEventListener(
@@ -180,7 +176,8 @@ export class JsonWebSocketClient {
                         for (const callback of this.webSocketClientCallbacks.values()) {
                             try {
                                 callback?.onError?.(ev);
-                            } catch (e) {
+                            }
+                            catch (e) {
                                 console.error('Callback onError failed:', e);
                             }
                         }
@@ -189,7 +186,7 @@ export class JsonWebSocketClient {
                             isRejected = true;
                             reject(new Error('WebSocket error. Type: ' + ev.type));
                         }
-                    },
+                    }
                 );
 
                 socket.addEventListener(
@@ -200,7 +197,8 @@ export class JsonWebSocketClient {
                         for (const callback of this.webSocketClientCallbacks.values()) {
                             try {
                                 callback?.onClose?.(ev);
-                            } catch (e) {
+                            }
+                            catch (e) {
                                 console.error('Callback onClose failed:', e);
                             }
                         }
@@ -214,13 +212,13 @@ export class JsonWebSocketClient {
                             reject(
                                 new Error(
                                     'WebSocket is closed. Code: ' + ev.code + ' Reason ' +
-                                    ev.reason,
-                                ),
+                                        ev.reason
+                                )
                             );
                         }
-                    },
+                    }
                 );
-            },
+            }
         );
     }
 

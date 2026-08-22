@@ -1,11 +1,11 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
 import { selectRallarBlackBoxFirstFailure } from '@shared-test/rallar-bb-test/selectors.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 
 export function FailurePanel({
     state,
-    authSession,
+    authSession
 }: {
     state: RallarBlackBoxTestState;
     authSession?: AuthSession;

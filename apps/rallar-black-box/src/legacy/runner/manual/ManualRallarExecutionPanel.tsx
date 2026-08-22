@@ -1,7 +1,7 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
-import { SchemaAuthoringPanel } from '../../shared/schema/SchemaAuthoringPanel.tsx';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
+import { SchemaAuthoringPanel } from '../../shared/schema/SchemaAuthoringPanel.tsx';
 import { formatTime } from '../../shared/time-format.ts';
 import { actionLabel } from './manual-workbench-defaults.ts';
 import type { ManualRallarWorkbenchModel } from './use-manual-rallar-workbench.ts';
@@ -11,7 +11,7 @@ export function ManualRallarExecutionPanel({
     authSession,
     busy,
     onSelectCommand,
-    model,
+    model
 }: {
     state: RallarBlackBoxTestState;
     authSession?: AuthSession;
@@ -36,7 +36,7 @@ export function ManualRallarExecutionPanel({
         copyRtcMatrixRecipe,
         copyNegativeRecipe,
         setRecipeVisible,
-        copyRecipeSnippet,
+        copyRecipeSnippet
     } = model;
 
     return (
@@ -74,15 +74,13 @@ export function ManualRallarExecutionPanel({
                         'send',
                         'health',
                         'close',
-                        'reset',
+                        'reset'
                     ] as const
                 ).map((action) => (
                     <button
                         key={action}
                         type="button"
-                        disabled={
-                            busy || (action === 'send' && !payloadResult.ok)
-                        }
+                        disabled={busy || (action === 'send' && !payloadResult.ok)}
                         onClick={() => void runManualAction(action)}
                     >
                         {actionLabel(action)}
@@ -144,9 +142,7 @@ export function ManualRallarExecutionPanel({
                     <div className="heading-actions">
                         <button
                             type="button"
-                            onClick={() =>
-                                setRecipeVisible((current) => !current)
-                            }
+                            onClick={() => setRecipeVisible((current) => !current)}
                         >
                             {recipeVisible ? 'Hide Recipe' : 'Show Recipe'}
                         </button>
@@ -160,9 +156,7 @@ export function ManualRallarExecutionPanel({
                     </div>
                 </div>
                 <div className="manual-action-list">
-                    {history.length === 0 && (
-                        <div className="empty-state">No manual actions</div>
-                    )}
+                    {history.length === 0 && <div className="empty-state">No manual actions</div>}
                     {history
                         .slice()
                         .reverse()
@@ -170,7 +164,7 @@ export function ManualRallarExecutionPanel({
                             const relatedEvents = events.filter(
                                 (event) =>
                                     event.commandId &&
-                                    entry.commandIds.includes(event.commandId),
+                                    entry.commandIds.includes(event.commandId)
                             ).length;
                             return (
                                 <article
@@ -180,8 +174,7 @@ export function ManualRallarExecutionPanel({
                                     <div>
                                         <strong>{entry.label}</strong>
                                         <small>
-                                            {formatTime(entry.atEpochMs)} -{' '}
-                                            {relatedEvents} events
+                                            {formatTime(entry.atEpochMs)} - {relatedEvents} events
                                         </small>
                                     </div>
                                     <div className="manual-command-links">
@@ -189,9 +182,7 @@ export function ManualRallarExecutionPanel({
                                             <button
                                                 type="button"
                                                 key={commandId}
-                                                onClick={() =>
-                                                    onSelectCommand(commandId)
-                                                }
+                                                onClick={() => onSelectCommand(commandId)}
                                             >
                                                 {commandId}
                                             </button>

@@ -13,7 +13,7 @@ import {
     REMOTE_SNAPSHOT_POSITION_LERP_MS,
     ROOM_ROAM_INSPECTION_SPEED_MULTIPLIER,
     ROOM_ROAM_SPRINT_SPEED,
-    ROOM_ROAM_WALK_SPEED,
+    ROOM_ROAM_WALK_SPEED
 } from '../src/game/scene/motionTuning.ts';
 
 describe('neon adventure motion tuning', () => {

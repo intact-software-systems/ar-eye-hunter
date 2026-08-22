@@ -1,9 +1,5 @@
 import type { RallarBlackBoxTestRuntimeStatus } from '@shared-test/rallar-bb-test/types.ts';
-import type {
-    RecipeLaunchState,
-    RunnerReadinessCheck,
-    RunnerServiceProbeStatus,
-} from '../../../runner-readiness.ts';
+import type { RecipeLaunchState, RunnerReadinessCheck, RunnerServiceProbeStatus } from '../../../runner-readiness.ts';
 
 export type RunnerServiceProbe = Readonly<{
     status: RunnerServiceProbeStatus;
@@ -11,7 +7,7 @@ export type RunnerServiceProbe = Readonly<{
 }>;
 
 export function runnerLaunchStateFromRunState(
-    runState: RallarBlackBoxTestRuntimeStatus | string,
+    runState: RallarBlackBoxTestRuntimeStatus | string
 ): RecipeLaunchState {
     if (runState === 'running') {
         return 'running';
@@ -39,7 +35,7 @@ export function runnerLaunchTone(state: RecipeLaunchState): string {
 }
 
 export function runnerReadinessCheckTone(
-    check: RunnerReadinessCheck,
+    check: RunnerReadinessCheck
 ): string {
     if (check.status === 'ready') {
         return 'good';

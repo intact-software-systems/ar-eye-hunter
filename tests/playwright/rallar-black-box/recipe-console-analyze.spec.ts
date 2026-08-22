@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import {
     createAnalyzeLooseFiles,
     createAnalyzeTimeoutEnvelopeFile,
-    createAnalyzeTimeoutLooseFiles,
+    createAnalyzeTimeoutLooseFiles
 } from './recipe-console-analyze-artifacts.ts';
 import { installRecipeConsoleAnalyzeFixture } from './recipe-console-analyze-fixture.ts';
 import {
@@ -11,7 +11,7 @@ import {
     analyzeSearch,
     analyzeSource,
     analyzeVerdict,
-    chooseAnalyzeFiles,
+    chooseAnalyzeFiles
 } from './recipe-console-analyze-helpers.ts';
 import {
     ANALYZE_AGENT_ID,
@@ -26,13 +26,10 @@ import {
     ANALYZE_RESULT_FAILURE_MESSAGE,
     ANALYZE_RESULT_FAILURE_NAME,
     ANALYZE_RESULT_FAILURE_STACK,
-    ANALYZE_ROUTE,
+    ANALYZE_ROUTE
 } from './recipe-console-analyze-run-data.ts';
 
-test('imports a partial bundle offline and focuses the first actionable failure', async ({
-    context,
-    page,
-}) => {
+test('imports a partial bundle offline and focuses the first actionable failure', async ({ context, page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     const fixture = await installRecipeConsoleAnalyzeFixture(context);
     await page.goto(ANALYZE_ROUTE);
@@ -43,9 +40,8 @@ test('imports a partial bundle offline and focuses the first actionable failure'
 
     const sections = page.locator('[data-analyze-section]');
     await expect(sections).toHaveCount(ANALYZE_SECTION_ORDER.length);
-    expect(await sections.evaluateAll(nodes => nodes.map(node =>
-        node.getAttribute('data-analyze-section')
-    ))).toEqual(ANALYZE_SECTION_ORDER);
+    expect(await sections.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-analyze-section'))))
+        .toEqual(ANALYZE_SECTION_ORDER);
 
     const failure = analyzeVerdict(page);
     await expect(failure).toHaveAttribute('data-run-state', 'failed');
@@ -57,17 +53,17 @@ test('imports a partial bundle offline and focuses the first actionable failure'
     await expect(failure.getByText('Next action', { exact: true })).toBeVisible();
     await expect(failure.getByText('Verify', { exact: true }).locator('..'))
         .toContainText(
-            'npm run test:e2e:rallar-black-box:full-stack:memory:live-rtc-3',
+            'npm run test:e2e:rallar-black-box:full-stack:memory:live-rtc-3'
         );
     const quality = page.locator('[data-analyze-section="quality"]');
     await expect(quality.locator('[data-file-status="malformed"]', {
-        hasText: 'events.jsonl',
+        hasText: 'events.jsonl'
     })).toBeVisible();
     await expect(quality.locator('[data-file-status="missing-optional"]', {
-        hasText: 'report.json',
+        hasText: 'report.json'
     })).toBeVisible();
     await expect(quality.locator('[data-file-status="ignored"]', {
-        hasText: 'operator-notes.txt',
+        hasText: 'operator-notes.txt'
     })).toBeVisible();
 
     const performance = page.locator('[data-analyze-section="performance"]');
@@ -92,10 +88,10 @@ test('imports a partial bundle offline and focuses the first actionable failure'
     const fromEpochMs = ANALYZE_GENERATED_AT_EPOCH_MS - 1_000;
     const toEpochMs = ANALYZE_GENERATED_AT_EPOCH_MS + 59_000;
     await evidenceSearch.getByLabel('From').fill(
-        new Date(fromEpochMs).toISOString().slice(0, 16),
+        new Date(fromEpochMs).toISOString().slice(0, 16)
     );
     await evidenceSearch.getByLabel('To').fill(
-        new Date(toEpochMs).toISOString().slice(0, 16),
+        new Date(toEpochMs).toISOString().slice(0, 16)
     );
 
     const diagnostic = evidenceSearch.locator('[data-evidence-result]');
@@ -125,10 +121,7 @@ test('imports a partial bundle offline and focuses the first actionable failure'
     await expect(markdown).toContainText('Likely causal trail');
 });
 
-test('promotes a correlated timeout result from verdict through raw payload', async ({
-    context,
-    page,
-}) => {
+test('promotes a correlated timeout result from verdict through raw payload', async ({ context, page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await installRecipeConsoleAnalyzeFixture(context);
     await page.goto(ANALYZE_ROUTE);
@@ -136,7 +129,7 @@ test('promotes a correlated timeout result from verdict through raw payload', as
 
     const verdict = analyzeVerdict(page);
     const resultFingerprint = verdict.locator(
-        '[data-analyze-failure-details="verdict"]',
+        '[data-analyze-failure-details="verdict"]'
     );
     await expect(resultFingerprint).toContainText(ANALYZE_RESULT_FAILURE_CODE);
     await expect(resultFingerprint).toContainText(ANALYZE_RESULT_FAILURE_NAME);
@@ -156,17 +149,14 @@ test('promotes a correlated timeout result from verdict through raw payload', as
     await expect(inspector.locator('[data-analyze-failure-details="inspector"]'))
         .toContainText(ANALYZE_RESULT_FAILURE_STACK);
     const rawPayload = inspector.locator('details').filter({
-        hasText: 'Raw payload JSON',
+        hasText: 'Raw payload JSON'
     });
     await expect(rawPayload).toHaveJSProperty('open', false);
     await rawPayload.locator('summary').click();
     await expect(rawPayload.locator('pre')).toContainText(ANALYZE_RESULT_FAILURE_NAME);
 });
 
-test('loads from Control, exports an envelope, reimports it, and clears memory on reload', async ({
-    context,
-    page,
-}) => {
+test('loads from Control, exports an envelope, reimports it, and clears memory on reload', async ({ context, page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     const fixture = await installRecipeConsoleAnalyzeFixture(context);
     await page.goto(ANALYZE_CONTROL_ROUTE);
@@ -186,15 +176,17 @@ test('loads from Control, exports an envelope, reimports it, and clears memory o
     await controlSource.getByRole('button', { name: 'Export artifact' }).click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toBe(
-        `${ANALYZE_DISTRIBUTED_RUN_ID}-artifact.json`,
+        `${ANALYZE_DISTRIBUTED_RUN_ID}-artifact.json`
     );
     const downloadPath = await download.path();
-    if (!downloadPath) throw new Error('Analyze artifact download path is unavailable.');
+    if (!downloadPath) {
+        throw new Error('Analyze artifact download path is unavailable.');
+    }
     const downloaded = await readFile(downloadPath);
     expect(JSON.parse(downloaded.toString())).toMatchObject({
         artifactSchemaVersion: 2,
         distributedRunId: ANALYZE_DISTRIBUTED_RUN_ID,
-        generatedAtEpochMs: ANALYZE_GENERATED_AT_EPOCH_MS,
+        generatedAtEpochMs: ANALYZE_GENERATED_AT_EPOCH_MS
     });
     await controlSource.getByRole('button', { name: 'Clear' }).click();
     await expect(page.getByRole('heading', { name: 'Import distributed-run evidence' }))
@@ -202,7 +194,7 @@ test('loads from Control, exports an envelope, reimports it, and clears memory o
     await chooseAnalyzeFiles(page, [{
         name: download.suggestedFilename(),
         mimeType: 'application/json',
-        buffer: downloaded,
+        buffer: downloaded
     }]);
     await expect(analyzeVerdict(page)).toContainText(ANALYZE_FAILURE_MESSAGE);
     expect(fixture.artifactRequestCount()).toBe(1);
@@ -213,10 +205,7 @@ test('loads from Control, exports an envelope, reimports it, and clears memory o
         .toBeDisabled();
 });
 
-test('opens and closes the Analyze inspector through a keyboard-only short-landscape path', async ({
-    context,
-    page,
-}) => {
+test('opens and closes the Analyze inspector through a keyboard-only short-landscape path', async ({ context, page }) => {
     await page.setViewportSize({ width: 932, height: 430 });
     const fixture = await installRecipeConsoleAnalyzeFixture(context);
     await page.goto(ANALYZE_ROUTE);
@@ -243,8 +232,10 @@ test('opens and closes the Analyze inspector through a keyboard-only short-lands
     await expect(resultInspector).toHaveCount(0);
     await expect(resultTrigger).toBeFocused();
     await expect.poll(fixture.artifactRequestCount).toBe(0);
-    expect(await page.evaluate(() => ({
-        x: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-        y: document.documentElement.scrollHeight - document.documentElement.clientHeight,
-    }))).toEqual({ x: 0, y: 0 });
+    expect(
+        await page.evaluate(() => ({
+            x: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            y: document.documentElement.scrollHeight - document.documentElement.clientHeight
+        }))
+    ).toEqual({ x: 0, y: 0 });
 });

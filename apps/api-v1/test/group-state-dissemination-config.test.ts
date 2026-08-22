@@ -1,41 +1,41 @@
 import assert from 'node:assert/strict';
 
 import {
-  groupStateDisseminationStartupLogLine,
-  readApiGroupStateDisseminationConfig,
+    groupStateDisseminationStartupLogLine,
+    readApiGroupStateDisseminationConfig
 } from '../src/runtime/group-formation/group-state-dissemination-config.ts';
 
 Deno.test('group-state dissemination defaults to delta-primary', () => {
-  assert.deepEqual(
-    readApiGroupStateDisseminationConfig(fakeEnv({})),
-    { dissemination: 'delta-primary' },
-  );
+    assert.deepEqual(
+        readApiGroupStateDisseminationConfig(fakeEnv({})),
+        { dissemination: 'delta-primary' }
+    );
 });
 
 Deno.test('group-state dissemination accepts only the two explicit modes and trims input', () => {
-  assert.deepEqual(
-    readApiGroupStateDisseminationConfig(
-      fakeEnv({ RALLAR_GROUP_STATE_DISSEMINATION: ' delta-primary ' }),
-    ),
-    { dissemination: 'delta-primary' },
-  );
-  assert.deepEqual(
-    readApiGroupStateDisseminationConfig(
-      fakeEnv({ RALLAR_GROUP_STATE_DISSEMINATION: 'dual-emit' }),
-    ),
-    { dissemination: 'dual-emit' },
-  );
-  // The retired mode is rejected like any other unknown value rather than
-  // silently accepted or mapped onto a survivor.
-  for (const rejected of ['delta', 'snapshot-per-change']) {
-    assert.throws(
-      () =>
+    assert.deepEqual(
         readApiGroupStateDisseminationConfig(
-          fakeEnv({ RALLAR_GROUP_STATE_DISSEMINATION: rejected }),
+            fakeEnv({ RALLAR_GROUP_STATE_DISSEMINATION: ' delta-primary ' })
         ),
-      /RALLAR_GROUP_STATE_DISSEMINATION must be one of dual-emit, delta-primary/,
+        { dissemination: 'delta-primary' }
     );
-  }
+    assert.deepEqual(
+        readApiGroupStateDisseminationConfig(
+            fakeEnv({ RALLAR_GROUP_STATE_DISSEMINATION: 'dual-emit' })
+        ),
+        { dissemination: 'dual-emit' }
+    );
+    // The retired mode is rejected like any other unknown value rather than
+    // silently accepted or mapped onto a survivor.
+    for (const rejected of ['delta', 'snapshot-per-change']) {
+        assert.throws(
+            () =>
+                readApiGroupStateDisseminationConfig(
+                    fakeEnv({ RALLAR_GROUP_STATE_DISSEMINATION: rejected })
+                ),
+            /RALLAR_GROUP_STATE_DISSEMINATION must be one of dual-emit, delta-primary/
+        );
+    }
 });
 
 // Formation damping no longer overrides dissemination. The override existed so
@@ -43,47 +43,47 @@ Deno.test('group-state dissemination accepts only the two explicit modes and tri
 // now mode-independent, and silently rewriting an explicitly configured
 // dissemination mode because an unrelated knob was set is a trap.
 Deno.test('formation damping does not override the configured dissemination mode', () => {
-  for (const damping of ['legacy', 'damped']) {
-    assert.deepEqual(
-      readApiGroupStateDisseminationConfig(
-        fakeEnv({
-          RALLAR_GROUP_FORMATION_DAMPING: damping,
-          RALLAR_GROUP_STATE_DISSEMINATION: 'dual-emit',
-        }),
-      ),
-      { dissemination: 'dual-emit' },
-    );
-    assert.deepEqual(
-      readApiGroupStateDisseminationConfig(fakeEnv({ RALLAR_GROUP_FORMATION_DAMPING: damping })),
-      { dissemination: 'delta-primary' },
-    );
-  }
+    for (const damping of ['legacy', 'damped']) {
+        assert.deepEqual(
+            readApiGroupStateDisseminationConfig(
+                fakeEnv({
+                    RALLAR_GROUP_FORMATION_DAMPING: damping,
+                    RALLAR_GROUP_STATE_DISSEMINATION: 'dual-emit'
+                })
+            ),
+            { dissemination: 'dual-emit' }
+        );
+        assert.deepEqual(
+            readApiGroupStateDisseminationConfig(fakeEnv({ RALLAR_GROUP_FORMATION_DAMPING: damping })),
+            { dissemination: 'delta-primary' }
+        );
+    }
 });
 
 Deno.test('an invalid dissemination value fails startup under any damping mode', () => {
-  assert.throws(
-    () =>
-      readApiGroupStateDisseminationConfig(
-        fakeEnv({
-          RALLAR_GROUP_FORMATION_DAMPING: 'legacy',
-          RALLAR_GROUP_STATE_DISSEMINATION: 'bogus',
-        }),
-      ),
-    /RALLAR_GROUP_STATE_DISSEMINATION must be one of dual-emit, delta-primary/,
-  );
+    assert.throws(
+        () =>
+            readApiGroupStateDisseminationConfig(
+                fakeEnv({
+                    RALLAR_GROUP_FORMATION_DAMPING: 'legacy',
+                    RALLAR_GROUP_STATE_DISSEMINATION: 'bogus'
+                })
+            ),
+        /RALLAR_GROUP_STATE_DISSEMINATION must be one of dual-emit, delta-primary/
+    );
 });
 
 Deno.test('group-state dissemination startup log exposes the active mode', () => {
-  assert.equal(
-    groupStateDisseminationStartupLogLine({ dissemination: 'dual-emit' }),
-    'Rallar API-v1 group-state dissemination: dual-emit',
-  );
+    assert.equal(
+        groupStateDisseminationStartupLogLine({ dissemination: 'dual-emit' }),
+        'Rallar API-v1 group-state dissemination: dual-emit'
+    );
 });
 
 function fakeEnv(values: Readonly<Record<string, string | undefined>>) {
-  return {
-    get(name: string): string | undefined {
-      return values[name];
-    },
-  };
+    return {
+        get(name: string): string | undefined {
+            return values[name];
+        }
+    };
 }

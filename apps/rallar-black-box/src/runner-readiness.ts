@@ -63,7 +63,7 @@ export type RunnerReadinessInput = Readonly<{
 }>;
 
 export function runnerReadinessStatus(
-    input: RunnerReadinessInput,
+    input: RunnerReadinessInput
 ): RunnerReadinessStatus {
     const recipeIssues = input.recipePrerequisiteIssues ?? [];
     const apiRequired = input.apiRequired ?? true;
@@ -77,7 +77,7 @@ export function runnerReadinessStatus(
             offlineMessage: 'API is offline',
             onlineMessage: 'API reachable',
             checkingMessage: 'Checking API',
-            action: 'Start API-v1 or update the API base URL.',
+            action: 'Start API-v1 or update the API base URL.'
         }),
         {
             id: 'auth',
@@ -85,31 +85,29 @@ export function runnerReadinessStatus(
             status: input.authenticated
                 ? 'ready'
                 : authRequired
-                  ? 'blocked'
-                  : 'warning',
+                ? 'blocked'
+                : 'warning',
             message: input.authenticated
                 ? 'Logged in'
                 : authRequired
-                  ? 'Login required'
-                  : 'Login not needed for this local recipe',
+                ? 'Login required'
+                : 'Login not needed for this local recipe',
             action: input.authenticated
                 ? undefined
                 : authRequired
-                  ? 'Open Auth and sign in before live browser recipes.'
-                  : undefined,
+                ? 'Open Auth and sign in before live browser recipes.'
+                : undefined
         },
         {
             id: 'group',
             label: 'Group',
             status: input.groupId.trim().length > 0 ? 'ready' : 'blocked',
-            message:
-                input.groupId.trim().length > 0
-                    ? input.groupId
-                    : 'Current group missing',
-            action:
-                input.groupId.trim().length > 0
-                    ? undefined
-                    : 'Set a group in Global Context.',
+            message: input.groupId.trim().length > 0
+                ? input.groupId
+                : 'Current group missing',
+            action: input.groupId.trim().length > 0
+                ? undefined
+                : 'Set a group in Global Context.'
         },
         serviceCheck({
             id: 'control',
@@ -118,68 +116,61 @@ export function runnerReadinessStatus(
             offlineMessage: 'Control server offline',
             onlineMessage: 'Control server reachable',
             checkingMessage: 'Checking control server',
-            action: 'Start rallar-black-box-control-server.',
+            action: 'Start rallar-black-box-control-server.'
         }),
         {
             id: 'run',
             label: 'Control run',
             status: input.controlRunId.trim().length > 0 ? 'ready' : 'blocked',
-            message:
-                input.controlRunId.trim().length > 0
-                    ? input.controlRunId
-                    : 'Control run missing',
-            action:
-                input.controlRunId.trim().length > 0
-                    ? undefined
-                    : 'Start or select a control run.',
+            message: input.controlRunId.trim().length > 0
+                ? input.controlRunId
+                : 'Control run missing',
+            action: input.controlRunId.trim().length > 0
+                ? undefined
+                : 'Start or select a control run.'
         },
         {
             id: 'agents',
             label: 'Agents',
-            status:
-                input.targetableAgentCount > 0
-                    ? 'ready'
-                    : input.connectedAgentCount > 0
-                      ? 'warning'
-                      : 'blocked',
-            message:
-                input.targetableAgentCount > 0
-                    ? `${input.targetableAgentCount} targetable`
-                    : input.connectedAgentCount > 0
-                      ? 'No agents match this group'
-                      : 'No agents connected',
-            action:
-                input.targetableAgentCount > 0
-                    ? undefined
-                    : 'Open another browser as a control agent in the same group.',
+            status: input.targetableAgentCount > 0
+                ? 'ready'
+                : input.connectedAgentCount > 0
+                ? 'warning'
+                : 'blocked',
+            message: input.targetableAgentCount > 0
+                ? `${input.targetableAgentCount} targetable`
+                : input.connectedAgentCount > 0
+                ? 'No agents match this group'
+                : 'No agents connected',
+            action: input.targetableAgentCount > 0
+                ? undefined
+                : 'Open another browser as a control agent in the same group.'
         },
         ...turnChecks(input.turnStatus, input.turnDetail),
         {
             id: 'recipe-prerequisites',
             label: 'Recipe',
             status: recipeIssues.length > 0 ? 'blocked' : 'ready',
-            message:
-                recipeIssues.length > 0
-                    ? recipeIssues[0]
-                    : 'Recipe prerequisites clear',
-            action:
-                recipeIssues.length > 0
-                    ? 'Choose a compatible recipe or fix the prerequisite.'
-                    : undefined,
-        },
+            message: recipeIssues.length > 0
+                ? recipeIssues[0]
+                : 'Recipe prerequisites clear',
+            action: recipeIssues.length > 0
+                ? 'Choose a compatible recipe or fix the prerequisite.'
+                : undefined
+        }
     ];
 
     const localBlockedIds: readonly RunnerReadinessCheckId[] = [
         'api',
         'auth',
         'group',
-        'recipe-prerequisites',
+        'recipe-prerequisites'
     ];
     const distributedBlockedIds: readonly RunnerReadinessCheckId[] = [
         ...localBlockedIds,
         'control',
         'run',
-        'agents',
+        'agents'
     ];
     const localBlockers = blockerMessages(checks, localBlockedIds);
     const distributedBlockers = blockerMessages(checks, distributedBlockedIds);
@@ -195,19 +186,18 @@ export function runnerReadinessStatus(
         primaryMessage: firstLocalBlocker
             ? firstLocalBlocker
             : firstDistributedBlocker
-              ? `Ready to run in this browser. Distributed: ${firstDistributedBlocker}`
-              : 'Ready to run recipes.',
+            ? `Ready to run in this browser. Distributed: ${firstDistributedBlocker}`
+            : 'Ready to run recipes.'
     };
 }
 
 export function runnerDisabledReason(
     readiness: RunnerReadinessStatus,
-    mode: RecipeRunMode,
+    mode: RecipeRunMode
 ): string | undefined {
-    const blockers =
-        mode === 'local-browser'
-            ? readiness.localBlockers
-            : readiness.distributedBlockers;
+    const blockers = mode === 'local-browser'
+        ? readiness.localBlockers
+        : readiness.distributedBlockers;
     return blockers[0];
 }
 
@@ -237,7 +227,7 @@ export function runnerFriendlyErrorMessage(error: unknown): string {
 
 function turnChecks(
     status: RunnerTurnProbeStatus | undefined,
-    detail: string | undefined,
+    detail: string | undefined
 ): readonly RunnerReadinessCheck[] {
     if (!status) {
         return [];
@@ -247,7 +237,7 @@ function turnChecks(
             id: 'turn',
             label: 'TURN',
             status: 'ready',
-            message: detail ?? 'TURN/STUN servers returned',
+            message: detail ?? 'TURN/STUN servers returned'
         }];
     }
     if (status === 'checking') {
@@ -255,7 +245,7 @@ function turnChecks(
             id: 'turn',
             label: 'TURN',
             status: 'checking',
-            message: 'Checking TURN/STUN',
+            message: 'Checking TURN/STUN'
         }];
     }
     if (status === 'error') {
@@ -264,7 +254,7 @@ function turnChecks(
             label: 'TURN',
             status: 'warning',
             message: `TURN/STUN check failed: ${detail ?? 'unknown error'}`,
-            action: 'Check login, API URL, CORS, or Metered TURN configuration.',
+            action: 'Check login, API URL, CORS, or Metered TURN configuration.'
         }];
     }
 
@@ -273,26 +263,28 @@ function turnChecks(
         label: 'TURN',
         status: 'warning',
         message: 'No TURN/STUN servers returned. Cross-region WebRTC may fail; configure Metered TURN.',
-        action: 'Set Metered TURN secrets and restart API-v1 before cross-region RTC tests.',
+        action: 'Set Metered TURN secrets and restart API-v1 before cross-region RTC tests.'
     }];
 }
 
-function serviceCheck(input: Readonly<{
-    id: Extract<RunnerReadinessCheckId, 'api' | 'control'>;
-    label: string;
-    status: RunnerServiceProbeStatus;
-    required?: boolean;
-    offlineMessage: string;
-    onlineMessage: string;
-    checkingMessage: string;
-    action: string;
-}>): RunnerReadinessCheck {
+function serviceCheck(
+    input: Readonly<{
+        id: Extract<RunnerReadinessCheckId, 'api' | 'control'>;
+        label: string;
+        status: RunnerServiceProbeStatus;
+        required?: boolean;
+        offlineMessage: string;
+        onlineMessage: string;
+        checkingMessage: string;
+        action: string;
+    }>
+): RunnerReadinessCheck {
     if (input.status === 'online') {
         return {
             id: input.id,
             label: input.label,
             status: 'ready',
-            message: input.onlineMessage,
+            message: input.onlineMessage
         };
     }
     if (input.status === 'checking') {
@@ -300,7 +292,7 @@ function serviceCheck(input: Readonly<{
             id: input.id,
             label: input.label,
             status: input.required === false ? 'warning' : 'checking',
-            message: input.checkingMessage,
+            message: input.checkingMessage
         };
     }
     return {
@@ -308,20 +300,20 @@ function serviceCheck(input: Readonly<{
         label: input.label,
         status: input.required === false ? 'warning' : 'blocked',
         message: input.offlineMessage,
-        action: input.required === false ? undefined : input.action,
+        action: input.required === false ? undefined : input.action
     };
 }
 
 function blockerMessages(
     checks: readonly RunnerReadinessCheck[],
-    ids: readonly RunnerReadinessCheckId[],
+    ids: readonly RunnerReadinessCheckId[]
 ): readonly string[] {
     const blockedIds = new Set(ids);
     return checks
         .filter(
             (check) =>
                 blockedIds.has(check.id) &&
-                (check.status === 'blocked' || check.status === 'checking'),
+                (check.status === 'blocked' || check.status === 'checking')
         )
         .map((check) => check.message);
 }

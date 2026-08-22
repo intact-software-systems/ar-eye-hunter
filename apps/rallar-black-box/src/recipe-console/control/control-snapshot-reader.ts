@@ -1,25 +1,22 @@
 import type {
     ControlRunSnapshot,
     ControlServerSnapshot,
-    ControlSnapshotBounds,
+    ControlSnapshotBounds
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     fetchControlRunSnapshot,
     fetchControlServerSnapshot,
-    fetchDistributedRuns,
+    fetchDistributedRuns
 } from '../../control-run-manager.ts';
-import type {
-    ControlAuthorizedTransport,
-    RecipeConsoleControlAuthorization,
-} from './control-authorized-transport.ts';
 import { isControlAbortError } from './control-authorized-fetch.ts';
+import type { ControlAuthorizedTransport, RecipeConsoleControlAuthorization } from './control-authorized-transport.ts';
 import { mergeControlRunDetails } from './control-detail-run-ids.ts';
 import { createControlSnapshotRevisionSession } from './control-snapshot-revision.ts';
 import {
     validateControlDistributedRuns,
     validateControlRunSnapshot,
     validateControlServerCoreSnapshot,
-    withoutDistributedRuns,
+    withoutDistributedRuns
 } from './control-snapshot-validation.ts';
 
 export type RecipeConsoleControlDistributedRunsSource =
@@ -47,7 +44,7 @@ export type RecipeConsoleControlQueryProvenance = Readonly<{
 }>;
 
 export type ControlSnapshotReader = (
-    input?: Readonly<{ signal?: AbortSignal }>,
+    input?: Readonly<{ signal?: AbortSignal; }>
 ) => Promise<RecipeConsoleControlSnapshotResult>;
 
 export type ControlSnapshotReaderConfig = Readonly<{
@@ -61,36 +58,34 @@ export type ControlSnapshotReaderConfig = Readonly<{
 }>;
 
 export function createControlSnapshotReader(
-    config: ControlSnapshotReaderConfig,
+    config: ControlSnapshotReaderConfig
 ): ControlSnapshotReader {
     const runsAuthorization = config.transport.createEndpointAuthorization();
-    const distributedRunsAuthorization =
-        config.transport.createEndpointAuthorization();
+    const distributedRunsAuthorization = config.transport.createEndpointAuthorization();
     const revisionSession = createControlSnapshotRevisionSession();
 
-    return async function readSnapshot(input = {}) {
+    return async function readSnapshot (input = {}) {
         const server = await config.transport.response(
             (token, fetchFn) =>
                 fetchControlServerSnapshot({
                     baseUrl: config.baseUrl,
                     token,
                     bounds: config.indexBounds,
-                    fetchFn,
+                    fetchFn
                 }),
             runsAuthorization,
-            input.signal,
+            input.signal
         );
         try {
             validateControlServerCoreSnapshot(server.value);
-        } catch (error) {
+        }
+        catch (error) {
             throw config.protocolError(error);
         }
 
         let snapshot = server.value;
-        let completeness: RecipeConsoleControlSnapshotResult['completeness'] =
-            'complete';
-        let distributedRunsSource:
-            RecipeConsoleControlDistributedRunsSource = 'root-snapshot';
+        let completeness: RecipeConsoleControlSnapshotResult['completeness'] = 'complete';
+        let distributedRunsSource: RecipeConsoleControlDistributedRunsSource = 'root-snapshot';
         let authorization = server.authorization;
         let partialError: unknown;
         let fallbackDocument: unknown;
@@ -98,37 +93,40 @@ export function createControlSnapshotReader(
         if (server.value.distributedRuns !== undefined) {
             try {
                 validateControlDistributedRuns(server.value.distributedRuns);
-            } catch (error) {
+            }
+            catch (error) {
                 snapshot = withoutDistributedRuns(server.value);
                 completeness = 'partial';
                 distributedRunsSource = 'unavailable';
                 partialError = config.protocolError(error);
             }
-        } else {
+        }
+        else {
             try {
                 const distributed = await config.transport.response(
                     (token, fetchFn) =>
                         fetchDistributedRuns({
                             baseUrl: config.baseUrl,
                             token,
-                            fetchFn,
+                            fetchFn
                         }),
                     distributedRunsAuthorization,
-                    input.signal,
+                    input.signal
                 );
                 validateControlDistributedRuns(distributed.value);
                 snapshot = {
                     ...server.value,
-                    distributedRuns: distributed.value,
+                    distributedRuns: distributed.value
                 };
                 validateControlServerCoreSnapshot(snapshot);
                 distributedRunsSource = 'canonical-fallback';
                 authorization = combinedAuthorization(
                     server.authorization,
-                    distributed.authorization,
+                    distributed.authorization
                 );
                 fallbackDocument = distributed.value;
-            } catch (error) {
+            }
+            catch (error) {
                 if (input.signal?.aborted || isControlAbortError(error)) {
                     throw error;
                 }
@@ -142,7 +140,7 @@ export function createControlSnapshotReader(
 
         const requestedRunIds = requestedDetailRunIds(
             snapshot,
-            config.detailRunIds?.(snapshot) ?? [],
+            config.detailRunIds?.(snapshot) ?? []
         );
         const detailRuns: ControlRunSnapshot[] = [];
         for (const runId of requestedRunIds) {
@@ -153,17 +151,17 @@ export function createControlSnapshotReader(
                         runId,
                         token,
                         bounds: config.detailBounds,
-                        fetchFn,
+                        fetchFn
                     });
                     validateControlRunSnapshot(value);
                     return value;
                 },
                 runsAuthorization,
-                input.signal,
+                input.signal
             );
             authorization = combinedAuthorization(
                 authorization,
-                detail.authorization,
+                detail.authorization
             );
             detailRuns.push(detail.value);
         }
@@ -171,19 +169,19 @@ export function createControlSnapshotReader(
         const mergedSnapshot = detailRuns.length > 0
             ? mergeControlRunDetails(snapshot, detailRuns)
             : snapshot;
-        const detailedRunIds = detailRuns.map(run => run.runId);
+        const detailedRunIds = detailRuns.map((run) => run.runId);
         const detailed = new Set(detailedRunIds);
         const runEvidence = {
             detailedRunIds,
             indexOnlyRunIds: mergedSnapshot.runs
-                .map(run => run.runId)
-                .filter(runId => !detailed.has(runId)),
+                .map((run) => run.runId)
+                .filter((runId) => !detailed.has(runId))
         };
         revisionSession.associate(mergedSnapshot, {
             source: distributedRunsSource,
             rootDocument: server.value,
             fallbackDocument,
-            detailDocuments: detailRuns,
+            detailDocuments: detailRuns
         });
         return {
             snapshot: mergedSnapshot,
@@ -191,24 +189,28 @@ export function createControlSnapshotReader(
             distributedRunsSource,
             authorization,
             runEvidence,
-            ...(partialError === undefined ? {} : { partialError }),
+            ...(partialError === undefined ? {} : { partialError })
         };
     };
 }
 
 function requestedDetailRunIds(
     snapshot: ControlServerSnapshot,
-    requested: readonly string[],
+    requested: readonly string[]
 ): readonly string[] {
-    const available = new Set(snapshot.runs.map(run => run.runId));
-    return [...new Set(requested)].filter(runId => available.has(runId));
+    const available = new Set(snapshot.runs.map((run) => run.runId));
+    return [...new Set(requested)].filter((runId) => available.has(runId));
 }
 
 function combinedAuthorization(
     left: RecipeConsoleControlAuthorization,
-    right: RecipeConsoleControlAuthorization,
+    right: RecipeConsoleControlAuthorization
 ): RecipeConsoleControlAuthorization {
-    if (left === 'manual' || right === 'manual') return 'manual';
-    if (left === 'brokered' || right === 'brokered') return 'brokered';
+    if (left === 'manual' || right === 'manual') {
+        return 'manual';
+    }
+    if (left === 'brokered' || right === 'brokered') {
+        return 'brokered';
+    }
     return 'anonymous';
 }

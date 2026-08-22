@@ -1,6 +1,6 @@
 import { configureSharedGraphRepositories } from '@shared-graph/repository/configure-shared-graph-repositories.ts';
-import { configureRttRepository } from '@shared/repository/rtt-repository.ts';
 import { configureSharedStateRepositories } from '@shared/repository/configure-shared-state-repositories.ts';
+import { configureRttRepository } from '@shared/repository/rtt-repository.ts';
 
 const MINUTE_MS = 60_000;
 
@@ -14,34 +14,34 @@ export type InitialiseRallarServerCacheRepositoriesOptions = Readonly<{
 }>;
 
 export function initialiseRallarServerCacheRepositories(
-    options: InitialiseRallarServerCacheRepositoriesOptions = {},
+    options: InitialiseRallarServerCacheRepositoriesOptions = {}
 ): void {
     const deleteExpiredIntervalMs = options.deleteExpiredIntervalMs ?? MINUTE_MS;
 
     configureSharedStateRepositories({
         clientSnapshots: {
             ttlMs: options.clientSnapshotsTtlMs ?? 2 * MINUTE_MS,
-            deleteExpiredIntervalMs,
+            deleteExpiredIntervalMs
         },
         groupSnapshots: {
             ttlMs: options.groupSnapshotsTtlMs ?? 2 * MINUTE_MS,
-            deleteExpiredIntervalMs,
-        },
+            deleteExpiredIntervalMs
+        }
     });
     configureRttRepository({
         ttlMs: options.rttTtlMs ?? MINUTE_MS,
-        deleteExpiredIntervalMs,
+        deleteExpiredIntervalMs
     });
 
     configureSharedGraphRepositories({
         graphs: {
             ttlMs: options.graphsTtlMs ?? 2 * MINUTE_MS,
-            deleteExpiredIntervalMs,
+            deleteExpiredIntervalMs
         },
         vivaldi: {
             ttlMs: options.vivaldiTtlMs ?? 5 * MINUTE_MS,
-            deleteExpiredIntervalMs,
-        },
+            deleteExpiredIntervalMs
+        }
     });
 }
 

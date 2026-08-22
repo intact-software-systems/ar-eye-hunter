@@ -1,14 +1,14 @@
 export type InProcessMutationLaneRunOptions = Readonly<{
-  signal?: AbortSignal;
+    signal?: AbortSignal;
 }>;
 
 export type InProcessMutationLane = Readonly<{
-  run<TResult>(
-    key: string,
-    effect: () => TResult | PromiseLike<TResult>,
-    options?: InProcessMutationLaneRunOptions,
-  ): Promise<TResult>;
-  pendingKeyCount(): number;
+    run<TResult>(
+        key: string,
+        effect: () => TResult | PromiseLike<TResult>,
+        options?: InProcessMutationLaneRunOptions
+    ): Promise<TResult>;
+    pendingKeyCount(): number;
 }>;
 
 /**
@@ -17,41 +17,41 @@ export type InProcessMutationLane = Readonly<{
  * conditional database writes performed by each effect.
  */
 export function createInProcessMutationLane(): InProcessMutationLane {
-  const tails = new Map<string, Promise<void>>();
+    const tails = new Map<string, Promise<void>>();
 
-  return {
-    run: <TResult>(
-      key: string,
-      effect: () => TResult | PromiseLike<TResult>,
-      options: InProcessMutationLaneRunOptions = {},
-    ): Promise<TResult> => {
-      const previous = tails.get(key) ?? Promise.resolve();
-      const result = previous.then(() => {
-        if (options.signal?.aborted) {
-          throw mutationLaneAbortError(options.signal);
-        }
-        return effect();
-      });
-      const tail = result.then(
-        () => undefined,
-        () => undefined,
-      );
-      tails.set(key, tail);
-      void tail.then(() => {
-        if (tails.get(key) === tail) {
-          tails.delete(key);
-        }
-      });
-      return result;
-    },
-    pendingKeyCount: () => tails.size,
-  };
+    return {
+        run: <TResult>(
+            key: string,
+            effect: () => TResult | PromiseLike<TResult>,
+            options: InProcessMutationLaneRunOptions = {}
+        ): Promise<TResult> => {
+            const previous = tails.get(key) ?? Promise.resolve();
+            const result = previous.then(() => {
+                if (options.signal?.aborted) {
+                    throw mutationLaneAbortError(options.signal);
+                }
+                return effect();
+            });
+            const tail = result.then(
+                () => undefined,
+                () => undefined
+            );
+            tails.set(key, tail);
+            void tail.then(() => {
+                if (tails.get(key) === tail) {
+                    tails.delete(key);
+                }
+            });
+            return result;
+        },
+        pendingKeyCount: () => tails.size
+    };
 }
 
 function mutationLaneAbortError(signal: AbortSignal): Error {
-  const error = new Error('Mutation lane effect aborted before acquisition', {
-    cause: signal.reason,
-  });
-  error.name = 'AbortError';
-  return error;
+    const error = new Error('Mutation lane effect aborted before acquisition', {
+        cause: signal.reason
+    });
+    error.name = 'AbortError';
+    return error;
 }

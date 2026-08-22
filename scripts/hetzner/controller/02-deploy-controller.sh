@@ -2,8 +2,8 @@
 set -Eeuo pipefail
 
 if [[ "$(id -u)" != "0" ]]; then
-  echo "Run this script as root." >&2
-  exit 1
+	echo "Run this script as root." >&2
+	exit 1
 fi
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,10 +27,10 @@ apply_rallar_public_spa_defaults
 apply_rallar_public_cors_defaults
 
 require_command() {
-  if ! command -v "$1" >/dev/null 2>&1; then
-    echo "Missing required command: $1. Run 01-install-runtime.sh first." >&2
-    exit 1
-  fi
+	if ! command -v "$1" >/dev/null 2>&1; then
+		echo "Missing required command: $1. Run 01-install-runtime.sh first." >&2
+		exit 1
+	fi
 }
 
 require_command git
@@ -43,10 +43,10 @@ require_command curl
 
 echo "==> Deploying ${RALLAR_REPO_URL} ref ${RALLAR_REPO_REF}"
 if [[ -d "${RALLAR_CHECKOUT_DIR}/.git" ]]; then
-  git -C "${RALLAR_CHECKOUT_DIR}" fetch --prune origin
+	git -C "${RALLAR_CHECKOUT_DIR}" fetch --prune origin
 else
-  install -d -m 0755 -o rallar -g rallar "$(dirname "${RALLAR_CHECKOUT_DIR}")"
-  git clone "${RALLAR_REPO_URL}" "${RALLAR_CHECKOUT_DIR}"
+	install -d -m 0755 -o rallar -g rallar "$(dirname "${RALLAR_CHECKOUT_DIR}")"
+	git clone "${RALLAR_REPO_URL}" "${RALLAR_CHECKOUT_DIR}"
 fi
 
 git -C "${RALLAR_CHECKOUT_DIR}" checkout "${RALLAR_REPO_REF}"
@@ -58,14 +58,14 @@ runuser -u rallar -- npm --prefix "${RALLAR_CHECKOUT_DIR}" ci
 
 echo "==> Warming Deno caches"
 runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno \
-  deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/api-v1/deno.json" \
-  "${RALLAR_CHECKOUT_DIR}/apps/api-v1/src/main.ts"
+	deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/api-v1/deno.json" \
+	"${RALLAR_CHECKOUT_DIR}/apps/api-v1/src/main.ts"
 runuser -u rallar -- env DENO_DIR=/var/lib/rallar-deno \
-  deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/deno.json" \
-  "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/src/main.ts"
+	deno cache --frozen --config "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/deno.json" \
+	"${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-control-server/src/main.ts"
 
 if [[ "${RALLAR_INSTALL_PLAYWRIGHT}" == "1" || "${RALLAR_INSTALL_PLAYWRIGHT}" == "true" ]]; then
-  install_rallar_playwright_browser "${RALLAR_CHECKOUT_DIR}" "${RALLAR_BLACK_BOX_BROWSER_ENGINE:-chromium}"
+	install_rallar_playwright_browser "${RALLAR_CHECKOUT_DIR}" "${RALLAR_BLACK_BOX_BROWSER_ENGINE:-chromium}"
 fi
 
 echo "==> Building rallar-black-box SPA"
@@ -74,12 +74,12 @@ build_rallar_black_box_spa "${RALLAR_CHECKOUT_DIR}"
 echo "==> Publishing SPA static files"
 rm -rf /var/www/rallar-black-box/*
 rsync -a --delete \
-  "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box/dist/" \
-  /var/www/rallar-black-box/
+	"${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box/dist/" \
+	/var/www/rallar-black-box/
 install -d -m 0755 -o caddy -g caddy /var/www/rallar-black-box/headless
 rsync -a --delete \
-  "${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-headless/dist/" \
-  /var/www/rallar-black-box/headless/
+	"${RALLAR_CHECKOUT_DIR}/apps/rallar-black-box-headless/dist/" \
+	/var/www/rallar-black-box/headless/
 chown -R caddy:caddy /var/www/rallar-black-box
 
 echo "==> Writing environment files"
@@ -89,36 +89,36 @@ install -d -m 0755 -o rallar -g rallar /var/lib/rallar-deno
 write_rallar_black_box_spa_env_file
 
 if [[ -z "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET:-}" && -r /etc/rallar/api-v1.env ]]; then
-  RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="$(
-    grep -E "^RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=" /etc/rallar/api-v1.env \
-      | tail -n 1 \
-      | cut -d= -f2- || true
-  )"
+	RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="$(
+		grep -E "^RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=" /etc/rallar/api-v1.env |
+			tail -n 1 |
+			cut -d= -f2- || true
+	)"
 fi
 if [[ -z "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET:-}" && -r /etc/rallar/control-server.env ]]; then
-  RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="$(
-    grep -E "^RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=" /etc/rallar/control-server.env \
-      | tail -n 1 \
-      | cut -d= -f2- || true
-  )"
+	RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="$(
+		grep -E "^RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=" /etc/rallar/control-server.env |
+			tail -n 1 |
+			cut -d= -f2- || true
+	)"
 fi
 if [[ -z "${RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET:-}" ]]; then
-  RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="$(openssl rand -hex 32)"
+	RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET="$(openssl rand -hex 32)"
 fi
 
 if [[ -z "${RALLAR_AUTH_CREDENTIAL_SECRET:-}" && -r /etc/rallar/api-v1.env ]]; then
-  RALLAR_AUTH_CREDENTIAL_SECRET="$(
-    grep -E "^RALLAR_AUTH_CREDENTIAL_SECRET=" /etc/rallar/api-v1.env \
-      | tail -n 1 \
-      | cut -d= -f2- || true
-  )"
+	RALLAR_AUTH_CREDENTIAL_SECRET="$(
+		grep -E "^RALLAR_AUTH_CREDENTIAL_SECRET=" /etc/rallar/api-v1.env |
+			tail -n 1 |
+			cut -d= -f2- || true
+	)"
 fi
 if [[ -z "${RALLAR_AUTH_CREDENTIAL_SECRET:-}" ]]; then
-  RALLAR_AUTH_CREDENTIAL_SECRET="$(openssl rand -hex 32)"
+	RALLAR_AUTH_CREDENTIAL_SECRET="$(openssl rand -hex 32)"
 fi
-if (( ${#RALLAR_AUTH_CREDENTIAL_SECRET} < 32 )); then
-  echo "RALLAR_AUTH_CREDENTIAL_SECRET must contain at least 32 characters." >&2
-  exit 1
+if ((${#RALLAR_AUTH_CREDENTIAL_SECRET} < 32)); then
+	echo "RALLAR_AUTH_CREDENTIAL_SECRET must contain at least 32 characters." >&2
+	exit 1
 fi
 
 cat >/etc/rallar/api-v1.env <<EOF
@@ -142,14 +142,14 @@ chmod 0600 /etc/rallar/api-v1.env
 echo "WARNING: API-v1 is configured with RALLAR_SQL_BACKEND=pglite-memory; restarting rallar-api-v1 resets auth sessions and runtime state."
 
 if [[ -z "${RALLAR_CONTROL_ADMIN_TOKEN:-}" && -r /etc/rallar/control-server.env ]]; then
-  RALLAR_CONTROL_ADMIN_TOKEN="$(
-    grep -E "^RALLAR_BLACK_BOX_ADMIN_TOKEN=" /etc/rallar/control-server.env \
-      | tail -n 1 \
-      | cut -d= -f2- || true
-  )"
+	RALLAR_CONTROL_ADMIN_TOKEN="$(
+		grep -E "^RALLAR_BLACK_BOX_ADMIN_TOKEN=" /etc/rallar/control-server.env |
+			tail -n 1 |
+			cut -d= -f2- || true
+	)"
 fi
 if [[ -z "${RALLAR_CONTROL_ADMIN_TOKEN:-}" ]]; then
-  RALLAR_CONTROL_ADMIN_TOKEN="$(openssl rand -hex 32)"
+	RALLAR_CONTROL_ADMIN_TOKEN="$(openssl rand -hex 32)"
 fi
 
 cat >/etc/rallar/control-server.env <<EOF

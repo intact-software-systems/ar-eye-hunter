@@ -2,27 +2,30 @@ import type {
     ControlFleetFailureSignature,
     ControlFleetReportBundle,
     ControlFleetRunReport,
-    ControlFleetTimingDistribution,
+    ControlFleetTimingDistribution
 } from '../../../../control-run-manager.ts';
-import {
-    formatFleetDuration,
-    formatPercent,
-} from '../../shared/performance-format.ts';
+import { formatFleetDuration, formatPercent } from '../../shared/performance-format.ts';
 import { shortRunId } from '../../shared/run-id-presentation.ts';
-import {
-    fleetAgentStateTone,
-    fleetCellTitle,
-    fleetFailureTone,
-    shortSignatureId,
-} from '../fleet-presentation.ts';
+import { fleetAgentStateTone, fleetCellTitle, fleetFailureTone, shortSignatureId } from '../fleet-presentation.ts';
 import type { FleetAgentHeatmapRow, FleetTimingGroup } from '../fleet-types.ts';
 import { FleetTimingGroupList } from './FleetTimingGroupList.tsx';
 
 export function RunnerFleetReportAnalysis({
-    heatmapRows, heatmapRuns, selectedReport, setSelectedReportId,
-    setSelectedAgentId, setSelectedFailureId, regionRows, failureRows,
-    selectedFailure, regionTiming, recipeTiming, reports, busy,
-    exportSelectedReport, lastExport,
+    heatmapRows,
+    heatmapRuns,
+    selectedReport,
+    setSelectedReportId,
+    setSelectedAgentId,
+    setSelectedFailureId,
+    regionRows,
+    failureRows,
+    selectedFailure,
+    regionTiming,
+    recipeTiming,
+    reports,
+    busy,
+    exportSelectedReport,
+    lastExport
 }: {
     heatmapRows: readonly FleetAgentHeatmapRow[];
     heatmapRuns: readonly ControlFleetRunReport[];
@@ -31,8 +34,11 @@ export function RunnerFleetReportAnalysis({
     setSelectedAgentId(value: string): void;
     setSelectedFailureId(value: string): void;
     regionRows: readonly Readonly<{
-        region: string; provider?: string; passRate: number;
-        timing: ControlFleetTimingDistribution; failed: number;
+        region: string;
+        provider?: string;
+        passRate: number;
+        timing: ControlFleetTimingDistribution;
+        failed: number;
         dominantFailureSignatureId?: string;
     }>[];
     failureRows: readonly ControlFleetFailureSignature[];
@@ -62,9 +68,8 @@ export function RunnerFleetReportAnalysis({
                                 title={run.distributedRunId}
                                 onClick={() =>
                                     setSelectedReportId(
-                                        run.distributedRunId,
-                                    )
-                                }
+                                        run.distributedRunId
+                                    )}
                             >
                                 {shortRunId(run.distributedRunId)}
                             </button>
@@ -79,9 +84,7 @@ export function RunnerFleetReportAnalysis({
                             <button
                                 type="button"
                                 className="fleet-agent-button"
-                                onClick={() =>
-                                    setSelectedAgentId(row.agent.agentId)
-                                }
+                                onClick={() => setSelectedAgentId(row.agent.agentId)}
                             >
                                 <strong>{row.agent.agentId}</strong>
                                 <small>
@@ -97,13 +100,12 @@ export function RunnerFleetReportAnalysis({
                                     onClick={() => {
                                         if (cell) {
                                             setSelectedAgentId(
-                                                cell.agentId,
+                                                cell.agentId
                                             );
-                                            const firstFailure =
-                                                cell.failureSignatureIds[0];
+                                            const firstFailure = cell.failureSignatureIds[0];
                                             if (firstFailure) {
                                                 setSelectedFailureId(
-                                                    firstFailure,
+                                                    firstFailure
                                                 );
                                             }
                                         }
@@ -143,7 +145,7 @@ export function RunnerFleetReportAnalysis({
                                     <td>{row.failed}</td>
                                     <td>
                                         {shortSignatureId(
-                                            row.dominantFailureSignatureId,
+                                            row.dominantFailureSignatureId
                                         )}
                                     </td>
                                 </tr>
@@ -162,10 +164,10 @@ export function RunnerFleetReportAnalysis({
                         <button
                             type="button"
                             key={failure.signatureId}
-                            className={`fleet-failure-row ${failure.signatureId === selectedFailure?.signatureId ? 'selected' : ''}`}
-                            onClick={() =>
-                                setSelectedFailureId(failure.signatureId)
-                            }
+                            className={`fleet-failure-row ${
+                                failure.signatureId === selectedFailure?.signatureId ? 'selected' : ''
+                            }`}
+                            onClick={() => setSelectedFailureId(failure.signatureId)}
                         >
                             <span
                                 className={`pill ${fleetFailureTone(failure.category)}`}
@@ -174,8 +176,7 @@ export function RunnerFleetReportAnalysis({
                             </span>
                             <strong>{failure.title}</strong>
                             <small>
-                                {failure.count} hits -{' '}
-                                {failure.affectedRegions.join(', ') ||
+                                {failure.count} hits - {failure.affectedRegions.join(', ') ||
                                     'unknown region'}
                             </small>
                             <small>{failure.nextAction}</small>
@@ -214,9 +215,7 @@ export function RunnerFleetReportAnalysis({
                         <span>Run</span>
                         <select
                             value={selectedReport?.distributedRunId ?? ''}
-                            onChange={(event) =>
-                                setSelectedReportId(event.target.value)
-                            }
+                            onChange={(event) => setSelectedReportId(event.target.value)}
                         >
                             {reports.map((report) => (
                                 <option

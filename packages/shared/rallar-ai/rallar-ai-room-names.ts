@@ -13,7 +13,7 @@ const ROOM_NAME_MAX_LENGTH = 72;
 const MAX_NAME_ATTEMPTS = 64;
 const DEFAULT_BASE_NAMES: Record<RallarAiFunnyRoomNameTheme, string> = {
     'ar-eye-hunter': 'AR Eye Hunter Arena',
-    'relic-hunters': 'Relic Hunters Expedition',
+    'relic-hunters': 'Relic Hunters Expedition'
 };
 
 const THEME_WORDS: Record<
@@ -36,7 +36,7 @@ const THEME_WORDS: Record<
             'Recursive',
             'Laser',
             'Cosmic',
-            'Hologram',
+            'Hologram'
         ],
         nouns: [
             'Crosshair',
@@ -50,8 +50,8 @@ const THEME_WORDS: Record<
             'Lens',
             'Ping',
             'Circuit',
-            'Target',
-        ],
+            'Target'
+        ]
     },
     'relic-hunters': {
         adjectives: [
@@ -66,7 +66,7 @@ const THEME_WORDS: Record<
             'Recursive',
             'Laser',
             'Cosmic',
-            'Hologram',
+            'Hologram'
         ],
         nouns: [
             'Teacup',
@@ -80,9 +80,9 @@ const THEME_WORDS: Record<
             'Kiosk',
             'Satchel',
             'Map',
-            'Pebble',
-        ],
-    },
+            'Pebble'
+        ]
+    }
 };
 
 export function createRallarAiRoomNameSeed(prefix = 'rallar-ai-room'): string {
@@ -94,12 +94,12 @@ export function createRallarAiRoomNameSeed(prefix = 'rallar-ai-room'): string {
 }
 
 export function createRallarAiFunnyRoomName(
-    options: CreateRallarAiFunnyRoomNameOptions,
+    options: CreateRallarAiFunnyRoomNameOptions
 ): string {
     const baseName = normalizeRoomName(options.baseName) ||
         DEFAULT_BASE_NAMES[options.theme];
     const existingNames = new Set(
-        (options.existingNames ?? []).map(normalizeComparableName),
+        (options.existingNames ?? []).map(normalizeComparableName)
     );
 
     for (let attempt = 0; attempt < MAX_NAME_ATTEMPTS; attempt += 1) {
@@ -116,7 +116,7 @@ function createCandidateName(
     theme: RallarAiFunnyRoomNameTheme,
     baseName: string,
     seed: string,
-    attempt: number,
+    attempt: number
 ): string {
     const words = THEME_WORDS[theme];
     const saltedSeed = `${theme}:${baseName}:${seed}:${attempt}`;
@@ -130,7 +130,7 @@ function createFallbackName(
     theme: RallarAiFunnyRoomNameTheme,
     baseName: string,
     seed: string,
-    existingNames: ReadonlySet<string>,
+    existingNames: ReadonlySet<string>
 ): string {
     let sequence = existingNames.size;
     while (true) {
@@ -152,7 +152,7 @@ function compactRoomName(baseName: string, callsign: string, code: string): stri
 
     const maxCallsignLength = Math.max(
         8,
-        ROOM_NAME_MAX_LENGTH - baseName.length - ': '.length - suffix.length,
+        ROOM_NAME_MAX_LENGTH - baseName.length - ': '.length - suffix.length
     );
     return `${baseName}: ${callsign.slice(0, maxCallsignLength).trimEnd()}${suffix}`;
 }

@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
 import { QRtcDataChannel } from '@shared/webrtc/QRtcDataChannel.ts';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('QRtcDataChannel', () => {
     it('creates an initiator channel, dispatches messages, and enforces send guards', async () => {
@@ -8,8 +8,8 @@ describe('QRtcDataChannel', () => {
             peerConnection.peerConnection as never,
             {
                 peerId: 'peer-1',
-                dataChannelName: 'room',
-            },
+                dataChannelName: 'room'
+            }
         );
         const lifecycle: string[] = [];
         const typedMessages: unknown[] = [];
@@ -24,25 +24,25 @@ describe('QRtcDataChannel', () => {
             },
             onError: async () => {
                 lifecycle.push('error');
-            },
+            }
         });
         dataChannel.onRtcMessageDo(
             'typed',
             {
                 onMessage: async (message) => {
                     typedMessages.push(message);
-                },
+                }
             },
-            'chat',
+            'chat'
         );
         dataChannel.onRtcMessageDo('plain', {
             onMessage: async (message) => {
                 plainMessages.push(message);
-            },
+            }
         });
 
         expect(() => dataChannel.send({ nope: true })).toThrow(
-            'Data channel not open',
+            'Data channel not open'
         );
 
         dataChannel.connect(true);
@@ -61,31 +61,31 @@ describe('QRtcDataChannel', () => {
 
         await createdChannel.emitMessage({
             type: 'chat',
-            body: 'typed',
+            body: 'typed'
         });
         await createdChannel.emitMessage({
-            body: 'plain',
+            body: 'plain'
         });
         await createdChannel.emitError();
         await createdChannel.emitClose();
 
         expect(createdChannel.sent).toEqual([
             JSON.stringify({ hello: true }),
-            '{"raw":true}',
+            '{"raw":true}'
         ]);
         expect(typedMessages).toEqual([
             {
                 type: 'chat',
-                body: 'typed',
+                body: 'typed'
             },
             {
-                body: 'plain',
-            },
+                body: 'plain'
+            }
         ]);
         expect(plainMessages).toEqual([
             {
-                body: 'plain',
-            },
+                body: 'plain'
+            }
         ]);
         expect(lifecycle).toEqual(['open', 'error', 'close']);
     });
@@ -96,15 +96,15 @@ describe('QRtcDataChannel', () => {
             peerConnection.peerConnection as never,
             {
                 peerId: 'peer-1',
-                dataChannelName: 'room',
-            },
+                dataChannelName: 'room'
+            }
         );
         const opened: string[] = [];
 
         dataChannel.onRtcCallbacksDo('callbacks', {
             onOpen: async () => {
                 opened.push('open');
-            },
+            }
         });
 
         dataChannel.connect(false);
@@ -114,14 +114,14 @@ describe('QRtcDataChannel', () => {
 
         const wrong = new FakeRTCDataChannel('other');
         await peerConnection.onDataChannelCallback?.({
-            channel: wrong,
+            channel: wrong
         });
 
         expect(opened).toEqual([]);
 
         const matching = new FakeRTCDataChannel('room');
         await peerConnection.onDataChannelCallback?.({
-            channel: matching,
+            channel: matching
         });
 
         matching.readyState = 'open';
@@ -145,15 +145,15 @@ describe('QRtcDataChannel', () => {
             peerConnection.peerConnection as never,
             {
                 peerId: 'peer-1',
-                dataChannelName: 'rtc-data-channel',
-            },
+                dataChannelName: 'rtc-data-channel'
+            }
         );
         const realtime = new QRtcDataChannel(
             peerConnection.peerConnection as never,
             {
                 peerId: 'peer-1',
-                dataChannelName: 'rtc-realtime',
-            },
+                dataChannelName: 'rtc-realtime'
+            }
         );
 
         reliable.connect(false);
@@ -161,13 +161,13 @@ describe('QRtcDataChannel', () => {
 
         expect(Array.from(peerConnection.onDataChannelCallbacks.keys())).toEqual([
             'peer-1:rtc-data-channel',
-            'peer-1:rtc-realtime',
+            'peer-1:rtc-realtime'
         ]);
 
         const incoming = new FakeRTCDataChannel('rtc-realtime');
         for (const callback of peerConnection.onDataChannelCallbacks.values()) {
             await callback({
-                channel: incoming,
+                channel: incoming
             });
         }
 
@@ -175,8 +175,8 @@ describe('QRtcDataChannel', () => {
         expect(realtime.readHealth().readyState).toBe('connecting');
         expect(consoleError).not.toHaveBeenCalledWith(
             expect.stringContaining(
-                'Received data channel for different data channel name',
-            ),
+                'Received data channel for different data channel name'
+            )
         );
         consoleError.mockRestore();
     });
@@ -187,8 +187,8 @@ describe('QRtcDataChannel', () => {
             peerConnection.peerConnection as never,
             {
                 peerId: 'peer-1',
-                dataChannelName: 'room',
-            },
+                dataChannelName: 'room'
+            }
         );
 
         dataChannel.connect(true);
@@ -209,8 +209,8 @@ describe('QRtcDataChannel', () => {
                 peerConnection.peerConnection as never,
                 {
                     peerId: 'peer-1',
-                    dataChannelName: 'room',
-                },
+                    dataChannelName: 'room'
+                }
             );
 
             dataChannel.connect(true);
@@ -219,7 +219,8 @@ describe('QRtcDataChannel', () => {
             await vi.advanceTimersByTimeAsync(10);
 
             await expect(wait).resolves.toBe(false);
-        } finally {
+        }
+        finally {
             vi.useRealTimers();
         }
     });
@@ -230,8 +231,8 @@ describe('QRtcDataChannel', () => {
             peerConnection.peerConnection as never,
             {
                 peerId: 'peer-1',
-                dataChannelName: 'room',
-            },
+                dataChannelName: 'room'
+            }
         );
 
         dataChannel.connect(false);
@@ -243,7 +244,7 @@ describe('QRtcDataChannel', () => {
         await expect(wait).resolves.toBe(false);
         expect(dataChannel.readHealth()).toMatchObject({
             state: 'Idle',
-            readyState: undefined,
+            readyState: undefined
         });
     });
 
@@ -253,15 +254,15 @@ describe('QRtcDataChannel', () => {
             peerConnection.peerConnection as never,
             {
                 peerId: 'peer-1',
-                dataChannelName: 'room',
-            },
+                dataChannelName: 'room'
+            }
         );
         const lifecycle: string[] = [];
 
         dataChannel.onRtcCallbacksDo('callbacks', {
             onClose: async () => {
                 lifecycle.push('close');
-            },
+            }
         });
 
         dataChannel.connect(true);
@@ -275,7 +276,7 @@ describe('QRtcDataChannel', () => {
         expect(lifecycle).toEqual(['close']);
         expect(dataChannel.readHealth()).toMatchObject({
             state: 'Closed',
-            readyState: undefined,
+            readyState: undefined
         });
         expect(createdChannel.onopen).toBeNull();
         expect(createdChannel.onclose).toBeNull();
@@ -287,8 +288,8 @@ describe('QRtcDataChannel', () => {
             peerConnection.peerConnection as never,
             {
                 peerId: 'peer-1',
-                dataChannelName: 'room',
-            },
+                dataChannelName: 'room'
+            }
         );
 
         dataChannel.connect(true);
@@ -299,7 +300,7 @@ describe('QRtcDataChannel', () => {
 
         expect(dataChannel.readHealth()).toMatchObject({
             state: 'Closed',
-            readyState: undefined,
+            readyState: undefined
         });
         expect(dataChannel.isReadyToConnect()).toBe(true);
         await expect(dataChannel.waitUntilOpen(1_000)).resolves.toBe(false);
@@ -311,8 +312,8 @@ describe('QRtcDataChannel', () => {
             peerConnection.peerConnection as never,
             {
                 peerId: 'peer-1',
-                dataChannelName: 'room',
-            },
+                dataChannelName: 'room'
+            }
         );
 
         dataChannel.connect(true);
@@ -322,7 +323,7 @@ describe('QRtcDataChannel', () => {
 
         expect(dataChannel.readHealth()).toMatchObject({
             state: 'Failed',
-            readyState: undefined,
+            readyState: undefined
         });
         expect(firstChannel.onopen).toBeNull();
         expect(firstChannel.onerror).toBeNull();
@@ -342,7 +343,7 @@ describe('QRtcDataChannel', () => {
         await expect(wait).resolves.toBe(true);
         expect(dataChannel.readHealth()).toMatchObject({
             state: 'Open',
-            readyState: 'open',
+            readyState: 'open'
         });
     });
 
@@ -352,8 +353,8 @@ describe('QRtcDataChannel', () => {
             peerConnection.peerConnection as never,
             {
                 peerId: 'peer-1',
-                dataChannelName: 'room',
-            },
+                dataChannelName: 'room'
+            }
         );
 
         dataChannel.connect(true);
@@ -375,7 +376,7 @@ describe('QRtcDataChannel', () => {
         await expect(wait).resolves.toBe(true);
         expect(dataChannel.readHealth()).toMatchObject({
             state: 'Open',
-            readyState: 'open',
+            readyState: 'open'
         });
     });
 
@@ -390,9 +391,9 @@ describe('QRtcDataChannel', () => {
                     highWatermarkBytes: 2,
                     lowWatermarkBytes: 1,
                     overflow: 'queue',
-                    maxQueueItems: 2,
-                },
-            },
+                    maxQueueItems: 2
+                }
+            }
         );
 
         dataChannel.connect(true);
@@ -402,10 +403,10 @@ describe('QRtcDataChannel', () => {
         await firstChannel.emitOpen();
 
         expect(dataChannel.sendJson({ seq: 1 })).toMatchObject({
-            status: 'queued',
+            status: 'queued'
         });
         expect(dataChannel.sendJson({ seq: 2 })).toMatchObject({
-            status: 'queued',
+            status: 'queued'
         });
         expect(dataChannel.readHealth().queuedItemCount).toBe(2);
 
@@ -414,7 +415,7 @@ describe('QRtcDataChannel', () => {
         expect(dataChannel.readHealth()).toMatchObject({
             state: 'Closed',
             readyState: undefined,
-            queuedItemCount: 0,
+            queuedItemCount: 0
         });
 
         dataChannel.connect(true);
@@ -438,9 +439,9 @@ describe('QRtcDataChannel', () => {
                     highWatermarkBytes: 2,
                     lowWatermarkBytes: 1,
                     overflow: 'queue',
-                    maxQueueItems: 2,
-                },
-            },
+                    maxQueueItems: 2
+                }
+            }
         );
 
         dataChannel.connect(true);
@@ -450,10 +451,10 @@ describe('QRtcDataChannel', () => {
         await firstChannel.emitOpen();
 
         expect(dataChannel.sendJson({ seq: 1 })).toMatchObject({
-            status: 'queued',
+            status: 'queued'
         });
         expect(dataChannel.sendJson({ seq: 2 })).toMatchObject({
-            status: 'queued',
+            status: 'queued'
         });
         expect(dataChannel.readHealth().queuedItemCount).toBe(2);
 
@@ -462,7 +463,7 @@ describe('QRtcDataChannel', () => {
         expect(dataChannel.readHealth()).toMatchObject({
             state: 'Failed',
             readyState: undefined,
-            queuedItemCount: 0,
+            queuedItemCount: 0
         });
 
         dataChannel.connect(true);
@@ -481,15 +482,15 @@ describe('QRtcDataChannel', () => {
             peerConnection.peerConnection as never,
             {
                 peerId: 'peer-1',
-                dataChannelName: 'room',
-            },
+                dataChannelName: 'room'
+            }
         );
 
         dataChannel.connect(false);
 
         const firstChannel = new FakeRTCDataChannel('room');
         await peerConnection.onDataChannelCallback?.({
-            channel: firstChannel,
+            channel: firstChannel
         });
         await firstChannel.emitOpen();
         await firstChannel.emitClose();
@@ -501,14 +502,14 @@ describe('QRtcDataChannel', () => {
 
         const secondChannel = new FakeRTCDataChannel('room');
         await peerConnection.onDataChannelCallback?.({
-            channel: secondChannel,
+            channel: secondChannel
         });
         await secondChannel.emitOpen();
 
         await expect(wait).resolves.toBe(true);
         expect(dataChannel.readHealth()).toMatchObject({
             state: 'Open',
-            readyState: 'open',
+            readyState: 'open'
         });
     });
 
@@ -516,7 +517,7 @@ describe('QRtcDataChannel', () => {
         const peerConnection = createPeerConnectionHarness();
         const dataChannelInit = {
             ordered: false,
-            maxRetransmits: 0,
+            maxRetransmits: 0
         };
         const dataChannel = new QRtcDataChannel(
             peerConnection.peerConnection as never,
@@ -529,16 +530,16 @@ describe('QRtcDataChannel', () => {
                     highWatermarkBytes: 10,
                     lowWatermarkBytes: 2,
                     overflow: 'replace-by-key',
-                    maxQueueItems: 4,
-                },
-            },
+                    maxQueueItems: 4
+                }
+            }
         );
 
         dataChannel.connect(true);
 
         expect(peerConnection.createDataChannel).toHaveBeenCalledWith(
             'realtime',
-            dataChannelInit,
+            dataChannelInit
         );
 
         const createdChannel = peerConnection.createdChannels[0];
@@ -552,12 +553,12 @@ describe('QRtcDataChannel', () => {
         expect(dataChannel.sendJson({ x: 1 }, { key: 'player' })).toMatchObject({
             status: 'queued',
             key: 'player',
-            bufferedAmount: 10,
+            bufferedAmount: 10
         });
         expect(dataChannel.sendJson({ x: 2 }, { key: 'player' })).toMatchObject({
             status: 'replaced',
             key: 'player',
-            bufferedAmount: 10,
+            bufferedAmount: 10
         });
         expect(createdChannel.sent).toEqual([]);
 
@@ -567,11 +568,11 @@ describe('QRtcDataChannel', () => {
         const bytes = new Uint8Array([1, 2, 3]);
         expect(dataChannel.sendBinary(bytes)).toMatchObject({
             status: 'sent',
-            bufferedAmount: 0,
+            bufferedAmount: 0
         });
         expect(createdChannel.sent).toEqual([
             JSON.stringify({ x: 2 }),
-            bytes,
+            bytes
         ]);
     });
 
@@ -586,9 +587,9 @@ describe('QRtcDataChannel', () => {
                     highWatermarkBytes: 2,
                     lowWatermarkBytes: 1,
                     overflow: 'replace-by-key',
-                    maxQueueItems: 3,
-                },
-            },
+                    maxQueueItems: 3
+                }
+            }
         );
 
         dataChannel.connect(true);
@@ -599,16 +600,16 @@ describe('QRtcDataChannel', () => {
         await createdChannel.emitOpen();
 
         expect(dataChannel.sendJson({ seq: 1 }, { key: 'a' })).toMatchObject({
-            status: 'queued',
+            status: 'queued'
         });
         expect(dataChannel.sendJson({ seq: 2 }, { key: 'b' })).toMatchObject({
-            status: 'queued',
+            status: 'queued'
         });
         expect(dataChannel.sendJson({ seq: 3 }, { key: 'c' })).toMatchObject({
-            status: 'queued',
+            status: 'queued'
         });
         expect(dataChannel.sendJson({ seq: 4 }, { key: 'b' })).toMatchObject({
-            status: 'replaced',
+            status: 'replaced'
         });
 
         createdChannel.bufferedAmount = 0;
@@ -617,7 +618,7 @@ describe('QRtcDataChannel', () => {
         expect(createdChannel.sent).toEqual([
             JSON.stringify({ seq: 1 }),
             JSON.stringify({ seq: 4 }),
-            JSON.stringify({ seq: 3 }),
+            JSON.stringify({ seq: 3 })
         ]);
         expect(dataChannel.readHealth()).toMatchObject({
             queuedItemCount: 0,
@@ -625,16 +626,16 @@ describe('QRtcDataChannel', () => {
                 queued: 3,
                 replaced: 1,
                 flushed: 3,
-                sent: 3,
-            },
+                sent: 3
+            }
         });
 
         createdChannel.bufferedAmount = 2;
         expect(dataChannel.sendJson({ seq: 5 }, { key: 'b' })).toMatchObject({
-            status: 'queued',
+            status: 'queued'
         });
         expect(dataChannel.sendJson({ seq: 6 }, { key: 'b' })).toMatchObject({
-            status: 'replaced',
+            status: 'replaced'
         });
 
         createdChannel.bufferedAmount = 0;
@@ -644,7 +645,7 @@ describe('QRtcDataChannel', () => {
             JSON.stringify({ seq: 1 }),
             JSON.stringify({ seq: 4 }),
             JSON.stringify({ seq: 3 }),
-            JSON.stringify({ seq: 6 }),
+            JSON.stringify({ seq: 6 })
         ]);
     });
 
@@ -654,15 +655,15 @@ describe('QRtcDataChannel', () => {
             peerConnection.peerConnection as never,
             {
                 peerId: 'peer-1',
-                dataChannelName: 'room',
-            },
+                dataChannelName: 'room'
+            }
         );
         const rawMessages: unknown[] = [];
 
         dataChannel.onRawMessageDo('raw', {
             onMessage: async (data) => {
                 rawMessages.push(data);
-            },
+            }
         });
 
         dataChannel.connect(true);
@@ -685,9 +686,9 @@ describe('QRtcDataChannel', () => {
                 flowControl: {
                     highWatermarkBytes: 4,
                     lowWatermarkBytes: 1,
-                    overflow: 'drop-new',
-                },
-            },
+                    overflow: 'drop-new'
+                }
+            }
         );
 
         dataChannel.connect(true);
@@ -699,7 +700,7 @@ describe('QRtcDataChannel', () => {
 
         expect(dataChannel.sendJson({ x: 1 })).toMatchObject({
             status: 'dropped',
-            bufferedAmount: 4,
+            bufferedAmount: 4
         });
         expect(dataChannel.readHealth()).toMatchObject({
             peerId: 'peer-1',
@@ -711,13 +712,13 @@ describe('QRtcDataChannel', () => {
             flowControl: {
                 highWatermarkBytes: 4,
                 lowWatermarkBytes: 1,
-                overflow: 'drop-new',
+                overflow: 'drop-new'
             },
             counters: {
                 dropped: 1,
                 queued: 0,
-                sent: 0,
-            },
+                sent: 0
+            }
         });
     });
 
@@ -732,9 +733,9 @@ describe('QRtcDataChannel', () => {
                     highWatermarkBytes: 2,
                     lowWatermarkBytes: 1,
                     overflow: 'queue',
-                    maxQueueItems: 2,
-                },
-            },
+                    maxQueueItems: 2
+                }
+            }
         );
 
         dataChannel.connect(true);
@@ -749,11 +750,11 @@ describe('QRtcDataChannel', () => {
                 { stale: true },
                 {
                     maxAgeMs: 1,
-                    now: () => Date.now() - 10,
-                },
-            ),
+                    now: () => Date.now() - 10
+                }
+            )
         ).toMatchObject({
-            status: 'queued',
+            status: 'queued'
         });
 
         createdChannel.bufferedAmount = 0;
@@ -765,8 +766,8 @@ describe('QRtcDataChannel', () => {
             counters: {
                 queued: 1,
                 droppedStale: 1,
-                sent: 0,
-            },
+                sent: 0
+            }
         });
     });
 
@@ -781,9 +782,9 @@ describe('QRtcDataChannel', () => {
                     highWatermarkBytes: 2,
                     lowWatermarkBytes: 1,
                     overflow: 'drop-old',
-                    maxQueueItems: 1,
-                },
-            },
+                    maxQueueItems: 1
+                }
+            }
         );
 
         dataChannel.connect(true);
@@ -794,17 +795,17 @@ describe('QRtcDataChannel', () => {
         await createdChannel.emitOpen();
 
         expect(dataChannel.sendJson({ seq: 1 })).toMatchObject({
-            status: 'queued',
+            status: 'queued'
         });
         expect(dataChannel.sendJson({ seq: 2 })).toMatchObject({
-            status: 'queued',
+            status: 'queued'
         });
 
         createdChannel.bufferedAmount = 0;
         await createdChannel.emitBufferedAmountLow();
 
         expect(createdChannel.sent).toEqual([
-            JSON.stringify({ seq: 2 }),
+            JSON.stringify({ seq: 2 })
         ]);
         expect(dataChannel.readHealth()).toMatchObject({
             queuedItemCount: 0,
@@ -812,16 +813,14 @@ describe('QRtcDataChannel', () => {
                 queued: 2,
                 droppedOldest: 1,
                 flushed: 1,
-                sent: 1,
-            },
+                sent: 1
+            }
         });
     });
 });
 
 class FakeRTCDataChannel {
-    readonly sent: Array<
-        string | Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>
-    > = [];
+    readonly sent: Array<string | Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>> = [];
     readonly close = vi.fn(() => {
         this.readyState = 'closed';
     });
@@ -852,13 +851,13 @@ class FakeRTCDataChannel {
 
     async emitMessage(data: unknown): Promise<void> {
         await this.onmessage?.({
-            data: JSON.stringify(data),
+            data: JSON.stringify(data)
         } as MessageEvent);
     }
 
     async emitRawMessage(data: unknown): Promise<void> {
         await this.onmessage?.({
-            data,
+            data
         } as MessageEvent);
     }
 
@@ -877,23 +876,20 @@ class FakeRTCDataChannel {
     }
 }
 
-type FakeRTCDataChannelEvent = { channel: FakeRTCDataChannel };
+type FakeRTCDataChannelEvent = { channel: FakeRTCDataChannel; };
 
 function createPeerConnectionHarness() {
     let onDataChannelCallback:
         | ((event: FakeRTCDataChannelEvent) => Promise<void>)
         | undefined;
-    const onDataChannelCallbacks = new Map<
-        string,
-        (event: FakeRTCDataChannelEvent) => Promise<void>
-    >();
+    const onDataChannelCallbacks = new Map<string, (event: FakeRTCDataChannelEvent) => Promise<void>>();
     const createdChannels: FakeRTCDataChannel[] = [];
 
     const peerConnection = {
         isReadyToConnect: vi.fn(() => true),
         onDataChannelDo: vi.fn(function (
             id: string,
-            callback: (event: FakeRTCDataChannelEvent) => Promise<void>,
+            callback: (event: FakeRTCDataChannelEvent) => Promise<void>
         ) {
             onDataChannelCallbacks.set(id, callback);
             onDataChannelCallback = callback;
@@ -903,7 +899,7 @@ function createPeerConnectionHarness() {
             const channel = new FakeRTCDataChannel(label);
             createdChannels.push(channel);
             return channel;
-        }),
+        })
     };
 
     return {
@@ -913,6 +909,6 @@ function createPeerConnectionHarness() {
         onDataChannelCallbacks,
         get onDataChannelCallback() {
             return onDataChannelCallback;
-        },
+        }
     };
 }

@@ -1,10 +1,5 @@
 import type { ALMessage } from '../al-contracts/al-contract.ts';
-import {
-    COMPLETED_STATUSES,
-    EntityStatus,
-    isFailed,
-    type ResourceEntry,
-} from './ResourceEntry.ts';
+import { COMPLETED_STATUSES, EntityStatus, isFailed, type ResourceEntry } from './ResourceEntry.ts';
 
 export const COALESCED_APP_OUTBOX_WORK_FIELD = '__rallarCoalescedWork';
 
@@ -18,8 +13,8 @@ export type CoalescedAppOutboxWorkMetadata = Readonly<{
 export type CoalescedAppOutboxWorkData<T extends object> =
     & T
     & Readonly<{
-    [COALESCED_APP_OUTBOX_WORK_FIELD]: CoalescedAppOutboxWorkMetadata;
-}>;
+        [COALESCED_APP_OUTBOX_WORK_FIELD]: CoalescedAppOutboxWorkMetadata;
+    }>;
 
 export type CoalescedAppOutboxWorkEnvelope<T extends object> = Readonly<{
     type: string;
@@ -39,21 +34,22 @@ export function isMutableCoalescedStatus(status: EntityStatus): boolean {
 }
 
 export function tryReadCoalescedAppOutboxWorkEnvelope<T extends object>(
-    entry: ResourceEntry,
+    entry: ResourceEntry
 ): CoalescedAppOutboxWorkEnvelope<T> | undefined {
     try {
         const message = JSON.parse(entry.resource) as ALMessage;
         const envelope = JSON.parse(
-            message.payload.resource,
+            message.payload.resource
         ) as CoalescedAppOutboxWorkEnvelope<T>;
         return isCoalescedEnvelope(envelope) ? envelope : undefined;
-    } catch {
+    }
+    catch {
         return undefined;
     }
 }
 
 function isCoalescedEnvelope(
-    value: unknown,
+    value: unknown
 ): value is CoalescedAppOutboxWorkEnvelope<object> {
     if (!value || typeof value !== 'object') {
         return false;

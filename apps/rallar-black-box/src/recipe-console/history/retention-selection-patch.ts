@@ -1,5 +1,4 @@
-import type { ControlRetentionCandidate } from
-    '@shared-test/rallar-bb-test/control-retention.ts';
+import type { ControlRetentionCandidate } from '@shared-test/rallar-bb-test/control-retention.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 
 export type RetentionSelectionCapture = Readonly<{
@@ -10,40 +9,42 @@ export type RetentionSelectionCapture = Readonly<{
     }>[];
 }>;
 
-export function captureRetentionSelectionBeforeCleanup(input: Readonly<{
-    urlState: RecipeConsoleUrlState;
-    candidates: readonly ControlRetentionCandidate[];
-}>): RetentionSelectionCapture {
+export function captureRetentionSelectionBeforeCleanup(
+    input: Readonly<{
+        urlState: RecipeConsoleUrlState;
+        candidates: readonly ControlRetentionCandidate[];
+    }>
+): RetentionSelectionCapture {
     return {
         urlState: {
             ...input.urlState,
             ...(input.urlState.fleetMapLayers
                 ? { fleetMapLayers: [...input.urlState.fleetMapLayers] }
-                : {}),
+                : {})
         },
-        associations: input.candidates.map(candidate => ({
+        associations: input.candidates.map((candidate) => ({
             controlRunId: candidate.runId,
-            distributedRunIds: candidate.distributedRuns.map(run =>
-                run.distributedRunId
-            ),
-        })),
+            distributedRunIds: candidate.distributedRuns.map((run) => run.distributedRunId)
+        }))
     };
 }
 
-export function retentionSelectionPatchAfterCleanup(input: Readonly<{
-    capture: RetentionSelectionCapture;
-    currentUrlState: RecipeConsoleUrlState;
-    deletedRunIds: readonly string[];
-}>): Partial<RecipeConsoleUrlState> {
+export function retentionSelectionPatchAfterCleanup(
+    input: Readonly<{
+        capture: RetentionSelectionCapture;
+        currentUrlState: RecipeConsoleUrlState;
+        deletedRunIds: readonly string[];
+    }>
+): Partial<RecipeConsoleUrlState> {
     const confirmed = new Set(input.deletedRunIds);
     const deletedControlRunIds = new Set<string>();
     const deletedDistributedRunIds = new Set<string>();
     for (const association of input.capture.associations) {
-        if (!confirmed.has(association.controlRunId)) continue;
+        if (!confirmed.has(association.controlRunId)) {
+            continue;
+        }
         deletedControlRunIds.add(association.controlRunId);
-        association.distributedRunIds.forEach(id =>
-            deletedDistributedRunIds.add(id)
-        );
+        association.distributedRunIds.forEach((id) => deletedDistributedRunIds.add(id));
     }
 
     const state = input.currentUrlState;
@@ -57,12 +58,15 @@ export function retentionSelectionPatchAfterCleanup(input: Readonly<{
         patch.agentId = undefined;
         patch.recipeId = undefined;
         patch.commandId = undefined;
-    } else if (
+    }
+    else if (
         state.distributedRunId !== undefined &&
         deletedDistributedRunIds.has(state.distributedRunId)
     ) {
         patch.distributedRunId = undefined;
-        if (state.controlRunId === undefined) patch.agentId = undefined;
+        if (state.controlRunId === undefined) {
+            patch.agentId = undefined;
+        }
         patch.recipeId = undefined;
         patch.commandId = undefined;
     }

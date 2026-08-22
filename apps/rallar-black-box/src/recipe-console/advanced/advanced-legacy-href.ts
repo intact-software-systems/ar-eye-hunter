@@ -1,36 +1,27 @@
-import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
-import {
-    buildDiagnosticBridgeReturnHref,
-} from '../../app/diagnostic-bridge-return-href.ts';
+import { buildDiagnosticBridgeReturnHref } from '../../app/diagnostic-bridge-return-href.ts';
 import {
     DIAGNOSTIC_BRIDGE_PROVIDERS,
     DIAGNOSTIC_BRIDGE_URL_QUERY_MAX_BYTES,
-    DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES,
+    DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES
 } from '../../app/diagnostic-bridge-url-contract.ts';
-import {
-    RECIPE_CONSOLE_TRANSPORTS,
-    RECIPE_CONSOLE_VIEWS,
-} from '../routing/url-state-contract.ts';
-import {
-    resolveAdvancedSurface,
-} from './advanced-surface-catalog.ts';
+import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
+import { RECIPE_CONSOLE_TRANSPORTS, RECIPE_CONSOLE_VIEWS } from '../routing/url-state-contract.ts';
+import { resolveAdvancedSurface } from './advanced-surface-catalog.ts';
 
-export const ADVANCED_DIAGNOSTIC_CONTEXT_MAX_BYTES =
-    DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES;
-export const ADVANCED_DIAGNOSTIC_QUERY_MAX_BYTES =
-    DIAGNOSTIC_BRIDGE_URL_QUERY_MAX_BYTES;
+export const ADVANCED_DIAGNOSTIC_CONTEXT_MAX_BYTES = DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES;
+export const ADVANCED_DIAGNOSTIC_QUERY_MAX_BYTES = DIAGNOSTIC_BRIDGE_URL_QUERY_MAX_BYTES;
 
 const RUN_CONTEXT_FIELDS = [
     'controlRunId',
     'distributedRunId',
     'agentId',
     'recipeId',
-    'commandId',
+    'commandId'
 ] as const satisfies readonly (keyof RecipeConsoleUrlState)[];
 const SOURCE_CONTEXT_FIELDS = [
     ['applicationId', 'contextApplicationId'],
     ['workspaceId', 'contextWorkspaceId'],
-    ['groupId', 'contextGroupId'],
+    ['groupId', 'contextGroupId']
 ] as const;
 
 export type CreateAdvancedLegacyHrefInput = Readonly<{
@@ -42,7 +33,7 @@ export type CreateAdvancedLegacyHrefInput = Readonly<{
 export function createAdvancedLegacyHref({
     surface: surfaceValue,
     state,
-    sourceSearch = '',
+    sourceSearch = ''
 }: CreateAdvancedLegacyHrefInput): string | undefined {
     const surface = resolveAdvancedSurface(surfaceValue);
     if (!surface) {
@@ -61,18 +52,22 @@ export function createAdvancedLegacyHref({
     params.set('view', allowedValue(state.view, RECIPE_CONSOLE_VIEWS) ?? 'advanced');
 
     const source = new URLSearchParams(sourceSearch);
-    appendAllowed(params, 'provider', singleAllowedParam(
-        source,
+    appendAllowed(
+        params,
         'provider',
-        DIAGNOSTIC_BRIDGE_PROVIDERS,
-    ));
+        singleAllowedParam(
+            source,
+            'provider',
+            DIAGNOSTIC_BRIDGE_PROVIDERS
+        )
+    );
     for (const field of RUN_CONTEXT_FIELDS) {
         appendBounded(params, field, state[field]);
     }
     appendAllowed(
         params,
         'transport',
-        allowedValue(state.transport, RECIPE_CONSOLE_TRANSPORTS),
+        allowedValue(state.transport, RECIPE_CONSOLE_TRANSPORTS)
     );
     for (const [sourceField, targetField] of SOURCE_CONTEXT_FIELDS) {
         appendBounded(params, targetField, singleParam(source, sourceField));
@@ -82,7 +77,7 @@ export function createAdvancedLegacyHref({
 }
 
 export function createAdvancedRecipeConsoleReturnHref(
-    search: string | URLSearchParams,
+    search: string | URLSearchParams
 ): string {
     const source = search instanceof URLSearchParams
         ? search
@@ -98,13 +93,13 @@ export function createAdvancedRecipeConsoleReturnHref(
         provider: singleAllowedParam(
             source,
             'provider',
-            DIAGNOSTIC_BRIDGE_PROVIDERS,
+            DIAGNOSTIC_BRIDGE_PROVIDERS
         ),
         view,
         controlRunId: boundedContextValue(singleParam(source, 'controlRunId')),
         distributedRunId: boundedContextValue(singleParam(
             source,
-            'distributedRunId',
+            'distributedRunId'
         )),
         agentId: boundedContextValue(singleParam(source, 'agentId')),
         recipeId: boundedContextValue(singleParam(source, 'recipeId')),
@@ -112,11 +107,11 @@ export function createAdvancedRecipeConsoleReturnHref(
         transport: singleAllowedParam(
             source,
             'transport',
-            RECIPE_CONSOLE_TRANSPORTS,
+            RECIPE_CONSOLE_TRANSPORTS
         ),
         legacySurface: view === 'advanced'
             ? resolveAdvancedSurface(singleParam(source, 'legacySurface'))?.id
-            : undefined,
+            : undefined
     }) ?? genericAdvancedHref();
 }
 
@@ -127,7 +122,7 @@ function genericAdvancedHref(): string {
 function appendAllowed<const Value extends string>(
     params: URLSearchParams,
     field: string,
-    value: Value | undefined,
+    value: Value | undefined
 ): void {
     if (value !== undefined) {
         appendIfQueryFits(params, field, value);
@@ -137,7 +132,7 @@ function appendAllowed<const Value extends string>(
 function appendBounded(
     params: URLSearchParams,
     field: string,
-    value: unknown,
+    value: unknown
 ): void {
     const normalized = boundedContextValue(value);
     if (normalized !== undefined) {
@@ -148,7 +143,7 @@ function appendBounded(
 function appendIfQueryFits(
     params: URLSearchParams,
     field: string,
-    value: string,
+    value: string
 ): void {
     const candidate = new URLSearchParams(params);
     candidate.set(field, value);
@@ -174,7 +169,7 @@ function boundedContextValue(value: unknown): string | undefined {
 
 function singleParam(
     params: URLSearchParams,
-    field: string,
+    field: string
 ): string | undefined {
     const values = params.getAll(field);
     return values.length === 1 ? values[0] : undefined;
@@ -183,14 +178,14 @@ function singleParam(
 function singleAllowedParam<const Value extends string>(
     params: URLSearchParams,
     field: string,
-    allowed: readonly Value[],
+    allowed: readonly Value[]
 ): Value | undefined {
     return allowedValue(singleParam(params, field), allowed);
 }
 
 function allowedValue<const Value extends string>(
     value: unknown,
-    allowed: readonly Value[],
+    allowed: readonly Value[]
 ): Value | undefined {
     if (typeof value !== 'string') {
         return undefined;

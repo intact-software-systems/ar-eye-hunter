@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LatestMementoRepository } from '@shared/cache/LatestMementoRepository.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('LatestMementoRepository', () => {
     afterEach(() => {
@@ -7,12 +7,9 @@ describe('LatestMementoRepository', () => {
     });
 
     it('keeps history per key isolated and supports undo/redo', () => {
-        const repo = new LatestMementoRepository<
-            string,
-            { content: string; version: number }
-        >({
+        const repo = new LatestMementoRepository<string, { content: string; version: number; }>({
             undoDepth: 3,
-            redoDepth: 3,
+            redoDepth: 3
         });
 
         repo.accept('doc-1', { content: 'A', version: 1 });
@@ -23,7 +20,8 @@ describe('LatestMementoRepository', () => {
 
         expect(repo.get('doc-1').version).toBe(3);
         expect(repo.undoStack('doc-1').map((value) => value.version)).toEqual([
-            2, 1,
+            2,
+            1
         ]);
         expect(repo.get('doc-2').version).toBe(20);
 
@@ -36,7 +34,7 @@ describe('LatestMementoRepository', () => {
     it('supports callback writes and compare-and-set style updates', () => {
         const repo = new LatestMementoRepository<string, number>({
             undoDepth: 3,
-            redoDepth: 3,
+            redoDepth: 3
         });
         const callback = repo.asCallback('counter');
 
@@ -56,7 +54,7 @@ describe('LatestMementoRepository', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const repo = new LatestMementoRepository<string, number>({
-            ttlMs: 100,
+            ttlMs: 100
         });
 
         repo.accept('a', 1);

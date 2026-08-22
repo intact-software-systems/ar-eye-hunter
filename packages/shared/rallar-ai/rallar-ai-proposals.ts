@@ -1,8 +1,5 @@
-import {
-    type RallarAiJsonResult,
-    type RallarAiResultLifecycleState,
-} from './rallar-ai-types.ts';
 import { assertRallarAiResultLifecycleTransition } from './rallar-ai-result-lifecycle.ts';
+import { type RallarAiJsonResult, type RallarAiResultLifecycleState } from './rallar-ai-types.ts';
 
 export type RallarAiAcceptedResultDecision = Readonly<{
     applied: boolean;
@@ -14,33 +11,33 @@ export type RallarAiAcceptedResultTracker<TValue = unknown> = Readonly<{
     hasAccepted(result: RallarAiJsonResult<TValue>): boolean;
     acceptOnce(
         result: RallarAiJsonResult<TValue>,
-        apply?: (result: RallarAiJsonResult<TValue>) => void | Promise<void>,
+        apply?: (result: RallarAiJsonResult<TValue>) => void | Promise<void>
     ): Promise<RallarAiAcceptedResultDecision>;
     snapshot(): readonly string[];
 }>;
 
 export function getRallarAiResultDedupeId(
-    result: Pick<RallarAiJsonResult, 'dedupeKey' | 'generationId'>,
+    result: Pick<RallarAiJsonResult, 'dedupeKey' | 'generationId'>
 ): string {
     return result.dedupeKey ?? result.generationId;
 }
 
 export function transitionRallarAiResultLifecycle<TValue>(
     result: RallarAiJsonResult<TValue>,
-    lifecycle: RallarAiResultLifecycleState,
+    lifecycle: RallarAiResultLifecycleState
 ): RallarAiJsonResult<TValue> {
     assertRallarAiResultLifecycleTransition(
         result.lifecycle ?? 'draft',
-        lifecycle,
+        lifecycle
     );
     return {
         ...result,
-        lifecycle,
+        lifecycle
     };
 }
 
 export function createRallarAiAcceptedResultTracker<TValue = unknown>(
-    acceptedDedupeIds: Iterable<string> = [],
+    acceptedDedupeIds: Iterable<string> = []
 ): RallarAiAcceptedResultTracker<TValue> {
     const accepted = new Set(acceptedDedupeIds);
 
@@ -52,14 +49,14 @@ export function createRallarAiAcceptedResultTracker<TValue = unknown>(
                 return {
                     applied: false,
                     dedupeId,
-                    reason: 'not-accepted',
+                    reason: 'not-accepted'
                 };
             }
             if (accepted.has(dedupeId)) {
                 return {
                     applied: false,
                     dedupeId,
-                    reason: 'duplicate',
+                    reason: 'duplicate'
                 };
             }
 
@@ -67,9 +64,9 @@ export function createRallarAiAcceptedResultTracker<TValue = unknown>(
             await apply?.(result);
             return {
                 applied: true,
-                dedupeId,
+                dedupeId
             };
         },
-        snapshot: () => Array.from(accepted).sort(),
+        snapshot: () => Array.from(accepted).sort()
     };
 }

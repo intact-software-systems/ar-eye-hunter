@@ -2,16 +2,12 @@
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FleetMap } from
-    '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetMap.tsx';
-import { FleetGeographyEvidence } from
-    '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetGeographyEvidence.tsx';
-import type { FleetMapModel } from
-    '../../../apps/rallar-black-box/src/recipe-console/fleet/fleet-map-model.ts';
-import { useFleetWindow } from
-    '../../../apps/rallar-black-box/src/recipe-console/fleet/use-fleet-window.ts';
+import type { FleetMapModel } from '../../../apps/rallar-black-box/src/recipe-console/fleet/fleet-map-model.ts';
+import { FleetGeographyEvidence } from '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetGeographyEvidence.tsx';
+import { FleetMap } from '../../../apps/rallar-black-box/src/recipe-console/fleet/FleetMap.tsx';
+import { useFleetWindow } from '../../../apps/rallar-black-box/src/recipe-console/fleet/use-fleet-window.ts';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
     .IS_REACT_ACT_ENVIRONMENT = true;
 
 const LOCATION = {
@@ -20,7 +16,7 @@ const LOCATION = {
     label: 'Europe north',
     precision: 'approximate',
     source: 'live-region-lookup',
-    evidenceKind: 'live',
+    evidenceKind: 'live'
 } as const;
 
 const AGENT = {
@@ -32,7 +28,7 @@ const AGENT = {
         synthetic: false,
         region: 'eu-north',
         provider: 'provider-a',
-        activeRunIds: [],
+        activeRunIds: []
     },
     historical: {
         latest: {
@@ -42,14 +38,14 @@ const AGENT = {
             state: 'failed',
             ok: false,
             missing: false,
-            stale: false,
+            stale: false
         },
         outcomeCount: 3,
         failedOutcomes: 2,
         missingOutcomes: 0,
         runIds: ['run-failed'],
-        failureSignatureIds: ['sig-runtime'],
-    },
+        failureSignatureIds: ['sig-runtime']
+    }
 } as const;
 
 const REGION = {
@@ -61,7 +57,7 @@ const REGION = {
         source: 'historical-region-lookup',
         evidenceKind: 'historical',
         distributedRunId: 'run-failed',
-        generatedAtEpochMs: 2_000,
+        generatedAtEpochMs: 2_000
     },
     agentCount: 1,
     outcomeCount: 3,
@@ -72,7 +68,7 @@ const REGION = {
     stale: 0,
     passRate: 1 / 3,
     dominantFailureSignatureId: 'sig-runtime',
-    latestDistributedRunId: 'run-failed',
+    latestDistributedRunId: 'run-failed'
 } as const;
 
 const MODEL = {
@@ -87,8 +83,8 @@ const MODEL = {
             severity: 'critical',
             selected: true,
             point: { x: 550, y: 87 },
-            agent: AGENT,
-        }],
+            agent: AGENT
+        }]
     },
     regionMarkers: {
         enabled: true,
@@ -100,8 +96,8 @@ const MODEL = {
             severity: 'critical',
             selected: true,
             point: { x: 550, y: 87 },
-            region: REGION,
-        }],
+            region: REGION
+        }]
     },
     routePaths: {
         enabled: true,
@@ -122,9 +118,9 @@ const MODEL = {
                 target: { ...LOCATION, longitude: -70, label: 'US east' },
                 transport: 'rtc',
                 eventCount: 3,
-                failedCount: 1,
-            },
-        }],
+                failedCount: 1
+            }
+        }]
     },
     failureMarkers: {
         enabled: true,
@@ -136,17 +132,16 @@ const MODEL = {
             severity: 'critical',
             selected: true,
             point: { x: 550, y: 87 },
-            agent: AGENT,
-        }],
+            agent: AGENT
+        }]
     },
     unresolved: {
         agentIds: ['agent-unresolved'],
         routeEndpointAgentIds: ['agent-peer-only'],
         routeObservationCount: 2,
-        routeEvidenceLabel:
-            'Observed in the bounded control snapshot event window; not a complete network topology.',
-        topologyComplete: false,
-    },
+        routeEvidenceLabel: 'Observed in the bounded control snapshot event window; not a complete network topology.',
+        topologyComplete: false
+    }
 } as unknown as FleetMapModel;
 
 describe('Recipe Console Fleet map UI', () => {
@@ -159,7 +154,9 @@ describe('Recipe Console Fleet map UI', () => {
     });
 
     afterEach(async () => {
-        if (root) await act(async () => root?.unmount());
+        if (root) {
+            await act(async () => root?.unmount());
+        }
         root = undefined;
         container.remove();
     });
@@ -169,14 +166,16 @@ describe('Recipe Console Fleet map UI', () => {
         const selectAgent = vi.fn();
         const selectRegion = vi.fn();
         root = createRoot(container);
-        await act(async () => root?.render(createElement(FleetMap, {
-            model: MODEL,
-            onSelectAgent: selectAgent,
-            onSelectRegion: selectRegion,
-            onToggleLayer: toggleLayer,
-            selectedAgentId: AGENT.agentId,
-            selectedRegion: REGION.region,
-        })));
+        await act(async () =>
+            root?.render(createElement(FleetMap, {
+                model: MODEL,
+                onSelectAgent: selectAgent,
+                onSelectRegion: selectRegion,
+                onToggleLayer: toggleLayer,
+                selectedAgentId: AGENT.agentId,
+                selectedRegion: REGION.region
+            }))
+        );
 
         const svg = container.querySelector('svg');
         expect(svg?.getAttribute('aria-hidden')).toBe('true');
@@ -186,26 +185,26 @@ describe('Recipe Console Fleet map UI', () => {
         expect(svg?.querySelectorAll('[data-fleet-map-route]')).toHaveLength(1);
         expect(svg?.querySelectorAll('[data-fleet-map-failure]')).toHaveLength(1);
         expect(svg?.textContent).toContain(
-            '1 agents · 1 regions · 1 routes · 1 failure marks',
+            '1 agents · 1 regions · 1 routes · 1 failure marks'
         );
 
         const layerButtons = container.querySelectorAll<HTMLButtonElement>(
-            '[data-fleet-map-layer]',
+            '[data-fleet-map-layer]'
         );
         expect(layerButtons).toHaveLength(4);
-        expect([...layerButtons].every(button => button.getAttribute('aria-pressed') === 'true'))
+        expect([...layerButtons].every((button) => button.getAttribute('aria-pressed') === 'true'))
             .toBe(true);
         await act(async () => layerButtons[0]?.click());
         expect(toggleLayer).toHaveBeenCalledWith('live-agents', false);
 
         const agentButton = container.querySelector<HTMLButtonElement>(
-            `[data-map-agent-id="${CSS.escape(AGENT.agentId)}"]`,
+            `[data-map-agent-id="${CSS.escape(AGENT.agentId)}"]`
         );
         expect(agentButton?.getAttribute('aria-pressed')).toBe('true');
         await act(async () => agentButton?.click());
         expect(selectAgent).toHaveBeenCalledWith(AGENT.agentId, agentButton);
         const regionButton = container.querySelector<HTMLButtonElement>(
-            '[data-map-region="eu-north"]',
+            '[data-map-region="eu-north"]'
         );
         await act(async () => regionButton?.click());
         expect(selectRegion).toHaveBeenCalledWith(undefined, regionButton);
@@ -217,28 +216,30 @@ describe('Recipe Console Fleet map UI', () => {
         expect(container.textContent).toContain('live region lookup · approximate');
         expect(container.textContent).toContain('historical region lookup · approximate');
         expect(container.textContent).toContain(
-            'Europe north · 60°, 18° · live region lookup · approximate',
+            'Europe north · 60°, 18° · live region lookup · approximate'
         );
         expect(container.textContent).toContain('1 unresolved agents');
         expect(container.textContent).toContain('1 unresolved route endpoint identities');
         expect(container.querySelector('[data-exact-identifier]')?.getAttribute('dir'))
             .toBe('ltr');
 
-        await act(async () => root?.render(createElement(FleetMap, {
-            model: {
-                ...MODEL,
-                routePaths: {
-                    enabled: true,
-                    candidateCount: 0,
-                    renderedCount: 0,
-                    omittedCount: 0,
-                    items: [],
+        await act(async () =>
+            root?.render(createElement(FleetMap, {
+                model: {
+                    ...MODEL,
+                    routePaths: {
+                        enabled: true,
+                        candidateCount: 0,
+                        renderedCount: 0,
+                        omittedCount: 0,
+                        items: []
+                    }
                 },
-            },
-            onSelectAgent: selectAgent,
-            onSelectRegion: selectRegion,
-            onToggleLayer: toggleLayer,
-        })));
+                onSelectAgent: selectAgent,
+                onSelectRegion: selectRegion,
+                onToggleLayer: toggleLayer
+            }))
+        );
         expect(container.querySelector('[data-fleet-map-no-routes]')?.textContent)
             .toContain('No explicit resolved route evidence');
     });
@@ -251,15 +252,15 @@ describe('Recipe Console Fleet map UI', () => {
             source: LOCATION,
             target: { ...LOCATION, longitude: -70 },
             eventCount: index + 1,
-            failedCount: index % 3,
+            failedCount: index % 3
         }));
         const unresolvedAgents = Array.from(
             { length: 85 },
-            (_, index) => `unresolved-${String(index).padStart(2, '0')}`,
+            (_, index) => `unresolved-${String(index).padStart(2, '0')}`
         );
         const unresolvedEndpoints = Array.from(
             { length: 67 },
-            (_, index) => `endpoint-${String(index).padStart(2, '0')}`,
+            (_, index) => `endpoint-${String(index).padStart(2, '0')}`
         );
         const agentMarkers = Array.from({ length: 85 }, (_, index) => ({
             id: `agent-marker-${index}`,
@@ -269,8 +270,8 @@ describe('Recipe Console Fleet map UI', () => {
             agent: {
                 ...AGENT,
                 agentId: `resolved-agent-${String(index).padStart(2, '0')}`,
-                location: { ...LOCATION, latitude: 10 + index / 100 },
-            },
+                location: { ...LOCATION, latitude: 10 + index / 100 }
+            }
         }));
         const regionMarkers = Array.from({ length: 55 }, (_, index) => ({
             id: `region-marker-${index}`,
@@ -281,8 +282,8 @@ describe('Recipe Console Fleet map UI', () => {
                 ...REGION,
                 key: `region-key-${index}`,
                 region: `resolved-region-${String(index).padStart(2, '0')}`,
-                location: { ...REGION.location, latitude: 20 + index / 100 },
-            },
+                location: { ...REGION.location, latitude: 20 + index / 100 }
+            }
         }));
         const failureMarkers = Array.from({ length: 83 }, (_, index) => ({
             ...agentMarkers[index % agentMarkers.length]!,
@@ -291,35 +292,40 @@ describe('Recipe Console Fleet map UI', () => {
             agent: {
                 ...AGENT,
                 agentId: `failure-agent-${String(index).padStart(2, '0')}`,
-                location: { ...LOCATION, latitude: 30 + index / 100 },
-            },
+                location: { ...LOCATION, latitude: 30 + index / 100 }
+            }
         }));
 
         function Harness() {
             const agentWindow = useFleetWindow({
-                contextKey: 'map-agents', section: 'mapAgents',
-                total: agentMarkers.length,
+                contextKey: 'map-agents',
+                section: 'mapAgents',
+                total: agentMarkers.length
             });
             const regionWindow = useFleetWindow({
-                contextKey: 'map-regions', section: 'mapRegions',
-                total: regionMarkers.length,
+                contextKey: 'map-regions',
+                section: 'mapRegions',
+                total: regionMarkers.length
             });
             const failureWindow = useFleetWindow({
-                contextKey: 'map-failures', section: 'mapFailures',
-                total: failureMarkers.length,
+                contextKey: 'map-failures',
+                section: 'mapFailures',
+                total: failureMarkers.length
             });
             const routeWindow = useFleetWindow({
-                contextKey: 'map-routes', section: 'mapRoutes', total: routes.length,
+                contextKey: 'map-routes',
+                section: 'mapRoutes',
+                total: routes.length
             });
             const unresolvedAgentWindow = useFleetWindow({
                 contextKey: 'map-unresolved-agents',
                 section: 'unresolvedAgents',
-                total: unresolvedAgents.length,
+                total: unresolvedAgents.length
             });
             const unresolvedEndpointWindow = useFleetWindow({
                 contextKey: 'map-unresolved-endpoints',
                 section: 'unresolvedRouteEndpoints',
-                total: unresolvedEndpoints.length,
+                total: unresolvedEndpoints.length
             });
             return createElement(FleetGeographyEvidence, {
                 agentMarkers,
@@ -335,7 +341,7 @@ describe('Recipe Console Fleet map UI', () => {
                 unresolvedAgentWindow,
                 unresolvedEndpointAgentIds: unresolvedEndpoints,
                 unresolvedEndpointObservationCount: 81,
-                unresolvedEndpointWindow,
+                unresolvedEndpointWindow
             });
         }
 
@@ -345,55 +351,69 @@ describe('Recipe Console Fleet map UI', () => {
         async function traverse(
             rowSelector: string,
             value: (row: HTMLElement) => string,
-            label: string,
+            label: string
         ): Promise<string[]> {
             const visited: string[] = [];
             while (true) {
                 visited.push(...[...container.querySelectorAll<HTMLElement>(
-                    rowSelector,
+                    rowSelector
                 )].map(value));
                 const group = container.querySelector<HTMLElement>(
-                    `[aria-label="${label} window"]`,
+                    `[aria-label="${label} window"]`
                 );
                 const next = group?.querySelector<HTMLButtonElement>(
-                    '[data-explicit-window-direction="next"]',
+                    '[data-explicit-window-direction="next"]'
                 );
-                if (!next || next.disabled) break;
+                if (!next || next.disabled) {
+                    break;
+                }
                 await act(async () => next.click());
             }
             return visited;
         }
 
-        expect(await traverse(
-            '[data-fleet-resolved-agent-location]',
-            row => row.dataset.fleetResolvedAgentLocation ?? '',
-            'Fleet resolved live agent locations',
-        )).toEqual(agentMarkers.map(marker => marker.agent.agentId));
-        expect(await traverse(
-            '[data-fleet-resolved-region-location]',
-            row => row.dataset.fleetResolvedRegionLocation ?? '',
-            'Fleet resolved region locations',
-        )).toEqual(regionMarkers.map(marker => marker.region.key));
-        expect(await traverse(
-            '[data-fleet-resolved-failure-location]',
-            row => row.dataset.fleetResolvedFailureLocation ?? '',
-            'Fleet resolved failure locations',
-        )).toEqual(failureMarkers.map(marker => marker.agent.agentId));
-        expect(await traverse(
-            '[data-fleet-route-evidence]',
-            row => row.dataset.fleetRouteEvidence ?? '',
-            'Fleet observed routes',
-        )).toEqual(routes.map(route => route.routeId));
-        expect(await traverse(
-            '[data-fleet-unresolved-agent]',
-            row => row.dataset.fleetUnresolvedAgent ?? '',
-            'Fleet unresolved agents',
-        )).toEqual(unresolvedAgents);
-        expect(await traverse(
-            '[data-fleet-unresolved-endpoint]',
-            row => row.dataset.fleetUnresolvedEndpoint ?? '',
-            'Fleet unresolved route endpoints',
-        )).toEqual(unresolvedEndpoints);
+        expect(
+            await traverse(
+                '[data-fleet-resolved-agent-location]',
+                (row) => row.dataset.fleetResolvedAgentLocation ?? '',
+                'Fleet resolved live agent locations'
+            )
+        ).toEqual(agentMarkers.map((marker) => marker.agent.agentId));
+        expect(
+            await traverse(
+                '[data-fleet-resolved-region-location]',
+                (row) => row.dataset.fleetResolvedRegionLocation ?? '',
+                'Fleet resolved region locations'
+            )
+        ).toEqual(regionMarkers.map((marker) => marker.region.key));
+        expect(
+            await traverse(
+                '[data-fleet-resolved-failure-location]',
+                (row) => row.dataset.fleetResolvedFailureLocation ?? '',
+                'Fleet resolved failure locations'
+            )
+        ).toEqual(failureMarkers.map((marker) => marker.agent.agentId));
+        expect(
+            await traverse(
+                '[data-fleet-route-evidence]',
+                (row) => row.dataset.fleetRouteEvidence ?? '',
+                'Fleet observed routes'
+            )
+        ).toEqual(routes.map((route) => route.routeId));
+        expect(
+            await traverse(
+                '[data-fleet-unresolved-agent]',
+                (row) => row.dataset.fleetUnresolvedAgent ?? '',
+                'Fleet unresolved agents'
+            )
+        ).toEqual(unresolvedAgents);
+        expect(
+            await traverse(
+                '[data-fleet-unresolved-endpoint]',
+                (row) => row.dataset.fleetUnresolvedEndpoint ?? '',
+                'Fleet unresolved route endpoints'
+            )
+        ).toEqual(unresolvedEndpoints);
         expect(container.textContent).toContain('not a complete network topology');
         expect(container.textContent).toContain('81 unresolved endpoint observations');
         expect(container.textContent).toContain('live region lookup · approximate');
@@ -410,72 +430,89 @@ describe('Recipe Console Fleet map UI', () => {
             ...MODEL.routePaths.items[0]!.route,
             source: location,
             target: location,
-            transport: transportLabel,
+            transport: transportLabel
         };
         const model = {
             ...MODEL,
             agentMarkers: {
                 ...MODEL.agentMarkers,
-                items: MODEL.agentMarkers.items.map(item => ({
+                items: MODEL.agentMarkers.items.map((item) => ({
                     ...item,
-                    agent: { ...item.agent, location },
-                })),
+                    agent: { ...item.agent, location }
+                }))
             },
             regionMarkers: {
                 ...MODEL.regionMarkers,
-                items: MODEL.regionMarkers.items.map(item => ({
+                items: MODEL.regionMarkers.items.map((item) => ({
                     ...item,
                     region: {
                         ...item.region,
                         region: regionLabel,
                         provider: providerLabel,
-                        location,
-                    },
-                })),
+                        location
+                    }
+                }))
             },
             routePaths: {
                 ...MODEL.routePaths,
-                items: [{ ...MODEL.routePaths.items[0]!, route }],
-            },
+                items: [{ ...MODEL.routePaths.items[0]!, route }]
+            }
         } as unknown as FleetMapModel;
 
         root = createRoot(container);
-        await act(async () => root?.render(createElement(FleetMap, {
-            model,
-            onSelectAgent: vi.fn(),
-            onSelectRegion: vi.fn(),
-            onToggleLayer: vi.fn(),
-        })));
-        for (const value of [
-            locationLabel,
-            regionLabel,
-            providerLabel,
-            transportLabel,
-        ]) {
-            expect([...container.querySelectorAll('bdi[dir="auto"]')]
-                .some(node => node.textContent === value), value).toBe(true);
+        await act(async () =>
+            root?.render(createElement(FleetMap, {
+                model,
+                onSelectAgent: vi.fn(),
+                onSelectRegion: vi.fn(),
+                onToggleLayer: vi.fn()
+            }))
+        );
+        for (
+            const value of [
+                locationLabel,
+                regionLabel,
+                providerLabel,
+                transportLabel
+            ]
+        ) {
+            expect(
+                [...container.querySelectorAll('bdi[dir="auto"]')]
+                    .some((node) => node.textContent === value),
+                value
+            ).toBe(true);
         }
 
         function LedgerHarness() {
             const agentWindow = useFleetWindow({
-                contextKey: 'bidi-map-agent', section: 'mapAgents', total: 0,
+                contextKey: 'bidi-map-agent',
+                section: 'mapAgents',
+                total: 0
             });
             const regionWindow = useFleetWindow({
-                contextKey: 'bidi-map-region', section: 'mapRegions', total: 0,
+                contextKey: 'bidi-map-region',
+                section: 'mapRegions',
+                total: 0
             });
             const failureWindow = useFleetWindow({
-                contextKey: 'bidi-map-failure', section: 'mapFailures', total: 0,
+                contextKey: 'bidi-map-failure',
+                section: 'mapFailures',
+                total: 0
             });
             const routeWindow = useFleetWindow({
-                contextKey: 'bidi-route', section: 'mapRoutes', total: 1,
+                contextKey: 'bidi-route',
+                section: 'mapRoutes',
+                total: 1
             });
             const unresolvedAgentWindow = useFleetWindow({
-                contextKey: 'bidi-agent', section: 'unresolvedAgents', total: 0,
+                contextKey: 'bidi-agent',
+                section: 'unresolvedAgents',
+                total: 0
             });
             const unresolvedEndpointWindow = useFleetWindow({
                 contextKey: 'bidi-endpoint',
                 section: 'unresolvedRouteEndpoints',
-                total: 0,
+                total: 0
             });
             return createElement(FleetGeographyEvidence, {
                 agentMarkers: [],
@@ -491,11 +528,11 @@ describe('Recipe Console Fleet map UI', () => {
                 unresolvedAgentWindow,
                 unresolvedEndpointAgentIds: [],
                 unresolvedEndpointObservationCount: 0,
-                unresolvedEndpointWindow,
+                unresolvedEndpointWindow
             });
         }
         await act(async () => root?.render(createElement(LedgerHarness)));
         expect([...container.querySelectorAll('bdi[dir="auto"]')]
-            .some(node => node.textContent === transportLabel)).toBe(true);
+            .some((node) => node.textContent === transportLabel)).toBe(true);
     });
 });

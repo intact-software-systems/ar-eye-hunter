@@ -28,12 +28,14 @@ black-box runners.
 ### Task 1: Prove canonical runtime key injectivity
 
 **Files:**
+
 - Create: `packages/tests/shared-server/client-state/client-state-storage-key-injectivity.test.ts`
 - Modify: `packages/tests/shared-server/client-state/client-mutation-command-and-request.test.ts`
 - Modify: `packages/shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts`
 - Modify: `packages/shared-server/rallar-system/client-state-storage-keys.ts`
 
 **Interfaces:**
+
 - Produces: `clientStateWorkspaceStorageKey(workspaceId: string): string`.
 - Preserves: principal, instance, session, idempotency, comparison, and decoder
   function names.
@@ -65,10 +67,10 @@ Implement the pure encoder beside the key builders:
 
 ```ts
 export function clientStateWorkspaceStorageKey(workspaceId: string): string {
-  if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
-    throw new TypeError('Client-state workspaceId must be a nonempty string');
-  }
-  return workspaceId === '_' ? '%5F' : encodeURIComponent(workspaceId);
+    if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
+        throw new TypeError('Client-state workspaceId must be a nonempty string');
+    }
+    return workspaceId === '_' ? '%5F' : encodeURIComponent(workspaceId);
 }
 ```
 
@@ -84,11 +86,13 @@ all pass.
 ### Task 2: Reject omitted persisted workspace identities
 
 **Files:**
+
 - Modify: `packages/tests/shared-server/client-state/client-mutation-persisted-state-validation.test.ts`
 - Modify: `packages/shared-server/rallar-system/client-state/persistence/client-state-persistence-codec.ts`
 - Modify: `packages/shared-server/rallar-system/client-state/README.md`
 
 **Interfaces:**
+
 - Consumes: canonical workspace keys from Task 1.
 - Preserves: the four `normalizePersistedClient*` function names.
 
@@ -123,6 +127,7 @@ Run the Step 2 command and all client-state Vitest tests. Expected: all pass.
 ### Task 3: Align SQL event and admin persistence
 
 **Files:**
+
 - Create: `apps/api-v1/test/db/pglite-client-state-workspace-isolation.test.ts`
 - Modify: `apps/api-v1/test/db/admin-operations-postgres-reader.test.ts`
 - Modify: `packages/tests/shared-server/integration/postgres/runtime-state-prefix.test.ts`
@@ -130,6 +135,7 @@ Run the Step 2 command and all client-state Vitest tests. Expected: all pass.
 - Modify: `packages/shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts`
 
 **Interfaces:**
+
 - Consumes: `clientStateWorkspaceStorageKey(workspaceId: string): string`.
 - Preserves: `ClientStateEventStore` and admin response contracts.
 
@@ -175,10 +181,12 @@ Expected: all enabled tests pass with literal isolated keys.
 ### Task 4: Reconcile active documentation and deferred-work records
 
 **Files:**
+
 - Modify: `packages/shared-server/rallar-system/client-state/README.md`
 - Modify: `plans/rallar-rest-snapshot-read-convergence-implementation-plan.md`
 
 **Interfaces:**
+
 - Documents the one current persistence contract; introduces no runtime API.
 
 - [ ] **Step 1: Update active guidance**
@@ -207,9 +215,11 @@ Run `npm run test:repo-governance`. Expected: pass.
 ### Task 5: Final verification and publication
 
 **Files:**
+
 - Verify all changed files.
 
 **Interfaces:**
+
 - Proves the final tree; produces no new product contract.
 
 - [ ] **Step 1: Run focused correctness checks**

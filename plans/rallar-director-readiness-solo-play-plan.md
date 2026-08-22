@@ -44,9 +44,9 @@
 
 ```ts
 export type RallarReadinessExpectation =
-    | Readonly<{ min: number; max?: number }>
-    | Readonly<{ exact: number }>
-    | Readonly<{ sessionIds: readonly string[]; allowExtras?: boolean }>;
+    | Readonly<{ min: number; max?: number; }>
+    | Readonly<{ exact: number; }>
+    | Readonly<{ sessionIds: readonly string[]; allowExtras?: boolean; }>;
 
 export type RallarReadinessStatus =
     | 'ready'
@@ -76,6 +76,7 @@ export type RallarReadinessStatus =
 ### Task 1: Add Readiness Expectation Helpers
 
 **Files:**
+
 - Create: `packages/shared-web/browser/readiness.ts`
 - Test: `packages/tests/shared-web/rallar-readiness.test.ts`
 - Modify: `packages/shared-web/browser/rallar.ts`
@@ -86,31 +87,31 @@ export type RallarReadinessStatus =
 Create `packages/tests/shared-web/rallar-readiness.test.ts` with these behavioral cases:
 
 ```ts
-import { describe, expect, it } from 'vitest';
 import {
     evaluateRallarReadinessExpectation,
-    normalizeRallarReadinessExpectation,
+    normalizeRallarReadinessExpectation
 } from '@shared-web/browser/rallar.ts';
+import { describe, expect, it } from 'vitest';
 
 describe('Rallar readiness expectations', () => {
     it('treats one active local session as ready for min one', () => {
         const result = evaluateRallarReadinessExpectation(
             ['session-local'],
-            normalizeRallarReadinessExpectation({ min: 1 }),
+            normalizeRallarReadinessExpectation({ min: 1 })
         );
 
         expect(result).toMatchObject({
             status: 'ready',
             observedCount: 1,
             missingSessionIds: [],
-            extraSessionIds: [],
+            extraSessionIds: []
         });
     });
 
     it('reports partial when exact count is not reached', () => {
         const result = evaluateRallarReadinessExpectation(
             ['session-local'],
-            normalizeRallarReadinessExpectation({ exact: 2 }),
+            normalizeRallarReadinessExpectation({ exact: 2 })
         );
 
         expect(result.status).toBe('partial');
@@ -121,7 +122,7 @@ describe('Rallar readiness expectations', () => {
     it('reports over-capacity when exact count is exceeded', () => {
         const result = evaluateRallarReadinessExpectation(
             ['a', 'b', 'c'],
-            normalizeRallarReadinessExpectation({ exact: 2 }),
+            normalizeRallarReadinessExpectation({ exact: 2 })
         );
 
         expect(result.status).toBe('over-capacity');
@@ -132,8 +133,8 @@ describe('Rallar readiness expectations', () => {
         const result = evaluateRallarReadinessExpectation(
             ['director', 'player', 'spectator'],
             normalizeRallarReadinessExpectation({
-                sessionIds: ['director', 'player'],
-            }),
+                sessionIds: ['director', 'player']
+            })
         );
 
         expect(result.status).toBe('ready');
@@ -145,8 +146,8 @@ describe('Rallar readiness expectations', () => {
             ['director', 'player', 'spectator'],
             normalizeRallarReadinessExpectation({
                 sessionIds: ['director', 'player'],
-                allowExtras: false,
-            }),
+                allowExtras: false
+            })
         );
 
         expect(result.status).toBe('over-capacity');
@@ -167,9 +168,9 @@ Create `packages/shared-web/browser/readiness.ts` with the exported types and he
 
 ```ts
 export type RallarReadinessExpectation =
-    | Readonly<{ min: number; max?: number }>
-    | Readonly<{ exact: number }>
-    | Readonly<{ sessionIds: readonly string[]; allowExtras?: boolean }>;
+    | Readonly<{ min: number; max?: number; }>
+    | Readonly<{ exact: number; }>
+    | Readonly<{ sessionIds: readonly string[]; allowExtras?: boolean; }>;
 
 export type RallarNormalizedReadinessExpectation = Readonly<{
     min?: number;
@@ -199,7 +200,7 @@ export type RallarReadinessEvaluation = Readonly<{
 }>;
 
 export function normalizeRallarReadinessExpectation(
-    expectation: RallarReadinessExpectation | undefined,
+    expectation: RallarReadinessExpectation | undefined
 ): RallarNormalizedReadinessExpectation {
     if (!expectation) {
         return { min: 1, allowExtras: true };
@@ -208,14 +209,14 @@ export function normalizeRallarReadinessExpectation(
     if ('sessionIds' in expectation) {
         return {
             sessionIds: uniqueSortedSessionIds(expectation.sessionIds),
-            allowExtras: expectation.allowExtras ?? true,
+            allowExtras: expectation.allowExtras ?? true
         };
     }
 
     if ('exact' in expectation) {
         return {
             exact: normalizeNonNegativeInteger(expectation.exact, 'exact'),
-            allowExtras: false,
+            allowExtras: false
         };
     }
 
@@ -232,7 +233,7 @@ export function normalizeRallarReadinessExpectation(
 
 export function evaluateRallarReadinessExpectation(
     observedSessionIds: readonly string[],
-    expectation: RallarNormalizedReadinessExpectation,
+    expectation: RallarNormalizedReadinessExpectation
 ): RallarReadinessEvaluation {
     const observed = uniqueSortedSessionIds(observedSessionIds);
     const observedSet = new Set(observed);
@@ -246,20 +247,50 @@ export function evaluateRallarReadinessExpectation(
 
     if (expectation.sessionIds) {
         if (missingSessionIds.length > 0) {
-            return toEvaluation('partial', observed, missingSessionIds, extraSessionIds, expectation.sessionIds.length);
+            return toEvaluation(
+                'partial',
+                observed,
+                missingSessionIds,
+                extraSessionIds,
+                expectation.sessionIds.length
+            );
         }
         if (!expectation.allowExtras && extraSessionIds.length > 0) {
-            return toEvaluation('over-capacity', observed, missingSessionIds, extraSessionIds, expectation.sessionIds.length);
+            return toEvaluation(
+                'over-capacity',
+                observed,
+                missingSessionIds,
+                extraSessionIds,
+                expectation.sessionIds.length
+            );
         }
-        return toEvaluation(observed.length === 0 ? 'empty' : 'ready', observed, missingSessionIds, extraSessionIds, expectation.sessionIds.length);
+        return toEvaluation(
+            observed.length === 0 ? 'empty' : 'ready',
+            observed,
+            missingSessionIds,
+            extraSessionIds,
+            expectation.sessionIds.length
+        );
     }
 
     if (expectation.exact !== undefined) {
         if (observed.length === expectation.exact) {
-            return toEvaluation(expectation.exact === 0 ? 'empty' : 'ready', observed, [], [], expectation.exact);
+            return toEvaluation(
+                expectation.exact === 0 ? 'empty' : 'ready',
+                observed,
+                [],
+                [],
+                expectation.exact
+            );
         }
         if (observed.length > expectation.exact) {
-            return toEvaluation('over-capacity', observed, [], observed.slice(expectation.exact), expectation.exact);
+            return toEvaluation(
+                'over-capacity',
+                observed,
+                [],
+                observed.slice(expectation.exact),
+                expectation.exact
+            );
         }
         return toEvaluation('partial', observed, [], [], expectation.exact);
     }
@@ -269,13 +300,19 @@ export function evaluateRallarReadinessExpectation(
         return toEvaluation('over-capacity', observed, [], observed.slice(expectation.max), min);
     }
     if (observed.length >= min) {
-        return toEvaluation(min === 0 && observed.length === 0 ? 'empty' : 'ready', observed, [], [], min);
+        return toEvaluation(
+            min === 0 && observed.length === 0 ? 'empty' : 'ready',
+            observed,
+            [],
+            [],
+            min
+        );
     }
     return toEvaluation(observed.length === 0 ? 'empty' : 'partial', observed, [], [], min);
 }
 
 function readExpectedCount(
-    expectation: RallarNormalizedReadinessExpectation,
+    expectation: RallarNormalizedReadinessExpectation
 ): number | undefined {
     return expectation.exact ?? expectation.min ?? expectation.sessionIds?.length;
 }
@@ -285,7 +322,7 @@ function toEvaluation(
     observedSessionIds: readonly string[],
     missingSessionIds: readonly string[],
     extraSessionIds: readonly string[],
-    expectedCount?: number,
+    expectedCount?: number
 ): RallarReadinessEvaluation {
     return {
         status,
@@ -293,7 +330,7 @@ function toEvaluation(
         missingSessionIds,
         extraSessionIds,
         observedCount: observedSessionIds.length,
-        expectedCount,
+        expectedCount
     };
 }
 
@@ -314,14 +351,14 @@ Modify `packages/shared-web/browser/rallar.ts` to export the helper API:
 ```ts
 export {
     evaluateRallarReadinessExpectation,
-    normalizeRallarReadinessExpectation,
+    normalizeRallarReadinessExpectation
 } from '@shared-web/browser/readiness.ts';
 
 export type {
     RallarNormalizedReadinessExpectation,
     RallarReadinessEvaluation,
     RallarReadinessExpectation,
-    RallarReadinessStatus,
+    RallarReadinessStatus
 } from '@shared-web/browser/readiness.ts';
 ```
 
@@ -345,6 +382,7 @@ Expected: commit succeeds.
 ### Task 2: Add `rallar.rooms.waitForPresence`
 
 **Files:**
+
 - Modify: `packages/shared-web/browser/rallar.ts`
 - Modify: `packages/shared-web/browser/rallar-rooms-facade.ts`
 - Test: `packages/tests/shared-web/rallar-readiness.test.ts`
@@ -361,16 +399,16 @@ it('waits for local room presence with min one for solo rooms', async () => {
     await facade.connect();
     seedGroupSnapshot({
         groupId: 'arena-1',
-        activeSessionIds: ['session-local'],
+        activeSessionIds: ['session-local']
     });
 
     await expect(facade.rooms.waitForPresence('arena-1', {
         expect: { min: 1 },
-        timeoutMs: 10,
+        timeoutMs: 10
     })).resolves.toMatchObject({
         status: 'ready',
         activeSessionIds: ['session-local'],
-        observedCount: 1,
+        observedCount: 1
     });
 });
 
@@ -381,17 +419,17 @@ it('returns timeout with the latest active sessions when exact presence is not r
     await facade.connect();
     seedGroupSnapshot({
         groupId: 'arena-1',
-        activeSessionIds: ['session-local'],
+        activeSessionIds: ['session-local']
     });
 
     await expect(facade.rooms.waitForPresence('arena-1', {
         expect: { exact: 2 },
-        timeoutMs: 1,
+        timeoutMs: 1
     })).resolves.toMatchObject({
         status: 'timeout',
         activeSessionIds: ['session-local'],
         observedCount: 1,
-        expectedCount: 2,
+        expectedCount: 2
     });
 });
 
@@ -402,23 +440,23 @@ it('resolves when a later state cache update satisfies presence expectations', a
     await facade.connect();
     seedGroupSnapshot({
         groupId: 'arena-1',
-        activeSessionIds: ['session-local'],
+        activeSessionIds: ['session-local']
     });
 
     const wait = facade.rooms.waitForPresence('arena-1', {
         expect: { exact: 2 },
-        timeoutMs: 1_000,
+        timeoutMs: 1_000
     });
 
     seedGroupSnapshot({
         groupId: 'arena-1',
-        activeSessionIds: ['session-local', 'session-peer'],
+        activeSessionIds: ['session-local', 'session-peer']
     });
 
     await expect(wait).resolves.toMatchObject({
         status: 'ready',
         activeSessionIds: ['session-local', 'session-peer'],
-        observedCount: 2,
+        observedCount: 2
     });
 });
 ```
@@ -439,19 +477,19 @@ In `packages/shared-web/browser/rallar.ts`, add public types beside the room and
 export type RallarRoomPresenceWaitOptions =
     & RallarScopedOperationOptions
     & Readonly<{
-    expect?: RallarReadinessExpectation;
-    timeoutMs?: number;
-    signal?: AbortSignal;
-}>;
+        expect?: RallarReadinessExpectation;
+        timeoutMs?: number;
+        signal?: AbortSignal;
+    }>;
 
 export type RallarRoomPresenceWaitResult =
     & RallarReadinessEvaluation
     & Readonly<{
-    roomId: string;
-    roomRef?: GroupRef;
-    activeSessionIds: readonly string[];
-    timedOut: boolean;
-}>;
+        roomId: string;
+        roomRef?: GroupRef;
+        activeSessionIds: readonly string[];
+        timedOut: boolean;
+    }>;
 ```
 
 Import the helper functions in `rallar.ts` for internal use:
@@ -460,9 +498,9 @@ Import the helper functions in `rallar.ts` for internal use:
 import {
     evaluateRallarReadinessExpectation,
     normalizeRallarReadinessExpectation,
-    type RallarReadinessExpectation,
     type RallarReadinessEvaluation,
-    type RallarReadinessStatus,
+    type RallarReadinessExpectation,
+    type RallarReadinessStatus
 } from '@shared-web/browser/readiness.ts';
 ```
 
@@ -473,7 +511,7 @@ Modify `packages/shared-web/browser/rallar-rooms-facade.ts` imports from `rallar
 ```ts
 import type {
     RallarRoomPresenceWaitOptions,
-    RallarRoomPresenceWaitResult,
+    RallarRoomPresenceWaitResult
 } from '@shared-web/browser/rallar.ts';
 ```
 
@@ -616,6 +654,7 @@ Expected: commit succeeds.
 ### Task 3: Extend `rallar.rtc.waitForRoomLane` With Expectations
 
 **Files:**
+
 - Modify: `packages/shared-web/browser/rallar.ts`
 - Test: `packages/tests/shared-web/rallar-rtc-wait-compat.test.ts`
 
@@ -631,17 +670,17 @@ it('returns empty for a solo room with no remote RTC targets', async () => {
     await facade.connect();
     seedGroupSnapshot({
         groupId: 'arena-1',
-        activeSessionIds: ['session-local'],
+        activeSessionIds: ['session-local']
     });
 
     await expect(facade.rtc.waitForRoomLane('arena-1', 'game-snapshot', {
         expect: { exact: 0 },
-        timeoutMs: 10,
+        timeoutMs: 10
     })).resolves.toMatchObject({
         status: 'empty',
         readyPeerIds: [],
         notReadyPeerIds: [],
-        expectedCount: 0,
+        expectedCount: 0
     });
 });
 
@@ -652,18 +691,18 @@ it('waits until the expected number of remote peers have open lanes', async () =
     await facade.connect();
     seedGroupSnapshot({
         groupId: 'arena-1',
-        activeSessionIds: ['session-local', 'peer-1', 'peer-2'],
+        activeSessionIds: ['session-local', 'peer-1', 'peer-2']
     });
     mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue(['peer-1']);
 
     await expect(facade.rtc.waitForRoomLane('arena-1', 'game-snapshot', {
         expect: { exact: 2 },
-        timeoutMs: 1,
+        timeoutMs: 1
     })).resolves.toMatchObject({
         status: 'timeout',
         readyPeerIds: ['peer-1'],
         notReadyPeerIds: ['peer-2'],
-        expectedCount: 2,
+        expectedCount: 2
     });
 });
 
@@ -674,17 +713,17 @@ it('supports strict expected peer session ids', async () => {
     await facade.connect();
     seedGroupSnapshot({
         groupId: 'arena-1',
-        activeSessionIds: ['session-local', 'peer-1', 'peer-2'],
+        activeSessionIds: ['session-local', 'peer-1', 'peer-2']
     });
     mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue(['peer-1', 'peer-2']);
 
     await expect(facade.rtc.waitForRoomLane('arena-1', 'game-snapshot', {
         expect: { sessionIds: ['peer-1'], allowExtras: false },
-        timeoutMs: 10,
+        timeoutMs: 10
     })).resolves.toMatchObject({
         status: 'over-capacity',
         readyPeerIds: ['peer-1', 'peer-2'],
-        extraPeerIds: ['peer-2'],
+        extraPeerIds: ['peer-2']
     });
 });
 ```
@@ -703,10 +742,10 @@ Modify `RallarRtcRoomLaneWaitOptions` in `packages/shared-web/browser/rallar.ts`
 export type RallarRtcRoomLaneWaitOptions =
     & RallarWaitForOpenOptions
     & Readonly<{
-    connect?: boolean;
-    roomRef?: GroupRef;
-    expect?: RallarReadinessExpectation;
-}>;
+        connect?: boolean;
+        roomRef?: GroupRef;
+        expect?: RallarReadinessExpectation;
+    }>;
 ```
 
 Extend `RallarRtcRoomLaneWaitResult`:
@@ -738,7 +777,7 @@ Update `waitForRtcRoomLaneOpen(...)` in `packages/shared-web/browser/rallar.ts`:
 ```ts
 const desiredPeerIds = this.resolveRoomPeerIds(options.roomRef ?? room);
 const expectation = normalizeRallarReadinessExpectation(
-    options.expect ?? { exact: desiredPeerIds.length },
+    options.expect ?? { exact: desiredPeerIds.length }
 );
 if (desiredPeerIds.length === 0) {
     return this.toRtcRoomLaneWaitResult(roomId, laneId, [], [], expectation);
@@ -807,6 +846,7 @@ Expected: commit succeeds.
 ### Task 4: Convert RTC Prepared Send Warm-Up Failures Into Typed Outcomes
 
 **Files:**
+
 - Modify: `packages/shared/alm/ALOutboundMessageRuntime.ts`
 - Modify: `packages/shared/multicast/WebRtcOverlayMulticastManager.ts`
 - Modify: `packages/shared/services/WsQueueBoxClientService.ts`
@@ -823,7 +863,7 @@ it('reschedules durable send-prepared effects when the transport is not ready', 
     const sendPreparedMessage = vi.fn(async () => ({
         status: 'not-ready' as const,
         reason: 'RTC lane warming',
-        retryAfterMs: 25,
+        retryAfterMs: 25
     }));
     const runtime = createRuntime({ sendPreparedMessage });
 
@@ -838,7 +878,7 @@ it('reschedules durable send-prepared effects when the transport is not ready', 
 it('completes durable send-prepared effects when there are no RTC targets', async () => {
     const sendPreparedMessage = vi.fn(async () => ({
         status: 'no-targets' as const,
-        reason: 'solo room',
+        reason: 'solo room'
     }));
     const runtime = createRuntime({ sendPreparedMessage });
 
@@ -862,18 +902,18 @@ it('does not call raw RTC send when the next-hop channel is not open', async () 
         readyState: 'connecting',
         send: vi.fn(async () => {
             throw new Error('Data channel not open');
-        }),
+        })
     });
     const manager = createMulticastManagerWithPeer('peer-1', channel);
 
     const result = await manager.sendPreparedMessageForTest(
         createPreparedMessageForPeer('peer-1'),
-        'dequeue',
+        'dequeue'
     );
 
     expect(result).toMatchObject({
         status: 'not-ready',
-        reason: expect.stringContaining('peer-1'),
+        reason: expect.stringContaining('peer-1')
     });
     expect(channel.send).not.toHaveBeenCalled();
 });
@@ -907,18 +947,18 @@ export type ALOutboundPreparedSendResult = Readonly<{
 Change the input contract:
 
 ```ts
-sendPreparedMessage: (
+sendPreparedMessage: ((
     prepared: TPrepared,
-    phase: ALOutboundDispatchPhase,
-) => Promise<void | ALOutboundPreparedSendResult>;
+    phase: ALOutboundDispatchPhase
+) => Promise<void | ALOutboundPreparedSendResult>);
 ```
 
 In `runDurableEffectDrainLoop()`, let `runDurableEffect(...)` return a reschedule instruction:
 
 ```ts
 type ALDurableEffectRunResult =
-    | Readonly<{ status: 'completed' }>
-    | Readonly<{ status: 'reschedule'; readyAtMs: number; reason: string }>;
+    | Readonly<{ status: 'completed'; }>
+    | Readonly<{ status: 'reschedule'; readyAtMs: number; reason: string; }>;
 ```
 
 For `send-prepared`, normalize `undefined` to `{ status: 'sent' }`. Return `completed` for `sent` and `no-targets`. Return `reschedule` for `not-ready`:
@@ -952,7 +992,7 @@ Use `peer.channel.readHealth()` before `peer.channel.send(msg)`:
 if (!peerId) {
     return {
         status: 'no-targets',
-        reason: 'Skipping RTC send without immediate next hop',
+        reason: 'Skipping RTC send without immediate next hop'
     };
 }
 
@@ -962,7 +1002,7 @@ if (!peer?.channel || health?.readyState !== 'open') {
     return {
         status: 'not-ready',
         reason: `RTC channel for peer ${peerId} is not open`,
-        retryAfterMs: 100,
+        retryAfterMs: 100
     };
 }
 
@@ -1003,6 +1043,7 @@ Expected: commit succeeds.
 ### Task 5: Make Director Relay Fall Back Reliably And Report Partial RTC Delivery
 
 **Files:**
+
 - Modify: `packages/shared-web/browser/rallar.ts`
 - Test: `packages/tests/shared-web/rallar-director-relay-compat.test.ts`
 
@@ -1021,18 +1062,18 @@ it('falls back to WS when director room RTC output has no open remote targets', 
     mocks.messagesRtcSend.mockResolvedValue({
         transport: 'rtc',
         status: 'no-targets',
-        reason: 'solo room',
+        reason: 'solo room'
     });
     mocks.messagesWsSend.mockResolvedValue({
         transport: 'ws',
-        status: 'sent',
+        status: 'sent'
     });
 
     const relay = facade.director.createRelay(createRelayConfig('arena-1'));
     await expect(relay.sendOutput({ type: 'snapshot' })).resolves.toMatchObject({
         status: 'sent',
         rtc: { status: 'no-targets' },
-        ws: { status: 'sent' },
+        ws: { status: 'sent' }
     });
 });
 
@@ -1045,18 +1086,18 @@ it('reports partial when RTC reaches some peers and WS fallback succeeds', async
     mocks.messagesRtcSend.mockResolvedValue({
         transport: 'rtc',
         status: 'partial',
-        reason: 'one peer not open',
+        reason: 'one peer not open'
     });
     mocks.messagesWsSend.mockResolvedValue({
         transport: 'ws',
-        status: 'sent',
+        status: 'sent'
     });
 
     const relay = facade.director.createRelay(createRelayConfig('arena-1'));
     await expect(relay.sendSnapshot({ tick: 1 })).resolves.toMatchObject({
         status: 'partial',
         rtc: { status: 'partial' },
-        ws: { status: 'sent' },
+        ws: { status: 'sent' }
     });
 });
 ```
@@ -1104,7 +1145,7 @@ if (!wsSucceeded) {
         status: 'failed',
         rtc,
         ws,
-        reason: ws.reason ?? rtc.reason,
+        reason: ws.reason ?? rtc.reason
     };
 }
 
@@ -1112,7 +1153,7 @@ return {
     status: rtc.status === 'partial' ? 'partial' : 'sent',
     rtc,
     ws,
-    reason: rtc.status === 'partial' ? rtc.reason : undefined,
+    reason: rtc.status === 'partial' ? rtc.reason : undefined
 };
 ```
 
@@ -1138,6 +1179,7 @@ Expected: commit succeeds.
 ### Task 6: Expose Rallar Game Authority And Egress Readiness Separately
 
 **Files:**
+
 - Modify: `packages/shared-web/game/types.ts`
 - Modify: `packages/shared-web/game/match.ts`
 - Modify: `packages/shared-web/game/diagnostics.ts`
@@ -1155,8 +1197,8 @@ it('marks a solo auto-appointed director as active with empty realtime egress', 
         rtcRoomLaneResult: {
             status: 'empty',
             readyPeerIds: [],
-            notReadyPeerIds: [],
-        },
+            notReadyPeerIds: []
+        }
     });
     const match = createTestMatch({ rallar });
 
@@ -1170,8 +1212,8 @@ it('marks a solo auto-appointed director as active with empty realtime egress', 
         directorAuthority: 'active',
         egress: {
             reliable: 'ready',
-            realtime: 'empty',
-        },
+            realtime: 'empty'
+        }
     });
 });
 
@@ -1182,8 +1224,8 @@ it('keeps local director authority active while remote realtime lanes warm', asy
         rtcRoomLaneResult: {
             status: 'timeout',
             readyPeerIds: [],
-            notReadyPeerIds: ['peer-1'],
-        },
+            notReadyPeerIds: ['peer-1']
+        }
     });
     const match = createTestMatch({ rallar });
 
@@ -1195,8 +1237,8 @@ it('keeps local director authority active while remote realtime lanes warm', asy
         directorAuthority: 'active',
         egress: {
             reliable: 'ready',
-            realtime: 'warming',
-        },
+            realtime: 'warming'
+        }
     });
 });
 ```
@@ -1282,7 +1324,7 @@ function toDirectorAuthority(status: RallarDirectorStatus): RallarGameDirectorAu
 }
 
 function toRealtimeEgressState(
-    status: RallarGamePeerReadiness['status'],
+    status: RallarGamePeerReadiness['status']
 ): RallarGameRealtimeEgressState {
     switch (status) {
         case 'open':
@@ -1355,6 +1397,7 @@ Expected: commit succeeds.
 ### Task 7: Update AR Eye Hunter Solo Director Flow And Diagnostics
 
 **Files:**
+
 - Modify: `apps/ar-eye-hunter-v1/src/game/useRallarArena.ts`
 - Modify: `apps/ar-eye-hunter-v1/src/App.tsx`
 - Test: `packages/tests/ar-eye-hunter-v1/use-rallar-arena-auth-lifecycle.test.ts`
@@ -1372,8 +1415,8 @@ it('starts solo play after room creation without waiting for remote RTC peers', 
         rtcRoomLaneResult: {
             status: 'empty',
             readyPeerIds: [],
-            notReadyPeerIds: [],
-        },
+            notReadyPeerIds: []
+        }
     });
 
     await harness.waitForDirectorAttempt('appointed');
@@ -1383,8 +1426,8 @@ it('starts solo play after room creation without waiting for remote RTC peers', 
         directorAuthority: 'active',
         egress: {
             reliable: 'ready',
-            realtime: 'empty',
-        },
+            realtime: 'empty'
+        }
     });
     expect(harness.current.error).toBeUndefined();
 });
@@ -1397,8 +1440,8 @@ it('syncs a late peer after presence and rtc lane readiness change', async () =>
         rtcRoomLaneResult: {
             status: 'empty',
             readyPeerIds: [],
-            notReadyPeerIds: [],
-        },
+            notReadyPeerIds: []
+        }
     });
 
     await harness.waitForDirectorAttempt('appointed');
@@ -1406,18 +1449,18 @@ it('syncs a late peer after presence and rtc lane readiness change', async () =>
     harness.updateRtcRoomLaneResult({
         status: 'open',
         readyPeerIds: ['peer-1'],
-        notReadyPeerIds: [],
+        notReadyPeerIds: []
     });
 
     await harness.waitForPublishedSnapshot();
 
     expect(harness.publishedSnapshots.at(-1)).toMatchObject({
-        reliable: true,
+        reliable: true
     });
     expect(harness.current.gameDiagnostics).toMatchObject({
         egress: {
-            realtime: 'ready',
-        },
+            realtime: 'ready'
+        }
     });
 });
 ```
@@ -1454,10 +1497,10 @@ void runBestEffortNetworkTask(async () => {
             GAME_COMBAT_LANE_ID,
             GAME_SNAPSHOT_LANE_ID,
             GAME_FX_LANE_ID,
-            GAME_AI_LANE_ID,
+            GAME_AI_LANE_ID
         ],
         expect: { min: 0 },
-        timeoutMs: 650,
+        timeoutMs: 650
     });
     setGameDiagnostics(match.diagnostics());
     if (readiness.status === 'open' || readiness.status === 'partial') {
@@ -1489,7 +1532,7 @@ useEffect(() => {
         const readiness = await match.waitForReadyLanes({
             laneIds: [GAME_SNAPSHOT_LANE_ID],
             expect: { min: 1 },
-            timeoutMs: 1_000,
+            timeoutMs: 1_000
         });
         setGameDiagnostics(match.diagnostics());
         if (readiness.status === 'open' || readiness.status === 'partial') {
@@ -1542,6 +1585,7 @@ Expected: commit succeeds.
 ### Task 8: Validate The Integrated Change Set
 
 **Files:**
+
 - Validate: `packages/shared`
 - Validate: `packages/shared-web`
 - Validate: `apps/ar-eye-hunter-v1`

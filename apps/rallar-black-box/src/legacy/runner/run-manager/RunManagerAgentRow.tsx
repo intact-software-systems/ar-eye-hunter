@@ -4,7 +4,7 @@ import { formatTime } from '../../shared/time-format.ts';
 export function RunManagerAgentRow({
     row,
     selected,
-    onToggle,
+    onToggle
 }: {
     row: ControlRunAgentRow;
     selected: boolean;
@@ -23,8 +23,7 @@ export function RunManagerAgentRow({
             <span>
                 <strong>{row.agentId}</strong>
                 <small>
-                    {row.status} - heartbeat{' '}
-                    {formatTime(row.lastHeartbeatAtEpochMs)}
+                    {row.status} - heartbeat {formatTime(row.lastHeartbeatAtEpochMs)}
                 </small>
                 {row.identitySummary && <small>{row.identitySummary}</small>}
             </span>
@@ -32,8 +31,7 @@ export function RunManagerAgentRow({
                 {row.connected ? 'connected' : 'offline'}
             </span>
             <span className="run-manager-agent-counts">
-                {row.queuedCommandCount} queued / {row.completedCommandCount}{' '}
-                done
+                {row.queuedCommandCount} queued / {row.completedCommandCount} done
             </span>
         </label>
     );

@@ -1,5 +1,4 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
 import type { ApiMutationRequestOptions } from '@shared-web/browser/api/http-request.ts';
 import {
@@ -7,21 +6,22 @@ import {
     configureWebSocketTicketLocalRateLimit,
     createWebSocketTicket as requestWebSocketTicket,
     readWebSocketTicketBackoffState,
-    resetWebSocketTicketBackoff,
+    resetWebSocketTicketBackoff
 } from '@shared-web/browser/auth/websocket-ticket-http-api.ts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 function createWebSocketTicket(
-    options: Omit<ApiMutationRequestOptions, 'requestId'>,
+    options: Omit<ApiMutationRequestOptions, 'requestId'>
 ) {
     return requestWebSocketTicket({
         requestId: 'websocket-ticket-request-id',
-        ...options,
+        ...options
     });
 }
 
 const SERVER_UNAVAILABLE_ERROR = new RegExp(
     'API POST /api/auth/ws-ticket/requests/[A-Za-z0-9_-]+ ' +
-        'failed: 503 server unavailable',
+        'failed: 503 server unavailable'
 );
 
 describe('createWebSocketTicket backoff', () => {
@@ -34,7 +34,7 @@ describe('createWebSocketTicket backoff', () => {
             maxConsecutiveFailures: 10,
             resetTimeoutMs: 10_000,
             halfOpenTimeoutMs: 10_000,
-            slidingWindowMs: 10_000,
+            slidingWindowMs: 10_000
         });
         configureWebSocketTicketLocalRateLimit({ windowMs: 60_000, maxRequests: 30 });
     });
@@ -48,7 +48,7 @@ describe('createWebSocketTicket backoff', () => {
             maxConsecutiveFailures: 10,
             resetTimeoutMs: 10_000,
             halfOpenTimeoutMs: 10_000,
-            slidingWindowMs: 10_000,
+            slidingWindowMs: 10_000
         });
         configureWebSocketTicketLocalRateLimit({ windowMs: 60_000, maxRequests: 30 });
     });
@@ -57,23 +57,23 @@ describe('createWebSocketTicket backoff', () => {
         const fetchMock = vi.fn(async () =>
             new Response('too many', {
                 status: 429,
-                headers: { 'retry-after': '4' },
+                headers: { 'retry-after': '4' }
             })
         );
         vi.stubGlobal('fetch', fetchMock);
 
         await expect(createWebSocketTicket({ authSession: null })).rejects.toThrow(
-            /API POST \/api\/auth\/ws-ticket\/requests\/[A-Za-z0-9_-]+ failed: 429 too many/,
+            /API POST \/api\/auth\/ws-ticket\/requests\/[A-Za-z0-9_-]+ failed: 429 too many/
         );
 
         expect(readWebSocketTicketBackoffState()).toMatchObject({
             status: 'cooldown',
             retryAtEpochMs: 5_000,
-            lastStatus: 429,
+            lastStatus: 429
         });
 
         await expect(createWebSocketTicket({ authSession: null })).rejects.toThrow(
-            'WebSocket ticket request suppressed until cooldown expires.',
+            'WebSocket ticket request suppressed until cooldown expires.'
         );
         expect(fetchMock).toHaveBeenCalledTimes(1);
 
@@ -83,21 +83,21 @@ describe('createWebSocketTicket backoff', () => {
                 JSON.stringify({
                     ticket: 'ticket-1',
                     sessionId: 'session-1',
-                    expiresAtEpochMs: 10_000,
+                    expiresAtEpochMs: 10_000
                 }),
                 {
                     status: 200,
-                    headers: { 'content-type': 'application/json' },
-                },
-            ),
+                    headers: { 'content-type': 'application/json' }
+                }
+            )
         );
 
         await expect(createWebSocketTicket({ authSession: null })).resolves.toMatchObject({
             ticket: 'ticket-1',
-            sessionId: 'session-1',
+            sessionId: 'session-1'
         });
         expect(readWebSocketTicketBackoffState()).toMatchObject({
-            status: 'idle',
+            status: 'idle'
         });
         expect(fetchMock).toHaveBeenCalledTimes(2);
     });
@@ -110,28 +110,28 @@ describe('createWebSocketTicket backoff', () => {
                     JSON.stringify({
                         ticket: 'ticket-1',
                         sessionId: 'session-1',
-                        expiresAtEpochMs: 10_000,
+                        expiresAtEpochMs: 10_000
                     }),
                     {
                         status: 200,
-                        headers: { 'content-type': 'application/json' },
-                    },
-                ),
+                        headers: { 'content-type': 'application/json' }
+                    }
+                )
             );
         vi.stubGlobal('fetch', fetchMock);
         const options = {
             requestId: 'websocket-lost-response-id',
-            authSession: null,
+            authSession: null
         } as const;
 
         await expect(requestWebSocketTicket(options)).rejects.toThrow('response lost');
         await expect(requestWebSocketTicket(options)).resolves.toMatchObject({
-            ticket: 'ticket-1',
+            ticket: 'ticket-1'
         });
 
         expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
             'https://api.test/api/auth/ws-ticket/requests/websocket-lost-response-id',
-            'https://api.test/api/auth/ws-ticket/requests/websocket-lost-response-id',
+            'https://api.test/api/auth/ws-ticket/requests/websocket-lost-response-id'
         ]);
     });
 
@@ -142,12 +142,12 @@ describe('createWebSocketTicket backoff', () => {
                 JSON.stringify({
                     ticket: 'ticket-1',
                     sessionId: 'session-1',
-                    expiresAtEpochMs: 10_000,
+                    expiresAtEpochMs: 10_000
                 }),
                 {
                     status: 200,
-                    headers: { 'content-type': 'application/json' },
-                },
+                    headers: { 'content-type': 'application/json' }
+                }
             )
         );
         vi.stubGlobal('fetch', fetchMock);
@@ -158,11 +158,11 @@ describe('createWebSocketTicket backoff', () => {
                 sessionId: 'session-1',
                 username: 'test',
                 accessToken: 'token-1',
-                expiresAtEpochMs: 61_000,
-            },
+                expiresAtEpochMs: 61_000
+            }
         })).resolves.toMatchObject({
             ticket: 'ticket-1',
-            sessionId: 'session-1',
+            sessionId: 'session-1'
         });
 
         await expect(createWebSocketTicket({
@@ -171,15 +171,15 @@ describe('createWebSocketTicket backoff', () => {
                 sessionId: 'session-1',
                 username: 'test',
                 accessToken: 'token-1',
-                expiresAtEpochMs: 61_000,
-            },
+                expiresAtEpochMs: 61_000
+            }
         })).rejects.toThrow(
-            'WebSocket ticket request suppressed by local client rate limiter.',
+            'WebSocket ticket request suppressed by local client rate limiter.'
         );
         expect(fetchMock).toHaveBeenCalledTimes(1);
         expect(readWebSocketTicketBackoffState()).toMatchObject({
             status: 'local-rate-limited',
-            lastStatus: 429,
+            lastStatus: 429
         });
     });
 
@@ -188,22 +188,22 @@ describe('createWebSocketTicket backoff', () => {
             maxConsecutiveFailures: 0,
             resetTimeoutMs: 60_000,
             halfOpenTimeoutMs: 10_000,
-            slidingWindowMs: 60_000,
+            slidingWindowMs: 60_000
         });
         const fetchMock = vi.fn(async () => new Response('server unavailable', { status: 503 }));
         vi.stubGlobal('fetch', fetchMock);
 
         await expect(createWebSocketTicket({ authSession: null })).rejects.toThrow(
-            SERVER_UNAVAILABLE_ERROR,
+            SERVER_UNAVAILABLE_ERROR
         );
 
         await expect(createWebSocketTicket({ authSession: null })).rejects.toThrow(
-            'WebSocket ticket request suppressed by local circuit breaker.',
+            'WebSocket ticket request suppressed by local circuit breaker.'
         );
         expect(fetchMock).toHaveBeenCalledTimes(1);
         expect(readWebSocketTicketBackoffState()).toMatchObject({
             status: 'circuit-open',
-            lastStatus: 503,
+            lastStatus: 503
         });
     });
 
@@ -212,18 +212,18 @@ describe('createWebSocketTicket backoff', () => {
             maxConsecutiveFailures: 0,
             resetTimeoutMs: 60_000,
             halfOpenTimeoutMs: 10_000,
-            slidingWindowMs: 60_000,
+            slidingWindowMs: 60_000
         });
         const fetchMock = vi.fn(async () =>
             new Response('too many', {
                 status: 429,
-                headers: { 'retry-after': '1' },
+                headers: { 'retry-after': '1' }
             })
         );
         vi.stubGlobal('fetch', fetchMock);
 
         await expect(createWebSocketTicket({ authSession: null })).rejects.toThrow(
-            /API POST \/api\/auth\/ws-ticket\/requests\/[A-Za-z0-9_-]+ failed: 429 too many/,
+            /API POST \/api\/auth\/ws-ticket\/requests\/[A-Za-z0-9_-]+ failed: 429 too many/
         );
 
         await vi.advanceTimersByTimeAsync(1_001);
@@ -232,22 +232,22 @@ describe('createWebSocketTicket backoff', () => {
                 JSON.stringify({
                     ticket: 'ticket-2',
                     sessionId: 'session-2',
-                    expiresAtEpochMs: 10_000,
+                    expiresAtEpochMs: 10_000
                 }),
                 {
                     status: 200,
-                    headers: { 'content-type': 'application/json' },
-                },
-            ),
+                    headers: { 'content-type': 'application/json' }
+                }
+            )
         );
 
         await expect(createWebSocketTicket({ authSession: null })).resolves.toMatchObject({
             ticket: 'ticket-2',
-            sessionId: 'session-2',
+            sessionId: 'session-2'
         });
         expect(fetchMock).toHaveBeenCalledTimes(2);
         expect(readWebSocketTicketBackoffState()).toMatchObject({
-            status: 'idle',
+            status: 'idle'
         });
     });
 
@@ -257,26 +257,26 @@ describe('createWebSocketTicket backoff', () => {
             maxConsecutiveFailures: 0,
             resetTimeoutMs: 60_000,
             halfOpenTimeoutMs: 10_000,
-            slidingWindowMs: 60_000,
+            slidingWindowMs: 60_000
         });
         const fetchMock = vi.fn(async () => new Response('server unavailable', { status: 503 }));
         vi.stubGlobal('fetch', fetchMock);
 
         await expect(createWebSocketTicket({ authSession: null })).rejects.toThrow(
-            SERVER_UNAVAILABLE_ERROR,
+            SERVER_UNAVAILABLE_ERROR
         );
 
         await expect(createWebSocketTicket({ authSession: null })).rejects.toThrow(
-            'WebSocket ticket request suppressed by local circuit breaker.',
+            'WebSocket ticket request suppressed by local circuit breaker.'
         );
         await expect(createWebSocketTicket({ authSession: null })).rejects.toThrow(
-            'WebSocket ticket request suppressed by local circuit breaker.',
+            'WebSocket ticket request suppressed by local circuit breaker.'
         );
 
         expect(fetchMock).toHaveBeenCalledTimes(1);
         expect(readWebSocketTicketBackoffState()).toMatchObject({
             status: 'circuit-open',
-            lastStatus: 503,
+            lastStatus: 503
         });
     });
 });

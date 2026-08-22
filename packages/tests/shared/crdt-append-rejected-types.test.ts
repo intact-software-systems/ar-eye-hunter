@@ -7,72 +7,70 @@ import {
     type RallarCrdtAppendRejectionCode,
     type RallarCrdtDocumentRef,
     type RallarCrdtHardeningErrorCategory,
-    type RallarCrdtUpdateEnvelope,
+    type RallarCrdtUpdateEnvelope
 } from '../../shared/crdt/mod.ts';
 
-type RallarCrdtRetryableCodeFromPublicUnion = Extract<
-    RallarCrdtAppendRejected,
-    { readonly retryable: true }
->['code'];
+type RallarCrdtRetryableCodeFromPublicUnion = Extract<RallarCrdtAppendRejected, { readonly retryable: true; }>['code'];
 
-type AppendRejectionExpectationByCode = Readonly<{
-    [Code in RallarCrdtAppendRejectionCode]: Readonly<{
-        retryable: Code extends RallarCrdtRetryableCodeFromPublicUnion
-            ? true
-            : false;
-        category: RallarCrdtHardeningErrorCategory;
-    }>;
-}>;
+type AppendRejectionExpectationByCode = Readonly<
+    {
+        [Code in RallarCrdtAppendRejectionCode]: Readonly<{
+            retryable: Code extends RallarCrdtRetryableCodeFromPublicUnion ? true :
+                false;
+            category: RallarCrdtHardeningErrorCategory;
+        }>;
+    }
+>;
 
 const APPEND_REJECTION_EXPECTATIONS = {
     'authorization-denied': {
         retryable: false,
-        category: 'permanent.authorization',
+        category: 'permanent.authorization'
     },
     'document-archived': {
         retryable: false,
-        category: 'permanent.authorization',
+        category: 'permanent.authorization'
     },
     'document-destroyed': {
         retryable: false,
-        category: 'permanent.authorization',
+        category: 'permanent.authorization'
     },
     'document-quarantined': {
         retryable: false,
-        category: 'permanent.authorization',
+        category: 'permanent.authorization'
     },
     'duplicate-hash-mismatch': {
         retryable: false,
-        category: 'permanent.validation',
+        category: 'permanent.validation'
     },
     'feature-disabled': {
         retryable: false,
-        category: 'permanent.authorization',
+        category: 'permanent.authorization'
     },
     'invalid-update': {
         retryable: false,
-        category: 'permanent.validation',
+        category: 'permanent.validation'
     },
     'quota-exceeded': {
         retryable: false,
-        category: 'permanent.quota',
+        category: 'permanent.quota'
     },
     'rate-limited': {
         retryable: true,
-        category: 'retryable.server',
+        category: 'retryable.server'
     },
     'schema-version-not-allowed': {
         retryable: false,
-        category: 'permanent.validation',
+        category: 'permanent.validation'
     },
     'update-too-large': {
         retryable: false,
-        category: 'permanent.quota',
+        category: 'permanent.quota'
     },
     'storage-failed': {
         retryable: true,
-        category: 'retryable.server',
-    },
+        category: 'retryable.server'
+    }
 } as const satisfies AppendRejectionExpectationByCode;
 
 const update = createUpdate();
@@ -81,21 +79,21 @@ const storageRejected = {
     update,
     code: 'storage-failed',
     reason: 'Storage failed.',
-    retryable: true,
+    retryable: true
 } satisfies RallarCrdtAppendRejected;
 const rateRejected = {
     status: 'rejected',
     update,
     code: 'rate-limited',
     reason: 'Rate limited.',
-    retryable: true,
+    retryable: true
 } satisfies RallarCrdtAppendRejected;
 const authorizationRejected = {
     status: 'rejected',
     update,
     code: 'authorization-denied',
     reason: 'Authorization denied.',
-    retryable: false,
+    retryable: false
 } satisfies RallarCrdtAppendRejected;
 
 const quotaRetryable = {
@@ -103,7 +101,7 @@ const quotaRetryable = {
     update,
     code: 'quota-exceeded',
     reason: 'Quota exceeded.',
-    retryable: true,
+    retryable: true
 } as const;
 // @ts-expect-error quota rejection is never retryable
 const invalidQuotaRetryability: RallarCrdtAppendRejected = quotaRetryable;
@@ -112,7 +110,7 @@ const missingUpdate = {
     status: 'rejected',
     code: 'authorization-denied',
     reason: 'Authorization denied.',
-    retryable: false,
+    retryable: false
 } as const;
 // @ts-expect-error every rejection carries the rejected update
 const invalidMissingUpdate: RallarCrdtAppendRejected = missingUpdate;
@@ -122,7 +120,7 @@ const storageNonRetryable = {
     update,
     code: 'storage-failed',
     reason: 'Storage failed.',
-    retryable: false,
+    retryable: false
 } as const;
 // @ts-expect-error storage rejection is always retryable
 const invalidStorageRetryability: RallarCrdtAppendRejected = storageNonRetryable;
@@ -130,7 +128,7 @@ const invalidStorageRetryability: RallarCrdtAppendRejected = storageNonRetryable
 describe('RallarCrdtAppendRejected type contract', () => {
     it('classifies every rejection consistently with exact retryability', () => {
         const codes = Object.keys(
-            APPEND_REJECTION_EXPECTATIONS,
+            APPEND_REJECTION_EXPECTATIONS
         ) as RallarCrdtAppendRejectionCode[];
 
         for (const code of codes) {
@@ -139,7 +137,7 @@ describe('RallarCrdtAppendRejected type contract', () => {
 
             expect(category).toBe(expectation.category);
             expect(category.startsWith('retryable.')).toBe(
-                expectation.retryable,
+                expectation.retryable
             );
         }
     });
@@ -148,12 +146,12 @@ describe('RallarCrdtAppendRejected type contract', () => {
         expect([
             storageRejected.retryable,
             rateRejected.retryable,
-            authorizationRejected.retryable,
+            authorizationRejected.retryable
         ]).toEqual([true, true, false]);
         expect([
             invalidQuotaRetryability,
             invalidMissingUpdate,
-            invalidStorageRetryability,
+            invalidStorageRetryability
         ]).toHaveLength(3);
     });
 });
@@ -163,7 +161,7 @@ function createUpdate(): RallarCrdtUpdateEnvelope {
         applicationId: 'app-1',
         scope: 'app',
         documentType: 'checklist',
-        documentId: 'document-1',
+        documentId: 'document-1'
     };
     return {
         protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
@@ -181,8 +179,8 @@ function createUpdate(): RallarCrdtUpdateEnvelope {
                 kind: 'register.set',
                 path: ['title'],
                 policy: 'lww',
-                value: 'one',
-            }],
-        },
+                value: 'one'
+            }]
+        }
     };
 }

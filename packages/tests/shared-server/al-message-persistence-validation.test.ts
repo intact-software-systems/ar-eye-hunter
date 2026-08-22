@@ -1,7 +1,5 @@
+import { validatePersistedALMessage } from '@shared-server/rallar-system/services/al-message-persistence-validation.ts';
 import { describe, expect, it } from 'vitest';
-import {
-    validatePersistedALMessage,
-} from '@shared-server/rallar-system/services/al-message-persistence-validation.ts';
 
 describe('persisted AL message validation', () => {
     it.each([
@@ -9,90 +7,96 @@ describe('persisted AL message validation', () => {
             mode: 'multicast',
             targets: {
                 mode: 'multicast',
-                groupRef: { applicationId: 'app-1', groupId: 'room-1' },
-            },
+                groupRef: { applicationId: 'app-1', groupId: 'room-1' }
+            }
         },
         {
             mode: 'broadcast',
             targets: {
                 mode: 'broadcast',
                 scope: 'room',
-                groupRef: { applicationId: 'app-1', groupId: 'room-1' },
-            },
-        },
+                groupRef: { applicationId: 'app-1', groupId: 'room-1' }
+            }
+        }
     ])('rejects a $mode target whose group ref omits workspaceId', ({ targets }) => {
-        expect(() => validatePersistedALMessage({
-            id: {
-                v: 2,
-                msgId: 'message-1',
-                ts: 1,
-                senderId: 'server-1',
-            },
-            route: {
-                topicId: 'topic-1',
-                resourceId: 'resource-1',
-                contextId: 'context-1',
-            },
-            targets,
-            payload: {
-                typeId: 'type-1',
-                resource: '{}',
-            },
-        })).toThrow(/workspace/);
+        expect(() =>
+            validatePersistedALMessage({
+                id: {
+                    v: 2,
+                    msgId: 'message-1',
+                    ts: 1,
+                    senderId: 'server-1'
+                },
+                route: {
+                    topicId: 'topic-1',
+                    resourceId: 'resource-1',
+                    contextId: 'context-1'
+                },
+                targets,
+                payload: {
+                    typeId: 'type-1',
+                    resource: '{}'
+                }
+            })
+        ).toThrow(/workspace/);
     });
 
     it('rejects a room broadcast without a group ref', () => {
-        expect(() => validatePersistedALMessage({
-            id: {
-                v: 2,
-                msgId: 'message-1',
-                ts: 1,
-                senderId: 'server-1',
-            },
-            route: {
-                topicId: 'topic-1',
-                resourceId: 'resource-1',
-                contextId: 'context-1',
-            },
-            targets: {
-                mode: 'broadcast',
-                scope: 'room',
-            },
-            payload: {
-                typeId: 'type-1',
-                resource: '{}',
-            },
-        })).toThrow(/room.*group ref|group ref.*room/i);
+        expect(() =>
+            validatePersistedALMessage({
+                id: {
+                    v: 2,
+                    msgId: 'message-1',
+                    ts: 1,
+                    senderId: 'server-1'
+                },
+                route: {
+                    topicId: 'topic-1',
+                    resourceId: 'resource-1',
+                    contextId: 'context-1'
+                },
+                targets: {
+                    mode: 'broadcast',
+                    scope: 'room'
+                },
+                payload: {
+                    typeId: 'type-1',
+                    resource: '{}'
+                }
+            })
+        ).toThrow(/room.*group ref|group ref.*room/i);
     });
 
     it('accepts a canonical fixed recipient audience for a room broadcast', () => {
-        expect(() => validatePersistedALMessage({
-            id: {
-                v: 2,
-                msgId: 'message-1',
-                ts: 1,
-                senderId: 'server-1',
-            },
-            route: {
-                topicId: 'overlay.topology',
-                resourceId: 'resource-1',
-                contextId: 'room-1',
-            },
-            targets: {
-                mode: 'broadcast',
-                scope: 'room',
-                groupRef: {
-                    applicationId: 'app-1',
-                    workspaceId: 'workspace-1',
-                    groupId: 'room-1',
+        expect(() =>
+            validatePersistedALMessage({
+                id: {
+                    v: 2,
+                    msgId: 'message-1',
+                    ts: 1,
+                    senderId: 'server-1'
                 },
-                minSnapshotVersion: 3,
-                recipientPeerIds: ['session-a', 'session-b'],
-            },
-            payload: {
-                typeId: 'overlay.topology',
-                resource: '{}',
-            },
-        })).not.toThrow();
+                route: {
+                    topicId: 'overlay.topology',
+                    resourceId: 'resource-1',
+                    contextId: 'room-1'
+                },
+                targets: {
+                    mode: 'broadcast',
+                    scope: 'room',
+                    groupRef: {
+                        applicationId: 'app-1',
+                        workspaceId: 'workspace-1',
+                        groupId: 'room-1'
+                    },
+                    minSnapshotVersion: 3,
+                    recipientPeerIds: ['session-a', 'session-b']
+                },
+                payload: {
+                    typeId: 'overlay.topology',
+                    resource: '{}'
+                }
+            })
+        ).not.toThrow();
     });
 });

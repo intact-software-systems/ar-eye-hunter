@@ -6,7 +6,7 @@ import {
     decideBlackBoxRallarLifecycleRequest,
     isSameBlackBoxRallarSession,
     mergeBlackBoxRallarAuthenticationConfig,
-    normalizeBlackBoxRallarApiBaseUrl,
+    normalizeBlackBoxRallarApiBaseUrl
 } from '../../shared-test/black-box-runner/browser/rallar-browser-runtime/policy.ts';
 
 describe('browser Rallar runtime lifecycle policy', () => {
@@ -15,15 +15,15 @@ describe('browser Rallar runtime lifecycle policy', () => {
         expect(
             blackBoxRallarAuthenticationIdentityOf(
                 {
-                    apiBaseUrl: 'https://api.example.test/',
+                    apiBaseUrl: 'https://api.example.test/'
                 },
                 {
-                    username: 'restored-user',
-                },
-            ),
+                    username: 'restored-user'
+                }
+            )
         ).toEqual({
             apiBaseUrl: 'https://api.example.test',
-            username: 'restored-user',
+            username: 'restored-user'
         });
     });
 
@@ -34,15 +34,15 @@ describe('browser Rallar runtime lifecycle policy', () => {
                 roomRef: {
                     applicationId: 'app-1',
                     workspaceId: 'workspace-1',
-                    groupId: 'room-1',
+                    groupId: 'room-1'
                 },
                 rallar: {
                     apiBaseUrl: 'https://api.example.test/',
                     username: 'alice',
                     applicationId: 'app-1',
-                    workspaceId: 'workspace-1',
-                },
-            }),
+                    workspaceId: 'workspace-1'
+                }
+            })
         ).toEqual({
             apiBaseUrl: 'https://api.example.test',
             username: 'alice',
@@ -52,8 +52,8 @@ describe('browser Rallar runtime lifecycle policy', () => {
             roomRef: {
                 applicationId: 'app-1',
                 workspaceId: 'workspace-1',
-                groupId: 'room-1',
-            },
+                groupId: 'room-1'
+            }
         });
     });
 
@@ -65,9 +65,9 @@ describe('browser Rallar runtime lifecycle policy', () => {
                 username: 'alice',
                 scope: {
                     applicationId: 'app-1',
-                    workspaceId: 'workspace-1',
-                },
-            },
+                    workspaceId: 'workspace-1'
+                }
+            }
         });
         const second = blackBoxRallarConnectionTargetOf({
             roomId: 'room-1',
@@ -76,18 +76,18 @@ describe('browser Rallar runtime lifecycle policy', () => {
                 username: 'alice',
                 scope: {
                     applicationId: 'app-2',
-                    workspaceId: 'workspace-2',
-                },
-            },
+                    workspaceId: 'workspace-2'
+                }
+            }
         });
 
         expect(first).toMatchObject({
             applicationId: 'app-1',
-            workspaceId: 'workspace-1',
+            workspaceId: 'workspace-1'
         });
         expect(second).toMatchObject({
             applicationId: 'app-2',
-            workspaceId: 'workspace-2',
+            workspaceId: 'workspace-2'
         });
         expect(first).not.toEqual(second);
     });
@@ -98,7 +98,7 @@ describe('browser Rallar runtime lifecycle policy', () => {
                 roomRef: {
                     applicationId: 'outer-app',
                     workspaceId: 'outer-workspace',
-                    groupId: 'outer-room',
+                    groupId: 'outer-room'
                 },
                 rallar: {
                     apiBaseUrl: 'https://api.example.test',
@@ -106,10 +106,10 @@ describe('browser Rallar runtime lifecycle policy', () => {
                     roomRef: {
                         applicationId: 'runtime-app',
                         workspaceId: 'runtime-workspace',
-                        groupId: 'runtime-room',
-                    },
-                },
-            }),
+                        groupId: 'runtime-room'
+                    }
+                }
+            })
         ).toEqual({
             apiBaseUrl: 'https://api.example.test',
             username: 'alice',
@@ -118,8 +118,8 @@ describe('browser Rallar runtime lifecycle policy', () => {
             roomRef: {
                 applicationId: 'runtime-app',
                 workspaceId: 'runtime-workspace',
-                groupId: 'runtime-room',
-            },
+                groupId: 'runtime-room'
+            }
         });
     });
 
@@ -131,23 +131,23 @@ describe('browser Rallar runtime lifecycle policy', () => {
             rallar: {
                 apiBaseUrl: 'https://api.example.test/',
                 username: 'alice',
-                password: 'secret',
-            },
+                password: 'secret'
+            }
         };
 
         const realtimeKey = blackBoxRallarConnectionOperationKeyOf({
             ...base,
             rallar: {
                 ...base.rallar,
-                transport: 'realtime',
-            },
+                transport: 'realtime'
+            }
         });
         const messagesKey = blackBoxRallarConnectionOperationKeyOf({
             ...base,
             rallar: {
                 ...base.rallar,
-                transport: 'messages.rtc',
-            },
+                transport: 'messages.rtc'
+            }
         });
 
         expect(realtimeKey).not.toBe(messagesKey);
@@ -160,9 +160,9 @@ describe('browser Rallar runtime lifecycle policy', () => {
                     password: 'secret',
                     username: 'alice',
                     transport: 'realtime',
-                    apiBaseUrl: 'https://api.example.test',
-                },
-            }),
+                    apiBaseUrl: 'https://api.example.test'
+                }
+            })
         );
     });
 
@@ -171,29 +171,29 @@ describe('browser Rallar runtime lifecycle policy', () => {
             connection: 'firstHttp',
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
-                logoutOnClose: true,
-            },
+                logoutOnClose: true
+            }
         };
         const latestContext = {
             connection: 'secondHttp',
             actor: 'second-actor',
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
-                logoutOnClose: false,
-            },
+                logoutOnClose: false
+            }
         };
 
         expect(
-            mergeBlackBoxRallarAuthenticationConfig(cleanupRequired, latestContext),
+            mergeBlackBoxRallarAuthenticationConfig(cleanupRequired, latestContext)
         ).toEqual({
             ...latestContext,
             rallar: {
                 ...latestContext.rallar,
-                logoutOnClose: true,
-            },
+                logoutOnClose: true
+            }
         });
         expect(
-            mergeBlackBoxRallarAuthenticationConfig(latestContext, cleanupRequired),
+            mergeBlackBoxRallarAuthenticationConfig(latestContext, cleanupRequired)
         ).toEqual(cleanupRequired);
     });
 
@@ -202,39 +202,39 @@ describe('browser Rallar runtime lifecycle policy', () => {
             roomId: 'room-1',
             rallar: {
                 apiBaseUrl: 'https://api.example.test',
-                username: 'alice',
-            },
+                username: 'alice'
+            }
         });
 
         expect(
             decideBlackBoxRallarLifecycleRequest(
                 {
                     status: 'connecting',
-                    activeTarget: target,
+                    activeTarget: target
                 },
                 {
                     kind: 'connect',
-                    target,
-                },
-            ),
+                    target
+                }
+            )
         ).toEqual({ kind: 'reuse' });
         expect(
             decideBlackBoxRallarLifecycleRequest(
                 {
                     status: 'connected',
-                    activeTarget: target,
+                    activeTarget: target
                 },
                 {
                     kind: 'connect',
                     target: {
                         ...target,
-                        roomId: 'room-2',
-                    },
-                },
-            ),
+                        roomId: 'room-2'
+                    }
+                }
+            )
         ).toEqual({
             kind: 'reject',
-            reason: 'Connected Rallar identity, scope, or room changes require close first.',
+            reason: 'Connected Rallar identity, scope, or room changes require close first.'
         });
     });
 
@@ -244,28 +244,28 @@ describe('browser Rallar runtime lifecycle policy', () => {
                 {
                     clientId: 'client-1',
                     sessionId: 'session-1',
-                    username: 'alice',
+                    username: 'alice'
                 },
                 {
                     clientId: 'client-1',
                     sessionId: 'session-1',
-                    username: 'alice',
-                },
-            ),
+                    username: 'alice'
+                }
+            )
         ).toBe(true);
         expect(
             isSameBlackBoxRallarSession(
                 {
                     clientId: 'client-1',
                     sessionId: 'session-1',
-                    username: 'alice',
+                    username: 'alice'
                 },
                 {
                     clientId: 'client-1',
                     sessionId: 'session-2',
-                    username: 'alice',
-                },
-            ),
+                    username: 'alice'
+                }
+            )
         ).toBe(false);
     });
 });

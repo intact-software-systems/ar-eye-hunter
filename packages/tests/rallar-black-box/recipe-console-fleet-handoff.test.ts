@@ -1,31 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import type {
-    ControlFleetAgentRunOutcome,
-    ControlFleetFailureSignature,
-    ControlFleetRunReport,
-} from '../../../packages/shared-test/rallar-bb-test/fleet-report.ts';
-import { filterDistributedRuns } from
-    '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
-import type { ControlDistributedRunSnapshot } from
-    '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
+import { resolveFleetFailureRunEvidence } from '../../../apps/rallar-black-box/src/recipe-console/fleet/fleet-failure-evidence.ts';
 import {
     fleetAffectedAgentPatch,
     fleetMapLayerTogglePatch,
     fleetRegionSelectionPatch,
-    fleetReportSelectionPatch,
     fleetReportAnalyzePatch,
     fleetReportMonitorPatch,
+    fleetReportSelectionPatch,
     fleetReportTuneHistoryPatch,
-    fleetReturnPatch,
+    fleetReturnPatch
 } from '../../../apps/rallar-black-box/src/recipe-console/fleet/fleet-url-patches.ts';
-import type { RecipeConsoleUrlState } from
-    '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
-import { resolveFleetFailureRunEvidence } from
-    '../../../apps/rallar-black-box/src/recipe-console/fleet/fleet-failure-evidence.ts';
+import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
+import type { ControlDistributedRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
+import { filterDistributedRuns } from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import type {
+    ControlFleetAgentRunOutcome,
+    ControlFleetFailureSignature,
+    ControlFleetRunReport
+} from '../../../packages/shared-test/rallar-bb-test/fleet-report.ts';
 
 function agentOutcome(
     agentId: string,
-    failureSignatureIds: readonly string[],
+    failureSignatureIds: readonly string[]
 ): ControlFleetAgentRunOutcome {
     const failed = failureSignatureIds.length > 0;
     return {
@@ -43,7 +39,7 @@ function agentOutcome(
         diagnosticCount: failed ? 1 : 0,
         reconnectCount: 0,
         durationMs: 100,
-        failureSignatureIds,
+        failureSignatureIds
     };
 }
 
@@ -59,7 +55,7 @@ function failureSignature(signatureId: string): ControlFleetFailureSignature {
         affectedRegions: ['eu-north'],
         affectedRuns: [],
         likelyCause: 'The recipe under test raised a runtime error.',
-        nextAction: 'Open the proving run evidence for this signature.',
+        nextAction: 'Open the proving run evidence for this signature.'
     };
 }
 
@@ -73,7 +69,7 @@ const REPORT: ControlFleetRunReport = {
     group: {
         applicationId: 'rallar-server',
         workspaceId: 'default',
-        groupId: 'fleet/group exact',
+        groupId: 'fleet/group exact'
     },
     recipeIds: ['rtc-smoke'],
     runDurationMs: 500,
@@ -86,11 +82,11 @@ const REPORT: ControlFleetRunReport = {
         flaky: 0,
         stale: 0,
         passRate: 1,
-        failureGroups: 0,
+        failureGroups: 0
     },
     timing: {
         run: { count: 1, p95Ms: 500 },
-        commands: { count: 1, p95Ms: 100 },
+        commands: { count: 1, p95Ms: 100 }
     },
     agents: [agentOutcome('agent/Δ exact', [])],
     regions: [{
@@ -103,18 +99,18 @@ const REPORT: ControlFleetRunReport = {
         flaky: 0,
         stale: 0,
         passRate: 1,
-        timing: { count: 1, p95Ms: 100 },
+        timing: { count: 1, p95Ms: 100 }
     }],
     failureSignatures: [],
     artifactRefs: {
         distributedRun: 'opaque:must-not-navigate:distributed',
         controlRun: 'opaque:must-not-navigate:control',
-        fleetReport: 'opaque:must-not-navigate:fleet',
-    },
+        fleetReport: 'opaque:must-not-navigate:fleet'
+    }
 };
 
 const FAILURE: ControlFleetFailureSignature = failureSignature(
-    'signature/Δ exact',
+    'signature/Δ exact'
 );
 
 const FLEET_STATE: RecipeConsoleUrlState = {
@@ -129,7 +125,7 @@ const FLEET_STATE: RecipeConsoleUrlState = {
     historyQuery: 'old-query',
     historyGroup: 'old-group',
     fleetRegion: 'eu-north',
-    fleetMapLayers: ['live-agents', 'failures'],
+    fleetMapLayers: ['live-agents', 'failures']
 };
 
 describe('Recipe Console Fleet URL handoffs', () => {
@@ -137,34 +133,34 @@ describe('Recipe Console Fleet URL handoffs', () => {
         const failure: ControlFleetFailureSignature = {
             ...FAILURE,
             affectedRuns: ['run/non-proving', 'run/proving'],
-            affectedAgents: ['agent/non-proving', 'agent/proving'],
+            affectedAgents: ['agent/non-proving', 'agent/proving']
         };
         const nonProving: ControlFleetRunReport = {
             ...REPORT,
             distributedRunId: 'run/non-proving',
             agents: [agentOutcome('agent/non-proving', ['another-signature'])],
-            failureSignatures: [],
+            failureSignatures: []
         };
         const proving: ControlFleetRunReport = {
             ...REPORT,
             distributedRunId: 'run/proving',
             agents: [agentOutcome('agent/proving', [FAILURE.signatureId])],
-            failureSignatures: [],
+            failureSignatures: []
         };
         const unrelated: ControlFleetRunReport = {
             ...REPORT,
             distributedRunId: 'run/unrelated',
             agents: [agentOutcome('agent/non-proving', [FAILURE.signatureId])],
-            failureSignatures: [failureSignature(FAILURE.signatureId)],
+            failureSignatures: [failureSignature(FAILURE.signatureId)]
         };
 
         expect(resolveFleetFailureRunEvidence({
             failure,
             preferredRunId: nonProving.distributedRunId,
-            reports: [unrelated, nonProving, proving],
+            reports: [unrelated, nonProving, proving]
         })).toEqual({
             report: proving,
-            agentId: 'agent/proving',
+            agentId: 'agent/proving'
         });
     });
 
@@ -172,18 +168,18 @@ describe('Recipe Console Fleet URL handoffs', () => {
         const failure: ControlFleetFailureSignature = {
             ...FAILURE,
             affectedRuns: ['run/report-level-proof'],
-            affectedAgents: ['agent/aggregate-only'],
+            affectedAgents: ['agent/aggregate-only']
         };
         const proving: ControlFleetRunReport = {
             ...REPORT,
             distributedRunId: 'run/report-level-proof',
             agents: [agentOutcome('agent/aggregate-only', [])],
-            failureSignatures: [failureSignature(FAILURE.signatureId)],
+            failureSignatures: [failureSignature(FAILURE.signatureId)]
         };
 
         expect(resolveFleetFailureRunEvidence({
             failure,
-            reports: [proving],
+            reports: [proving]
         })).toEqual({ report: proving });
     });
 
@@ -194,7 +190,7 @@ describe('Recipe Console Fleet URL handoffs', () => {
             distributedRunId: 'distributed/Δ exact',
             agentId: 'agent/Δ exact',
             recipeId: undefined,
-            commandId: undefined,
+            commandId: undefined
         });
         expect(fleetReportAnalyzePatch(REPORT)).toEqual({
             view: 'analyze',
@@ -202,11 +198,11 @@ describe('Recipe Console Fleet URL handoffs', () => {
             distributedRunId: 'distributed/Δ exact',
             agentId: undefined,
             recipeId: undefined,
-            commandId: undefined,
+            commandId: undefined
         });
         const serialized = JSON.stringify([
             fleetReportMonitorPatch(REPORT),
-            fleetReportAnalyzePatch(REPORT),
+            fleetReportAnalyzePatch(REPORT)
         ]);
         expect(serialized).not.toContain('opaque:must-not-navigate');
     });
@@ -224,7 +220,7 @@ describe('Recipe Console Fleet URL handoffs', () => {
             historyQuery: 'distributed/Δ exact',
             historyGroup: 'fleet/group exact',
             historyRecipeId: 'rtc-smoke',
-            failureCategory: undefined,
+            failureCategory: undefined
         });
 
         const affectedRun = {
@@ -242,13 +238,13 @@ describe('Recipe Console Fleet URL handoffs', () => {
                 group: {
                     applicationId: 'rallar-server',
                     workspaceId: 'default',
-                    groupId: REPORT.group.groupId,
+                    groupId: REPORT.group.groupId
                 },
                 targetPolicy: {
                     mode: 'selected-agents',
-                    agentIds: ['agent-a'],
+                    agentIds: ['agent-a']
                 },
-                recipes: [{ recipeId: REPORT.recipeIds[0] }],
+                recipes: [{ recipeId: REPORT.recipeIds[0] }]
             },
             rollup: {
                 state: 'failed',
@@ -260,8 +256,8 @@ describe('Recipe Console Fleet URL handoffs', () => {
                     required: true,
                     error: {
                         code: 'RAW_RUNTIME_FAILURE',
-                        message: 'Raw runtime evidence, not the Fleet slug.',
-                    },
+                        message: 'Raw runtime evidence, not the Fleet slug.'
+                    }
                 }],
                 summary: {
                     participants: 1,
@@ -276,33 +272,35 @@ describe('Recipe Console Fleet URL handoffs', () => {
                     groupAssertions: 0,
                     passedGroupAssertions: 0,
                     failedGroupAssertions: 0,
-                    blockingFailures: 1,
-                },
-            },
+                    blockingFailures: 1
+                }
+            }
         } satisfies ControlDistributedRunSnapshot;
-        expect(filterDistributedRuns([affectedRun], {
-            query: patch.historyQuery,
-            groupId: patch.historyGroup,
-            recipeId: patch.historyRecipeId,
-            failureCategory: patch.failureCategory,
-        }).map(run => run.distributedRunId)).toEqual([
-            REPORT.distributedRunId,
+        expect(
+            filterDistributedRuns([affectedRun], {
+                query: patch.historyQuery,
+                groupId: patch.historyGroup,
+                recipeId: patch.historyRecipeId,
+                failureCategory: patch.failureCategory
+            }).map((run) => run.distributedRunId)
+        ).toEqual([
+            REPORT.distributedRunId
         ]);
     });
 
     it('commits region and affected-agent selections as minimal patches', () => {
         expect(fleetRegionSelectionPatch('us-east')).toEqual({
-            fleetRegion: 'us-east',
+            fleetRegion: 'us-east'
         });
         expect(fleetRegionSelectionPatch(undefined)).toEqual({
-            fleetRegion: undefined,
+            fleetRegion: undefined
         });
         expect(fleetAffectedAgentPatch('agent-b')).toEqual({
-            agentId: 'agent-b',
+            agentId: 'agent-b'
         });
         expect(fleetReportSelectionPatch(REPORT)).toEqual({
             controlRunId: 'control/Δ exact',
-            distributedRunId: 'distributed/Δ exact',
+            distributedRunId: 'distributed/Δ exact'
         });
     });
 
@@ -310,45 +308,45 @@ describe('Recipe Console Fleet URL handoffs', () => {
         const withoutFailures = fleetMapLayerTogglePatch(
             undefined,
             'failures',
-            false,
+            false
         );
         expect(withoutFailures).toEqual({
             fleetMapLayers: [
                 'live-agents',
                 'historical-regions',
-                'observed-routes',
-            ],
+                'observed-routes'
+            ]
         });
         expect(fleetMapLayerTogglePatch(
             withoutFailures.fleetMapLayers,
             'failures',
-            true,
+            true
         )).toEqual({ fleetMapLayers: undefined });
         expect(fleetMapLayerTogglePatch([], 'observed-routes', true)).toEqual({
-            fleetMapLayers: ['observed-routes'],
+            fleetMapLayers: ['observed-routes']
         });
         expect(fleetMapLayerTogglePatch(
             ['observed-routes'],
             'observed-routes',
-            false,
+            false
         )).toEqual({ fleetMapLayers: [] });
         expect(fleetMapLayerTogglePatch(
             ['failures', 'live-agents', 'failures'],
             'historical-regions',
-            true,
+            true
         )).toEqual({
             fleetMapLayers: [
                 'live-agents',
                 'historical-regions',
-                'failures',
-            ],
+                'failures'
+            ]
         });
     });
 
     it('preserves Fleet URL state across a handoff and explicit return trip', () => {
         const monitorState = {
             ...FLEET_STATE,
-            ...fleetReportMonitorPatch(REPORT, 'agent-b'),
+            ...fleetReportMonitorPatch(REPORT, 'agent-b')
         };
         const returned = { ...monitorState, ...fleetReturnPatch() };
 
@@ -360,7 +358,7 @@ describe('Recipe Console Fleet URL handoffs', () => {
             fleetRegion: 'eu-north',
             fleetMapLayers: ['live-agents', 'failures'],
             historyQuery: 'old-query',
-            historyGroup: 'old-group',
+            historyGroup: 'old-group'
         });
         expect(fleetReturnPatch()).toEqual({ view: 'fleet' });
     });

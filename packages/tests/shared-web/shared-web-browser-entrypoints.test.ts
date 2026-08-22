@@ -1,11 +1,7 @@
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-    analyzeSourceFile,
-    type SourceAnalysis,
-    type SourceImport,
-} from '../helpers/source-analysis';
+import { analyzeSourceFile, type SourceAnalysis, type SourceImport } from '../helpers/source-analysis';
 
 type BrowserEntrypoint = Readonly<{
     moduleId: string;
@@ -29,7 +25,7 @@ const BROWSER_ENTRYPOINTS: readonly BrowserEntrypoint[] = [
             'matchesRallarMessageSelector',
             'normalizeRallarMessageSelector',
             'normalizeApiBaseUrl',
-            'readApiBaseUrl',
+            'readApiBaseUrl'
         ],
         forbiddenRuntimeExports: [
             'createRallarCrdtFacade',
@@ -37,8 +33,8 @@ const BROWSER_ENTRYPOINTS: readonly BrowserEntrypoint[] = [
             'createRallarFacade',
             'createRallarMediaFacade',
             'createRallarCallsFacade',
-            'rallar',
-        ],
+            'rallar'
+        ]
     },
     {
         moduleId: '@shared-web/browser/rallar-realtime.ts',
@@ -56,7 +52,7 @@ const BROWSER_ENTRYPOINTS: readonly BrowserEntrypoint[] = [
             'matchesRallarMessageSelector',
             'normalizeRallarMessageSelector',
             'normalizeApiBaseUrl',
-            'readApiBaseUrl',
+            'readApiBaseUrl'
         ],
         forbiddenRuntimeExports: [
             'createRallarCrdtFacade',
@@ -64,15 +60,15 @@ const BROWSER_ENTRYPOINTS: readonly BrowserEntrypoint[] = [
             'createRallarFacade',
             'createRallarMediaFacade',
             'createRallarCallsFacade',
-            'rallar',
-        ],
+            'rallar'
+        ]
     },
     {
         moduleId: '@shared-web/browser/rallar-media-calls.ts',
         sourcePath: 'packages/shared-web/browser/rallar-media-calls.ts',
         expectedRuntimeExports: [
             'createRallarCallsFacade',
-            'createRallarMediaFacade',
+            'createRallarMediaFacade'
         ],
         forbiddenRuntimeExports: [
             'createRallarCrdtFacade',
@@ -80,9 +76,9 @@ const BROWSER_ENTRYPOINTS: readonly BrowserEntrypoint[] = [
             'createRallarFacade',
             'createRallarRealtimeFacade',
             'createRallarRtcFacade',
-            'rallar',
-        ],
-    },
+            'rallar'
+        ]
+    }
 ];
 
 const PUBLIC_FACADE_MODULES = [
@@ -98,7 +94,7 @@ const PUBLIC_FACADE_MODULES = [
     'packages/shared-web/browser/rooms/rallar-room-contracts.ts',
     'packages/shared-web/browser/rooms/rallar-rooms-facade.ts',
     'packages/shared-web/browser/rallar-rtc-facade.ts',
-    'packages/shared-web/browser/rallar-stats-facade.ts',
+    'packages/shared-web/browser/rallar-stats-facade.ts'
 ] as const;
 
 describe('shared-web browser entrypoints', () => {
@@ -125,7 +121,7 @@ describe('shared-web browser entrypoints', () => {
     it('keeps public facade contracts independent from the full facade entrypoint', () => {
         const references = PUBLIC_FACADE_MODULES.flatMap((filePath) =>
             collectFullFacadeReferences(readSourceAnalysis(filePath)).map(
-                (reference) => `${filePath}: ${reference}`,
+                (reference) => `${filePath}: ${reference}`
             )
         );
 
@@ -136,7 +132,7 @@ describe('shared-web browser entrypoints', () => {
         const references = PUBLIC_FACADE_MODULES.flatMap((filePath) =>
             collectModuleReferences(
                 readSourceAnalysis(filePath),
-                '@shared-web/browser/rallar-facade-contract.ts',
+                '@shared-web/browser/rallar-facade-contract.ts'
             ).map((reference) => `${filePath}: ${reference}`)
         );
 
@@ -145,11 +141,11 @@ describe('shared-web browser entrypoints', () => {
 
     it('keeps runtime controllers independent from the compatibility entrypoint', () => {
         const runtimeFiles = readdirSync(
-            path.resolve('packages/shared-web/browser/rallar-runtime'),
+            path.resolve('packages/shared-web/browser/rallar-runtime')
         ).filter((fileName) => fileName.endsWith('.ts'));
         const references = runtimeFiles.flatMap((fileName) =>
             collectFullFacadeReferences(readSourceAnalysis(
-                `packages/shared-web/browser/rallar-runtime/${fileName}`,
+                `packages/shared-web/browser/rallar-runtime/${fileName}`
             )).map((reference) => `${fileName}: ${reference}`)
         );
 
@@ -159,16 +155,14 @@ describe('shared-web browser entrypoints', () => {
     it('keeps runtime controllers independent from the aggregate contract', () => {
         const allowedFiles = new Set(['composition.ts']);
         const runtimeFiles = readdirSync(
-            path.resolve('packages/shared-web/browser/rallar-runtime'),
-        ).filter((fileName) =>
-            fileName.endsWith('.ts') && !allowedFiles.has(fileName)
-        );
+            path.resolve('packages/shared-web/browser/rallar-runtime')
+        ).filter((fileName) => fileName.endsWith('.ts') && !allowedFiles.has(fileName));
         const references = runtimeFiles.flatMap((fileName) =>
             collectModuleReferences(
                 readSourceAnalysis(
-                    `packages/shared-web/browser/rallar-runtime/${fileName}`,
+                    `packages/shared-web/browser/rallar-runtime/${fileName}`
                 ),
-                '@shared-web/browser/rallar-facade-contract.ts',
+                '@shared-web/browser/rallar-facade-contract.ts'
             ).map((reference) => `${fileName}: ${reference}`)
         );
 
@@ -178,16 +172,14 @@ describe('shared-web browser entrypoints', () => {
     it('keeps mutable state-cache access inside the state store', () => {
         const allowedFiles = new Set(['state-store.ts']);
         const runtimeFiles = readdirSync(
-            path.resolve('packages/shared-web/browser/rallar-runtime'),
-        ).filter((fileName) =>
-            fileName.endsWith('.ts') && !allowedFiles.has(fileName)
-        );
+            path.resolve('packages/shared-web/browser/rallar-runtime')
+        ).filter((fileName) => fileName.endsWith('.ts') && !allowedFiles.has(fileName));
         const references = runtimeFiles.flatMap((fileName) =>
             collectModuleReferences(
                 readSourceAnalysis(
-                    `packages/shared-web/browser/rallar-runtime/${fileName}`,
+                    `packages/shared-web/browser/rallar-runtime/${fileName}`
                 ),
-                '@shared-web/browser/data-caches.ts',
+                '@shared-web/browser/data-caches.ts'
             ).map((reference) => `${fileName}: ${reference}`)
         );
 
@@ -197,16 +189,14 @@ describe('shared-web browser entrypoints', () => {
     it('limits the full runtime context to the composer and port contracts', () => {
         const allowedFiles = new Set(['composition.ts', 'contracts.ts']);
         const runtimeFiles = readdirSync(
-            path.resolve('packages/shared-web/browser/rallar-runtime'),
-        ).filter((fileName) =>
-            fileName.endsWith('.ts') && !allowedFiles.has(fileName)
-        );
+            path.resolve('packages/shared-web/browser/rallar-runtime')
+        ).filter((fileName) => fileName.endsWith('.ts') && !allowedFiles.has(fileName));
         const references = runtimeFiles.flatMap((fileName) =>
             collectModuleReferences(
                 readSourceAnalysis(
-                    `packages/shared-web/browser/rallar-runtime/${fileName}`,
+                    `packages/shared-web/browser/rallar-runtime/${fileName}`
                 ),
-                '@shared-web/browser/rallar-runtime-context.ts',
+                '@shared-web/browser/rallar-runtime-context.ts'
             ).map((reference) => `${fileName}: ${reference}`)
         );
 
@@ -220,10 +210,10 @@ describe('shared-web browser entrypoints', () => {
             'subscriptions.ts',
             'validation.ts',
             'wait.ts',
-            'ws-inbox.ts',
+            'ws-inbox.ts'
         ]);
         const runtimeDirectory = path.resolve(
-            'packages/shared-web/browser/rallar-runtime',
+            'packages/shared-web/browser/rallar-runtime'
         );
         const runtimeFiles = readdirSync(runtimeDirectory).filter((fileName) =>
             fileName.endsWith('.ts') &&
@@ -232,19 +222,17 @@ describe('shared-web browser entrypoints', () => {
         );
         const references = runtimeFiles.flatMap((fileName) => {
             const sourceFile = readSourceAnalysis(
-                `packages/shared-web/browser/rallar-runtime/${fileName}`,
+                `packages/shared-web/browser/rallar-runtime/${fileName}`
             );
             return sourceFile.imports
                 .map((entry) => entry.specifier)
                 .filter((specifier) =>
                     specifier.startsWith(
-                        '@shared-web/browser/rallar-runtime/',
+                        '@shared-web/browser/rallar-runtime/'
                     )
                 )
                 .map((specifier) => specifier.split('/').at(-1) ?? '')
-                .filter((dependency) =>
-                    !allowedRuntimeDependencies.has(dependency)
-                )
+                .filter((dependency) => !allowedRuntimeDependencies.has(dependency))
                 .map((dependency) => `${fileName}: ${dependency}`);
         });
 
@@ -254,11 +242,11 @@ describe('shared-web browser entrypoints', () => {
     it('does not publicly barrel-export internal runtime modules', () => {
         const publicBarrels = [
             'packages/shared-web/mod.ts',
-            ...BROWSER_ENTRYPOINTS.map((entrypoint) => entrypoint.sourcePath),
+            ...BROWSER_ENTRYPOINTS.map((entrypoint) => entrypoint.sourcePath)
         ];
         const references = publicBarrels.flatMap((filePath) =>
             collectInternalRuntimeExports(readSourceAnalysis(filePath)).map(
-                (reference) => `${filePath}: ${reference}`,
+                (reference) => `${filePath}: ${reference}`
             )
         );
 
@@ -267,7 +255,7 @@ describe('shared-web browser entrypoints', () => {
 
     it('keeps rallar.ts as a thin compatibility entrypoint', () => {
         const sourceFile = readSourceAnalysis(
-            'packages/shared-web/browser/rallar.ts',
+            'packages/shared-web/browser/rallar.ts'
         );
         const classNames = sourceFile.topLevelDeclarations
             .filter((declaration) => declaration.kind === 'class')
@@ -278,13 +266,13 @@ describe('shared-web browser entrypoints', () => {
 
         expect(classNames).not.toContain('BrowserRallarFacade');
         expect(runtimeImports).toContain(
-            '@shared-web/browser/rallar-runtime/compose.ts',
+            '@shared-web/browser/rallar-runtime/compose.ts'
         );
     });
 });
 
 function collectFullFacadeReferences(
-    sourceFile: SourceAnalysis,
+    sourceFile: SourceAnalysis
 ): readonly string[] {
     return [
         ...sourceFile.imports
@@ -294,23 +282,21 @@ function collectFullFacadeReferences(
         ...sourceFile.exports
             .flatMap((entry) => entry.specifier ? [entry.specifier] : [])
             .filter(isFullFacadeSpecifier)
-            .map((specifier) => `export ${specifier}`),
+            .map((specifier) => `export ${specifier}`)
     ];
 }
 
 function collectInternalRuntimeExports(
-    sourceFile: SourceAnalysis,
+    sourceFile: SourceAnalysis
 ): readonly string[] {
     return sourceFile.exports
         .flatMap((entry) => entry.specifier ? [entry.specifier] : [])
-        .filter((moduleSpecifier) =>
-            moduleSpecifier.includes('/rallar-runtime/')
-        );
+        .filter((moduleSpecifier) => moduleSpecifier.includes('/rallar-runtime/'));
 }
 
 function collectModuleReferences(
     sourceFile: SourceAnalysis,
-    expectedSpecifier: string,
+    expectedSpecifier: string
 ): readonly string[] {
     return [
         ...sourceFile.imports
@@ -318,12 +304,12 @@ function collectModuleReferences(
             .map(() => `import ${expectedSpecifier}`),
         ...sourceFile.exports
             .filter((entry) => entry.specifier === expectedSpecifier)
-            .map(() => `export ${expectedSpecifier}`),
+            .map(() => `export ${expectedSpecifier}`)
     ];
 }
 
 function collectRuntimeFullFacadeReferences(
-    sourceFile: SourceAnalysis,
+    sourceFile: SourceAnalysis
 ): readonly string[] {
     return [
         ...sourceFile.imports
@@ -335,7 +321,7 @@ function collectRuntimeFullFacadeReferences(
             .filter((entry) => !entry.typeOnly)
             .flatMap((entry) => entry.specifier ? [entry.specifier] : [])
             .filter(isFullFacadeSpecifier)
-            .map((specifier) => `export ${specifier}`),
+            .map((specifier) => `export ${specifier}`)
     ];
 }
 

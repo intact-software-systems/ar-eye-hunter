@@ -361,7 +361,7 @@ export function planRallarBlackBoxRtcStreamFrames(input: {
 }): {
     intervalMs: number;
     requestedRateHz?: number;
-    frames: readonly { index: number; iteration: number; scheduledElapsedMs: number }[];
+    frames: readonly { index: number; iteration: number; scheduledElapsedMs: number; }[];
 };
 
 export function replaceRallarBlackBoxRtcStreamPlaceholders<T>(
@@ -372,7 +372,7 @@ export function replaceRallarBlackBoxRtcStreamPlaceholders<T>(
         iteration: number;
         elapsedMs: number;
         scheduledElapsedMs: number;
-    },
+    }
 ): T;
 
 export function summarizeRallarBlackBoxRtcStreamObservations(input: {
@@ -434,7 +434,7 @@ Test one: scheduled sends are not sequentially blocked:
 const sendStarts: number[] = [];
 const runtime = createRallarBlackBoxBrowserTestRuntime({
     now: () => fakeNow,
-    sleep: async ms => {
+    sleep: async (ms) => {
         fakeNow += ms;
     },
     rallarRuntime: {
@@ -448,8 +448,8 @@ const runtime = createRallarBlackBoxBrowserTestRuntime({
         },
         async health() {
             return { rtcStatus: { readyPeerIds: ['peer-1'] } };
-        },
-    },
+        }
+    }
 });
 ```
 
@@ -464,7 +464,7 @@ await runtime.execute({
     count: 5,
     intervalMs: 50,
     maxInFlight: 64,
-    send: { data: { seq: '{stream.index}' } },
+    send: { data: { seq: '{stream.index}' } }
 });
 ```
 
@@ -487,7 +487,7 @@ await runtime.execute({
     maxInFlight: 1,
     drainTimeoutMs: 500,
     send: { data: { seq: '{stream.index}' } },
-    thresholds: { maxDroppedFrames: 0 },
+    thresholds: { maxDroppedFrames: 0 }
 });
 ```
 
@@ -595,13 +595,13 @@ const recipe = createRallarBlackBoxRtcRealtimeRecipe({
     durationSeconds: 5,
     executionMode: 'stream',
     readyPeerCount: 1,
-    readyTimeoutMs: 10_000,
+    readyTimeoutMs: 10_000
 });
 
-expect(recipe.commands.map(command => command.kind)).toContain('rtc.stream');
-expect(recipe.commands.map(command => command.kind)).not.toContain('loop');
+expect(recipe.commands.map((command) => command.kind)).toContain('rtc.stream');
+expect(recipe.commands.map((command) => command.kind)).not.toContain('loop');
 
-const stream = recipe.commands.find(command => command.kind === 'rtc.stream');
+const stream = recipe.commands.find((command) => command.kind === 'rtc.stream');
 expect(stream).toMatchObject({
     commandId: 'rtc-realtime-position-stream',
     count: 100,
@@ -610,8 +610,8 @@ expect(stream).toMatchObject({
     drainTimeoutMs: 5000,
     thresholds: {
         minSendSuccessRatio: 0.99,
-        maxDroppedFrames: 0,
-    },
+        maxDroppedFrames: 0
+    }
 });
 ```
 
@@ -797,7 +797,7 @@ expect(analysis.failure).toMatchObject({
     category: 'runtime',
     title: expect.stringContaining('RTC stream did not finish'),
     evidenceFile: 'events.jsonl',
-    minimalFixArea: 'shared-test/browser-adapter',
+    minimalFixArea: 'shared-test/browser-adapter'
 });
 ```
 
@@ -811,7 +811,7 @@ expect(analysis.performance.rtcStreams?.[0]).toMatchObject({
     p50Ms: 24,
     p95Ms: 45,
     p99Ms: 60,
-    maxMs: 67,
+    maxMs: 67
 });
 ```
 
@@ -939,7 +939,9 @@ Expected: FAIL because stream metrics are not surfaced.
 In `rtc-diagnostics.ts`, add pure view-model helpers that format stream rows from shared analysis:
 
 ```ts
-export function distributedRtcStreamMetricRows(analysis: DistributedRunArtifactAnalysis): readonly DistributedAgentMetricCell[] {
+export function distributedRtcStreamMetricRows(
+    analysis: DistributedRunArtifactAnalysis
+): readonly DistributedAgentMetricCell[] {
     // Return dense cells for frames, dropped, p50, p95, p99, max, achieved Hz.
 }
 ```

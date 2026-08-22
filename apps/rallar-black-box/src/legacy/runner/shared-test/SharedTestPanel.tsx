@@ -11,8 +11,7 @@ export function SharedTestPanel() {
                 <div className="panel-heading">
                     <h2>Coverage Ownership</h2>
                     <span>
-                        {RALLAR_BLACK_BOX_SHARED_TEST_COVERAGE_HANDOFF.length}{' '}
-                        owners
+                        {RALLAR_BLACK_BOX_SHARED_TEST_COVERAGE_HANDOFF.length} owners
                     </span>
                 </div>
                 <div className="coverage-owner-grid">
@@ -25,18 +24,14 @@ export function SharedTestPanel() {
                                 <h3>{owner.owner}</h3>
                                 <strong>Owns</strong>
                                 <ul>
-                                    {owner.owns.map((item) => (
-                                        <li key={item}>{item}</li>
-                                    ))}
+                                    {owner.owns.map((item) => <li key={item}>{item}</li>)}
                                 </ul>
                                 <strong>Does not own</strong>
                                 <ul>
-                                    {owner.doesNotOwn.map((item) => (
-                                        <li key={item}>{item}</li>
-                                    ))}
+                                    {owner.doesNotOwn.map((item) => <li key={item}>{item}</li>)}
                                 </ul>
                             </article>
-                        ),
+                        )
                     )}
                 </div>
             </section>

@@ -1,18 +1,18 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
-import * as Resource from './ResourceEntry.ts';
-import { type Key, ResourceEntry } from './ResourceEntry.ts';
-import { RateLimiter } from '../resilience/Resilience.ts';
 import { EnqueuedType } from '../api/api-config.ts';
-import {
-    hasSameGroupPresenceSummaryImmutableEntry,
-    isCanonicalGroupPresenceSummaryEntry,
-} from './GroupPresenceSummaryEntryContract.ts';
-import { isCanonicalRtcTopologyWorkEntry } from './RtcTopologyWorkEntryContract.ts';
+import type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
+import { RateLimiter } from '../resilience/Resilience.ts';
 import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
-    tryReadCoalescedAppOutboxWorkEnvelope,
+    tryReadCoalescedAppOutboxWorkEnvelope
 } from './coalesced-app-outbox-work-envelope.ts';
+import {
+    hasSameGroupPresenceSummaryImmutableEntry,
+    isCanonicalGroupPresenceSummaryEntry
+} from './GroupPresenceSummaryEntryContract.ts';
+import * as Resource from './ResourceEntry.ts';
+import { ResourceEntry, type Key } from './ResourceEntry.ts';
+import { isCanonicalRtcTopologyWorkEntry } from './RtcTopologyWorkEntryContract.ts';
 
 export type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
 
@@ -23,9 +23,11 @@ export type ResourceInboxReservationOptions = Readonly<{
 
 export type ResourceInboxReservationInput = number | ResourceInboxReservationOptions;
 
-export type ResourceInboxFairnessReservationOptions = ResourceInboxReservationOptions & Readonly<{
-    maxToScan: number;
-}>;
+export type ResourceInboxFairnessReservationOptions =
+    & ResourceInboxReservationOptions
+    & Readonly<{
+        maxToScan: number;
+    }>;
 
 export type ResourceInboxFairnessReservationInput =
     | number
@@ -88,10 +90,10 @@ export class ResourceInboxLostReservationError extends Error {
 
     constructor(
         key: Key,
-        expectedAttempts: number,
+        expectedAttempts: number
     ) {
         super(
-            `Resource inbox reservation was lost before release: ${JSON.stringify(key)}`,
+            `Resource inbox reservation was lost before release: ${JSON.stringify(key)}`
         );
         this.key = key;
         this.expectedAttempts = expectedAttempts;
@@ -111,14 +113,13 @@ export class ResourceInboxInvalidReleaseDispositionError extends Error {
 export function isIdempotentHandlerFinalizedRelease(
     current: ResourceEntry,
     reserved: ResourceEntry,
-    disposition: ResourceInboxReleaseDisposition,
+    disposition: ResourceInboxReleaseDisposition
 ): boolean {
     try {
         if (isCoalescedRevivalAfterHandlerFinalization(current, reserved, disposition)) {
             return true;
         }
-        const remoteDeliveryRequeue =
-            disposition.status === Resource.EntityStatus.COMPLETED &&
+        const remoteDeliveryRequeue = disposition.status === Resource.EntityStatus.COMPLETED &&
             disposition.delayMs === null &&
             reserved.typeId === EnqueuedType.WS_OUTBOX &&
             reserved.status === Resource.EntityStatus.RESERVED &&
@@ -128,9 +129,10 @@ export function isIdempotentHandlerFinalizedRelease(
             Resource.isKeysEqual(current.key, reserved.key) &&
             current.dequeueAudit.attempts === reserved.dequeueAudit.attempts &&
             !Resource.isExpiredResourceEntry(current);
-        if (remoteDeliveryRequeue) return true;
-        const commonFinalization =
-            disposition.status === Resource.EntityStatus.COMPLETED &&
+        if (remoteDeliveryRequeue) {
+            return true;
+        }
+        const commonFinalization = disposition.status === Resource.EntityStatus.COMPLETED &&
             disposition.delayMs === null &&
             reserved.status === Resource.EntityStatus.RESERVED &&
             current.typeId === reserved.typeId &&
@@ -138,13 +140,19 @@ export function isIdempotentHandlerFinalizedRelease(
             Resource.isKeysEqual(current.key, reserved.key) &&
             current.dequeueAudit.attempts === reserved.dequeueAudit.attempts &&
             !Resource.isExpiredResourceEntry(current);
-        if (!commonFinalization) return false;
-        if (reserved.typeId === EnqueuedType.APP_INBOX) return true;
+        if (!commonFinalization) {
+            return false;
+        }
+        if (reserved.typeId === EnqueuedType.APP_INBOX) {
+            return true;
+        }
 
         if (
             reserved.typeId !== EnqueuedType.APP_OUTBOX ||
             current.resource !== reserved.resource
-        ) return false;
+        ) {
+            return false;
+        }
 
         if (
             isCanonicalGroupPresenceSummaryEntry(reserved) &&
@@ -155,7 +163,8 @@ export function isIdempotentHandlerFinalizedRelease(
 
         return isCanonicalRtcTopologyWorkEntry(reserved) &&
             isCanonicalRtcTopologyWorkEntry(current);
-    } catch {
+    }
+    catch {
         return false;
     }
 }
@@ -171,7 +180,7 @@ export function isIdempotentHandlerFinalizedRelease(
 function isCoalescedRevivalAfterHandlerFinalization(
     current: ResourceEntry,
     reserved: ResourceEntry,
-    disposition: ResourceInboxReleaseDisposition,
+    disposition: ResourceInboxReleaseDisposition
 ): boolean {
     if (
         disposition.status !== Resource.EntityStatus.COMPLETED ||
@@ -196,7 +205,7 @@ function isCoalescedRevivalAfterHandlerFinalization(
 
 export function toResourceInboxReservationOptions(
     input: ResourceInboxReservationInput,
-    defaultMaxAttempts: number,
+    defaultMaxAttempts: number
 ): ResourceInboxReservationOptions {
     const options = typeof input === 'number'
         ? { maxToReserve: input, maxAttempts: defaultMaxAttempts }
@@ -213,7 +222,7 @@ export function toResourceInboxReservationOptions(
 
 export function toResourceInboxFairnessReservationOptions(
     input: ResourceInboxFairnessReservationInput,
-    defaultMaxAttempts: number,
+    defaultMaxAttempts: number
 ): ResourceInboxFairnessReservationOptions {
     const reservation = toResourceInboxReservationOptions(input, defaultMaxAttempts);
     const maxToScan = typeof input === 'number'
@@ -228,7 +237,7 @@ export function toResourceInboxFairnessReservationOptions(
 }
 
 export function toSaturatedResourceInboxFairnessScanBudget(
-    maxToReserve: number,
+    maxToReserve: number
 ): number {
     if (!Number.isSafeInteger(maxToReserve) || maxToReserve < 0) {
         throw new Error('maxToReserve must be a non-negative safe integer');
@@ -240,7 +249,7 @@ export function toSaturatedResourceInboxFairnessScanBudget(
 }
 
 export function toResourceInboxFinalizationReservationOptions(
-    input: ResourceInboxFinalizationReservationOptions,
+    input: ResourceInboxFinalizationReservationOptions
 ): ResourceInboxFinalizationReservationOptions {
     if (!Number.isSafeInteger(input.processingAttempts) || input.processingAttempts < 1) {
         throw new Error('processingAttempts must be a positive safe integer');
@@ -257,7 +266,7 @@ export function toResourceInboxFinalizationReservationOptions(
 export function toResourceInboxWorkAdvertisementOptions(
     input: ResourceInboxWorkAdvertisementInput,
     legacyCheckFairness: RateLimiter | undefined,
-    defaultMaxAttempts: number,
+    defaultMaxAttempts: number
 ): ResourceInboxWorkAdvertisementOptions {
     const options = input instanceof RateLimiter
         ? {
@@ -265,7 +274,7 @@ export function toResourceInboxWorkAdvertisementOptions(
             checkFairness: legacyCheckFairness ?? input,
             checkFinalization: input,
             maxAttempts: defaultMaxAttempts,
-            finalizationStaleAfterMs: 5 * 60 * 1000,
+            finalizationStaleAfterMs: 5 * 60 * 1000
         }
         : input;
 
@@ -283,10 +292,10 @@ export function toResourceInboxWorkAdvertisementOptions(
 }
 
 export function toResourceInboxReleaseDisposition(
-    input: ResourceInboxReleaseDisposition,
+    input: ResourceInboxReleaseDisposition
 ): ResourceInboxReleaseDisposition {
-    const status = (input as { status?: unknown } | null)?.status;
-    const delayMs = (input as { delayMs?: unknown } | null)?.delayMs;
+    const status = (input as { status?: unknown; } | null)?.status;
+    const delayMs = (input as { delayMs?: unknown; } | null)?.delayMs;
     if (
         status === Resource.EntityStatus.RETRY &&
         Number.isSafeInteger(delayMs) &&
@@ -301,7 +310,7 @@ export function toResourceInboxReleaseDisposition(
         Resource.EntityStatus.ABORTED,
         Resource.EntityStatus.NON_RETRYABLE,
         Resource.EntityStatus.PARTITIONED,
-        Resource.EntityStatus.MERGED,
+        Resource.EntityStatus.MERGED
     ]);
     if (terminalStatuses.has(status) && delayMs === null) {
         return input;
@@ -311,46 +320,39 @@ export function toResourceInboxReleaseDisposition(
 }
 
 export interface DequeueResourceEntryRepository {
-
     isAnyEntryToLock(
         typeIds: Set<string>,
         workOptions: ResourceInboxWorkAdvertisementInput,
-        legacyCheckFairness?: RateLimiter,
-    )
-        : Promise<boolean>;
+        legacyCheckFairness?: RateLimiter
+    ): Promise<boolean>;
 
     reserveEntries(
         typeIds: Set<string>,
         statusIds: Set<Resource.EntityStatus>,
-        options: ResourceInboxReservationInput,
-    )
-        : Promise<Map<Resource.Key, Resource.ResourceEntry>>;
+        options: ResourceInboxReservationInput
+    ): Promise<Map<Resource.Key, Resource.ResourceEntry>>;
 
     reserveTimeoutEntries(
         typeIds: Set<string>,
         options: ResourceInboxReservationInput,
         timeSinceStartTs: Temporal.Duration
-    )
-        : Promise<Map<Resource.Key, Resource.ResourceEntry>>;
+    ): Promise<Map<Resource.Key, Resource.ResourceEntry>>;
 
     reserveOverdueRetryEntries(
         typeIds: Set<string>,
         overdueBeforeEpochMs: number,
-        options: ResourceInboxFairnessReservationInput,
-    )
-        : Promise<Map<Resource.Key, ResourceInboxFairnessSelection>>;
+        options: ResourceInboxFairnessReservationInput
+    ): Promise<Map<Resource.Key, ResourceInboxFairnessSelection>>;
 
     reserveRetryExhaustionFinalizations(
         typeIds: Set<string>,
-        options: ResourceInboxFinalizationReservationOptions,
-    )
-        : Promise<Map<Resource.Key, ResourceInboxFinalizationSelection>>;
+        options: ResourceInboxFinalizationReservationOptions
+    ): Promise<Map<Resource.Key, ResourceInboxFinalizationSelection>>;
 
     releaseEntries(
         resources: Resource.ResourceEntry[],
-        disposition: ResourceInboxReleaseDisposition,
-    )
-        : Promise<Map<Resource.Key, Resource.ResourceEntry>>;
+        disposition: ResourceInboxReleaseDisposition
+    ): Promise<Map<Resource.Key, Resource.ResourceEntry>>;
 }
 
 export interface EnqueueResourceEntryController {
@@ -358,12 +360,12 @@ export interface EnqueueResourceEntryController {
 
     enqueueOrUpdate(
         resourceEntry: ResourceEntry,
-        updateExisting: (existing: ResourceEntry) => ResourceEntry | undefined,
+        updateExisting: (existing: ResourceEntry) => ResourceEntry | undefined
     ): Promise<EnqueueOrUpdateResult>;
 
     enqueueIf(
         resourceEntry: ResourceEntry,
-        enqueueIt: (existing: ResourceEntry) => boolean,
+        enqueueIt: (existing: ResourceEntry) => boolean
     ): Promise<ResourceEntry | undefined>;
 
     enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined>;
@@ -379,12 +381,13 @@ export type EnqueueOrUpdateResult = Readonly<{
     previous?: ResourceEntry;
 }>;
 
-export interface EnqueueBoxResourceEntryRepository
-    extends EnqueueResourceEntryController {
-
-    findByKey(key: Key): Promise<ResourceEntry | undefined>
+export interface EnqueueBoxResourceEntryRepository extends EnqueueResourceEntryController {
+    findByKey(key: Key): Promise<ResourceEntry | undefined>;
 }
 
 export interface QueueBoxResourceEntryRepository
-    extends DequeueResourceEntryRepository, EnqueueResourceEntryController, PersistenceProvider<Resource.Key, Resource.ResourceEntry> {
+    extends
+        DequeueResourceEntryRepository,
+        EnqueueResourceEntryController,
+        PersistenceProvider<Resource.Key, Resource.ResourceEntry> {
 }

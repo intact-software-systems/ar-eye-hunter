@@ -10,18 +10,18 @@ const groupAssertionSourceSchema: JsonSchema = {
     properties: {
         recipeId: stringSchema,
         commandId: stringSchema,
-        path: stringSchema,
+        path: stringSchema
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 
 const groupAssertionScopeSchema: JsonSchema = {
     type: 'object',
     required: ['role'],
     properties: {
-        role: stringSchema,
+        role: stringSchema
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 
 const groupAssertionPredicateSchema: JsonSchema = {
@@ -30,11 +30,11 @@ const groupAssertionPredicateSchema: JsonSchema = {
     properties: {
         operator: {
             type: 'string',
-            enum: RALLAR_BLACK_BOX_ASSERT_OPERATORS,
+            enum: RALLAR_BLACK_BOX_ASSERT_OPERATORS
         },
-        expected: anyValueSchema,
+        expected: anyValueSchema
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 
 const groupAssertionCountSchema: JsonSchema = {
@@ -42,15 +42,15 @@ const groupAssertionCountSchema: JsonSchema = {
     requiredAnyOf: [
         {
             properties: ['equals', 'gte', 'lte'],
-            message: 'countMatching requires at least one of equals, gte, lte.',
-        },
+            message: 'countMatching requires at least one of equals, gte, lte.'
+        }
     ],
     properties: {
         equals: { type: 'integer', minimum: 0 },
         gte: { type: 'integer', minimum: 0 },
-        lte: { type: 'integer', minimum: 0 },
+        lte: { type: 'integer', minimum: 0 }
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 
 const groupAssertionCommonProperties: Readonly<Record<string, JsonSchema>> = {
@@ -58,7 +58,7 @@ const groupAssertionCommonProperties: Readonly<Record<string, JsonSchema>> = {
     description: stringSchema,
     source: groupAssertionSourceSchema,
     scope: groupAssertionScopeSchema,
-    minParticipants: { type: 'integer', minimum: 1 },
+    minParticipants: { type: 'integer', minimum: 1 }
 };
 
 const allMatchSchema: JsonSchema = {
@@ -67,9 +67,9 @@ const allMatchSchema: JsonSchema = {
     properties: {
         ...groupAssertionCommonProperties,
         aggregate: { const: 'allMatch' },
-        predicate: groupAssertionPredicateSchema,
+        predicate: groupAssertionPredicateSchema
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 
 const noneMatchSchema: JsonSchema = {
@@ -78,9 +78,9 @@ const noneMatchSchema: JsonSchema = {
     properties: {
         ...groupAssertionCommonProperties,
         aggregate: { const: 'noneMatch' },
-        predicate: groupAssertionPredicateSchema,
+        predicate: groupAssertionPredicateSchema
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 
 const countMatchingSchema: JsonSchema = {
@@ -90,9 +90,9 @@ const countMatchingSchema: JsonSchema = {
         ...groupAssertionCommonProperties,
         aggregate: { const: 'countMatching' },
         predicate: groupAssertionPredicateSchema,
-        count: groupAssertionCountSchema,
+        count: groupAssertionCountSchema
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 
 const allEqualSchema: JsonSchema = {
@@ -100,9 +100,9 @@ const allEqualSchema: JsonSchema = {
     required: ['groupAssertionId', 'aggregate', 'source'],
     properties: {
         ...groupAssertionCommonProperties,
-        aggregate: { const: 'allEqual' },
+        aggregate: { const: 'allEqual' }
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 
 const allEqualWithinSchema: JsonSchema = {
@@ -111,9 +111,9 @@ const allEqualWithinSchema: JsonSchema = {
     properties: {
         ...groupAssertionCommonProperties,
         aggregate: { const: 'allEqualWithin' },
-        tolerance: { type: 'number', minimum: 0 },
+        tolerance: { type: 'number', minimum: 0 }
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 
 export const RALLAR_BLACK_BOX_GROUP_ASSERTIONS_SCHEMA: JsonSchema = {
@@ -124,7 +124,7 @@ export const RALLAR_BLACK_BOX_GROUP_ASSERTIONS_SCHEMA: JsonSchema = {
             noneMatchSchema,
             countMatchingSchema,
             allEqualSchema,
-            allEqualWithinSchema,
-        ],
-    },
+            allEqualWithinSchema
+        ]
+    }
 };

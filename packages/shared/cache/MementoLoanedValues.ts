@@ -1,4 +1,4 @@
-import { LoanedValue, LoanedValueOptions, LoanedValueRefresh, } from './LoanedValue.ts';
+import { LoanedValue, LoanedValueOptions, LoanedValueRefresh } from './LoanedValue.ts';
 
 export interface MementoLoanedOptions<T> extends LoanedValueOptions<T> {
     undoDepth?: number;
@@ -27,14 +27,14 @@ export class MementoLoanedValue<T> {
 
     public constructor(
         current?: LoanedValue<T>,
-        options: MementoLoanedOptions<T> = {},
+        options: MementoLoanedOptions<T> = {}
     ) {
         this.current = current;
         this.undoDepth = options.undoDepth ?? DEFAULT_UNDO_DEPTH;
         this.redoDepth = options.redoDepth ?? DEFAULT_REDO_DEPTH;
         this.defaultLoanOptions = {
             ttlMs: options.ttlMs,
-            isValid: options.isValid,
+            isValid: options.isValid
         };
 
         if (!Number.isInteger(this.undoDepth) || this.undoDepth < 0) {
@@ -47,39 +47,39 @@ export class MementoLoanedValue<T> {
     }
 
     public static empty<T>(
-        options: MementoLoanedOptions<T> = {},
+        options: MementoLoanedOptions<T> = {}
     ): MementoLoanedValue<T> {
         return new MementoLoanedValue<T>(undefined, options);
     }
 
     public static fromRefresher<T>(
         refresher: LoanedValueRefresh<T>,
-        options: MementoLoanedOptions<T> = {},
+        options: MementoLoanedOptions<T> = {}
     ): MementoLoanedValue<T> {
         return new MementoLoanedValue<T>(
             new LoanedValue<T>(refresher, options),
-            options,
+            options
         );
     }
 
     public static fromValue<T>(
         value: T,
-        options: MementoLoanedOptions<T> = {},
+        options: MementoLoanedOptions<T> = {}
     ): MementoLoanedValue<T> {
         return new MementoLoanedValue<T>(
             MementoLoanedValue.fixedLoan(value, options),
-            options,
+            options
         );
     }
 
     public static fromSnapshot<T>(
-        snapshot: MementoLoanedSnapshot<T>,
+        snapshot: MementoLoanedSnapshot<T>
     ): MementoLoanedValue<T> {
         const instance = new MementoLoanedValue<T>(snapshot.current, {
             undoDepth: snapshot.undoDepth,
             redoDepth: snapshot.redoDepth,
             ttlMs: snapshot.defaultLoanOptions.ttlMs,
-            isValid: snapshot.defaultLoanOptions.isValid,
+            isValid: snapshot.defaultLoanOptions.isValid
         });
 
         instance.undos.push(...snapshot.undos);
@@ -99,7 +99,7 @@ export class MementoLoanedValue<T> {
             redos: [...this.redos],
             undoDepth: this.undoDepth,
             redoDepth: this.redoDepth,
-            defaultLoanOptions: { ...this.defaultLoanOptions },
+            defaultLoanOptions: { ...this.defaultLoanOptions }
         };
     }
 
@@ -173,35 +173,35 @@ export class MementoLoanedValue<T> {
 
     public setRefresher(
         refresher: LoanedValueRefresh<T>,
-        options: LoanedValueOptions<T> = this.defaultLoanOptions,
+        options: LoanedValueOptions<T> = this.defaultLoanOptions
     ): this {
         return this.setLoan(new LoanedValue<T>(refresher, options));
     }
 
     public commitRefresher(
         refresher: LoanedValueRefresh<T>,
-        options: LoanedValueOptions<T> = this.defaultLoanOptions,
+        options: LoanedValueOptions<T> = this.defaultLoanOptions
     ): this {
         return this.setRefresher(refresher, options);
     }
 
     public setValue(
         value: T,
-        options: LoanedValueOptions<T> = this.defaultLoanOptions,
+        options: LoanedValueOptions<T> = this.defaultLoanOptions
     ): this {
         return this.setLoan(MementoLoanedValue.fixedLoan(value, options));
     }
 
     public commitValue(
         value: T,
-        options: LoanedValueOptions<T> = this.defaultLoanOptions,
+        options: LoanedValueOptions<T> = this.defaultLoanOptions
     ): this {
         return this.setValue(value, options);
     }
 
     public compareAndSetLoan(
         expect: LoanedValue<T> | undefined,
-        update: LoanedValue<T> | undefined,
+        update: LoanedValue<T> | undefined
     ): boolean {
         if (this.current !== expect) {
             return false;
@@ -214,7 +214,7 @@ export class MementoLoanedValue<T> {
     }
 
     public getAndSetLoan(
-        loan: LoanedValue<T> | undefined,
+        loan: LoanedValue<T> | undefined
     ): LoanedValue<T> | undefined {
         const previous = this.current;
         this.pushUndo(previous);
@@ -391,7 +391,7 @@ export class MementoLoanedValue<T> {
      * as a fixed LoanedValue<T>. This creates a point-in-time snapshot.
      */
     public async snapshotCurrentValueIntoHistory(
-        options: LoanedValueOptions<T> = this.defaultLoanOptions,
+        options: LoanedValueOptions<T> = this.defaultLoanOptions
     ): Promise<this> {
         const current = this.requireCurrent();
         const resolved = await current.get();
@@ -431,12 +431,12 @@ export class MementoLoanedValue<T> {
 
     private static fixedLoan<T>(
         value: T,
-        options: LoanedValueOptions<T> = {},
+        options: LoanedValueOptions<T> = {}
     ): LoanedValue<T> {
         return new LoanedValue<T>(async () => value, {
             ttlMs: Number.MAX_SAFE_INTEGER,
             isValid: () => true,
-            ...options,
+            ...options
         });
     }
 }

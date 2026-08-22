@@ -1,8 +1,5 @@
 import { RoomsClientsView } from './RoomsClientsView.tsx';
-import {
-    type UseRoomsClientsControllerInput,
-    useRoomsClientsController,
-} from './use-rooms-clients-controller.ts';
+import { useRoomsClientsController, type UseRoomsClientsControllerInput } from './use-rooms-clients-controller.ts';
 
 export function RoomsClientsPanel(input: UseRoomsClientsControllerInput) {
     const model = useRoomsClientsController(input);

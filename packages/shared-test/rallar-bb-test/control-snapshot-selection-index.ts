@@ -1,12 +1,12 @@
-import { isDistributedRunTerminalState } from './distributed-run.ts';
 import type {
     ControlAgentSnapshot,
     ControlDistributedRunCommandLink,
     ControlDistributedRunSnapshot,
     ControlQueuedCommandSnapshot,
     ControlRunSnapshot,
-    ControlServerSnapshot,
+    ControlServerSnapshot
 } from './control-snapshots.ts';
+import { isDistributedRunTerminalState } from './distributed-run.ts';
 
 export type ControlSnapshotSelectionIndex = Readonly<{
     hasDistributedRunCollection: boolean;
@@ -17,51 +17,27 @@ export type ControlSnapshotSelectionIndex = Readonly<{
     /** Global Array.find semantics: the first source row with this ID. */
     firstDistributedRunOrdinalById: ReadonlyMap<string, number>;
     /** First source row for the exact ID/control pair, with no composite key. */
-    firstDistributedRunOrdinalByIdAndControlRunId: ReadonlyMap<
-        string,
-        ReadonlyMap<string, number>
-    >;
+    firstDistributedRunOrdinalByIdAndControlRunId: ReadonlyMap<string, ReadonlyMap<string, number>>;
     controlRunOrdinalsByUpdatedDesc: readonly number[];
     distributedRunOrdinalsByUpdatedDesc: readonly number[];
     firstAgentOrdinalByControlRunId: ReadonlyMap<string, ReadonlyMap<string, number>>;
     firstCommandOrdinalByControlRunId: ReadonlyMap<string, ReadonlyMap<string, number>>;
     controlAgentOrdinalsByControlRunIdSorted: ReadonlyMap<string, readonly number[]>;
-    controlCommandOrdinalsByControlRunAgentId: ReadonlyMap<
-        string,
-        ReadonlyMap<string, readonly number[]>
-    >;
-    queuedControlCommandCountByControlRunAgentId: ReadonlyMap<
-        string,
-        ReadonlyMap<string, number>
-    >;
+    controlCommandOrdinalsByControlRunAgentId: ReadonlyMap<string, ReadonlyMap<string, readonly number[]>>;
+    queuedControlCommandCountByControlRunAgentId: ReadonlyMap<string, ReadonlyMap<string, number>>;
     /** Every compatible source row, preserving multiplicity and source order. */
     distributedRunOrdinalsByControlRunId: ReadonlyMap<string, readonly number[]>;
-    distributedRunOrdinalsByControlRunIdUpdatedDesc: ReadonlyMap<
-        string,
-        readonly number[]
-    >;
+    distributedRunOrdinalsByControlRunIdUpdatedDesc: ReadonlyMap<string, readonly number[]>;
     activeDistributedRunOrdinalsByControlRunId: ReadonlyMap<string, readonly number[]>;
-    targetDistributedRunOrdinalsByControlRunId: ReadonlyMap<
-        string,
-        ReadonlyMap<string, readonly number[]>
-    >;
-    commandLinkOrdinalsByDistributedRunOrdinal: ReadonlyMap<
-        number,
-        ReadonlyMap<string, readonly number[]>
-    >;
-    boardRoleByAgentIdByDistributedRunOrdinal: ReadonlyMap<
-        number,
-        ReadonlyMap<string, string>
-    >;
+    targetDistributedRunOrdinalsByControlRunId: ReadonlyMap<string, ReadonlyMap<string, readonly number[]>>;
+    commandLinkOrdinalsByDistributedRunOrdinal: ReadonlyMap<number, ReadonlyMap<string, readonly number[]>>;
+    boardRoleByAgentIdByDistributedRunOrdinal: ReadonlyMap<number, ReadonlyMap<string, string>>;
     boardDistributedRunIdsInFirstInsertionOrder: readonly string[];
     boardFirstInsertionOrdinalByDistributedRunId: ReadonlyMap<string, number>;
     boardSourceWinnerOrdinalByDistributedRunId: ReadonlyMap<string, number>;
     boardSourceCountByDistributedRunId: ReadonlyMap<string, number>;
     boardDistributedRunOrdinalsByControlRunId: ReadonlyMap<string, readonly number[]>;
-    boardTargetDistributedRunOrdinalsByControlRunId: ReadonlyMap<
-        string,
-        ReadonlyMap<string, readonly number[]>
-    >;
+    boardTargetDistributedRunOrdinalsByControlRunId: ReadonlyMap<string, ReadonlyMap<string, readonly number[]>>;
 }>;
 
 export type ControlSnapshotBoardRunOverlayEntry =
@@ -132,7 +108,7 @@ const controlMemberIdentityByIndex = new WeakMap<object, ControlMemberIdentityTo
  * object. Every retained lookup value is an identity string or source ordinal.
  */
 export function createControlSnapshotSelectionIndex(
-    snapshot: ControlServerSnapshot,
+    snapshot: ControlServerSnapshot
 ): ControlSnapshotSelectionIndex {
     const work = emptyWork();
     const controlRunIdsByOrdinal: string[] = [];
@@ -141,14 +117,11 @@ export function createControlSnapshotSelectionIndex(
     const firstAgentOrdinalByControlRunId = new Map<string, ReadonlyMap<string, number>>();
     const firstCommandOrdinalByControlRunId = new Map<string, ReadonlyMap<string, number>>();
     const controlAgentOrdinalsByControlRunIdSorted = new Map<string, number[]>();
-    const controlCommandOrdinalsByControlRunAgentId =
-        new Map<string, Map<string, number[]>>();
-    const queuedControlCommandCountByControlRunAgentId =
-        new Map<string, Map<string, number>>();
+    const controlCommandOrdinalsByControlRunAgentId = new Map<string, Map<string, number[]>>();
+    const queuedControlCommandCountByControlRunAgentId = new Map<string, Map<string, number>>();
     const agentIdsByControlRunId = new Map<string, readonly string[]>();
     const commandIdsByControlRunId = new Map<string, readonly string[]>();
-    const commandAgentIdsByControlRunId =
-        new Map<string, readonly (string | undefined)[]>();
+    const commandAgentIdsByControlRunId = new Map<string, readonly (string | undefined)[]>();
     const controlRunOrdinalsByUpdatedDesc: number[] = [];
 
     snapshot.runs.forEach((run, runOrdinal) => {
@@ -157,7 +130,9 @@ export function createControlSnapshotSelectionIndex(
         controlRunUpdatedAtByOrdinal.push(run.updatedAtEpochMs);
         controlRunOrdinalsByUpdatedDesc.push(runOrdinal);
         work.controlRunUpdatedOrderProjectionVisitCount += 1;
-        if (firstControlRunOrdinalById.has(run.runId)) return;
+        if (firstControlRunOrdinalById.has(run.runId)) {
+            return;
+        }
 
         firstControlRunOrdinalById.set(run.runId, runOrdinal);
         const agents = new Map<string, number>();
@@ -165,12 +140,14 @@ export function createControlSnapshotSelectionIndex(
         run.agents.forEach((agent, agentOrdinal) => {
             work.controlAgentVisitCount += 1;
             agentIds.push(agent.agentId);
-            if (!agents.has(agent.agentId)) agents.set(agent.agentId, agentOrdinal);
+            if (!agents.has(agent.agentId)) {
+                agents.set(agent.agentId, agentOrdinal);
+            }
         });
         firstAgentOrdinalByControlRunId.set(run.runId, agents);
         agentIdsByControlRunId.set(
             run.runId,
-            Object.freeze(agentIds),
+            Object.freeze(agentIds)
         );
         const sortedAgentOrdinals = run.agents.map((_agent, agentOrdinal) => {
             work.controlAgentSortedOrdinalProjectionVisitCount += 1;
@@ -192,9 +169,13 @@ export function createControlSnapshotSelectionIndex(
             const commandId = command.envelope.commandId;
             commandIds.push(commandId);
             commandAgentIds.push(command.envelope.agentId);
-            if (!commands.has(commandId)) commands.set(commandId, commandOrdinal);
+            if (!commands.has(commandId)) {
+                commands.set(commandId, commandOrdinal);
+            }
             const agentId = command.envelope.agentId;
-            if (agentId === undefined) return;
+            if (agentId === undefined) {
+                return;
+            }
             appendOrdinal(commandsByAgentId, agentId, commandOrdinal);
             work.controlCommandAgentBucketWriteCount += 1;
             if (command.completedAtEpochMs === undefined) {
@@ -205,16 +186,16 @@ export function createControlSnapshotSelectionIndex(
         firstCommandOrdinalByControlRunId.set(run.runId, commands);
         commandIdsByControlRunId.set(
             run.runId,
-            Object.freeze(commandIds),
+            Object.freeze(commandIds)
         );
         commandAgentIdsByControlRunId.set(
             run.runId,
-            Object.freeze(commandAgentIds),
+            Object.freeze(commandAgentIds)
         );
         controlCommandOrdinalsByControlRunAgentId.set(run.runId, commandsByAgentId);
         queuedControlCommandCountByControlRunAgentId.set(
             run.runId,
-            queuedCommandCountByAgentId,
+            queuedCommandCountByAgentId
         );
     });
     controlRunOrdinalsByUpdatedDesc.sort((left, right) =>
@@ -227,25 +208,19 @@ export function createControlSnapshotSelectionIndex(
     const distributedRunControlIdsByOrdinal: string[] = [];
     const distributedRunUpdatedAtByOrdinal: number[] = [];
     const firstDistributedRunOrdinalById = new Map<string, number>();
-    const firstDistributedRunOrdinalByIdAndControlRunId =
-        new Map<string, Map<string, number>>();
+    const firstDistributedRunOrdinalByIdAndControlRunId = new Map<string, Map<string, number>>();
     const distributedRunOrdinalsByUpdatedDesc: number[] = [];
     const distributedRunOrdinalsByControlRunId = new Map<string, number[]>();
-    const distributedRunOrdinalsByControlRunIdUpdatedDesc =
-        new Map<string, number[]>();
+    const distributedRunOrdinalsByControlRunIdUpdatedDesc = new Map<string, number[]>();
     const activeDistributedRunOrdinalsByControlRunId = new Map<string, number[]>();
-    const targetDistributedRunOrdinalsByControlRunId =
-        new Map<string, Map<string, number[]>>();
-    const commandLinkOrdinalsByDistributedRunOrdinal =
-        new Map<number, Map<string, number[]>>();
-    const boardRoleByAgentIdByDistributedRunOrdinal =
-        new Map<number, Map<string, string>>();
+    const targetDistributedRunOrdinalsByControlRunId = new Map<string, Map<string, number[]>>();
+    const commandLinkOrdinalsByDistributedRunOrdinal = new Map<number, Map<string, number[]>>();
+    const boardRoleByAgentIdByDistributedRunOrdinal = new Map<number, Map<string, string>>();
     const commandLinkAgentIdsByDistributedRunOrdinal: string[][] = [];
     const commandLinkCommandIdsByDistributedRunOrdinal: string[][] = [];
     const commandLinkPhasesByDistributedRunOrdinal: string[][] = [];
     const boardDistributedRunIdsInFirstInsertionOrder: string[] = [];
-    const boardFirstInsertionOrdinalByDistributedRunId =
-        new Map<string, number>();
+    const boardFirstInsertionOrdinalByDistributedRunId = new Map<string, number>();
     const boardSourceWinnerOrdinalByDistributedRunId = new Map<string, number>();
     const boardSourceCountByDistributedRunId = new Map<string, number>();
 
@@ -263,14 +238,14 @@ export function createControlSnapshotSelectionIndex(
             firstDistributedRunOrdinalByIdAndControlRunId,
             run.distributedRunId,
             run.controlRunId,
-            runOrdinal,
+            runOrdinal
         );
         appendOrdinal(distributedRunOrdinalsByControlRunId, run.controlRunId, runOrdinal);
         work.distributedControlBucketWriteCount += 1;
         appendOrdinal(
             distributedRunOrdinalsByControlRunIdUpdatedDesc,
             run.controlRunId,
-            runOrdinal,
+            runOrdinal
         );
         work.distributedUpdatedControlBucketWriteCount += 1;
 
@@ -279,7 +254,7 @@ export function createControlSnapshotSelectionIndex(
             appendOrdinal(
                 activeDistributedRunOrdinalsByControlRunId,
                 run.controlRunId,
-                runOrdinal,
+                runOrdinal
             );
             work.activeDistributedControlBucketWriteCount += 1;
         }
@@ -287,13 +262,15 @@ export function createControlSnapshotSelectionIndex(
         const seenTargets = new Set<string>();
         run.targetAgentIds.forEach((agentId) => {
             work.distributedTargetAgentVisitCount += 1;
-            if (seenTargets.has(agentId)) return;
+            if (seenTargets.has(agentId)) {
+                return;
+            }
             seenTargets.add(agentId);
             appendNestedOrdinal(
                 targetDistributedRunOrdinalsByControlRunId,
                 run.controlRunId,
                 agentId,
-                runOrdinal,
+                runOrdinal
             );
             work.targetMembershipWriteCount += 1;
         });
@@ -327,7 +304,9 @@ export function createControlSnapshotSelectionIndex(
         const manifestRoleAgentIds = new Set<string>();
         (run.manifest.roleAssignments ?? []).forEach((assignment) => {
             work.manifestRoleAssignmentVisitCount += 1;
-            if (manifestRoleAgentIds.has(assignment.agentId)) return;
+            if (manifestRoleAgentIds.has(assignment.agentId)) {
+                return;
+            }
             manifestRoleAgentIds.add(assignment.agentId);
             if (typeof assignment.role === 'string') {
                 roleByAgentId.set(assignment.agentId, assignment.role);
@@ -337,7 +316,9 @@ export function createControlSnapshotSelectionIndex(
         const resolutionRoleAgentIds = new Set<string>();
         (run.targetResolution?.roleAssignments ?? []).forEach((assignment) => {
             work.targetResolutionRoleAssignmentVisitCount += 1;
-            if (resolutionRoleAgentIds.has(assignment.agentId)) return;
+            if (resolutionRoleAgentIds.has(assignment.agentId)) {
+                return;
+            }
             resolutionRoleAgentIds.add(assignment.agentId);
             if (typeof assignment.role === 'string') {
                 roleByAgentId.set(assignment.agentId, assignment.role);
@@ -350,13 +331,13 @@ export function createControlSnapshotSelectionIndex(
         if (!boardFirstInsertionOrdinalByDistributedRunId.has(run.distributedRunId)) {
             boardFirstInsertionOrdinalByDistributedRunId.set(
                 run.distributedRunId,
-                runOrdinal,
+                runOrdinal
             );
             boardDistributedRunIdsInFirstInsertionOrder.push(run.distributedRunId);
         }
         boardSourceWinnerOrdinalByDistributedRunId.set(
             run.distributedRunId,
-            runOrdinal,
+            runOrdinal
         );
         incrementCount(boardSourceCountByDistributedRunId, run.distributedRunId);
     });
@@ -366,7 +347,7 @@ export function createControlSnapshotSelectionIndex(
             left,
             right,
             distributedRunUpdatedAtByOrdinal,
-            distributedRunIdsByOrdinal,
+            distributedRunIdsByOrdinal
         )
     );
     distributedRunOrdinalsByControlRunIdUpdatedDesc.forEach((ordinals) => {
@@ -375,7 +356,7 @@ export function createControlSnapshotSelectionIndex(
                 left,
                 right,
                 distributedRunUpdatedAtByOrdinal,
-                distributedRunIdsByOrdinal,
+                distributedRunIdsByOrdinal
             )
         );
     });
@@ -385,33 +366,34 @@ export function createControlSnapshotSelectionIndex(
                 left,
                 right,
                 distributedRunUpdatedAtByOrdinal,
-                distributedRunIdsByOrdinal,
+                distributedRunIdsByOrdinal
             )
         );
     });
 
     const boardDistributedRunOrdinalsByControlRunId = new Map<string, number[]>();
-    const boardTargetDistributedRunOrdinalsByControlRunId =
-        new Map<string, Map<string, number[]>>();
+    const boardTargetDistributedRunOrdinalsByControlRunId = new Map<string, Map<string, number[]>>();
     boardSourceWinnerOrdinalByDistributedRunId.forEach((runOrdinal) => {
         work.boardWinnerVisitCount += 1;
         const run = distributedRuns[runOrdinal]!;
         appendOrdinal(
             boardDistributedRunOrdinalsByControlRunId,
             run.controlRunId,
-            runOrdinal,
+            runOrdinal
         );
         work.boardControlBucketWriteCount += 1;
         const seenTargets = new Set<string>();
         run.targetAgentIds.forEach((agentId) => {
             work.boardTargetAgentVisitCount += 1;
-            if (seenTargets.has(agentId)) return;
+            if (seenTargets.has(agentId)) {
+                return;
+            }
             seenTargets.add(agentId);
             appendNestedOrdinal(
                 boardTargetDistributedRunOrdinalsByControlRunId,
                 run.controlRunId,
                 agentId,
-                runOrdinal,
+                runOrdinal
             );
             work.boardTargetMembershipWriteCount += 1;
         });
@@ -426,49 +408,39 @@ export function createControlSnapshotSelectionIndex(
         firstDistributedRunOrdinalById,
         firstDistributedRunOrdinalByIdAndControlRunId,
         controlRunOrdinalsByUpdatedDesc: Object.freeze(controlRunOrdinalsByUpdatedDesc),
-        distributedRunOrdinalsByUpdatedDesc:
-            Object.freeze(distributedRunOrdinalsByUpdatedDesc),
+        distributedRunOrdinalsByUpdatedDesc: Object.freeze(distributedRunOrdinalsByUpdatedDesc),
         firstAgentOrdinalByControlRunId,
         firstCommandOrdinalByControlRunId,
-        controlAgentOrdinalsByControlRunIdSorted:
-            freezeMapArrays(controlAgentOrdinalsByControlRunIdSorted),
-        controlCommandOrdinalsByControlRunAgentId:
-            freezeNestedMapArrays(controlCommandOrdinalsByControlRunAgentId),
+        controlAgentOrdinalsByControlRunIdSorted: freezeMapArrays(controlAgentOrdinalsByControlRunIdSorted),
+        controlCommandOrdinalsByControlRunAgentId: freezeNestedMapArrays(controlCommandOrdinalsByControlRunAgentId),
         queuedControlCommandCountByControlRunAgentId,
-        distributedRunOrdinalsByControlRunId:
-            freezeMapArrays(distributedRunOrdinalsByControlRunId),
-        distributedRunOrdinalsByControlRunIdUpdatedDesc:
-            freezeMapArrays(distributedRunOrdinalsByControlRunIdUpdatedDesc),
-        activeDistributedRunOrdinalsByControlRunId:
-            freezeMapArrays(activeDistributedRunOrdinalsByControlRunId),
-        targetDistributedRunOrdinalsByControlRunId:
-            freezeNestedMapArrays(targetDistributedRunOrdinalsByControlRunId),
-        commandLinkOrdinalsByDistributedRunOrdinal:
-            freezeNestedMapArrays(commandLinkOrdinalsByDistributedRunOrdinal),
+        distributedRunOrdinalsByControlRunId: freezeMapArrays(distributedRunOrdinalsByControlRunId),
+        distributedRunOrdinalsByControlRunIdUpdatedDesc: freezeMapArrays(
+            distributedRunOrdinalsByControlRunIdUpdatedDesc
+        ),
+        activeDistributedRunOrdinalsByControlRunId: freezeMapArrays(activeDistributedRunOrdinalsByControlRunId),
+        targetDistributedRunOrdinalsByControlRunId: freezeNestedMapArrays(targetDistributedRunOrdinalsByControlRunId),
+        commandLinkOrdinalsByDistributedRunOrdinal: freezeNestedMapArrays(commandLinkOrdinalsByDistributedRunOrdinal),
         boardRoleByAgentIdByDistributedRunOrdinal,
-        boardDistributedRunIdsInFirstInsertionOrder:
-            Object.freeze(boardDistributedRunIdsInFirstInsertionOrder),
+        boardDistributedRunIdsInFirstInsertionOrder: Object.freeze(boardDistributedRunIdsInFirstInsertionOrder),
         boardFirstInsertionOrdinalByDistributedRunId,
         boardSourceWinnerOrdinalByDistributedRunId,
         boardSourceCountByDistributedRunId,
-        boardDistributedRunOrdinalsByControlRunId:
-            freezeMapArrays(boardDistributedRunOrdinalsByControlRunId),
-        boardTargetDistributedRunOrdinalsByControlRunId:
-            freezeNestedMapArrays(boardTargetDistributedRunOrdinalsByControlRunId),
+        boardDistributedRunOrdinalsByControlRunId: freezeMapArrays(boardDistributedRunOrdinalsByControlRunId),
+        boardTargetDistributedRunOrdinalsByControlRunId: freezeNestedMapArrays(
+            boardTargetDistributedRunOrdinalsByControlRunId
+        )
     });
     workByIndex.set(index, Object.freeze({ ...work }));
     commandLinkIdentityByIndex.set(index, {
-        agentIdsByDistributedRunOrdinal:
-            freezeNestedArrays(commandLinkAgentIdsByDistributedRunOrdinal),
-        commandIdsByDistributedRunOrdinal:
-            freezeNestedArrays(commandLinkCommandIdsByDistributedRunOrdinal),
-        phasesByDistributedRunOrdinal:
-            freezeNestedArrays(commandLinkPhasesByDistributedRunOrdinal),
+        agentIdsByDistributedRunOrdinal: freezeNestedArrays(commandLinkAgentIdsByDistributedRunOrdinal),
+        commandIdsByDistributedRunOrdinal: freezeNestedArrays(commandLinkCommandIdsByDistributedRunOrdinal),
+        phasesByDistributedRunOrdinal: freezeNestedArrays(commandLinkPhasesByDistributedRunOrdinal)
     });
     controlMemberIdentityByIndex.set(index, {
         agentIdsByControlRunId,
         commandIdsByControlRunId,
-        commandAgentIdsByControlRunId,
+        commandAgentIdsByControlRunId
     });
     return index;
 }
@@ -476,10 +448,12 @@ export function createControlSnapshotSelectionIndex(
 export function rebindControlRunFromSelectionIndex(
     index: ControlSnapshotSelectionIndex,
     snapshot: ControlServerSnapshot,
-    runId: string,
+    runId: string
 ): ControlRunSnapshot | undefined {
     const ordinal = index.firstControlRunOrdinalById.get(runId);
-    if (ordinal === undefined) return undefined;
+    if (ordinal === undefined) {
+        return undefined;
+    }
     const run = snapshot.runs[ordinal];
     return run?.runId === runId && index.controlRunIdsByOrdinal[ordinal] === runId
         ? run
@@ -489,10 +463,12 @@ export function rebindControlRunFromSelectionIndex(
 export function rebindDistributedRunFromSelectionIndex(
     index: ControlSnapshotSelectionIndex,
     snapshot: ControlServerSnapshot,
-    distributedRunId: string,
+    distributedRunId: string
 ): ControlDistributedRunSnapshot | undefined {
     const ordinal = index.firstDistributedRunOrdinalById.get(distributedRunId);
-    if (ordinal === undefined) return undefined;
+    if (ordinal === undefined) {
+        return undefined;
+    }
     return distributedRunAtOrdinal(index, snapshot, ordinal);
 }
 
@@ -501,11 +477,13 @@ export function rebindDistributedRunPairFromSelectionIndex(
     index: ControlSnapshotSelectionIndex,
     snapshot: ControlServerSnapshot,
     distributedRunId: string,
-    controlRunId: string,
+    controlRunId: string
 ): ControlDistributedRunSnapshot | undefined {
     const ordinal = index.firstDistributedRunOrdinalByIdAndControlRunId
         .get(distributedRunId)?.get(controlRunId);
-    if (ordinal === undefined) return undefined;
+    if (ordinal === undefined) {
+        return undefined;
+    }
     return distributedRunAtOrdinal(index, snapshot, ordinal);
 }
 
@@ -518,52 +496,50 @@ export function rebindDistributedRunPairFromSelectionIndex(
 export function createControlSnapshotBoardRunOverlayPlan(
     index: ControlSnapshotSelectionIndex,
     controlRunId: string,
-    selected: Readonly<{
-        distributedRunId: string;
-        controlRunId: string;
-    }> | undefined,
+    selected:
+        | Readonly<{
+            distributedRunId: string;
+            controlRunId: string;
+        }>
+        | undefined
 ): readonly ControlSnapshotBoardRunOverlayEntry[] {
-    const sourceOrdinals =
-        index.boardDistributedRunOrdinalsByControlRunId.get(controlRunId) ?? [];
+    const sourceOrdinals = index.boardDistributedRunOrdinalsByControlRunId.get(controlRunId) ?? [];
     const entries: ControlSnapshotBoardRunOverlayEntry[] = [];
     for (const sourceWinnerOrdinal of sourceOrdinals) {
         const distributedRunId = index.distributedRunIdsByOrdinal[sourceWinnerOrdinal];
-        if (distributedRunId === undefined ||
-            distributedRunId === selected?.distributedRunId) continue;
+        if (
+            distributedRunId === undefined ||
+            distributedRunId === selected?.distributedRunId
+        ) {
+            continue;
+        }
         entries.push(Object.freeze({
             kind: 'source',
             distributedRunId,
-            firstInsertionOrdinal:
-                index.boardFirstInsertionOrdinalByDistributedRunId
-                    .get(distributedRunId)!,
+            firstInsertionOrdinal: index.boardFirstInsertionOrdinalByDistributedRunId
+                .get(distributedRunId)!,
             sourceWinnerOrdinal,
-            sourceCount:
-                index.boardSourceCountByDistributedRunId.get(distributedRunId) ?? 0,
+            sourceCount: index.boardSourceCountByDistributedRunId.get(distributedRunId) ?? 0
         }));
     }
 
     if (selected?.controlRunId === controlRunId) {
-        const firstInsertionOrdinal =
-            index.boardFirstInsertionOrdinalByDistributedRunId
-                .get(selected.distributedRunId) ?? index.distributedRunIdsByOrdinal.length;
+        const firstInsertionOrdinal = index.boardFirstInsertionOrdinalByDistributedRunId
+            .get(selected.distributedRunId) ?? index.distributedRunIdsByOrdinal.length;
         const selectedEntry: ControlSnapshotBoardRunOverlayEntry = Object.freeze({
             kind: 'selected',
             distributedRunId: selected.distributedRunId,
             firstInsertionOrdinal,
-            sourceWinnerOrdinal:
-                index.boardSourceWinnerOrdinalByDistributedRunId
-                    .get(selected.distributedRunId),
-            sourceCount:
-                index.boardSourceCountByDistributedRunId
-                    .get(selected.distributedRunId) ?? 0,
+            sourceWinnerOrdinal: index.boardSourceWinnerOrdinalByDistributedRunId
+                .get(selected.distributedRunId),
+            sourceCount: index.boardSourceCountByDistributedRunId
+                .get(selected.distributedRunId) ?? 0
         });
-        const insertionIndex = entries.findIndex(entry =>
-            entry.firstInsertionOrdinal > firstInsertionOrdinal
-        );
+        const insertionIndex = entries.findIndex((entry) => entry.firstInsertionOrdinal > firstInsertionOrdinal);
         entries.splice(
             insertionIndex < 0 ? entries.length : insertionIndex,
             0,
-            selectedEntry,
+            selectedEntry
         );
     }
     return Object.freeze(entries);
@@ -573,11 +549,13 @@ export function rebindControlAgentFromSelectionIndex(
     index: ControlSnapshotSelectionIndex,
     snapshot: ControlServerSnapshot,
     controlRunId: string,
-    agentId: string,
+    agentId: string
 ): ControlAgentSnapshot | undefined {
     const run = rebindControlRunFromSelectionIndex(index, snapshot, controlRunId);
     const ordinal = index.firstAgentOrdinalByControlRunId.get(controlRunId)?.get(agentId);
-    if (!run || ordinal === undefined) return undefined;
+    if (!run || ordinal === undefined) {
+        return undefined;
+    }
     const agent = run.agents[ordinal];
     return agent?.agentId === agentId ? agent : undefined;
 }
@@ -586,11 +564,13 @@ export function rebindControlCommandFromSelectionIndex(
     index: ControlSnapshotSelectionIndex,
     snapshot: ControlServerSnapshot,
     controlRunId: string,
-    commandId: string,
+    commandId: string
 ): ControlQueuedCommandSnapshot | undefined {
     const run = rebindControlRunFromSelectionIndex(index, snapshot, controlRunId);
     const ordinal = index.firstCommandOrdinalByControlRunId.get(controlRunId)?.get(commandId);
-    if (!run || ordinal === undefined) return undefined;
+    if (!run || ordinal === undefined) {
+        return undefined;
+    }
     const command = run.commands[ordinal];
     return command?.envelope.commandId === commandId ? command : undefined;
 }
@@ -599,16 +579,20 @@ export function rebindControlAgentsFromSelectionIndex(
     index: ControlSnapshotSelectionIndex,
     snapshot: ControlServerSnapshot,
     controlRunId: string,
-    ordinals: readonly number[],
+    ordinals: readonly number[]
 ): readonly ControlAgentSnapshot[] {
     const run = rebindControlRunFromSelectionIndex(index, snapshot, controlRunId);
     const expectedIds = controlMemberIdentityByIndex.get(index)
         ?.agentIdsByControlRunId.get(controlRunId);
-    if (!run || !expectedIds) return [];
+    if (!run || !expectedIds) {
+        return [];
+    }
     const rebound: ControlAgentSnapshot[] = [];
     for (const ordinal of ordinals) {
         const agent = run.agents[ordinal];
-        if (!agent || agent.agentId !== expectedIds[ordinal]) return [];
+        if (!agent || agent.agentId !== expectedIds[ordinal]) {
+            return [];
+        }
         rebound.push(agent);
     }
     return rebound;
@@ -618,20 +602,24 @@ export function rebindControlCommandsFromSelectionIndex(
     index: ControlSnapshotSelectionIndex,
     snapshot: ControlServerSnapshot,
     controlRunId: string,
-    ordinals: readonly number[],
+    ordinals: readonly number[]
 ): readonly ControlQueuedCommandSnapshot[] {
     const run = rebindControlRunFromSelectionIndex(index, snapshot, controlRunId);
     const identities = controlMemberIdentityByIndex.get(index);
     const expectedIds = identities?.commandIdsByControlRunId.get(controlRunId);
     const expectedAgentIds = identities?.commandAgentIdsByControlRunId.get(controlRunId);
-    if (!run || !expectedIds || !expectedAgentIds) return [];
+    if (!run || !expectedIds || !expectedAgentIds) {
+        return [];
+    }
     const rebound: ControlQueuedCommandSnapshot[] = [];
     for (const ordinal of ordinals) {
         const command = run.commands[ordinal];
         if (
             !command || command.envelope.commandId !== expectedIds[ordinal] ||
             command.envelope.agentId !== expectedAgentIds[ordinal]
-        ) return [];
+        ) {
+            return [];
+        }
         rebound.push(command);
     }
     return rebound;
@@ -640,12 +628,14 @@ export function rebindControlCommandsFromSelectionIndex(
 export function rebindControlRunsFromSelectionIndex(
     index: ControlSnapshotSelectionIndex,
     snapshot: ControlServerSnapshot,
-    ordinals: readonly number[],
+    ordinals: readonly number[]
 ): readonly ControlRunSnapshot[] {
     const rebound: ControlRunSnapshot[] = [];
     for (const ordinal of ordinals) {
         const run = snapshot.runs[ordinal];
-        if (!run || run.runId !== index.controlRunIdsByOrdinal[ordinal]) return [];
+        if (!run || run.runId !== index.controlRunIdsByOrdinal[ordinal]) {
+            return [];
+        }
         rebound.push(run);
     }
     return rebound;
@@ -654,12 +644,14 @@ export function rebindControlRunsFromSelectionIndex(
 export function rebindDistributedRunsFromSelectionIndex(
     index: ControlSnapshotSelectionIndex,
     snapshot: ControlServerSnapshot,
-    ordinals: readonly number[],
+    ordinals: readonly number[]
 ): readonly ControlDistributedRunSnapshot[] {
     const rebound: ControlDistributedRunSnapshot[] = [];
     for (const ordinal of ordinals) {
         const run = distributedRunAtOrdinal(index, snapshot, ordinal);
-        if (!run) return [];
+        if (!run) {
+            return [];
+        }
         rebound.push(run);
     }
     return rebound;
@@ -669,15 +661,19 @@ export function rebindCommandLinksFromSelectionIndex(
     index: ControlSnapshotSelectionIndex,
     snapshot: ControlServerSnapshot,
     distributedRunOrdinal: number,
-    linkOrdinals: readonly number[],
+    linkOrdinals: readonly number[]
 ): readonly ControlDistributedRunCommandLink[] {
     const run = distributedRunAtOrdinal(index, snapshot, distributedRunOrdinal);
     const identities = commandLinkIdentityByIndex.get(index);
-    if (!run || !identities) return [];
+    if (!run || !identities) {
+        return [];
+    }
     const agentIds = identities.agentIdsByDistributedRunOrdinal[distributedRunOrdinal];
     const commandIds = identities.commandIdsByDistributedRunOrdinal[distributedRunOrdinal];
     const phases = identities.phasesByDistributedRunOrdinal[distributedRunOrdinal];
-    if (!agentIds || !commandIds || !phases) return [];
+    if (!agentIds || !commandIds || !phases) {
+        return [];
+    }
 
     const rebound: ControlDistributedRunCommandLink[] = [];
     for (const ordinal of linkOrdinals) {
@@ -685,14 +681,16 @@ export function rebindCommandLinksFromSelectionIndex(
         if (
             !link || link.agentId !== agentIds[ordinal] ||
             link.commandId !== commandIds[ordinal] || link.phase !== phases[ordinal]
-        ) return [];
+        ) {
+            return [];
+        }
         rebound.push(link);
     }
     return rebound;
 }
 
 export function controlSnapshotSelectionIndexWorkForTest(
-    index: ControlSnapshotSelectionIndex,
+    index: ControlSnapshotSelectionIndex
 ): ControlSnapshotSelectionIndexWork | undefined {
     return workByIndex.get(index);
 }
@@ -700,7 +698,7 @@ export function controlSnapshotSelectionIndexWorkForTest(
 function distributedRunAtOrdinal(
     index: ControlSnapshotSelectionIndex,
     snapshot: ControlServerSnapshot,
-    ordinal: number,
+    ordinal: number
 ): ControlDistributedRunSnapshot | undefined {
     const run = snapshot.distributedRuns?.[ordinal];
     return run && run.distributedRunId === index.distributedRunIdsByOrdinal[ordinal] &&
@@ -712,18 +710,22 @@ function distributedRunAtOrdinal(
 function appendOrdinal<Key>(
     map: Map<Key, number[]>,
     key: Key,
-    ordinal: number,
+    ordinal: number
 ): void {
     const current = map.get(key);
-    if (current) current.push(ordinal);
-    else map.set(key, [ordinal]);
+    if (current) {
+        current.push(ordinal);
+    }
+    else {
+        map.set(key, [ordinal]);
+    }
 }
 
 function appendNestedOrdinal<OuterKey, InnerKey>(
     map: Map<OuterKey, Map<InnerKey, number[]>>,
     outerKey: OuterKey,
     innerKey: InnerKey,
-    ordinal: number,
+    ordinal: number
 ): void {
     let nested = map.get(outerKey);
     if (!nested) {
@@ -737,14 +739,16 @@ function setNestedFirstOrdinal<OuterKey, InnerKey>(
     map: Map<OuterKey, Map<InnerKey, number>>,
     outerKey: OuterKey,
     innerKey: InnerKey,
-    ordinal: number,
+    ordinal: number
 ): void {
     let nested = map.get(outerKey);
     if (!nested) {
         nested = new Map<InnerKey, number>();
         map.set(outerKey, nested);
     }
-    if (!nested.has(innerKey)) nested.set(innerKey, ordinal);
+    if (!nested.has(innerKey)) {
+        nested.set(innerKey, ordinal);
+    }
 }
 
 function incrementCount<Key>(map: Map<Key, number>, key: Key): void {
@@ -755,7 +759,7 @@ function compareDistributedUpdatedOrdinals(
     left: number,
     right: number,
     updatedAtByOrdinal: readonly number[],
-    idsByOrdinal: readonly string[],
+    idsByOrdinal: readonly string[]
 ): number {
     return updatedAtByOrdinal[right]! - updatedAtByOrdinal[left]! ||
         compareText(idsByOrdinal[left]!, idsByOrdinal[right]!);
@@ -766,21 +770,21 @@ function compareText(left: string, right: string): number {
 }
 
 function freezeMapArrays<Key>(
-    map: Map<Key, number[]>,
+    map: Map<Key, number[]>
 ): ReadonlyMap<Key, readonly number[]> {
     map.forEach((ordinals) => Object.freeze(ordinals));
     return map;
 }
 
 function freezeNestedMapArrays<OuterKey, InnerKey>(
-    map: Map<OuterKey, Map<InnerKey, number[]>>,
+    map: Map<OuterKey, Map<InnerKey, number[]>>
 ): ReadonlyMap<OuterKey, ReadonlyMap<InnerKey, readonly number[]>> {
     map.forEach((nested) => freezeMapArrays(nested));
     return map;
 }
 
 function freezeNestedArrays(values: string[][]): readonly (readonly string[])[] {
-    values.forEach(value => Object.freeze(value));
+    values.forEach((value) => Object.freeze(value));
     return Object.freeze(values);
 }
 
@@ -809,6 +813,6 @@ function emptyWork(): MutableWork {
         boardWinnerVisitCount: 0,
         boardControlBucketWriteCount: 0,
         boardTargetAgentVisitCount: 0,
-        boardTargetMembershipWriteCount: 0,
+        boardTargetMembershipWriteCount: 0
     };
 }

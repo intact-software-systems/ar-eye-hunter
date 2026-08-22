@@ -246,12 +246,12 @@ Current working-tree checkpoint on 2026-08-10:
 
 Stack record:
 
-| Layer | Branch | Base | State |
-| --- | --- | --- | --- |
-| Plan | `codex/rtc-topology-durable-replay-plan` | `origin/main` | PR #141 merged as `28c49ceb` |
-| PR 1 | `codex/rtc-topology-durable-replay-1-streams` | resulting `main` `28c49ceb` | merged as `263961b5`, tree `ea35a92b`; exact resulting-main gates pending |
-| PR 2 | `codex/rtc-topology-durable-replay-2-consumer` | resulting `main` `263961b5` | rebased head `dd68d090`, tree `279a2468`; affected exact gates pending |
-| PR 3 | `codex/rtc-topology-durable-replay-3-hydration` | rebased PR 2 `dd68d090` | rebased code/progress head `f51435fe`, tree `7e31c30b`; ledger freeze and affected exact gates pending |
+| Layer | Branch                                          | Base                        | State                                                                                                  |
+| ----- | ----------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Plan  | `codex/rtc-topology-durable-replay-plan`        | `origin/main`               | PR #141 merged as `28c49ceb`                                                                           |
+| PR 1  | `codex/rtc-topology-durable-replay-1-streams`   | resulting `main` `28c49ceb` | merged as `263961b5`, tree `ea35a92b`; exact resulting-main gates pending                              |
+| PR 2  | `codex/rtc-topology-durable-replay-2-consumer`  | resulting `main` `263961b5` | rebased head `dd68d090`, tree `279a2468`; affected exact gates pending                                 |
+| PR 3  | `codex/rtc-topology-durable-replay-3-hydration` | rebased PR 2 `dd68d090`     | rebased code/progress head `f51435fe`, tree `7e31c30b`; ledger freeze and affected exact gates pending |
 
 The detailed PR 1, PR 2, and PR 3 evidence below records the pre-rebase
 implementation history. It remains useful diagnostic and review evidence, but
@@ -608,11 +608,11 @@ diagnostics, runner controls, and admin metric fields are internal/additive.
 
 The black-box proof and documentation use these names consistently:
 
-| API process | Connected browsers | Publisher stream |
-| --- | --- | --- |
-| A (port 18080) | N1, N2 | A/1, A/2, ... |
-| B (port 18081) | N3, N4 | B/1, B/2, ... |
-| C (port 18082) | N5, N6 | C/1, C/2, ... |
+| API process    | Connected browsers | Publisher stream |
+| -------------- | ------------------ | ---------------- |
+| A (port 18080) | N1, N2             | A/1, A/2, ...    |
+| B (port 18081) | N3, N4             | B/1, B/2, ...    |
+| C (port 18082) | N5, N6             | C/1, C/2, ...    |
 
 N1/N3/N5 are three distinct sessions for principal Alice; N2/N4/N6 are
 three distinct sessions for principal Bob. This preserves and exercises the
@@ -643,14 +643,14 @@ Add one Prisma migration and mirror it exactly in
 
 One row per process instance/publisher stream:
 
-| Column | Type | Rules |
-| --- | --- | --- |
-| `stream_id` | UUID | Primary key; process instance identity |
-| `head_sequence` | BIGINT | Non-negative, default 0 |
-| `retained_from_sequence` | BIGINT | Positive, default 1; must be `<= head + 1` |
-| `lease_expires_at` | TIMESTAMPTZ(3) | Required process lease |
-| `created_at` | TIMESTAMPTZ(3) | Database default |
-| `updated_at` | TIMESTAMPTZ(3) | Updated on HEAD, floor, or lease change |
+| Column                   | Type           | Rules                                      |
+| ------------------------ | -------------- | ------------------------------------------ |
+| `stream_id`              | UUID           | Primary key; process instance identity     |
+| `head_sequence`          | BIGINT         | Non-negative, default 0                    |
+| `retained_from_sequence` | BIGINT         | Positive, default 1; must be `<= head + 1` |
+| `lease_expires_at`       | TIMESTAMPTZ(3) | Required process lease                     |
+| `created_at`             | TIMESTAMPTZ(3) | Database default                           |
+| `updated_at`             | TIMESTAMPTZ(3) | Updated on HEAD, floor, or lease change    |
 
 HEAD is the last committed sequence in this stream. The retained floor is the
 first sequence that may still be read; `head + 1` means the stream currently
@@ -660,19 +660,19 @@ has no retained entries.
 
 One immutable row per committed publication append:
 
-| Column | Type | Rules |
-| --- | --- | --- |
-| `publisher_stream_id` | UUID | References stream; delete restricted |
-| `sequence` | BIGINT | Positive; primary key with publisher stream |
-| `application_id` | TEXT | Non-empty |
-| `workspace_id` | TEXT | Non-empty |
-| `group_id` | TEXT | Non-empty |
-| `publication_id` | TEXT | Non-empty |
-| `outbox_topic_id` | TEXT | Exact QueueBox key |
-| `outbox_resource_id` | TEXT | Exact QueueBox key |
-| `outbox_context_id` | TEXT | Exact QueueBox key |
-| `retain_until` | TIMESTAMPTZ(3) | Same expiry as publication/outbox |
-| `inserted_at` | TIMESTAMPTZ(3) | Database default; diagnostics only |
+| Column                | Type           | Rules                                       |
+| --------------------- | -------------- | ------------------------------------------- |
+| `publisher_stream_id` | UUID           | References stream; delete restricted        |
+| `sequence`            | BIGINT         | Positive; primary key with publisher stream |
+| `application_id`      | TEXT           | Non-empty                                   |
+| `workspace_id`        | TEXT           | Non-empty                                   |
+| `group_id`            | TEXT           | Non-empty                                   |
+| `publication_id`      | TEXT           | Non-empty                                   |
+| `outbox_topic_id`     | TEXT           | Exact QueueBox key                          |
+| `outbox_resource_id`  | TEXT           | Exact QueueBox key                          |
+| `outbox_context_id`   | TEXT           | Exact QueueBox key                          |
+| `retain_until`        | TIMESTAMPTZ(3) | Same expiry as publication/outbox           |
+| `inserted_at`         | TIMESTAMPTZ(3) | Database default; diagnostics only          |
 
 Primary key: `(publisher_stream_id, sequence)`.
 
@@ -689,12 +689,12 @@ publication identity. Do not add a foreign key to expiring runtime-state or
 
 One row per consumer/publisher pair:
 
-| Column | Type | Rules |
-| --- | --- | --- |
-| `consumer_stream_id` | UUID | References process stream; delete restricted |
-| `publisher_stream_id` | UUID | References process stream; delete restricted |
-| `last_processed_sequence` | BIGINT | Non-negative |
-| `updated_at` | TIMESTAMPTZ(3) | Database time |
+| Column                    | Type           | Rules                                        |
+| ------------------------- | -------------- | -------------------------------------------- |
+| `consumer_stream_id`      | UUID           | References process stream; delete restricted |
+| `publisher_stream_id`     | UUID           | References process stream; delete restricted |
+| `last_processed_sequence` | BIGINT         | Non-negative                                 |
+| `updated_at`              | TIMESTAMPTZ(3) | Database time                                |
 
 Primary key: `(consumer_stream_id, publisher_stream_id)`.
 
@@ -1176,24 +1176,24 @@ five control lanes, and all current assertions.
 
 ## Traceability Matrix
 
-| Guarantee | Implementation owner | Required evidence |
-| --- | --- | --- |
-| A/B writes do not contend on one HEAD | per-process stream repository | true-overlap PostgreSQL test and delivery-log benchmark |
-| A committed append has no visible hole | append transaction | rollback/commit-order repository tests |
-| One publication appears in one stream | canonical unique identity | A/B race test and exact existing-row validation |
-| Missed notification is repaired live | replay poll/drain | passive-C N1-N6 black-box proof |
-| Restart converges current state | reconnect hydrator | C/C' same-session proof |
-| Cursor never over-acknowledges | contiguous handling plus CAS | partial failure and crash-before-CAS tests |
-| Cross-stream order is not authority | current topology causal comparison | A/B reverse-order and incomparable tests |
-| Duplicate delivery is harmless | immutable message plus monotonic browser cache | direct+replay duplicate tests and black-box assertion |
-| Retention is bounded | fixed expiry/compactor | compaction and retired-consumer tests |
-| Retention gap is observable and repairable | gap hydration | gap sweep success/failure tests |
-| Reconnect does not authorize from cache | durable group repository | revoked/expired/wrong-principal hydration tests |
-| Replacement socket is not written | context identity fence | generation race tests |
-| Corruption is not skipped | strict row/reference validation | missing/mismatched publication/outbox tests |
-| Readiness covers replay ownership | combined startup barrier | Deno readiness failure tests |
-| Diagnostics have bounded dimensions | replay sink/metrics | exact event union and forbidden-label tests |
-| Public contracts remain compatible | preserved exports/wire shapes | public API snapshots, Swagger, bundle/governance tests |
+| Guarantee                                  | Implementation owner                           | Required evidence                                       |
+| ------------------------------------------ | ---------------------------------------------- | ------------------------------------------------------- |
+| A/B writes do not contend on one HEAD      | per-process stream repository                  | true-overlap PostgreSQL test and delivery-log benchmark |
+| A committed append has no visible hole     | append transaction                             | rollback/commit-order repository tests                  |
+| One publication appears in one stream      | canonical unique identity                      | A/B race test and exact existing-row validation         |
+| Missed notification is repaired live       | replay poll/drain                              | passive-C N1-N6 black-box proof                         |
+| Restart converges current state            | reconnect hydrator                             | C/C' same-session proof                                 |
+| Cursor never over-acknowledges             | contiguous handling plus CAS                   | partial failure and crash-before-CAS tests              |
+| Cross-stream order is not authority        | current topology causal comparison             | A/B reverse-order and incomparable tests                |
+| Duplicate delivery is harmless             | immutable message plus monotonic browser cache | direct+replay duplicate tests and black-box assertion   |
+| Retention is bounded                       | fixed expiry/compactor                         | compaction and retired-consumer tests                   |
+| Retention gap is observable and repairable | gap hydration                                  | gap sweep success/failure tests                         |
+| Reconnect does not authorize from cache    | durable group repository                       | revoked/expired/wrong-principal hydration tests         |
+| Replacement socket is not written          | context identity fence                         | generation race tests                                   |
+| Corruption is not skipped                  | strict row/reference validation                | missing/mismatched publication/outbox tests             |
+| Readiness covers replay ownership          | combined startup barrier                       | Deno readiness failure tests                            |
+| Diagnostics have bounded dimensions        | replay sink/metrics                            | exact event union and forbidden-label tests             |
+| Public contracts remain compatible         | preserved exports/wire shapes                  | public API snapshots, Swagger, bundle/governance tests  |
 
 ## Performance Evidence
 

@@ -1,9 +1,6 @@
 import { selectRallarBlackBoxEvents } from '@shared-test/rallar-bb-test/selectors.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
-import {
-    eventPayloadDetails,
-    isRallarBrowserEvent,
-} from '../diagnostics/events/event-presentation.ts';
+import { eventPayloadDetails, isRallarBrowserEvent } from '../diagnostics/events/event-presentation.ts';
 import { optionalNumber } from '../shared/finite-number.ts';
 import { recordValue as optionalRecord } from '../shared/record-value.ts';
 import { stringValue } from '../shared/string-value.ts';
@@ -46,19 +43,23 @@ function looksLikeRtcStatus(value: Record<string, unknown>): boolean {
 }
 
 function wsStatusFromDetails(
-    details: Record<string, unknown>,
+    details: Record<string, unknown>
 ): Record<string, unknown> | undefined {
     const explicit = optionalRecord(details.wsStatus);
-    if (looksLikeWsStatus(explicit)) return explicit;
+    if (looksLikeWsStatus(explicit)) {
+        return explicit;
+    }
     const nestedStatus = optionalRecord(details.status);
     return looksLikeWsStatus(nestedStatus) ? nestedStatus : undefined;
 }
 
 function rtcStatusFromDetails(
-    details: Record<string, unknown>,
+    details: Record<string, unknown>
 ): Record<string, unknown> | undefined {
     const explicit = optionalRecord(details.rtcStatus);
-    if (looksLikeRtcStatus(explicit)) return explicit;
+    if (looksLikeRtcStatus(explicit)) {
+        return explicit;
+    }
     const nestedStatus = optionalRecord(details.status);
     return looksLikeRtcStatus(nestedStatus) ? nestedStatus : undefined;
 }
@@ -68,16 +69,13 @@ function arrayCount(value: unknown): number {
 }
 
 function deriveWsStatusLabel(
-    status?: Record<string, unknown>,
-): Pick<
-    RallarBrowserStatusSummary,
-    'signalingLabel' | 'signalingTone' | 'signalingDetail'
-> {
+    status?: Record<string, unknown>
+): Pick<RallarBrowserStatusSummary, 'signalingLabel' | 'signalingTone' | 'signalingDetail'> {
     if (!status) {
         return {
             signalingLabel: 'not observed',
             signalingTone: 'muted',
-            signalingDetail: '-',
+            signalingDetail: '-'
         };
     }
 
@@ -88,94 +86,83 @@ function deriveWsStatusLabel(
     const label = reconnectExhausted
         ? 'exhausted'
         : reconnecting
-          ? 'reconnecting'
-          : status.isOpen === true || readyState === 'open'
-            ? 'open'
-            : (readyState ?? connectState ?? 'unknown');
-    const tone =
-        label === 'open'
-            ? 'good'
-            : label === 'connecting' || label === 'reconnecting'
-              ? 'active'
-              : label === 'closed' ||
-                  label === 'closing' ||
-                  label === 'exhausted'
-                ? 'warn'
-                : 'muted';
+        ? 'reconnecting'
+        : status.isOpen === true || readyState === 'open'
+        ? 'open'
+        : (readyState ?? connectState ?? 'unknown');
+    const tone = label === 'open'
+        ? 'good'
+        : label === 'connecting' || label === 'reconnecting'
+        ? 'active'
+        : label === 'closed' ||
+                label === 'closing' ||
+                label === 'exhausted'
+        ? 'warn'
+        : 'muted';
     const attempts = optionalNumber(status.reconnectAttempts);
     const maxAttempts = optionalNumber(status.maxReconnectAttempts);
 
     return {
         signalingLabel: label,
         signalingTone: tone,
-        signalingDetail:
-            [
-                connectState,
-                attempts !== undefined
-                    ? `${attempts}/${maxAttempts ?? '-'} reconnects`
-                    : undefined,
-            ]
-                .filter((value): value is string =>
-                    Boolean(value && value.length > 0),
-                )
-                .join(' - ') || '-',
+        signalingDetail: [
+            connectState,
+            attempts !== undefined
+                ? `${attempts}/${maxAttempts ?? '-'} reconnects`
+                : undefined
+        ]
+            .filter((value): value is string => Boolean(value && value.length > 0))
+            .join(' - ') || '-'
     };
 }
 
 function deriveRtcStatusLabel(
     status: Record<string, unknown> | undefined,
     latestDetails: Record<string, unknown> | undefined,
-    latestTopic?: string,
-): Pick<
-    RallarBrowserStatusSummary,
-    'rtcLabel' | 'rtcTone' | 'peerSummary' | 'rallarConnected'
-> {
+    latestTopic?: string
+): Pick<RallarBrowserStatusSummary, 'rtcLabel' | 'rtcTone' | 'peerSummary' | 'rallarConnected'> {
     const readyPeers = arrayCount(status?.readyPeerIds);
     const activePeers = arrayCount(status?.activePeerIds);
     const knownPeers = arrayCount(status?.knownPeerIds);
     const noReconnectable = arrayCount(status?.peerIdsWithNoReconnectableLanes);
-    const rallarConnected =
-        latestDetails?.rallarConnected === true ||
+    const rallarConnected = latestDetails?.rallarConnected === true ||
         stringValue(latestDetails?.status) === 'connected';
-    const closed =
-        latestTopic?.includes('closed') === true ||
+    const closed = latestTopic?.includes('closed') === true ||
         latestTopic?.includes('disconnect_completed') === true;
     const label = closed
         ? 'closed'
         : readyPeers > 0
-          ? 'ready'
-          : activePeers > 0
-            ? 'active'
-            : knownPeers > 0
-              ? 'peers known'
-              : rallarConnected
-                ? 'connected'
-                : status
-                  ? 'no peers'
-                  : 'not observed';
-    const tone =
-        label === 'ready' || label === 'active' || label === 'connected'
-            ? 'good'
-            : label === 'peers known' || label === 'no peers'
-              ? 'warn'
-              : label === 'closed'
-                ? 'muted'
-                : 'muted';
+        ? 'ready'
+        : activePeers > 0
+        ? 'active'
+        : knownPeers > 0
+        ? 'peers known'
+        : rallarConnected
+        ? 'connected'
+        : status
+        ? 'no peers'
+        : 'not observed';
+    const tone = label === 'ready' || label === 'active' || label === 'connected'
+        ? 'good'
+        : label === 'peers known' || label === 'no peers'
+        ? 'warn'
+        : label === 'closed'
+        ? 'muted'
+        : 'muted';
 
     return {
         rtcLabel: label,
         rtcTone: noReconnectable > 0 ? 'warn' : tone,
         peerSummary: `ready ${readyPeers} / active ${activePeers} / known ${knownPeers}`,
-        rallarConnected,
+        rallarConnected
     };
 }
 
 export function deriveRallarBrowserStatus(
     state: RallarBlackBoxTestState,
-    globalValues?: CommandCenterGlobalValues,
+    globalValues?: CommandCenterGlobalValues
 ): RallarBrowserStatusSummary {
-    const events =
-        selectRallarBlackBoxEvents(state).filter(isRallarBrowserEvent);
+    const events = selectRallarBlackBoxEvents(state).filter(isRallarBrowserEvent);
     const latestEvent = events.at(-1);
     const latestDetails = latestEvent
         ? eventPayloadDetails(latestEvent)
@@ -202,10 +189,9 @@ export function deriveRallarBrowserStatus(
     const rtc = deriveRtcStatusLabel(
         latestRtcStatus,
         latestRtcDetails,
-        latestRtcEvent?.topic,
+        latestRtcEvent?.topic
     );
-    const group =
-        stringValue(latestRtcDetails?.roomId) ??
+    const group = stringValue(latestRtcDetails?.roomId) ??
         stringValue(optionalRecord(latestRtcDetails?.roomRef).groupId) ??
         globalValues?.roomId ??
         state.currentConfig?.roomId ??
@@ -214,17 +200,14 @@ export function deriveRallarBrowserStatus(
     return {
         ...ws,
         ...rtc,
-        rtcDetail:
-            stringValue(latestRtcDetails?.laneId) ??
+        rtcDetail: stringValue(latestRtcDetails?.laneId) ??
             stringValue(latestRtcDetails?.typeId) ??
             '-',
         rtcGroup: group,
-        rtcConnection:
-            latestRtcEvent?.connection ??
+        rtcConnection: latestRtcEvent?.connection ??
             String(state.currentConfig?.defaults?.connection ?? 'default'),
-        rtcTransport:
-            latestRtcEvent?.transport ?? state.currentConfig?.transport ?? '-',
+        rtcTransport: latestRtcEvent?.transport ?? state.currentConfig?.transport ?? '-',
         latestTopic: latestEvent?.topic,
-        latestAtEpochMs: latestEvent?.atEpochMs,
+        latestAtEpochMs: latestEvent?.atEpochMs
     };
 }

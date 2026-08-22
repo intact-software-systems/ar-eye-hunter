@@ -1,78 +1,67 @@
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-    analyzeSourceFile,
-    buildRelativeTypeScriptGraph,
-    findDependencyCycles,
-    type SourceAnalysis,
-    type SourceImport,
-} from '../helpers/source-analysis';
+import { analyzeSourceFile, buildRelativeTypeScriptGraph, findDependencyCycles, type SourceAnalysis, type SourceImport } from '../helpers/source-analysis';
 
 const repositoryRoot = path.resolve(import.meta.dirname, '../../..');
 const appSourcePath = 'apps/rallar-black-box/src/App.tsx';
-const legacyExperienceSourcePath =
-    'apps/rallar-black-box/src/legacy/shell/LegacyExperience.tsx';
-const recipeConsoleSourcePath =
-    'apps/rallar-black-box/src/recipe-console';
-const runnerWorkspaceTabsSourcePath =
-    'apps/rallar-black-box/src/legacy/shell/tabs/RunnerWorkspaceTabPanels.tsx';
-const runnerAdvancedSourcePath =
-    'apps/rallar-black-box/src/legacy/runner/advanced/RunnerAdvancedPanel.tsx';
-const directConnectionTabsSourcePath =
-    'apps/rallar-black-box/src/legacy/shell/tabs/DirectConnectionTabPanels.tsx';
+const legacyExperienceSourcePath = 'apps/rallar-black-box/src/legacy/shell/LegacyExperience.tsx';
+const recipeConsoleSourcePath = 'apps/rallar-black-box/src/recipe-console';
+const runnerWorkspaceTabsSourcePath = 'apps/rallar-black-box/src/legacy/shell/tabs/RunnerWorkspaceTabPanels.tsx';
+const runnerAdvancedSourcePath = 'apps/rallar-black-box/src/legacy/runner/advanced/RunnerAdvancedPanel.tsx';
+const directConnectionTabsSourcePath = 'apps/rallar-black-box/src/legacy/shell/tabs/DirectConnectionTabPanels.tsx';
 
 const LEGACY_ROUTES = [
     [
         runnerWorkspaceTabsSourcePath,
         '../../runner/recipes/RunnerRecipesPanel.tsx',
-        'RunnerRecipesPanel',
+        'RunnerRecipesPanel'
     ],
     [
         runnerWorkspaceTabsSourcePath,
         '../../runner/runs/RunnerRunsPanel.tsx',
-        'RunnerRunsPanel',
+        'RunnerRunsPanel'
     ],
     [
         runnerWorkspaceTabsSourcePath,
         '../../runner/fleet/RunnerFleetPanel.tsx',
-        'RunnerFleetPanel',
+        'RunnerFleetPanel'
     ],
     [
         runnerWorkspaceTabsSourcePath,
         '../../runner/builder/FlowBuilderPanel.tsx',
-        'FlowBuilderPanel',
+        'FlowBuilderPanel'
     ],
     [
         runnerAdvancedSourcePath,
         '../distributed-recipes/DistributedRecipesPanel.tsx',
-        'DistributedRecipesPanel',
+        'DistributedRecipesPanel'
     ],
     [
         runnerAdvancedSourcePath,
         '../run-manager/RunManagerPanel.tsx',
-        'RunManagerPanel',
+        'RunManagerPanel'
     ],
     [
         runnerAdvancedSourcePath,
         '../shared-test/SharedTestPanel.tsx',
-        'SharedTestPanel',
+        'SharedTestPanel'
     ],
     [
         directConnectionTabsSourcePath,
         '../../diagnostics/rooms-clients/RoomsClientsPanel.tsx',
-        'RoomsClientsPanel',
+        'RoomsClientsPanel'
     ],
     [
         directConnectionTabsSourcePath,
         '../../diagnostics/topology/TopologyGraphPanel.tsx',
-        'TopologyGraphPanel',
+        'TopologyGraphPanel'
     ],
     [
         directConnectionTabsSourcePath,
         '../../diagnostics/rtc/RtcDiagnosticsPanel.tsx',
-        'RtcDiagnosticsPanel',
-    ],
+        'RtcDiagnosticsPanel'
+    ]
 ] as const;
 
 describe('Rallar Black Box legacy boundaries', () => {
@@ -82,14 +71,11 @@ describe('Rallar Black Box legacy boundaries', () => {
                 const analysis = analyzeSourceFile(filePath);
                 return [
                     ...analysis.imports.map((entry) => entry.specifier),
-                    ...analysis.exports.flatMap((entry) =>
-                        entry.specifier ? [entry.specifier] : [],
-                    ),
+                    ...analysis.exports.flatMap((entry) => entry.specifier ? [entry.specifier] : [])
                 ]
                     .filter(isLegacyImplementationSpecifier)
                     .map(
-                        (specifier) =>
-                            `${repositoryRelative(filePath)}: ${specifier}`,
+                        (specifier) => `${repositoryRelative(filePath)}: ${specifier}`
                     );
             });
 
@@ -105,8 +91,7 @@ describe('Rallar Black Box legacy boundaries', () => {
             analyses.set(ownerPath, analysis);
 
             const literalDynamicImports = analysis.dynamicImports.flatMap(
-                (entry) =>
-                    entry.literal && entry.specifier ? [entry.specifier] : [],
+                (entry) => entry.literal && entry.specifier ? [entry.specifier] : []
             );
             const eagerValueImports = analysis.imports
                 .filter(isRuntimeImport)
@@ -114,18 +99,18 @@ describe('Rallar Black Box legacy boundaries', () => {
 
             expect(
                 literalDynamicImports,
-                `${ownerPath}: ${seamName}`,
+                `${ownerPath}: ${seamName}`
             ).toContain(moduleSpecifier);
             expect(
                 eagerValueImports,
-                `${ownerPath}: ${seamName} remains lazy`,
+                `${ownerPath}: ${seamName} remains lazy`
             ).not.toContain(moduleSpecifier);
         }
     });
 
     it('keeps the reachable legacy TypeScript dependency graph acyclic', () => {
         const graph = buildRelativeTypeScriptGraph([
-            repositoryAbsolute(legacyExperienceSourcePath),
+            repositoryAbsolute(legacyExperienceSourcePath)
         ]);
 
         expect(findDependencyCycles(graph)).toEqual([]);
@@ -133,29 +118,25 @@ describe('Rallar Black Box legacy boundaries', () => {
 
     it('keeps application and legacy roots as composition boundaries', () => {
         const featurePanelNames: ReadonlySet<string> = new Set(
-            LEGACY_ROUTES.map(([, , seamName]) => seamName),
+            LEGACY_ROUTES.map(([, , seamName]) => seamName)
         );
 
         for (const sourcePath of [appSourcePath, legacyExperienceSourcePath]) {
             const analysis = analyzeSourceFile(repositoryAbsolute(sourcePath));
             const directFeatureDeclarations = analysis.topLevelDeclarations
                 .map((declaration) => declaration.name)
-                .filter((name) =>
-                    featurePanelNames.has(name) || /(?:Panel|Section)$/.test(name)
-                );
+                .filter((name) => featurePanelNames.has(name) || /(?:Panel|Section)$/.test(name));
             const directFeatureImports = analysis.imports
                 .flatMap(importedLocalNames)
-                .filter((name) =>
-                    featurePanelNames.has(name) || /(?:Panel|Section)$/.test(name)
-                );
+                .filter((name) => featurePanelNames.has(name) || /(?:Panel|Section)$/.test(name));
 
             expect(
                 directFeatureDeclarations,
-                `${sourcePath}: feature declarations`,
+                `${sourcePath}: feature declarations`
             ).toEqual([]);
             expect(
                 directFeatureImports,
-                `${sourcePath}: feature imports`,
+                `${sourcePath}: feature imports`
             ).toEqual([]);
         }
     });
@@ -175,7 +156,8 @@ function sourceFilesUnder(relativeDirectory: string): readonly string[] {
             const entryPath = path.join(directory, entry.name);
             if (entry.isDirectory()) {
                 pending.push(entryPath);
-            } else if (/\.(?:ts|tsx|mts|cts)$/.test(entry.name)) {
+            }
+            else if (/\.(?:ts|tsx|mts|cts)$/.test(entry.name)) {
                 sourceFiles.push(entryPath);
             }
         }
@@ -201,7 +183,7 @@ function importedLocalNames(entry: SourceImport): readonly string[] {
     return [
         ...(entry.defaultImport ? [entry.defaultImport] : []),
         ...(entry.namespaceImport ? [entry.namespaceImport] : []),
-        ...entry.namedImports.map((namedImport) => namedImport.local),
+        ...entry.namedImports.map((namedImport) => namedImport.local)
     ];
 }
 

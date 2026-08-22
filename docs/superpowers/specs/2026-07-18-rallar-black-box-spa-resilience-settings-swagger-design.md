@@ -83,12 +83,12 @@ A versioned Recipe Console preferences module will own a small local-storage doc
 
 ```ts
 type RecipeConsolePreferences = Readonly<{
-  controlUrl?: string;
-  apiBaseUrl?: string;
-  applicationId?: string;
-  workspaceId?: string;
-  groupId?: string;
-  controlReadTimeoutMs: number;
+    controlUrl?: string;
+    apiBaseUrl?: string;
+    applicationId?: string;
+    workspaceId?: string;
+    groupId?: string;
+    controlReadTimeoutMs: number;
 }>;
 ```
 

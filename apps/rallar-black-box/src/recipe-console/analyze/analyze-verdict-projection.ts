@@ -6,7 +6,7 @@ import {
     MAX_METADATA_BYTES,
     MAX_NESTED_EVIDENCE_ROWS,
     MAX_SUMMARY_BYTES,
-    projectOpaqueIdentifier,
+    projectOpaqueIdentifier
 } from './analyze-projection-bounds.ts';
 
 export function projectAnalyzeVerdict(verdict: RunVerdictView): RunVerdictView {
@@ -43,18 +43,18 @@ export function projectAnalyzeVerdict(verdict: RunVerdictView): RunVerdictView {
             ? { nextAction: boundedText(verdict.nextAction) }
             : {}),
         primaryEvidence: verdict.primaryEvidence.slice(0, MAX_ANALYSIS_ROWS).map(
-            row => ({
+            (row) => ({
                 label: boundedText(row.label, MAX_METADATA_BYTES),
                 value: boundedText(row.value, MAX_SUMMARY_BYTES),
                 tone: row.tone,
-                ...(row.detail ? { detail: boundedText(row.detail) } : {}),
-            }),
+                ...(row.detail ? { detail: boundedText(row.detail) } : {})
+            })
         ),
         successSignals: verdict.successSignals.slice(0, MAX_ANALYSIS_ROWS)
-            .map(value => boundedText(value, MAX_SUMMARY_BYTES)),
+            .map((value) => boundedText(value, MAX_SUMMARY_BYTES)),
         warningSignals: verdict.warningSignals.slice(0, MAX_ANALYSIS_ROWS)
-            .map(value => boundedText(value, MAX_SUMMARY_BYTES)),
-        causalTrail: verdict.causalTrail.slice(0, MAX_ANALYSIS_ROWS).map(row => ({
+            .map((value) => boundedText(value, MAX_SUMMARY_BYTES)),
+        causalTrail: verdict.causalTrail.slice(0, MAX_ANALYSIS_ROWS).map((row) => ({
             kind: row.kind,
             label: boundedText(row.label, MAX_METADATA_BYTES),
             detail: boundedText(row.detail, MAX_SUMMARY_BYTES),
@@ -79,7 +79,7 @@ export function projectAnalyzeVerdict(verdict: RunVerdictView): RunVerdictView {
                 ? { atEpochMs: finiteNumber(row.atEpochMs) }
                 : {}),
             evidence: row.evidence.slice(0, MAX_NESTED_EVIDENCE_ROWS)
-                .map(value => boundedText(value, MAX_METADATA_BYTES)),
-        })),
+                .map((value) => boundedText(value, MAX_METADATA_BYTES))
+        }))
     };
 }

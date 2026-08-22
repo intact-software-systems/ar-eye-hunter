@@ -1,14 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime.ts';
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control-protocol.ts';
-import {
-    RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
-    validateJsonSchema,
-} from '../../shared-test/rallar-bb-test/schema.ts';
+import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime.ts';
+import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema.ts';
 import type {
     RallarBlackBoxTestAssertCommand,
     RallarBlackBoxTestAssertResultValue,
-    RallarBlackBoxTestRuntime,
+    RallarBlackBoxTestRuntime
 } from '../../shared-test/rallar-bb-test/types.ts';
 
 function createDeterministicRuntime(): RallarBlackBoxTestRuntime {
@@ -16,21 +13,21 @@ function createDeterministicRuntime(): RallarBlackBoxTestRuntime {
     let sequence = 1;
     return createRallarBlackBoxTestRuntime({
         now: () => now++,
-        idFactory: (prefix) => `${prefix}-${sequence++}`,
+        idFactory: (prefix) => `${prefix}-${sequence++}`
     });
 }
 
 async function evaluateAssert(
     runtime: RallarBlackBoxTestRuntime,
-    assert: Omit<RallarBlackBoxTestAssertCommand, 'kind'>,
-): Promise<RallarBlackBoxTestAssertResultValue & Readonly<{ ok: boolean }>> {
+    assert: Omit<RallarBlackBoxTestAssertCommand, 'kind'>
+): Promise<RallarBlackBoxTestAssertResultValue & Readonly<{ ok: boolean; }>> {
     const result = await runtime.execute({
         kind: 'assert',
-        ...assert,
+        ...assert
     });
     return {
         ...(result.value as RallarBlackBoxTestAssertResultValue),
-        ok: result.ok,
+        ok: result.ok
     };
 }
 
@@ -45,71 +42,95 @@ describe('rallar-bb-test extended assert operators', () => {
                     topic: 'room.assert.evidence',
                     marker: 'assert-operators',
                     score: '17',
-                    items: ['alpha', 'beta', 'gamma'],
-                },
-            },
+                    items: ['alpha', 'beta', 'gamma']
+                }
+            }
         });
 
-        expect((await evaluateAssert(runtime, {
-            source: 'messages.0.payload.data.items.length',
-            operator: 'gt',
-            expected: 2,
-        })).ok).toBe(true);
-        expect((await evaluateAssert(runtime, {
-            source: 'messages.0.payload.data.items.length',
-            operator: 'lt',
-            expected: 4,
-        })).ok).toBe(true);
-        expect((await evaluateAssert(runtime, {
-            source: 'messages.0.payload.data.score',
-            operator: 'gt',
-            expected: 16,
-        })).ok).toBe(true);
-        expect((await evaluateAssert(runtime, {
-            source: 'messages.0.payload.data.score',
-            operator: 'between',
-            expected: [17, 20],
-        })).ok).toBe(true);
-        expect((await evaluateAssert(runtime, {
-            source: 'messages.0.payload.data.score',
-            operator: 'between',
-            expected: [18, 20],
-        })).ok).toBe(false);
-        expect((await evaluateAssert(runtime, {
-            source: 'messages.0.payload.data.score',
-            operator: 'between',
-            expected: [17],
-        })).ok).toBe(false);
-        expect((await evaluateAssert(runtime, {
-            source: 'messages.0.payload.data.items',
-            operator: 'length',
-            expected: 3,
-        })).ok).toBe(true);
-        expect((await evaluateAssert(runtime, {
-            source: 'messages.0.payload.data.marker',
-            operator: 'length',
-            expected: 'assert-operators'.length,
-        })).ok).toBe(true);
-        expect((await evaluateAssert(runtime, {
-            source: 'messages.0.payload.data.score',
-            operator: 'length',
-            expected: 2,
-        })).ok).toBe(true);
-        expect((await evaluateAssert(runtime, {
-            source: 'messages.0.payload.data.marker',
-            operator: 'matches',
-            expected: '^assert-',
-        })).ok).toBe(true);
-        expect((await evaluateAssert(runtime, {
-            source: 'messages.0.payload.data.marker',
-            operator: 'matches',
-            expected: '^[invalid',
-        })).ok).toBe(false);
-        expect((await evaluateAssert(runtime, {
-            source: 'messages.0.payload.data.items',
-            operator: 'matches',
-            expected: 'alpha',
-        })).ok).toBe(false);
+        expect(
+            (await evaluateAssert(runtime, {
+                source: 'messages.0.payload.data.items.length',
+                operator: 'gt',
+                expected: 2
+            })).ok
+        ).toBe(true);
+        expect(
+            (await evaluateAssert(runtime, {
+                source: 'messages.0.payload.data.items.length',
+                operator: 'lt',
+                expected: 4
+            })).ok
+        ).toBe(true);
+        expect(
+            (await evaluateAssert(runtime, {
+                source: 'messages.0.payload.data.score',
+                operator: 'gt',
+                expected: 16
+            })).ok
+        ).toBe(true);
+        expect(
+            (await evaluateAssert(runtime, {
+                source: 'messages.0.payload.data.score',
+                operator: 'between',
+                expected: [17, 20]
+            })).ok
+        ).toBe(true);
+        expect(
+            (await evaluateAssert(runtime, {
+                source: 'messages.0.payload.data.score',
+                operator: 'between',
+                expected: [18, 20]
+            })).ok
+        ).toBe(false);
+        expect(
+            (await evaluateAssert(runtime, {
+                source: 'messages.0.payload.data.score',
+                operator: 'between',
+                expected: [17]
+            })).ok
+        ).toBe(false);
+        expect(
+            (await evaluateAssert(runtime, {
+                source: 'messages.0.payload.data.items',
+                operator: 'length',
+                expected: 3
+            })).ok
+        ).toBe(true);
+        expect(
+            (await evaluateAssert(runtime, {
+                source: 'messages.0.payload.data.marker',
+                operator: 'length',
+                expected: 'assert-operators'.length
+            })).ok
+        ).toBe(true);
+        expect(
+            (await evaluateAssert(runtime, {
+                source: 'messages.0.payload.data.score',
+                operator: 'length',
+                expected: 2
+            })).ok
+        ).toBe(true);
+        expect(
+            (await evaluateAssert(runtime, {
+                source: 'messages.0.payload.data.marker',
+                operator: 'matches',
+                expected: '^assert-'
+            })).ok
+        ).toBe(true);
+        expect(
+            (await evaluateAssert(runtime, {
+                source: 'messages.0.payload.data.marker',
+                operator: 'matches',
+                expected: '^[invalid'
+            })).ok
+        ).toBe(false);
+        expect(
+            (await evaluateAssert(runtime, {
+                source: 'messages.0.payload.data.items',
+                operator: 'matches',
+                expected: 'alpha'
+            })).ok
+        ).toBe(false);
     });
 
     it('evaluates shape operators on lastResult and resultCache roots', async () => {
@@ -117,7 +138,7 @@ describe('rallar-bb-test extended assert operators', () => {
         await runtime.execute({
             kind: 'http.request',
             commandId: 'shape-source-http',
-            request: { url: 'https://api.example.test' },
+            request: { url: 'https://api.example.test' }
         });
 
         const cacheShape = await evaluateAssert(runtime, {
@@ -125,8 +146,8 @@ describe('rallar-bb-test extended assert operators', () => {
             operator: 'matchesShape',
             expected: {
                 fake: true,
-                kind: 'http.request',
-            },
+                kind: 'http.request'
+            }
         });
         expect(cacheShape.ok).toBe(true);
 
@@ -135,8 +156,8 @@ describe('rallar-bb-test extended assert operators', () => {
             operator: 'matchesShape',
             expected: {
                 fake: true,
-                kind: 'ws.send',
-            },
+                kind: 'ws.send'
+            }
         });
         expect(lastResultShape.ok).toBe(false);
     });
@@ -149,17 +170,17 @@ describe('rallar-bb-test extended assert operators', () => {
             payload: {
                 data: {
                     topic: 'room.assert.shape',
-                    items: ['expected-item', 'unexpected-item'],
-                },
-            },
+                    items: ['expected-item', 'unexpected-item']
+                }
+            }
         });
 
         const compatible = await evaluateAssert(runtime, {
             source: 'messages.0.payload.data',
             operator: 'matchesShape',
             expected: {
-                items: ['expected-item'],
-            },
+                items: ['expected-item']
+            }
         });
         expect(compatible.ok).toBe(true);
 
@@ -168,8 +189,8 @@ describe('rallar-bb-test extended assert operators', () => {
             operator: 'matchesShapeComplete',
             expected: {
                 topic: 'room.assert.shape',
-                items: ['expected-item'],
-            },
+                items: ['expected-item']
+            }
         });
         expect(complete.ok).toBe(false);
         expect(complete.passed).toBe(false);
@@ -179,8 +200,8 @@ describe('rallar-bb-test extended assert operators', () => {
             operator: 'matchesShapeComplete',
             expected: {
                 topic: 'room.assert.shape',
-                items: ['expected-item', 'unexpected-item'],
-            },
+                items: ['expected-item', 'unexpected-item']
+            }
         });
         expect(completeExact.ok).toBe(true);
     });
@@ -192,9 +213,9 @@ describe('rallar-bb-test extended assert operators', () => {
             topic: 'room.assert.secret',
             payload: {
                 data: {
-                    accessToken: 'live-secret-value',
-                },
-            },
+                    accessToken: 'live-secret-value'
+                }
+            }
         });
 
         const result = await runtime.execute({
@@ -203,14 +224,14 @@ describe('rallar-bb-test extended assert operators', () => {
             source: 'messages.0.payload.data',
             operator: 'matchesShape',
             expected: {
-                accessToken: 'value-that-cannot-match',
-            },
+                accessToken: 'value-that-cannot-match'
+            }
         });
 
         expect(result.ok).toBe(false);
         const value = result.value as RallarBlackBoxTestAssertResultValue;
-        expect((value.actual as { accessToken: string }).accessToken).toBe('<redacted>');
-        const details = result.error?.details as { actual: { accessToken: string } };
+        expect((value.actual as { accessToken: string; }).accessToken).toBe('<redacted>');
+        const details = result.error?.details as { actual: { accessToken: string; }; };
         expect(details.actual.accessToken).toBe('<redacted>');
     });
 
@@ -220,19 +241,19 @@ describe('rallar-bb-test extended assert operators', () => {
         const missingPathNotEquals = await evaluateAssert(runtime, {
             source: 'state.missing.path',
             operator: 'notEquals',
-            expected: 'anything',
+            expected: 'anything'
         });
         expect(missingPathNotEquals.ok).toBe(true);
 
         runtime.recordEvent({
             kind: 'message',
             topic: 'room.assert.quirks',
-            payload: { data: { score: '17' } },
+            payload: { data: { score: '17' } }
         });
         const stringGte = await evaluateAssert(runtime, {
             source: 'messages.0.payload.data.score',
             operator: 'gte',
-            expected: 17,
+            expected: 17
         });
         expect(stringGte.ok).toBe(false);
     });
@@ -244,30 +265,36 @@ describe('rallar-bb-test extended assert operators', () => {
                 commandId: `assert-${operator}`,
                 source: 'state.messages.length',
                 operator,
-                expected: 1,
+                expected: 1
             } as never)).toEqual({ ok: true });
 
-            expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
-                kind: 'assert',
-                commandId: `assert-${operator}`,
-                source: 'state.messages.length',
-                operator,
-                expected: 1,
-            }).ok).toBe(true);
+            expect(
+                validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+                    kind: 'assert',
+                    commandId: `assert-${operator}`,
+                    source: 'state.messages.length',
+                    operator,
+                    expected: 1
+                }).ok
+            ).toBe(true);
         }
 
-        expect(validateRallarBlackBoxTestCommand({
-            kind: 'assert',
-            commandId: 'assert-unknown',
-            source: 'state.messages.length',
-            operator: 'matchesShapeExact',
-        } as never).ok).toBe(false);
+        expect(
+            validateRallarBlackBoxTestCommand({
+                kind: 'assert',
+                commandId: 'assert-unknown',
+                source: 'state.messages.length',
+                operator: 'matchesShapeExact'
+            } as never).ok
+        ).toBe(false);
 
-        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
-            kind: 'assert',
-            commandId: 'assert-unknown',
-            source: 'state.messages.length',
-            operator: 'matchesShapeExact',
-        }).ok).toBe(false);
+        expect(
+            validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+                kind: 'assert',
+                commandId: 'assert-unknown',
+                source: 'state.messages.length',
+                operator: 'matchesShapeExact'
+            }).ok
+        ).toBe(false);
     });
 });

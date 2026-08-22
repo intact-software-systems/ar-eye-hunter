@@ -1,6 +1,6 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { CollapsiblePanelSection } from '../../shared/CollapsiblePanelSection.tsx';
 import { Metric } from '../../shared/Metric.tsx';
@@ -12,7 +12,7 @@ import {
     GROUP_SORT_OPTIONS,
     ROOMS_CLIENTS_ACTION_GROUPS,
     type ClientSortId,
-    type GroupSortId,
+    type GroupSortId
 } from './rooms-clients-contracts.ts';
 import type { RoomsClientsControllerModel } from './use-rooms-clients-controller.ts';
 
@@ -20,7 +20,7 @@ export function RoomsClientsView({
     state,
     bootstrap,
     authSession,
-    model,
+    model
 }: {
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
@@ -64,7 +64,7 @@ export function RoomsClientsView({
         missingClients,
         currentSessionInGroup,
         currentClientOnline,
-        expectedOtherClientVisible,
+        expectedOtherClientVisible
     } = model;
 
     return (
@@ -84,9 +84,7 @@ export function RoomsClientsView({
                         <span>API Base URL</span>
                         <input
                             value={apiBaseUrl}
-                            onChange={(event) =>
-                                setApiBaseUrl(event.target.value)
-                            }
+                            onChange={(event) => setApiBaseUrl(event.target.value)}
                         />
                     </label>
                     <label className="field">
@@ -96,9 +94,8 @@ export function RoomsClientsView({
                             onChange={(event) =>
                                 updateVariable(
                                     'applicationId',
-                                    event.target.value,
-                                )
-                            }
+                                    event.target.value
+                                )}
                         />
                     </label>
                     <label className="field">
@@ -108,18 +105,15 @@ export function RoomsClientsView({
                             onChange={(event) =>
                                 updateVariable(
                                     'workspaceId',
-                                    event.target.value,
-                                )
-                            }
+                                    event.target.value
+                                )}
                         />
                     </label>
                     <label className="field">
                         <span>Group</span>
                         <input
                             value={variables.groupId}
-                            onChange={(event) =>
-                                updateVariable('groupId', event.target.value)
-                            }
+                            onChange={(event) => updateVariable('groupId', event.target.value)}
                         />
                     </label>
                     <label className="field">
@@ -129,9 +123,8 @@ export function RoomsClientsView({
                             onChange={(event) =>
                                 updateVariable(
                                     'principalId',
-                                    event.target.value,
-                                )
-                            }
+                                    event.target.value
+                                )}
                         />
                     </label>
                     <label className="field">
@@ -141,18 +134,15 @@ export function RoomsClientsView({
                             onChange={(event) =>
                                 updateVariable(
                                     'clientInstanceId',
-                                    event.target.value,
-                                )
-                            }
+                                    event.target.value
+                                )}
                         />
                     </label>
                     <label className="field">
                         <span>Session</span>
                         <input
                             value={variables.sessionId}
-                            onChange={(event) =>
-                                updateVariable('sessionId', event.target.value)
-                            }
+                            onChange={(event) => updateVariable('sessionId', event.target.value)}
                         />
                     </label>
                     <label className="field">
@@ -161,9 +151,7 @@ export function RoomsClientsView({
                             type="number"
                             min={0}
                             value={timeoutMs}
-                            onChange={(event) =>
-                                setTimeoutMs(Number(event.target.value))
-                            }
+                            onChange={(event) => setTimeoutMs(Number(event.target.value))}
                         />
                     </label>
                 </div>
@@ -196,69 +184,55 @@ export function RoomsClientsView({
                         aria-label={`${category.title}. ${category.description}`}
                     >
                         <h3>{category.title}</h3>
-                        {category.categoryId === 'groups' ? (
-                            <div className="rooms-action-subsection">
-                                <h4>Rallar facade</h4>
-                                <div className="rooms-action-grid">
-                                    <button
-                                        type="button"
-                                        disabled={
-                                            Boolean(busyAction) ||
-                                            !authSession ||
-                                            bootstrap.providerMode !==
-                                                'browser-rallar'
-                                        }
-                                        onClick={() =>
-                                            void runDirectRoomsAction('refresh')
-                                        }
-                                    >
-                                        Rallar refresh
-                                    </button>
-                                    <button
-                                        type="button"
-                                        disabled={
-                                            Boolean(busyAction) ||
-                                            !authSession ||
-                                            bootstrap.providerMode !==
-                                                'browser-rallar'
-                                        }
-                                        onClick={() =>
-                                            void runDirectRoomsAction('create')
-                                        }
-                                    >
-                                        Rallar create group
-                                    </button>
-                                    <button
-                                        type="button"
-                                        disabled={
-                                            Boolean(busyAction) ||
-                                            !authSession ||
-                                            bootstrap.providerMode !==
-                                                'browser-rallar'
-                                        }
-                                        onClick={() =>
-                                            void runDirectRoomsAction('join')
-                                        }
-                                    >
-                                        Rallar join group
-                                    </button>
-                                    <button
-                                        type="button"
-                                        disabled={
-                                            Boolean(busyAction) ||
-                                            !authSession ||
-                                            bootstrap.providerMode !==
-                                                'browser-rallar'
-                                        }
-                                        onClick={() =>
-                                            void runDirectRoomsAction('leave')
-                                        }
-                                    >
-                                        Rallar leave group
-                                    </button>
+                        {category.categoryId === 'groups'
+                            ? (
+                                <div className="rooms-action-subsection">
+                                    <h4>Rallar facade</h4>
+                                    <div className="rooms-action-grid">
+                                        <button
+                                            type="button"
+                                            disabled={Boolean(busyAction) ||
+                                                !authSession ||
+                                                bootstrap.providerMode !==
+                                                    'browser-rallar'}
+                                            onClick={() => void runDirectRoomsAction('refresh')}
+                                        >
+                                            Rallar refresh
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={Boolean(busyAction) ||
+                                                !authSession ||
+                                                bootstrap.providerMode !==
+                                                    'browser-rallar'}
+                                            onClick={() => void runDirectRoomsAction('create')}
+                                        >
+                                            Rallar create group
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={Boolean(busyAction) ||
+                                                !authSession ||
+                                                bootstrap.providerMode !==
+                                                    'browser-rallar'}
+                                            onClick={() => void runDirectRoomsAction('join')}
+                                        >
+                                            Rallar join group
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={Boolean(busyAction) ||
+                                                !authSession ||
+                                                bootstrap.providerMode !==
+                                                    'browser-rallar'}
+                                            onClick={() => void runDirectRoomsAction('leave')}
+                                        >
+                                            Rallar leave group
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
-                        ) : null}
+                            )
+                            : null}
                         <div className="rooms-action-subsection">
                             <h4>Rallar Server REST</h4>
                             <div className="rooms-action-grid">
@@ -266,12 +240,8 @@ export function RoomsClientsView({
                                     <button
                                         key={action.actionId}
                                         type="button"
-                                        disabled={
-                                            Boolean(busyAction) || !authSession
-                                        }
-                                        onClick={() =>
-                                            void runPresetAction(action)
-                                        }
+                                        disabled={Boolean(busyAction) || !authSession}
+                                        onClick={() => void runPresetAction(action)}
                                     >
                                         {action.label}
                                     </button>
@@ -289,9 +259,7 @@ export function RoomsClientsView({
                     <input
                         type="checkbox"
                         checked={onlyGroupsWithMembers}
-                        onChange={(event) =>
-                            setOnlyGroupsWithMembers(event.target.checked)
-                        }
+                        onChange={(event) => setOnlyGroupsWithMembers(event.target.checked)}
                     />
                     <span>Groups with members</span>
                 </label>
@@ -299,24 +267,21 @@ export function RoomsClientsView({
                     <input
                         type="checkbox"
                         checked={onlyOnlineClients}
-                        onChange={(event) =>
-                            setOnlyOnlineClients(event.target.checked)
-                        }
+                        onChange={(event) => setOnlyOnlineClients(event.target.checked)}
                     />
                     <span>Online clients</span>
                 </label>
                 <span className="filter-summary">
-                    {visibleGroupRows.length}/{groupRows.length} groups,{' '}
-                    {visibleClientRows.length}/{clientRows.length} clients
+                    {visibleGroupRows.length}/{groupRows.length} groups, {visibleClientRows.length}/{clientRows.length}
+                    {' '}
+                    clients
                 </span>
                 <label className="field compact-field rooms-sort-field">
                     <span>Group sort</span>
                     <select
                         aria-label="Group sort"
                         value={groupSort}
-                        onChange={(event) =>
-                            setGroupSort(event.target.value as GroupSortId)
-                        }
+                        onChange={(event) => setGroupSort(event.target.value as GroupSortId)}
                     >
                         {GROUP_SORT_OPTIONS.map((option) => (
                             <option key={option.value} value={option.value}>
@@ -330,9 +295,7 @@ export function RoomsClientsView({
                     <select
                         aria-label="Client sort"
                         value={clientSort}
-                        onChange={(event) =>
-                            setClientSort(event.target.value as ClientSortId)
-                        }
+                        onChange={(event) => setClientSort(event.target.value as ClientSortId)}
                     >
                         {CLIENT_SORT_OPTIONS.map((option) => (
                             <option key={option.value} value={option.value}>
@@ -346,9 +309,7 @@ export function RoomsClientsView({
                     <input
                         aria-label="Expected other client"
                         value={expectedOtherClient}
-                        onChange={(event) =>
-                            setExpectedOtherClient(event.target.value)
-                        }
+                        onChange={(event) => setExpectedOtherClient(event.target.value)}
                     />
                 </label>
             </div>
@@ -356,7 +317,7 @@ export function RoomsClientsView({
                 <div className="workbench-error" role="status">
                     {redactRallarBlackBoxValue(
                         localError,
-                        uiRedactionOptions(state, authSession),
+                        uiRedactionOptions(state, authSession)
                     )}
                 </div>
             )}
@@ -513,8 +474,7 @@ export function RoomsClientsView({
                                     <div>
                                         <strong>{action.label}</strong>
                                         <small>
-                                            {formatTime(action.atEpochMs)} -{' '}
-                                            {formatDuration(action.durationMs)}
+                                            {formatTime(action.atEpochMs)} - {formatDuration(action.durationMs)}
                                         </small>
                                     </div>
                                     <span

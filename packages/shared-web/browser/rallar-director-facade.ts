@@ -2,10 +2,7 @@ import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-co
 import type { RallarMessageSendResult } from '@shared-web/browser/rallar-messages-facade.ts';
 import type { RallarTargetedSendResult } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
-import type {
-    RallarGroupDirectorAppointment,
-    RallarGroupDirectorFreshness,
-} from '@shared/api/group-director.ts';
+import type { RallarGroupDirectorAppointment, RallarGroupDirectorFreshness } from '@shared/api/group-director.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 export type RallarDirectorRole = 'none' | 'director' | 'client';
@@ -33,8 +30,8 @@ export type RallarDirectorStatus = Readonly<{
 export type RallarDirectorAppointOptions =
     & RallarScopedOperationOptions
     & Readonly<{
-    heartbeatTtlMs?: number;
-}>;
+        heartbeatTtlMs?: number;
+    }>;
 
 export type RallarDirectorResignOptions = RallarScopedOperationOptions;
 
@@ -43,7 +40,7 @@ export type RallarDirectorStatusOptions = Readonly<{
 }>;
 
 export type RallarDirectorStatusListener = (
-    status: RallarDirectorStatus,
+    status: RallarDirectorStatus
 ) => void | Promise<void>;
 
 export type RallarDirectorRelayEnvelope<T = unknown> = Readonly<{
@@ -79,91 +76,86 @@ export type RallarDirectorRelaySendResult = Readonly<{
     reason?: string;
 }>;
 
-export type RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot = TOutput> =
-    Readonly<{
-        roomId?: string;
-        roomRef?: GroupRef;
-        laneId?: string;
-        topicId?: string;
-        intentTypeId: string;
-        outputTypeId: string;
-        heartbeatTypeId?: string;
-        snapshotTypeId?: string;
-        syncRequestTypeId?: string;
-        heartbeatIntervalMs?: number;
-        snapshotIntervalMs?: number | false;
-        readSnapshot?: () => TSnapshot | undefined | Promise<TSnapshot | undefined>;
-        onIntent?: (
-            message: RallarDirectorRelayMessage<TIntent>,
-            relay: RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot>,
-        ) => void | TOutput | readonly TOutput[] | Promise<void | TOutput | readonly TOutput[]>;
-        onOutput?: (
-            message: RallarDirectorRelayMessage<TOutput>,
-        ) => void | Promise<void>;
-        onSnapshot?: (
-            message: RallarDirectorRelayMessage<TSnapshot>,
-        ) => void | Promise<void>;
-        onSyncRequest?: (
-            message: RallarDirectorRelayMessage<unknown>,
-            relay: RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot>,
-        ) => void | Promise<void>;
-    }>;
+export type RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot = TOutput> = Readonly<{
+    roomId?: string;
+    roomRef?: GroupRef;
+    laneId?: string;
+    topicId?: string;
+    intentTypeId: string;
+    outputTypeId: string;
+    heartbeatTypeId?: string;
+    snapshotTypeId?: string;
+    syncRequestTypeId?: string;
+    heartbeatIntervalMs?: number;
+    snapshotIntervalMs?: number | false;
+    readSnapshot?: () => TSnapshot | undefined | Promise<TSnapshot | undefined>;
+    onIntent?: (
+        message: RallarDirectorRelayMessage<TIntent>,
+        relay: RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot>
+    ) => void | TOutput | readonly TOutput[] | Promise<void | TOutput | readonly TOutput[]>;
+    onOutput?: (
+        message: RallarDirectorRelayMessage<TOutput>
+    ) => void | Promise<void>;
+    onSnapshot?: (
+        message: RallarDirectorRelayMessage<TSnapshot>
+    ) => void | Promise<void>;
+    onSyncRequest?: (
+        message: RallarDirectorRelayMessage<unknown>,
+        relay: RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot>
+    ) => void | Promise<void>;
+}>;
 
-export type RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot = TOutput> =
-    Readonly<{
-        status(): RallarDirectorStatus;
-        sendIntent(intent: TIntent): Promise<RallarDirectorRelaySendResult>;
-        sendOutput(output: TOutput): Promise<RallarDirectorRelaySendResult>;
-        sendHeartbeat(): Promise<RallarDirectorRelaySendResult>;
-        sendSnapshot(snapshot?: TSnapshot): Promise<RallarDirectorRelaySendResult>;
-        requestSync(payload?: unknown): Promise<RallarDirectorRelaySendResult>;
-        stop(): void;
-    }>;
+export type RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot = TOutput> = Readonly<{
+    status(): RallarDirectorStatus;
+    sendIntent(intent: TIntent): Promise<RallarDirectorRelaySendResult>;
+    sendOutput(output: TOutput): Promise<RallarDirectorRelaySendResult>;
+    sendHeartbeat(): Promise<RallarDirectorRelaySendResult>;
+    sendSnapshot(snapshot?: TSnapshot): Promise<RallarDirectorRelaySendResult>;
+    requestSync(payload?: unknown): Promise<RallarDirectorRelaySendResult>;
+    stop(): void;
+}>;
 
 export type RallarDirectorFacade = Readonly<{
     appoint(
         room?: string | GroupRef,
-        options?: RallarDirectorAppointOptions,
+        options?: RallarDirectorAppointOptions
     ): Promise<RallarDirectorStatus>;
     resign(
         room?: string | GroupRef,
-        options?: RallarDirectorResignOptions,
+        options?: RallarDirectorResignOptions
     ): Promise<RallarDirectorStatus>;
     status(
         room?: string | GroupRef,
-        options?: RallarDirectorStatusOptions,
+        options?: RallarDirectorStatusOptions
     ): RallarDirectorStatus;
     onStatus(listener: RallarDirectorStatusListener): RallarUnsubscribe;
     createRelay<TIntent, TOutput, TSnapshot = TOutput>(
-        config: RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot>,
+        config: RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot>
     ): RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot>;
 }>;
 
 export type CreateRallarDirectorFacadeOptions = RallarDirectorFacade;
 
 export function createRallarDirectorFacade(
-    operations: CreateRallarDirectorFacadeOptions,
+    operations: CreateRallarDirectorFacadeOptions
 ): RallarDirectorFacade {
     return {
         appoint: async (
             room,
-            options = {},
-        ): Promise<RallarDirectorStatus> =>
-            await operations.appoint(room, options),
+            options = {}
+        ): Promise<RallarDirectorStatus> => await operations.appoint(room, options),
         resign: async (
             room,
-            options = {},
-        ): Promise<RallarDirectorStatus> =>
-            await operations.resign(room, options),
+            options = {}
+        ): Promise<RallarDirectorStatus> => await operations.resign(room, options),
         status: (
             room,
-            options = {},
+            options = {}
         ): RallarDirectorStatus => operations.status(room, options),
-        onStatus: (listener): RallarUnsubscribe =>
-            operations.onStatus(listener),
+        onStatus: (listener): RallarUnsubscribe => operations.onStatus(listener),
         createRelay: <TIntent, TOutput, TSnapshot = TOutput>(
-            config: RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot>,
+            config: RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot>
         ): RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot> =>
-            operations.createRelay<TIntent, TOutput, TSnapshot>(config),
+            operations.createRelay<TIntent, TOutput, TSnapshot>(config)
     };
 }

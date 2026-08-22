@@ -11,32 +11,32 @@ const QRtcSessionState = {
     Connecting: 'Connecting',
     Open: 'Open',
     Closed: 'Closed',
-    Failed: 'Failed',
+    Failed: 'Failed'
 } as const;
 
 type QRtcSessionState = (typeof QRtcSessionState)[keyof typeof QRtcSessionState];
 
 export type QRtcDataExchanged = {
-    description: RTCSessionDescriptionInit | null
-    candidate: RTCIceCandidateInit | null
-}
+    description: RTCSessionDescriptionInit | null;
+    candidate: RTCIceCandidateInit | null;
+};
 
 export type QRtcOnDataChannelCallback = (event: RTCDataChannelEvent) => Promise<void>;
 export type QRtcOnTrackCallback = (event: RTCTrackEvent) => Promise<void>;
 export type QRtcOnRemoteStreamCallback = (stream: MediaStream, event: RTCTrackEvent) => Promise<void>;
 
 export type QRtcPeerConnectionStateCallbacks = {
-    onConnected?: () => Promise<void>
-    onDisconnected?: () => Promise<void>
-    onFailed?: () => Promise<void>
-    onClosed?: (peerId: string) => Promise<void>
-    onOffer?: (offer: RTCSessionDescriptionInit) => Promise<void>
-    onAnswer?: (answer: RTCSessionDescriptionInit) => Promise<void>
-    onIceCandidate?: (candidate: RTCIceCandidateInit) => Promise<void>
-    onDataChannel?: (channel: RTCDataChannel) => Promise<void>
-    onTrack?: (track: MediaStreamTrack) => Promise<void>
-    onRemoteStream?: (stream: MediaStream) => Promise<void>
-}
+    onConnected?: () => Promise<void>;
+    onDisconnected?: () => Promise<void>;
+    onFailed?: () => Promise<void>;
+    onClosed?: (peerId: string) => Promise<void>;
+    onOffer?: (offer: RTCSessionDescriptionInit) => Promise<void>;
+    onAnswer?: (answer: RTCSessionDescriptionInit) => Promise<void>;
+    onIceCandidate?: (candidate: RTCIceCandidateInit) => Promise<void>;
+    onDataChannel?: (channel: RTCDataChannel) => Promise<void>;
+    onTrack?: (track: MediaStreamTrack) => Promise<void>;
+    onRemoteStream?: (stream: MediaStream) => Promise<void>;
+};
 
 export type RtcCodecMimeType = string;
 
@@ -58,12 +58,12 @@ export type QRtcMediaPolicy = {
 };
 
 export type QRtcPeerConnectionInputDto = {
-    readonly sessionId: string
-    readonly token: string
-    readonly peerSessionId: string
-    readonly iceCandidates: IceConfig
-    readonly isPolite: boolean
-}
+    readonly sessionId: string;
+    readonly token: string;
+    readonly peerSessionId: string;
+    readonly iceCandidates: IceConfig;
+    readonly isPolite: boolean;
+};
 
 export type QRtcPeerConnectionDiagnostics = {
     readonly connectCallCount: number;
@@ -101,30 +101,30 @@ export type QRtcPeerConnectionDiagnostics = {
     readonly pendingIceCandidateQueueLength: number;
     readonly reconnectAttemptsInFlight: number;
     readonly hasReconnectTimer: boolean;
-}
+};
 
-type QRtcPeerConnectionDiagnosticCounters = Omit<
-    QRtcPeerConnectionDiagnostics,
-    'pendingIceCandidateQueueLength' | 'reconnectAttemptsInFlight' | 'hasReconnectTimer'
-> extends infer Counters
-    ? { -readonly [Key in keyof Counters]: Counters[Key] }
-    : never;
+type QRtcPeerConnectionDiagnosticCounters =
+    Omit<
+        QRtcPeerConnectionDiagnostics,
+        'pendingIceCandidateQueueLength' | 'reconnectAttemptsInFlight' | 'hasReconnectTimer'
+    > extends infer Counters ? { -readonly [Key in keyof Counters]: Counters[Key]; } :
+        never;
 
 type QRtcPeerConnectionStatus = {
-    state: QRtcSessionState | undefined
-    pc: RTCPeerConnection | undefined
-    localStream: MediaStream | undefined
-    localSenders: Map<string, RTCRtpSender>
-    remoteStreams: Map<string, MediaStream>
-    mediaPolicy: QRtcMediaPolicy | undefined
-    makingOffer: boolean
-    ignoreOffer: boolean
-    iceCandidateQueue: RTCIceCandidateInit[]
-    reconnectAttempts: number
-    reconnectTimer: ReturnType<typeof setTimeout> | undefined
-    disconnectTimer: ReturnType<typeof setTimeout> | undefined
-    callbacks: QRtcPeerConnectionStateCallbacks
-}
+    state: QRtcSessionState | undefined;
+    pc: RTCPeerConnection | undefined;
+    localStream: MediaStream | undefined;
+    localSenders: Map<string, RTCRtpSender>;
+    remoteStreams: Map<string, MediaStream>;
+    mediaPolicy: QRtcMediaPolicy | undefined;
+    makingOffer: boolean;
+    ignoreOffer: boolean;
+    iceCandidateQueue: RTCIceCandidateInit[];
+    reconnectAttempts: number;
+    reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    disconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    callbacks: QRtcPeerConnectionStateCallbacks;
+};
 
 export class QRtcPeerConnection {
     private readonly MAX_RECONNECT_ATTEMPTS: number = 5;
@@ -171,7 +171,7 @@ export class QRtcPeerConnection {
             ...this.diagnostics,
             pendingIceCandidateQueueLength: this.status.iceCandidateQueue.length,
             reconnectAttemptsInFlight: this.status.reconnectAttempts,
-            hasReconnectTimer: this.status.reconnectTimer !== undefined,
+            hasReconnectTimer: this.status.reconnectTimer !== undefined
         };
     }
 
@@ -200,14 +200,17 @@ export class QRtcPeerConnection {
     private closePeerConnectionIfPresent() {
         if (this.status?.pc) {
             try {
-                console.log('Closing peer connection for peer: ' + this.input.peerSessionId + ' (state: ' + this.status.state + ')');
+                console.log(
+                    'Closing peer connection for peer: ' + this.input.peerSessionId + ' (state: ' + this.status.state +
+                        ')'
+                );
 
                 const pc = this.status.pc;
                 this.diagnostics.closedPeerConnectionCount++;
 
                 // Stop all Transceivers/Tracks associated with this peer
                 pc.getTransceivers()
-                    .forEach(transceiver => {
+                    .forEach((transceiver) => {
                         if (transceiver.stop) {
                             transceiver.stop();
                         }
@@ -224,7 +227,7 @@ export class QRtcPeerConnection {
                 if (this.iceGatheringStateChangeListener) {
                     pc.removeEventListener(
                         'icegatheringstatechange',
-                        this.iceGatheringStateChangeListener,
+                        this.iceGatheringStateChangeListener
                     );
                     this.iceGatheringStateChangeListener = undefined;
                 }
@@ -238,8 +241,8 @@ export class QRtcPeerConnection {
                     clearTimeout(this.status.reconnectTimer);
                 }
                 this.clearDisconnectTimer();
-
-            } catch (e) {
+            }
+            catch (e) {
                 console.error('Error closing peer connection. Ignoring ...', e);
             }
         }
@@ -286,7 +289,10 @@ export class QRtcPeerConnection {
         if (this.isOpen() || !this.isReadyToConnect()) {
             this.diagnostics.connectIgnoredCount++;
             console.log('Ignore connect, peer connection in state: ' + this.status.state);
-            console.log('Peer connection is not ready to current peer connection state: ' + this.status.pc?.connectionState + ' current pc signaling state ' + this.status?.pc?.signalingState);
+            console.log(
+                'Peer connection is not ready to current peer connection state: ' + this.status.pc?.connectionState +
+                    ' current pc signaling state ' + this.status?.pc?.signalingState
+            );
             return;
         }
 
@@ -311,7 +317,9 @@ export class QRtcPeerConnection {
                 // automatically once the state returns to 'stable'.
                 if (this.status.makingOffer || pc.signalingState !== 'stable') {
                     this.diagnostics.negotiationSkippedCount++;
-                    console.log('Ignoring negotiation needed because we are already negotiating or not in a stable state');
+                    console.log(
+                        'Ignoring negotiation needed because we are already negotiating or not in a stable state'
+                    );
                     return;
                 }
 
@@ -328,14 +336,16 @@ export class QRtcPeerConnection {
                         candidate: null
                     }
                 );
-            } catch (err) {
+            }
+            catch (err) {
                 console.error('Negotiation error', err);
-            } finally {
+            }
+            finally {
                 this.status.makingOffer = false;
             }
         };
 
-        pc.onicecandidate = async event => {
+        pc.onicecandidate = async (event) => {
             if (event.candidate) {
                 try {
                     await this.sendSignal(
@@ -345,32 +355,33 @@ export class QRtcPeerConnection {
                             candidate: event.candidate
                         }
                     );
-                } catch (err) {
+                }
+                catch (err) {
                     console.error('ICE candidate signaling error', err);
                 }
-            } else {
+            }
+            else {
                 console.log('ICE Gathering Complete');
             }
         };
 
-        pc.ondatachannel =
-            async event => {
-                console.log('Data channel created: ' + event.channel.label);
+        pc.ondatachannel = async (event) => {
+            console.log('Data channel created: ' + event.channel.label);
 
-                for (const callback of this.onDataChannelCallbacks.values()) {
-                    try {
-                        await callback(event);
-                    } catch (e) {
-                        console.error('Callback onDataChannel failed:', e);
-                    }
+            for (const callback of this.onDataChannelCallbacks.values()) {
+                try {
+                    await callback(event);
                 }
-            };
+                catch (e) {
+                    console.error('Callback onDataChannel failed:', e);
+                }
+            }
+        };
 
         pc.ontrack = async (event) => {
-            const stream: MediaStream | undefined =
-                event.streams && event.streams.length > 0
-                    ? event.streams[0]
-                    : undefined;
+            const stream: MediaStream | undefined = event.streams && event.streams.length > 0
+                ? event.streams[0]
+                : undefined;
 
             if (stream) {
                 this.status.remoteStreams.set(stream.id, stream);
@@ -378,7 +389,8 @@ export class QRtcPeerConnection {
                 for (const cb of this.onRemoteStreamCallbacks.values()) {
                     try {
                         await cb(stream, event);
-                    } catch (e) {
+                    }
+                    catch (e) {
                         console.error('Callback onRemoteStream failed:', e);
                     }
                 }
@@ -387,7 +399,8 @@ export class QRtcPeerConnection {
             for (const cb of this.onTrackCallbacks.values()) {
                 try {
                     await cb(event);
-                } catch (e) {
+                }
+                catch (e) {
                     console.error('Callback onTrack failed:', e);
                 }
             }
@@ -432,7 +445,7 @@ export class QRtcPeerConnection {
                     this.clearDisconnectTimer();
 
                     this.handleReconnect()
-                        .catch(err => console.error('Error handling reconnect', err));
+                        .catch((err) => console.error('Error handling reconnect', err));
 
                     callbacks.onFailed?.();
                     break;
@@ -463,13 +476,13 @@ export class QRtcPeerConnection {
         };
         pc.addEventListener(
             'icegatheringstatechange',
-            this.iceGatheringStateChangeListener,
+            this.iceGatheringStateChangeListener
         );
     }
 
     createDataChannel(
         label: string,
-        dataChannelDict?: RTCDataChannelInit,
+        dataChannelDict?: RTCDataChannelInit
     ): RTCDataChannel {
         const pc = this.status.pc;
         if (!pc) {
@@ -482,12 +495,11 @@ export class QRtcPeerConnection {
     }
 
     async handleSignal(signal: QRtcSignalingType, msg: QRtcDataExchanged) {
-        const run =
-            this.signalingChain
-                .then(
-                    async () => await this.processSignal(signal, msg)
-                );
-        this.signalingChain = run.catch(err => {
+        const run = this.signalingChain
+            .then(
+                async () => await this.processSignal(signal, msg)
+            );
+        this.signalingChain = run.catch((err) => {
             this.diagnostics.inboundSignalingErrorCount++;
             console.error('Signaling chain error', err);
         });
@@ -514,7 +526,7 @@ export class QRtcPeerConnection {
                     this.diagnostics.staleAnswerIgnoredCount++;
                     console.warn(
                         'Ignoring stale answer from ' + this.input.peerSessionId +
-                        ' because signaling state is ' + pc.signalingState,
+                            ' because signaling state is ' + pc.signalingState
                     );
                     break;
                 }
@@ -546,12 +558,16 @@ export class QRtcPeerConnection {
 
                 if (offerCollision) {
                     this.diagnostics.politeOfferRollbackCount++;
-                    console.log('Accepting offer from ' + this.input.peerSessionId + ' because we are polite = ' + this.input.isPolite);
+                    console.log(
+                        'Accepting offer from ' + this.input.peerSessionId + ' because we are polite = ' +
+                            this.input.isPolite
+                    );
                     await Promise.all([
                         pc.setLocalDescription({ type: 'rollback' }),
                         pc.setRemoteDescription(msg.description)
                     ]);
-                } else {
+                }
+                else {
                     await pc.setRemoteDescription(msg.description);
                 }
 
@@ -565,7 +581,7 @@ export class QRtcPeerConnection {
                     QRtcSignalingType.Answer,
                     {
                         description: pc.localDescription,
-                        candidate: null,
+                        candidate: null
                     }
                 );
                 break;
@@ -580,7 +596,9 @@ export class QRtcPeerConnection {
 
                 if (this.status.ignoreOffer) {
                     this.diagnostics.ignoredIceCandidateForIgnoredOfferCount++;
-                    console.log('Ignoring ICE candidate from ' + this.input.peerSessionId + ' because we are not polite');
+                    console.log(
+                        'Ignoring ICE candidate from ' + this.input.peerSessionId + ' because we are not polite'
+                    );
                     return;
                 }
 
@@ -588,11 +606,13 @@ export class QRtcPeerConnection {
                     if (pc.remoteDescription && pc.remoteDescription.type) {
                         await pc.addIceCandidate(msg.candidate);
                         this.diagnostics.addedIceCandidateCount++;
-                    } else {
+                    }
+                    else {
                         this.status.iceCandidateQueue.push(msg.candidate);
                         this.diagnostics.queuedIceCandidateCount++;
                     }
-                } catch (err) {
+                }
+                catch (err) {
                     if (!this.status.ignoreOffer) {
                         throw err;
                     }
@@ -612,7 +632,8 @@ export class QRtcPeerConnection {
                 await pc.addIceCandidate(candidate);
                 this.diagnostics.addedIceCandidateCount++;
                 this.diagnostics.flushedIceCandidateCount++;
-            } catch (e) {
+            }
+            catch (e) {
                 console.warn('Failed to add queued candidate:', e);
             }
         }
@@ -639,43 +660,41 @@ export class QRtcPeerConnection {
         const delay = Math.pow(2, this.status.reconnectAttempts) * 1000;
         console.log(`Try again ${this.status.reconnectAttempts} in ${delay / 1000} seconds...`);
 
-        this.status.reconnectTimer =
-            setTimeout(
-                async () => {
-                    this.status.reconnectTimer = undefined;
+        this.status.reconnectTimer = setTimeout(
+            async () => {
+                this.status.reconnectTimer = undefined;
 
-                    try {
-                        // Sjekk om vi ble koblet til i ventetiden (f.eks. ved et innkommende anrop)
-                        if (this.isConnectedOrInProgress(this.status.pc)) {
-                            this.diagnostics.iceRestartSkippedConnectedCount++;
-                            this.status.reconnectAttempts = 0;
-                            return;
-                        }
-
-                        console.log('Performing ICE restart...');
-
-                        // Enqueue to avoid race conditions
-                        this.signalingChain =
-                            this.signalingChain
-                                .then(
-                                    async () => {
-                                        if (this.isConnectedOrInProgress(this.status.pc)) {
-                                            this.diagnostics.iceRestartSkippedConnectedCount++;
-                                            this.status.reconnectAttempts = 0;
-                                            return;
-                                        }
-
-                                        this.status?.pc?.restartIce();
-                                        this.diagnostics.iceRestartCount++;
-                                    }
-                                );
-
-                    } catch (err) {
-                        console.error('Error during reconnect:', err);
+                try {
+                    // Sjekk om vi ble koblet til i ventetiden (f.eks. ved et innkommende anrop)
+                    if (this.isConnectedOrInProgress(this.status.pc)) {
+                        this.diagnostics.iceRestartSkippedConnectedCount++;
+                        this.status.reconnectAttempts = 0;
+                        return;
                     }
-                },
-                delay
-            );
+
+                    console.log('Performing ICE restart...');
+
+                    // Enqueue to avoid race conditions
+                    this.signalingChain = this.signalingChain
+                        .then(
+                            async () => {
+                                if (this.isConnectedOrInProgress(this.status.pc)) {
+                                    this.diagnostics.iceRestartSkippedConnectedCount++;
+                                    this.status.reconnectAttempts = 0;
+                                    return;
+                                }
+
+                                this.status?.pc?.restartIce();
+                                this.diagnostics.iceRestartCount++;
+                            }
+                        );
+                }
+                catch (err) {
+                    console.error('Error during reconnect:', err);
+                }
+            },
+            delay
+        );
     }
 
     private isConnectedOrInProgress(pc: RTCPeerConnection | undefined): boolean {
@@ -700,14 +719,13 @@ export class QRtcPeerConnection {
             payload: payload
         };
 
-        const run =
-            this.outboundSignalingChain
-                .then(async () => {
-                    console.log('Sending signal: ' + JSON.stringify(signal));
-                    await this.signaler.send(signal);
-                });
+        const run = this.outboundSignalingChain
+            .then(async () => {
+                console.log('Sending signal: ' + JSON.stringify(signal));
+                await this.signaler.send(signal);
+            });
 
-        this.outboundSignalingChain = run.catch(err => {
+        this.outboundSignalingChain = run.catch((err) => {
             this.diagnostics.outboundSignalingErrorCount++;
             console.error('Outbound signaling chain error', err);
         });
@@ -758,18 +776,17 @@ export class QRtcPeerConnection {
         }
 
         this.diagnostics.disconnectTimerScheduledCount++;
-        this.status.disconnectTimer =
-            setTimeout(
-                () => {
-                    this.status.disconnectTimer = undefined;
-                    this.diagnostics.disconnectTimerFiredCount++;
-                    if (pc.connectionState === 'disconnected') {
-                        this.handleReconnect()
-                            .catch(err => console.error('Error handling reconnect', err));
-                    }
-                },
-                this.DISCONNECT_TIMEOUT_MSECS
-            );
+        this.status.disconnectTimer = setTimeout(
+            () => {
+                this.status.disconnectTimer = undefined;
+                this.diagnostics.disconnectTimerFiredCount++;
+                if (pc.connectionState === 'disconnected') {
+                    this.handleReconnect()
+                        .catch((err) => console.error('Error handling reconnect', err));
+                }
+            },
+            this.DISCONNECT_TIMEOUT_MSECS
+        );
     }
 
     private clearDisconnectTimer(): void {
@@ -796,7 +813,8 @@ export class QRtcPeerConnection {
 
             if (sender) {
                 await sender.replaceTrack(track);
-            } else {
+            }
+            else {
                 const newSender = pc.addTrack(track, stream);
                 this.status.localSenders.set(key, newSender);
             }
@@ -838,13 +856,14 @@ export class QRtcPeerConnection {
         const tracks = kind === 'all'
             ? stream.getTracks()
             : kind === 'audio'
-                ? stream.getAudioTracks()
-                : stream.getVideoTracks();
+            ? stream.getAudioTracks()
+            : stream.getVideoTracks();
 
         for (const t of tracks) {
             try {
                 t.stop();
-            } catch {
+            }
+            catch {
                 // ignore
             }
         }
@@ -880,7 +899,7 @@ export class QRtcPeerConnection {
                     maxBitrateBps: policy.maxVideoBitrateBps,
                     maxFramerate: policy.maxVideoFramerate,
                     scaleResolutionDownBy: policy.scaleResolutionDownBy,
-                    degradationPreference: policy.degradationPreference,
+                    degradationPreference: policy.degradationPreference
                 }
             );
         }
@@ -889,7 +908,7 @@ export class QRtcPeerConnection {
             void this.applySenderEncodingParams(
                 'audio',
                 {
-                    maxBitrateBps: policy.maxAudioBitrateBps,
+                    maxBitrateBps: policy.maxAudioBitrateBps
                 }
             );
         }
@@ -897,15 +916,17 @@ export class QRtcPeerConnection {
 
     private ensureTransceiversForPolicy(policy: QRtcMediaPolicy): void {
         const pc = this.status.pc;
-        if (!pc) return;
+        if (!pc) {
+            return;
+        }
 
         const needAudio = !!(policy.preferredAudioCodecs && policy.preferredAudioCodecs.length > 0);
         const needVideo = !!(policy.preferredVideoCodecs && policy.preferredVideoCodecs.length > 0);
 
-        if (needAudio && !pc.getTransceivers().some(t => t.receiver?.track?.kind === 'audio')) {
+        if (needAudio && !pc.getTransceivers().some((t) => t.receiver?.track?.kind === 'audio')) {
             pc.addTransceiver('audio', { direction: 'sendrecv' });
         }
-        if (needVideo && !pc.getTransceivers().some(t => t.receiver?.track?.kind === 'video')) {
+        if (needVideo && !pc.getTransceivers().some((t) => t.receiver?.track?.kind === 'video')) {
             pc.addTransceiver('video', { direction: 'sendrecv' });
         }
     }
@@ -926,21 +947,21 @@ export class QRtcPeerConnection {
 
         const codecs = caps.codecs
             .filter(
-                c => preferredMimeTypes.includes(c.mimeType)
+                (c) => preferredMimeTypes.includes(c.mimeType)
             )
             .sort(
-                (a, b) =>
-                    preferredMimeTypes.indexOf(a.mimeType) - preferredMimeTypes.indexOf(b.mimeType)
+                (a, b) => preferredMimeTypes.indexOf(a.mimeType) - preferredMimeTypes.indexOf(b.mimeType)
             );
 
-        const transceiver = pc.getTransceivers().find(t => t.receiver?.track?.kind === kind);
+        const transceiver = pc.getTransceivers().find((t) => t.receiver?.track?.kind === kind);
         if (!transceiver || codecs.length === 0) {
             return;
         }
 
         try {
             transceiver.setCodecPreferences(codecs);
-        } catch (e) {
+        }
+        catch (e) {
             console.warn('setCodecPreferences not supported or failed', e);
         }
     }
@@ -959,7 +980,7 @@ export class QRtcPeerConnection {
             return;
         }
 
-        const sender = pc.getSenders().find(s => s.track?.kind === kind);
+        const sender = pc.getSenders().find((s) => s.track?.kind === kind);
         if (!sender) {
             return;
         }
@@ -974,8 +995,12 @@ export class QRtcPeerConnection {
         }
 
         if (kind === 'video') {
-            if (args.maxFramerate !== undefined) enc.maxFramerate = args.maxFramerate;
-            if (args.scaleResolutionDownBy !== undefined) enc.scaleResolutionDownBy = args.scaleResolutionDownBy;
+            if (args.maxFramerate !== undefined) {
+                enc.maxFramerate = args.maxFramerate;
+            }
+            if (args.scaleResolutionDownBy !== undefined) {
+                enc.scaleResolutionDownBy = args.scaleResolutionDownBy;
+            }
 
             if (args.degradationPreference !== undefined) {
                 // Best-effort: supported in many browsers but not always typed
@@ -985,7 +1010,8 @@ export class QRtcPeerConnection {
 
         try {
             await sender.setParameters(params);
-        } catch (e) {
+        }
+        catch (e) {
             console.warn('setParameters failed', e);
         }
     }
@@ -1024,6 +1050,6 @@ function createInitialDiagnostics(): QRtcPeerConnectionDiagnosticCounters {
         disconnectTimerClearedCount: 0,
         disconnectTimerFiredCount: 0,
         outboundSignalingErrorCount: 0,
-        inboundSignalingErrorCount: 0,
+        inboundSignalingErrorCount: 0
     };
 }

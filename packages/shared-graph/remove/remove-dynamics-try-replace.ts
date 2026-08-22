@@ -1,14 +1,14 @@
 import { compareVertexIds, TreeGraph, VertexId, VertexState, VertexType } from '../graph-props.ts';
-import type { RemoveDynamicsContext, RemoveResult, } from './remove-dynamics-types.ts';
-import { degreeLimitOf, degreeOf, edgeWeightOf, neighborsOf, } from './remove-dynamics-helpers.ts';
-import { connectMCE, connectMDE, connectSearchMCE, connectSearchMDE, } from './tree-dynamics-connect.ts';
-import { getNeighborsOptimizeSP } from './remove-dynamics-optimize-neighbors.ts';
-import { CoreSelectionAlgo, findWCNodes } from '../graph/steiner-core-algorithms.ts';
 import { cloneGraph } from '../graph/graph-algs.ts';
+import { CoreSelectionAlgo, findWCNodes } from '../graph/steiner-core-algorithms.ts';
+import { degreeLimitOf, degreeOf, edgeWeightOf, neighborsOf } from './remove-dynamics-helpers.ts';
+import { getNeighborsOptimizeSP } from './remove-dynamics-optimize-neighbors.ts';
+import type { RemoveDynamicsContext, RemoveResult } from './remove-dynamics-types.ts';
+import { connectMCE, connectMDE, connectSearchMCE, connectSearchMDE } from './tree-dynamics-connect.ts';
 
 export function rvTryReplace(
     ctx: RemoveDynamicsContext,
-    coreSelectionAlgo: CoreSelectionAlgo = CoreSelectionAlgo.CENTER_SELECTION,
+    coreSelectionAlgo: CoreSelectionAlgo = CoreSelectionAlgo.CENTER_SELECTION
 ): RemoveResult {
     const actionDegree = degreeOf(ctx.groupGraph, ctx.actionVertexId);
 
@@ -26,20 +26,20 @@ export function rvTryReplace(
 
     return {
         graph: cloneGraph(ctx.groupGraph),
-        changed: false,
+        changed: false
     };
 }
 
 function rvTryReplaceHighDegree(
     ctx: RemoveDynamicsContext,
-    coreSelectionAlgo: CoreSelectionAlgo,
+    coreSelectionAlgo: CoreSelectionAlgo
 ): RemoveResult {
     const next = cloneGraph(ctx.groupGraph);
 
     const {
         adjacentMembers,
         adjacentSteiner,
-        removableEdgeKeys,
+        removableEdgeKeys
     } = getNeighborsOptimizeSP(next, ctx.actionVertexId);
 
     adjacentMembers.delete(ctx.actionVertexId);
@@ -51,8 +51,7 @@ function rvTryReplaceHighDegree(
     }
 
     const steinerDegreeLimit = next.getAttributes().degreeLimitSteiner;
-    const numNewSP =
-        Math.ceil(adjacentMembers.size / Math.max(1, steinerDegreeLimit)) -
+    const numNewSP = Math.ceil(adjacentMembers.size / Math.max(1, steinerDegreeLimit)) -
         adjacentSteiner.size;
 
     let newSPSet = new Set<VertexId>();
@@ -64,7 +63,7 @@ function rvTryReplaceHighDegree(
             union(adjacentMembers, new Set([ctx.actionVertexId])),
             nextNodeSet(next),
             numNewSP,
-            coreSelectionAlgo,
+            coreSelectionAlgo
         );
 
         newSPSet = new Set(chosen);
@@ -76,14 +75,14 @@ function rvTryReplaceHighDegree(
         ctx.globalGraph,
         adjacentMembers,
         testVertices,
-        next,
+        next
     );
 
     const connectV = selectIntersectionVertices(
         ranked,
         ctx.globalGraph,
         next,
-        adjacentMembers.size,
+        adjacentMembers.size
     );
 
     const removeSteiner = difference(adjacentSteiner, connectV);
@@ -113,10 +112,10 @@ function rvTryReplaceHighDegree(
             const result = connectSearchMDE(
                 {
                     globalGraph: ctx.globalGraph,
-                    groupGraph: next,
+                    groupGraph: next
                 },
                 new Set(totalToConnect),
-                new Set<VertexId>(),
+                new Set<VertexId>()
             );
             return pruneLeafSteinerConnectors(result.graph, connectV);
         }
@@ -125,10 +124,10 @@ function rvTryReplaceHighDegree(
             const result = connectMDE(
                 {
                     globalGraph: ctx.globalGraph,
-                    groupGraph: next,
+                    groupGraph: next
                 },
                 new Set(totalToConnect),
-                new Set<VertexId>(),
+                new Set<VertexId>()
             );
             return pruneLeafSteinerConnectors(result.graph, connectV);
         }
@@ -139,10 +138,10 @@ function rvTryReplaceHighDegree(
             const result = connectSearchMCE(
                 {
                     globalGraph: ctx.globalGraph,
-                    groupGraph: next,
+                    groupGraph: next
                 },
                 remaining,
-                new Set<VertexId>([seeded]),
+                new Set<VertexId>([seeded])
             );
             return pruneLeafSteinerConnectors(result.graph, connectV);
         }
@@ -154,10 +153,10 @@ function rvTryReplaceHighDegree(
             const result = connectMCE(
                 {
                     globalGraph: ctx.globalGraph,
-                    groupGraph: next,
+                    groupGraph: next
                 },
                 remaining,
-                new Set<VertexId>([seeded]),
+                new Set<VertexId>([seeded])
             );
             return pruneLeafSteinerConnectors(result.graph, connectV);
         }
@@ -168,16 +167,20 @@ function rankIntersectionVertices(
     globalGraph: TreeGraph,
     adjacentMembers: ReadonlySet<VertexId>,
     testVertices: ReadonlySet<VertexId>,
-    currentGraph: TreeGraph,
-): Array<{ node: VertexId; sumEdges: number }> {
-    const ranked: Array<{ node: VertexId; sumEdges: number }> = [];
+    currentGraph: TreeGraph
+): Array<{ node: VertexId; sumEdges: number; }> {
+    const ranked: Array<{ node: VertexId; sumEdges: number; }> = [];
 
     for (const candidate of testVertices) {
         let sumEdges = 0;
 
         for (const member of adjacentMembers) {
-            if (candidate === member) continue;
-            if (!globalGraph.hasEdge(candidate, member)) continue;
+            if (candidate === member) {
+                continue;
+            }
+            if (!globalGraph.hasEdge(candidate, member)) {
+                continue;
+            }
 
             sumEdges += edgeWeightOf(globalGraph, candidate, member);
         }
@@ -190,18 +193,17 @@ function rankIntersectionVertices(
 }
 
 function selectIntersectionVertices(
-    ranked: ReadonlyArray<{ node: VertexId; sumEdges: number }>,
+    ranked: ReadonlyArray<{ node: VertexId; sumEdges: number; }>,
     globalGraph: TreeGraph,
     currentGraph: TreeGraph,
-    adjacentMemberCount: number,
+    adjacentMemberCount: number
 ): Set<VertexId> {
     const connectV = new Set<VertexId>();
     let sumODCapacity = 0;
 
     for (const entry of ranked) {
         const node = entry.node;
-        const odCapacity =
-            degreeLimitOf(globalGraph, node) -
+        const odCapacity = degreeLimitOf(globalGraph, node) -
             (currentGraph.hasNode(node) ? degreeOf(currentGraph, node) : 0);
 
         if (odCapacity > 1) {
@@ -209,8 +211,7 @@ function selectIntersectionVertices(
             sumODCapacity += odCapacity;
         }
 
-        const connectInterconnectOD =
-            connectV.size <= 1 ? 0 : ((connectV.size - 2) * 2) + 2;
+        const connectInterconnectOD = connectV.size <= 1 ? 0 : ((connectV.size - 2) * 2) + 2;
 
         if (sumODCapacity >= adjacentMemberCount + connectInterconnectOD) {
             break;
@@ -222,12 +223,14 @@ function selectIntersectionVertices(
 
 function pruneLeafSteinerConnectors(
     graph: TreeGraph,
-    connectV: ReadonlySet<VertexId>,
+    connectV: ReadonlySet<VertexId>
 ): RemoveResult {
     const next = cloneGraph(graph);
 
     for (const v of connectV) {
-        if (!next.hasNode(v)) continue;
+        if (!next.hasNode(v)) {
+            continue;
+        }
 
         const attrs = next.getNodeAttributes(v);
         if (attrs.state !== VertexState.MEMBER && next.degree(v) <= 1) {
@@ -237,29 +240,31 @@ function pruneLeafSteinerConnectors(
 
     return {
         graph: next,
-        changed: true,
+        changed: true
     };
 }
 
 function addSteinerVertexFromGlobal(
     graph: TreeGraph,
     globalGraph: TreeGraph,
-    vertexId: VertexId,
+    vertexId: VertexId
 ): void {
-    if (graph.hasNode(vertexId)) return;
+    if (graph.hasNode(vertexId)) {
+        return;
+    }
 
     const attrs = globalGraph.getNodeAttributes(vertexId);
     graph.addNode(vertexId, {
         ...attrs,
         type: VertexType.CORE,
         state: VertexState.STEINER,
-        degreeLimit: graph.getAttributes().degreeLimitSteiner,
+        degreeLimit: graph.getAttributes().degreeLimitSteiner
     });
 }
 
 function seedHighestDegreeVertex(
     graph: TreeGraph,
-    vertices: ReadonlySet<VertexId>,
+    vertices: ReadonlySet<VertexId>
 ): VertexId {
     const sorted = [...vertices].sort((a, b) => {
         const da = graph.hasNode(a) ? graph.degree(a) : 0;
@@ -282,14 +287,18 @@ function seedHighestDegreeVertex(
 
 function union<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): Set<T> {
     const out = new Set<T>(a);
-    for (const x of b) out.add(x);
+    for (const x of b) {
+        out.add(x);
+    }
     return out;
 }
 
 function difference<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): Set<T> {
     const out = new Set<T>();
     for (const x of a) {
-        if (!b.has(x)) out.add(x);
+        if (!b.has(x)) {
+            out.add(x);
+        }
     }
     return out;
 }
@@ -306,7 +315,7 @@ function rvLeafLocal(ctx: RemoveDynamicsContext): RemoveResult {
 
     return {
         graph: next,
-        changed: true,
+        changed: true
     };
 }
 
@@ -316,7 +325,7 @@ function rvODTwoLocal(ctx: RemoveDynamicsContext): RemoveResult {
 
     if (neighbors.length !== 2) {
         throw new Error(
-            `rvODTwo requires degree 2 for ${ctx.actionVertexId}, got ${neighbors.length}`,
+            `rvODTwo requires degree 2 for ${ctx.actionVertexId}, got ${neighbors.length}`
         );
     }
 
@@ -327,12 +336,12 @@ function rvODTwoLocal(ctx: RemoveDynamicsContext): RemoveResult {
         next.addEdge(a, b, {
             from: a,
             to: b,
-            weight: edgeWeightOf(ctx.globalGraph, a, b),
+            weight: edgeWeightOf(ctx.globalGraph, a, b)
         });
     }
 
     return {
         graph: next,
-        changed: true,
+        changed: true
     };
 }

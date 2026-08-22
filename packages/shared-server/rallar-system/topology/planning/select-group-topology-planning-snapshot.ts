@@ -1,24 +1,21 @@
-import {
-  compareGroupCausalRevision,
-  readGroupCausalRevision,
-} from '@shared/api/group-client-views.ts';
+import { compareGroupCausalRevision, readGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { GroupStateSnapshotIncomparableError } from '@shared/repository/group-state-snapshots-repository.ts';
 import { isTuplePreservingGroupLivenessReduction } from '@shared/repository/group-state-snapshot-revision.ts';
+import { GroupStateSnapshotIncomparableError } from '@shared/repository/group-state-snapshots-repository.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
 
 import { rtcTopologySemanticEqual } from '../../rtc-topology-semantic-equality.ts';
 import type { GroupTopologyPlanningSnapshotSelection } from './group-topology-planning-authority.ts';
 
 export function isGroupTopologyActiveAt(
-  snapshot: GroupSnapshot,
-  observedAtEpochMs: number,
+    snapshot: GroupSnapshot,
+    observedAtEpochMs: number
 ): boolean {
-  return (
-    snapshot.group.status === 'active' &&
-    (snapshot.group.expiresAtEpochMs === null ||
-      snapshot.group.expiresAtEpochMs > observedAtEpochMs)
-  );
+    return (
+        snapshot.group.status === 'active' &&
+        (snapshot.group.expiresAtEpochMs === null ||
+            snapshot.group.expiresAtEpochMs > observedAtEpochMs)
+    );
 }
 
 /**
@@ -29,41 +26,41 @@ export function isGroupTopologyActiveAt(
  * never enter FORMING, which keeps today's behaviour byte-identical for them.
  */
 export function isGroupTopologyPlannableAt(
-  snapshot: GroupSnapshot,
-  observedAtEpochMs: number,
+    snapshot: GroupSnapshot,
+    observedAtEpochMs: number
 ): boolean {
-  return (
-    isGroupTopologyActiveAt(snapshot, observedAtEpochMs) &&
-    snapshot.group.lifecycleState !== 'forming'
-  );
+    return (
+        isGroupTopologyActiveAt(snapshot, observedAtEpochMs) &&
+        snapshot.group.lifecycleState !== 'forming'
+    );
 }
 
 export function selectGroupTopologyPlanningSnapshot(
-  knownGroup: GroupSnapshot,
-  currentGroup: GroupSnapshot | undefined,
-  snapshotSelection: GroupTopologyPlanningSnapshotSelection,
+    knownGroup: GroupSnapshot,
+    currentGroup: GroupSnapshot | undefined,
+    snapshotSelection: GroupTopologyPlanningSnapshotSelection
 ): GroupSnapshot {
-  if (!currentGroup) {
-    return knownGroup;
-  }
-  const comparison = compareGroupCausalRevision(
-    readGroupCausalRevision(currentGroup),
-    readGroupCausalRevision(knownGroup),
-  );
-  if (comparison === 'dominates') {
-    return snapshotSelection === 'preserve-known-revision' ? knownGroup : currentGroup;
-  }
-  if (comparison === 'dominated') {
-    return knownGroup;
-  }
-  if (comparison === 'incomparable') {
-    throw new GroupStateSnapshotIncomparableError(knownGroup.group);
-  }
-  if (
-    !rtcTopologySemanticEqual(currentGroup, knownGroup) &&
-    !isTuplePreservingGroupLivenessReduction(currentGroup, knownGroup)
-  ) {
-    throw new StateSnapshotRevisionConflictError('Group', knownGroup.stateRevision);
-  }
-  return currentGroup;
+    if (!currentGroup) {
+        return knownGroup;
+    }
+    const comparison = compareGroupCausalRevision(
+        readGroupCausalRevision(currentGroup),
+        readGroupCausalRevision(knownGroup)
+    );
+    if (comparison === 'dominates') {
+        return snapshotSelection === 'preserve-known-revision' ? knownGroup : currentGroup;
+    }
+    if (comparison === 'dominated') {
+        return knownGroup;
+    }
+    if (comparison === 'incomparable') {
+        throw new GroupStateSnapshotIncomparableError(knownGroup.group);
+    }
+    if (
+        !rtcTopologySemanticEqual(currentGroup, knownGroup) &&
+        !isTuplePreservingGroupLivenessReduction(currentGroup, knownGroup)
+    ) {
+        throw new StateSnapshotRevisionConflictError('Group', knownGroup.stateRevision);
+    }
+    return currentGroup;
 }

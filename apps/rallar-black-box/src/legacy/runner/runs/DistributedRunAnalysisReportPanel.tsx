@@ -1,21 +1,15 @@
-import {
-    distributedRecipeStateTone,
-    type DistributedRunAnalysisReport,
-} from '../../../distributed-recipes.ts';
-import { Metric } from '../../shared/Metric.tsx';
+import { distributedRecipeStateTone, type DistributedRunAnalysisReport } from '../../../distributed-recipes.ts';
 import { json } from '../../shared/json-presentation.ts';
-import {
-    formatDuration,
-    formatTime,
-} from '../../shared/time-format.ts';
+import { Metric } from '../../shared/Metric.tsx';
+import { formatDuration, formatTime } from '../../shared/time-format.ts';
 import {
     distributedDiagnosticTone,
     distributedFailureCategoryTone,
-    distributedProgressTone,
+    distributedProgressTone
 } from '../distributed/status-presentation.ts';
 
 export function DistributedRunAnalysisReportPanel({
-    report,
+    report
 }: {
     report: DistributedRunAnalysisReport;
 }) {
@@ -63,13 +57,11 @@ export function DistributedRunAnalysisReportPanel({
                 <Metric
                     label="Artifact"
                     value={report.summary.artifactStatus}
-                    tone={
-                        report.summary.artifactStatus === 'valid'
-                            ? 'good'
-                            : report.summary.artifactStatus === 'not-loaded'
-                            ? 'muted'
-                            : 'bad'
-                    }
+                    tone={report.summary.artifactStatus === 'valid'
+                        ? 'good'
+                        : report.summary.artifactStatus === 'not-loaded'
+                        ? 'muted'
+                        : 'bad'}
                 />
             </div>
             {report.summary.snapshotWarnings.length > 0 && (
@@ -78,37 +70,39 @@ export function DistributedRunAnalysisReportPanel({
                     <span>{report.summary.snapshotWarnings.join(' ')}</span>
                 </div>
             )}
-            {firstFailure ? (
-                <section className="runner-analysis-first-failure">
-                    <div>
-                        <span className="eyebrow">First failure</span>
-                        <h4>{firstFailure.code ?? firstFailure.category}</h4>
-                        <p>{firstFailure.message}</p>
+            {firstFailure
+                ? (
+                    <section className="runner-analysis-first-failure">
+                        <div>
+                            <span className="eyebrow">First failure</span>
+                            <h4>{firstFailure.code ?? firstFailure.category}</h4>
+                            <p>{firstFailure.message}</p>
+                        </div>
+                        <dl>
+                            <div>
+                                <dt>Agent</dt>
+                                <dd>{firstFailure.agentId ?? '-'}</dd>
+                            </div>
+                            <div>
+                                <dt>Recipe</dt>
+                                <dd>{firstFailure.recipeId ?? '-'}</dd>
+                            </div>
+                            <div>
+                                <dt>Command</dt>
+                                <dd>{firstFailure.commandId ?? '-'}</dd>
+                            </div>
+                            <div>
+                                <dt>Time</dt>
+                                <dd>{formatTime(firstFailure.atEpochMs)}</dd>
+                            </div>
+                        </dl>
+                    </section>
+                )
+                : (
+                    <div className="empty-state">
+                        No failure evidence in the selected distributed run.
                     </div>
-                    <dl>
-                        <div>
-                            <dt>Agent</dt>
-                            <dd>{firstFailure.agentId ?? '-'}</dd>
-                        </div>
-                        <div>
-                            <dt>Recipe</dt>
-                            <dd>{firstFailure.recipeId ?? '-'}</dd>
-                        </div>
-                        <div>
-                            <dt>Command</dt>
-                            <dd>{firstFailure.commandId ?? '-'}</dd>
-                        </div>
-                        <div>
-                            <dt>Time</dt>
-                            <dd>{formatTime(firstFailure.atEpochMs)}</dd>
-                        </div>
-                    </dl>
-                </section>
-            ) : (
-                <div className="empty-state">
-                    No failure evidence in the selected distributed run.
-                </div>
-            )}
+                )}
             <section className="runner-analysis-actions">
                 <div className="section-heading compact">
                     <h3>Next Actions</h3>
@@ -160,20 +154,16 @@ export function DistributedRunAnalysisReportPanel({
                                     {agent.execution}
                                 </span>
                                 <small>
-                                    ack {agent.readiness} - barrier{' '}
-                                    {agent.barrier} - failures{' '}
+                                    ack {agent.readiness} - barrier {agent.barrier} - failures{' '}
                                     {agent.failedCommandCount}
                                 </small>
                                 <small>
-                                    events {agent.eventCount} - reconnects{' '}
-                                    {agent.reconnectCount ?? 0} - heartbeat{' '}
+                                    events {agent.eventCount} - reconnects {agent.reconnectCount ?? 0} - heartbeat{' '}
                                     {formatTime(agent.lastHeartbeatAtEpochMs)}
                                 </small>
                             </div>
                         ))}
-                        {topAgents.length === 0 && (
-                            <div className="empty-state">No agents</div>
-                        )}
+                        {topAgents.length === 0 && <div className="empty-state">No agents</div>}
                     </div>
                 </section>
                 <section>
@@ -186,7 +176,9 @@ export function DistributedRunAnalysisReportPanel({
                             >
                                 <strong>{recipe.recipeId}</strong>
                                 <span
-                                    className={`pill ${recipe.failedCount > 0 ? 'bad' : recipe.passedCount > 0 ? 'good' : 'muted'}`}
+                                    className={`pill ${
+                                        recipe.failedCount > 0 ? 'bad' : recipe.passedCount > 0 ? 'good' : 'muted'
+                                    }`}
                                 >
                                     {recipe.failedCount > 0
                                         ? 'failed'
@@ -195,21 +187,16 @@ export function DistributedRunAnalysisReportPanel({
                                         : 'pending'}
                                 </span>
                                 <small>
-                                    passed {recipe.passedCount} - failed{' '}
-                                    {recipe.failedCount} - running{' '}
-                                    {recipe.runningCount} - missing{' '}
-                                    {recipe.missingCount}
+                                    passed {recipe.passedCount} - failed {recipe.failedCount} - running{' '}
+                                    {recipe.runningCount} - missing {recipe.missingCount}
                                 </small>
                                 <small>
-                                    {recipe.role ?? 'all roles'} -{' '}
-                                    {recipe.profile ?? 'default'} - targets{' '}
+                                    {recipe.role ?? 'all roles'} - {recipe.profile ?? 'default'} - targets{' '}
                                     {recipe.targetCount}
                                 </small>
                             </div>
                         ))}
-                        {topRecipes.length === 0 && (
-                            <div className="empty-state">No recipe rows</div>
-                        )}
+                        {topRecipes.length === 0 && <div className="empty-state">No recipe rows</div>}
                     </div>
                 </section>
                 <section>
@@ -217,17 +204,21 @@ export function DistributedRunAnalysisReportPanel({
                     <div className="runner-analysis-list">
                         <div className="runner-analysis-row">
                             <strong>
-                                {report.diagnostics.errors} errors,{' '}
-                                {report.diagnostics.warnings} warnings
+                                {report.diagnostics.errors} errors, {report.diagnostics.warnings} warnings
                             </strong>
                             <span
-                                className={`pill ${report.diagnostics.errors > 0 ? 'bad' : report.diagnostics.warnings > 0 ? 'warn' : 'good'}`}
+                                className={`pill ${
+                                    report.diagnostics.errors > 0
+                                        ? 'bad'
+                                        : report.diagnostics.warnings > 0
+                                        ? 'warn'
+                                        : 'good'
+                                }`}
                             >
                                 {report.diagnostics.total} total
                             </span>
                             <small>
-                                WS {report.diagnostics.ws} - RTC{' '}
-                                {report.diagnostics.rtc}
+                                WS {report.diagnostics.ws} - RTC {report.diagnostics.rtc}
                             </small>
                         </div>
                         {diagnostics.map((diagnostic) => (
@@ -242,8 +233,7 @@ export function DistributedRunAnalysisReportPanel({
                                     {diagnostic.severity}
                                 </span>
                                 <small>
-                                    {diagnostic.transport ?? 'runtime'} -{' '}
-                                    {diagnostic.agentId} -{' '}
+                                    {diagnostic.transport ?? 'runtime'} - {diagnostic.agentId} -{' '}
                                     {diagnostic.commandId ?? 'no command'}
                                 </small>
                                 <small>{diagnostic.summary}</small>

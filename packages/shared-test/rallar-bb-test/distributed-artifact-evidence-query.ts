@@ -1,6 +1,6 @@
 import type {
     DistributedArtifactEvidenceEntry,
-    DistributedArtifactEvidenceWindowQuery,
+    DistributedArtifactEvidenceWindowQuery
 } from './distributed-artifact-evidence-contracts.ts';
 import { normalizedEvidenceText } from './distributed-artifact-evidence-utils.ts';
 
@@ -10,30 +10,30 @@ export type CompiledDistributedArtifactEvidenceQuery = Readonly<{
 }>;
 
 export function compileDistributedArtifactEvidenceQuery(
-    query: DistributedArtifactEvidenceWindowQuery = {},
+    query: DistributedArtifactEvidenceWindowQuery = {}
 ): CompiledDistributedArtifactEvidenceQuery {
     const tokens = normalizedEvidenceText(query.query).split(/\s+/).filter(Boolean);
     return { query, tokens };
 }
 
 export function distributedArtifactEvidenceQueryFingerprintValue(
-    compiled: CompiledDistributedArtifactEvidenceQuery,
+    compiled: CompiledDistributedArtifactEvidenceQuery
 ): readonly unknown[] {
     const query = compiled.query;
     return [
-            [...new Set(compiled.tokens)].sort(),
-            optionalTextFingerprint(query.agentId),
-            optionalTextFingerprint(query.recipeId),
-            optionalTextFingerprint(query.commandId),
-            query.status === undefined
-                ? ['absent']
-                : ['present', normalizedStatus(query.status)],
-            optionalTextFingerprint(query.severity),
-            optionalTextFingerprint(query.transport),
-            optionalTextFingerprint(query.category),
-            optionalNumberFingerprint(query.fromEpochMs),
-            optionalNumberFingerprint(query.toEpochMs),
-        ];
+        [...new Set(compiled.tokens)].sort(),
+        optionalTextFingerprint(query.agentId),
+        optionalTextFingerprint(query.recipeId),
+        optionalTextFingerprint(query.commandId),
+        query.status === undefined
+            ? ['absent']
+            : ['present', normalizedStatus(query.status)],
+        optionalTextFingerprint(query.severity),
+        optionalTextFingerprint(query.transport),
+        optionalTextFingerprint(query.category),
+        optionalNumberFingerprint(query.fromEpochMs),
+        optionalNumberFingerprint(query.toEpochMs)
+    ];
 }
 
 function optionalTextFingerprint(value: string | undefined): readonly unknown[] {
@@ -43,45 +43,55 @@ function optionalTextFingerprint(value: string | undefined): readonly unknown[] 
 }
 
 function optionalNumberFingerprint(value: number | undefined): readonly unknown[] {
-    if (value === undefined) return ['absent'];
-    if (Number.isNaN(value)) return ['present', 'nan'];
-    if (value === Number.POSITIVE_INFINITY) return ['present', 'positive-infinity'];
-    if (value === Number.NEGATIVE_INFINITY) return ['present', 'negative-infinity'];
+    if (value === undefined) {
+        return ['absent'];
+    }
+    if (Number.isNaN(value)) {
+        return ['present', 'nan'];
+    }
+    if (value === Number.POSITIVE_INFINITY) {
+        return ['present', 'positive-infinity'];
+    }
+    if (value === Number.NEGATIVE_INFINITY) {
+        return ['present', 'negative-infinity'];
+    }
     return ['present', 'finite', value];
 }
 
 export function distributedArtifactEvidenceSearchHaystack(
-    entry: DistributedArtifactEvidenceEntry,
+    entry: DistributedArtifactEvidenceEntry
 ): string {
-    return normalizedEvidenceText([
-        entry.agentId,
-        ...(entry.agentIds ?? []),
-        entry.recipeId,
-        entry.commandId,
-        entry.topic,
-        entry.diagnosticType,
-        entry.failureDetails?.code,
-        entry.failureDetails?.name,
-        entry.failureDetails?.message,
-        entry.failureDetails?.stack,
-        entry.payloadSummary,
-        entry.summary,
-        entry.category,
-        entry.status,
-        entry.severity,
-        entry.transport,
-        entry.kind,
-        entry.sourceFile,
-    ].filter(Boolean).join(' '));
+    return normalizedEvidenceText(
+        [
+            entry.agentId,
+            ...(entry.agentIds ?? []),
+            entry.recipeId,
+            entry.commandId,
+            entry.topic,
+            entry.diagnosticType,
+            entry.failureDetails?.code,
+            entry.failureDetails?.name,
+            entry.failureDetails?.message,
+            entry.failureDetails?.stack,
+            entry.payloadSummary,
+            entry.summary,
+            entry.category,
+            entry.status,
+            entry.severity,
+            entry.transport,
+            entry.kind,
+            entry.sourceFile
+        ].filter(Boolean).join(' ')
+    );
 }
 
 export function distributedArtifactEvidenceEntryMatches(
     entry: DistributedArtifactEvidenceEntry,
     compiled: CompiledDistributedArtifactEvidenceQuery,
-    haystack = distributedArtifactEvidenceSearchHaystack(entry),
+    haystack = distributedArtifactEvidenceSearchHaystack(entry)
 ): boolean {
     const query = compiled.query;
-    return compiled.tokens.every(token => haystack.includes(token)) &&
+    return compiled.tokens.every((token) => haystack.includes(token)) &&
         relatedMatch(entry.agentId, entry.agentIds, query.agentId) &&
         exactMatch(entry.recipeId, query.recipeId) &&
         exactMatch(entry.commandId, query.commandId) &&
@@ -103,10 +113,10 @@ function exactMatch(value: string | undefined, expected: string | undefined): bo
 function relatedMatch(
     value: string | undefined,
     values: readonly string[] | undefined,
-    expected: string | undefined,
+    expected: string | undefined
 ): boolean {
     return expected === undefined || exactMatch(value, expected) ||
-        (values ?? []).some(candidate => exactMatch(candidate, expected));
+        (values ?? []).some((candidate) => exactMatch(candidate, expected));
 }
 
 function statusMatch(value: string | undefined, expected: string | undefined): boolean {
@@ -115,7 +125,11 @@ function statusMatch(value: string | undefined, expected: string | undefined): b
 
 function normalizedStatus(value: string | undefined): string {
     const status = normalizedEvidenceText(value);
-    if (status === 'ok' || status === 'pass' || status === 'success') return 'passed';
-    if (status === 'failure' || status === 'error') return 'failed';
+    if (status === 'ok' || status === 'pass' || status === 'success') {
+        return 'passed';
+    }
+    if (status === 'failure' || status === 'error') {
+        return 'failed';
+    }
     return status;
 }

@@ -1,16 +1,11 @@
-import type { FleetGeographyRoute } from
-    '@shared-test/rallar-bb-test/fleet-geography.ts';
+import type { FleetGeographyRoute } from '@shared-test/rallar-bb-test/fleet-geography.ts';
 import type { ReactNode } from 'react';
 import { ExactIdentifier } from '../ui/ExactIdentifier.tsx';
-import { FleetWindowControls } from './FleetWindowControls.tsx';
-import { FleetLocationEvidence } from './FleetLocationEvidence.tsx';
-import type {
-    FleetMapAgentMarker,
-    FleetMapFailureMarker,
-    FleetMapRegionMarker,
-} from './fleet-map-model.ts';
-import type { FleetWindowController } from './use-fleet-window.ts';
+import type { FleetMapAgentMarker, FleetMapFailureMarker, FleetMapRegionMarker } from './fleet-map-model.ts';
 import styles from './FleetGeographyEvidence.module.css';
+import { FleetLocationEvidence } from './FleetLocationEvidence.tsx';
+import { FleetWindowControls } from './FleetWindowControls.tsx';
+import type { FleetWindowController } from './use-fleet-window.ts';
 
 export function FleetGeographyEvidence({
     agentMarkers,
@@ -26,7 +21,7 @@ export function FleetGeographyEvidence({
     unresolvedAgentWindow,
     unresolvedEndpointAgentIds,
     unresolvedEndpointObservationCount,
-    unresolvedEndpointWindow,
+    unresolvedEndpointWindow
 }: Readonly<{
     agentMarkers: readonly FleetMapAgentMarker[];
     agentWindow: FleetWindowController;
@@ -50,7 +45,7 @@ export function FleetGeographyEvidence({
     const visibleAgents = windowItems(unresolvedAgentIds, unresolvedAgentWindow);
     const visibleEndpoints = windowItems(
         unresolvedEndpointAgentIds,
-        unresolvedEndpointWindow,
+        unresolvedEndpointWindow
     );
     return (
         <section aria-labelledby="fleet-geography-ledger" className={styles.root}>
@@ -66,15 +61,17 @@ export function FleetGeographyEvidence({
                     label="Fleet resolved live agent locations"
                     window={agentWindow}
                 >
-                    <ol className={styles.routes}>{visibleAgentMarkers.map(marker => (
-                        <li
-                            data-fleet-resolved-agent-location={marker.agent.agentId}
-                            key={marker.id}
-                        >
-                            <ExactIdentifier value={marker.agent.agentId} />
-                            <FleetLocationEvidence location={marker.agent.location!} />
-                        </li>
-                    ))}</ol>
+                    <ol className={styles.routes}>
+                        {visibleAgentMarkers.map((marker) => (
+                            <li
+                                data-fleet-resolved-agent-location={marker.agent.agentId}
+                                key={marker.id}
+                            >
+                                <ExactIdentifier value={marker.agent.agentId} />
+                                <FleetLocationEvidence location={marker.agent.location!} />
+                            </li>
+                        ))}
+                    </ol>
                 </EvidenceWindow>
                 <EvidenceWindow
                     contentId="fleet-resolved-region-locations"
@@ -82,18 +79,20 @@ export function FleetGeographyEvidence({
                     label="Fleet resolved region locations"
                     window={regionWindow}
                 >
-                    <ol className={styles.routes}>{visibleRegionMarkers.map(marker => (
-                        <li
-                            data-fleet-resolved-region-location={marker.region.key}
-                            key={marker.id}
-                        >
-                            <bdi dir="auto">{marker.region.region}</bdi>
-                            {marker.region.provider
-                                ? <bdi dir="auto">{marker.region.provider}</bdi>
-                                : <span>Unknown provider</span>}
-                            <FleetLocationEvidence location={marker.region.location} />
-                        </li>
-                    ))}</ol>
+                    <ol className={styles.routes}>
+                        {visibleRegionMarkers.map((marker) => (
+                            <li
+                                data-fleet-resolved-region-location={marker.region.key}
+                                key={marker.id}
+                            >
+                                <bdi dir="auto">{marker.region.region}</bdi>
+                                {marker.region.provider
+                                    ? <bdi dir="auto">{marker.region.provider}</bdi>
+                                    : <span>Unknown provider</span>}
+                                <FleetLocationEvidence location={marker.region.location} />
+                            </li>
+                        ))}
+                    </ol>
                 </EvidenceWindow>
                 <EvidenceWindow
                     contentId="fleet-resolved-failure-locations"
@@ -101,17 +100,18 @@ export function FleetGeographyEvidence({
                     label="Fleet resolved failure locations"
                     window={failureWindow}
                 >
-                    <ol className={styles.routes}>{visibleFailureMarkers.map(marker => (
-                        <li
-                            data-fleet-resolved-failure-location={marker.agent.agentId}
-                            key={marker.id}
-                        >
-                            <ExactIdentifier value={marker.agent.agentId} />
-                            <span>{marker.agent.historical?.failedOutcomes ?? 0}{' '}
-                                failed outcomes</span>
-                            <FleetLocationEvidence location={marker.agent.location!} />
-                        </li>
-                    ))}</ol>
+                    <ol className={styles.routes}>
+                        {visibleFailureMarkers.map((marker) => (
+                            <li
+                                data-fleet-resolved-failure-location={marker.agent.agentId}
+                                key={marker.id}
+                            >
+                                <ExactIdentifier value={marker.agent.agentId} />
+                                <span>{marker.agent.historical?.failedOutcomes ?? 0} failed outcomes</span>
+                                <FleetLocationEvidence location={marker.agent.location!} />
+                            </li>
+                        ))}
+                    </ol>
                 </EvidenceWindow>
             </div>
             <EvidenceWindow
@@ -120,23 +120,27 @@ export function FleetGeographyEvidence({
                 label="Fleet observed routes"
                 window={routeWindow}
             >
-                <ol className={styles.routes}>{visibleRoutes.map(route => (
-                    <li
-                        data-fleet-route-evidence={route.routeId}
-                        key={route.routeId}
-                    >
-                        <ExactIdentifier value={route.sourceAgentId} />
-                        <span aria-hidden="true">→</span>
-                        <ExactIdentifier value={route.targetAgentId} />
-                        <span>{route.transport
-                            ? <bdi dir="auto">{route.transport}</bdi>
-                            : 'unknown transport'} ·{' '}
-                            {route.eventCount.toLocaleString('en-US')} observations ·{' '}
-                            {route.failedCount.toLocaleString('en-US')} failed ·{' '}
-                            source <FleetLocationEvidence location={route.source} /> ·{' '}
-                            target <FleetLocationEvidence location={route.target} /></span>
-                    </li>
-                ))}</ol>
+                <ol className={styles.routes}>
+                    {visibleRoutes.map((route) => (
+                        <li
+                            data-fleet-route-evidence={route.routeId}
+                            key={route.routeId}
+                        >
+                            <ExactIdentifier value={route.sourceAgentId} />
+                            <span aria-hidden="true">→</span>
+                            <ExactIdentifier value={route.targetAgentId} />
+                            <span>
+                                {route.transport
+                                    ? <bdi dir="auto">{route.transport}</bdi>
+                                    : 'unknown transport'} · {route.eventCount.toLocaleString('en-US')} observations ·
+                                {' '}
+                                {route.failedCount.toLocaleString('en-US')} failed · source{' '}
+                                <FleetLocationEvidence location={route.source} /> · target{' '}
+                                <FleetLocationEvidence location={route.target} />
+                            </span>
+                        </li>
+                    ))}
+                </ol>
             </EvidenceWindow>
             <div className={styles.twoColumn}>
                 <EvidenceWindow
@@ -156,8 +160,9 @@ export function FleetGeographyEvidence({
                     label="Fleet unresolved route endpoints"
                     window={unresolvedEndpointWindow}
                 >
-                    <p>{unresolvedEndpointObservationCount.toLocaleString('en-US')}{' '}
-                        unresolved endpoint observations.</p>
+                    <p>
+                        {unresolvedEndpointObservationCount.toLocaleString('en-US')} unresolved endpoint observations.
+                    </p>
                     <IdentifierList
                         attribute="data-fleet-unresolved-endpoint"
                         values={visibleEndpoints}
@@ -173,7 +178,7 @@ function EvidenceWindow({
     contentId,
     itemLabel,
     label,
-    window,
+    window
 }: Readonly<{
     children: ReactNode;
     contentId: string;
@@ -196,27 +201,32 @@ function EvidenceWindow({
 
 function IdentifierList({
     attribute,
-    values,
+    values
 }: Readonly<{
-    attribute: 'data-fleet-unresolved-agent' |
-        'data-fleet-unresolved-endpoint';
+    attribute:
+        | 'data-fleet-unresolved-agent'
+        | 'data-fleet-unresolved-endpoint';
     values: readonly string[];
 }>) {
-    return values.length === 0 ? <p className={styles.empty}>None.</p> : (
-        <ul className={styles.identifiers}>{values.map(value => (
-            <li {...{ [attribute]: value }} key={value}>
-                <ExactIdentifier value={value} />
-            </li>
-        ))}</ul>
-    );
+    return values.length === 0
+        ? <p className={styles.empty}>None.</p>
+        : (
+            <ul className={styles.identifiers}>
+                {values.map((value) => (
+                    <li {...{ [attribute]: value }} key={value}>
+                        <ExactIdentifier value={value} />
+                    </li>
+                ))}
+            </ul>
+        );
 }
 
 function windowItems<Item>(
     items: readonly Item[],
-    window: FleetWindowController,
+    window: FleetWindowController
 ): readonly Item[] {
     return items.slice(
         window.model.startIndex,
-        window.model.endIndexExclusive,
+        window.model.endIndexExclusive
     );
 }

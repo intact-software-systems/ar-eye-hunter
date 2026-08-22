@@ -1,7 +1,7 @@
 import type {
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestResult,
-    RallarBlackBoxTestState,
+    RallarBlackBoxTestState
 } from '@shared-test/rallar-bb-test/types.ts';
 import type { DistributedRunMonitor } from './distributed-recipes.ts';
 
@@ -176,7 +176,7 @@ const RTC_STAGE_DEFINITIONS: readonly Readonly<{
     { stageId: 'signaling', label: 'Signaling' },
     { stageId: 'peer-discovery', label: 'Peer Discovery' },
     { stageId: 'data-channel', label: 'Data Channel' },
-    { stageId: 'first-payload', label: 'First Payload' },
+    { stageId: 'first-payload', label: 'First Payload' }
 ];
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -204,11 +204,11 @@ function unique(values: readonly (string | undefined)[]): readonly string[] {
 }
 
 function latestDefined<T>(values: readonly (T | undefined)[]): T | undefined {
-    return values.findLast(value => value !== undefined);
+    return values.findLast((value) => value !== undefined);
 }
 
 function stringArray(value: unknown): readonly string[] {
-    return unique(asArray(value).map(entry => stringValue(entry)));
+    return unique(asArray(value).map((entry) => stringValue(entry)));
 }
 
 function lowerTopic(event: RallarBlackBoxTestEvent): string {
@@ -277,24 +277,32 @@ function stageFromPhase(value: unknown): RtcConnectStageId | undefined {
         return undefined;
     }
 
-    if (phase.includes('auth') || phase.includes('login')) return 'auth';
+    if (phase.includes('auth') || phase.includes('login')) {
+        return 'auth';
+    }
     if (phase.includes('runtime') || phase.includes('bootstrap') || phase.includes('config')) {
         return 'runtime-bootstrap';
     }
     if (phase.includes('group') || phase.includes('room') || phase.includes('join')) {
         return 'group-join';
     }
-    if (phase.includes('signal') || phase.includes('socket')) return 'signaling';
-    if (phase.includes('peer')) return 'peer-discovery';
+    if (phase.includes('signal') || phase.includes('socket')) {
+        return 'signaling';
+    }
+    if (phase.includes('peer')) {
+        return 'peer-discovery';
+    }
     if (phase.includes('channel') || phase.includes('lane') || phase.includes('ready')) {
         return 'data-channel';
     }
-    if (phase.includes('payload') || phase.includes('message')) return 'first-payload';
+    if (phase.includes('payload') || phase.includes('message')) {
+        return 'first-payload';
+    }
     return undefined;
 }
 
 export function rtcConnectStageIdForEvent(
-    event: RallarBlackBoxTestEvent,
+    event: RallarBlackBoxTestEvent
 ): RtcConnectStageId | undefined {
     const payload = payloadOf(event);
     const fromPhase = stageFromPhase(payload.phase ?? payload.stage ?? payload.connectStage);
@@ -307,15 +315,21 @@ export function rtcConnectStageIdForEvent(
     }
 
     const topic = lowerTopic(event);
-    if (topic.includes('auth') || topic.includes('login')) return 'auth';
+    if (topic.includes('auth') || topic.includes('login')) {
+        return 'auth';
+    }
     if (topic.includes('runtime') || topic.includes('bootstrap') || topic.includes('configured')) {
         return 'runtime-bootstrap';
     }
     if (topic.includes('group') || topic.includes('room') || topic.includes('join')) {
         return 'group-join';
     }
-    if (topic.includes('signal') || topic.includes('websocket')) return 'signaling';
-    if (topic.includes('peer')) return 'peer-discovery';
+    if (topic.includes('signal') || topic.includes('websocket')) {
+        return 'signaling';
+    }
+    if (topic.includes('peer')) {
+        return 'peer-discovery';
+    }
     if (
         topic.includes('data_channel') ||
         topic.includes('data-channel') ||
@@ -339,9 +353,9 @@ function stageStatusForEvent(event: RallarBlackBoxTestEvent): RtcConnectStageSta
 function deriveStages(events: readonly RallarBlackBoxTestEvent[]): readonly RtcConnectStage[] {
     const relatedEvents = events.filter(eventLooksRtcRelated);
     const startedAt = relatedEvents[0]?.atEpochMs;
-    return RTC_STAGE_DEFINITIONS.map(definition => {
+    return RTC_STAGE_DEFINITIONS.map((definition) => {
         const matching = relatedEvents
-            .filter(event => rtcConnectStageIdForEvent(event) === definition.stageId)
+            .filter((event) => rtcConnectStageIdForEvent(event) === definition.stageId)
             .sort((left, right) => {
                 const leftFailed = isFailureEvent(left) ? 0 : 1;
                 const rightFailed = isFailureEvent(right) ? 0 : 1;
@@ -357,7 +371,7 @@ function deriveStages(events: readonly RallarBlackBoxTestEvent[]): readonly RtcC
                 : undefined,
             eventId: matching?.eventId,
             topic: matching?.topic,
-            details: matching?.payload,
+            details: matching?.payload
         };
     });
 }
@@ -373,19 +387,19 @@ function gatherClientIdsFromPayload(payload: Record<string, unknown>): Readonly<
     const nestedData = asRecord(payload.data);
     const nack = asRecord(payload.nack);
     const results = asArray(payload.results)
-        .map(result => stringValue(asRecord(result).peerId));
+        .map((result) => stringValue(asRecord(result).peerId));
     const ready = unique([
         ...stringArray(payload.readyPeerIds),
         ...stringArray(payload.readyPeers),
         ...stringArray(payload.readyClients),
-        ...stringArray(nestedData.readyPeerIds),
+        ...stringArray(nestedData.readyPeerIds)
     ]);
     const active = unique([
         ...stringArray(payload.activePeerIds),
         ...stringArray(payload.activePeers),
         ...stringArray(payload.activeClients),
         ...stringArray(payload.connectedPeerIds),
-        ...stringArray(nestedData.activePeerIds),
+        ...stringArray(nestedData.activePeerIds)
     ]);
     return {
         expected: unique([
@@ -394,7 +408,7 @@ function gatherClientIdsFromPayload(payload: Record<string, unknown>): Readonly<
             ...stringArray(payload.peerIds),
             ...stringArray(payload.nextHopPeerIds),
             ...stringArray(nestedData.expectedClients),
-            ...stringArray(nestedData.targets),
+            ...stringArray(nestedData.targets)
         ]),
         observed: unique([
             stringValue(payload.sessionId),
@@ -408,7 +422,7 @@ function gatherClientIdsFromPayload(payload: Record<string, unknown>): Readonly<
             ...stringArray(payload.peerIds),
             ...ready,
             ...active,
-            ...stringArray(nestedData.senderId),
+            ...stringArray(nestedData.senderId)
         ]),
         ready,
         active,
@@ -417,42 +431,42 @@ function gatherClientIdsFromPayload(payload: Record<string, unknown>): Readonly<
             stringValue(payload.staleClientId),
             stringValue(payload.staleSessionId),
             ...stringArray(payload.staleClients),
-            ...stringArray(payload.staleClientIds),
+            ...stringArray(payload.staleClientIds)
         ]),
         nackCodes: unique([
             stringValue(payload.nackCode),
             stringValue(payload.negativeCase),
             stringValue(nack.code),
-            ...stringArray(payload.nackCodes),
-        ]),
+            ...stringArray(payload.nackCodes)
+        ])
     };
 }
 
 function deriveMembership(
     state: RallarBlackBoxTestState,
-    events: readonly RallarBlackBoxTestEvent[],
+    events: readonly RallarBlackBoxTestEvent[]
 ): RtcMembershipDiagnostics {
     const config = state.currentConfig;
     const related = events.filter(eventLooksRtcRelated);
     const latest = related.at(-1);
     const latestPayload = latest ? payloadOf(latest) : {};
-    const observedSets = related.map(event => gatherClientIdsFromPayload(payloadOf(event)));
+    const observedSets = related.map((event) => gatherClientIdsFromPayload(payloadOf(event)));
     const relatedPayloads = related.map(payloadOf);
-    const expectedClients = unique(observedSets.flatMap(set => set.expected));
-    const observedClients = unique(observedSets.flatMap(set => set.observed));
-    const readyPeerIds = unique(observedSets.flatMap(set => set.ready));
-    const activePeerIds = unique(observedSets.flatMap(set => set.active));
+    const expectedClients = unique(observedSets.flatMap((set) => set.expected));
+    const observedClients = unique(observedSets.flatMap((set) => set.observed));
+    const readyPeerIds = unique(observedSets.flatMap((set) => set.ready));
+    const activePeerIds = unique(observedSets.flatMap((set) => set.active));
     const staleClients = unique([
-        ...observedSets.flatMap(set => set.stale),
+        ...observedSets.flatMap((set) => set.stale),
         ...related
-            .filter(event => lowerTopic(event).includes('stale'))
-            .map(event => stringValue(payloadOf(event).sessionId)),
+            .filter((event) => lowerTopic(event).includes('stale'))
+            .map((event) => stringValue(payloadOf(event).sessionId))
     ]);
-    const nackCodes = unique(observedSets.flatMap(set => set.nackCodes));
-    const missingClients = expectedClients.filter(client => !observedClients.includes(client));
+    const nackCodes = unique(observedSets.flatMap((set) => set.nackCodes));
+    const missingClients = expectedClients.filter((client) => !observedClients.includes(client));
     const extraClients = expectedClients.length === 0
         ? []
-        : observedClients.filter(client => !expectedClients.includes(client));
+        : observedClients.filter((client) => !expectedClients.includes(client));
 
     return {
         connection: latest?.connection ??
@@ -468,34 +482,32 @@ function deriveMembership(
         extraClients,
         staleClients,
         nackCodes,
-        peerCount: latestDefined(relatedPayloads.map(payload => numberValue(payload.peerCount))) ??
+        peerCount: latestDefined(relatedPayloads.map((payload) => numberValue(payload.peerCount))) ??
             state.latestStats?.rallar?.peerCount,
-        laneHealth: latestDefined(relatedPayloads.map(payload => payload.laneHealth)) ??
+        laneHealth: latestDefined(relatedPayloads.map((payload) => payload.laneHealth)) ??
             state.latestStats?.rallar?.laneHealth,
-        sourceTopic: latest?.topic,
+        sourceTopic: latest?.topic
     };
 }
 
 function latestResult(
     results: readonly RallarBlackBoxTestResult[],
-    kind: string,
+    kind: string
 ): RallarBlackBoxTestResult | undefined {
-    return results.filter(result => result.kind === kind).at(-1);
+    return results.filter((result) => result.kind === kind).at(-1);
 }
 
 function deriveLatency(
     state: RallarBlackBoxTestState,
-    events: readonly RallarBlackBoxTestEvent[],
+    events: readonly RallarBlackBoxTestEvent[]
 ): RtcLatencyDiagnostics {
     const connectResult = latestResult(state.commandHistory, 'rtc.connect');
     const sendResult = latestResult(state.commandHistory, 'rtc.send');
     const firstPayload = events
-        .filter(event => event.kind === 'message')
-        .filter(event =>
-            connectResult ? event.atEpochMs >= connectResult.startedAtEpochMs : true
-        )[0];
+        .filter((event) => event.kind === 'message')
+        .filter((event) => connectResult ? event.atEpochMs >= connectResult.startedAtEpochMs : true)[0];
     const matchingPayloadCommand = firstPayload?.commandId
-        ? state.commandHistory.find(result => result.commandId === firstPayload.commandId)
+        ? state.commandHistory.find((result) => result.commandId === firstPayload.commandId)
         : undefined;
 
     return {
@@ -509,7 +521,7 @@ function deriveLatency(
         lastCommandMs: state.latestStats?.commandLatency?.lastMs ??
             state.commandHistory.at(-1)?.durationMs,
         averageCommandMs: state.latestStats?.commandLatency?.averageMs,
-        maxCommandMs: state.latestStats?.commandLatency?.maxMs,
+        maxCommandMs: state.latestStats?.commandLatency?.maxMs
     };
 }
 
@@ -561,7 +573,7 @@ function failureSource(event: RallarBlackBoxTestEvent): RtcFailureDiagnostics['s
 }
 
 function deriveFailure(
-    events: readonly RallarBlackBoxTestEvent[],
+    events: readonly RallarBlackBoxTestEvent[]
 ): RtcFailureDiagnostics | undefined {
     const failure = events.filter(eventLooksRtcRelated).find(isFailureEvent);
     if (!failure) {
@@ -576,7 +588,7 @@ function deriveFailure(
         atEpochMs: failure.atEpochMs,
         message: failureMessage(failure),
         severity: failure.severity,
-        details: failure.payload,
+        details: failure.payload
     };
 }
 
@@ -586,7 +598,7 @@ const MAX_TIMESERIES_BUCKET_MS = 60_000;
 
 function bucketMsForEvents(
     events: readonly RallarBlackBoxTestEvent[],
-    bucketCount: number,
+    bucketCount: number
 ): number {
     if (events.length < 2) {
         return 5_000;
@@ -601,32 +613,34 @@ function makeBucketPoints(
     startAtEpochMs: number,
     bucketMs: number,
     bucketCount: number,
-    values: readonly number[],
+    values: readonly number[]
 ): readonly RtcDiagnosticsTimeseriesPoint[] {
     return Array.from({ length: bucketCount }, (_, index) => ({
         atEpochMs: startAtEpochMs + (index * bucketMs),
-        value: Math.round((values[index] ?? 0) * 100) / 100,
+        value: Math.round((values[index] ?? 0) * 100) / 100
     }));
 }
 
-function makeSeries(input: Readonly<{
-    seriesId: RtcDiagnosticsTimeseriesSeriesId;
-    label: string;
-    unit: string;
-    tone: RtcDiagnosticsTimeseriesSeries['tone'];
-    points: readonly RtcDiagnosticsTimeseriesPoint[];
-}>): RtcDiagnosticsTimeseriesSeries {
-    const values = input.points.map(point => point.value);
+function makeSeries(
+    input: Readonly<{
+        seriesId: RtcDiagnosticsTimeseriesSeriesId;
+        label: string;
+        unit: string;
+        tone: RtcDiagnosticsTimeseriesSeries['tone'];
+        points: readonly RtcDiagnosticsTimeseriesPoint[];
+    }>
+): RtcDiagnosticsTimeseriesSeries {
+    const values = input.points.map((point) => point.value);
     return {
         ...input,
         latest: values.at(-1) ?? 0,
-        max: Math.max(0, ...values),
+        max: Math.max(0, ...values)
     };
 }
 
 export function deriveRtcDiagnosticsTimeseries(
     state: RallarBlackBoxTestState,
-    options: RtcDiagnosticsTimeseriesOptions = {},
+    options: RtcDiagnosticsTimeseriesOptions = {}
 ): readonly RtcDiagnosticsTimeseriesSeries[] {
     const relatedEvents = state.events
         .filter(eventLooksRtcTimeseriesRelated)
@@ -675,29 +689,29 @@ export function deriveRtcDiagnosticsTimeseries(
             label: 'RTC events',
             unit: 'events',
             tone: 'active',
-            points: makeBucketPoints(startAtEpochMs, bucketMs, bucketCount, eventCounts),
+            points: makeBucketPoints(startAtEpochMs, bucketMs, bucketCount, eventCounts)
         }),
         makeSeries({
             seriesId: 'messages',
             label: 'Messages',
             unit: 'messages',
             tone: 'good',
-            points: makeBucketPoints(startAtEpochMs, bucketMs, bucketCount, messageCounts),
+            points: makeBucketPoints(startAtEpochMs, bucketMs, bucketCount, messageCounts)
         }),
         makeSeries({
             seriesId: 'failures',
             label: 'Failures',
             unit: 'failures',
-            tone: failureCounts.some(count => count > 0) ? 'bad' : 'muted',
-            points: makeBucketPoints(startAtEpochMs, bucketMs, bucketCount, failureCounts),
+            tone: failureCounts.some((count) => count > 0) ? 'bad' : 'muted',
+            points: makeBucketPoints(startAtEpochMs, bucketMs, bucketCount, failureCounts)
         }),
         makeSeries({
             seriesId: 'phase-duration',
             label: 'Phase duration',
             unit: 'ms',
             tone: 'warn',
-            points: makeBucketPoints(startAtEpochMs, bucketMs, bucketCount, phaseDurations),
-        }),
+            points: makeBucketPoints(startAtEpochMs, bucketMs, bucketCount, phaseDurations)
+        })
     ];
 }
 
@@ -712,14 +726,18 @@ function isRelevantResult(result: RallarBlackBoxTestResult): boolean {
 }
 
 function resultTransport(result: RallarBlackBoxTestResult): RtcPerformanceScatterPoint['transport'] {
-    if (result.kind.startsWith('rtc.')) return 'rtc';
-    if (result.kind.startsWith('ws.')) return 'ws';
+    if (result.kind.startsWith('rtc.')) {
+        return 'rtc';
+    }
+    if (result.kind.startsWith('ws.')) {
+        return 'ws';
+    }
     return 'runtime';
 }
 
 function finiteDurations(results: readonly RallarBlackBoxTestResult[]): readonly number[] {
     return results
-        .map(result => result.durationMs)
+        .map((result) => result.durationMs)
         .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
 }
 
@@ -730,14 +748,14 @@ function percentile(values: readonly number[], percentileValue: number): number 
     const sorted = [...values].sort((left, right) => left - right);
     const index = Math.min(
         sorted.length - 1,
-        Math.max(0, Math.ceil(percentileValue * sorted.length) - 1),
+        Math.max(0, Math.ceil(percentileValue * sorted.length) - 1)
     );
     return sorted[index];
 }
 
 function histogramBuckets(
     durations: readonly number[],
-    bucketCount: number,
+    bucketCount: number
 ): readonly RtcPerformanceHistogramBucket[] {
     if (durations.length === 0) {
         return [];
@@ -750,7 +768,7 @@ function histogramBuckets(
             label: `${Math.round(min)} ms`,
             minMs: min,
             maxMs: max,
-            count: durations.length,
+            count: durations.length
         }];
     }
     const width = (max - min) / count;
@@ -761,43 +779,49 @@ function histogramBuckets(
             label: `${Math.round(minMs)}-${Math.round(maxMs)} ms`,
             minMs,
             maxMs,
-            count: 0,
+            count: 0
         };
     });
-    durations.forEach(duration => {
+    durations.forEach((duration) => {
         const rawIndex = Math.floor((duration - min) / width);
         const index = Math.min(count - 1, Math.max(0, rawIndex));
         buckets[index] = {
             ...buckets[index],
-            count: buckets[index].count + 1,
+            count: buckets[index].count + 1
         };
     });
     return buckets;
 }
 
 function performanceStageTone(status: RtcConnectStageStatus): RtcPerformanceTone {
-    if (status === 'observed') return 'good';
-    if (status === 'failed') return 'bad';
-    if (status === 'warning') return 'warn';
+    if (status === 'observed') {
+        return 'good';
+    }
+    if (status === 'failed') {
+        return 'bad';
+    }
+    if (status === 'warning') {
+        return 'warn';
+    }
     return 'muted';
 }
 
 function phaseSpans(
     diagnostics: RtcDiagnosticsSnapshot,
-    results: readonly RallarBlackBoxTestResult[],
+    results: readonly RallarBlackBoxTestResult[]
 ): readonly RtcPerformancePhaseSpan[] {
-    const observedStages = diagnostics.stages.filter(stage => stage.atEpochMs !== undefined);
+    const observedStages = diagnostics.stages.filter((stage) => stage.atEpochMs !== undefined);
     if (observedStages.length === 0) {
         return [];
     }
-    const firstEventAt = Math.min(...observedStages.map(stage => stage.atEpochMs!));
+    const firstEventAt = Math.min(...observedStages.map((stage) => stage.atEpochMs!));
     const firstResultAt = results
-        .map(result => result.startedAtEpochMs)
+        .map((result) => result.startedAtEpochMs)
         .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
         .sort((left, right) => left - right)[0];
     const baseline = Math.min(firstEventAt, firstResultAt ?? firstEventAt);
     let previousEnd = 0;
-    return observedStages.map(stage => {
+    return observedStages.map((stage) => {
         const endMs = Math.max(0, (stage.atEpochMs ?? baseline) - baseline);
         const payloadDurationMs = stagePayloadDurationMs(stage);
         const startMs = payloadDurationMs === undefined
@@ -818,7 +842,7 @@ function phaseSpans(
                 ? `${Math.round(durationMs)} ms duration`
                 : `${Math.round(endMs)} ms observed delta`,
             tone: performanceStageTone(stage.status),
-            eventId: stage.eventId,
+            eventId: stage.eventId
         };
     });
 }
@@ -832,12 +856,12 @@ function stagePayloadDurationMs(stage: RtcConnectStage): number | undefined {
         details.durationMs ??
             details.elapsedMs ??
             details.phaseDurationMs ??
-            details.latencyMs,
+            details.latencyMs
     );
 }
 
 function laneCellsForMembership(
-    membership: RtcMembershipDiagnostics,
+    membership: RtcMembershipDiagnostics
 ): readonly RtcPerformanceAgentLaneCell[] {
     const laneIds = unique([
         ...membership.expectedClients,
@@ -845,7 +869,7 @@ function laneCellsForMembership(
         ...membership.readyPeerIds,
         ...membership.activePeerIds,
         ...membership.staleClients,
-        ...membership.missingClients,
+        ...membership.missingClients
     ]);
     const expected = new Set(membership.expectedClients);
     const observed = new Set(membership.observedClients);
@@ -859,43 +883,48 @@ function laneCellsForMembership(
         'ready',
         'active',
         'stale',
-        'missing',
+        'missing'
     ];
 
-    return laneIds.flatMap(laneId => metrics.map(metric => {
-        const set = {
-            expected,
-            observed,
-            ready,
-            active,
-            stale,
-            missing,
-        }[metric];
-        const present = set.has(laneId);
-        const shouldBePresent =
-            metric === 'expected' ||
-            (expected.has(laneId) && metric !== 'stale' && metric !== 'missing');
-        const status: RtcPerformanceTone = metric === 'stale' || metric === 'missing'
-            ? present ? 'bad' : 'good'
-            : present ? 'good' : shouldBePresent ? 'warn' : 'muted';
-        return {
-            laneId,
-            metric,
-            value: present ? 'yes' : 'no',
-            status,
-        };
-    }));
+    return laneIds.flatMap((laneId) =>
+        metrics.map((metric) => {
+            const set = {
+                expected,
+                observed,
+                ready,
+                active,
+                stale,
+                missing
+            }[metric];
+            const present = set.has(laneId);
+            const shouldBePresent = metric === 'expected' ||
+                (expected.has(laneId) && metric !== 'stale' && metric !== 'missing');
+            const status: RtcPerformanceTone = metric === 'stale' || metric === 'missing'
+                ? present ? 'bad' : 'good'
+                : present
+                ? 'good'
+                : shouldBePresent
+                ? 'warn'
+                : 'muted';
+            return {
+                laneId,
+                metric,
+                value: present ? 'yes' : 'no',
+                status
+            };
+        })
+    );
 }
 
 function distributedAgentScatterPoints(
     monitor: DistributedRunMonitor | undefined,
-    startSequence: number,
+    startSequence: number
 ): readonly RtcPerformanceScatterPoint[] {
     if (!monitor) {
         return [];
     }
     return monitor.agentProgress
-        .filter(row => typeof row.averageLatencyMs === 'number' && Number.isFinite(row.averageLatencyMs))
+        .filter((row) => typeof row.averageLatencyMs === 'number' && Number.isFinite(row.averageLatencyMs))
         .map((row, index) => {
             const failed = row.failedCommandCount > 0 || row.execution === 'failed';
             return {
@@ -907,7 +936,7 @@ function distributedAgentScatterPoints(
                 status: failed ? 'failed' : 'ok',
                 ok: !failed,
                 durationMs: row.averageLatencyMs!,
-                agentId: row.agentId,
+                agentId: row.agentId
             };
         });
 }
@@ -916,43 +945,57 @@ function distributedAgentMetricCell(
     laneId: string,
     metric: RtcPerformanceAgentLaneCell['metric'],
     value: string,
-    status: RtcPerformanceTone,
+    status: RtcPerformanceTone
 ): RtcPerformanceAgentLaneCell {
     return { laneId, metric, value, status };
 }
 
 function laneCellsForDistributedMonitor(
-    monitor: DistributedRunMonitor | undefined,
+    monitor: DistributedRunMonitor | undefined
 ): readonly RtcPerformanceAgentLaneCell[] | undefined {
     if (!monitor || monitor.agentProgress.length === 0) {
         return undefined;
     }
-    return monitor.agentProgress.flatMap(row => {
+    return monitor.agentProgress.flatMap((row) => {
         const observed = row.resultCount > 0 || row.eventCount > 0 || row.completedCommandCount > 0;
         const ready = row.readiness === 'ready' || row.readiness === 'passed';
-        const readinessFailed = row.readiness === 'failed' || row.readiness === 'cancelled' || row.readiness === 'missing';
+        const readinessFailed = row.readiness === 'failed' || row.readiness === 'cancelled' ||
+            row.readiness === 'missing';
         const active = row.execution === 'running' || row.execution === 'passed';
-        const executionBlocked = row.execution === 'failed' || row.execution === 'cancelled' || row.execution === 'missing';
+        const executionBlocked = row.execution === 'failed' || row.execution === 'cancelled' ||
+            row.execution === 'missing';
         const missing = row.readiness === 'missing' || row.execution === 'missing';
         return [
             distributedAgentMetricCell(row.agentId, 'expected', 'yes', 'good'),
             distributedAgentMetricCell(row.agentId, 'observed', observed ? 'yes' : 'no', observed ? 'good' : 'warn'),
-            distributedAgentMetricCell(row.agentId, 'ready', ready ? 'yes' : 'no', ready ? 'good' : readinessFailed ? 'bad' : 'warn'),
-            distributedAgentMetricCell(row.agentId, 'active', active ? 'yes' : 'no', active ? 'good' : executionBlocked ? 'warn' : 'muted'),
+            distributedAgentMetricCell(
+                row.agentId,
+                'ready',
+                ready ? 'yes' : 'no',
+                ready ? 'good' : readinessFailed ? 'bad' : 'warn'
+            ),
+            distributedAgentMetricCell(
+                row.agentId,
+                'active',
+                active ? 'yes' : 'no',
+                active ? 'good' : executionBlocked ? 'warn' : 'muted'
+            ),
             distributedAgentMetricCell(row.agentId, 'stale', 'no', 'good'),
-            distributedAgentMetricCell(row.agentId, 'missing', missing ? 'yes' : 'no', missing ? 'bad' : 'good'),
+            distributedAgentMetricCell(row.agentId, 'missing', missing ? 'yes' : 'no', missing ? 'bad' : 'good')
         ];
     });
 }
 
-export function deriveRtcPerformanceView(input: Readonly<{
-    diagnostics: RtcDiagnosticsSnapshot;
-    state: RallarBlackBoxTestState;
-    distributedMonitor?: DistributedRunMonitor;
-    histogramBucketCount?: number;
-}>): RtcPerformanceView {
+export function deriveRtcPerformanceView(
+    input: Readonly<{
+        diagnostics: RtcDiagnosticsSnapshot;
+        state: RallarBlackBoxTestState;
+        distributedMonitor?: DistributedRunMonitor;
+        histogramBucketCount?: number;
+    }>
+): RtcPerformanceView {
     const relevantResults = input.diagnostics.recentResults
-        .filter(result => typeof result.durationMs === 'number' && Number.isFinite(result.durationMs));
+        .filter((result) => typeof result.durationMs === 'number' && Number.isFinite(result.durationMs));
     const localScatter = relevantResults.map((result, index) => ({
         sequence: index + 1,
         commandId: result.commandId,
@@ -964,23 +1007,23 @@ export function deriveRtcPerformanceView(input: Readonly<{
         startedAtEpochMs: result.startedAtEpochMs,
         endedAtEpochMs: result.endedAtEpochMs,
         durationMs: result.durationMs!,
-        agentId: input.state.currentConfig?.agentId,
+        agentId: input.state.currentConfig?.agentId
     }));
     const scatter = [
         ...localScatter,
-        ...distributedAgentScatterPoints(input.distributedMonitor, localScatter.length + 1),
+        ...distributedAgentScatterPoints(input.distributedMonitor, localScatter.length + 1)
     ];
-    const durations = scatter.map(point => point.durationMs);
+    const durations = scatter.map((point) => point.durationMs);
     const failureCount = input.diagnostics.recentEvents.filter(isFailureEvent).length +
-        relevantResults.filter(result => !result.ok).length +
+        relevantResults.filter((result) => !result.ok).length +
         (input.distributedMonitor?.agentProgress.reduce(
             (sum, row) => sum + row.failedCommandCount,
-            0,
+            0
         ) ?? 0);
-    const messageCount = input.diagnostics.recentEvents.filter(event => event.kind === 'message').length;
+    const messageCount = input.diagnostics.recentEvents.filter((event) => event.kind === 'message').length;
     const emptyReasons = [
         scatter.length === 0 ? 'No RTC/WS command results yet' : undefined,
-        input.diagnostics.recentEvents.length === 0 ? 'No RTC timeline events yet' : undefined,
+        input.diagnostics.recentEvents.length === 0 ? 'No RTC timeline events yet' : undefined
     ].filter((value): value is string => Boolean(value));
 
     return {
@@ -993,7 +1036,7 @@ export function deriveRtcPerformanceView(input: Readonly<{
             connectMs: input.diagnostics.latency.connectMs,
             firstPayloadMs: input.diagnostics.latency.firstPayloadMs,
             failureCount,
-            messageCount,
+            messageCount
         },
         emptyReasons,
         timeseries: input.diagnostics.timeseries,
@@ -1001,12 +1044,12 @@ export function deriveRtcPerformanceView(input: Readonly<{
         histogram: histogramBuckets(durations, input.histogramBucketCount ?? 6),
         phaseSpans: phaseSpans(input.diagnostics, relevantResults),
         agentMatrix: laneCellsForDistributedMonitor(input.distributedMonitor) ??
-            laneCellsForMembership(input.diagnostics.membership),
+            laneCellsForMembership(input.diagnostics.membership)
     };
 }
 
 export function deriveRtcDiagnostics(
-    state: RallarBlackBoxTestState,
+    state: RallarBlackBoxTestState
 ): RtcDiagnosticsSnapshot {
     const recentEvents = state.events.filter(eventLooksRtcRelated).slice(-40);
     const recentResults = state.commandHistory.filter(isRelevantResult).slice(-20);
@@ -1036,10 +1079,10 @@ export function deriveRtcDiagnostics(
                 restoreSession: state.currentConfig?.rallar?.restoreSession === true,
                 register: state.currentConfig?.rallar?.register,
                 logoutOnClose: state.currentConfig?.rallar?.logoutOnClose === true,
-                leaveRoomOnClose: state.currentConfig?.rallar?.leaveRoomOnClose,
-            },
+                leaveRoomOnClose: state.currentConfig?.rallar?.leaveRoomOnClose
+            }
         },
-        commandIds: recentResults.map(result => result.commandId),
+        commandIds: recentResults.map((result) => result.commandId),
         stages,
         membership,
         latency,
@@ -1047,7 +1090,7 @@ export function deriveRtcDiagnostics(
         timeseries,
         latestStats: state.latestStats,
         recentResults,
-        recentEvents,
+        recentEvents
     };
 
     return {
@@ -1058,6 +1101,6 @@ export function deriveRtcDiagnostics(
         timeseries,
         recentEvents,
         recentResults,
-        bundle,
+        bundle
     };
 }

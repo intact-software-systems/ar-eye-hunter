@@ -1,16 +1,7 @@
-import type {
-    RallarAiJsonProvider,
-    RallarAiJsonRequest,
-    RallarAiJsonResult,
-} from '@shared/rallar-ai/mod.ts';
+import type { RallarAiJsonProvider, RallarAiJsonRequest, RallarAiJsonResult } from '@shared/rallar-ai/mod.ts';
 
-import {
-    type ArenaBrowserAiConfig,
-} from './browserAiConfig.ts';
-import {
-    createWebLlmRallarAiProvider,
-    type CreateWebLlmRallarAiProviderOptions,
-} from './webLlmProvider.ts';
+import { type ArenaBrowserAiConfig } from './browserAiConfig.ts';
+import { createWebLlmRallarAiProvider, type CreateWebLlmRallarAiProviderOptions } from './webLlmProvider.ts';
 
 export type ArenaBrowserAiProviderMode = 'mock' | 'webllm';
 
@@ -40,7 +31,7 @@ export type CreateArenaBrowserAiProviderOptions = Readonly<{
 }>;
 
 export function createArenaBrowserAiProvider(
-    options: CreateArenaBrowserAiProviderOptions,
+    options: CreateArenaBrowserAiProviderOptions
 ): ArenaBrowserAiProviderSelection {
     const config = options.config;
     if (!config.enabled || config.mode === 'off') {
@@ -48,7 +39,7 @@ export function createArenaBrowserAiProvider(
             status: 'unavailable',
             mode: 'off',
             fallback: false,
-            reason: 'Browser RallarAI is disabled.',
+            reason: 'Browser RallarAI is disabled.'
         };
     }
     if (config.mode === 'mock') {
@@ -56,7 +47,7 @@ export function createArenaBrowserAiProvider(
             status: 'ready',
             mode: 'mock',
             provider: options.createMockProvider(),
-            fallback: false,
+            fallback: false
         };
     }
 
@@ -68,7 +59,7 @@ export function createArenaBrowserAiProvider(
                 mode: 'mock',
                 provider: options.createMockProvider(),
                 fallback: true,
-                reason: 'WebGPU is unavailable in this browser.',
+                reason: 'WebGPU is unavailable in this browser.'
             };
         }
         return {
@@ -76,20 +67,20 @@ export function createArenaBrowserAiProvider(
             mode: 'webllm',
             provider: undefined,
             fallback: false,
-            reason: 'WebGPU is unavailable in this browser.',
+            reason: 'WebGPU is unavailable in this browser.'
         };
     }
 
     const webLlmProvider = (options.createWebLlmProvider ?? createWebLlmRallarAiProvider)({
         modelId: config.modelId,
         hasWebGpu: () => hasWebGpu,
-        onProgress: options.onWebLlmProgress,
+        onProgress: options.onWebLlmProgress
     });
     const provider = config.fallbackMode === 'mock'
         ? createProviderWithMockFallback(
             webLlmProvider,
             options.createMockProvider(),
-            options.onFallback,
+            options.onFallback
         )
         : webLlmProvider;
 
@@ -97,14 +88,14 @@ export function createArenaBrowserAiProvider(
         status: 'ready',
         mode: 'webllm',
         provider,
-        fallback: false,
+        fallback: false
     };
 }
 
 function createProviderWithMockFallback(
     primary: RallarAiJsonProvider,
     fallback: RallarAiJsonProvider,
-    onFallback: ((reason: string) => void) | undefined,
+    onFallback: ((reason: string) => void) | undefined
 ): RallarAiJsonProvider {
     return {
         providerId: primary.providerId,
@@ -112,16 +103,17 @@ function createProviderWithMockFallback(
         modelId: primary.modelId,
         capabilities: primary.capabilities,
         async generateJson<TValue = unknown, TContext = unknown>(
-            request: RallarAiJsonRequest<TContext>,
+            request: RallarAiJsonRequest<TContext>
         ): Promise<RallarAiJsonResult<TValue>> {
             try {
                 return await primary.generateJson<TValue, TContext>(request);
-            } catch (error) {
+            }
+            catch (error) {
                 const reason = error instanceof Error ? error.message : String(error);
                 onFallback?.(reason);
                 return await fallback.generateJson<TValue, TContext>(request);
             }
-        },
+        }
     };
 }
 

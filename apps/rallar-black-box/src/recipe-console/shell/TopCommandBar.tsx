@@ -3,11 +3,8 @@ import type { RecipeConsoleUrlIssue } from '../routing/url-state-contract.ts';
 import { CommandBarItem } from '../ui/CommandBarItem.tsx';
 import { IconButton } from '../ui/IconButton.tsx';
 import { StatusMark, type OperationalStatus } from '../ui/StatusMark.tsx';
+import { AccountSettingsPanel, type AccountSettingsPanelProps } from './AccountSettingsPanel.tsx';
 import styles from './TopCommandBar.module.css';
-import {
-    AccountSettingsPanel,
-    type AccountSettingsPanelProps,
-} from './AccountSettingsPanel.tsx';
 
 export function TopCommandBar({
     accountSettings,
@@ -17,7 +14,7 @@ export function TopCommandBar({
     onCopyLink,
     onRefresh,
     status,
-    statusLabel,
+    statusLabel
 }: Readonly<{
     accountSettings: AccountSettingsPanelProps;
     height: 48 | 52;
@@ -53,19 +50,22 @@ export function TopCommandBar({
                 <IconButton aria-label="Copy canonical link" icon="copy" onClick={onCopyLink} />
                 <AccountSettingsPanel {...accountSettings} />
             </header>
-            {issues.length > 0 ? (
-                <div
-                    className={styles.urlIssueStrip}
-                    data-url-issues
-                    role="status"
-                >
-                    {issues.map((issue, index) => (
-                        <span key={`${issue.field}:${issue.code}:${index}`}>
-                            {index > 0 ? ' ' : null}{issue.message}
-                        </span>
-                    ))}
-                </div>
-            ) : null}
+            {issues.length > 0
+                ? (
+                    <div
+                        className={styles.urlIssueStrip}
+                        data-url-issues
+                        role="status"
+                    >
+                        {issues.map((issue, index) => (
+                            <span key={`${issue.field}:${issue.code}:${index}`}>
+                                {index > 0 ? ' ' : null}
+                                {issue.message}
+                            </span>
+                        ))}
+                    </div>
+                )
+                : null}
         </>
     );
 }

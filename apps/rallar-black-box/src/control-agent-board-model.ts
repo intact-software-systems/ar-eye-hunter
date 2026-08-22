@@ -1,28 +1,20 @@
-import { isDistributedRunTerminalState } from
-    '@shared-test/rallar-bb-test/distributed-run.ts';
-import type {
-    ControlDistributedRunSnapshot,
-    ControlRunAgentRow,
-} from './control-run-manager.ts';
-import type {
-    DistributedRecipeTargetRow,
-    DistributedRunAgentProgressRow,
-} from './distributed-recipes.ts';
-import type {
-    ControlAgentBoardRow,
-    ControlAgentRunParticipation,
-} from './control-agent-board-contract.ts';
+import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { ControlAgentBoardRow, ControlAgentRunParticipation } from './control-agent-board-contract.ts';
+import type { ControlDistributedRunSnapshot, ControlRunAgentRow } from './control-run-manager.ts';
+import type { DistributedRecipeTargetRow, DistributedRunAgentProgressRow } from './distributed-recipes.ts';
 
-export function controlAgentBoardRowFromParticipations(input: Readonly<{
-    agentRow: ControlRunAgentRow;
-    targetRow: DistributedRecipeTargetRow | undefined;
-    nowEpochMs: number;
-    participations: readonly ControlAgentRunParticipation[];
-    synthetic: boolean;
-}>): ControlAgentBoardRow {
+export function controlAgentBoardRowFromParticipations(
+    input: Readonly<{
+        agentRow: ControlRunAgentRow;
+        targetRow: DistributedRecipeTargetRow | undefined;
+        nowEpochMs: number;
+        participations: readonly ControlAgentRunParticipation[];
+        synthetic: boolean;
+    }>
+): ControlAgentBoardRow {
     const identity = input.agentRow.identity;
     const crdt = identity?.capabilities?.crdt;
-    const selectedRun = input.participations.find(item => item.selected);
+    const selectedRun = input.participations.find((item) => item.selected);
     const targetStatus = input.targetRow?.status ??
         (input.synthetic ? 'missing-agent' : 'not-scoped');
 
@@ -68,23 +60,23 @@ export function controlAgentBoardRowFromParticipations(input: Readonly<{
         receivedResultCount: input.agentRow.receivedResultCount,
         receivedEventCount: input.agentRow.receivedEventCount,
         reconnectCount: input.agentRow.reconnectCount,
-        activeRuns: input.participations.filter(item => item.active),
-        selectedRun,
+        activeRuns: input.participations.filter((item) => item.active),
+        selectedRun
     };
 }
 
-export function controlAgentRunParticipation(input: Readonly<{
-    run: ControlDistributedRunSnapshot;
-    agentId: string;
-    selected: boolean;
-    progress?: DistributedRunAgentProgressRow;
-    links?: ControlDistributedRunSnapshot['commandLinks'];
-    indexedRole?: string;
-    roleIndexed?: boolean;
-}>): ControlAgentRunParticipation {
-    const links = input.links ?? input.run.commandLinks.filter(link =>
-        link.agentId === input.agentId
-    );
+export function controlAgentRunParticipation(
+    input: Readonly<{
+        run: ControlDistributedRunSnapshot;
+        agentId: string;
+        selected: boolean;
+        progress?: DistributedRunAgentProgressRow;
+        links?: ControlDistributedRunSnapshot['commandLinks'];
+        indexedRole?: string;
+        roleIndexed?: boolean;
+    }>
+): ControlAgentRunParticipation {
+    const links = input.links ?? input.run.commandLinks.filter((link) => link.agentId === input.agentId);
     const progress = input.progress;
 
     return {
@@ -96,7 +88,7 @@ export function controlAgentRunParticipation(input: Readonly<{
         role: progress?.role ?? (input.roleIndexed
             ? input.indexedRole
             : roleForAgent(input.run, input.agentId)),
-        commandPhases: uniqueValues(links.map(link => link.phase)),
+        commandPhases: uniqueValues(links.map((link) => link.phase)),
         commandCount: links.length,
         blockingFailures: input.run.rollup.summary.blockingFailures,
         updatedAtEpochMs: input.run.updatedAtEpochMs,
@@ -108,7 +100,7 @@ export function controlAgentRunParticipation(input: Readonly<{
         resultCount: progress?.resultCount,
         eventCount: progress?.eventCount,
         averageLatencyMs: progress?.averageLatencyMs,
-        lastActivityAtEpochMs: progress?.lastActivityAtEpochMs,
+        lastActivityAtEpochMs: progress?.lastActivityAtEpochMs
     };
 }
 
@@ -123,29 +115,27 @@ export function syntheticControlAgentRow(agentId: string): ControlRunAgentRow {
         completedCommandCount: 0,
         receivedResultCount: 0,
         receivedEventCount: 0,
-        reconnectCount: 0,
+        reconnectCount: 0
     };
 }
 
 export function controlAgentBoardRowSort(
     left: ControlAgentBoardRow,
-    right: ControlAgentBoardRow,
+    right: ControlAgentBoardRow
 ): number {
-    if (left.synthetic !== right.synthetic) return left.synthetic ? 1 : -1;
+    if (left.synthetic !== right.synthetic) {
+        return left.synthetic ? 1 : -1;
+    }
     return left.agentId.localeCompare(right.agentId);
 }
 
 function roleForAgent(
     run: ControlDistributedRunSnapshot,
-    agentId: string,
+    agentId: string
 ): string | undefined {
-    return run.targetResolution?.roleAssignments.find(assignment =>
-        assignment.agentId === agentId
-    )?.role ??
-        run.manifest.roleAssignments?.find(assignment =>
-            assignment.agentId === agentId
-        )?.role ??
-        run.commandLinks.find(link => link.agentId === agentId)?.role;
+    return run.targetResolution?.roleAssignments.find((assignment) => assignment.agentId === agentId)?.role ??
+        run.manifest.roleAssignments?.find((assignment) => assignment.agentId === agentId)?.role ??
+        run.commandLinks.find((link) => link.agentId === agentId)?.role;
 }
 
 function uniqueValues<Value>(values: readonly Value[]): readonly Value[] {

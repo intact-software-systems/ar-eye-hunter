@@ -1,7 +1,4 @@
-import type {
-    DistributedRunTuningInventory,
-    DistributedRunTuningKnob,
-} from './distributed-run-tuning.ts';
+import type { DistributedRunTuningInventory, DistributedRunTuningKnob } from './distributed-run-tuning.ts';
 
 export type DistributedRunTuningHintKind =
     | 'fix-target-readiness'
@@ -53,18 +50,20 @@ export type DistributedRunTuningDecisionResult = Readonly<{
 }>;
 
 export function tuningInventoryIssues(
-    inventory: DistributedRunTuningInventory,
+    inventory: DistributedRunTuningInventory
 ): DistributedRunTuningDecisionIssue[] {
-    return inventory.limitations.map(row => tuningDecisionIssue(
-        row.code === 'reference-only-recipe' ? 'reference-only-recipe' : 'inventory-limited',
-        row.message,
-    ));
+    return inventory.limitations.map((row) =>
+        tuningDecisionIssue(
+            row.code === 'reference-only-recipe' ? 'reference-only-recipe' : 'inventory-limited',
+            row.message
+        )
+    );
 }
 
 export function tuningDecisionIssue(
     code: DistributedRunTuningDecisionIssueCode,
     message: string,
-    pointers?: readonly string[],
+    pointers?: readonly string[]
 ): DistributedRunTuningDecisionIssue {
     return { code, message, pointers };
 }

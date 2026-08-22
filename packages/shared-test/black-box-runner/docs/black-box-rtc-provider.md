@@ -9,19 +9,19 @@ For the general recipe contract and provider boundary, start with
 
 ## Current provider status
 
-| Provider | Purpose | Real transport? | Notes |
-| --- | --- | --- | --- |
-| `rallar-stub` | Simple fake RTC provider | No | Useful for parser/runner smoke tests. |
-| `rallar-memory` | Deterministic multi-peer in-memory RTC runtime | No | Useful for direct, broadcast, close, reconnect, and routing tests. |
-| `rallar-signaling` | Rallar signaling provider | WebSocket signaling only | Opens WebSocket signaling and waits for open by default. Does not create `RTCPeerConnection` or `RTCDataChannel` yet. |
-| `rallar` | Compatibility alias | WebSocket signaling only | Kept for existing recipes; prefer `rallar-signaling` in new recipes. |
-| `rallar-browser` | Browser-backed Rallar provider | Yes | Opt-in Playwright/Vite provider that loads the browser harness and delegates RTC behavior to the existing browser `rallar` facade. |
-| `rallar-remote-browser` | Control-server-backed browser provider | Yes | Runs the same generic RTC recipe through `rallar-bb-test` and maps remote browser events into the normal runner report stores. |
+| Provider                | Purpose                                        | Real transport?          | Notes                                                                                                                              |
+| ----------------------- | ---------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `rallar-stub`           | Simple fake RTC provider                       | No                       | Useful for parser/runner smoke tests.                                                                                              |
+| `rallar-memory`         | Deterministic multi-peer in-memory RTC runtime | No                       | Useful for direct, broadcast, close, reconnect, and routing tests.                                                                 |
+| `rallar-signaling`      | Rallar signaling provider                      | WebSocket signaling only | Opens WebSocket signaling and waits for open by default. Does not create `RTCPeerConnection` or `RTCDataChannel` yet.              |
+| `rallar`                | Compatibility alias                            | WebSocket signaling only | Kept for existing recipes; prefer `rallar-signaling` in new recipes.                                                               |
+| `rallar-browser`        | Browser-backed Rallar provider                 | Yes                      | Opt-in Playwright/Vite provider that loads the browser harness and delegates RTC behavior to the existing browser `rallar` facade. |
+| `rallar-remote-browser` | Control-server-backed browser provider         | Yes                      | Runs the same generic RTC recipe through `rallar-bb-test` and maps remote browser events into the normal runner report stores.     |
 
 The CLI provider named `rallar-signaling` currently maps to:
 
 ```ts
-createRallarWebRtcWebSocketSignalingProvider()
+createRallarWebRtcWebSocketSignalingProvider();
 ```
 
 The legacy provider name `rallar` maps to the same provider for backward compatibility.
@@ -29,7 +29,7 @@ The legacy provider name `rallar` maps to the same provider for backward compati
 The `rallar-browser` provider currently maps to:
 
 ```ts
-createRallarBrowserRtcProvider()
+createRallarBrowserRtcProvider();
 ```
 
 It is intended for headless browser runs against deployed Rallar REST and signaling services. Provider registration, `rtc.connect`, `rtc.close`, browser event bridging, and realtime target resolution are in place.
@@ -48,19 +48,19 @@ packages/shared-test/black-box-runner/docs/black-box-rtc-test-catalog.md
 
 Provider-mode examples:
 
-| Example | Purpose |
-| --- | --- |
-| `examples/rtc-rallar-browser-connect.json` | Connect and close two browser-backed Rallar RTC connections. |
-| `examples/rtc-rallar-browser-realtime.json` | Send and wait for browser realtime data-channel messages. |
-| `examples/rtc-rallar-browser-messages-rtc.json` | Send and wait for app-level `rallar.messages.rtc` messages. |
-| `examples/rtc-rallar-browser-messages-rtc-multicast.json` | Send one app-level `messages.rtc` payload to a room and assert two peers receive it. |
-| `examples/rtc-rallar-browser-provider-mode-parity.json` | Parameterize the RTC provider so the same recipe runs locally or through `rallar-remote-browser`. |
-| `examples/rtc-rallar-browser-scoped-workspaces.json` | Pass scoped `roomRef` values through browser RTC and assert same-room-id workspace isolation. |
-| `examples/rtc-rallar-browser-not-yet-in-sync.json` | Pass `minSnapshotVersion` and assert an observable `not-yet-in-sync` NACK. |
-| `examples/rtc-rallar-browser-readiness-diagnostics.json` | Wait for browser-provider readiness diagnostics and health. |
-| `examples/rtc-rallar-browser-timeout-diagnostics.json` | Intentionally fail a diagnostic wait to show timeout diagnostics. |
-| `examples/rtc-rallar-memory-delivery-semantics.json` | Deterministically assert direct and room broadcast delivery metadata. |
-| `examples/rtc-rallar-memory-routing-failures.json` | Intentionally record no-recipient, closed-target, and send-after-close failures. |
+| Example                                                   | Purpose                                                                                           |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `examples/rtc-rallar-browser-connect.json`                | Connect and close two browser-backed Rallar RTC connections.                                      |
+| `examples/rtc-rallar-browser-realtime.json`               | Send and wait for browser realtime data-channel messages.                                         |
+| `examples/rtc-rallar-browser-messages-rtc.json`           | Send and wait for app-level `rallar.messages.rtc` messages.                                       |
+| `examples/rtc-rallar-browser-messages-rtc-multicast.json` | Send one app-level `messages.rtc` payload to a room and assert two peers receive it.              |
+| `examples/rtc-rallar-browser-provider-mode-parity.json`   | Parameterize the RTC provider so the same recipe runs locally or through `rallar-remote-browser`. |
+| `examples/rtc-rallar-browser-scoped-workspaces.json`      | Pass scoped `roomRef` values through browser RTC and assert same-room-id workspace isolation.     |
+| `examples/rtc-rallar-browser-not-yet-in-sync.json`        | Pass `minSnapshotVersion` and assert an observable `not-yet-in-sync` NACK.                        |
+| `examples/rtc-rallar-browser-readiness-diagnostics.json`  | Wait for browser-provider readiness diagnostics and health.                                       |
+| `examples/rtc-rallar-browser-timeout-diagnostics.json`    | Intentionally fail a diagnostic wait to show timeout diagnostics.                                 |
+| `examples/rtc-rallar-memory-delivery-semantics.json`      | Deterministically assert direct and room broadcast delivery metadata.                             |
+| `examples/rtc-rallar-memory-routing-failures.json`        | Intentionally record no-recipient, closed-target, and send-after-close failures.                  |
 
 Live validation command:
 

@@ -4,7 +4,7 @@ import type {
     RallarGameEnvelopeKind,
     RallarGameSequenceAcceptConstraints,
     RallarGameSequenceAcceptResult,
-    RallarGameSequenceTracker,
+    RallarGameSequenceTracker
 } from './types.ts';
 
 const RALLAR_GAME_ENVELOPE_KINDS = new Set<RallarGameEnvelopeKind>([
@@ -15,11 +15,11 @@ const RALLAR_GAME_ENVELOPE_KINDS = new Set<RallarGameEnvelopeKind>([
     'event',
     'snapshot',
     'sync-request',
-    'heartbeat',
+    'heartbeat'
 ]);
 
 export function createRallarGameEnvelope<T>(
-    input: RallarGameEnvelopeCreateInput<T>,
+    input: RallarGameEnvelopeCreateInput<T>
 ): RallarGameEnvelope<T> {
     return {
         protocol: input.protocol,
@@ -30,13 +30,13 @@ export function createRallarGameEnvelope<T>(
         seq: input.seq,
         sentAtEpochMs: input.sentAtEpochMs ?? Date.now(),
         directorEpoch: input.directorEpoch,
-        payload: input.payload,
+        payload: input.payload
     };
 }
 
 export function isRallarGameEnvelope(
     value: unknown,
-    protocol: string,
+    protocol: string
 ): value is RallarGameEnvelope<unknown> {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         return false;
@@ -68,14 +68,14 @@ export function createRallarGameSequenceTracker(): RallarGameSequenceTracker {
     return {
         accept(
             envelope: RallarGameEnvelope<unknown>,
-            constraints: RallarGameSequenceAcceptConstraints = {},
+            constraints: RallarGameSequenceAcceptConstraints = {}
         ): RallarGameSequenceAcceptResult {
             const rejected = rejectByConstraints(envelope, constraints);
             if (rejected) {
                 return {
                     accepted: false,
                     reason: rejected,
-                    envelope,
+                    envelope
                 };
             }
 
@@ -86,7 +86,7 @@ export function createRallarGameSequenceTracker(): RallarGameSequenceTracker {
                     return {
                         accepted: false,
                         reason: 'duplicate-sequence',
-                        envelope,
+                        envelope
                     };
                 }
 
@@ -94,7 +94,7 @@ export function createRallarGameSequenceTracker(): RallarGameSequenceTracker {
                     return {
                         accepted: false,
                         reason: 'stale-sequence',
-                        envelope,
+                        envelope
                     };
                 }
             }
@@ -102,7 +102,7 @@ export function createRallarGameSequenceTracker(): RallarGameSequenceTracker {
             lastSeqByKey.set(key, envelope.seq);
             return {
                 accepted: true,
-                envelope,
+                envelope
             };
         },
         last(envelope): number | undefined {
@@ -110,14 +110,14 @@ export function createRallarGameSequenceTracker(): RallarGameSequenceTracker {
         },
         reset(): void {
             lastSeqByKey.clear();
-        },
+        }
     };
 }
 
 function rejectByConstraints(
     envelope: RallarGameEnvelope<unknown>,
-    constraints: RallarGameSequenceAcceptConstraints,
-): Exclude<RallarGameSequenceAcceptResult, { accepted: true }>['reason'] | undefined {
+    constraints: RallarGameSequenceAcceptConstraints
+): Exclude<RallarGameSequenceAcceptResult, { accepted: true; }>['reason'] | undefined {
     if (constraints.protocol && envelope.protocol !== constraints.protocol) {
         return 'wrong-protocol';
     }
@@ -155,16 +155,13 @@ function rejectByConstraints(
 }
 
 function sequenceKey(
-    envelope: Pick<
-        RallarGameEnvelope<unknown>,
-        'roomId' | 'matchId' | 'directorEpoch' | 'senderId' | 'kind'
-    >,
+    envelope: Pick<RallarGameEnvelope<unknown>, 'roomId' | 'matchId' | 'directorEpoch' | 'senderId' | 'kind'>
 ): string {
     return [
         envelope.roomId,
         envelope.matchId ?? '',
         envelope.directorEpoch,
         envelope.senderId,
-        envelope.kind,
+        envelope.kind
     ].join('\u001f');
 }

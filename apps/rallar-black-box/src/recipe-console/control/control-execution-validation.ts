@@ -1,21 +1,21 @@
 import type {
     ControlDistributedRunArtifactBundle,
-    ControlDistributedRunSnapshot,
+    ControlDistributedRunSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     RALLAR_BLACK_BOX_DISTRIBUTED_TARGET_POLICY_MODES,
-    type RallarBlackBoxDistributedTargetResolution,
+    type RallarBlackBoxDistributedTargetResolution
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { validateControlDistributedRuns } from './control-snapshot-validation.ts';
 
 export function validateControlExecutionRun(
-    value: unknown,
+    value: unknown
 ): asserts value is ControlDistributedRunSnapshot {
     validateControlDistributedRuns([value]);
 }
 
 export function validateControlExecutionTargetResolution(
-    value: unknown,
+    value: unknown
 ): asserts value is RallarBlackBoxDistributedTargetResolution {
     const resolution = record(value, 'target resolution');
     const group = record(resolution.group, 'target resolution.group');
@@ -35,7 +35,7 @@ export function validateControlExecutionTargetResolution(
     const targetAgentIds = arrayField(
         resolution,
         'targetAgentIds',
-        'target resolution.targetAgentIds',
+        'target resolution.targetAgentIds'
     );
     stringArray(targetAgentIds, 'target resolution.targetAgentIds');
     uniqueStrings(targetAgentIds, 'target resolution.targetAgentIds');
@@ -43,29 +43,29 @@ export function validateControlExecutionTargetResolution(
     const roleAssignments = arrayField(
         resolution,
         'roleAssignments',
-        'target resolution.roleAssignments',
+        'target resolution.roleAssignments'
     );
     roleAssignments.forEach((value, index) => {
         const assignment = record(
             value,
-            `target resolution.roleAssignments[${index}]`,
+            `target resolution.roleAssignments[${index}]`
         );
         stringField(
             assignment,
             'agentId',
-            `target resolution.roleAssignments[${index}].agentId`,
+            `target resolution.roleAssignments[${index}].agentId`
         );
         stringField(
             assignment,
             'role',
-            `target resolution.roleAssignments[${index}].role`,
+            `target resolution.roleAssignments[${index}].role`
         );
     });
 
     const blockers = arrayField(
         resolution,
         'blockers',
-        'target resolution.blockers',
+        'target resolution.blockers'
     );
     blockers.forEach((value, index) => {
         const blocker = record(value, `target resolution.blockers[${index}]`);
@@ -73,7 +73,7 @@ export function validateControlExecutionTargetResolution(
             stringField(
                 blocker,
                 field,
-                `target resolution.blockers[${index}].${field}`,
+                `target resolution.blockers[${index}].${field}`
             );
         }
     });
@@ -88,7 +88,7 @@ export function validateControlExecutionTargetResolution(
             'staleAgents',
             'offlineAgents',
             'wrongGroupAgents',
-            'agentsWithoutIdentity',
+            'agentsWithoutIdentity'
         ] as const
     ) {
         numberField(summary, field, `target resolution.summary.${field}`);
@@ -97,7 +97,7 @@ export function validateControlExecutionTargetResolution(
         numberField(
             summary,
             'expectedParticipantCount',
-            'target resolution.summary.expectedParticipantCount',
+            'target resolution.summary.expectedParticipantCount'
         );
     }
     for (const field of ['roleCounts', 'regions', 'providers'] as const) {
@@ -106,7 +106,7 @@ export function validateControlExecutionTargetResolution(
 }
 
 export function validateControlExecutionArtifactBundle(
-    value: unknown,
+    value: unknown
 ): asserts value is ControlDistributedRunArtifactBundle {
     const artifact = record(value, 'artifact');
     if (artifact.artifactSchemaVersion !== 2) {
@@ -119,7 +119,7 @@ export function validateControlExecutionArtifactBundle(
         const file of [
             'distributed-run.json',
             'manifest.json',
-            'control-run.json',
+            'control-run.json'
         ]
     ) {
         stringField(files, file, `artifact.files.${file}`);
@@ -141,24 +141,28 @@ function record(value: unknown, path: string): Record<string, unknown> {
 function arrayField(
     value: Record<string, unknown>,
     field: string,
-    path: string,
+    path: string
 ): readonly unknown[] {
-    if (!Array.isArray(value[field])) fail(`${path} must be an array`);
+    if (!Array.isArray(value[field])) {
+        fail(`${path} must be an array`);
+    }
     return value[field] as readonly unknown[];
 }
 
 function stringField(
     value: Record<string, unknown>,
     field: string,
-    path: string,
+    path: string
 ): void {
-    if (typeof value[field] !== 'string') fail(`${path} must be a string`);
+    if (typeof value[field] !== 'string') {
+        fail(`${path} must be a string`);
+    }
 }
 
 function numberField(
     value: Record<string, unknown>,
     field: string,
-    path: string,
+    path: string
 ): void {
     if (typeof value[field] !== 'number' || !Number.isFinite(value[field])) {
         fail(`${path} must be a finite number`);
@@ -167,7 +171,9 @@ function numberField(
 
 function stringArray(values: readonly unknown[], path: string): void {
     values.forEach((value, index) => {
-        if (typeof value !== 'string') fail(`${path}[${index}] must be a string`);
+        if (typeof value !== 'string') {
+            fail(`${path}[${index}] must be a string`);
+        }
     });
 }
 

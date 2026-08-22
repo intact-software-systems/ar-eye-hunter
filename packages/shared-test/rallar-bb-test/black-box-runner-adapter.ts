@@ -2,13 +2,13 @@
 import {
     createRtcProviderFromClientFactory,
     type RtcClient,
-    type RtcProvider,
+    type RtcProvider
 } from '../black-box-runner/rtc-provider.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestEvent,
     RallarBlackBoxTestResult,
-    RallarBlackBoxTestRuntime,
+    RallarBlackBoxTestRuntime
 } from './types.ts';
 
 export type RallarBlackBoxRtcClientAdapterOptions = Readonly<{
@@ -22,7 +22,7 @@ function asRecord(value: any): Record<string, any> {
 }
 
 function firstDefined(...values: any[]): any {
-    return values.find(value => value !== undefined);
+    return values.find((value) => value !== undefined);
 }
 
 function toRallarScope(request: any): Record<string, unknown> | undefined {
@@ -33,7 +33,7 @@ function toRallarScope(request: any): Record<string, unknown> | undefined {
         request.applicationId,
         rallar.applicationId,
         scope.applicationId,
-        roomRef.applicationId,
+        roomRef.applicationId
     );
     if (applicationId === undefined) {
         return undefined;
@@ -43,12 +43,12 @@ function toRallarScope(request: any): Record<string, unknown> | undefined {
         request.workspaceId,
         rallar.workspaceId,
         scope.workspaceId,
-        roomRef.workspaceId,
+        roomRef.workspaceId
     );
 
     return {
         applicationId: String(applicationId),
-        ...(workspaceId !== undefined ? { workspaceId: String(workspaceId) } : {}),
+        ...(workspaceId !== undefined ? { workspaceId: String(workspaceId) } : {})
     };
 }
 
@@ -61,7 +61,7 @@ function toRallarRoomRef(request: any): Record<string, unknown> | undefined {
             ...(explicitRoomRef.workspaceId !== undefined
                 ? { workspaceId: String(explicitRoomRef.workspaceId) }
                 : {}),
-            groupId: String(explicitRoomRef.groupId),
+            groupId: String(explicitRoomRef.groupId)
         };
     }
 
@@ -74,7 +74,7 @@ function toRallarRoomRef(request: any): Record<string, unknown> | undefined {
     return {
         applicationId: scope.applicationId,
         ...(scope.workspaceId !== undefined ? { workspaceId: scope.workspaceId } : {}),
-        groupId: String(roomId),
+        groupId: String(roomId)
     };
 }
 
@@ -84,7 +84,7 @@ function toRallarScopeFields(request: any): Record<string, unknown> {
     const roomRef = toRallarRoomRef(request);
     const minSnapshotVersion = firstDefined(
         request.minSnapshotVersion,
-        rallar.minSnapshotVersion,
+        rallar.minSnapshotVersion
     );
 
     return {
@@ -92,7 +92,7 @@ function toRallarScopeFields(request: any): Record<string, unknown> {
         ...(scope?.workspaceId !== undefined ? { workspaceId: scope.workspaceId } : {}),
         ...(scope ? { scope } : {}),
         ...(roomRef ? { roomRef } : {}),
-        ...(minSnapshotVersion !== undefined ? { minSnapshotVersion } : {}),
+        ...(minSnapshotVersion !== undefined ? { minSnapshotVersion } : {})
     };
 }
 
@@ -103,7 +103,7 @@ function toConnectionName(request: any): string {
         request.actor,
         request.peerId,
         request.clientId,
-        'default',
+        'default'
     ));
 }
 
@@ -118,7 +118,7 @@ function toCommandId(
     connection: string,
     action: string,
     sequence: number,
-    request: any,
+    request: any
 ): string {
     return String(firstDefined(
         request.commandId,
@@ -130,8 +130,8 @@ function toCommandId(
             request.scenarioExecutionNumber,
             request.interactionExecutionNumber,
             request.repeatIndex,
-            sequence,
-        ].filter(value => value !== undefined && value !== '').join('-'),
+            sequence
+        ].filter((value) => value !== undefined && value !== '').join('-')
     ));
 }
 
@@ -142,13 +142,13 @@ function assertCommandSucceeded(result: RallarBlackBoxTestResult): void {
 
     throw new Error(
         result.error?.message ??
-        'Rallar black-box command failed: ' + result.commandId,
+            'Rallar black-box command failed: ' + result.commandId
     );
 }
 
 function eventBelongsToConnection(
     event: RallarBlackBoxTestEvent,
-    connection: string,
+    connection: string
 ): boolean {
     return !event.connection || event.connection === connection;
 }
@@ -172,14 +172,14 @@ function isCloseEvent(event: RallarBlackBoxTestEvent): boolean {
 function toConnectCommand(
     request: any,
     connection: string,
-    commandId: string,
+    commandId: string
 ): RallarBlackBoxTestCommand {
     const rallar = asRecord(request.rallar);
     const scopeFields = toRallarScopeFields(request);
     const apiBaseUrl = firstDefined(
         rallar.apiBaseUrl,
         request.apiBaseUrl,
-        request.rallarApiBaseUrl,
+        request.rallarApiBaseUrl
     );
     const transport = toRtcTransport(firstDefined(rallar.transport, request.transport));
 
@@ -195,12 +195,12 @@ function toConnectCommand(
             ...rallar,
             ...(apiBaseUrl ? { apiBaseUrl } : {}),
             ...(transport ? { transport } : {}),
-            ...scopeFields,
+            ...scopeFields
         },
         metadata: {
             ...(request.parity ? { parity: request.parity } : {}),
-            blackBoxRunner: request,
-        },
+            blackBoxRunner: request
+        }
     };
 }
 
@@ -209,7 +209,7 @@ function toSendCommand(
     connection: string,
     commandId: string,
     message: unknown,
-    interaction: any,
+    interaction: any
 ): RallarBlackBoxTestCommand {
     const rallar = asRecord(request.rallar);
     const scopeFields = toRallarScopeFields(request);
@@ -217,15 +217,15 @@ function toSendCommand(
         ? {
             ...message,
             ...Object.fromEntries(
-                Object.entries(scopeFields).filter(([key]) => !(key in message)),
-            ),
+                Object.entries(scopeFields).filter(([key]) => !(key in message))
+            )
         }
         : Object.keys(scopeFields).length > 0
-            ? {
-                data: message,
-                ...scopeFields,
-            }
-            : message;
+        ? {
+            data: message,
+            ...scopeFields
+        }
+        : message;
     return {
         kind: 'rtc.send',
         commandId,
@@ -236,15 +236,15 @@ function toSendCommand(
         transport: toRtcTransport(firstDefined(rallar.transport, request.transport)),
         metadata: {
             ...(request.parity ? { parity: request.parity } : {}),
-            blackBoxRunner: request,
-        },
+            blackBoxRunner: request
+        }
     };
 }
 
 export function createRallarBlackBoxRtcClient(
     runtime: RallarBlackBoxTestRuntime,
     request: any,
-    options: RallarBlackBoxRtcClientAdapterOptions = {},
+    options: RallarBlackBoxRtcClientAdapterOptions = {}
 ): RtcClient {
     const connection = toConnectionName(request);
     const commandIdPrefix = options.commandIdPrefix ?? 'rallar-bb';
@@ -259,7 +259,7 @@ export function createRallarBlackBoxRtcClient(
             const result = await runtime.execute(toConnectCommand(
                 request,
                 connection,
-                toCommandId(commandIdPrefix, connection, 'connect', sequence++, request),
+                toCommandId(commandIdPrefix, connection, 'connect', sequence++, request)
             ));
             assertCommandSucceeded(result);
         },
@@ -271,7 +271,7 @@ export function createRallarBlackBoxRtcClient(
                 connection,
                 toCommandId(commandIdPrefix, connection, 'send', sequence++, sendRequest),
                 message,
-                interaction,
+                interaction
             ));
             assertCommandSucceeded(result);
         },
@@ -285,13 +285,13 @@ export function createRallarBlackBoxRtcClient(
                     connection,
                     'close',
                     sequence++,
-                    closeRequest,
+                    closeRequest
                 ),
                 metadata: {
                     ...(closeRequest.parity ? { parity: closeRequest.parity } : {}),
                     connection,
-                    blackBoxRunner: closeRequest,
-                },
+                    blackBoxRunner: closeRequest
+                }
             });
             assertCommandSucceeded(result);
             unsubscribeMessages?.();
@@ -300,11 +300,11 @@ export function createRallarBlackBoxRtcClient(
 
         onMessage(handler: (message: unknown) => void): void {
             unsubscribeMessages?.();
-            runtime.state().events.forEach(event => {
+            runtime.state().events.forEach((event) => {
                 seenMessageEventIds.add(event.eventId);
             });
-            unsubscribeMessages = runtime.subscribe(state => {
-                state.events.forEach(event => {
+            unsubscribeMessages = runtime.subscribe((state) => {
+                state.events.forEach((event) => {
                     if (
                         seenMessageEventIds.has(event.eventId) ||
                         event.kind !== 'message' ||
@@ -321,11 +321,11 @@ export function createRallarBlackBoxRtcClient(
 
         onClose(handler: (event: unknown) => void): void {
             unsubscribeClose?.();
-            runtime.state().events.forEach(event => {
+            runtime.state().events.forEach((event) => {
                 seenCloseEventIds.add(event.eventId);
             });
-            unsubscribeClose = runtime.subscribe(state => {
-                state.events.forEach(event => {
+            unsubscribeClose = runtime.subscribe((state) => {
+                state.events.forEach((event) => {
                     if (
                         seenCloseEventIds.has(event.eventId) ||
                         !isCloseEvent(event) ||
@@ -338,19 +338,20 @@ export function createRallarBlackBoxRtcClient(
                     handler(event.payload ?? event);
                 });
             });
-        },
+        }
     };
 }
 
 export function createRallarBlackBoxRtcProvider(
     runtime: RallarBlackBoxTestRuntime,
-    options: RallarBlackBoxRtcClientAdapterOptions = {},
+    options: RallarBlackBoxRtcClientAdapterOptions = {}
 ): RtcProvider {
     return createRtcProviderFromClientFactory({
-        createClient: request => createRallarBlackBoxRtcClient(
-            runtime,
-            request,
-            options,
-        ),
+        createClient: (request) =>
+            createRallarBlackBoxRtcClient(
+                runtime,
+                request,
+                options
+            )
     });
 }

@@ -144,22 +144,22 @@ and alias-retention wording in the historical task recipes below.
 
 ```ts
 export interface RtcRttRefinementServiceDependencies {
-  readonly gate: RtcRttRefinementGate;
-  readonly nowEpochMs: () => number;
-  readonly observeRtt: (rtt: RttMeasurementInfo) => boolean;
-  readonly readPredictedNodeData: () => ReadonlyMap<string, VivaldiNodeData>;
+    readonly gate: RtcRttRefinementGate;
+    readonly nowEpochMs: () => number;
+    readonly observeRtt: (rtt: RttMeasurementInfo) => boolean;
+    readonly readPredictedNodeData: () => ReadonlyMap<string, VivaldiNodeData>;
 }
 
 export interface ClaimRtcRttRefinementWorkInput {
-  readonly observationId: string;
-  readonly workId: string;
-  readonly groupKey: string;
-  readonly rtt: RttMeasurementInfo;
-  readonly expireAtEpochMs: number;
+    readonly observationId: string;
+    readonly workId: string;
+    readonly groupKey: string;
+    readonly rtt: RttMeasurementInfo;
+    readonly expireAtEpochMs: number;
 }
 
 export class RtcRttRefinementService {
-  claimWork(input: ClaimRtcRttRefinementWorkInput): boolean;
+    claimWork(input: ClaimRtcRttRefinementWorkInput): boolean;
 }
 ```
 
@@ -191,9 +191,9 @@ parses its final `APP_OUTBOX` entry, and asserts:
 
 ```ts
 expect(envelope.data).toMatchObject({
-  kind: 'rtt-refresh',
-  rtt,
-  refinementObservationId: toRtcRttMutationReceiptId(rtt),
+    kind: 'rtt-refresh',
+    rtt,
+    refinementObservationId: toRtcRttMutationReceiptId(rtt)
 });
 ```
 

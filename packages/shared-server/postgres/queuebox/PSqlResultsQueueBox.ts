@@ -1,14 +1,14 @@
+import {
+    ResourceInboxResultsRepository
+} from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { EnqueueBoxResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
 import { isExpiredResourceEntry, Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import {
-    ResourceInboxResultsRepository,
-} from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 
 export class PSqlResultsQueueBox implements EnqueueBoxResourceEntryRepository {
     public readonly repo: ResourceInboxResultsRepository;
 
     constructor(
-        repo: ResourceInboxResultsRepository,
+        repo: ResourceInboxResultsRepository
     ) {
         this.repo = repo;
     }
@@ -27,13 +27,13 @@ export class PSqlResultsQueueBox implements EnqueueBoxResourceEntryRepository {
         return await this.repo.begin(
             async (txRepo: ResourceInboxResultsRepository) => {
                 return await txRepo.writeIfAbsentOrReplaceExpired(resourceEntry);
-            },
+            }
         );
     }
 
     async enqueueIf(
         resourceEntry: ResourceEntry,
-        enqueueIt: (existing: ResourceEntry) => boolean,
+        enqueueIt: (existing: ResourceEntry) => boolean
     ): Promise<ResourceEntry | undefined> {
         return await this.repo.begin(
             async (txRepo: ResourceInboxResultsRepository) => {
@@ -48,13 +48,13 @@ export class PSqlResultsQueueBox implements EnqueueBoxResourceEntryRepository {
                 }
 
                 return previous;
-            },
+            }
         );
     }
 
     async enqueueOrUpdate(
         resourceEntry: ResourceEntry,
-        updateExisting: (existing: ResourceEntry) => ResourceEntry | undefined,
+        updateExisting: (existing: ResourceEntry) => ResourceEntry | undefined
     ) {
         return await this.repo.begin(
             async (txRepo: ResourceInboxResultsRepository) => {
@@ -64,7 +64,7 @@ export class PSqlResultsQueueBox implements EnqueueBoxResourceEntryRepository {
                     return {
                         action: 'inserted' as const,
                         entry: resourceEntry,
-                        previous: undefined,
+                        previous: undefined
                     };
                 }
 
@@ -73,7 +73,7 @@ export class PSqlResultsQueueBox implements EnqueueBoxResourceEntryRepository {
                     return {
                         action: 'unchanged' as const,
                         entry: previous,
-                        previous,
+                        previous
                     };
                 }
 
@@ -81,9 +81,9 @@ export class PSqlResultsQueueBox implements EnqueueBoxResourceEntryRepository {
                 return {
                     action: 'updated' as const,
                     entry: updated,
-                    previous,
+                    previous
                 };
-            },
+            }
         );
     }
 

@@ -10,5 +10,5 @@ export {
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey,
     groupStatePresenceSummaryStorageKey,
-    groupStateScopeStorageKey,
+    groupStateScopeStorageKey
 } from './group-state/persistence/group-state-storage-keys.ts';

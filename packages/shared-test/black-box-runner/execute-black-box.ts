@@ -1,26 +1,12 @@
 // deno-lint-ignore-file no-explicit-any
 import { compareJson, COMPARISON, toConfig } from '../json-compare/CompareJson.ts';
-import {
-    rememberRtcCloseEvent,
-    type RtcClient,
-    type RtcProvider,
-    toRtcPayload,
-    toRtcFailureStatus, toRtcSuccessStatus,
-} from './rtc-provider.ts';
-import {
-    toWsConnectionName,
-    toWsExpectedConnectionName,
-    toWsFailureStatus,
-    toWsSuccessStatus,
-    waitForWsClose,
-    waitForWsMessage,
-    waitForWsMessageAbsence,
-    waitForWsMessages,
-} from './ws/ws-wait-expectations.ts';
-import { createRallarStubRtcProvider } from './rallar-stub-rtc-provider.ts';
-import { createRallarWebRtcWebSocketSignalingProvider } from './rallar-webrtc-runtime.ts';
-import {createRallarInMemoryProvider} from './rallar-in-memory-runtime.ts';
+import type { RallarBlackBoxTestCommand } from '../rallar-bb-test/types.ts';
+import { validateAssertValueComparators } from './expectations/assert-value-comparators.ts';
+import { executeHttpInteraction } from './http/execute-http-interaction.ts';
+import { toHttpInteractionStatus, toStatus } from './http/http-response-expectations.ts';
+import { normalizeBlackBoxResponseHeaders } from './http/normalize-black-box-response-headers.ts';
 import { createRallarBrowserRtcProvider } from './rallar-browser-rtc-provider.ts';
+import { createRallarInMemoryProvider } from './rallar-in-memory-runtime.ts';
 import {
     createRallarRemoteBrowserRtcProvider,
     executeRallarRemoteBrowserCommand,
@@ -29,39 +15,51 @@ import {
     toRallarRemoteBrowserCommandId,
     type RallarRemoteBrowserConfig,
     type RallarRemoteBrowserControlFetch,
-    type RallarRemoteBrowserControlResultEnvelope,
+    type RallarRemoteBrowserControlResultEnvelope
 } from './rallar-remote-browser-provider.ts';
-import type { RallarBlackBoxTestCommand } from '../rallar-bb-test/types.ts';
-import { normalizeBlackBoxResponseHeaders } from './http/normalize-black-box-response-headers.ts';
-import { executeHttpInteraction } from './http/execute-http-interaction.ts';
-import { validateAssertValueComparators } from './expectations/assert-value-comparators.ts';
+import { createRallarStubRtcProvider } from './rallar-stub-rtc-provider.ts';
+import { createRallarWebRtcWebSocketSignalingProvider } from './rallar-webrtc-runtime.ts';
 import {
-    toHttpInteractionStatus,
-    toStatus,
-} from './http/http-response-expectations.ts';
+    rememberRtcCloseEvent,
+    toRtcFailureStatus,
+    toRtcPayload,
+    toRtcSuccessStatus,
+    type RtcClient,
+    type RtcProvider
+} from './rtc-provider.ts';
 import {
     directSafeOutputTransformSpec,
     evaluateSafeOutputTransform,
     isSafeOutputTransformOnlySpec,
-    SafeOutputTransformError,
+    SafeOutputTransformError
 } from './scenario-transform/safe-output-transform.ts';
+import {
+    toWsConnectionName,
+    toWsExpectedConnectionName,
+    toWsFailureStatus,
+    toWsSuccessStatus,
+    waitForWsClose,
+    waitForWsMessage,
+    waitForWsMessageAbsence,
+    waitForWsMessages
+} from './ws/ws-wait-expectations.ts';
 const SUCCESS = 'SUCCESS';
 const FAILURE = 'FAILURE';
-declare const process: { env: Record<string, string | undefined> } | undefined;
+declare const process: { env: Record<string, string | undefined>; } | undefined;
 type Redaction = {
-    name: string
-    value: string
-}
+    name: string;
+    value: string;
+};
 
 type RunnerCorrelationConfig = {
-    runnerRunId: string
-    enabled: boolean
-    injectHeaders: boolean
-    injectPayloads: boolean
-    runIdHeader: string
-    stepIdHeader: string
-    payloadField: string
-}
+    runnerRunId: string;
+    enabled: boolean;
+    injectHeaders: boolean;
+    injectPayloads: boolean;
+    runIdHeader: string;
+    stepIdHeader: string;
+    payloadField: string;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -87,8 +85,8 @@ function toSecretNameSet(secretVariables: unknown): Set<string> {
         return new Set(
             secretVariables
                 .split(',')
-                .map(value => value.trim())
-                .filter(value => value.length > 0),
+                .map((value) => value.trim())
+                .filter((value) => value.length > 0)
         );
     }
 
@@ -105,25 +103,25 @@ function addRedaction(redactions: Redaction[], name: string, value: unknown): vo
         return;
     }
 
-    if (redactions.some(redaction => redaction.name === name && redaction.value === text)) {
+    if (redactions.some((redaction) => redaction.name === name && redaction.value === text)) {
         return;
     }
 
     redactions.push({
         name,
-        value: text,
+        value: text
     });
 }
 
 function normalizeRedactions(redactions: unknown): Redaction[] {
     if (Array.isArray(redactions)) {
-        return redactions.flatMap(redaction => {
+        return redactions.flatMap((redaction) => {
             if (isRecord(redaction) && typeof redaction.value === 'string' && redaction.value.length > 0) {
                 return [{
                     name: typeof redaction.name === 'string' && redaction.name.length > 0
                         ? redaction.name
                         : 'secret',
-                    value: redaction.value,
+                    value: redaction.value
                 }];
             }
 
@@ -139,7 +137,7 @@ function normalizeRedactions(redactions: unknown): Redaction[] {
 
             return [{
                 name,
-                value: String(value),
+                value: String(value)
             }];
         });
     }
@@ -153,7 +151,7 @@ function randomUuid(): string {
         return cryptoApi.randomUUID();
     }
 
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, character => {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
         const random = Math.floor(Math.random() * 16);
         const value = character === 'x' ? random : (random & 0x3) | 0x8;
         return value.toString(16);
@@ -171,7 +169,7 @@ function stringOption(...values: unknown[]): string | undefined {
 }
 
 function booleanOption(...values: unknown[]): boolean {
-    return values.some(value => value === true);
+    return values.some((value) => value === true);
 }
 
 function toRunnerCorrelationConfig(options: any = {}): RunnerCorrelationConfig {
@@ -185,37 +183,37 @@ function toRunnerCorrelationConfig(options: any = {}): RunnerCorrelationConfig {
             rawCorrelation.runnerRunId,
             rawCorrelation.runId,
             options.runnerRunId,
-            options.runId,
+            options.runId
         ) || 'bb-run-' + randomUuid(),
         enabled,
         injectHeaders: enabled && booleanOption(
             rawCorrelation.injectHeaders,
             rawCorrelation.headerInjection,
-            rawCorrelation.headers,
+            rawCorrelation.headers
         ),
         injectPayloads: enabled && booleanOption(
             rawCorrelation.injectPayloads,
             rawCorrelation.injectPayload,
             rawCorrelation.payloadInjection,
-            rawCorrelation.payloads,
+            rawCorrelation.payloads
         ),
         runIdHeader: stringOption(
             rawCorrelation.runIdHeader,
             rawCorrelation.runnerRunIdHeader,
             rawCorrelation.headers && isRecord(rawCorrelation.headers) ? rawCorrelation.headers.runId : undefined,
-            rawCorrelation.headers && isRecord(rawCorrelation.headers) ? rawCorrelation.headers.runnerRunId : undefined,
+            rawCorrelation.headers && isRecord(rawCorrelation.headers) ? rawCorrelation.headers.runnerRunId : undefined
         ) || 'x-rallar-black-box-run-id',
         stepIdHeader: stringOption(
             rawCorrelation.stepIdHeader,
             rawCorrelation.runnerStepIdHeader,
             rawCorrelation.headers && isRecord(rawCorrelation.headers) ? rawCorrelation.headers.stepId : undefined,
-            rawCorrelation.headers && isRecord(rawCorrelation.headers) ? rawCorrelation.headers.runnerStepId : undefined,
+            rawCorrelation.headers && isRecord(rawCorrelation.headers) ? rawCorrelation.headers.runnerStepId : undefined
         ) || 'x-rallar-black-box-step-id',
         payloadField: stringOption(
             rawCorrelation.payloadField,
             rawCorrelation.payloadKey,
-            rawCorrelation.field,
-        ) || 'blackBoxRunner',
+            rawCorrelation.field
+        ) || 'blackBoxRunner'
     };
 }
 
@@ -228,16 +226,16 @@ function toPublicCorrelationConfig(config: RunnerCorrelationConfig): any {
             payloads: config.injectPayloads,
             runIdHeader: config.runIdHeader,
             stepIdHeader: config.stepIdHeader,
-            payloadField: config.payloadField,
-        },
+            payloadField: config.payloadField
+        }
     };
 }
 
 export function resolveBlackBoxVariables(
     rawVariables: Record<string, unknown> = {},
     environment: Record<string, string | undefined> = defaultEnvironment(),
-    secretVariables: unknown = [],
-): { variables: Record<string, unknown>, redactions: Redaction[] } {
+    secretVariables: unknown = []
+): { variables: Record<string, unknown>; redactions: Redaction[]; } {
     const secrets = toSecretNameSet(secretVariables);
     const variables: Record<string, unknown> = {};
     const redactions: Redaction[] = [];
@@ -277,7 +275,7 @@ export function resolveBlackBoxVariables(
 
     return {
         variables,
-        redactions,
+        redactions
     };
 }
 
@@ -299,13 +297,13 @@ export function redactBlackBoxData<T>(value: T, redactions: Redaction[] = []): T
     }
 
     if (Array.isArray(value)) {
-        return value.map(item => redactBlackBoxData(item, redactions)) as T;
+        return value.map((item) => redactBlackBoxData(item, redactions)) as T;
     }
 
     if (isRecord(value)) {
         return Object.fromEntries(
             Object.entries(value)
-                .map(([key, nested]) => [key, redactBlackBoxData(nested, redactions)]),
+                .map(([key, nested]) => [key, redactBlackBoxData(nested, redactions)])
         ) as T;
     }
 
@@ -319,8 +317,8 @@ function createMissingRtcProvider(providerName: string): RtcProvider {
             interaction,
             'RTC provider is not configured: ' + providerName,
             {
-                availableProviders: Object.keys(context.rtcProviders || {}),
-            },
+                availableProviders: Object.keys(context.rtcProviders || {})
+            }
         ));
     };
 
@@ -328,7 +326,7 @@ function createMissingRtcProvider(providerName: string): RtcProvider {
         connect: missing,
         send: missing,
         wait: missing,
-        close: missing,
+        close: missing
     };
 }
 
@@ -341,7 +339,7 @@ function createRtcProviders(): Record<string, RtcProvider> {
         'rallar-stub': createRallarStubRtcProvider(),
         'rallar-memory': createRallarInMemoryProvider(),
         'rallar-browser': createRallarBrowserRtcProvider(),
-        'rallar-remote-browser': createRallarRemoteBrowserRtcProvider(),
+        'rallar-remote-browser': createRallarRemoteBrowserRtcProvider()
     };
 }
 
@@ -349,7 +347,7 @@ function createScenarioContext(options: any = {}): any {
     const resolvedVariables = resolveBlackBoxVariables(
         options.variables || {},
         options.environment || defaultEnvironment(),
-        options.secretVariables || options.secrets || [],
+        options.secretVariables || options.secrets || []
     );
     const correlation = toRunnerCorrelationConfig(options);
 
@@ -368,15 +366,15 @@ function createScenarioContext(options: any = {}): any {
         rtcCloseEvents: {},
         rtcProviders: {
             ...createRtcProviders(),
-            ...options.rtcProviders,
+            ...options.rtcProviders
         },
         options,
         dryRun: options?.dryRun === true,
         correlation,
         redactions: [
             ...resolvedVariables.redactions,
-            ...normalizeRedactions(options.redactions),
-        ],
+            ...normalizeRedactions(options.redactions)
+        ]
     };
 }
 
@@ -390,7 +388,7 @@ function toResolverRoot(context: any): any {
         resultsList: context.resultsList,
         resultsByName: context.resultsByName,
         runnerRunId: context.correlation?.runnerRunId,
-        correlation: toPublicCorrelationConfig(context.correlation),
+        correlation: toPublicCorrelationConfig(context.correlation)
     };
 }
 
@@ -409,18 +407,18 @@ function pathSegments(path: string): string[] {
     return path
         .replaceAll(/\[(\d+)]/g, '.$1')
         .split('.')
-        .map(segment => segment.trim())
-        .filter(segment => segment.length > 0);
+        .map((segment) => segment.trim())
+        .filter((segment) => segment.length > 0);
 }
 
-function tryResolvePath(path: string, root: any): { found: boolean, value?: any } {
+function tryResolvePath(path: string, root: any): { found: boolean; value?: any; } {
     const segments = pathSegments(path);
     let value = root;
 
     for (const segment of segments) {
         if (value === undefined || value === null) {
             return {
-                found: false,
+                found: false
             };
         }
 
@@ -429,11 +427,11 @@ function tryResolvePath(path: string, root: any): { found: boolean, value?: any 
 
     return value === undefined
         ? {
-            found: false,
+            found: false
         }
         : {
             found: true,
-            value,
+            value
         };
 }
 
@@ -449,7 +447,7 @@ function extractOutputPath(result: any, outputPath: unknown): any {
     const roots = [
         result,
         result?.actual,
-        result?.actual?.body,
+        result?.actual?.body
     ];
 
     for (const root of roots) {
@@ -463,18 +461,18 @@ function extractOutputPath(result: any, outputPath: unknown): any {
 }
 
 type OutputExtraction = {
-    name: string
-    path?: unknown
-    transform?: unknown
-    secret?: boolean
-    redactAs?: string
-}
+    name: string;
+    path?: unknown;
+    transform?: unknown;
+    secret?: boolean;
+    redactAs?: string;
+};
 
 interface EvaluateScenarioTransformInput {
-    readonly transform: unknown
-    readonly context: any
-    readonly result?: any
-    readonly operatorPath?: string
+    readonly transform: unknown;
+    readonly context: any;
+    readonly result?: any;
+    readonly operatorPath?: string;
 }
 
 function evaluateScenarioTransform(input: EvaluateScenarioTransformInput): any {
@@ -483,7 +481,7 @@ function evaluateScenarioTransform(input: EvaluateScenarioTransformInput): any {
         result: input.result,
         operatorPath: input.operatorPath,
         createUuid: randomUuid,
-        readTimestamp: Date.now,
+        readTimestamp: Date.now
     });
 }
 
@@ -496,7 +494,7 @@ function outputExtractions(result: any): OutputExtraction[] {
             path: result.outputPath,
             transform: result.transform,
             secret: result.secret === true || result.redact === true,
-            redactAs: typeof result.redactAs === 'string' ? result.redactAs : undefined,
+            redactAs: typeof result.redactAs === 'string' ? result.redactAs : undefined
         });
     }
 
@@ -505,7 +503,7 @@ function outputExtractions(result: any): OutputExtraction[] {
             if (typeof spec === 'string') {
                 extractions.push({
                     name,
-                    path: spec,
+                    path: spec
                 });
                 return;
             }
@@ -516,14 +514,14 @@ function outputExtractions(result: any): OutputExtraction[] {
                     path: spec.path ?? spec.from ?? spec.outputPath,
                     transform: spec.transform ?? directSafeOutputTransformSpec(spec),
                     secret: spec.secret === true || spec.redact === true,
-                    redactAs: typeof spec.redactAs === 'string' ? spec.redactAs : undefined,
+                    redactAs: typeof spec.redactAs === 'string' ? spec.redactAs : undefined
                 });
                 return;
             }
 
             extractions.push({
                 name,
-                path: spec,
+                path: spec
             });
         });
     }
@@ -542,35 +540,36 @@ function withExtractedOutputs(result: any, context: any): any {
     }
 
     const extractionErrors: any[] = [];
-    const extractedOutputs: Array<OutputExtraction & { value: any }> = [];
+    const extractedOutputs: Array<OutputExtraction & { value: any; }> = [];
 
-    extractions.forEach(extraction => {
+    extractions.forEach((extraction) => {
         try {
             const value = extraction.transform !== undefined
                 ? evaluateScenarioTransform({
                     transform: extraction.transform,
                     context,
                     result,
-                    operatorPath: `outputs.${extraction.name}`,
+                    operatorPath: `outputs.${extraction.name}`
                 })
                 : extractOutputPath(result, extraction.path);
             extractedOutputs.push({
                 ...extraction,
-                value,
+                value
             });
-        } catch (error) {
+        }
+        catch (error) {
             extractionErrors.push({
                 output: extraction.name,
                 path: extraction.path,
                 transform: extraction.transform,
                 error: error instanceof Error ? error.message : String(error),
-                details: error instanceof SafeOutputTransformError ? error.details : undefined,
+                details: error instanceof SafeOutputTransformError ? error.details : undefined
             });
         }
     });
 
     if (extractionErrors.length <= 0) {
-        extractedOutputs.forEach(extraction => {
+        extractedOutputs.forEach((extraction) => {
             context.outputs[extraction.name] = extraction.value;
             if (extraction.secret) {
                 addRedaction(context.redactions, extraction.redactAs || extraction.name, extraction.value);
@@ -586,8 +585,8 @@ function withExtractedOutputs(result: any, context: any): any {
         result: 'Output extraction failed',
         details: {
             ...(isRecord(result.details) ? result.details : {}),
-            outputExtractionErrors: extractionErrors,
-        },
+            outputExtractionErrors: extractionErrors
+        }
     };
 }
 
@@ -619,7 +618,7 @@ function resolvePlaceholders(value: any, context: any): any {
     }
 
     if (Array.isArray(value)) {
-        return value.map(item => resolvePlaceholders(item, context));
+        return value.map((item) => resolvePlaceholders(item, context));
     }
 
     if (value && typeof value === 'object') {
@@ -640,7 +639,8 @@ function resolveAssertActual(value: any, context: any, missingActualValue: any):
     if (typeof value === 'string') {
         try {
             return resolveStringPlaceholders(value, context);
-        } catch (error) {
+        }
+        catch (error) {
             if (missingActualValue !== undefined) {
                 return missingActualValue;
             }
@@ -649,7 +649,7 @@ function resolveAssertActual(value: any, context: any, missingActualValue: any):
     }
 
     if (Array.isArray(value)) {
-        return value.map(item => resolveAssertActual(item, context, missingActualValue));
+        return value.map((item) => resolveAssertActual(item, context, missingActualValue));
     }
 
     if (value && typeof value === 'object') {
@@ -659,7 +659,7 @@ function resolveAssertActual(value: any, context: any, missingActualValue: any):
 
         return Object.fromEntries(
             Object.entries(value)
-                .map(([key, nested]) => [key, resolveAssertActual(nested, context, missingActualValue)]),
+                .map(([key, nested]) => [key, resolveAssertActual(nested, context, missingActualValue)])
         );
     }
 
@@ -670,9 +670,9 @@ function toResultKey(interactionData: any): string {
     return [
         interactionData.name,
         'i' + interactionData.interactionExecutionNumber,
-        interactionData.repeatIndex !== undefined ? 'r' + interactionData.repeatIndex : undefined,
+        interactionData.repeatIndex !== undefined ? 'r' + interactionData.repeatIndex : undefined
     ]
-        .filter(value => value !== undefined && value !== null && value !== '')
+        .filter((value) => value !== undefined && value !== null && value !== '')
         .join('-');
 }
 
@@ -685,14 +685,14 @@ function storeInteractionData(interactionData: any, context: any): any {
 
     const resultWithKey = withExtractedOutputs({
         ...interactionData,
-        resultKey,
+        resultKey
     }, context);
     const storedResult = resultWithKey?.status === FAILURE &&
             (resultWithKey?.nonBlockingFailure === true ||
                 resultWithKey?.interaction?.request?.nonBlockingFailure === true)
         ? {
             ...resultWithKey,
-            nonBlockingFailure: true,
+            nonBlockingFailure: true
         }
         : resultWithKey;
 
@@ -709,7 +709,7 @@ function storeInteractionData(interactionData: any, context: any): any {
 }
 
 function sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function toOutputReportFields(interaction: any): any {
@@ -720,13 +720,13 @@ function toOutputReportFields(interaction: any): any {
         transform: interaction.request.transform,
         secret: interaction.request.secret,
         redact: interaction.request.redact,
-        redactAs: interaction.request.redactAs,
+        redactAs: interaction.request.redactAs
     };
 }
 
 function toInteractionName(interactionWithConfig: any): string {
     return Object.keys(interactionWithConfig)
-        .filter(key => !['HTTP', 'MQ', 'WS', 'RTC', 'WEBRTC', 'CRDT', 'ASSERT', 'SET', 'PARALLEL'].includes(key))[0];
+        .filter((key) => !['HTTP', 'MQ', 'WS', 'RTC', 'WEBRTC', 'CRDT', 'ASSERT', 'SET', 'PARALLEL'].includes(key))[0];
 }
 
 function toInteractionConfig(interactionWithConfig: any): any {
@@ -734,23 +734,28 @@ function toInteractionConfig(interactionWithConfig: any): any {
 
     return {
         interactionName: name,
-        ...interactionWithConfig[name],
+        ...interactionWithConfig[name]
     };
 }
 
 function toExecutableInteraction(interaction: any): any {
-    return interaction?.HTTP
-        || interaction?.MQ
-        || interaction?.WS
-        || interaction?.RTC
-        || interaction?.WEBRTC
-        || interaction?.CRDT
-        || interaction?.ASSERT
-        || interaction?.SET
-        || interaction?.PARALLEL;
+    return interaction?.HTTP ||
+        interaction?.MQ ||
+        interaction?.WS ||
+        interaction?.RTC ||
+        interaction?.WEBRTC ||
+        interaction?.CRDT ||
+        interaction?.ASSERT ||
+        interaction?.SET ||
+        interaction?.PARALLEL;
 }
 
-function toRunnerStepId(correlation: RunnerCorrelationConfig, request: any, interactionName: string, options: any = {}): string {
+function toRunnerStepId(
+    correlation: RunnerCorrelationConfig,
+    request: any,
+    interactionName: string,
+    options: any = {}
+): string {
     const runIndex = Number.parseInt(String(options.runIndex || request.runIndex || 1), 10) || 1;
     const scenarioExecutionNumber = Number.parseInt(String(request.scenarioExecutionNumber || 1), 10) || 1;
     const interactionExecutionNumber = Number.parseInt(String(request.interactionExecutionNumber || 0), 10) || 0;
@@ -769,7 +774,7 @@ function toRunnerStepId(correlation: RunnerCorrelationConfig, request: any, inte
         interactionExecutionNumber,
         safeName,
         'repeat',
-        repeatIndex,
+        repeatIndex
     ].join('-');
 }
 
@@ -787,7 +792,7 @@ function toStepCorrelation(interaction: any, config: any, context: any): any {
         scenarioExecutionNumber: request.scenarioExecutionNumber,
         interactionExecutionNumber: request.interactionExecutionNumber,
         repeatIndex: request.repeatIndex,
-        interactionName: config.interactionName,
+        interactionName: config.interactionName
     };
 }
 
@@ -800,7 +805,7 @@ function toCorrelationReportFields(interaction: any): any {
     return {
         runnerRunId: correlation.runnerRunId,
         runnerStepId: correlation.runnerStepId,
-        correlation,
+        correlation
     };
 }
 
@@ -818,8 +823,8 @@ function mergePayloadCorrelation(value: unknown, correlation: any, payloadField:
         [payloadField]: {
             ...(isRecord(value[payloadField]) ? value[payloadField] : {}),
             runnerRunId: correlation.runnerRunId,
-            runnerStepId: correlation.runnerStepId,
-        },
+            runnerStepId: correlation.runnerStepId
+        }
     };
 }
 
@@ -860,26 +865,26 @@ function applyInteractionCorrelation(interactionWithConfig: any, interaction: an
     const transport = interactionWithConfig.HTTP
         ? 'HTTP'
         : interactionWithConfig.WS
-            ? 'WS'
-            : interactionWithConfig.CRDT
-                ? 'CRDT'
-                : interactionWithConfig.RTC || interactionWithConfig.WEBRTC
-                    ? 'RTC'
-                    : interactionWithConfig.PARALLEL
-                        ? 'PARALLEL'
-                        : interactionWithConfig.SET
-                            ? 'SET'
-                            : interactionWithConfig.ASSERT
-                                ? 'ASSERT'
-                                : 'UNKNOWN';
+        ? 'WS'
+        : interactionWithConfig.CRDT
+        ? 'CRDT'
+        : interactionWithConfig.RTC || interactionWithConfig.WEBRTC
+        ? 'RTC'
+        : interactionWithConfig.PARALLEL
+        ? 'PARALLEL'
+        : interactionWithConfig.SET
+        ? 'SET'
+        : interactionWithConfig.ASSERT
+        ? 'ASSERT'
+        : 'UNKNOWN';
 
     request.correlation = {
         ...correlation,
         transport,
         injected: {
             headers: false,
-            payload: false,
-        },
+            payload: false
+        }
     };
     request.runnerRunId = correlation.runnerRunId;
     request.runnerStepId = correlation.runnerStepId;
@@ -888,7 +893,7 @@ function applyInteractionCorrelation(interactionWithConfig: any, interaction: an
         request.headers = {
             ...(isRecord(request.headers) ? request.headers : {}),
             [correlationConfig.runIdHeader]: correlation.runnerRunId,
-            [correlationConfig.stepIdHeader]: correlation.runnerStepId,
+            [correlationConfig.stepIdHeader]: correlation.runnerStepId
         };
         request.correlation.injected.headers = true;
     }
@@ -901,7 +906,7 @@ function applyInteractionCorrelation(interactionWithConfig: any, interaction: an
         request.correlation.injected.payload = injectCorrelationPayload(
             request,
             correlation,
-            correlationConfig.payloadField,
+            correlationConfig.payloadField
         );
     }
 }
@@ -919,7 +924,7 @@ function toSetSuccessStatus(config: any, interaction: any, value: any): any {
         expected: interaction.response,
         actual: value,
         ...toOutputReportFields(interaction),
-        input: interaction.request.input,
+        input: interaction.request.input
     };
 }
 
@@ -936,7 +941,7 @@ function toSetFailureStatus(config: any, interaction: any, result: string, detai
         expected: interaction.response,
         actual: undefined,
         details,
-        ...config,
+        ...config
     };
 }
 
@@ -949,12 +954,16 @@ async function executeSetInteraction(interaction: any, config: any, context: any
 
     if (evidence !== undefined) {
         const collector = context.options.stateWriteEvidenceCollector;
-        if (typeof collector !== 'function') throw new Error('State-write evidence collector is unavailable.');
+        if (typeof collector !== 'function') {
+            throw new Error('State-write evidence collector is unavailable.');
+        }
         value = await collector(evidence);
     }
     if (!output) {
-        return toSetFailureStatus(config, interaction,
-            'Set step is missing output. Use output to name the stored value.',
+        return toSetFailureStatus(
+            config,
+            interaction,
+            'Set step is missing output. Use output to name the stored value.'
         );
     }
 
@@ -963,9 +972,10 @@ async function executeSetInteraction(interaction: any, config: any, context: any
             value = evaluateScenarioTransform({
                 transform,
                 context,
-                operatorPath: `set.${String(output)}`,
+                operatorPath: `set.${String(output)}`
             });
-        } catch (error) {
+        }
+        catch (error) {
             return toSetFailureStatus(
                 config,
                 interaction,
@@ -974,9 +984,9 @@ async function executeSetInteraction(interaction: any, config: any, context: any
                     transform,
                     transformError: {
                         message: error instanceof Error ? error.message : String(error),
-                        details: error instanceof SafeOutputTransformError ? error.details : undefined,
-                    },
-                },
+                        details: error instanceof SafeOutputTransformError ? error.details : undefined
+                    }
+                }
             );
         }
     }
@@ -985,11 +995,13 @@ async function executeSetInteraction(interaction: any, config: any, context: any
         return toSetFailureStatus(
             config,
             interaction,
-            'Set step is missing value. Use value, request.value, or transform.',
+            'Set step is missing value. Use value, request.value, or transform.'
         );
     }
 
-    if (Number.isFinite(delayMs) && delayMs > 0) await sleep(delayMs);
+    if (Number.isFinite(delayMs) && delayMs > 0) {
+        await sleep(delayMs);
+    }
 
     return toSetSuccessStatus(config, interaction, value);
 }
@@ -1007,7 +1019,7 @@ function toAssertSuccessStatus(config: any, interaction: any, actual: any, detai
         actual,
         details,
         ...toOutputReportFields(interaction),
-        input: interaction.request.input,
+        input: interaction.request.input
     };
 }
 
@@ -1024,7 +1036,7 @@ function toAssertFailureStatus(config: any, interaction: any, actual: any, resul
         expected: interaction.response,
         actual,
         details,
-        ...config,
+        ...config
     };
 }
 
@@ -1033,7 +1045,7 @@ function monotonicComparisonFailures(actual: any, paths: unknown): any[] {
         return [];
     }
 
-    return paths.flatMap<any>(path => {
+    return paths.flatMap<any>((path) => {
         if (typeof path !== 'string' || path.length <= 0) {
             return [{ path, error: 'Monotonic assertion paths must be non-empty strings.' }];
         }
@@ -1041,10 +1053,11 @@ function monotonicComparisonFailures(actual: any, paths: unknown): any[] {
         let values: unknown;
         try {
             values = resolvePath(path, actual);
-        } catch (error) {
+        }
+        catch (error) {
             return [{
                 path,
-                error: error instanceof Error ? error.message : String(error),
+                error: error instanceof Error ? error.message : String(error)
             }];
         }
 
@@ -1052,8 +1065,8 @@ function monotonicComparisonFailures(actual: any, paths: unknown): any[] {
             return [{ path, values, error: 'Monotonic assertion path must resolve to a non-empty array.' }];
         }
 
-        const numericValues = values.map(value => Number(value));
-        if (numericValues.some(value => !Number.isFinite(value))) {
+        const numericValues = values.map((value) => Number(value));
+        if (numericValues.some((value) => !Number.isFinite(value))) {
             return [{ path, values, error: 'Monotonic assertion values must be finite numbers.' }];
         }
 
@@ -1067,7 +1080,7 @@ function monotonicComparisonFailures(actual: any, paths: unknown): any[] {
                 values,
                 regressionIndex,
                 previous: numericValues[regressionIndex - 1],
-                current: numericValues[regressionIndex],
+                current: numericValues[regressionIndex]
             }];
     });
 }
@@ -1078,39 +1091,41 @@ function toResolvedAssertActual(interaction: any, context: any): any {
             ? evaluateScenarioTransform({
                 transform: interaction.response.actual.transform,
                 context,
-                operatorPath: 'assert.actual',
+                operatorPath: 'assert.actual'
             })
             : resolveAssertActual(
                 interaction.response.actual,
                 context,
-                interaction.response.missingActualValue,
+                interaction.response.missingActualValue
             )
         : interaction.request.actual;
 }
 
 function toAssertAnyOfStatus(interaction: any, config: any, actual: any): any {
     const expectedAlternatives = interaction.response.anyOf;
-    const comparisons = expectedAlternatives.map((expectedValue: any) => compareJson(
-        expectedValue,
-        actual,
-        toConfig(
-            interaction.response?.comparison || COMPARISON.COMPATIBLE,
-            interaction.response?.ignoreJsonKeys || [],
-            interaction.response?.ignoreJsonPaths || [],
-        ),
-    ));
+    const comparisons = expectedAlternatives.map((expectedValue: any) =>
+        compareJson(
+            expectedValue,
+            actual,
+            toConfig(
+                interaction.response?.comparison || COMPARISON.COMPATIBLE,
+                interaction.response?.ignoreJsonKeys || [],
+                interaction.response?.ignoreJsonPaths || []
+            )
+        )
+    );
     const matchedIndex = comparisons.findIndex((result: any) => result.isEqual);
 
     if (matchedIndex < 0) {
         return toAssertFailureStatus(config, interaction, actual, 'Assert comparison failed', {
             anyOf: expectedAlternatives,
-            comparisons,
+            comparisons
         });
     }
 
     return toAssertSuccessStatus(config, interaction, actual, {
         anyOfMatchedIndex: matchedIndex,
-        comparison: comparisons[matchedIndex],
+        comparison: comparisons[matchedIndex]
     });
 }
 
@@ -1124,8 +1139,8 @@ function executeAssertInteraction(interaction: any, config: any, context: any): 
     const expected = interaction.response.body !== undefined
         ? interaction.response.body
         : interaction.response.expect !== undefined
-            ? interaction.response.expect
-            : interaction.response.expected;
+        ? interaction.response.expect
+        : interaction.response.expected;
 
     const actual = toResolvedAssertActual(interaction, context);
 
@@ -1135,7 +1150,7 @@ function executeAssertInteraction(interaction: any, config: any, context: any): 
             interaction,
             actual,
             'Assert step is missing expected value. ' +
-                'Use expect.body, expect.expect, expect.expected, or expect.comparators.',
+                'Use expect.body, expect.expect, expect.expected, or expect.comparators.'
         ));
     }
 
@@ -1144,13 +1159,13 @@ function executeAssertInteraction(interaction: any, config: any, context: any): 
             config,
             interaction,
             actual,
-            'Assert step is missing actual value. Use actual or expect.actual.',
+            'Assert step is missing actual value. Use actual or expect.actual.'
         ));
     }
 
     const monotonicFailures = monotonicComparisonFailures(
         actual,
-        interaction.response.monotonicPaths,
+        interaction.response.monotonicPaths
     );
     if (monotonicFailures.length > 0) {
         return Promise.resolve(toAssertFailureStatus(
@@ -1160,8 +1175,8 @@ function executeAssertInteraction(interaction: any, config: any, context: any): 
             'Assert monotonic comparison failed',
             {
                 monotonicPaths: interaction.response.monotonicPaths,
-                failures: monotonicFailures,
-            },
+                failures: monotonicFailures
+            }
         ));
     }
 
@@ -1174,8 +1189,8 @@ function executeAssertInteraction(interaction: any, config: any, context: any): 
             'Assert comparator failed',
             {
                 comparators,
-                failures: comparatorIssues,
-            },
+                failures: comparatorIssues
+            }
         ));
     }
 
@@ -1185,7 +1200,7 @@ function executeAssertInteraction(interaction: any, config: any, context: any): 
 
     if (expected === undefined) {
         return Promise.resolve(toAssertSuccessStatus(config, interaction, actual, {
-            comparators,
+            comparators
         }));
     }
 
@@ -1195,8 +1210,8 @@ function executeAssertInteraction(interaction: any, config: any, context: any): 
         toConfig(
             interaction.response?.comparison || COMPARISON.COMPATIBLE,
             interaction.response?.ignoreJsonKeys || [],
-            interaction.response?.ignoreJsonPaths || [],
-        ),
+            interaction.response?.ignoreJsonPaths || []
+        )
     );
 
     if (!comparisonResult.isEqual) {
@@ -1205,7 +1220,7 @@ function executeAssertInteraction(interaction: any, config: any, context: any): 
             interaction,
             actual,
             'Assert comparison failed',
-            comparisonResult,
+            comparisonResult
         ));
     }
 
@@ -1236,15 +1251,15 @@ function isRallarRemoteBrowserRequest(request: any): boolean {
 function toStringList(value: unknown): string[] {
     if (Array.isArray(value)) {
         return value
-            .filter(item => typeof item === 'string' && item.trim().length > 0)
-            .map(item => item.trim());
+            .filter((item) => typeof item === 'string' && item.trim().length > 0)
+            .map((item) => item.trim());
     }
 
     if (typeof value === 'string' && value.trim().length > 0) {
         return value
             .split(',')
-            .map(item => item.trim())
-            .filter(item => item.length > 0);
+            .map((item) => item.trim())
+            .filter((item) => item.length > 0);
     }
 
     return [];
@@ -1257,7 +1272,7 @@ function remoteBrowserAllowedOrigins(request: any, context: any): string[] {
         ...toStringList(request.allowedOrigins),
         ...toStringList(request.remoteAllowedOrigins),
         ...toStringList(control.allowedOrigins),
-        ...toStringList(options.allowedOrigins),
+        ...toStringList(options.allowedOrigins)
     ];
 }
 
@@ -1268,7 +1283,7 @@ function remoteBrowserAllowedHosts(request: any, context: any): string[] {
         ...toStringList(request.allowedHosts),
         ...toStringList(request.remoteAllowedHosts),
         ...toStringList(control.allowedHosts),
-        ...toStringList(options.allowedHosts),
+        ...toStringList(options.allowedHosts)
     ];
 }
 
@@ -1299,7 +1314,8 @@ function assertRemoteDestinationAllowed(request: any, context: any, url: string 
     let parsed: URL;
     try {
         parsed = new URL(url);
-    } catch (_ignored) {
+    }
+    catch (_ignored) {
         return;
     }
 
@@ -1307,7 +1323,7 @@ function assertRemoteDestinationAllowed(request: any, context: any, url: string 
         return;
     }
 
-    if (allowedHosts.some(allowedHost => hostMatchesAllowedHost(parsed.host, parsed.hostname, allowedHost))) {
+    if (allowedHosts.some((allowedHost) => hostMatchesAllowedHost(parsed.host, parsed.hostname, allowedHost))) {
         return;
     }
 
@@ -1342,7 +1358,9 @@ function assertRemotePayloadWithinLimit(request: any, context: any, value: unkno
     const maxBytes = remoteBrowserMaxPayloadBytes(request, context);
     const byteLength = payloadByteLength(value);
     if (byteLength > maxBytes) {
-        throw new Error(`${label} payload is too large for remote browser execution: ${byteLength} bytes exceeds ${maxBytes} bytes`);
+        throw new Error(
+            `${label} payload is too large for remote browser execution: ${byteLength} bytes exceeds ${maxBytes} bytes`
+        );
     }
 }
 
@@ -1365,7 +1383,7 @@ function toRemoteHttpHeaders(request: any): Readonly<Record<string, string>> | u
 
     return {
         'Content-Type': 'application/x-www-form-urlencoded',
-        ...request.headers,
+        ...request.headers
     };
 }
 
@@ -1379,11 +1397,11 @@ function toRemoteHttpResponseOptions(request: any): any {
 
     return maxBodyChars === undefined
         ? {
-            body: responseBody,
+            body: responseBody
         }
         : {
             body: responseBody,
-            maxBodyChars,
+            maxBodyChars
         };
 }
 
@@ -1402,13 +1420,13 @@ function toRemoteHttpCommand(commandId: string, interaction: any, context: any):
             headers: toRemoteHttpHeaders(request),
             body,
             credentials: request.credentials,
-            mode: request.mode,
+            mode: request.mode
         },
         response: toRemoteHttpResponseOptions(request),
         timeoutMs: request.timeoutMs,
         metadata: {
-            blackBoxRunner: request,
-        },
+            blackBoxRunner: request
+        }
     };
 }
 
@@ -1423,7 +1441,8 @@ function parseRemoteHttpBody(body: any): any {
 
     try {
         return JSON.parse(body);
-    } catch (_ignored) {
+    }
+    catch (_ignored) {
         return {};
     }
 }
@@ -1441,7 +1460,7 @@ function toRemoteHttpResponse(result: RallarRemoteBrowserControlResultEnvelope):
         url: value?.url,
         body: value?.body,
         blackBoxAttemptNumber: 1,
-        blackBoxMaxAttempts: 1,
+        blackBoxMaxAttempts: 1
     };
 }
 
@@ -1450,8 +1469,8 @@ function withRemoteHttpDetails(status: any, details: any): any {
         ...status,
         actual: {
             ...status.actual,
-            ...details,
-        },
+            ...details
+        }
     };
 }
 
@@ -1460,7 +1479,7 @@ async function executeRemoteHttpInteraction(interaction: any, config: any, conte
         interaction.request,
         config,
         context,
-        remoteBrowserOptions(context),
+        remoteBrowserOptions(context)
     );
     const fetchFn = remoteBrowserFetch(context);
     const commandId = toRallarRemoteBrowserCommandId('http', interaction);
@@ -1477,13 +1496,13 @@ async function executeRemoteHttpInteraction(interaction: any, config: any, conte
                     status: 0,
                     statusText: 'Remote command failed',
                     blackBoxAttemptNumber: 1,
-                    blackBoxMaxAttempts: 1,
+                    blackBoxMaxAttempts: 1
                 },
                 interaction,
                 {
                     remote,
-                    result,
-                },
+                    result
+                }
             );
         }
 
@@ -1493,15 +1512,16 @@ async function executeRemoteHttpInteraction(interaction: any, config: any, conte
                 config,
                 interaction,
                 response,
-                parseRemoteHttpBody(response.body),
+                parseRemoteHttpBody(response.body)
             ),
             {
                 remote,
                 commandId,
-                result: remoteResultValue(result),
-            },
+                result: remoteResultValue(result)
+            }
         );
-    } catch (e) {
+    }
+    catch (e) {
         const error = e instanceof Error ? e : new Error(String(e));
         return {
             name: config.interactionName,
@@ -1518,9 +1538,9 @@ async function executeRemoteHttpInteraction(interaction: any, config: any, conte
             repeatIndex: config.interaction.request.repeatIndex,
             expected: interaction.response,
             actual: {
-                remote,
+                remote
             },
-            ...config,
+            ...config
         };
     }
 }
@@ -1550,7 +1570,7 @@ function toWsSocketState(ws: any): any {
     if (!ws) {
         return {
             readyState: undefined,
-            readyStateName: 'MISSING',
+            readyStateName: 'MISSING'
         };
     }
 
@@ -1559,7 +1579,7 @@ function toWsSocketState(ws: any): any {
         readyStateName: toWsReadyStateName(ws.readyState),
         bufferedAmount: typeof ws.bufferedAmount === 'number'
             ? ws.bufferedAmount
-            : undefined,
+            : undefined
     };
 }
 
@@ -1570,7 +1590,7 @@ function toWsSendResult(status: string, ws: any, connectionName: string, wirePay
         ...toWsSocketState(ws),
         wirePayload,
         wirePayloadLength: wirePayload.length,
-        ...details,
+        ...details
     };
 }
 
@@ -1581,7 +1601,8 @@ function parseWsData(data: any): any {
 
     try {
         return JSON.parse(data);
-    } catch (_ignored) {
+    }
+    catch (_ignored) {
         return data;
     }
 }
@@ -1611,7 +1632,7 @@ function openWs(interaction: any, config: any, context: any): Promise<any> {
         return Promise.resolve(toWsFailureStatus(config, interaction, 'WebSocket URL is missing'));
     }
 
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
         const ws = new WebSocket(url);
         const timeoutMs = Number.parseInt(request.timeoutMs || 5000);
         let settled = false;
@@ -1630,12 +1651,13 @@ function openWs(interaction: any, config: any, context: any): Promise<any> {
             resolveOnce(toWsFailureStatus(config, interaction, 'WebSocket connect timed out', {
                 connection: connectionName,
                 url,
-                timeoutMs,
+                timeoutMs
             }));
 
             try {
                 ws.close();
-            } catch (_ignored) {
+            }
+            catch (_ignored) {
                 // ignored
             }
         }, timeoutMs);
@@ -1648,23 +1670,23 @@ function openWs(interaction: any, config: any, context: any): Promise<any> {
             resolveOnce(toWsSuccessStatus(config, interaction, {
                 connection: connectionName,
                 url,
-                readyState: ws.readyState,
+                readyState: ws.readyState
             }));
         };
 
-        ws.onmessage = event => {
+        ws.onmessage = (event) => {
             rememberWsMessage(connectionName, {
                 data: parseWsData(event.data),
-                receivedAtEpochMs: Date.now(),
+                receivedAtEpochMs: Date.now()
             }, context);
         };
 
-        ws.onclose = event => {
+        ws.onclose = (event) => {
             rememberWsCloseEvent(connectionName, {
                 code: event.code,
                 reason: event.reason,
                 wasClean: event.wasClean,
-                closedAtEpochMs: Date.now(),
+                closedAtEpochMs: Date.now()
             }, context);
 
             if (context.wsConnections[connectionName] === ws) {
@@ -1677,17 +1699,17 @@ function openWs(interaction: any, config: any, context: any): Promise<any> {
                     url,
                     code: event.code,
                     reason: event.reason,
-                    wasClean: event.wasClean,
+                    wasClean: event.wasClean
                 }));
             }
         };
 
-        ws.onerror = event => {
+        ws.onerror = (event) => {
             resolveOnce(toWsFailureStatus(config, interaction, 'WebSocket connection failed', {
                 connection: connectionName,
                 url,
                 eventType: event?.type,
-                readyState: ws.readyState,
+                readyState: ws.readyState
             }));
         };
     });
@@ -1704,14 +1726,15 @@ function closeWs(interaction: any, config: any, context: any): Promise<any> {
         return Promise.resolve(toWsSuccessStatus(config, interaction, {
             connection: connectionName,
             closed: false,
-            reason: 'WebSocket connection was not open',
+            reason: 'WebSocket connection was not open'
         }));
     }
 
     try {
         if (closeCode !== undefined || closeReason !== undefined) {
             ws.close(closeCode, closeReason);
-        } else {
+        }
+        else {
             ws.close();
         }
 
@@ -1722,14 +1745,15 @@ function closeWs(interaction: any, config: any, context: any): Promise<any> {
             closeRequested: true,
             closed: true,
             closeCode,
-            closeReason,
+            closeReason
         }));
-    } catch (e) {
+    }
+    catch (e) {
         return Promise.resolve(toWsFailureStatus(config, interaction, 'Failed to close WebSocket connection', {
             connection: connectionName,
             closeCode,
             closeReason,
-            exception: e instanceof Error ? e.message : String(e),
+            exception: e instanceof Error ? e.message : String(e)
         }));
     }
 }
@@ -1742,15 +1766,15 @@ function sendWs(interaction: any, config: any, context: any): Promise<any> {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
         return Promise.resolve(toWsFailureStatus(config, interaction, 'WebSocket connection is not open', {
             connection: connectionName,
-            ...toWsSocketState(ws),
+            ...toWsSocketState(ws)
         }));
     }
 
     const payload = request.send !== undefined
         ? request.send
         : request.message !== undefined
-            ? request.message
-            : request.body;
+        ? request.message
+        : request.body;
 
     const wirePayload = typeof payload === 'string'
         ? payload
@@ -1759,18 +1783,19 @@ function sendWs(interaction: any, config: any, context: any): Promise<any> {
     const sendStartedAtEpochMs = Date.now();
     try {
         ws.send(wirePayload);
-    } catch (e) {
+    }
+    catch (e) {
         const sendFailedAtEpochMs = Date.now();
         return Promise.resolve(toWsFailureStatus(config, interaction, 'WebSocket send failed', {
             connection: connectionName,
             sent: payload,
             sendResult: toWsSendResult('failed', ws, connectionName, wirePayload, {
-                exception: e instanceof Error ? e.message : String(e),
+                exception: e instanceof Error ? e.message : String(e)
             }),
             sendStartedAtEpochMs,
             sendFailedAtEpochMs,
             sendLatencyMs: sendFailedAtEpochMs - sendStartedAtEpochMs,
-            exception: e instanceof Error ? e.message : String(e),
+            exception: e instanceof Error ? e.message : String(e)
         }));
     }
 
@@ -1782,7 +1807,7 @@ function sendWs(interaction: any, config: any, context: any): Promise<any> {
         sendResult,
         sendStartedAtEpochMs,
         sendEndedAtEpochMs,
-        sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs,
+        sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs
     };
 
     if (interaction.response?.messages) {
@@ -1795,7 +1820,7 @@ function sendWs(interaction: any, config: any, context: any): Promise<any> {
 
     return Promise.resolve(toWsSuccessStatus(config, interaction, {
         connection: connectionName,
-        ...details,
+        ...details
     }));
 }
 
@@ -1803,15 +1828,15 @@ function toRemoteWsPayload(request: any): unknown {
     return request.send !== undefined
         ? request.send
         : request.message !== undefined
-            ? request.message
-            : request.body;
+        ? request.message
+        : request.body;
 }
 
 function toRemoteWsOpenCommand(
     commandId: string,
     interaction: any,
-    context: any,
-): Extract<RallarBlackBoxTestCommand, { kind: 'ws.open' }> {
+    context: any
+): Extract<RallarBlackBoxTestCommand, { kind: 'ws.open'; }> {
     const request = interaction.request;
     const url = toWsUrl(request);
     assertRemoteDestinationAllowed(request, context, url, 'WebSocket');
@@ -1824,16 +1849,16 @@ function toRemoteWsOpenCommand(
         headers: request.headers,
         timeoutMs: request.timeoutMs,
         metadata: {
-            blackBoxRunner: request,
-        },
+            blackBoxRunner: request
+        }
     };
 }
 
 function toRemoteWsSendCommand(
     commandId: string,
     interaction: any,
-    context: any,
-): Extract<RallarBlackBoxTestCommand, { kind: 'ws.send' }> {
+    context: any
+): Extract<RallarBlackBoxTestCommand, { kind: 'ws.send'; }> {
     const request = interaction.request;
     const data = toRemoteWsPayload(request);
     assertRemotePayloadWithinLimit(request, context, data, 'WebSocket send');
@@ -1844,15 +1869,15 @@ function toRemoteWsSendCommand(
         data,
         timeoutMs: request.timeoutMs,
         metadata: {
-            blackBoxRunner: request,
-        },
+            blackBoxRunner: request
+        }
     };
 }
 
 function toRemoteWsCloseCommand(
     commandId: string,
-    interaction: any,
-): Extract<RallarBlackBoxTestCommand, { kind: 'ws.close' }> {
+    interaction: any
+): Extract<RallarBlackBoxTestCommand, { kind: 'ws.close'; }> {
     const request = interaction.request;
     return {
         kind: 'ws.close',
@@ -1862,8 +1887,8 @@ function toRemoteWsCloseCommand(
         reason: request.closeReason !== undefined ? request.closeReason : request.reason,
         timeoutMs: request.timeoutMs,
         metadata: {
-            blackBoxRunner: request,
-        },
+            blackBoxRunner: request
+        }
     };
 }
 
@@ -1872,7 +1897,7 @@ function toRemoteWsConfig(interaction: any, config: any, context: any): RallarRe
         interaction.request,
         config,
         context,
-        remoteBrowserOptions(context),
+        remoteBrowserOptions(context)
     );
 }
 
@@ -1892,7 +1917,7 @@ function shouldExecuteRemoteWsInteraction(interaction: any, context: any): boole
 function startRemoteWsEventSync(
     remote: RallarRemoteBrowserConfig,
     fetchFn: RallarRemoteBrowserControlFetch,
-    context: any,
+    context: any
 ): number {
     let syncing = false;
     return setInterval(() => {
@@ -1914,13 +1939,14 @@ async function waitWithRemoteWsEventSync(
     remote: RallarRemoteBrowserConfig,
     fetchFn: RallarRemoteBrowserControlFetch,
     context: any,
-    wait: () => Promise<any>,
+    wait: () => Promise<any>
 ): Promise<any> {
     await syncRallarRemoteBrowserEvents(remote, fetchFn, context);
     const interval = startRemoteWsEventSync(remote, fetchFn, context);
     try {
         return await wait();
-    } finally {
+    }
+    finally {
         clearInterval(interval);
     }
 }
@@ -1948,7 +1974,7 @@ async function openRemoteWs(interaction: any, config: any, context: any): Promis
             return toRemoteWsFailure(config, interaction, 'Remote WebSocket connect failed', {
                 connection: connectionName,
                 remote,
-                result,
+                result
             });
         }
 
@@ -1964,10 +1990,10 @@ async function openRemoteWs(interaction: any, config: any, context: any): Promis
                     {
                         ...toRemoteWsCloseCommand(`${commandId}-auto-close`, interaction),
                         code,
-                        reason,
-                    },
+                        reason
+                    }
                 );
-            },
+            }
         };
         context.wsMessages[connectionName] = context.wsMessages[connectionName] || [];
         context.wsCloseEvents[connectionName] = context.wsCloseEvents[connectionName] || [];
@@ -1978,13 +2004,14 @@ async function openRemoteWs(interaction: any, config: any, context: any): Promis
             readyState: 1,
             remote,
             commandId,
-            result: remoteResultValue(result),
+            result: remoteResultValue(result)
         });
-    } catch (error) {
+    }
+    catch (error) {
         return toRemoteWsFailure(config, interaction, 'Remote WebSocket connect failed', {
             connection: connectionName,
             remote,
-            exception: error instanceof Error ? error.message : String(error),
+            exception: error instanceof Error ? error.message : String(error)
         });
     }
 }
@@ -1994,7 +2021,7 @@ async function sendRemoteWs(interaction: any, config: any, context: any): Promis
 
     if (!context.wsConnections[connectionName]) {
         return toRemoteWsFailure(config, interaction, 'WebSocket connection is not open', {
-            connection: connectionName,
+            connection: connectionName
         });
     }
 
@@ -2017,11 +2044,11 @@ async function sendRemoteWs(interaction: any, config: any, context: any): Promis
                 sendResult: {
                     status: 'failed',
                     connection: connectionName,
-                    remoteResult: remoteResultValue(result),
+                    remoteResult: remoteResultValue(result)
                 },
                 sendStartedAtEpochMs,
                 sendEndedAtEpochMs,
-                sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs,
+                sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs
             });
         }
 
@@ -2034,11 +2061,11 @@ async function sendRemoteWs(interaction: any, config: any, context: any): Promis
             sendResult: {
                 status: 'sent',
                 connection: connectionName,
-                remoteResult: remoteResultValue(result),
+                remoteResult: remoteResultValue(result)
             },
             sendStartedAtEpochMs,
             sendEndedAtEpochMs,
-            sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs,
+            sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs
         };
 
         if (interaction.response?.messages) {
@@ -2046,7 +2073,7 @@ async function sendRemoteWs(interaction: any, config: any, context: any): Promis
                 remote,
                 fetchFn,
                 context,
-                () => waitForWsMessages(interaction, config, context, details),
+                () => waitForWsMessages(interaction, config, context, details)
             );
         }
 
@@ -2055,7 +2082,7 @@ async function sendRemoteWs(interaction: any, config: any, context: any): Promis
                 remote,
                 fetchFn,
                 context,
-                () => waitForWsMessage(interaction, config, context, details),
+                () => waitForWsMessage(interaction, config, context, details)
             );
         }
 
@@ -2069,9 +2096,10 @@ async function sendRemoteWs(interaction: any, config: any, context: any): Promis
             sendResult: details.sendResult,
             sendStartedAtEpochMs,
             sendEndedAtEpochMs,
-            sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs,
+            sendLatencyMs: sendEndedAtEpochMs - sendStartedAtEpochMs
         });
-    } catch (error) {
+    }
+    catch (error) {
         return toRemoteWsFailure(config, interaction, 'Remote WebSocket send failed', {
             connection: connectionName,
             remote,
@@ -2079,9 +2107,9 @@ async function sendRemoteWs(interaction: any, config: any, context: any): Promis
             sendResult: {
                 status: 'failed',
                 connection: connectionName,
-                exception: error instanceof Error ? error.message : String(error),
+                exception: error instanceof Error ? error.message : String(error)
             },
-            exception: error instanceof Error ? error.message : String(error),
+            exception: error instanceof Error ? error.message : String(error)
         });
     }
 }
@@ -2095,32 +2123,32 @@ async function waitRemoteWs(interaction: any, config: any, context: any): Promis
                 interaction,
                 config,
                 context,
-                details: { remote },
+                details: { remote }
             });
         }
 
         if (interaction.response?.close !== undefined) {
             return waitForWsClose(interaction, config, context, {
-                remote,
+                remote
             });
         }
 
         if (interaction.response?.messages) {
             return waitForWsMessages(interaction, config, context, {
-                remote,
+                remote
             });
         }
 
         if (interaction.response?.message) {
             return waitForWsMessage(interaction, config, context, {
-                remote,
+                remote
             });
         }
 
         return Promise.resolve(toRemoteWsFailure(
             config,
             interaction,
-            'WebSocket wait expects expect.message, expect.messages, expect.absent, or expect.close',
+            'WebSocket wait expects expect.message, expect.messages, expect.absent, or expect.close'
         ));
     });
 }
@@ -2141,7 +2169,7 @@ async function closeRemoteWs(interaction: any, config: any, context: any): Promi
             return toRemoteWsFailure(config, interaction, 'Remote WebSocket close failed', {
                 connection: connectionName,
                 remote,
-                result,
+                result
             });
         }
 
@@ -2151,13 +2179,14 @@ async function closeRemoteWs(interaction: any, config: any, context: any): Promi
             closed: true,
             remote,
             commandId,
-            result: remoteResultValue(result),
+            result: remoteResultValue(result)
         });
-    } catch (error) {
+    }
+    catch (error) {
         return toRemoteWsFailure(config, interaction, 'Remote WebSocket close failed', {
             connection: connectionName,
             remote,
-            exception: error instanceof Error ? error.message : String(error),
+            exception: error instanceof Error ? error.message : String(error)
         });
     }
 }
@@ -2216,7 +2245,13 @@ function executeWsInteraction(interaction: any, config: any, context: any): Prom
             return waitForWsMessage(interaction, config, context);
         }
 
-        return Promise.resolve(toWsFailureStatus(config, interaction, 'WebSocket wait expects expect.message, expect.messages, expect.absent, or expect.close'));
+        return Promise.resolve(
+            toWsFailureStatus(
+                config,
+                interaction,
+                'WebSocket wait expects expect.message, expect.messages, expect.absent, or expect.close'
+            )
+        );
     }
 
     if (action === 'close') {
@@ -2231,16 +2266,17 @@ function toRequest(request: any, context: any): any {
 }
 
 function toParallelRequest(request: any, context: any): any {
-    const {groups, ...parentRequest} = request;
+    const { groups, ...parentRequest } = request;
 
     return {
         ...resolvePlaceholders(parentRequest, context),
-        groups,
+        groups
     };
 }
 
 function toOutputKey(interactionData: any): string {
-    return interactionData.scenarioExecutionNumber + '-' + interactionData.name + '-' + interactionData.interactionExecutionNumber;
+    return interactionData.scenarioExecutionNumber + '-' + interactionData.name + '-' +
+        interactionData.interactionExecutionNumber;
 }
 
 function toResultEntries(results: any): any[] {
@@ -2270,9 +2306,9 @@ function toResultEntries(results: any): any[] {
 
 function toSummary(results: any, options: any, startedAtEpochMs: number, endedAtEpochMs: number): any {
     const entries = toResultEntries(results);
-    const observedFailures = entries.filter(entry => entry?.status === FAILURE);
-    const failures = observedFailures.filter(entry => entry?.nonBlockingFailure !== true);
-    const successes = entries.filter(entry => entry?.status === SUCCESS);
+    const observedFailures = entries.filter((entry) => entry?.status === FAILURE);
+    const failures = observedFailures.filter((entry) => entry?.nonBlockingFailure !== true);
+    const successes = entries.filter((entry) => entry?.status === SUCCESS);
 
     return {
         total: entries.length,
@@ -2295,9 +2331,9 @@ function toSummary(results: any, options: any, startedAtEpochMs: number, endedAt
                 path: failures[0].path,
                 scenarioExecutionNumber: failures[0].scenarioExecutionNumber,
                 interactionExecutionNumber: failures[0].interactionExecutionNumber,
-                repeatIndex: failures[0].repeatIndex,
+                repeatIndex: failures[0].repeatIndex
             }
-            : undefined,
+            : undefined
     };
 }
 
@@ -2313,7 +2349,7 @@ function toReport(context: any, options: any, startedAtEpochMs: number, endedAtE
     return redactBlackBoxData({
         summary: {
             ...toSummary(context.results, options, startedAtEpochMs, endedAtEpochMs),
-            runnerRunId: context.correlation.runnerRunId,
+            runnerRunId: context.correlation.runnerRunId
         },
         runnerRunId: context.correlation.runnerRunId,
         correlation: toPublicCorrelationConfig(context.correlation),
@@ -2327,19 +2363,19 @@ function toReport(context: any, options: any, startedAtEpochMs: number, endedAtE
         rtcMessages: context.rtcMessages,
         rtcDiagnostics: context.rtcDiagnostics,
         rtcCloseEvents: context.rtcCloseEvents,
-        rtcProviderNames: Object.keys(context.rtcProviders || {}),
+        rtcProviderNames: Object.keys(context.rtcProviders || {})
     }, context.redactions);
 }
 
 function isDryRunExecution(interaction: any, config: any, context: any): boolean {
-    return interaction?.request?.dryRun === true
-        || interaction?.dryRun === true
-        || config?.dryRun === true
-        || config?.interaction?.request?.dryRun === true
-        || config?.interactionConfig?.dryRun === true
-        || context?.dryRun === true
-        || context?.options?.dryRun === true
-        || context?.executionOptions?.dryRun === true
+    return interaction?.request?.dryRun === true ||
+        interaction?.dryRun === true ||
+        config?.dryRun === true ||
+        config?.interaction?.request?.dryRun === true ||
+        config?.interactionConfig?.dryRun === true ||
+        context?.dryRun === true ||
+        context?.options?.dryRun === true ||
+        context?.executionOptions?.dryRun === true;
 }
 
 function toDryRunRtcMessage(interaction: any, message: any): any {
@@ -2349,7 +2385,7 @@ function toDryRunRtcMessage(interaction: any, message: any): any {
         provider: interaction.request.provider,
         actor: interaction.request.actor,
         roomId: interaction.request.roomId,
-        dryRun: true,
+        dryRun: true
     };
 }
 
@@ -2358,8 +2394,8 @@ function toDryRunRtcDetails(interaction: any, action: string): any {
         dryRun: true,
         normalized: {
             ...interaction.request,
-            response: interaction.response,
-        },
+            response: interaction.response
+        }
     };
 
     if (action === 'send') {
@@ -2367,7 +2403,7 @@ function toDryRunRtcDetails(interaction: any, action: string): any {
         details.sent = toRtcPayload(interaction.request);
         details.sendResult = {
             status: 'sent',
-            dryRun: true,
+            dryRun: true
         };
     }
 
@@ -2384,7 +2420,7 @@ function toDryRunRtcDetails(interaction: any, action: string): any {
         details.matchedMessages = interaction.response.messages.map((message: any, index: number) => ({
             expectedMessage: message,
             matchedMessage: toDryRunRtcMessage(interaction, message),
-            matchIndex: index,
+            matchIndex: index
         }));
         details.consumed = interaction.response.consume === true;
         details.waitedMs = 0;
@@ -2399,7 +2435,7 @@ function executeRtcInteraction(interaction: any, config: any, context: any): Pro
     const provider = context.rtcProviders?.[providerName] || createMissingRtcProvider(providerName);
 
     if (isDryRunExecution(interaction, config, context)) {
-        return Promise.resolve(toRtcSuccessStatus(config, interaction, toDryRunRtcDetails(interaction, action)))
+        return Promise.resolve(toRtcSuccessStatus(config, interaction, toDryRunRtcDetails(interaction, action)));
     }
 
     if (action === 'connect') {
@@ -2424,8 +2460,8 @@ function executeRtcInteraction(interaction: any, config: any, context: any): Pro
         'Unsupported RTC action: ' + action,
         {
             provider: providerName,
-            supportedActions: ['connect', 'send', 'wait', 'expect', 'close'],
-        },
+            supportedActions: ['connect', 'send', 'wait', 'expect', 'close']
+        }
     ));
 }
 
@@ -2443,7 +2479,7 @@ function toCrdtReportFields(interaction: any): any {
         scope: interaction.request.scope,
         roomRef: interaction.request.roomRef,
         transportStrategy: interaction.request.transport,
-        durableCatchUp: interaction.request.durableCatchUp,
+        durableCatchUp: interaction.request.durableCatchUp
     };
 }
 
@@ -2460,9 +2496,9 @@ function toCrdtSuccessStatus(config: any, interaction: any, details: any = {}): 
         expected: interaction.response,
         actual: {
             ...toCrdtReportFields(interaction),
-            ...details,
+            ...details
         },
-        ...config,
+        ...config
     };
 }
 
@@ -2480,9 +2516,9 @@ function toCrdtFailureStatus(config: any, interaction: any, result: string, deta
         expected: interaction.response,
         actual: {
             ...toCrdtReportFields(interaction),
-            ...details,
+            ...details
         },
-        ...config,
+        ...config
     };
 }
 
@@ -2494,7 +2530,7 @@ function toDryRunCrdtDetails(interaction: any, action: string): any {
         connection: interaction.request.connection,
         handle: interaction.request.handle,
         batch: interaction.request.batch,
-        transportStrategy: interaction.request.transport,
+        transportStrategy: interaction.request.transport
     };
 }
 
@@ -2515,8 +2551,8 @@ function executeCrdtInteraction(interaction: any, config: any, context: any): Pr
             {
                 provider: providerName,
                 supportedProviders: Object.keys(context.rtcProviders || {})
-                    .filter(name => Boolean(context.rtcProviders?.[name]?.command)),
-            },
+                    .filter((name) => Boolean(context.rtcProviders?.[name]?.command))
+            }
         ));
     }
 
@@ -2534,7 +2570,7 @@ function executeInteraction(interactionWithConfig: any, context: any): Promise<a
         ? toParallelRequest(interaction.request, context)
         : toRequest(interaction.request, context);
     const rawResponse = interaction.response || {};
-    const {actual: rawAssertActual, ...responseWithoutAssertActual} = rawResponse;
+    const { actual: rawAssertActual, ...responseWithoutAssertActual } = rawResponse;
     interaction.response = resolvePlaceholders(responseWithoutAssertActual, context);
     if (interactionWithConfig.ASSERT && rawAssertActual !== undefined) {
         interaction.response.actual = rawAssertActual;
@@ -2543,7 +2579,7 @@ function executeInteraction(interactionWithConfig: any, context: any): Promise<a
     const config = {
         interactionName: toInteractionName(interactionWithConfig),
         interactionConfig: toInteractionConfig(interactionWithConfig),
-        interaction,
+        interaction
     };
 
     applyInteractionCorrelation(interactionWithConfig, interaction, config, context);
@@ -2592,7 +2628,7 @@ function toParallelFailureStatus(config: any, interaction: any, result: string, 
         repeatIndex: config.interaction.request.repeatIndex,
         expected: interaction.response,
         actual: details,
-        ...config,
+        ...config
     };
 }
 
@@ -2608,14 +2644,14 @@ function toParallelSuccessStatus(config: any, interaction: any, actual: any): an
         repeatIndex: config.interaction.request.repeatIndex,
         expected: interaction.response,
         actual,
-        ...config,
+        ...config
     };
 }
 
 async function runBoundedParallel<T, R>(
     items: T[],
     maxConcurrency: number,
-    worker: (item: T, index: number) => Promise<R>,
+    worker: (item: T, index: number) => Promise<R>
 ): Promise<R[]> {
     const results: R[] = new Array(items.length);
     let nextIndex = 0;
@@ -2645,7 +2681,7 @@ async function executeParallelInteraction(interaction: any, config: any, context
 
     const maxConcurrency = Math.max(
         1,
-        Number.parseInt(String(interaction.request.maxConcurrency || groups.length), 10) || groups.length,
+        Number.parseInt(String(interaction.request.maxConcurrency || groups.length), 10) || groups.length
     );
     const timeoutMs = Number.parseInt(String(interaction.request.timeoutMs || 0), 10);
     const groupFailFast = interaction.request.failFast !== false;
@@ -2665,26 +2701,26 @@ async function executeParallelInteraction(interaction: any, config: any, context
                 success: 0,
                 failure: 1,
                 result: 'Parallel group has no steps.',
-                durationMs: Date.now() - groupStartedAtEpochMs,
+                durationMs: Date.now() - groupStartedAtEpochMs
             };
         }
 
         const stepResults = await executeBlackBoxRecursive(steps, 0, {
             ...context.options,
             failFast: groupFailFast,
-            nonBlockingFailure: interaction.request.nonBlockingFailure === true,
+            nonBlockingFailure: interaction.request.nonBlockingFailure === true
         }, context);
         const resultValues = Object.values(stepResults || {}) as any[];
-        const failureCount = resultValues.filter(result => result?.status === FAILURE).length;
+        const failureCount = resultValues.filter((result) => result?.status === FAILURE).length;
 
         return {
             name: String(group.name || 'group-' + (groupIndex + 1)),
             index: group.index || groupIndex + 1,
             status: failureCount > 0 ? FAILURE : SUCCESS,
-            success: resultValues.filter(result => result?.status === SUCCESS).length,
+            success: resultValues.filter((result) => result?.status === SUCCESS).length,
             failure: failureCount,
-            resultKeys: resultValues.map(result => result?.resultKey).filter(Boolean),
-            durationMs: Date.now() - groupStartedAtEpochMs,
+            resultKeys: resultValues.map((result) => result?.resultKey).filter(Boolean),
+            durationMs: Date.now() - groupStartedAtEpochMs
         };
     });
 
@@ -2700,7 +2736,7 @@ async function executeParallelInteraction(interaction: any, config: any, context
         timedOut,
         durationMs,
         success,
-        failure,
+        failure
     };
 
     if (timedOut) {
@@ -2718,18 +2754,18 @@ function executeBlackBoxRecursive(
     interactions: any[],
     index: number,
     options: any = {},
-    context: any,
+    context: any
 ): Promise<any> {
     const executeNext = (interactionData: any): any => {
         const storedInteractionData = storeInteractionData(
             options.nonBlockingFailure === true
                 ? { ...interactionData, nonBlockingFailure: true }
                 : interactionData,
-            context,
+            context
         );
 
         const data = {
-            [toResultKey(storedInteractionData)]: storedInteractionData,
+            [toResultKey(storedInteractionData)]: storedInteractionData
         };
 
         if (
@@ -2742,7 +2778,7 @@ function executeBlackBoxRecursive(
 
         if (index + 1 < interactions.length) {
             return executeBlackBoxRecursive(interactions, ++index, options, context)
-                .then(d => {
+                .then((d) => {
                     return { ...data, ...d };
                 });
         }
@@ -2755,7 +2791,7 @@ function executeBlackBoxRecursive(
 
     return Promise.resolve()
         .then(() => executeInteraction(interactionWithConfig, context))
-        .catch(error => {
+        .catch((error) => {
             const interaction = toExecutableInteraction(interactionWithConfig);
             const request = interaction?.request || {};
             return {
@@ -2766,13 +2802,19 @@ function executeBlackBoxRecursive(
                 scenarioExecutionNumber: request.scenarioExecutionNumber,
                 interactionExecutionNumber: request.interactionExecutionNumber,
                 repeatIndex: request.repeatIndex,
-                interaction,
+                interaction
             };
         })
-        .then(data => {
+        .then((data) => {
             const endedAtEpochMs = Date.now();
-            return executeNext(withMaxDurationBound({ ...data, startedAtEpochMs, endedAtEpochMs,
-                durationMs: endedAtEpochMs - startedAtEpochMs }, interactionWithConfig));
+            return executeNext(
+                withMaxDurationBound({
+                    ...data,
+                    startedAtEpochMs,
+                    endedAtEpochMs,
+                    durationMs: endedAtEpochMs - startedAtEpochMs
+                }, interactionWithConfig)
+            );
         });
 }
 
@@ -2789,7 +2831,7 @@ function withMaxDurationBound(interactionData: any, interactionWithConfig: any):
     if (interactionData.status !== SUCCESS || interactionData.durationMs <= maxDurationMs) {
         return {
             ...interactionData,
-            maxDurationMs,
+            maxDurationMs
         };
     }
 
@@ -2797,7 +2839,7 @@ function withMaxDurationBound(interactionData: any, interactionWithConfig: any):
         ...interactionData,
         status: FAILURE,
         result: 'Step duration exceeded expect.maxDurationMs',
-        maxDurationMs,
+        maxDurationMs
     };
 }
 
@@ -2810,16 +2852,17 @@ function closeAllWsConnections(context: any): void {
                 rememberWsCloseEvent(connectionName, {
                     autoCloseRequested: true,
                     readyStateBeforeClose: socket.readyState,
-                    closedAtEpochMs: Date.now(),
+                    closedAtEpochMs: Date.now()
                 }, context);
 
                 socket.close();
-            } catch (e) {
+            }
+            catch (e) {
                 rememberWsCloseEvent(connectionName, {
                     autoCloseRequested: true,
                     autoCloseFailed: true,
                     exception: e instanceof Error ? e.message : String(e),
-                    closedAtEpochMs: Date.now(),
+                    closedAtEpochMs: Date.now()
                 }, context);
             }
         });
@@ -2855,9 +2898,10 @@ async function closeAllRtcConnections(context: any): Promise<void> {
                 autoCloseSucceeded: true,
                 closedAtEpochMs: Date.now(),
                 connection: toRtcConnectionDiagnostics(rtcConnection),
-                stub: rtcConnection?.stub === true,
+                stub: rtcConnection?.stub === true
             }, context);
-        } catch (e) {
+        }
+        catch (e) {
             rememberRtcCloseEvent(connectionName, {
                 autoCloseRequested: true,
                 autoCloseSucceeded: false,
@@ -2865,7 +2909,7 @@ async function closeAllRtcConnections(context: any): Promise<void> {
                 exception: e instanceof Error ? e.message : String(e),
                 closedAtEpochMs: Date.now(),
                 connection: toRtcConnectionDiagnostics(rtcConnection),
-                stub: rtcConnection?.stub === true,
+                stub: rtcConnection?.stub === true
             }, context);
         }
     }
@@ -2876,7 +2920,7 @@ async function closeAllRtcConnections(context: any): Promise<void> {
 export function executeBlackBox(
     interactions: any[],
     index = 0,
-    options: any = {},
+    options: any = {}
 ): Promise<any> {
     const startedAtEpochMs = Date.now();
     const context = createScenarioContext(options);
@@ -2888,7 +2932,7 @@ export function executeBlackBox(
             const endedAtEpochMs = Date.now();
             return toReport(context, options, startedAtEpochMs, endedAtEpochMs);
         })
-        .catch(async e => {
+        .catch(async (e) => {
             closeAllWsConnections(context);
             await closeAllRtcConnections(context);
             throw e;

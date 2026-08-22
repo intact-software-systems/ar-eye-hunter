@@ -1,33 +1,31 @@
 import type { BrowserContext, Route } from '@playwright/test';
 import type {
     ControlDistributedRunSnapshot,
-    ControlRunSnapshot,
-} from
-    '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
-import { createRecipeConsoleTuneScaleFixture } from
-    '../../../packages/shared-test/rallar-bb-test/recipe-console-tune-scale-fixture.ts';
+    ControlRunSnapshot
+} from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
+import {
+    createRecipeConsoleTuneScaleFixture
+} from '../../../packages/shared-test/rallar-bb-test/recipe-console-tune-scale-fixture.ts';
 import { createTuneArtifactEnvelope } from './recipe-console-tune-artifacts.ts';
 import {
+    createTuneControlRun,
+    createTuneDistributedRun,
     TUNE_BASE_EPOCH_MS,
     TUNE_LEFT_CONTROL_RUN_ID,
     TUNE_LEFT_RUN_ID,
     TUNE_RIGHT_CONTROL_RUN_ID,
-    TUNE_RIGHT_RUN_ID,
-    createTuneControlRun,
-    createTuneDistributedRun,
+    TUNE_RIGHT_RUN_ID
 } from './recipe-console-tune-run-data.ts';
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
 
-export const RETENTION_LONG_BIDI_CONTROL_ID =
-    `history-control-\u202egnol-界-\u2066exact\u2069-${'control'.repeat(20)}`;
-const RETENTION_LONG_BIDI_DISTRIBUTED_ID =
-    `history-distributed-\u202egnol-界-\u2066exact\u2069-${'distributed'.repeat(14)}`;
+export const RETENTION_LONG_BIDI_CONTROL_ID = `history-control-\u202egnol-界-\u2066exact\u2069-${'control'.repeat(20)}`;
+const RETENTION_LONG_BIDI_DISTRIBUTED_ID = `history-distributed-\u202egnol-界-\u2066exact\u2069-${
+    'distributed'.repeat(14)
+}`;
 
-export const TUNE_SCALE_LONG_BIDI_RUN_ID =
-    `tune-scale-run-مرحبا-שלום-界-exact-${'run'.repeat(24)}`;
-export const TUNE_SCALE_LONG_BIDI_CONTROL_ID =
-    `tune-scale-control-مرحبا-שלום-界-exact-${'control'.repeat(18)}`;
+export const TUNE_SCALE_LONG_BIDI_RUN_ID = `tune-scale-run-مرحبا-שלום-界-exact-${'run'.repeat(24)}`;
+export const TUNE_SCALE_LONG_BIDI_CONTROL_ID = `tune-scale-control-مرحبا-שלום-界-exact-${'control'.repeat(18)}`;
 
 export type RecipeConsoleTuneFixture = Readonly<{
     artifactRequestCount(): number;
@@ -77,11 +75,11 @@ export type RecipeConsoleTuneFixtureOptions = Readonly<{
 
 export async function installRecipeConsoleTuneFixture(
     context: BrowserContext,
-    options: RecipeConsoleTuneFixtureOptions = {},
+    options: RecipeConsoleTuneFixtureOptions = {}
 ): Promise<RecipeConsoleTuneFixture> {
     let controlRuns = [
         createTuneControlRun('left'),
-        createTuneControlRun('right'),
+        createTuneControlRun('right')
     ];
     let rightDistributedRun = createTuneDistributedRun('right');
     if (options.shadowedRateHz) {
@@ -95,7 +93,7 @@ export async function installRecipeConsoleTuneFixture(
     }
     let distributedRuns = [
         createTuneDistributedRun('left'),
-        rightDistributedRun,
+        rightDistributedRun
     ];
     for (
         let index = 1;
@@ -105,29 +103,31 @@ export async function installRecipeConsoleTuneFixture(
         const { runId, distributedRunId } = retentionIds(
             index,
             options.retentionCandidateCount ?? 1,
-            options.retentionLongBidiId === true,
+            options.retentionLongBidiId === true
         );
         controlRuns.push(historyOverflowControlRun(runId, index));
         distributedRuns.push(historyOverflowDistributedRun(
             distributedRunId,
             runId,
-            index,
+            index
         ));
     }
     const scaleSnapshots = options.tuneScale
         ? createTuneScaleSnapshots(
             controlRuns.slice(0, 2),
             distributedRuns.slice(0, 2),
-            options.tuneScale,
+            options.tuneScale
         )
         : undefined;
     let tuneScaleEnabled = options.tuneScale?.initial === true;
-    const visibleControlRuns = () => tuneScaleEnabled && scaleSnapshots
-        ? scaleSnapshots.controlRuns
-        : controlRuns;
-    const visibleDistributedRuns = () => tuneScaleEnabled && scaleSnapshots
-        ? scaleSnapshots.distributedRuns
-        : distributedRuns;
+    const visibleControlRuns = () =>
+        tuneScaleEnabled && scaleSnapshots
+            ? scaleSnapshots.controlRuns
+            : controlRuns;
+    const visibleDistributedRuns = () =>
+        tuneScaleEnabled && scaleSnapshots
+            ? scaleSnapshots.distributedRuns
+            : distributedRuns;
     let artifactReads = 0;
     let mutationRequests = 0;
     let distributedSnapshotReads = 0;
@@ -142,7 +142,7 @@ export async function installRecipeConsoleTuneFixture(
     const retentionObservations: RetentionRequestObservation[] = [];
     const order: string[] = [];
 
-    await context.route(CONTROL_ROUTE, async route => {
+    await context.route(CONTROL_ROUTE, async (route) => {
         const request = route.request();
         const url = new URL(request.url());
         if (request.method() === 'OPTIONS') {
@@ -160,7 +160,9 @@ export async function installRecipeConsoleTuneFixture(
             await route.abort('connectionfailed');
             return;
         }
-        if (request.method() !== 'GET') mutationRequests += 1;
+        if (request.method() !== 'GET') {
+            mutationRequests += 1;
+        }
         if (request.method() === 'GET' && isArtifactRead(url.pathname)) {
             artifactReads += 1;
         }
@@ -173,12 +175,12 @@ export async function installRecipeConsoleTuneFixture(
         if (request.method() === 'GET' && runDetailMatch) {
             const runId = decodeURIComponent(runDetailMatch[1]);
             const run = visibleControlRuns().find(
-                candidate => candidate.runId === runId,
+                (candidate) => candidate.runId === runId
             );
             await fulfillJson(
                 route,
                 run ?? { error: 'Control run not found.' },
-                run ? 200 : 404,
+                run ? 200 : 404
             );
             return;
         }
@@ -188,13 +190,13 @@ export async function installRecipeConsoleTuneFixture(
             if (holdNextDistributedSnapshot) {
                 holdNextDistributedSnapshot = false;
                 heldDistributedSnapshots += 1;
-                await new Promise<void>(resolve => {
+                await new Promise<void>((resolve) => {
                     releaseHeldSnapshot = resolve;
                 });
                 releaseHeldSnapshot = undefined;
             }
             await fulfillJson(route, {
-                distributedRuns: visibleDistributedRuns(),
+                distributedRuns: visibleDistributedRuns()
             });
             return;
         }
@@ -203,14 +205,16 @@ export async function installRecipeConsoleTuneFixture(
             const planToken = url.searchParams.get('planToken');
             const kind = dryRun === 'true'
                 ? 'preview'
-                : planToken !== null ? 'confirm' : 'legacy';
+                : planToken !== null
+                ? 'confirm'
+                : 'legacy';
             retentionObservations.push({
                 kind,
                 method: request.method(),
                 dryRun: dryRun === 'true',
                 hasPlanToken: planToken !== null,
                 body: request.postData(),
-                authorization: request.headers().authorization ?? null,
+                authorization: request.headers().authorization ?? null
             });
             order.push(kind);
             if (!options.retention) {
@@ -230,7 +234,7 @@ export async function installRecipeConsoleTuneFixture(
                     ++retentionSequence,
                     options.retentionCandidateCount ?? 1,
                     options.retentionLinkedCount ?? 1,
-                    options.retentionLongBidiId === true,
+                    options.retentionLongBidiId === true
                 );
                 await fulfillJson(route, currentPlan);
                 return;
@@ -247,16 +251,14 @@ export async function installRecipeConsoleTuneFixture(
             }
             const deletedRunIds = [...currentPlan.wouldDeleteRunIds];
             const deletedDistributedRunIds = new Set(
-                currentPlan.wouldDeleteDistributedRunIds,
+                currentPlan.wouldDeleteDistributedRunIds
             );
-            controlRuns = controlRuns.filter(run => !deletedRunIds.includes(run.runId));
-            distributedRuns = distributedRuns.filter(run =>
-                !deletedDistributedRunIds.has(run.distributedRunId)
-            );
+            controlRuns = controlRuns.filter((run) => !deletedRunIds.includes(run.runId));
+            distributedRuns = distributedRuns.filter((run) => !deletedDistributedRunIds.has(run.distributedRunId));
             const confirmation = {
                 deletedRunIds,
                 retainedRuns: currentPlan.projectedRetainedRuns,
-                maxRuns: currentPlan.maxRuns,
+                maxRuns: currentPlan.maxRuns
             };
             currentPlan = undefined;
             await fulfillJson(route, confirmation);
@@ -264,17 +266,13 @@ export async function installRecipeConsoleTuneFixture(
         }
         const runId = detailId(url.pathname, '/runs/');
         if (request.method() === 'GET' && runId) {
-            const run = visibleControlRuns().find(candidate =>
-                candidate.runId === runId
-            );
+            const run = visibleControlRuns().find((candidate) => candidate.runId === runId);
             await fulfillJson(route, run ?? { error: 'run not found' }, run ? 200 : 404);
             return;
         }
         const distributedRunId = detailId(url.pathname, '/distributed-runs/');
         if (request.method() === 'GET' && distributedRunId) {
-            const run = visibleDistributedRuns().find(candidate =>
-                candidate.distributedRunId === distributedRunId
-            );
+            const run = visibleDistributedRuns().find((candidate) => candidate.distributedRunId === distributedRunId);
             await fulfillJson(route, run ?? { error: 'distributed run not found' }, run ? 200 : 404);
             return;
         }
@@ -291,8 +289,8 @@ export async function installRecipeConsoleTuneFixture(
                 TUNE_LEFT_CONTROL_RUN_ID,
                 TUNE_RIGHT_CONTROL_RUN_ID,
                 TUNE_LEFT_RUN_ID,
-                TUNE_RIGHT_RUN_ID,
-            ],
+                TUNE_RIGHT_RUN_ID
+            ]
         }, 404);
     });
 
@@ -308,22 +306,20 @@ export async function installRecipeConsoleTuneFixture(
         },
         mutationRequestCount: () => mutationRequests,
         requestOrder: () => [...order],
-        retentionRequests: () => retentionObservations.map(value => ({ ...value })),
-        setReachability: value => {
+        retentionRequests: () => retentionObservations.map((value) => ({ ...value })),
+        setReachability: (value) => {
             reachability = value;
         },
-        setTuneScaleEnabled: value => {
+        setTuneScaleEnabled: (value) => {
             if (!scaleSnapshots && value) {
                 throw new Error('Tune scale fixture is not configured.');
             }
             tuneScaleEnabled = value;
         },
         snapshotIds: () => ({
-            controlRunIds: visibleControlRuns().map(run => run.runId),
-            distributedRunIds: visibleDistributedRuns().map(run =>
-                run.distributedRunId
-            ),
-        }),
+            controlRunIds: visibleControlRuns().map((run) => run.runId),
+            distributedRunIds: visibleDistributedRuns().map((run) => run.distributedRunId)
+        })
     };
 }
 
@@ -335,14 +331,14 @@ export function tuneScaleRunNeedles(runCount: number) {
         first: tuneScaleRunIdentity(0, runCount).distributedRunId,
         middle: tuneScaleRunIdentity(middle, runCount).distributedRunId,
         last: tuneScaleRunIdentity(last, runCount).distributedRunId,
-        longBidi: tuneScaleRunIdentity(longBidi, runCount).distributedRunId,
+        longBidi: tuneScaleRunIdentity(longBidi, runCount).distributedRunId
     } as const;
 }
 
 function createTuneScaleSnapshots(
     ordinaryControlRuns: readonly ControlRunSnapshot[],
     ordinaryDistributedRuns: readonly ControlDistributedRunSnapshot[],
-    config: NonNullable<RecipeConsoleTuneFixtureOptions['tuneScale']>,
+    config: NonNullable<RecipeConsoleTuneFixtureOptions['tuneScale']>
 ) {
     if (!Number.isSafeInteger(config.runCount) || config.runCount < 2) {
         throw new Error('Tune scale runCount must be a safe integer of at least 2.');
@@ -355,12 +351,14 @@ function createTuneScaleSnapshots(
         throw new Error('Tune scale fixture requires the ordinary paired runs.');
     }
     const scale = createRecipeConsoleTuneScaleFixture({
-        commandCount: config.commandCount,
+        commandCount: config.commandCount
     });
     const commands = config.shadowedRateHz
-        ? scale.recipe.commands.map(command => command.kind === 'rtc.stream'
-            ? { ...command, intervalMs: 34 }
-            : command)
+        ? scale.recipe.commands.map((command) =>
+            command.kind === 'rtc.stream'
+                ? { ...command, intervalMs: 34 }
+                : command
+        )
         : scale.recipe.commands;
     const scaledRight: ControlDistributedRunSnapshot = {
         ...right,
@@ -372,9 +370,9 @@ function createTuneScaleSnapshots(
             targetPolicy: right.manifest.targetPolicy,
             recipes: [{
                 ...scale.manifest.recipes[0]!,
-                recipe: { ...scale.recipe, commands },
-            }],
-        },
+                recipe: { ...scale.recipe, commands }
+            }]
+        }
     };
     const controlRuns: ControlRunSnapshot[] = [leftControl, rightControl];
     const distributedRuns: ControlDistributedRunSnapshot[] = [left, scaledRight];
@@ -384,7 +382,7 @@ function createTuneScaleSnapshots(
         distributedRuns.push(historyOverflowDistributedRun(
             identity.distributedRunId,
             identity.controlRunId,
-            index,
+            index
         ));
     }
     return { controlRuns, distributedRuns } as const;
@@ -394,25 +392,25 @@ function tuneScaleRunIdentity(index: number, runCount: number) {
     if (index === 0) {
         return {
             distributedRunId: TUNE_LEFT_RUN_ID,
-            controlRunId: TUNE_LEFT_CONTROL_RUN_ID,
+            controlRunId: TUNE_LEFT_CONTROL_RUN_ID
         };
     }
     if (index === 1) {
         return {
             distributedRunId: TUNE_RIGHT_RUN_ID,
-            controlRunId: TUNE_RIGHT_CONTROL_RUN_ID,
+            controlRunId: TUNE_RIGHT_CONTROL_RUN_ID
         };
     }
     if (index === Math.floor(runCount * 3 / 4)) {
         return {
             distributedRunId: TUNE_SCALE_LONG_BIDI_RUN_ID,
-            controlRunId: TUNE_SCALE_LONG_BIDI_CONTROL_ID,
+            controlRunId: TUNE_SCALE_LONG_BIDI_CONTROL_ID
         };
     }
     const ordinal = String(index).padStart(6, '0');
     return {
         distributedRunId: `tune-scale-run-${ordinal}`,
-        controlRunId: `tune-scale-control-${ordinal}`,
+        controlRunId: `tune-scale-control-${ordinal}`
     };
 }
 
@@ -420,21 +418,21 @@ function retentionPreview(
     sequence: number,
     candidateCount: number,
     linkedCount: number,
-    longBidiId: boolean,
+    longBidiId: boolean
 ) {
     const candidates = Array.from({ length: candidateCount }, (_, index) => {
         const primary = index === 0;
         const ids = primary
             ? {
                 runId: TUNE_RIGHT_CONTROL_RUN_ID,
-                distributedRunId: TUNE_RIGHT_RUN_ID,
+                distributedRunId: TUNE_RIGHT_RUN_ID
             }
             : retentionIds(index, candidateCount, longBidiId);
         const linked = Array.from({ length: linkedCount }, (_, linkIndex) => ({
             distributedRunId: linkIndex === 0
                 ? ids.distributedRunId
                 : `${ids.distributedRunId}-linked-${String(linkIndex).padStart(6, '0')}`,
-            state: primary ? 'failed' : 'passed',
+            state: primary ? 'failed' : 'passed'
         }));
         return {
             runId: ids.runId,
@@ -443,7 +441,7 @@ function retentionPreview(
             connectedAgentCount: primary ? 2 : 0,
             issuedRunTokenCount: primary ? 1 : 0,
             distributedRuns: linked,
-            fleetReportIds: linked.map(run => run.distributedRunId),
+            fleetReportIds: linked.map((run) => run.distributedRunId)
         };
     });
     return {
@@ -452,36 +450,34 @@ function retentionPreview(
         maxRuns: 1,
         dryRun: true,
         wouldDeleteRuns: candidates,
-        wouldDeleteRunIds: candidates.map(candidate => candidate.runId),
-        wouldDeleteDistributedRunIds: candidates.flatMap(candidate =>
-            candidate.distributedRuns.map(run => run.distributedRunId)
+        wouldDeleteRunIds: candidates.map((candidate) => candidate.runId),
+        wouldDeleteDistributedRunIds: candidates.flatMap((candidate) =>
+            candidate.distributedRuns.map((run) => run.distributedRunId)
         ),
-        wouldDeleteFleetReportIds: candidates.flatMap(candidate =>
-            candidate.fleetReportIds
-        ),
+        wouldDeleteFleetReportIds: candidates.flatMap((candidate) => candidate.fleetReportIds),
         projectedRetainedRuns: 1,
         preserves: {
             connectedAgentSockets: true,
-            storedArtifactFiles: true,
+            storedArtifactFiles: true
         },
-        planToken: `history-plan-${sequence}`,
+        planToken: `history-plan-${sequence}`
     } as const;
 }
 
 function retentionIds(
     index: number,
     candidateCount: number,
-    longBidiId: boolean,
-): Readonly<{ runId: string; distributedRunId: string }> {
+    longBidiId: boolean
+): Readonly<{ runId: string; distributedRunId: string; }> {
     const longBidiIndex = Math.floor(candidateCount * 3 / 4);
     return longBidiId && index === longBidiIndex
         ? {
             runId: RETENTION_LONG_BIDI_CONTROL_ID,
-            distributedRunId: RETENTION_LONG_BIDI_DISTRIBUTED_ID,
+            distributedRunId: RETENTION_LONG_BIDI_DISTRIBUTED_ID
         }
         : {
             runId: `history-overflow-control-${index}`,
-            distributedRunId: `history-overflow-distributed-${index}`,
+            distributedRunId: `history-overflow-distributed-${index}`
         };
 }
 
@@ -498,14 +494,14 @@ function historyOverflowControlRun(runId: string, index: number) {
         events: [],
         stats: [],
         reports: [],
-        heartbeats: [],
+        heartbeats: []
     };
 }
 
 function historyOverflowDistributedRun(
     distributedRunId: string,
     controlRunId: string,
-    index: number,
+    index: number
 ): ControlDistributedRunSnapshot {
     const source = createTuneDistributedRun('left');
     return {
@@ -518,52 +514,52 @@ function historyOverflowDistributedRun(
             ...source.manifest,
             distributedRunId,
             controlRunId,
-            displayName: `History overflow run ${index}`,
-        },
+            displayName: `History overflow run ${index}`
+        }
     };
 }
 
 function referenceOnlyTuneRun(
-    run: ControlDistributedRunSnapshot,
+    run: ControlDistributedRunSnapshot
 ): ControlDistributedRunSnapshot {
     return {
         ...run,
         manifest: {
             ...run.manifest,
-            recipes: run.manifest.recipes.map(selection => ({
+            recipes: run.manifest.recipes.map((selection) => ({
                 ...selection,
-                recipe: undefined,
-            })),
-        },
+                recipe: undefined
+            }))
+        }
     };
 }
 
 function shadowTuneRateHz(
-    run: ControlDistributedRunSnapshot,
+    run: ControlDistributedRunSnapshot
 ): ControlDistributedRunSnapshot {
     return {
         ...run,
         manifest: {
             ...run.manifest,
-            recipes: run.manifest.recipes.map(selection => ({
+            recipes: run.manifest.recipes.map((selection) => ({
                 ...selection,
                 recipe: selection.recipe
                     ? {
                         ...selection.recipe,
-                        commands: selection.recipe.commands.map(command =>
+                        commands: selection.recipe.commands.map((command) =>
                             command.kind === 'rtc.stream'
                                 ? { ...command, intervalMs: 33 }
                                 : command
-                        ),
+                        )
                     }
-                    : undefined,
-            })),
-        },
+                    : undefined
+            }))
+        }
     };
 }
 
 function incompatibleTuneRun(
-    run: ControlDistributedRunSnapshot,
+    run: ControlDistributedRunSnapshot
 ): ControlDistributedRunSnapshot {
     return {
         ...run,
@@ -571,21 +567,23 @@ function incompatibleTuneRun(
             ...run.manifest,
             group: {
                 ...run.manifest.group,
-                groupId: 'tune-advisory-other-group',
+                groupId: 'tune-advisory-other-group'
             },
-            recipes: run.manifest.recipes.map((selection, index) => index === 0
-                ? {
-                    ...selection,
-                    recipeId: 'tune-advisory-other-recipe',
-                    recipe: selection.recipe
-                        ? {
-                            ...selection.recipe,
-                            recipeId: 'tune-advisory-other-recipe',
-                        }
-                        : undefined,
-                }
-                : selection),
-        },
+            recipes: run.manifest.recipes.map((selection, index) =>
+                index === 0
+                    ? {
+                        ...selection,
+                        recipeId: 'tune-advisory-other-recipe',
+                        recipe: selection.recipe
+                            ? {
+                                ...selection.recipe,
+                                recipeId: 'tune-advisory-other-recipe'
+                            }
+                            : undefined
+                    }
+                    : selection
+            )
+        }
     };
 }
 
@@ -596,7 +594,9 @@ function isArtifactRead(pathname: string): boolean {
 }
 
 function detailId(pathname: string, prefix: string): string | undefined {
-    if (!pathname.startsWith(prefix)) return undefined;
+    if (!pathname.startsWith(prefix)) {
+        return undefined;
+    }
     const suffix = pathname.slice(prefix.length);
     return suffix && !suffix.includes('/') ? decodeURIComponent(suffix) : undefined;
 }
@@ -608,8 +608,8 @@ async function fulfillJson(route: Route, body: unknown, status = 200): Promise<v
         headers: {
             'access-control-allow-origin': '*',
             'access-control-allow-headers': '*',
-            'access-control-allow-methods': 'GET,POST,OPTIONS',
+            'access-control-allow-methods': 'GET,POST,OPTIONS'
         },
-        body: body === undefined ? '' : JSON.stringify(body),
+        body: body === undefined ? '' : JSON.stringify(body)
     });
 }

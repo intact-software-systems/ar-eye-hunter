@@ -1,17 +1,17 @@
+import { TreeGraph, VertexId, VertexState } from '../graph-props.ts';
+import { cloneGraph } from '../graph/graph-algs.ts';
 import {
     addMemberVertex,
     addSteinerVertex,
     insertEdgeFromGlobal,
     makeMember,
-    makeSteinerAvailable,
+    makeSteinerAvailable
 } from './complete-graph-helpers.ts';
-import { cloneGraph } from '../graph/graph-algs.ts';
-import { TreeGraph, VertexId, VertexState } from '../graph-props.ts';
 
 export function createCMGraphSteinerSet(
     globalGraph: TreeGraph,
     groupMembers: ReadonlySet<VertexId>,
-    steinerSet: ReadonlySet<VertexId>,
+    steinerSet: ReadonlySet<VertexId>
 ): TreeGraph {
     const inputT = cloneGraphEmpty(globalGraph);
     const totalV = new Set<VertexId>([...groupMembers, ...steinerSet]);
@@ -19,7 +19,8 @@ export function createCMGraphSteinerSet(
     for (const v of totalV) {
         if (groupMembers.has(v)) {
             addMemberVertex(inputT, globalGraph, v);
-        } else {
+        }
+        else {
             addSteinerVertex(inputT, globalGraph, v);
         }
     }
@@ -43,18 +44,18 @@ export function updateCMGraphSteinerSet(
     globalGraph: TreeGraph,
     groupMembers: ReadonlySet<VertexId>,
     inputSteinerSet: ReadonlySet<VertexId>,
-    newVertex: VertexId,
+    newVertex: VertexId
 ): TreeGraph {
     const inputT = cloneGraph(currentGraph);
 
-    const steinerSet =
-        new Set([...inputSteinerSet]
-            .filter(v => v !== newVertex && !groupMembers.has(v)));
+    const steinerSet = new Set([...inputSteinerSet]
+        .filter((v) => v !== newVertex && !groupMembers.has(v)));
 
     if (groupMembers.has(newVertex)) {
         if (inputT.hasNode(newVertex)) {
             makeMember(inputT, newVertex);
-        } else {
+        }
+        else {
             addMemberVertex(inputT, globalGraph, newVertex);
         }
 
@@ -63,7 +64,8 @@ export function updateCMGraphSteinerSet(
                 insertEdgeFromGlobal(inputT, globalGraph, member, newVertex);
             }
         }
-    } else if (inputT.hasNode(newVertex)) {
+    }
+    else if (inputT.hasNode(newVertex)) {
         inputT.dropNode(newVertex);
     }
 

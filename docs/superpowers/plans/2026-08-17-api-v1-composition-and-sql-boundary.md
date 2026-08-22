@@ -182,19 +182,19 @@ Create a callable fake with a `begin` method and assert that translation preserv
 
 ```ts
 Deno.test('toPSqlSql preserves the supported API SQL client identity', () => {
-  const database = Object.assign(
-    function <T>(_strings: TemplateStringsArray, ..._values: unknown[]): Promise<T> {
-      return Promise.reject(new Error('query not used'));
-    },
-    {
-      begin<T>(_operation: (transaction: PSqlSql) => Promise<T>): Promise<T> {
-        return Promise.reject(new Error('transaction not used'));
-      },
-    },
-  ) as PSqlSql;
-  const sqlClient: ApiV1Sql = database;
+    const database = Object.assign(
+        function<T> (_strings: TemplateStringsArray, ..._values: unknown[]): Promise<T> {
+            return Promise.reject(new Error('query not used'));
+        },
+        {
+            begin<T>(_operation: (transaction: PSqlSql) => Promise<T>): Promise<T> {
+                return Promise.reject(new Error('transaction not used'));
+            }
+        }
+    ) as PSqlSql;
+    const sqlClient: ApiV1Sql = database;
 
-  assert.equal(toPSqlSql(sqlClient), database);
+    assert.equal(toPSqlSql(sqlClient), database);
 });
 ```
 
@@ -218,7 +218,7 @@ import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import type { ApiV1Sql } from './db.ts';
 
 export function toPSqlSql(sqlClient: ApiV1Sql): PSqlSql {
-  return sqlClient as PSqlSql;
+    return sqlClient as PSqlSql;
 }
 ```
 
@@ -262,17 +262,17 @@ Update PR Validation with the exact RED/GREEN and type-check results.
 
 ```ts
 export interface ApiV1BackgroundTaskLifecycle {
-  beginStartupGeneration(): RuntimeStateExpiryStartupGeneration;
-  register(stop: () => void | Promise<void>): () => void;
-  stop(): Promise<void>;
+    beginStartupGeneration(): RuntimeStateExpiryStartupGeneration;
+    register(stop: () => void | Promise<void>): () => void;
+    stop(): Promise<void>;
 }
 
 export interface CreateApiV1BackgroundTaskLifecycleInput {
-  readonly runtimeStateExpiry: RuntimeStateExpiryLifecycle;
+    readonly runtimeStateExpiry: RuntimeStateExpiryLifecycle;
 }
 
 export function createApiV1BackgroundTaskLifecycle(
-  input: CreateApiV1BackgroundTaskLifecycleInput,
+    input: CreateApiV1BackgroundTaskLifecycleInput
 ): ApiV1BackgroundTaskLifecycle;
 ```
 
@@ -282,39 +282,39 @@ The tests use a fake `RuntimeStateExpiryLifecycle` and prove:
 
 ```ts
 Deno.test(
-  'background lifecycle unregisters one stop and attempts every remaining stop',
-  async () => {
-    const calls: string[] = [];
-    const lifecycle = createApiV1BackgroundTaskLifecycle({
-      runtimeStateExpiry: createFakeRuntimeStateExpiryLifecycle(calls),
-    });
-    const unregister = lifecycle.register(() => calls.push('removed'));
-    lifecycle.register(() => calls.push('first'));
-    lifecycle.register(() => {
-      calls.push('second');
-      throw new Error('second failed');
-    });
+    'background lifecycle unregisters one stop and attempts every remaining stop',
+    async () => {
+        const calls: string[] = [];
+        const lifecycle = createApiV1BackgroundTaskLifecycle({
+            runtimeStateExpiry: createFakeRuntimeStateExpiryLifecycle(calls)
+        });
+        const unregister = lifecycle.register(() => calls.push('removed'));
+        lifecycle.register(() => calls.push('first'));
+        lifecycle.register(() => {
+            calls.push('second');
+            throw new Error('second failed');
+        });
 
-    unregister();
-    await assert.rejects(() => lifecycle.stop(), /second failed/);
-    assert.deepEqual(calls, ['expiry-stop', 'first', 'second']);
-  },
+        unregister();
+        await assert.rejects(() => lifecycle.stop(), /second failed/);
+        assert.deepEqual(calls, ['expiry-stop', 'first', 'second']);
+    }
 );
 
 Deno.test('background lifecycle is repeat-stop safe and starts a fresh generation', async () => {
-  const calls: string[] = [];
-  const lifecycle = createApiV1BackgroundTaskLifecycle({
-    runtimeStateExpiry: createFakeRuntimeStateExpiryLifecycle(calls),
-  });
-  const firstGeneration = lifecycle.beginStartupGeneration();
-  const secondGeneration = lifecycle.beginStartupGeneration();
-  assert.notEqual(firstGeneration, secondGeneration);
+    const calls: string[] = [];
+    const lifecycle = createApiV1BackgroundTaskLifecycle({
+        runtimeStateExpiry: createFakeRuntimeStateExpiryLifecycle(calls)
+    });
+    const firstGeneration = lifecycle.beginStartupGeneration();
+    const secondGeneration = lifecycle.beginStartupGeneration();
+    assert.notEqual(firstGeneration, secondGeneration);
 
-  lifecycle.register(() => calls.push('task-stop'));
-  await lifecycle.stop();
-  await lifecycle.stop();
+    lifecycle.register(() => calls.push('task-stop'));
+    await lifecycle.stop();
+    await lifecycle.stop();
 
-  assert.deepEqual(calls, ['begin', 'begin', 'expiry-stop', 'task-stop']);
+    assert.deepEqual(calls, ['begin', 'begin', 'expiry-stop', 'task-stop']);
 });
 ```
 
@@ -371,28 +371,29 @@ git push
 **Interfaces:**
 
 ```ts
-export interface ApiV1Runtime extends Omit<
-  RallarMiddlewareRuntime,
-  | 'clientStateService'
-  | 'groupStateService'
-  | 'rtcTopologyPublicationRepository'
-  | 'rtcTopologyExecutionRepository'
-  | 'rtcTopologyDelivery'
-  | 'rtcTopologyReplay'
-  | 'appAuthInboxService'
-> {
-  readonly clientStateService: CachedClientStateService;
-  readonly groupStateService: CachedGroupStateService;
-  readonly rtcTopologyPublicationRepository: RtcTopologyPublicationRepository;
-  readonly rtcTopologyExecutionRepository: RtcTopologyExecutionRepository;
-  readonly rtcTopologyDelivery: NonNullable<RallarMiddlewareRuntime['rtcTopologyDelivery']>;
-  readonly rtcTopologyReplay: NonNullable<RallarMiddlewareRuntime['rtcTopologyReplay']>;
-  readonly appAuthInboxService: AppAuthInboxService;
-  readonly authSessionRepository: AuthSessionRepository;
-  readonly clientRestSnapshotReadSelector: ClientRestSnapshotReadSelector;
-  readonly groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
-  readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
-  readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
+export interface ApiV1Runtime extends
+    Omit<
+        RallarMiddlewareRuntime,
+        | 'clientStateService'
+        | 'groupStateService'
+        | 'rtcTopologyPublicationRepository'
+        | 'rtcTopologyExecutionRepository'
+        | 'rtcTopologyDelivery'
+        | 'rtcTopologyReplay'
+        | 'appAuthInboxService'
+    > {
+    readonly clientStateService: CachedClientStateService;
+    readonly groupStateService: CachedGroupStateService;
+    readonly rtcTopologyPublicationRepository: RtcTopologyPublicationRepository;
+    readonly rtcTopologyExecutionRepository: RtcTopologyExecutionRepository;
+    readonly rtcTopologyDelivery: NonNullable<RallarMiddlewareRuntime['rtcTopologyDelivery']>;
+    readonly rtcTopologyReplay: NonNullable<RallarMiddlewareRuntime['rtcTopologyReplay']>;
+    readonly appAuthInboxService: AppAuthInboxService;
+    readonly authSessionRepository: AuthSessionRepository;
+    readonly clientRestSnapshotReadSelector: ClientRestSnapshotReadSelector;
+    readonly groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
+    readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
+    readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
 }
 ```
 
@@ -489,17 +490,17 @@ Route registration functions become behavior-named and receive complete producti
 
 ```ts
 export interface RegisterWsRoutesInput {
-  readonly socketServer: JsonWebSocketServer;
-  readonly appClientInboxService: Pick<AppClientInboxService, 'enqueueAuthorisedWsClientConnect'>;
-  readonly requireWsAuthSession: (input: RequireWsAuthSessionInput) => Promise<IssuedAuthSession>;
+    readonly socketServer: JsonWebSocketServer;
+    readonly appClientInboxService: Pick<AppClientInboxService, 'enqueueAuthorisedWsClientConnect'>;
+    readonly requireWsAuthSession: (input: RequireWsAuthSessionInput) => Promise<IssuedAuthSession>;
 }
 
 export interface ClientStateRouteDependencies {
-  readonly clientStateService: ClientStateRouteService;
-  readonly requireApiAuthSession: RequireApiAuthSession;
-  readonly hydrateStateSyncSnapshotCaches: HydrateStateSyncSnapshotCaches;
-  readonly processClientAppInbox: ProcessClientAppInbox;
-  readonly readClientSnapshot: ClientStatePointRead;
+    readonly clientStateService: ClientStateRouteService;
+    readonly requireApiAuthSession: RequireApiAuthSession;
+    readonly hydrateStateSyncSnapshotCaches: HydrateStateSyncSnapshotCaches;
+    readonly processClientAppInbox: ProcessClientAppInbox;
+    readonly readClientSnapshot: ClientStatePointRead;
 }
 ```
 
@@ -513,7 +514,7 @@ The app-local repository owners become required and assertion-free:
 export function createRuntimeStateRepository(database: PSqlSql): PSqlRuntimeStateRepository;
 
 export function createClientStateRepository(
-  source: RuntimeStateRepositoryLike | PSqlSql,
+    source: RuntimeStateRepositoryLike | PSqlSql
 ): ClientStateRepository;
 ```
 
@@ -590,16 +591,16 @@ repository subtree and refactor `api-login-service.ts` to required inputs:
 
 ```ts
 export interface LoginInput {
-  readonly request: LoginRequest;
-  readonly userRepository: AuthUserRepository;
-  readonly staticClients: readonly LoginClientData[];
+    readonly request: LoginRequest;
+    readonly userRepository: AuthUserRepository;
+    readonly staticClients: readonly LoginClientData[];
 }
 
 export interface RegisterInput {
-  readonly request: RegisterRequest;
-  readonly staticClients: readonly LoginClientData[];
-  readonly capturedAtEpochMs: number;
-  readonly clientId: string;
+    readonly request: RegisterRequest;
+    readonly staticClients: readonly LoginClientData[];
+    readonly capturedAtEpochMs: number;
+    readonly clientId: string;
 }
 ```
 
@@ -676,24 +677,24 @@ Update the PR with Slice 1 behavior, validation, affected legacy removals, and a
 
 ```ts
 export interface ApiV1TopologyServices {
-  readonly rtcTopologyService: RallarRtcTopologyService;
-  readonly rtcTopologyOptions: RallarRtcTopologyServiceOptions;
-  readonly topologyManagement: GroupTopologyManagementService;
-  readonly topologyConfigRepository: GroupTopologyConfigRepository;
-  readonly groupStateRepository: GroupStateRepository;
-  readonly topologySnapshotRepository: RtcTopologySnapshotRepository;
-  readonly rttRepository: RtcRttRepository;
-  readonly rttRefinementGate: RtcRttRefinementGate;
-  readonly rttRefinementService: RtcRttRefinementService;
-  readonly adminClientIds: readonly string[];
-  readonly readRtcTopologyMetrics: () => object;
-  readonly resetRtcTopologyMetrics: () => void;
+    readonly rtcTopologyService: RallarRtcTopologyService;
+    readonly rtcTopologyOptions: RallarRtcTopologyServiceOptions;
+    readonly topologyManagement: GroupTopologyManagementService;
+    readonly topologyConfigRepository: GroupTopologyConfigRepository;
+    readonly groupStateRepository: GroupStateRepository;
+    readonly topologySnapshotRepository: RtcTopologySnapshotRepository;
+    readonly rttRepository: RtcRttRepository;
+    readonly rttRefinementGate: RtcRttRefinementGate;
+    readonly rttRefinementService: RtcRttRefinementService;
+    readonly adminClientIds: readonly string[];
+    readonly readRtcTopologyMetrics: () => object;
+    readonly resetRtcTopologyMetrics: () => void;
 }
 
 export interface ApiV1AdminServices {
-  readonly operations: AdminOperationsService;
-  readonly support: AdminSupportService;
-  readonly statistics: SpaStatisticsService;
+    readonly operations: AdminOperationsService;
+    readonly support: AdminSupportService;
+    readonly statistics: SpaStatisticsService;
 }
 ```
 
@@ -750,16 +751,16 @@ git push
 
 ```ts
 export interface ApiV1RouteInstallers {
-  readonly ws: RallarServerRouteInstaller<Hono>;
-  readonly rest: readonly RallarServerRouteInstaller<Hono>[];
+    readonly ws: RallarServerRouteInstaller<Hono>;
+    readonly rest: readonly RallarServerRouteInstaller<Hono>[];
 }
 
 export function createApiV1SystemInstallers(
-  input: CreateApiV1SystemInstallersInput,
+    input: CreateApiV1SystemInstallersInput
 ): RallarServerSystemInstallers<ApiV1Runtime>;
 
 export function createApiV1RouteInstallers(
-  input: CreateApiV1RouteInstallersInput,
+    input: CreateApiV1RouteInstallersInput
 ): ApiV1RouteInstallers;
 ```
 
@@ -810,24 +811,24 @@ git push
 
 ```ts
 export interface CreateRallarServerInput {
-  readonly runtime: ApiV1Runtime;
-  readonly repositories: RepositoryManager;
-  readonly appDataRepository: AppDataRepositoryLike;
-  readonly ws: RallarServerWsFacadeOptions;
-  readonly systemInstallers: RallarServerSystemInstallers<ApiV1Runtime>;
-  readonly routeInstallers: ApiV1RouteInstallers;
+    readonly runtime: ApiV1Runtime;
+    readonly repositories: RepositoryManager;
+    readonly appDataRepository: AppDataRepositoryLike;
+    readonly ws: RallarServerWsFacadeOptions;
+    readonly systemInstallers: RallarServerSystemInstallers<ApiV1Runtime>;
+    readonly routeInstallers: ApiV1RouteInstallers;
 }
 
 export function createRallarServer(
-  input: CreateRallarServerInput,
+    input: CreateRallarServerInput
 ): RallarServerApplication<ApiV1Runtime, Hono>;
 
 export interface CreateDefaultRallarServerOptions {
-  readonly ws?: RallarServerWsFacadeOptions;
+    readonly ws?: RallarServerWsFacadeOptions;
 }
 
 export function createDefaultRallarServer(
-  options?: CreateDefaultRallarServerOptions,
+    options?: CreateDefaultRallarServerOptions
 ): RallarServerApplication<ApiV1Runtime, Hono>;
 ```
 
@@ -867,10 +868,10 @@ Relic:
 
 ```ts
 const rallar = createDefaultRallarServer({
-  ws: {
-    allowImplicitUserTopics: false,
-    defaultFanout: 'live-only',
-  },
+    ws: {
+        allowImplicitUserTopics: false,
+        defaultFanout: 'live-only'
+    }
 });
 ```
 

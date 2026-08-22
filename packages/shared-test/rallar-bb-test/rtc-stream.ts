@@ -3,13 +3,11 @@ import type {
     RallarBlackBoxTestRtcStreamResultValue,
     RallarBlackBoxTestRtcStreamThresholdFailure,
     RallarBlackBoxTestRtcStreamThresholds,
-    RallarBlackBoxTestTransport,
+    RallarBlackBoxTestTransport
 } from './types.ts';
 
-const STREAM_PLACEHOLDER_PATTERN =
-    /\{stream\.(commandId|index|iteration|elapsedMs|scheduledElapsedMs)\}/g;
-const STREAM_EXACT_PLACEHOLDER_PATTERN =
-    /^\{stream\.(commandId|index|iteration|elapsedMs|scheduledElapsedMs)\}$/;
+const STREAM_PLACEHOLDER_PATTERN = /\{stream\.(commandId|index|iteration|elapsedMs|scheduledElapsedMs)\}/g;
+const STREAM_EXACT_PLACEHOLDER_PATTERN = /^\{stream\.(commandId|index|iteration|elapsedMs|scheduledElapsedMs)\}$/;
 
 export type RallarBlackBoxRtcStreamFramePlan = Readonly<{
     index: number;
@@ -46,7 +44,7 @@ export function planRallarBlackBoxRtcStreamFrames(input: {
         return {
             intervalMs,
             requestedRateHz: input.rateHz,
-            frames: [],
+            frames: []
         };
     }
 
@@ -57,27 +55,27 @@ export function planRallarBlackBoxRtcStreamFrames(input: {
     const frameCount = countBound === undefined
         ? durationBound ?? 0
         : durationBound === undefined
-            ? countBound
-            : Math.min(countBound, durationBound);
+        ? countBound
+        : Math.min(countBound, durationBound);
     const frames: RallarBlackBoxRtcStreamFramePlan[] = [];
     for (let index = 0; index < frameCount; index++) {
         frames.push({
             index,
             iteration: index + 1,
-            scheduledElapsedMs: roundMetric(index * intervalMs),
+            scheduledElapsedMs: roundMetric(index * intervalMs)
         });
     }
 
     return {
         intervalMs,
         requestedRateHz: input.rateHz ?? roundMetric(1000 / intervalMs),
-        frames,
+        frames
     };
 }
 
 export function replaceRallarBlackBoxRtcStreamPlaceholders<T>(
     value: T,
-    context: RallarBlackBoxRtcStreamPlaceholderContext,
+    context: RallarBlackBoxRtcStreamPlaceholderContext
 ): T {
     if (typeof value === 'string') {
         const exact = STREAM_EXACT_PLACEHOLDER_PATTERN.exec(value);
@@ -87,18 +85,18 @@ export function replaceRallarBlackBoxRtcStreamPlaceholders<T>(
 
         return value.replace(
             STREAM_PLACEHOLDER_PATTERN,
-            (_match, name: string) => String(streamPlaceholderValue(name, context)),
+            (_match, name: string) => String(streamPlaceholderValue(name, context))
         ) as T;
     }
 
     if (Array.isArray(value)) {
-        return value.map(entry => replaceRallarBlackBoxRtcStreamPlaceholders(entry, context)) as T;
+        return value.map((entry) => replaceRallarBlackBoxRtcStreamPlaceholders(entry, context)) as T;
     }
 
     if (isRecord(value)) {
         return Object.fromEntries(
             Object.entries(value)
-                .map(([key, entry]) => [key, replaceRallarBlackBoxRtcStreamPlaceholders(entry, context)]),
+                .map(([key, entry]) => [key, replaceRallarBlackBoxRtcStreamPlaceholders(entry, context)])
         ) as T;
     }
 
@@ -119,21 +117,21 @@ export function summarizeRallarBlackBoxRtcStreamObservations(input: {
     const elapsedMs = Math.max(0, input.endedAtEpochMs - input.startedAtEpochMs);
     const observations = [...input.observations].sort((left, right) => left.index - right.index);
     const durations = observations
-        .filter(observation => !observation.dropped)
-        .map(observation => observation.durationMs)
+        .filter((observation) => !observation.dropped)
+        .map((observation) => observation.durationMs)
         .filter((value): value is number => value !== undefined);
     const startDrifts = observations
-        .map(observation => observation.startDriftMs)
+        .map((observation) => observation.startDriftMs)
         .filter((value): value is number => value !== undefined);
     const jitters = startDrifts
         .slice(1)
         .map((drift, index) => Math.abs(drift - startDrifts[index]));
     const scheduledFrames = observations.length;
-    const droppedFrames = observations.filter(observation => observation.dropped).length;
-    const attemptedFrames = observations.filter(observation => !observation.dropped).length;
-    const completedFrames = observations.filter(observation => observation.ok && !observation.dropped).length;
-    const failedFrames = observations.filter(observation => !observation.ok).length;
-    const backpressureCount = observations.filter(observation => observation.backpressured).length;
+    const droppedFrames = observations.filter((observation) => observation.dropped).length;
+    const attemptedFrames = observations.filter((observation) => !observation.dropped).length;
+    const completedFrames = observations.filter((observation) => observation.ok && !observation.dropped).length;
+    const failedFrames = observations.filter((observation) => !observation.ok).length;
+    const backpressureCount = observations.filter((observation) => observation.backpressured).length;
     const lateThresholdMs = Math.max(1, Math.round(Math.max(input.intervalMs, 1) * 0.5));
     const value: RallarBlackBoxTestRtcStreamResultValue = {
         commandId: input.commandId,
@@ -160,7 +158,7 @@ export function summarizeRallarBlackBoxRtcStreamObservations(input: {
             maxStartDriftMs: startDrifts.length > 0 ? Math.max(...startDrifts) : undefined,
             averageStartDriftMs: average(startDrifts),
             maxJitterMs: jitters.length > 0 ? Math.max(...jitters) : undefined,
-            lateFrameCount: startDrifts.filter(value => value > lateThresholdMs).length,
+            lateFrameCount: startDrifts.filter((value) => value > lateThresholdMs).length
         },
         duration: {
             minMs: durations.length > 0 ? Math.min(...durations) : undefined,
@@ -168,21 +166,21 @@ export function summarizeRallarBlackBoxRtcStreamObservations(input: {
             p95Ms: percentile(durations, 0.95),
             p99Ms: percentile(durations, 0.99),
             maxMs: durations.length > 0 ? Math.max(...durations) : undefined,
-            averageMs: average(durations),
+            averageMs: average(durations)
         },
         thresholdFailures: [],
-        observations,
+        observations
     };
 
     return {
         ...value,
-        thresholdFailures: evaluateRallarBlackBoxRtcStreamThresholds(value, input.thresholds),
+        thresholdFailures: evaluateRallarBlackBoxRtcStreamThresholds(value, input.thresholds)
     };
 }
 
 export function evaluateRallarBlackBoxRtcStreamThresholds(
     value: RallarBlackBoxTestRtcStreamResultValue,
-    thresholds: RallarBlackBoxTestRtcStreamThresholds | undefined,
+    thresholds: RallarBlackBoxTestRtcStreamThresholds | undefined
 ): readonly RallarBlackBoxTestRtcStreamThresholdFailure[] {
     if (!thresholds) {
         return [];
@@ -199,7 +197,7 @@ export function evaluateRallarBlackBoxRtcStreamThresholds(
         'maxDroppedFrames',
         'delivery',
         'Dropped frame count',
-        'above',
+        'above'
     );
     pushNumericFailure(
         failures,
@@ -208,7 +206,7 @@ export function evaluateRallarBlackBoxRtcStreamThresholds(
         'maxBackpressureCount',
         'backpressure',
         'Backpressure count',
-        'above',
+        'above'
     );
     if (
         thresholds.minSendSuccessRatio !== undefined &&
@@ -220,7 +218,8 @@ export function evaluateRallarBlackBoxRtcStreamThresholds(
             category: 'delivery',
             threshold: thresholds.minSendSuccessRatio,
             actual: successRatio,
-            message: `Stream send success ratio was ${successRatio}, below the configured ${thresholds.minSendSuccessRatio} minimum.`,
+            message:
+                `Stream send success ratio was ${successRatio}, below the configured ${thresholds.minSendSuccessRatio} minimum.`
         });
     }
     pushNumericFailure(
@@ -230,7 +229,7 @@ export function evaluateRallarBlackBoxRtcStreamThresholds(
         'maxP95SendDurationMs',
         'delivery',
         'P95 send duration',
-        'above',
+        'above'
     );
     pushNumericFailure(
         failures,
@@ -239,7 +238,7 @@ export function evaluateRallarBlackBoxRtcStreamThresholds(
         'maxP99SendDurationMs',
         'delivery',
         'P99 send duration',
-        'above',
+        'above'
     );
     pushNumericFailure(
         failures,
@@ -248,7 +247,7 @@ export function evaluateRallarBlackBoxRtcStreamThresholds(
         'maxAverageStartDriftMs',
         'pacing',
         'Average start drift',
-        'above',
+        'above'
     );
     pushNumericFailure(
         failures,
@@ -257,7 +256,7 @@ export function evaluateRallarBlackBoxRtcStreamThresholds(
         'maxStartDriftMs',
         'pacing',
         'Maximum start drift',
-        'above',
+        'above'
     );
     pushNumericFailure(
         failures,
@@ -266,7 +265,7 @@ export function evaluateRallarBlackBoxRtcStreamThresholds(
         'maxJitterMs',
         'pacing',
         'Maximum jitter',
-        'above',
+        'above'
     );
 
     return failures;
@@ -274,7 +273,7 @@ export function evaluateRallarBlackBoxRtcStreamThresholds(
 
 export function sampleRallarBlackBoxRtcStreamObservations(
     observations: readonly RallarBlackBoxTestRtcStreamFrameObservation[],
-    sampleEvery: number,
+    sampleEvery: number
 ): readonly RallarBlackBoxTestRtcStreamFrameObservation[] {
     if (!Number.isInteger(sampleEvery) || sampleEvery <= 1 || observations.length <= 2) {
         return observations;
@@ -293,7 +292,7 @@ export function sampleRallarBlackBoxRtcStreamObservations(
 
 function streamPlaceholderValue(
     name: string,
-    context: RallarBlackBoxRtcStreamPlaceholderContext,
+    context: RallarBlackBoxRtcStreamPlaceholderContext
 ): string | number {
     switch (name) {
         case 'commandId':
@@ -318,7 +317,7 @@ function pushNumericFailure(
     name: keyof RallarBlackBoxTestRtcStreamThresholds,
     category: RallarBlackBoxTestRtcStreamThresholdFailure['category'],
     label: string,
-    direction: 'above',
+    direction: 'above'
 ): void {
     if (threshold === undefined || actual === undefined || actual <= threshold) {
         return;
@@ -329,7 +328,7 @@ function pushNumericFailure(
         category,
         threshold,
         actual,
-        message: `${label} was ${actual} ms, ${direction} the configured ${threshold} ms maximum.`,
+        message: `${label} was ${actual} ms, ${direction} the configured ${threshold} ms maximum.`
     });
 }
 

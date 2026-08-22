@@ -1,10 +1,10 @@
-import { defineConfig, devices, type PlaywrightTestConfig, } from '@playwright/test';
+import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test';
 import {
     createFullStackApiV1WebServer,
+    portFromBaseUrl,
     readFullStackApiBaseUrl,
     readFullStackApiServerMode,
-    readFullStackSpaBaseUrl,
-    portFromBaseUrl,
+    readFullStackSpaBaseUrl
 } from './playwright-full-stack-api-server.ts';
 
 const fullStackEnabled = process.env.RALLAR_BLACK_BOX_FULL_STACK === '1' ||
@@ -17,9 +17,9 @@ const fullStackApiServerMode = fullStackEnabled
 const reuseExistingServer = !process.env.CI;
 const requireFreshPostgresApi = [
     '1',
-    'true',
+    'true'
 ].includes(
-    process.env.RALLAR_BLACK_BOX_REQUIRE_FRESH_POSTGRES_API?.trim().toLowerCase() ?? '',
+    process.env.RALLAR_BLACK_BOX_REQUIRE_FRESH_POSTGRES_API?.trim().toLowerCase() ?? ''
 );
 
 const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
@@ -30,26 +30,27 @@ const webServer: NonNullable<PlaywrightTestConfig['webServer']> = [
                 apiBaseUrl: fullStackApiBaseUrl,
                 spaBaseUrl: fullStackSpaBaseUrl,
                 reuseExistingServer,
-                requireFreshPostgres: requireFreshPostgresApi,
-            }),
+                requireFreshPostgres: requireFreshPostgresApi
+            })
         ]
         : []),
     {
-        command:
-            `cd ../.. && npm --workspace rallar-black-box run dev -- --port ${portFromBaseUrl(fullStackSpaBaseUrl)} --force`,
+        command: `cd ../.. && npm --workspace rallar-black-box run dev -- --port ${
+            portFromBaseUrl(fullStackSpaBaseUrl)
+        } --force`,
         env: {
-            VITE_RALLAR_API_BASE_URL: fullStackApiBaseUrl,
+            VITE_RALLAR_API_BASE_URL: fullStackApiBaseUrl
         },
         url: fullStackSpaBaseUrl,
         reuseExistingServer,
-        timeout: 60_000,
+        timeout: 60_000
     },
     {
         command: 'cd ../rallar-black-box-control-server && deno task start',
         url: 'http://127.0.0.1:5180/health',
         reuseExistingServer,
-        timeout: 60_000,
-    },
+        timeout: 60_000
+    }
 ];
 
 export default defineConfig({
@@ -57,13 +58,13 @@ export default defineConfig({
     testMatch: /full-stack-.*\.spec\.ts/,
     timeout: 90_000,
     expect: {
-        timeout: 15_000,
+        timeout: 15_000
     },
     reporter: [['list']],
     use: {
         baseURL: fullStackSpaBaseUrl,
         trace: 'on-first-retry',
-        screenshot: 'only-on-failure',
+        screenshot: 'only-on-failure'
     },
     webServer,
     projects: [
@@ -75,10 +76,10 @@ export default defineConfig({
                     args: [
                         '--enable-unsafe-swiftshader',
                         '--use-gl=angle',
-                        '--use-angle=swiftshader',
-                    ],
-                },
-            },
-        },
-    ],
+                        '--use-angle=swiftshader'
+                    ]
+                }
+            }
+        }
+    ]
 });

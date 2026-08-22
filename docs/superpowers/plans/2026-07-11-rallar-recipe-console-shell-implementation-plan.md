@@ -62,13 +62,18 @@ export type AppExperience = 'legacy' | 'recipe-console';
 export const DEFAULT_APP_EXPERIENCE: AppExperience = 'legacy';
 export function resolveAppExperience(
     search: string,
-    defaultExperience?: AppExperience,
+    defaultExperience?: AppExperience
 ): AppExperience;
 export function useExperienceRoute(): AppExperience;
 
 export const RECIPE_CONSOLE_URL_VERSION = 1 as const;
 export const RECIPE_CONSOLE_VIEWS = [
-    'execute', 'monitor', 'analyze', 'tune', 'fleet', 'advanced',
+    'execute',
+    'monitor',
+    'analyze',
+    'tune',
+    'fleet',
+    'advanced'
 ] as const;
 export type RecipeConsoleView = typeof RECIPE_CONSOLE_VIEWS[number];
 export type RecipeConsoleUrlState = Readonly<{
@@ -83,18 +88,26 @@ export type RecipeConsoleUrlState = Readonly<{
     diagnosticSeverity?: 'debug' | 'info' | 'warning' | 'error';
     transport?: 'realtime' | 'messages.rtc' | 'ws' | 'http' | 'runtime';
     historyQuery?: string;
-    status?: 'draft' | 'resolving-targets' | 'staging' | 'waiting-for-ack' |
-        'waiting-for-barrier' | 'ready' | 'running' | 'passed' | 'failed' |
-        'cancelled' | 'timed-out';
+    status?:
+        | 'draft'
+        | 'resolving-targets'
+        | 'staging'
+        | 'waiting-for-ack'
+        | 'waiting-for-barrier'
+        | 'ready'
+        | 'running'
+        | 'passed'
+        | 'failed'
+        | 'cancelled'
+        | 'timed-out';
     from?: number;
     to?: number;
     compareLeft?: string;
     compareRight?: string;
-    timingMetric?: 'command-duration' | 'stream-send-duration' |
-        'stream-drift' | 'stream-cadence';
+    timingMetric?: 'command-duration' | 'stream-send-duration' | 'stream-drift' | 'stream-cadence';
     fleetRegion?: string;
-    fleetMapLayers?: readonly ('live-agents' | 'historical-regions' |
-        'failures' | 'observed-routes')[];
+    fleetMapLayers?:
+        readonly ('live-agents' | 'historical-regions' | 'failures' | 'observed-routes')[];
     legacySurface?: string;
 }>;
 export type RecipeConsoleUrlIssue = Readonly<{
@@ -112,15 +125,21 @@ export type ParsedRecipeConsoleUrl = Readonly<{
 export function parseRecipeConsoleUrl(search: string): ParsedRecipeConsoleUrl;
 export function serializeRecipeConsoleUrl(
     state: RecipeConsoleUrlState,
-    baseSearch?: string,
+    baseSearch?: string
 ): string;
 export function createRecipeConsoleShareHref(
     location: Pick<Location, 'origin' | 'pathname' | 'search' | 'hash'>,
-    state: RecipeConsoleUrlState,
+    state: RecipeConsoleUrlState
 ): string;
 export const RECIPE_CONSOLE_SENSITIVE_URL_KEYS = [
-    'agentSessionTicket', 'controlToken', 'rallarPassword', 'rallarToken',
-    'accessToken', 'refreshToken', 'password', 'token',
+    'agentSessionTicket',
+    'controlToken',
+    'rallarPassword',
+    'rallarToken',
+    'accessToken',
+    'refreshToken',
+    'password',
+    'token'
 ] as const;
 ```
 
@@ -157,14 +176,16 @@ expect(resolveAppExperience('?v=2&experience=recipe-console')).toBe('legacy');
 
 const parsed = parseRecipeConsoleUrl(
     '?provider=simulated&v=1&experience=recipe-console&view=monitor&view=tune' +
-    '&from=900&to=100&fleetMapLayers=failures,live-agents',
+        '&from=900&to=100&fleetMapLayers=failures,live-agents'
 );
 expect(parsed.state).toMatchObject({
-    view: 'monitor', from: 100, to: 900,
-    fleetMapLayers: ['live-agents', 'failures'],
+    view: 'monitor',
+    from: 100,
+    to: 900,
+    fleetMapLayers: ['live-agents', 'failures']
 });
-expect(parsed.issues.map(issue => issue.code)).toEqual(
-    expect.arrayContaining(['duplicate', 'normalized']),
+expect(parsed.issues.map((issue) => issue.code)).toEqual(
+    expect.arrayContaining(['duplicate', 'normalized'])
 );
 expect(parsed.canonicalSearch).toContain('provider=simulated');
 ```
@@ -196,7 +217,7 @@ export type RecipeConsoleHistoryPort = Readonly<{
 }>;
 
 export function createRecipeConsoleUrlHistory(
-    port: RecipeConsoleHistoryPort,
+    port: RecipeConsoleHistoryPort
 ): Readonly<{
     read(): ParsedRecipeConsoleUrl;
     push(patch: Partial<RecipeConsoleUrlState>): ParsedRecipeConsoleUrl;
@@ -246,7 +267,7 @@ git commit -m "feat: add recipe console URL contract"
 ```ts
 export function bootstrapMatchesAuthSession(
     bootstrap: RallarBlackBoxBootstrapConfig,
-    session: AuthSession,
+    session: AuthSession
 ): boolean;
 
 export type LegacyExperienceProps = Readonly<{
@@ -306,12 +327,8 @@ whose bootstrap fields match, and renders the unchanged `LegacyAppShell`.
 ticket consumption/scrub, bootstrap patch, login gate, and logout. It adds:
 
 ```ts
-const RecipeConsoleApp = lazy(() =>
-    import('./recipe-console/app/RecipeConsoleApp.tsx')
-);
-const LegacyExperience = lazy(() =>
-    import('./legacy/shell/LegacyExperience.tsx')
-);
+const RecipeConsoleApp = lazy(() => import('./recipe-console/app/RecipeConsoleApp.tsx'));
+const LegacyExperience = lazy(() => import('./legacy/shell/LegacyExperience.tsx'));
 ```
 
 After auth gates, render one `Suspense` and one conditional branch. Pass only
@@ -431,13 +448,13 @@ with the sample snapshot's exact group, then uses:
 ```ts
 const targetSeed = createSyntheticDistributedRunSeed('passed-clean');
 const selectedRecipe = createRallarBlackBoxRtcRealtimeStabilityRecipe({
-    group: targetSeed.distributedRun.manifest.group,
+    group: targetSeed.distributedRun.manifest.group
 });
 const targetRows = distributedRecipeTargetRows({
     run: targetSeed.controlRun,
     group: targetSeed.distributedRun.manifest.group,
     requiredCommandKinds: distributedRecipeCommandKinds(selectedRecipe),
-    nowEpochMs: 1_900_000_002_550,
+    nowEpochMs: 1_900_000_002_550
 });
 ```
 
@@ -510,7 +527,7 @@ export type RecipeConsolePresentation = Readonly<{
 }>;
 export function resolveRecipeConsolePresentation(
     width: number,
-    height: number,
+    height: number
 ): RecipeConsolePresentation;
 export function useRecipeConsolePresentation(): RecipeConsolePresentation;
 ```
@@ -863,7 +880,7 @@ export type ExperienceChunkGraph = Readonly<{
     productionClosure: ReadonlySet<string>;
 }>;
 export function readExperienceChunkGraph(
-    manifestPath: string,
+    manifestPath: string
 ): ExperienceChunkGraph;
 export function assertExperienceChunkGraph(graph: ExperienceChunkGraph): void;
 ```
@@ -938,11 +955,16 @@ git commit -m "test: prove recipe console isolation boundaries"
 
 ```ts
 export type RovingNavigationKey =
-    | 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight' | 'Home' | 'End';
+    | 'ArrowUp'
+    | 'ArrowDown'
+    | 'ArrowLeft'
+    | 'ArrowRight'
+    | 'Home'
+    | 'End';
 export function nextRovingNavigationIndex(
     current: number,
     key: RovingNavigationKey,
-    itemCount: number,
+    itemCount: number
 ): number;
 ```
 

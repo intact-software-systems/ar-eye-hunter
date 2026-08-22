@@ -1,10 +1,9 @@
-import type { FleetGeographyLiveAgentEvidence } from
-    '@shared-test/rallar-bb-test/fleet-geography.ts';
+import type { FleetGeographyLiveAgentEvidence } from '@shared-test/rallar-bb-test/fleet-geography.ts';
 import type { ControlAgentBoardRow } from '../../control-agent-board.ts';
 
 export function fleetLiveGeographyEvidenceFromBoardRows(
     rows: readonly ControlAgentBoardRow[],
-    observedAtEpochMs?: number,
+    observedAtEpochMs?: number
 ): readonly FleetGeographyLiveAgentEvidence[] {
     return rows.map((row) => ({
         agentId: row.agentId,
@@ -24,21 +23,27 @@ export function fleetLiveGeographyEvidenceFromBoardRows(
         ...(row.identity?.location === undefined
             ? {}
             : { location: row.identity.location }),
-        activeRunIds: uniqueSortedRunIds(row.activeRuns),
+        activeRunIds: uniqueSortedRunIds(row.activeRuns)
     })).sort((left, right) => compareText(left.agentId, right.agentId));
 }
 
 function liveState(
-    row: ControlAgentBoardRow,
+    row: ControlAgentBoardRow
 ): FleetGeographyLiveAgentEvidence['state'] {
-    if (row.targetStatus === 'stale') return 'stale';
-    if (row.connected) return 'connected';
-    if (row.targetStatus === 'offline' || !row.connected) return 'offline';
+    if (row.targetStatus === 'stale') {
+        return 'stale';
+    }
+    if (row.connected) {
+        return 'connected';
+    }
+    if (row.targetStatus === 'offline' || !row.connected) {
+        return 'offline';
+    }
     return 'unknown';
 }
 
 function uniqueSortedRunIds(
-    runs: ControlAgentBoardRow['activeRuns'],
+    runs: ControlAgentBoardRow['activeRuns']
 ): readonly string[] {
     return [...new Set(runs.map((run) => run.distributedRunId))]
         .sort(compareText);
@@ -46,7 +51,7 @@ function uniqueSortedRunIds(
 
 function optionalText<Key extends 'region' | 'provider' | 'datacenter'>(
     key: Key,
-    value: string | undefined,
+    value: string | undefined
 ): Readonly<Partial<Record<Key, string>>> {
     return value === undefined
         ? {} as Readonly<Partial<Record<Key, string>>>

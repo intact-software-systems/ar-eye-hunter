@@ -1,44 +1,56 @@
-\timing on
-
-insert into runtime_state_store (
+\ timing ON
+INSERT INTO
+  runtime_state_store (
     store_namespace,
     store_key,
     store_value,
     expire_at_ts
-)
-select
-    'perf-runtime-20260702',
-    'prefix:' || lpad(g::text, 8, '0'),
-    jsonb_build_object(
-        'kind', 'runtime',
-        'sequence', g,
-        'payload', repeat('x', 512)
-    )::text,
-    now() + interval '1 day'
-from generate_series(1, 100000) as g
-on conflict do nothing;
-
-insert into app_data_store (
+  )
+SELECT
+  'perf-runtime-20260702',
+  'prefix:' || lpad(g::text, 8, '0'),
+  jsonb_build_object(
+    'kind',
+    'runtime',
+    'sequence',
+    g,
+    'payload',
+    repeat('x', 512)
+  )::text,
+  now() + interval '1 day'
+FROM
+  generate_series(1, 100000) AS g
+ON conflict
+do nothing
+;
+INSERT INTO
+  app_data_store (
     app_namespace,
     store_name,
     data_key,
     data_value,
     expire_at_ts
-)
-select
-    'perf-app-20260702',
-    'store',
-    'prefix:' || lpad(g::text, 8, '0'),
-    jsonb_build_object(
-        'kind', 'app-data',
-        'sequence', g,
-        'payload', repeat('x', 512)
-    )::text,
-    now() + interval '1 day'
-from generate_series(1, 50000) as g
-on conflict do nothing;
-
-insert into client_state_events (
+  )
+SELECT
+  'perf-app-20260702',
+  'store',
+  'prefix:' || lpad(g::text, 8, '0'),
+  jsonb_build_object(
+    'kind',
+    'app-data',
+    'sequence',
+    g,
+    'payload',
+    repeat('x', 512)
+  )::text,
+  now() + interval '1 day'
+FROM
+  generate_series(1, 50000) AS g
+ON conflict
+do nothing
+;
+INSERT INTO
+  client_state_events (
     application_id,
     workspace_key,
     principal_id,
@@ -47,26 +59,40 @@ insert into client_state_events (
     snapshot_version,
     occurred_at_epoch_ms,
     event_json
-)
-select
-    'perf-app',
-    'perf-workspace',
-    'perf-principal',
+  )
+SELECT
+  'perf-app',
+  'perf-workspace',
+  'perf-principal',
+  'perf-event-' || lpad(g::text, 8, '0'),
+  CASE
+    WHEN g % 5 = 0 THEN 'session-heartbeat'
+    ELSE 'principal-updated'
+  END,
+  g,
+  1700000000000 + g,
+  jsonb_build_object(
+    'eventId',
     'perf-event-' || lpad(g::text, 8, '0'),
-    case when g % 5 = 0 then 'session-heartbeat' else 'principal-updated' end,
+    'eventType',
+    CASE
+      WHEN g % 5 = 0 THEN 'session-heartbeat'
+      ELSE 'principal-updated'
+    END,
+    'snapshotVersion',
     g,
+    'occurredAtEpochMs',
     1700000000000 + g,
-    jsonb_build_object(
-        'eventId', 'perf-event-' || lpad(g::text, 8, '0'),
-        'eventType', case when g % 5 = 0 then 'session-heartbeat' else 'principal-updated' end,
-        'snapshotVersion', g,
-        'occurredAtEpochMs', 1700000000000 + g,
-        'payload', repeat('x', 256)
-    )::text
-from generate_series(1, 100000) as g
-on conflict do nothing;
-
-insert into resource_inbox (
+    'payload',
+    repeat('x', 256)
+  )::text
+FROM
+  generate_series(1, 100000) AS g
+ON conflict
+do nothing
+;
+INSERT INTO
+  resource_inbox (
     ri_resource_id,
     ri_topic_id,
     ri_resource,
@@ -80,29 +106,41 @@ insert into resource_inbox (
     next_ts,
     ri_attempts,
     expire_ts
-)
-select
-    substr(md5('perf-resource-' || g), 1, 32),
-    'perf-topic',
-    jsonb_build_object('sequence', g, 'payload', repeat('x', 128))::text,
-    'PERF_TYPE',
-    case
-        when g % 10 = 0 then 'RESERVED'
-        when g % 5 = 0 then 'RETRY'
-        else 'NEW'
-    end,
-    'perf-bank-' || lpad((g % 1000)::text, 4, '0'),
-    current_date,
-    'perf',
-    now() - interval '1 minute',
-    case when g % 10 = 0 then now() - interval '10 minutes' else null end,
-    case when g % 5 = 0 then now() - interval '1 minute' else null end,
-    case when g % 5 = 0 then 1 else 0 end,
-    now() + interval '1 day'
-from generate_series(1, 100000) as g
-on conflict do nothing;
-
-insert into crdt_documents (
+  )
+SELECT
+  substr(md5('perf-resource-' || g), 1, 32),
+  'perf-topic',
+  jsonb_build_object('sequence', g, 'payload', repeat('x', 128))::text,
+  'PERF_TYPE',
+  CASE
+    WHEN g % 10 = 0 THEN 'RESERVED'
+    WHEN g % 5 = 0 THEN 'RETRY'
+    ELSE 'NEW'
+  END,
+  'perf-bank-' || lpad((g % 1000)::text, 4, '0'),
+  CURRENT_DATE,
+  'perf',
+  now() - interval '1 minute',
+  CASE
+    WHEN g % 10 = 0 THEN now() - interval '10 minutes'
+    ELSE NULL
+  END,
+  CASE
+    WHEN g % 5 = 0 THEN now() - interval '1 minute'
+    ELSE NULL
+  END,
+  CASE
+    WHEN g % 5 = 0 THEN 1
+    ELSE 0
+  END,
+  now() + interval '1 day'
+FROM
+  generate_series(1, 100000) AS g
+ON conflict
+do nothing
+;
+INSERT INTO
+  crdt_documents (
     document_key,
     application_id,
     workspace_id,
@@ -113,8 +151,9 @@ insert into crdt_documents (
     lifecycle,
     last_append_sequence,
     update_count
-)
-values (
+  )
+VALUES
+  (
     'perf-doc-hot',
     'perf-app',
     'perf-workspace',
@@ -125,10 +164,12 @@ values (
     'active',
     100000,
     100000
-)
-on conflict do nothing;
-
-insert into crdt_updates (
+  )
+ON conflict
+do nothing
+;
+INSERT INTO
+  crdt_updates (
     document_key,
     append_sequence,
     update_id,
@@ -138,31 +179,44 @@ insert into crdt_updates (
     principal_id,
     session_id,
     authorization_scope
-)
-select
-    'perf-doc-hot',
-    g,
+  )
+SELECT
+  'perf-doc-hot',
+  g,
+  'perf-update-' || lpad(g::text, 8, '0'),
+  jsonb_build_object(
+    'updateId',
     'perf-update-' || lpad(g::text, 8, '0'),
-    jsonb_build_object(
-        'updateId', 'perf-update-' || lpad(g::text, 8, '0'),
-        'sequence', g,
-        'payload', repeat('x', 512)
-    )::text,
-    md5('perf-update-' || g),
-    'actor-' || (g % 50),
-    'principal-' || (g % 50),
-    'session-' || (g % 50),
-    'workspace'
-from generate_series(1, 100000) as g
-on conflict do nothing;
-
-update crdt_documents document
-set stored_update_bytes = updates.update_bytes
-from (
-    select document_key,
-           coalesce(sum(octet_length(update_envelope)), 0)::bigint as update_bytes
-    from crdt_updates
-    where document_key = 'perf-doc-hot'
-    group by document_key
-) updates
-where document.document_key = updates.document_key;
+    'sequence',
+    g,
+    'payload',
+    repeat('x', 512)
+  )::text,
+  md5('perf-update-' || g),
+  'actor-' || (g % 50),
+  'principal-' || (g % 50),
+  'session-' || (g % 50),
+  'workspace'
+FROM
+  generate_series(1, 100000) AS g
+ON conflict
+do nothing
+;
+UPDATE
+  crdt_documents document
+SET
+  stored_update_bytes = updates.update_bytes
+FROM
+  (
+    SELECT
+      document_key,
+      coalesce(sum(octet_length(update_envelope)), 0)::bigint AS update_bytes
+    FROM
+      crdt_updates
+    WHERE
+      document_key = 'perf-doc-hot'
+    GROUP BY
+      document_key
+  ) updates
+WHERE
+  document.document_key = updates.document_key;

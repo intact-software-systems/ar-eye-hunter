@@ -2,23 +2,18 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HistoryFilters } from
-    '../../../apps/rallar-black-box/src/recipe-console/history/HistoryFilters.tsx';
-import { HistorySavedFilters } from
-    '../../../apps/rallar-black-box/src/recipe-console/history/HistorySavedFilters.tsx';
-import type { HistoryFilterPreset } from
-    '../../../apps/rallar-black-box/src/recipe-console/history/history-filter-contract.ts';
-import type { HistoryFilterPresetController } from
-    '../../../apps/rallar-black-box/src/recipe-console/history/use-history-filter-presets.ts';
-import type { RecipeConsoleUrlState } from
-    '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
+import type { HistoryFilterPreset } from '../../../apps/rallar-black-box/src/recipe-console/history/history-filter-contract.ts';
+import { HistoryFilters } from '../../../apps/rallar-black-box/src/recipe-console/history/HistoryFilters.tsx';
+import { HistorySavedFilters } from '../../../apps/rallar-black-box/src/recipe-console/history/HistorySavedFilters.tsx';
+import type { HistoryFilterPresetController } from '../../../apps/rallar-black-box/src/recipe-console/history/use-history-filter-presets.ts';
+import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const BASE_STATE: RecipeConsoleUrlState = {
     v: 1,
     experience: 'recipe-console',
-    view: 'tune',
+    view: 'tune'
 };
 
 describe('Recipe Console History filter presentation', () => {
@@ -50,9 +45,9 @@ describe('Recipe Console History filter presentation', () => {
                 failureCategory: 'readiness',
                 status: 'failed',
                 from,
-                to,
+                to
             },
-            onApply,
+            onApply
         });
 
         expect(labelled<HTMLInputElement>('Query').maxLength).toBe(512);
@@ -78,7 +73,7 @@ describe('Recipe Console History filter presentation', () => {
             failureCategory: 'command',
             status: 'passed',
             from,
-            to,
+            to
         });
     });
 
@@ -87,7 +82,7 @@ describe('Recipe Console History filter presentation', () => {
         await renderFilters({ urlState: BASE_STATE, onApply });
 
         const categories = labelled<HTMLSelectElement>('Failure category');
-        const offered = [...categories.options].map(option => option.value);
+        const offered = [...categories.options].map((option) => option.value);
         expect(offered).toContain('group-assertion');
 
         await setControlValue(categories, 'group-assertion');
@@ -101,7 +96,7 @@ describe('Recipe Console History filter presentation', () => {
         const onReset = vi.fn();
         await renderFilters({
             urlState: { ...BASE_STATE, historyQuery: 'committed' },
-            onReset,
+            onReset
         });
         await setControlValue(labelled<HTMLInputElement>('Query'), 'unsaved');
 
@@ -117,7 +112,7 @@ describe('Recipe Console History filter presentation', () => {
             failureCategory: undefined,
             status: undefined,
             from: undefined,
-            to: undefined,
+            to: undefined
         });
     });
 
@@ -126,15 +121,17 @@ describe('Recipe Console History filter presentation', () => {
             urlState: { ...BASE_STATE, historyQuery: 'same committed query' },
             resetRevision: 0,
             onApply: vi.fn(),
-            onReset: vi.fn(),
+            onReset: vi.fn()
         };
         await act(async () => root.render(createElement(HistoryFilters, props)));
         await setControlValue(labelled<HTMLInputElement>('Query'), 'unsaved query');
 
-        await act(async () => root.render(createElement(HistoryFilters, {
-            ...props,
-            resetRevision: 1,
-        })));
+        await act(async () =>
+            root.render(createElement(HistoryFilters, {
+                ...props,
+                resetRevision: 1
+            }))
+        );
 
         expect(labelled<HTMLInputElement>('Query').value).toBe('same committed query');
     });
@@ -144,7 +141,7 @@ describe('Recipe Console History filter presentation', () => {
         const from = Date.UTC(2026, 6, 12, 8, 30, 45, 125);
         await renderFilters({
             urlState: { ...BASE_STATE, from },
-            onApply,
+            onApply
         });
         const fromInput = labelled<HTMLInputElement>('From (UTC)');
         const toInput = labelled<HTMLInputElement>('To (UTC)');
@@ -157,7 +154,7 @@ describe('Recipe Console History filter presentation', () => {
 
         expect(onApply.mock.calls[0]?.[0]).toMatchObject({
             from,
-            to: Date.UTC(2026, 11, 1, 4, 5, 6, 7),
+            to: Date.UTC(2026, 11, 1, 4, 5, 6, 7)
         });
     });
 
@@ -165,16 +162,18 @@ describe('Recipe Console History filter presentation', () => {
         const onApply = vi.fn();
         await renderFilters({ urlState: BASE_STATE, onApply });
 
-        for (const text of [
-            'Query',
-            'Group',
-            'Recipe',
-            'Profile',
-            'Failure category',
-            'Run status',
-            'From (UTC)',
-            'To (UTC)',
-        ]) {
+        for (
+            const text of [
+                'Query',
+                'Group',
+                'Recipe',
+                'Profile',
+                'Failure category',
+                'Run status',
+                'From (UTC)',
+                'To (UTC)'
+            ]
+        ) {
             expect(labelled<HTMLInputElement | HTMLSelectElement>(text)).toBeTruthy();
         }
         const query = labelled<HTMLInputElement>('Query');
@@ -185,7 +184,7 @@ describe('Recipe Console History filter presentation', () => {
 
         expect(onApply).toHaveBeenCalledTimes(1);
         expect(onApply.mock.calls[0]?.[0]).toMatchObject({
-            historyQuery: 'entered by keyboard',
+            historyQuery: 'entered by keyboard'
         });
     });
 
@@ -195,8 +194,8 @@ describe('Recipe Console History filter presentation', () => {
             filters: {
                 historyQuery: 'ack',
                 failureCategory: 'readiness',
-                status: 'failed',
-            },
+                status: 'failed'
+            }
         };
         const save = vi.fn();
         const remove = vi.fn();
@@ -205,12 +204,14 @@ describe('Recipe Console History filter presentation', () => {
             presets: [savedPreset],
             status: 'ready',
             save,
-            remove,
+            remove
         };
-        await act(async () => root.render(createElement(HistorySavedFilters, {
-            controller,
-            onApply,
-        })));
+        await act(async () =>
+            root.render(createElement(HistorySavedFilters, {
+                controller,
+                onApply
+            }))
+        );
 
         const name = labelled<HTMLInputElement>('Preset name');
         expect(name.maxLength).toBe(64);
@@ -231,82 +232,104 @@ describe('Recipe Console History filter presentation', () => {
         expect(remove).toHaveBeenCalledWith('Failed readiness');
     });
 
-    it.each([
-        ['ready', 'Saved filters ready'],
-        ['invalid', 'Saved filters need attention'],
-        ['unsupported', 'Saved filters use a newer format'],
-        ['unavailable', 'Saved filters unavailable'],
-        ['write-failed', 'Could not save filters'],
-    ] as const)('shows the %s controller status visibly', async (status, message) => {
+    it.each(
+        [
+            ['ready', 'Saved filters ready'],
+            ['invalid', 'Saved filters need attention'],
+            ['unsupported', 'Saved filters use a newer format'],
+            ['unavailable', 'Saved filters unavailable'],
+            ['write-failed', 'Could not save filters']
+        ] as const
+    )('shows the %s controller status visibly', async (status, message) => {
         const controller: HistoryFilterPresetController = {
             presets: [],
             status,
             save: vi.fn(),
-            remove: vi.fn(),
+            remove: vi.fn()
         };
-        await act(async () => root.render(createElement(HistorySavedFilters, {
-            controller,
-            onApply: vi.fn(),
-        })));
+        await act(async () =>
+            root.render(createElement(HistorySavedFilters, {
+                controller,
+                onApply: vi.fn()
+            }))
+        );
 
         expect(container.querySelector('[role="status"]')?.textContent).toContain(message);
     });
 
-    async function renderFilters(input: Readonly<{
-        urlState: RecipeConsoleUrlState;
-        onApply?: (patch: Partial<RecipeConsoleUrlState>) => void;
-        onReset?: (patch: Partial<RecipeConsoleUrlState>) => void;
-    }>): Promise<void> {
-        await act(async () => root.render(createElement(HistoryFilters, {
-            onApply: input.onApply ?? vi.fn(),
-            onReset: input.onReset ?? vi.fn(),
-            resetRevision: 0,
-            urlState: input.urlState,
-        })));
+    async function renderFilters(
+        input: Readonly<{
+            urlState: RecipeConsoleUrlState;
+            onApply?: (patch: Partial<RecipeConsoleUrlState>) => void;
+            onReset?: (patch: Partial<RecipeConsoleUrlState>) => void;
+        }>
+    ): Promise<void> {
+        await act(async () =>
+            root.render(createElement(HistoryFilters, {
+                onApply: input.onApply ?? vi.fn(),
+                onReset: input.onReset ?? vi.fn(),
+                resetRevision: 0,
+                urlState: input.urlState
+            }))
+        );
     }
 
     function labelled<T extends HTMLInputElement | HTMLSelectElement>(text: string): T {
         const label = Array.from(container.querySelectorAll('label')).find(
-            candidate => candidate.querySelector('span')?.textContent === text,
+            (candidate) => candidate.querySelector('span')?.textContent === text
         );
         const control = label?.querySelector('input, select');
-        if (!control) throw new Error(`Missing control labelled ${text}`);
+        if (!control) {
+            throw new Error(`Missing control labelled ${text}`);
+        }
         return control as T;
     }
 
     function button(text: string): HTMLButtonElement {
         const match = Array.from(container.querySelectorAll('button')).find(
-            candidate => candidate.textContent?.trim() === text,
+            (candidate) => candidate.textContent?.trim() === text
         );
-        if (!match) throw new Error(`Missing button ${text}`);
+        if (!match) {
+            throw new Error(`Missing button ${text}`);
+        }
         return match;
     }
 });
 
 async function setControlValue(
     control: HTMLInputElement | HTMLSelectElement,
-    value: string,
+    value: string
 ): Promise<void> {
     await act(async () => {
         const prototype = control instanceof HTMLSelectElement
             ? HTMLSelectElement.prototype
             : HTMLInputElement.prototype;
         const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
-        if (!setter) throw new Error('Expected native control value setter');
+        if (!setter) {
+            throw new Error('Expected native control value setter');
+        }
         setter.call(control, value);
-        control.dispatchEvent(new Event(
-            control instanceof HTMLSelectElement ? 'change' : 'input',
-            { bubbles: true },
-        ));
+        control.dispatchEvent(
+            new Event(
+                control instanceof HTMLSelectElement ? 'change' : 'input',
+                { bubbles: true }
+            )
+        );
     });
 }
 
 async function submit(form: HTMLFormElement | null): Promise<void> {
-    if (!form) throw new Error('Expected semantic form');
-    await act(async () => form.dispatchEvent(new SubmitEvent('submit', {
-        bubbles: true,
-        cancelable: true,
-    })));
+    if (!form) {
+        throw new Error('Expected semantic form');
+    }
+    await act(async () =>
+        form.dispatchEvent(
+            new SubmitEvent('submit', {
+                bubbles: true,
+                cancelable: true
+            })
+        )
+    );
 }
 
 async function click(button: HTMLButtonElement): Promise<void> {

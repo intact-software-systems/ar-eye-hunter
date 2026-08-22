@@ -1,12 +1,9 @@
 import { useEffect } from 'react';
 
-import {
-    type ArenaAiDirectorScheduleInput,
-    startArenaAiDirectorSchedule,
-} from './start-arena-ai-director-schedule.ts';
+import { startArenaAiDirectorSchedule, type ArenaAiDirectorScheduleInput } from './start-arena-ai-director-schedule.ts';
 
 export function useArenaAiDirectorLifecycle(
-    input: ArenaAiDirectorScheduleInput,
+    input: ArenaAiDirectorScheduleInput
 ): void {
     useEffect(() => startArenaAiDirectorSchedule(input), [
         input.connectionState,
@@ -14,6 +11,6 @@ export function useArenaAiDirectorLifecycle(
         input.directorStatus.isFresh,
         input.isCurrentNetworkGeneration,
         input.roomId,
-        input.runBestEffortNetworkTask,
+        input.runBestEffortNetworkTask
     ]);
 }

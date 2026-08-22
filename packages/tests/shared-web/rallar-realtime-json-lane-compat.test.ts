@@ -1,20 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { QRtcPeerDto } from '@shared/services/WebRtcConnectionService.ts';
-import type {
-    QRtcDataChannel,
-    RtcDataChannelSendResult,
-    RtcRawMessageCallback,
-} from '@shared/webrtc/QRtcDataChannel.ts';
+import type { QRtcDataChannel, RtcDataChannelSendResult, RtcRawMessageCallback } from '@shared/webrtc/QRtcDataChannel.ts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
-type ClientStateSnapshotsRepositoryModule = typeof import(
-    '@shared/repository/client-state-snapshots-repository.ts'
-);
-type GroupStateSnapshotsRepositoryModule = typeof import(
-    '@shared/repository/group-state-snapshots-repository.ts'
-);
+type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
+type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
 
 const mocks = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
@@ -23,12 +15,12 @@ const mocks = await vi.hoisted(async () => {
     const ctx = createApiMiddlewareTestDouble();
     const throwClientRepositoryMissing = () => {
         throw new Error(
-            'Repository not found: shared.repository.client-state-snapshots',
+            'Repository not found: shared.repository.client-state-snapshots'
         );
     };
     const throwGroupRepositoryMissing = () => {
         throw new Error(
-            'Repository not found: shared.repository.group-state-snapshots',
+            'Repository not found: shared.repository.group-state-snapshots'
         );
     };
 
@@ -37,17 +29,13 @@ const mocks = await vi.hoisted(async () => {
         webRtcConnectionService: ctx.middleware.webRtcConnectionService,
         throwClientRepositoryMissing,
         throwGroupRepositoryMissing,
-        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() =>
-            Promise.resolve()
-        ),
-        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() =>
-            Promise.resolve(ctx)
-        ),
+        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() => Promise.resolve()),
+        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn<AppContextModule['isMiddlewareReady']>(() => false),
         onStateCacheChange: vi.fn<DataCachesModule['onStateCacheChange']>(() => vi.fn()),
         readSession: vi.fn<AuthModule['readSession']>(() => ctx.session),
         clientRepositoryMissing: vi.fn(throwClientRepositoryMissing),
-        groupRepositoryMissing: vi.fn(throwGroupRepositoryMissing),
+        groupRepositoryMissing: vi.fn(throwGroupRepositoryMissing)
     };
 });
 
@@ -57,31 +45,31 @@ vi.mock(
         clearMiddleware: vi.fn(),
         getMiddleware: vi.fn(() => mocks.ctx),
         initMiddleware: mocks.initMiddleware,
-        isMiddlewareReady: mocks.isMiddlewareReady,
-    }),
+        isMiddlewareReady: mocks.isMiddlewareReady
+    })
 );
 
 vi.mock(
     import('@shared-web/browser/data-caches.ts'),
     (): Partial<DataCachesModule> => ({
         hydrateStateCaches: mocks.hydrateStateCaches,
-        onStateCacheChange: mocks.onStateCacheChange,
-    }),
+        onStateCacheChange: mocks.onStateCacheChange
+    })
 );
 
 vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
     clearSession: vi.fn(),
     isLoggedIn: vi.fn(() => true),
     readSession: mocks.readSession,
-    writeSession: vi.fn(),
+    writeSession: vi.fn()
 }));
 
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
     (): Partial<ClientStateSnapshotsRepositoryModule> => ({
         findClientStateSnapshotByPrincipalId: mocks.clientRepositoryMissing,
-        getAllClientStateSnapshots: mocks.clientRepositoryMissing,
-    }),
+        getAllClientStateSnapshots: mocks.clientRepositoryMissing
+    })
 );
 
 vi.mock(
@@ -89,18 +77,18 @@ vi.mock(
     (): Partial<GroupStateSnapshotsRepositoryModule> => ({
         findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.groupRepositoryMissing,
         findGroupStateSnapshotByRef: mocks.groupRepositoryMissing,
-        getAllGroupStateSnapshots: mocks.groupRepositoryMissing,
-    }),
+        getAllGroupStateSnapshots: mocks.groupRepositoryMissing
+    })
 );
 
 describe('Rallar realtime JSON lane compatibility', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.clientRepositoryMissing.mockImplementation(
-            mocks.throwClientRepositoryMissing,
+            mocks.throwClientRepositoryMissing
         );
         mocks.groupRepositoryMissing.mockImplementation(
-            mocks.throwGroupRepositoryMissing,
+            mocks.throwGroupRepositoryMissing
         );
         mocks.hydrateStateCaches.mockResolvedValue(undefined);
         mocks.initMiddleware.mockResolvedValue(mocks.ctx);
@@ -117,7 +105,7 @@ describe('Rallar realtime JSON lane compatibility', () => {
         const rawCallbacks = new Map<string, RtcRawMessageCallback>();
         const sendResult: RtcDataChannelSendResult = {
             status: 'sent',
-            bufferedAmount: 0,
+            bufferedAmount: 0
         };
         const sendJson = vi.fn(() => sendResult);
         const gameplayChannel: QRtcDataChannel = toWebRtcTestDouble<QRtcDataChannel>({
@@ -126,14 +114,14 @@ describe('Rallar realtime JSON lane compatibility', () => {
                 rawCallbacks.set(id, callback);
                 return gameplayChannel;
             }),
-            removeOnRawMessageCallbackById: vi.fn(() => true),
+            removeOnRawMessageCallbackById: vi.fn(() => true)
         });
         const peer = toWebRtcTestDouble<QRtcPeerDto>({
             peerId: 'peer-1',
-            channels: new Map([['gameplay', gameplayChannel]]),
+            channels: new Map([['gameplay', gameplayChannel]])
         });
         vi.mocked(mocks.webRtcConnectionService.activePeerIds).mockReturnValue([
-            'peer-1',
+            'peer-1'
         ]);
         vi.mocked(mocks.webRtcConnectionService.readPeer).mockReturnValue(peer);
         vi.mocked(mocks.webRtcConnectionService.ensurePeerLaneOpen)
@@ -141,32 +129,32 @@ describe('Rallar realtime JSON lane compatibility', () => {
                 status: 'open',
                 peerId: 'peer-1',
                 laneId: 'gameplay',
-                channel: gameplayChannel,
+                channel: gameplayChannel
             });
         const facade = createRallarFacade();
-        const gameplay = facade.realtime.json<{ x: number }>({
+        const gameplay = facade.realtime.json<{ x: number; }>({
             laneId: 'gameplay',
             peerIds: ['peer-1'],
             openTimeoutMs: 750,
             key: 'player-1',
-            maxAgeMs: 250,
+            maxAgeMs: 250
         });
         const onMessage = vi.fn();
 
         gameplay.on(onMessage);
         await facade.connect();
         const sendResults = await gameplay.send({
-            x: 1,
+            x: 1
         });
         await rawCallbacks.get('rallar:realtime:gameplay')?.onMessage?.(
             JSON.stringify({
-                x: 2,
+                x: 2
             }),
             new MessageEvent('message', {
                 data: JSON.stringify({
-                    x: 2,
-                }),
-            }),
+                    x: 2
+                })
+            })
         );
 
         expect(mocks.webRtcConnectionService.ensurePeerLaneOpen)
@@ -174,33 +162,33 @@ describe('Rallar realtime JSON lane compatibility', () => {
                 'peer-1',
                 'gameplay',
                 expect.objectContaining({
-                    timeoutMs: 750,
-                }),
+                    timeoutMs: 750
+                })
             );
         expect(sendJson).toHaveBeenCalledWith(
             {
-                x: 1,
+                x: 1
             },
             expect.objectContaining({
                 key: 'player-1',
-                maxAgeMs: 250,
-            }),
+                maxAgeMs: 250
+            })
         );
         expect(sendResults).toEqual([
             {
                 peerId: 'peer-1',
                 laneId: 'gameplay',
-                result: sendResult,
-            },
+                result: sendResult
+            }
         ]);
         expect(onMessage).toHaveBeenCalledWith(
             expect.objectContaining({
                 peerId: 'peer-1',
                 laneId: 'gameplay',
                 data: {
-                    x: 2,
-                },
-            }),
+                    x: 2
+                }
+            })
         );
     });
 });

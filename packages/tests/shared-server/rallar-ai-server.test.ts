@@ -1,30 +1,23 @@
-import { describe, expect, it, vi } from 'vitest';
+import { createRallarAiFakeSidecarProvider, createRallarAiOllamaProvider, createRallarServerAi } from '@shared-server/rallar-ai/mod.ts';
+import type { RallarServerWsPublishResult } from '@shared-server/rallar-facade/ws-topic-router.ts';
+import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import {
     createRallarAiJsonResult,
     createRallarAiMockProvider,
     RallarAiError,
     type RallarAiJsonProvider,
-    type RallarAiJsonRequest,
+    type RallarAiJsonRequest
 } from '@shared/rallar-ai/mod.ts';
-import {
-    newALBroadcastMessage,
-    newALRoute,
-} from '@shared/al-contracts/al-contract.ts';
-import {
-    createRallarAiFakeSidecarProvider,
-    createRallarAiOllamaProvider,
-    createRallarServerAi,
-} from '@shared-server/rallar-ai/mod.ts';
-import type { RallarServerWsPublishResult } from '@shared-server/rallar-facade/ws-topic-router.ts';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('Rallar server AI facade', () => {
     const schema = {
         type: 'object',
         required: ['kind'],
         properties: {
-            kind: { type: 'string' },
+            kind: { type: 'string' }
         },
-        additionalProperties: false,
+        additionalProperties: false
     } as const;
 
     const request: RallarAiJsonRequest = {
@@ -33,7 +26,7 @@ describe('Rallar server AI facade', () => {
         schemaVersion: '1',
         schema,
         prompt: 'secret prompt',
-        context: { hidden: 'secret context' },
+        context: { hidden: 'secret context' }
     };
 
     it('generates JSON through an opt-in server provider with safe diagnostics', async () => {
@@ -41,18 +34,18 @@ describe('Rallar server AI facade', () => {
         const authorize = vi.fn(() => true);
         const provider = createRallarAiMockProvider({
             value: { kind: 'spawn' },
-            createdAtEpochMs: 10,
+            createdAtEpochMs: 10
         });
         const ai = createRallarServerAi({
             rallar: createFakeRallar().rallar,
             provider,
             diagnostics,
-            authorize,
+            authorize
         });
 
         const result = await ai.generateJson(request, {
             actorId: 'host-1',
-            roomId: 'room-1',
+            roomId: 'room-1'
         });
 
         expect(result.validation.ok).toBe(true);
@@ -61,15 +54,15 @@ describe('Rallar server AI facade', () => {
                 actorId: 'host-1',
                 action: 'generate',
                 source: 'server',
-                schemaId: 'game-event',
-            }),
+                schemaId: 'game-event'
+            })
         );
         expect(diagnostics).toHaveBeenCalledWith(
             expect.objectContaining({
                 kind: 'generation-requested',
                 requestId: 'request-1',
-                providerId: 'mock',
-            }),
+                providerId: 'mock'
+            })
         );
         expect(JSON.stringify(diagnostics.mock.calls)).not.toContain('secret prompt');
         expect(JSON.stringify(diagnostics.mock.calls)).not.toContain('secret context');
@@ -82,8 +75,8 @@ describe('Rallar server AI facade', () => {
             createRallarServerAi({
                 rallar: createFakeRallar().rallar,
                 provider,
-                policy: { mode: 'browser-only' },
-            }).generateJson(request),
+                policy: { mode: 'browser-only' }
+            }).generateJson(request)
         ).rejects.toThrow('cannot run browser-only');
 
         await expect(
@@ -93,10 +86,10 @@ describe('Rallar server AI facade', () => {
                     ...provider,
                     capabilities: {
                         ...provider.capabilities,
-                        target: 'browser',
-                    },
-                },
-            }).generateJson(request),
+                        target: 'browser'
+                    }
+                }
+            }).generateJson(request)
         ).rejects.toThrow('cannot run on the server');
     });
 
@@ -105,22 +98,22 @@ describe('Rallar server AI facade', () => {
             createRallarServerAi({
                 rallar: createFakeRallar().rallar,
                 provider: createRallarAiMockProvider({ value: { kind: 'spawn' } }),
-                limits: { maxPromptBytes: 4 },
-            }).generateJson(request),
+                limits: { maxPromptBytes: 4 }
+            }).generateJson(request)
         ).rejects.toThrow('prompt exceeded');
         await expect(
             createRallarServerAi({
                 rallar: createFakeRallar().rallar,
                 provider: createRallarAiMockProvider({ value: { kind: 'spawn' } }),
-                limits: { maxSchemaBytes: 4 },
-            }).generateJson(request),
+                limits: { maxSchemaBytes: 4 }
+            }).generateJson(request)
         ).rejects.toThrow('schema exceeded');
         await expect(
             createRallarServerAi({
                 rallar: createFakeRallar().rallar,
                 provider: createRallarAiMockProvider({ value: { kind: 'spawn' } }),
-                limits: { maxContextBytes: 4 },
-            }).generateJson(request),
+                limits: { maxContextBytes: 4 }
+            }).generateJson(request)
         ).rejects.toThrow('context exceeded');
 
         let release: (() => void) | undefined;
@@ -134,14 +127,14 @@ describe('Rallar server AI facade', () => {
                 return createRallarAiJsonResult<TValue>({
                     request: slowRequest,
                     provider: this,
-                    value: { kind: 'spawn' } as TValue,
+                    value: { kind: 'spawn' } as TValue
                 });
-            },
+            }
         };
         const ai = createRallarServerAi({
             rallar: createFakeRallar().rallar,
             provider: slowProvider,
-            limits: { maxConcurrentGenerations: 1 },
+            limits: { maxConcurrentGenerations: 1 }
         });
 
         const pending = ai.generateJson(request);
@@ -151,8 +144,8 @@ describe('Rallar server AI facade', () => {
         release?.();
         await expect(pending).resolves.toEqual(
             expect.objectContaining({
-                providerId: 'slow',
-            }),
+                providerId: 'slow'
+            })
         );
     });
 
@@ -162,18 +155,18 @@ describe('Rallar server AI facade', () => {
         const result = createRallarAiJsonResult({
             request,
             provider,
-            value: { kind: 'spawn' },
+            value: { kind: 'spawn' }
         });
         const ai = createRallarServerAi({
             rallar: fake.rallar,
             provider,
-            authorize: ({ action }) => action === 'generate',
+            authorize: ({ action }) => action === 'generate'
         });
 
         await expect(ai.broadcastJson({
             result,
             actorId: 'peer-1',
-            scope: 'world',
+            scope: 'world'
         }))
             .rejects.toMatchObject({ code: 'unauthorized' });
         await expect(ai.persistJson({ result, actorId: 'peer-1' }))
@@ -186,24 +179,24 @@ describe('Rallar server AI facade', () => {
         const diagnostics = vi.fn();
         const provider = createRallarAiFakeSidecarProvider({
             baseUrl: 'http://sidecar.test',
-            fetch: vi.fn(async () => new Response('down', { status: 503 })),
+            fetch: vi.fn(async () => new Response('down', { status: 503 }))
         });
         const ai = createRallarServerAi({
             rallar: createFakeRallar().rallar,
             provider,
-            diagnostics,
+            diagnostics
         });
 
         await expect(ai.generateJson(request)).rejects.toMatchObject({
             code: 'provider-failed',
-            message: 'Fake sidecar failed with HTTP 503.',
+            message: 'Fake sidecar failed with HTTP 503.'
         });
         expect(diagnostics).toHaveBeenCalledWith(
             expect.objectContaining({
                 kind: 'provider-failed',
                 requestId: 'request-1',
-                errorCode: 'provider-failed',
-            }),
+                errorCode: 'provider-failed'
+            })
         );
         expect(JSON.stringify(diagnostics.mock.calls)).not.toContain('secret');
     });
@@ -211,40 +204,40 @@ describe('Rallar server AI facade', () => {
     it('maps REST generation into typed success and error responses', async () => {
         const ai = createRallarServerAi({
             rallar: createFakeRallar().rallar,
-            provider: createRallarAiMockProvider({ value: { kind: 'spawn' } }),
+            provider: createRallarAiMockProvider({ value: { kind: 'spawn' } })
         });
 
         const ok = await ai.handleRestGenerateJson({
             body: request,
             actorId: 'host-1',
-            roomId: 'room-1',
+            roomId: 'room-1'
         });
         const invalid = await ai.handleRestGenerateJson({ body: { prompt: 'x' } });
 
         expect(ok).toEqual(
             expect.objectContaining({
                 status: 200,
-                body: expect.objectContaining({ ok: true }),
-            }),
+                body: expect.objectContaining({ ok: true })
+            })
         );
         expect(invalid).toEqual(
             expect.objectContaining({
                 status: 400,
                 body: expect.objectContaining({
                     ok: false,
-                    error: expect.objectContaining({ code: 'invalid-json' }),
-                }),
-            }),
+                    error: expect.objectContaining({ code: 'invalid-json' })
+                })
+            })
         );
     });
 
     it('installs a structural REST route installer', async () => {
         const app = {
-            post: vi.fn(),
+            post: vi.fn()
         };
         const ai = createRallarServerAi({
             rallar: createFakeRallar().rallar,
-            provider: createRallarAiMockProvider({ value: { kind: 'spawn' } }),
+            provider: createRallarAiMockProvider({ value: { kind: 'spawn' } })
         });
 
         ai.createRestRouteInstaller({ path: '/ai/json' })(app);
@@ -259,7 +252,7 @@ describe('Rallar server AI facade', () => {
         const fake = createFakeRallar();
         const ai = createRallarServerAi({
             rallar: fake.rallar,
-            provider: createRallarAiMockProvider({ value: { kind: 'spawn' } }),
+            provider: createRallarAiMockProvider({ value: { kind: 'spawn' } })
         });
         const result = await ai.generateJson(request);
 
@@ -267,7 +260,7 @@ describe('Rallar server AI facade', () => {
             result,
             storeName: 'ai-results',
             key: 'result-1',
-            actorId: 'host-1',
+            actorId: 'host-1'
         });
         await ai.broadcastJson({
             result,
@@ -275,22 +268,22 @@ describe('Rallar server AI facade', () => {
             roomRef: {
                 applicationId: 'app-1',
                 workspaceId: 'workspace-1',
-                groupId: 'room-1',
+                groupId: 'room-1'
             },
-            fanout: 'outbox',
+            fanout: 'outbox'
         });
 
         expect(fake.rallar.data.open).toHaveBeenCalledWith('ai-results', {
             namespace: 'server',
             schemaVersion: 1,
-            ttlMs: undefined,
+            ttlMs: undefined
         });
         expect(fake.store.set).toHaveBeenCalledWith('result-1', result);
         expect(fake.rallar.ws.publish).toHaveBeenCalledWith(
             expect.objectContaining({
                 route: expect.objectContaining({
                     topicId: 'room.ai.generated',
-                    contextId: 'room-1',
+                    contextId: 'room-1'
                 }),
                 targets: expect.objectContaining({
                     mode: 'broadcast',
@@ -298,14 +291,14 @@ describe('Rallar server AI facade', () => {
                     groupRef: {
                         applicationId: 'app-1',
                         workspaceId: 'workspace-1',
-                        groupId: 'room-1',
-                    },
+                        groupId: 'room-1'
+                    }
                 }),
                 payload: expect.objectContaining({
-                    typeId: 'rallar.ai.generate-json.result.v1',
-                }),
+                    typeId: 'rallar.ai.generate-json.result.v1'
+                })
             }),
-            'outbox',
+            'outbox'
         );
     });
 
@@ -315,11 +308,11 @@ describe('Rallar server AI facade', () => {
         const result = createRallarAiJsonResult({
             request,
             provider,
-            value: { kind: 'spawn' },
+            value: { kind: 'spawn' }
         });
         const ai = createRallarServerAi({
             rallar: fake.rallar,
-            provider,
+            provider
         });
         await expect(ai.broadcastJson({
             result,
@@ -328,9 +321,9 @@ describe('Rallar server AI facade', () => {
             // @ts-expect-error Runtime callers can still omit workspace identity.
             roomRef: {
                 applicationId: 'app-1',
-                groupId: 'room-1',
+                groupId: 'room-1'
             },
-            fanout: 'outbox',
+            fanout: 'outbox'
         })).rejects.toThrow(/complete GroupRef/i);
         expect(fake.rallar.ws.publish).not.toHaveBeenCalled();
 
@@ -345,28 +338,28 @@ describe('Rallar server AI facade', () => {
     it.each([
         ['unknown string', 'galaxy'],
         ['number', 7],
-        ['null', null],
+        ['null', null]
     ])('rejects a %s runtime broadcast scope before publishing', async (_label, invalidScope) => {
         const fake = createFakeRallar();
         const provider = createRallarAiMockProvider({ value: { kind: 'spawn' } });
         const result = createRallarAiJsonResult({
             request,
             provider,
-            value: { kind: 'spawn' },
+            value: { kind: 'spawn' }
         });
         const ai = createRallarServerAi({
             rallar: fake.rallar,
-            provider,
+            provider
         });
         const invalidInput = {
             result,
             scope: invalidScope,
-            fanout: 'outbox' as const,
+            fanout: 'outbox' as const
         };
 
         // @ts-expect-error Runtime JavaScript callers can supply invalid scope values.
         await expect(ai.broadcastJson(invalidInput)).rejects.toMatchObject({
-            code: 'invalid-json',
+            code: 'invalid-json'
         });
 
         expect(fake.rallar.ws.publish).not.toHaveBeenCalled();
@@ -378,11 +371,11 @@ describe('Rallar server AI facade', () => {
         const result = createRallarAiJsonResult({
             request,
             provider,
-            value: { kind: 'spawn' },
+            value: { kind: 'spawn' }
         });
         const ai = createRallarServerAi({
             rallar: fake.rallar,
-            provider,
+            provider
         });
 
         await ai.broadcastJson({ result, scope: 'world' });
@@ -392,10 +385,10 @@ describe('Rallar server AI facade', () => {
                 route: expect.objectContaining({ contextId: 'world' }),
                 targets: {
                     mode: 'broadcast',
-                    scope: 'world',
-                },
+                    scope: 'world'
+                }
             }),
-            undefined,
+            undefined
         );
     });
 
@@ -403,7 +396,7 @@ describe('Rallar server AI facade', () => {
         const fake = createFakeRallar();
         const ai = createRallarServerAi({
             rallar: fake.rallar,
-            provider: createRallarAiMockProvider({ value: { kind: 'spawn' } }),
+            provider: createRallarAiMockProvider({ value: { kind: 'spawn' } })
         });
 
         ai.installGenerationTopic({ resultFanout: 'outbox' });
@@ -416,15 +409,15 @@ describe('Rallar server AI facade', () => {
                     newALRoute('room.ai.generate', 'room-1', 'request-1'),
                     'room',
                     'rallar.ai.generate-json.request.v1',
-                    request,
+                    request
                 ),
-                receivedAtEpochMs: 1,
+                receivedAtEpochMs: 1
             },
             {
                 senderId: 'peer-1',
                 roomId: 'room-1',
-                proxy: {},
-            },
+                proxy: {}
+            }
         )).rejects.toThrow(/complete GroupRef/i);
         expect(fake.rallar.ws.publish).not.toHaveBeenCalled();
     });
@@ -432,16 +425,16 @@ describe('Rallar server AI facade', () => {
     it.each([
         ['unknown string', 'galaxy'],
         ['number', 7],
-        ['null', null],
+        ['null', null]
     ])('rejects a %s generation result scope before publishing', async (_label, invalidScope) => {
         const fake = createFakeRallar();
         const ai = createRallarServerAi({
             rallar: fake.rallar,
-            provider: createRallarAiMockProvider({ value: { kind: 'spawn' } }),
+            provider: createRallarAiMockProvider({ value: { kind: 'spawn' } })
         });
         const invalidOptions = {
             scope: invalidScope,
-            resultFanout: 'outbox' as const,
+            resultFanout: 'outbox' as const
         };
         // @ts-expect-error Runtime JavaScript callers can supply invalid scope values.
         ai.installGenerationTopic(invalidOptions);
@@ -454,9 +447,9 @@ describe('Rallar server AI facade', () => {
                     newALRoute('room.ai.generate', 'room-1', 'request-1'),
                     'room',
                     'rallar.ai.generate-json.request.v1',
-                    request,
+                    request
                 ),
-                receivedAtEpochMs: 1,
+                receivedAtEpochMs: 1
             },
             {
                 senderId: 'peer-1',
@@ -464,10 +457,10 @@ describe('Rallar server AI facade', () => {
                 roomRef: {
                     applicationId: 'app-1',
                     workspaceId: 'workspace-1',
-                    groupId: 'room-1',
+                    groupId: 'room-1'
                 },
-                proxy: {},
-            },
+                proxy: {}
+            }
         )).rejects.toMatchObject({ code: 'invalid-json' });
 
         expect(fake.rallar.ws.publish).not.toHaveBeenCalled();
@@ -477,11 +470,11 @@ describe('Rallar server AI facade', () => {
         const fake = createFakeRallar();
         const ai = createRallarServerAi({
             rallar: fake.rallar,
-            provider: createRallarAiMockProvider({ value: { kind: 'spawn' } }),
+            provider: createRallarAiMockProvider({ value: { kind: 'spawn' } })
         });
 
         const unregister = ai.installGenerationTopic({
-            resultFanout: 'live-only',
+            resultFanout: 'live-only'
         });
         await fake.handlers[0].handler(
             {
@@ -491,9 +484,9 @@ describe('Rallar server AI facade', () => {
                     newALRoute('room.ai.generate', 'room-1', 'request-1'),
                     'room',
                     'rallar.ai.generate-json.request.v1',
-                    request,
+                    request
                 ),
-                receivedAtEpochMs: 1,
+                receivedAtEpochMs: 1
             },
             {
                 senderId: 'peer-1',
@@ -501,18 +494,18 @@ describe('Rallar server AI facade', () => {
                 roomRef: {
                     applicationId: 'app-1',
                     workspaceId: 'workspace-1',
-                    groupId: 'room-1',
+                    groupId: 'room-1'
                 },
-                proxy: {},
-            },
+                proxy: {}
+            }
         );
 
         expect(fake.topics[0]).toEqual(
             expect.objectContaining({
                 topicId: 'room.ai.generate',
                 typeId: 'rallar.ai.generate-json.request.v1',
-                fanout: 'none',
-            }),
+                fanout: 'none'
+            })
         );
         expect(fake.rallar.ws.publish).toHaveBeenCalledTimes(1);
         const published = fake.rallar.ws.publish.mock.calls[0][0];
@@ -522,14 +515,14 @@ describe('Rallar server AI facade', () => {
             groupRef: {
                 applicationId: 'app-1',
                 workspaceId: 'workspace-1',
-                groupId: 'room-1',
-            },
+                groupId: 'room-1'
+            }
         });
         expect(JSON.parse(published.payload.resource)).toEqual(
             expect.objectContaining({
                 schemaId: 'game-event',
-                value: { kind: 'spawn' },
-            }),
+                value: { kind: 'spawn' }
+            })
         );
         expect(unregister()).toBe(true);
     });
@@ -542,20 +535,20 @@ describe('Rallar server AI facade', () => {
                 expect.objectContaining({
                     model: 'llama-test',
                     stream: false,
-                    format: schema,
-                }),
+                    format: schema
+                })
             );
             return new Response(
                 JSON.stringify({ response: JSON.stringify({ kind: 'spawn' }) }),
                 {
                     status: 200,
-                    headers: { 'content-type': 'application/json' },
-                },
+                    headers: { 'content-type': 'application/json' }
+                }
             );
         });
         const provider = createRallarAiOllamaProvider({
             model: 'llama-test',
-            fetch,
+            fetch
         });
 
         const result = await provider.generateJson(request);
@@ -564,14 +557,14 @@ describe('Rallar server AI facade', () => {
             expect.objectContaining({
                 providerId: 'ollama',
                 modelId: 'llama-test',
-                value: { kind: 'spawn' },
-            }),
+                value: { kind: 'spawn' }
+            })
         );
         expect(() =>
             createRallarAiOllamaProvider({
                 model: 'llama-test',
                 baseUrl: 'http://example.com:11434',
-                fetch,
+                fetch
             })
         ).toThrow(RallarAiError);
     });
@@ -579,14 +572,14 @@ describe('Rallar server AI facade', () => {
 
 function createFakeRallar() {
     const store = {
-        set: vi.fn(async () => undefined),
+        set: vi.fn(async () => undefined)
     };
     const topics: unknown[] = [];
     const handlers: Array<{
         selector: unknown;
         handler: (
             message: unknown,
-            context: unknown,
+            context: unknown
         ) => Promise<void> | void;
     }> = [];
     const ws = {
@@ -603,20 +596,20 @@ function createFakeRallar() {
             status: 'sent-live',
             message,
             sentCount: 1,
-            entries: [],
-        } satisfies RallarServerWsPublishResult)),
+            entries: []
+        } satisfies RallarServerWsPublishResult))
     };
     const rallar = {
         ws,
         data: {
-            open: vi.fn(async () => store),
-        },
+            open: vi.fn(async () => store)
+        }
     };
 
     return {
         rallar,
         store,
         topics,
-        handlers,
+        handlers
     };
 }

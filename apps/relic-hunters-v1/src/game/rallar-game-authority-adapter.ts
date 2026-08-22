@@ -1,19 +1,19 @@
 import {
-    createRallarGameAuthorityClient,
-    type RallarGameAuthorityClientHandle,
-    type RallarGameAuthorityClientRallarFacade,
-} from '@shared-web/game/mod.ts';
-import type { AuthSession } from '@shared/api/api-config.ts';
-import {
     RELIC_PROTOCOL_VERSION,
     type RelicCommand,
     type RelicPublicSnapshot,
-    type RelicServerEvent,
+    type RelicServerEvent
 } from '@relic-hunters/mod.ts';
+import {
+    createRallarGameAuthorityClient,
+    type RallarGameAuthorityClientHandle,
+    type RallarGameAuthorityClientRallarFacade
+} from '@shared-web/game/mod.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
-    RallarGameAuthorityEnvelope,
-    RallarGameAuthorityRef,
     RallarGameAuthorityClientStatus,
+    RallarGameAuthorityEnvelope,
+    RallarGameAuthorityRef
 } from '@shared/rallar-game/mod.ts';
 
 export const RELIC_AUTHORITY_PROTOCOL = 'relic-hunters.authority.v1';
@@ -21,7 +21,7 @@ export const RELIC_AUTHORITY_TOPIC_ID = 'relic-hunters.authority';
 export const RELIC_AUTHORITY_REF: RallarGameAuthorityRef = {
     kind: 'server',
     id: 'relic-hunter-server-v1',
-    epoch: RELIC_PROTOCOL_VERSION,
+    epoch: RELIC_PROTOCOL_VERSION
 };
 
 export type RelicAuthorityPresence = Readonly<{
@@ -32,8 +32,7 @@ export type RelicAuthorityPresence = Readonly<{
     sentAtEpochMs: number;
 }>;
 
-export type RelicAuthoritySnapshotEnvelope =
-    RallarGameAuthorityEnvelope<RelicPublicSnapshot>;
+export type RelicAuthoritySnapshotEnvelope = RallarGameAuthorityEnvelope<RelicPublicSnapshot>;
 
 export type RelicAuthorityClientBridge = Readonly<{
     start(onSnapshot: (event: RelicServerEvent) => void): () => void;
@@ -45,30 +44,30 @@ export type RelicAuthorityClientBridge = Readonly<{
 export function createRelicAuthorityPresence(
     session: AuthSession,
     roomId?: string,
-    nowEpochMs = Date.now(),
+    nowEpochMs = Date.now()
 ): RelicAuthorityPresence {
     return {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         sessionId: session.sessionId,
         username: session.username,
         roomId,
-        sentAtEpochMs: nowEpochMs,
+        sentAtEpochMs: nowEpochMs
     };
 }
 
 export function toRelicAuthoritySnapshotEvent(
-    snapshot: RelicPublicSnapshot,
+    snapshot: RelicPublicSnapshot
 ): RelicServerEvent {
     return {
         protocolVersion: snapshot.protocolVersion,
         gameId: snapshot.gameId,
-        snapshot,
+        snapshot
     };
 }
 
 export function shouldAcceptRelicAuthoritySnapshotRepair(
     envelope: RelicAuthoritySnapshotEnvelope,
-    expectedRoomId?: string,
+    expectedRoomId?: string
 ): boolean {
     return envelope.authority.kind === RELIC_AUTHORITY_REF.kind &&
         envelope.authority.id === RELIC_AUTHORITY_REF.id &&
@@ -77,15 +76,10 @@ export function shouldAcceptRelicAuthoritySnapshotRepair(
 }
 
 export function createRelicAuthorityClientBridge(
-    rallar: RallarGameAuthorityClientRallarFacade,
+    rallar: RallarGameAuthorityClientRallarFacade
 ): RelicAuthorityClientBridge {
     let client:
-        | RallarGameAuthorityClientHandle<
-            RelicCommand,
-            RelicPublicSnapshot,
-            RelicServerEvent,
-            RelicAuthorityPresence
-        >
+        | RallarGameAuthorityClientHandle<RelicCommand, RelicPublicSnapshot, RelicServerEvent, RelicAuthorityPresence>
         | undefined;
     let activeSnapshotHandler: ((event: RelicServerEvent) => void) | undefined;
 
@@ -109,7 +103,7 @@ export function createRelicAuthorityClientBridge(
             const handle = ensureClient();
             await handle.start();
             const result = await handle.publishPresence(
-                createRelicAuthorityPresence(session, roomId),
+                createRelicAuthorityPresence(session, roomId)
             );
             return result.status === 'sent';
         },
@@ -118,7 +112,7 @@ export function createRelicAuthorityClientBridge(
             await handle.start();
             const result = await handle.publishSnapshotRepair(snapshot);
             return result.status === 'sent';
-        },
+        }
     };
 
     function ensureClient(): RallarGameAuthorityClientHandle<
@@ -143,14 +137,14 @@ export function createRelicAuthorityClientBridge(
                 acceptSnapshotRepair: (envelope) =>
                     shouldAcceptRelicAuthoritySnapshotRepair(
                         envelope,
-                        rallar.rooms.state().currentRoomId,
-                    ),
+                        rallar.rooms.state().currentRoomId
+                    )
             },
             onSnapshot: (envelope) => {
                 activeSnapshotHandler?.(
-                    toRelicAuthoritySnapshotEvent(envelope.payload),
+                    toRelicAuthoritySnapshotEvent(envelope.payload)
                 );
-            },
+            }
         });
         return client;
     }

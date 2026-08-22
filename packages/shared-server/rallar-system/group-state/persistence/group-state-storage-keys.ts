@@ -1,150 +1,156 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 
-type GroupMemberStorageRef = GroupRef & Readonly<{ principalId: string }>;
-type GroupSessionStorageRef = GroupRef & Readonly<{ sessionId: string }>;
+type GroupMemberStorageRef = GroupRef & Readonly<{ principalId: string; }>;
+type GroupSessionStorageRef = GroupRef & Readonly<{ sessionId: string; }>;
 
 function keyPart(name: string, value: string): string {
-  return `${name}=${encodeURIComponent(value)}`;
+    return `${name}=${encodeURIComponent(value)}`;
 }
 
 function workspaceKeyPart(workspaceId: string | undefined): string {
-  if (workspaceId === undefined) return 'ws=_';
-  // Keep the historical absent-workspace namespace while ensuring that the
-  // valid explicit identifier "_" cannot alias it. Percent is itself escaped
-  // by encodeURIComponent, so "%5F" and the explicit sentinel remain distinct.
-  const encoded = workspaceId === '_' ? '%5F' : encodeURIComponent(workspaceId);
-  return `ws=${encoded}`;
+    if (workspaceId === undefined) {
+        return 'ws=_';
+    }
+    // Keep the historical absent-workspace namespace while ensuring that the
+    // valid explicit identifier "_" cannot alias it. Percent is itself escaped
+    // by encodeURIComponent, so "%5F" and the explicit sentinel remain distinct.
+    const encoded = workspaceId === '_' ? '%5F' : encodeURIComponent(workspaceId);
+    return `ws=${encoded}`;
 }
 
 export function groupStateScopeStorageKey(
-  scope: Pick<GroupRef, 'applicationId' | 'workspaceId'>,
+    scope: Pick<GroupRef, 'applicationId' | 'workspaceId'>
 ): string {
-  return [keyPart('app', scope.applicationId), workspaceKeyPart(scope.workspaceId)].join(':');
+    return [keyPart('app', scope.applicationId), workspaceKeyPart(scope.workspaceId)].join(':');
 }
 
 export function groupStateGroupStorageKey(ref: GroupRef): string {
-  return [groupStateScopeStorageKey(ref), keyPart('group', ref.groupId)].join(':');
+    return [groupStateScopeStorageKey(ref), keyPart('group', ref.groupId)].join(':');
 }
 
 export function decodeGroupStateGroupStorageKey(storageKey: string): GroupRef {
-  const parts = storageKey.split(':');
-  if (parts.length !== 3) {
-    throw new TypeError('Group-state group storage key has invalid arity');
-  }
-  const applicationId = decodeKeyPart(parts[0], 'app');
-  const workspaceId = decodeWorkspaceKeyPart(parts[1]);
-  const groupId = decodeKeyPart(parts[2], 'group');
-  const ref: GroupRef = {
-    applicationId,
-    workspaceId: workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
-    groupId,
-  };
-  const canonicalStorageKey =
-    workspaceId === undefined
-      ? [keyPart('app', applicationId), 'ws=_', keyPart('group', groupId)].join(':')
-      : groupStateGroupStorageKey(ref);
-  if (canonicalStorageKey !== storageKey) {
-    throw new TypeError('Group-state group storage key is not canonical');
-  }
-  return ref;
+    const parts = storageKey.split(':');
+    if (parts.length !== 3) {
+        throw new TypeError('Group-state group storage key has invalid arity');
+    }
+    const applicationId = decodeKeyPart(parts[0], 'app');
+    const workspaceId = decodeWorkspaceKeyPart(parts[1]);
+    const groupId = decodeKeyPart(parts[2], 'group');
+    const ref: GroupRef = {
+        applicationId,
+        workspaceId: workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
+        groupId
+    };
+    const canonicalStorageKey = workspaceId === undefined
+        ? [keyPart('app', applicationId), 'ws=_', keyPart('group', groupId)].join(':')
+        : groupStateGroupStorageKey(ref);
+    if (canonicalStorageKey !== storageKey) {
+        throw new TypeError('Group-state group storage key is not canonical');
+    }
+    return ref;
 }
 
 export function groupStateMemberStorageKey(ref: GroupMemberStorageRef): string {
-  return [groupStateGroupStorageKey(ref), keyPart('member', ref.principalId)].join(':');
+    return [groupStateGroupStorageKey(ref), keyPart('member', ref.principalId)].join(':');
 }
 
 export function decodeGroupStateMemberStorageKey(storageKey: string): GroupMemberStorageRef {
-  return decodeChildStorageKey(storageKey, 'member', 'principalId', groupStateMemberStorageKey);
+    return decodeChildStorageKey(storageKey, 'member', 'principalId', groupStateMemberStorageKey);
 }
 
 export function groupStatePresenceSessionStorageKey(ref: GroupSessionStorageRef): string {
-  return [groupStateGroupStorageKey(ref), keyPart('session', ref.sessionId)].join(':');
+    return [groupStateGroupStorageKey(ref), keyPart('session', ref.sessionId)].join(':');
 }
 
 export function decodeGroupStatePresenceSessionStorageKey(
-  storageKey: string,
+    storageKey: string
 ): GroupSessionStorageRef {
-  return decodeChildStorageKey(
-    storageKey,
-    'session',
-    'sessionId',
-    groupStatePresenceSessionStorageKey,
-  );
+    return decodeChildStorageKey(
+        storageKey,
+        'session',
+        'sessionId',
+        groupStatePresenceSessionStorageKey
+    );
 }
 
 export function groupStatePresenceAdmissionStorageKey(ref: GroupMemberStorageRef): string {
-  return [groupStateGroupStorageKey(ref), keyPart('principal', ref.principalId)].join(':');
+    return [groupStateGroupStorageKey(ref), keyPart('principal', ref.principalId)].join(':');
 }
 
 export function decodeGroupStatePresenceAdmissionStorageKey(
-  storageKey: string,
+    storageKey: string
 ): GroupMemberStorageRef {
-  return decodeChildStorageKey(
-    storageKey,
-    'principal',
-    'principalId',
-    groupStatePresenceAdmissionStorageKey,
-  );
+    return decodeChildStorageKey(
+        storageKey,
+        'principal',
+        'principalId',
+        groupStatePresenceAdmissionStorageKey
+    );
 }
 
 export function groupStatePresenceSummaryStorageKey(ref: GroupRef): string {
-  return groupStateGroupStorageKey(ref);
+    return groupStateGroupStorageKey(ref);
 }
 
 export function groupStateIdempotencyStorageKey(ref: GroupRef, requestId: string): string {
-  return [groupStateGroupStorageKey(ref), keyPart('request', requestId)].join(':');
+    return [groupStateGroupStorageKey(ref), keyPart('request', requestId)].join(':');
 }
 
 export function decodeGroupStateIdempotencyStorageKey(
-  storageKey: string,
-): GroupRef & Readonly<{ requestId: string }> {
-  return decodeChildStorageKey(storageKey, 'request', 'requestId', (ref) =>
-    groupStateIdempotencyStorageKey(ref, ref.requestId),
-  );
+    storageKey: string
+): GroupRef & Readonly<{ requestId: string; }> {
+    return decodeChildStorageKey(
+        storageKey,
+        'request',
+        'requestId',
+        (ref) => groupStateIdempotencyStorageKey(ref, ref.requestId)
+    );
 }
 
 function decodeChildStorageKey<Name extends string>(
-  storageKey: string,
-  partName: string,
-  propertyName: Name,
-  canonicalKeyFor: (ref: GroupRef & Readonly<Record<Name, string>>) => string,
+    storageKey: string,
+    partName: string,
+    propertyName: Name,
+    canonicalKeyFor: (ref: GroupRef & Readonly<Record<Name, string>>) => string
 ): GroupRef & Readonly<Record<Name, string>> {
-  const parts = storageKey.split(':');
-  if (parts.length !== 4) {
-    throw new TypeError(`Group-state ${partName} storage key has invalid arity`);
-  }
-  const ref = decodeGroupStateGroupStorageKey(parts.slice(0, 3).join(':'));
-  const value = decodeKeyPart(parts[3], partName);
-  const decoded = { ...ref, [propertyName]: value } as GroupRef & Readonly<Record<Name, string>>;
-  const canonicalStorageKey = canonicalKeyFor(decoded);
-  const normalizedStorageKey =
-    parts[1] === 'ws=_'
-      ? canonicalStorageKey.replace(
-          `:ws=${encodeURIComponent(DEFAULT_STATE_WORKSPACE_ID)}:`,
-          ':ws=_:',
+    const parts = storageKey.split(':');
+    if (parts.length !== 4) {
+        throw new TypeError(`Group-state ${partName} storage key has invalid arity`);
+    }
+    const ref = decodeGroupStateGroupStorageKey(parts.slice(0, 3).join(':'));
+    const value = decodeKeyPart(parts[3], partName);
+    const decoded = { ...ref, [propertyName]: value } as GroupRef & Readonly<Record<Name, string>>;
+    const canonicalStorageKey = canonicalKeyFor(decoded);
+    const normalizedStorageKey = parts[1] === 'ws=_'
+        ? canonicalStorageKey.replace(
+            `:ws=${encodeURIComponent(DEFAULT_STATE_WORKSPACE_ID)}:`,
+            ':ws=_:'
         )
-      : canonicalStorageKey;
-  if (normalizedStorageKey !== storageKey) {
-    throw new TypeError(`Group-state ${partName} storage key is not canonical`);
-  }
-  return decoded;
+        : canonicalStorageKey;
+    if (normalizedStorageKey !== storageKey) {
+        throw new TypeError(`Group-state ${partName} storage key is not canonical`);
+    }
+    return decoded;
 }
 
 function decodeKeyPart(part: string | undefined, name: string): string {
-  const prefix = `${name}=`;
-  if (!part?.startsWith(prefix)) {
-    throw new TypeError(`Group-state storage key is missing ${name}`);
-  }
-  try {
-    return decodeURIComponent(part.slice(prefix.length));
-  } catch {
-    throw new TypeError(`Group-state storage key has invalid ${name} encoding`);
-  }
+    const prefix = `${name}=`;
+    if (!part?.startsWith(prefix)) {
+        throw new TypeError(`Group-state storage key is missing ${name}`);
+    }
+    try {
+        return decodeURIComponent(part.slice(prefix.length));
+    }
+    catch {
+        throw new TypeError(`Group-state storage key has invalid ${name} encoding`);
+    }
 }
 
 function decodeWorkspaceKeyPart(part: string | undefined): string | undefined {
-  if (part === 'ws=_') return undefined;
-  const workspaceId = decodeKeyPart(part, 'ws');
-  return workspaceId;
+    if (part === 'ws=_') {
+        return undefined;
+    }
+    const workspaceId = decodeKeyPart(part, 'ws');
+    return workspaceId;
 }

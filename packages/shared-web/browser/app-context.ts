@@ -1,13 +1,13 @@
-import { readSession } from '@shared/api/auth.ts';
 import * as middleware from '@shared-web/browser/middleware.ts';
 import { Middleware, type MiddlewareInitOptions } from '@shared-web/browser/middleware.ts';
 import { AppTopics, AuthSession } from '@shared/api/api-config.ts';
+import { readSession } from '@shared/api/auth.ts';
 
 export type ApiMiddleware = {
     readonly session: AuthSession;
     readonly authFetch: (
         input: RequestInfo | URL,
-        init?: RequestInit,
+        init?: RequestInit
     ) => Promise<Response>;
     readonly middleware: Middleware;
 };
@@ -31,7 +31,7 @@ export function isMiddlewareReady(): boolean {
 }
 
 export async function initMiddleware(
-    options: InitMiddlewareOptions = {},
+    options: InitMiddlewareOptions = {}
 ): Promise<ApiMiddleware> {
     // Fast path: already initialized
     if (ctx) {
@@ -61,7 +61,7 @@ export async function initMiddleware(
         const mw = await middleware.initialiseMiddleware(
             session,
             AppTopics.rtcSignaling,
-            options,
+            options
         );
 
         const currentSession = readSession();
@@ -77,7 +77,7 @@ export async function initMiddleware(
         ctx = {
             session,
             authFetch,
-            middleware: mw,
+            middleware: mw
         };
 
         return ctx;
@@ -85,7 +85,8 @@ export async function initMiddleware(
 
     try {
         return await initPromise;
-    } catch (e) {
+    }
+    catch (e) {
         // If init failed, allow a future retry
         initPromise = undefined;
         throw e;
@@ -101,7 +102,7 @@ export function clearMiddleware(): void {
 
 export function shutdownMiddleware(
     mw: Middleware | undefined,
-    reason = 'rallar-disconnect',
+    reason = 'rallar-disconnect'
 ): void {
     if (!mw) {
         return;
@@ -123,7 +124,8 @@ export function shutdownMiddleware(
 function runShutdownStep(step: () => void): void {
     try {
         step();
-    } catch {
+    }
+    catch {
         // Shutdown is best-effort; callers are already tearing down auth state.
     }
 }

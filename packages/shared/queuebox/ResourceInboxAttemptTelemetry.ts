@@ -21,7 +21,7 @@ export type ResourceInboxAttemptReleaseTelemetry = Readonly<{
     status: EntityStatus;
     retryDelayMs: number;
     failure:
-        | Readonly<{ kind: 'none' }>
+        | Readonly<{ kind: 'none'; }>
         | Readonly<{
             kind: 'retryable' | 'non-retryable';
             code: string;
@@ -35,25 +35,25 @@ export function rememberResourceInboxAttemptTelemetry(
     entry: ResourceEntry,
     selectedLane: Reservator,
     selectedAtEpochMs: number,
-    selectedDueAtEpochMs?: number,
+    selectedDueAtEpochMs?: number
 ): void {
     const createdAtEpochMs = Number(entry.audit.createdTs.toZonedDateTime('UTC').epochMilliseconds);
     const dueAtEpochMs = selectedDueAtEpochMs ?? Number(
         entry.dequeueAudit.nextTs?.epochMilliseconds ??
-        entry.dequeueAudit.startTs?.epochMilliseconds ??
-        selectedAtEpochMs,
+            entry.dequeueAudit.startTs?.epochMilliseconds ??
+            selectedAtEpochMs
     );
     attempts.set(entry, {
         selectedLane,
         queueAgeMs: Math.max(0, selectedAtEpochMs - createdAtEpochMs),
         dueAgeMs: Math.max(0, selectedAtEpochMs - dueAtEpochMs),
         attempt: entry.dequeueAudit.attempts,
-        selectedDueAtEpochMs: dueAtEpochMs,
+        selectedDueAtEpochMs: dueAtEpochMs
     });
 }
 
 export function readResourceInboxAttemptTelemetry(
-    entry: ResourceEntry,
+    entry: ResourceEntry
 ): ResourceInboxAttemptTelemetry | undefined {
     return attempts.get(entry);
 }
@@ -63,11 +63,15 @@ export function recordResourceInboxAttemptRelease(
     reserved: ResourceEntry,
     released: ResourceEntry,
     classification: ResourceInboxAttemptReleaseTelemetry['classification'],
-    exception?: unknown,
+    exception?: unknown
 ): void {
-    if (!sink) return;
+    if (!sink) {
+        return;
+    }
     const selection = readResourceInboxAttemptTelemetry(reserved);
-    if (!selection) throw new Error('Resource inbox attempt selection telemetry is missing');
+    if (!selection) {
+        throw new Error('Resource inbox attempt selection telemetry is missing');
+    }
     const endMs = released.dequeueAudit.endTs
         ? Number(released.dequeueAudit.endTs.epochMilliseconds)
         : undefined;
@@ -94,20 +98,14 @@ export function recordResourceInboxAttemptRelease(
         retryDelayMs,
         failure: classification === 'accepted'
             ? { kind: 'none' }
-            : toReleaseFailure(classification, exception),
+            : toReleaseFailure(classification, exception)
     });
 }
 
 function toReleaseFailure(
-    classification: Exclude<
-        ResourceInboxAttemptReleaseTelemetry['classification'],
-        'accepted'
-    >,
-    exception: unknown,
-): Extract<
-    ResourceInboxAttemptReleaseTelemetry['failure'],
-    { kind: 'retryable' | 'non-retryable' }
-> {
+    classification: Exclude<ResourceInboxAttemptReleaseTelemetry['classification'], 'accepted'>,
+    exception: unknown
+): Extract<ResourceInboxAttemptReleaseTelemetry['failure'], { kind: 'retryable' | 'non-retryable'; }> {
     const error = exception instanceof Error ? exception : new Error(String(exception));
     const code = typeof exception === 'object' && exception !== null && 'code' in exception &&
             typeof exception.code === 'string'

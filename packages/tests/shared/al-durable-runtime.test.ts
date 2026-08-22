@@ -1,8 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
     ALControlPersistenceValue,
     ALInboundMessageRuntime,
-    type ALMessage,
     ALOrderingTrackSnapshot,
     ALOutboundMessageRuntime,
     ALSupersedencePersistenceValue,
@@ -11,7 +9,6 @@ import {
     InMemoryALOrderingStore,
     InMemoryPersistenceProvider,
     InMemoryQueueBox,
-    type Key,
     newALAckControlMessage,
     newALMulticastMessage,
     newALNackControlMessage,
@@ -22,8 +19,11 @@ import {
     PersistentALSupersedenceStore,
     planALMessageHandling,
     QueueBoxUtilities,
-    type ResourceEntry,
+    type ALMessage,
+    type Key,
+    type ResourceEntry
 } from '@shared/mod.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('Durable AL runtime stores', () => {
     afterEach(() => {
@@ -42,8 +42,7 @@ describe('Durable AL runtime stores', () => {
         expect(dedup2.has('msg-1', nowMs + 25)).toBe(true);
         expect(dedup2.has('msg-1', nowMs + 51)).toBe(false);
 
-        const orderingProvider =
-            new InMemoryPersistenceProvider<string, ALOrderingTrackSnapshot>();
+        const orderingProvider = new InMemoryPersistenceProvider<string, ALOrderingTrackSnapshot>();
         const ordering1 = new PersistentALOrderingStore(orderingProvider);
         await ordering1.ready();
         await ordering1.accept(createOrderedMessage(2), nowMs);
@@ -52,13 +51,12 @@ describe('Durable AL runtime stores', () => {
         await ordering2.ready();
         expect(ordering2.peek(createOrderedMessage(1), nowMs + 1)).toMatchObject({
             status: 'in-order',
-            releasableSeqs: [2],
+            releasableSeqs: [2]
         });
 
-        const supersedenceProvider =
-            new InMemoryPersistenceProvider<string, ALSupersedencePersistenceValue>();
+        const supersedenceProvider = new InMemoryPersistenceProvider<string, ALSupersedencePersistenceValue>();
         const supersedence1 = new PersistentALSupersedenceStore(
-            supersedenceProvider,
+            supersedenceProvider
         );
         await supersedence1.ready();
         await supersedence1.accept(
@@ -66,13 +64,13 @@ describe('Durable AL runtime stores', () => {
                 key: 'presence:room-1',
                 msgId: 'msg-new',
                 seq: 2,
-                ts: nowMs,
+                ts: nowMs
             },
-            nowMs,
+            nowMs
         );
 
         const supersedence2 = new PersistentALSupersedenceStore(
-            supersedenceProvider,
+            supersedenceProvider
         );
         await supersedence2.ready();
         expect(
@@ -81,31 +79,30 @@ describe('Durable AL runtime stores', () => {
                     key: 'presence:room-1',
                     msgId: 'msg-old',
                     seq: 1,
-                    ts: nowMs - 1,
+                    ts: nowMs - 1
                 },
-                nowMs + 1,
-            ),
+                nowMs + 1
+            )
         ).toMatchObject({
             status: 'superseded',
-            latestMsgId: 'msg-new',
+            latestMsgId: 'msg-new'
         });
     });
 
     it('rehydrates pending acknowledgements and control event history', async () => {
-        const provider =
-            new InMemoryPersistenceProvider<string, ALControlPersistenceValue>();
+        const provider = new InMemoryPersistenceProvider<string, ALControlPersistenceValue>();
         const tracker1 = new PersistentALControlTracker(provider);
         await tracker1.ready();
 
         await tracker1.accept(
-            newALNackControlMessage('peer-2', 'self', 'msg-1', 'gap'),
+            newALNackControlMessage('peer-2', 'self', 'msg-1', 'gap')
         );
         await tracker1.trackPendingAck(
             'msg-1',
             'upstream-peer',
             'subtree-complete',
             ['peer-2'],
-            false,
+            false
         );
 
         const tracker2 = new PersistentALControlTracker(provider);
@@ -116,20 +113,20 @@ describe('Durable AL runtime stores', () => {
             toPeerId: 'upstream-peer',
             localReady: false,
             expectedFromPeerIds: ['peer-2'],
-            ackedFromPeerIds: [],
+            ackedFromPeerIds: []
         });
 
         expect(await tracker2.markPendingAckLocalReady('msg-1')).toBeUndefined();
 
         const acceptance = await tracker2.accept(
-            newALAckControlMessage('peer-2', 'self', 'msg-1', 'delivered'),
+            newALAckControlMessage('peer-2', 'self', 'msg-1', 'delivered')
         );
         expect(acceptance.completedPendingAcks).toEqual([
             {
                 msgId: 'msg-1',
                 toPeerId: 'upstream-peer',
-                status: 'subtree-complete',
-            },
+                status: 'subtree-complete'
+            }
         ]);
     });
 
@@ -143,16 +140,16 @@ describe('Durable AL runtime stores', () => {
             {
                 topicId: 'chat',
                 resourceId: 'msg-1',
-                contextId: 'group-1',
+                contextId: 'group-1'
             },
             groupRef('group-1'),
             'chat.message.v1',
             {
-                text: 'hello',
+                text: 'hello'
             },
             {
-                reliability: 'at-least-once',
-            },
+                reliability: 'at-least-once'
+            }
         );
 
         await runtime1.handleIncomingMessage(msg, 'peer-1');
@@ -160,7 +157,7 @@ describe('Durable AL runtime stores', () => {
 
         const restartedRuntime = createInboundRuntime(
             createPersistentInboundStoreSet(stores),
-            dispatchedMsgIds,
+            dispatchedMsgIds
         );
 
         await restartedRuntime.handleIncomingMessage(msg, 'peer-1');
@@ -182,14 +179,14 @@ describe('Durable AL runtime stores', () => {
         const runtime2 = createInboundRuntime(
             createPersistentInboundStoreSet(stores),
             dispatchedMsgIds,
-            controlMessages,
+            controlMessages
         );
 
         await runtime2.handleIncomingMessage(seq1, 'peer-1');
 
         expect(dispatchedMsgIds).toEqual([seq1.id.msgId, seq2.id.msgId]);
         expect(controlMessages.map((msg) => msg.payload.typeId)).toContain(
-            'al.control.nack.v1',
+            'al.control.nack.v1'
         );
     });
 
@@ -204,13 +201,13 @@ describe('Durable AL runtime stores', () => {
             {
                 topicId: 'presence',
                 resourceId: 'presence-1',
-                contextId: 'room-1',
+                contextId: 'room-1'
             },
             'peer-1',
             'presence.state.v1',
             {
-                online: true,
-            },
+                online: true
+            }
         );
 
         const [firstEntry] = await enqueueOutboundOrThrow(runtime1, firstPresence);
@@ -218,20 +215,20 @@ describe('Durable AL runtime stores', () => {
         const restartedForSupersedence = createOutboundRuntime(
             createPersistentOutboundStoreSet(stores),
             sent,
-            outbox,
+            outbox
         );
         const secondPresence = newALUnicastMessage(
             'self',
             {
                 topicId: 'presence',
                 resourceId: 'presence-2',
-                contextId: 'room-1',
+                contextId: 'room-1'
             },
             'peer-1',
             'presence.state.v1',
             {
-                online: false,
-            },
+                online: false
+            }
         );
 
         const [secondEntry] = await enqueueOutboundOrThrow(restartedForSupersedence, secondPresence);
@@ -242,16 +239,16 @@ describe('Durable AL runtime stores', () => {
             ordering: {
                 orderingKey: 'conversation-1',
                 epoch: 0,
-                seq: 1,
-            },
+                seq: 1
+            }
         };
         const seq2 = {
             ...createOutboundMessage('msg-seq-2'),
             ordering: {
                 orderingKey: 'conversation-1',
                 epoch: 0,
-                seq: 2,
-            },
+                seq: 2
+            }
         };
 
         await enqueueOutboundOrThrow(restartedForSupersedence, seq1);
@@ -260,7 +257,7 @@ describe('Durable AL runtime stores', () => {
         const restartedForRepair = createOutboundRuntime(
             createPersistentOutboundStoreSet(stores),
             sent,
-            outbox,
+            outbox
         );
 
         await restartedForRepair.acceptControlMessage(
@@ -271,8 +268,8 @@ describe('Durable AL runtime stores', () => {
                 expectedSeq: 1,
                 lastContiguousSeq: 0,
                 missingSeqs: [1],
-                releasableSeqs: [],
-            }),
+                releasableSeqs: []
+            })
         );
 
         expect(sent.map((entry) => entry.msgId)).toContain(seq1.id.msgId);
@@ -292,7 +289,7 @@ describe('Durable AL runtime stores', () => {
 
         const runtime2 = createOutboundRuntime(
             createPersistentOutboundStoreSet(stores),
-            sent,
+            sent
         );
         await runtime2.ready();
 
@@ -300,7 +297,7 @@ describe('Durable AL runtime stores', () => {
 
         expect(sent).toEqual([
             { kind: 'send', msgId: msg.id.msgId, phase: 'immediate' },
-            { kind: 'repair', msgId: msg.id.msgId, trigger: 'ack-timeout', phase: 'immediate' },
+            { kind: 'repair', msgId: msg.id.msgId, trigger: 'ack-timeout', phase: 'immediate' }
         ]);
     });
 
@@ -316,7 +313,7 @@ describe('Durable AL runtime stores', () => {
 
         const runtime2 = createOutboundRuntime(
             createPersistentOutboundStoreSet(stores),
-            sent,
+            sent
         );
         await runtime2.ready();
 
@@ -332,7 +329,7 @@ describe('Durable AL runtime stores', () => {
 
 async function enqueueOutboundOrThrow(
     runtime: Pick<ALOutboundMessageRuntime<Record<string, unknown>>, 'enqueueIfAbsent'>,
-    msg: ALMessage,
+    msg: ALMessage
 ): Promise<readonly ResourceEntry[]> {
     const enqueued = await runtime.enqueueIfAbsent(msg);
     if (enqueued.status === 'failed') {
@@ -345,8 +342,7 @@ async function enqueueOutboundOrThrow(
 function createPersistentInboundStoreSet(existing?: {
     admissionProvider: InMemoryPersistenceProvider<string, unknown>;
 }) {
-    const admissionProvider =
-        existing?.admissionProvider ??
+    const admissionProvider = existing?.admissionProvider ??
         new InMemoryPersistenceProvider<string, unknown>();
 
     return {
@@ -358,16 +354,16 @@ function createPersistentInboundStoreSet(existing?: {
                 provider: admissionProvider,
                 coordinationKey: 'durable-test:inbound:admission',
                 orderingTrackTtlMs: 5 * 60_000,
-                supersedenceTrackTtlMs: 5 * 60_000,
-            }),
-        },
+                supersedenceTrackTtlMs: 5 * 60_000
+            })
+        }
     };
 }
 
 function createInboundRuntime(
     stores: ReturnType<typeof createPersistentInboundStoreSet>,
     dispatchedMsgIds: string[],
-    controlMessages: ALMessage[] = [],
+    controlMessages: ALMessage[] = []
 ) {
     return new ALInboundMessageRuntime({
         selfPeerId: 'self',
@@ -382,7 +378,7 @@ function createInboundRuntime(
                 overlayNeighborPeerIds: ['peer-2'],
                 dedupStore: runtime.dedupStore,
                 orderingStore: runtime.orderingStore,
-                supersedenceStore: runtime.supersedenceStore,
+                supersedenceStore: runtime.supersedenceStore
             }),
         readStoredEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
         toInboxEntry: (msg) => QueueBoxUtilities.toResourceEntryFromMsg(msg, 'inbox'),
@@ -392,15 +388,14 @@ function createInboundRuntime(
         },
         sendControlMessage: async (msg) => {
             controlMessages.push(msg);
-        },
+        }
     });
 }
 
 function createPersistentOutboundStoreSet(existing?: {
     admissionProvider: InMemoryPersistenceProvider<string, unknown>;
 }) {
-    const admissionProvider =
-        existing?.admissionProvider ??
+    const admissionProvider = existing?.admissionProvider ??
         new InMemoryPersistenceProvider<string, unknown>();
 
     return {
@@ -411,16 +406,16 @@ function createPersistentOutboundStoreSet(existing?: {
                 namespace: 'durable-test:outbound:admission',
                 provider: admissionProvider,
                 coordinationKey: 'durable-test:outbound:admission',
-                supersedenceTrackTtlMs: 5 * 60_000,
-            }),
-        },
+                supersedenceTrackTtlMs: 5 * 60_000
+            })
+        }
     };
 }
 
 function createOutboundRuntime(
     stores: ReturnType<typeof createPersistentOutboundStoreSet>,
     sent: Array<Record<string, unknown>>,
-    outbox: InMemoryQueueBox = new InMemoryQueueBox(new Map()),
+    outbox: InMemoryQueueBox = new InMemoryQueueBox(new Map())
 ) {
     return new ALOutboundMessageRuntime<Record<string, unknown>>({
         outbox,
@@ -429,35 +424,31 @@ function createOutboundRuntime(
         readMessageFromEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
         planOutgoingMessage: (msg) => ({
             persist: msg.payload.typeId === 'presence.state.v1',
-            preparedMessages:
-                msg.payload.typeId === 'presence.state.v1'
-                    ? []
-                    : [{ kind: 'send', msgId: msg.id.msgId }],
-            ackTracking:
-                msg.payload.typeId === 'presence.state.v1'
-                    ? undefined
-                    : {
-                        enabled: true,
-                        timeoutMs: 100,
-                        maxAttempts: 1,
-                        expectedPeerIds: ['peer-1'],
-                    },
-            repairTracking:
-                msg.payload.typeId === 'presence.state.v1'
-                    ? undefined
-                    : {
-                        enabled: true,
-                        algo: 'retransmit',
-                        maxAttempts: 1,
-                    },
-            supersedenceTracking:
-                msg.payload.typeId === 'presence.state.v1'
-                    ? {
-                        enabled: true,
-                        algo: 'latest-wins',
-                        key: `presence:${msg.route.contextId}`,
-                    }
-                    : undefined,
+            preparedMessages: msg.payload.typeId === 'presence.state.v1'
+                ? []
+                : [{ kind: 'send', msgId: msg.id.msgId }],
+            ackTracking: msg.payload.typeId === 'presence.state.v1'
+                ? undefined
+                : {
+                    enabled: true,
+                    timeoutMs: 100,
+                    maxAttempts: 1,
+                    expectedPeerIds: ['peer-1']
+                },
+            repairTracking: msg.payload.typeId === 'presence.state.v1'
+                ? undefined
+                : {
+                    enabled: true,
+                    algo: 'retransmit',
+                    maxAttempts: 1
+                },
+            supersedenceTracking: msg.payload.typeId === 'presence.state.v1'
+                ? {
+                    enabled: true,
+                    algo: 'latest-wins',
+                    key: `presence:${msg.route.contextId}`
+                }
+                : undefined
         }),
         planRepairMessage: async (msg, request) => ({
             persist: false,
@@ -465,13 +456,13 @@ function createOutboundRuntime(
                 {
                     kind: 'repair',
                     msgId: msg.id.msgId,
-                    trigger: request.trigger,
-                },
-            ],
+                    trigger: request.trigger
+                }
+            ]
         }),
         sendPreparedMessage: async (prepared, phase) => {
             sent.push({ ...prepared, phase });
-        },
+        }
     });
 }
 
@@ -482,23 +473,23 @@ function createOrderedMessage(seq: number) {
             {
                 topicId: 'chat',
                 resourceId: `msg-${seq}`,
-                contextId: 'group-1',
+                contextId: 'group-1'
             },
             groupRef('group-1'),
             'chat.message.v1',
             {
-                text: `message-${seq}`,
+                text: `message-${seq}`
             },
             {
                 seq,
-                reliability: 'at-least-once',
-            },
+                reliability: 'at-least-once'
+            }
         ),
         ordering: {
             orderingKey: 'group-1',
             epoch: 0,
-            seq,
-        },
+            seq
+        }
     };
 }
 
@@ -508,12 +499,12 @@ function createBufferedOrderedMessage(seq: number, text: string) {
         {
             topicId: 'chat',
             resourceId: `msg-${seq}`,
-            contextId: 'group-1',
+            contextId: 'group-1'
         },
         groupRef('group-1'),
         'chat.message.v1',
         {
-            text,
+            text
         },
         {
             seq,
@@ -521,10 +512,10 @@ function createBufferedOrderedMessage(seq: number, text: string) {
             ack: 'none',
             qos: {
                 durability: {
-                    algo: 'volatile',
-                },
-            },
-        },
+                    algo: 'volatile'
+                }
+            }
+        }
     );
 }
 
@@ -534,13 +525,13 @@ function createOutboundMessage(resourceId: string) {
         {
             topicId: 'chat',
             resourceId,
-            contextId: 'conversation-1',
+            contextId: 'conversation-1'
         },
         'peer-1',
         'chat.private-text.v1',
         {
-            text: resourceId,
-        },
+            text: resourceId
+        }
     );
 }
 
@@ -548,6 +539,6 @@ function groupRef(groupId: string) {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
-        groupId,
+        groupId
     };
 }

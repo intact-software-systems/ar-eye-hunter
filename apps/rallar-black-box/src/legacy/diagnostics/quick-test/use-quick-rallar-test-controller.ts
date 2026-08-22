@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     createDirectRallarRuntimeEvent,
     runDirectRallarGroupCreate,
@@ -8,12 +8,9 @@ import {
     runDirectRallarStatusCheck,
     runDirectRallarWsSend,
     runDirectRallarWsSubscribe,
-    type DirectRallarOperationResult,
+    type DirectRallarOperationResult
 } from '../../../direct-rallar-operations.ts';
-import {
-    type RallarBlackBoxBootstrapConfig,
-    rallarBlackBoxRuntimeStore,
-} from '../../../runtime-store.ts';
+import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { loadBrowserRallarFacade } from '../../rallar/load-browser-rallar-facade.ts';
 import { optionalNumber } from '../../shared/finite-number.ts';
 import { recordValue as optionalRecord } from '../../shared/record-value.ts';
@@ -24,7 +21,7 @@ import type { RallarBrowserStatusSummary } from '../../shell/rallar-browser-stat
 import type {
     QuickRallarReceivedMessageRow,
     QuickRallarSubscriptionState,
-    QuickRallarValues,
+    QuickRallarValues
 } from './quick-rallar-contracts.ts';
 import { QUICK_RALLAR_DEFAULT_VALUES } from './quick-rallar-defaults.ts';
 
@@ -36,7 +33,7 @@ export type UseQuickRallarTestControllerInput = Readonly<{
     browserStatus: RallarBrowserStatusSummary;
     onGlobalValueChange<K extends keyof CommandCenterGlobalValues>(
         key: K,
-        value: CommandCenterGlobalValues[K],
+        value: CommandCenterGlobalValues[K]
     ): void;
 }>;
 
@@ -46,33 +43,26 @@ export function useQuickRallarTestController({
     authSession,
     globalValues,
     browserStatus,
-    onGlobalValueChange,
+    onGlobalValueChange
 }: UseQuickRallarTestControllerInput) {
     const [values, setValues] = useState<QuickRallarValues>(() => ({
         ...QUICK_RALLAR_DEFAULT_VALUES,
-        contextId: globalValues.roomId || 'room',
+        contextId: globalValues.roomId || 'room'
     }));
     const [busyAction, setBusyAction] = useState<string | undefined>();
     const [localError, setLocalError] = useState<string | undefined>();
-    const [lastResult, setLastResult] = useState<
-        DirectRallarOperationResult | undefined
-    >();
-    const [subscription, setSubscription] = useState<
-        QuickRallarSubscriptionState | undefined
-    >();
-    const [receivedMessages, setReceivedMessages] = useState<
-        readonly QuickRallarReceivedMessageRow[]
-    >([]);
+    const [lastResult, setLastResult] = useState<DirectRallarOperationResult | undefined>();
+    const [subscription, setSubscription] = useState<QuickRallarSubscriptionState | undefined>();
+    const [receivedMessages, setReceivedMessages] = useState<readonly QuickRallarReceivedMessageRow[]>([]);
     const [waitStatus, setWaitStatus] = useState('idle');
     const subscriptionRef = useRef<QuickRallarSubscriptionState | undefined>(
-        undefined,
+        undefined
     );
     const receivedCountRef = useRef(0);
     const previousGlobalGroupRef = useRef(globalValues.roomId);
     const providerMode = bootstrap.providerMode;
     const realBackendReady = providerMode === 'browser-rallar';
-    const canUseDirectRallar =
-        realBackendReady && Boolean(authSession) && !busyAction;
+    const canUseDirectRallar = realBackendReady && Boolean(authSession) && !busyAction;
     const activeGroupId = globalValues.roomId.trim();
     const activeTypeId = values.typeId.trim();
     const activeTopicId = values.topicId.trim() || activeTypeId;
@@ -82,12 +72,13 @@ export function useQuickRallarTestController({
         try {
             return {
                 ok: true as const,
-                value: JSON.parse(values.payloadText) as unknown,
+                value: JSON.parse(values.payloadText) as unknown
             };
-        } catch (error) {
+        }
+        catch (error) {
             return {
                 ok: false as const,
-                error: error instanceof Error ? error.message : String(error),
+                error: error instanceof Error ? error.message : String(error)
             };
         }
     }, [values.payloadText]);
@@ -104,7 +95,7 @@ export function useQuickRallarTestController({
         () => () => {
             subscriptionRef.current?.unsubscribe();
         },
-        [],
+        []
     );
 
     useEffect(() => {
@@ -117,33 +108,30 @@ export function useQuickRallarTestController({
 
             return {
                 ...current,
-                contextId: globalValues.roomId || 'room',
+                contextId: globalValues.roomId || 'room'
             };
         });
     }, [globalValues.roomId]);
 
-    const operationContext = (): Parameters<
-        typeof runDirectRallarStatusCheck
-    >[0] => ({
+    const operationContext = (): Parameters<typeof runDirectRallarStatusCheck>[0] => ({
         providerMode,
         apiBaseUrl: globalValues.apiBaseUrl,
         applicationId: globalValues.applicationId,
         workspaceId: globalValues.workspaceId,
         roomId: activeGroupId,
-        actor:
-            authSession?.username ?? authSession?.clientId ?? bootstrap.actor,
+        actor: authSession?.username ?? authSession?.clientId ?? bootstrap.actor,
         connection: 'quick-test',
         authSession,
-        timeoutMs: values.timeoutMs,
+        timeoutMs: values.timeoutMs
     });
 
     const updateValue = <K extends keyof QuickRallarValues>(
         key: K,
-        value: QuickRallarValues[K],
+        value: QuickRallarValues[K]
     ): void => {
         setValues((current) => ({
             ...current,
-            [key]: value,
+            [key]: value
         }));
     };
 
@@ -152,17 +140,16 @@ export function useQuickRallarTestController({
         onGlobalValueChange('roomId', groupId);
         setValues((current) => ({
             ...current,
-            contextId:
-                !current.contextId || current.contextId === previousGroupId
-                    ? groupId || 'room'
-                    : current.contextId,
+            contextId: !current.contextId || current.contextId === previousGroupId
+                ? groupId || 'room'
+                : current.contextId
         }));
     };
 
     const recordDirectResult = (
         result: DirectRallarOperationResult,
         completedAction: string,
-        failedAction: string,
+        failedAction: string
     ): void => {
         result.events.forEach((event) => {
             rallarBlackBoxRuntimeStore.recordRuntimeEvent(event);
@@ -173,8 +160,7 @@ export function useQuickRallarTestController({
                 topic: `rallar.direct.quick.${result.kind}.${result.status}`,
                 transport: result.kind.startsWith('ws.') ? 'ws' : undefined,
                 severity: result.status === 'failed' ? 'error' : 'info',
-                actor:
-                    authSession?.username ??
+                actor: authSession?.username ??
                     authSession?.clientId ??
                     bootstrap.actor,
                 payload: {
@@ -184,12 +170,12 @@ export function useQuickRallarTestController({
                     selector: {
                         typeId: activeTypeId,
                         topicId: activeTopicId,
-                        contextId: activeContextId,
+                        contextId: activeContextId
                     },
-                    error: result.error,
-                },
+                    error: result.error
+                }
             },
-            result.status === 'failed' ? failedAction : completedAction,
+            result.status === 'failed' ? failedAction : completedAction
         );
         setLastResult(result);
         if (result.status === 'failed') {
@@ -202,7 +188,7 @@ export function useQuickRallarTestController({
         action: () => Promise<DirectRallarOperationResult>,
         completedAction: string,
         failedAction: string,
-        onCompleted?: (result: DirectRallarOperationResult) => void,
+        onCompleted?: (result: DirectRallarOperationResult) => void
     ): Promise<void> => {
         setBusyAction(busyLabel);
         setLocalError(undefined);
@@ -212,11 +198,13 @@ export function useQuickRallarTestController({
             if (result.status === 'completed') {
                 onCompleted?.(result);
             }
-        } catch (error) {
+        }
+        catch (error) {
             setLocalError(
-                error instanceof Error ? error.message : String(error),
+                error instanceof Error ? error.message : String(error)
             );
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -227,18 +215,18 @@ export function useQuickRallarTestController({
             () =>
                 runDirectRallarGroupCreate(
                     operationContext(),
-                    loadBrowserRallarFacade,
+                    loadBrowserRallarFacade
                 ),
             'Quick Test group created and joined',
             'Quick Test group create failed',
             (result) => {
                 const groupId = stringValue(
-                    optionalRecord(result.value).groupId,
+                    optionalRecord(result.value).groupId
                 );
                 if (groupId) {
                     updateGroupId(groupId);
                 }
-            },
+            }
         );
 
     const joinGroup = (): Promise<void> =>
@@ -247,22 +235,21 @@ export function useQuickRallarTestController({
             () =>
                 runDirectRallarGroupJoin(
                     operationContext(),
-                    loadBrowserRallarFacade,
+                    loadBrowserRallarFacade
                 ),
             'Quick Test group joined',
-            'Quick Test group join failed',
+            'Quick Test group join failed'
         );
 
     const messageRowFromRallarMessage = (
-        message: Record<string, unknown>,
+        message: Record<string, unknown>
     ): QuickRallarReceivedMessageRow => {
         const nestedMessage = optionalRecord(message.message);
-        const payload =
-            'payload' in message
-                ? message.payload
-                : 'payload' in nestedMessage
-                  ? nestedMessage.payload
-                  : message;
+        const payload = 'payload' in message
+            ? message.payload
+            : 'payload' in nestedMessage
+            ? nestedMessage.payload
+            : message;
         return {
             rowId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
             atEpochMs: optionalNumber(message.receivedAtEpochMs) ?? Date.now(),
@@ -273,28 +260,28 @@ export function useQuickRallarTestController({
                     message.groupId ??
                     nestedMessage.roomId ??
                     activeGroupId ??
-                    '-',
+                    '-'
             ),
             typeId: String(
-                message.typeId ?? nestedMessage.typeId ?? activeTypeId ?? '-',
+                message.typeId ?? nestedMessage.typeId ?? activeTypeId ?? '-'
             ),
             topicId: String(
                 message.topicId ??
                     nestedMessage.topicId ??
                     activeTopicId ??
-                    '-',
+                    '-'
             ),
             contextId: String(
                 message.contextId ??
                     nestedMessage.contextId ??
                     activeContextId ??
-                    '-',
+                    '-'
             ),
             resourceId: String(
-                message.resourceId ?? nestedMessage.resourceId ?? '-',
+                message.resourceId ?? nestedMessage.resourceId ?? '-'
             ),
             payload,
-            raw: message,
+            raw: message
         };
     };
 
@@ -314,7 +301,7 @@ export function useQuickRallarTestController({
         const context = operationContext();
         const selector = {
             typeId: activeTypeId,
-            ...(activeTopicId ? { topicId: activeTopicId } : {}),
+            ...(activeTopicId ? { topicId: activeTopicId } : {})
         };
         try {
             const result = await runDirectRallarWsSubscribe(
@@ -322,9 +309,7 @@ export function useQuickRallarTestController({
                 selector,
                 (message) => {
                     const row = messageRowFromRallarMessage(message);
-                    setReceivedMessages((current) =>
-                        [...current, row].slice(-50),
-                    );
+                    setReceivedMessages((current) => [...current, row].slice(-50));
                     rallarBlackBoxRuntimeStore.recordRuntimeEvent(
                         createDirectRallarRuntimeEvent({
                             kind: 'message',
@@ -339,18 +324,18 @@ export function useQuickRallarTestController({
                                 contextId: row.contextId,
                                 resourceId: row.resourceId,
                                 payload: row.payload,
-                                raw: row.raw,
-                            },
+                                raw: row.raw
+                            }
                         }),
-                        'Quick Test WS message received',
+                        'Quick Test WS message received'
                     );
                 },
-                loadBrowserRallarFacade,
+                loadBrowserRallarFacade
             );
             recordDirectResult(
                 result,
                 'Quick Test WS subscribed',
-                'Quick Test WS subscribe failed',
+                'Quick Test WS subscribe failed'
             );
             if (result.status === 'completed' && result.unsubscribe) {
                 setSubscription({
@@ -358,15 +343,17 @@ export function useQuickRallarTestController({
                     label: selectorLabel,
                     groupId: activeGroupId,
                     subscribedAtEpochMs: Date.now(),
-                    unsubscribe: result.unsubscribe,
+                    unsubscribe: result.unsubscribe
                 });
                 setWaitStatus('subscribed');
             }
-        } catch (error) {
+        }
+        catch (error) {
             setLocalError(
-                error instanceof Error ? error.message : String(error),
+                error instanceof Error ? error.message : String(error)
             );
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -382,10 +369,10 @@ export function useQuickRallarTestController({
                 transport: 'ws',
                 payload: {
                     groupId: activeGroupId,
-                    selector: selectorLabel,
-                },
+                    selector: selectorLabel
+                }
             }),
-            'Quick Test WS unsubscribed',
+            'Quick Test WS unsubscribed'
         );
     };
 
@@ -409,12 +396,12 @@ export function useQuickRallarTestController({
                         topicId: activeTopicId,
                         contextId: activeContextId,
                         resourceId: values.resourceId.trim() || undefined,
-                        payload: payloadResult.value,
+                        payload: payloadResult.value
                     },
-                    loadBrowserRallarFacade,
+                    loadBrowserRallarFacade
                 ),
             'Quick Test WS JSON sent',
-            'Quick Test WS send failed',
+            'Quick Test WS send failed'
         );
     };
 
@@ -436,8 +423,8 @@ export function useQuickRallarTestController({
                         window.clearInterval(interval);
                         reject(
                             new Error(
-                                'Timed out waiting for a Quick Test WebSocket receive.',
-                            ),
+                                'Timed out waiting for a Quick Test WebSocket receive.'
+                            )
                         );
                     }
                 }, 100);
@@ -450,14 +437,14 @@ export function useQuickRallarTestController({
                     transport: 'ws',
                     payload: {
                         waitedMs: Date.now() - startedAt,
-                        receivedCount: receivedCountRef.current,
-                    },
+                        receivedCount: receivedCountRef.current
+                    }
                 }),
-                'Quick Test receive observed',
+                'Quick Test receive observed'
             );
-        } catch (error) {
-            const message =
-                error instanceof Error ? error.message : String(error);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
             setWaitStatus('timeout');
             setLocalError(message);
             rallarBlackBoxRuntimeStore.recordRuntimeEvent(
@@ -469,12 +456,13 @@ export function useQuickRallarTestController({
                     payload: {
                         waitedMs: Date.now() - startedAt,
                         receivedCount: receivedCountRef.current,
-                        error: message,
-                    },
+                        error: message
+                    }
                 }),
-                'Quick Test receive timed out',
+                'Quick Test receive timed out'
             );
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -489,36 +477,34 @@ export function useQuickRallarTestController({
                         applicationId: globalValues.applicationId,
                         workspaceId: globalValues.workspaceId,
                         groupId: activeGroupId,
-                        actor:
-                            authSession?.username ??
+                        actor: authSession?.username ??
                             authSession?.clientId ??
                             bootstrap.actor,
-                        sessionId: authSession?.sessionId,
+                        sessionId: authSession?.sessionId
                     },
                     values,
                     selector: {
                         typeId: activeTypeId,
                         topicId: activeTopicId,
-                        contextId: activeContextId,
+                        contextId: activeContextId
                     },
                     browserStatus,
                     subscription: subscription
                         ? {
-                              transport: subscription.transport,
-                              label: subscription.label,
-                              groupId: subscription.groupId,
-                              subscribedAtEpochMs:
-                                  subscription.subscribedAtEpochMs,
-                          }
+                            transport: subscription.transport,
+                            label: subscription.label,
+                            groupId: subscription.groupId,
+                            subscribedAtEpochMs: subscription.subscribedAtEpochMs
+                        }
                         : undefined,
                     waitStatus,
                     localError,
                     lastResult,
-                    receivedMessages: receivedMessages.slice(-8),
+                    receivedMessages: receivedMessages.slice(-8)
                 },
                 state,
-                authSession,
-            ),
+                authSession
+            )
         );
     };
 
@@ -533,7 +519,7 @@ export function useQuickRallarTestController({
                         'provider=browser-rallar',
                         'logged-in browser session',
                         'Rallar Server API reachable',
-                        'receiver browser subscribed to same group/type/topic',
+                        'receiver browser subscribed to same group/type/topic'
                     ],
                     continueOnFailure: false,
                     commands: [
@@ -544,8 +530,7 @@ export function useQuickRallarTestController({
                                 runId: 'rallar-quick-test-export',
                                 apiBaseUrl: globalValues.apiBaseUrl,
                                 actor: authSession?.username ?? bootstrap.actor,
-                                sessionId:
-                                    authSession?.sessionId ??
+                                sessionId: authSession?.sessionId ??
                                     globalValues.sessionId,
                                 roomId: activeGroupId,
                                 providerMode,
@@ -554,15 +539,14 @@ export function useQuickRallarTestController({
                                     applicationId: globalValues.applicationId,
                                     workspaceId: globalValues.workspaceId,
                                     roomRef: {
-                                        applicationId:
-                                            globalValues.applicationId,
+                                        applicationId: globalValues.applicationId,
                                         workspaceId: globalValues.workspaceId,
-                                        groupId: activeGroupId,
+                                        groupId: activeGroupId
                                     },
                                     typeId: activeTypeId,
-                                    topicId: activeTopicId,
-                                },
-                            },
+                                    topicId: activeTopicId
+                                }
+                            }
                         },
                         {
                             kind: 'ws.send',
@@ -574,25 +558,22 @@ export function useQuickRallarTestController({
                                 typeId: activeTypeId,
                                 topicId: activeTopicId,
                                 contextId: activeContextId,
-                                payload,
+                                payload
                             },
-                            timeoutMs: values.timeoutMs,
-                        },
-                    ],
+                            timeoutMs: values.timeoutMs
+                        }
+                    ]
                 },
                 state,
-                authSession,
-            ),
+                authSession
+            )
         );
     };
 
-    const setupComplete =
-        realBackendReady && Boolean(authSession) && Boolean(activeGroupId);
+    const setupComplete = realBackendReady && Boolean(authSession) && Boolean(activeGroupId);
     const subscribed = Boolean(subscription);
-    const sendComplete =
-        lastResult?.kind === 'ws.send' && lastResult.status === 'completed';
-    const verifyComplete =
-        receivedMessages.length > 0 || waitStatus === 'message observed';
+    const sendComplete = lastResult?.kind === 'ws.send' && lastResult.status === 'completed';
+    const verifyComplete = receivedMessages.length > 0 || waitStatus === 'message observed';
     const workflowSteps: readonly Readonly<{
         id: string;
         label: string;
@@ -605,11 +586,11 @@ export function useQuickRallarTestController({
             detail: !realBackendReady
                 ? 'real backend required'
                 : !authSession
-                  ? 'login required'
-                  : activeGroupId
-                    ? activeGroupId
-                    : 'group required',
-            state: setupComplete ? 'done' : 'current',
+                ? 'login required'
+                : activeGroupId
+                ? activeGroupId
+                : 'group required',
+            state: setupComplete ? 'done' : 'current'
         },
         {
             id: 'subscribe',
@@ -618,8 +599,8 @@ export function useQuickRallarTestController({
             state: subscribed
                 ? 'done'
                 : setupComplete && activeTypeId
-                  ? 'current'
-                  : 'blocked',
+                ? 'current'
+                : 'blocked'
         },
         {
             id: 'send',
@@ -628,10 +609,10 @@ export function useQuickRallarTestController({
             state: sendComplete
                 ? 'done'
                 : setupComplete && payloadResult.ok
-                  ? 'current'
-                  : setupComplete
-                    ? 'blocked'
-                    : 'pending',
+                ? 'current'
+                : setupComplete
+                ? 'blocked'
+                : 'pending'
         },
         {
             id: 'verify',
@@ -642,9 +623,9 @@ export function useQuickRallarTestController({
             state: verifyComplete
                 ? 'done'
                 : sendComplete || subscribed
-                  ? 'current'
-                  : 'pending',
-        },
+                ? 'current'
+                : 'pending'
+        }
     ];
 
     return {
@@ -675,10 +656,8 @@ export function useQuickRallarTestController({
         copyRunnerRecipe,
         setupComplete,
         subscribed,
-        workflowSteps,
+        workflowSteps
     };
 }
 
-export type QuickRallarTestControllerModel = ReturnType<
-    typeof useQuickRallarTestController
->;
+export type QuickRallarTestControllerModel = ReturnType<typeof useQuickRallarTestController>;

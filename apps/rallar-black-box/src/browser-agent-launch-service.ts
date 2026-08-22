@@ -1,16 +1,8 @@
-import type {
-    AgentSessionTicketRequest,
-    AgentSessionTicketResponse,
-    AuthSession,
-} from '@shared/api/api-config.ts';
 import type { RallarBlackBoxProviderMode } from '@shared-test/rallar-bb-test/client-defaults.ts';
 import type { ControlRunToken } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import type {
-    RallarBlackBoxDistributedGroupRef,
-} from '@shared-test/rallar-bb-test/distributed-run.ts';
-import {
-    issueAgentSessionTicketsAt,
-} from '@shared-web/browser/auth/agent-session-ticket-http-api.ts';
+import type { RallarBlackBoxDistributedGroupRef } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import { issueAgentSessionTicketsAt } from '@shared-web/browser/auth/agent-session-ticket-http-api.ts';
+import type { AgentSessionTicketRequest, AgentSessionTicketResponse, AuthSession } from '@shared/api/api-config.ts';
 import { createRunnerAgentLaunchUrl } from './runner-agent-launch.ts';
 
 export type BrowserAgentLaunchRequest = Readonly<{
@@ -40,7 +32,7 @@ type IssueRunToken = (
         runId: string;
         agentId: string;
         signal?: AbortSignal;
-    }>,
+    }>
 ) => Promise<ControlRunToken>;
 
 type IssueAgentTickets = (
@@ -50,7 +42,7 @@ type IssueAgentTickets = (
         requestId: string;
         authSession: AuthSession;
         signal?: AbortSignal;
-    }>,
+    }>
 ) => Promise<AgentSessionTicketResponse>;
 
 export function createBrowserAgentLaunchService(
@@ -65,7 +57,7 @@ export function createBrowserAgentLaunchService(
         allowSharedControlToken?: boolean;
         issueRunToken: IssueRunToken;
         issueAgentTickets?: IssueAgentTickets;
-    }>,
+    }>
 ): BrowserAgentLaunchService {
     return {
         async prepare(input) {
@@ -77,20 +69,20 @@ export function createBrowserAgentLaunchService(
                 const token = await config.issueRunToken({
                     runId,
                     agentId,
-                    signal: input.signal,
+                    signal: input.signal
                 });
                 validateRunToken(
                     token,
                     runId,
                     agentId,
-                    config.allowAnonymousControlToken === true,
+                    config.allowAnonymousControlToken === true
                 );
                 return token;
             }));
             if (!config.allowSharedControlToken) {
                 assertUniqueAuthority(
                     tokens.map((token) => token.token).filter(Boolean),
-                    'Control tokens',
+                    'Control tokens'
                 );
             }
 
@@ -118,23 +110,23 @@ export function createBrowserAgentLaunchService(
                             actor: ticket ? config.authSession?.username : agentId,
                             sessionId: ticket ? ticket.sessionId : `${agentId}-session`,
                             controlToken: token.token,
-                            agentSessionTicket: ticket?.ticket,
+                            agentSessionTicket: ticket?.ticket
                         }),
                         expiresAtEpochMs: Math.min(
                             token.expiresAtEpochMs,
-                            ticket?.expiresAtEpochMs ?? Number.POSITIVE_INFINITY,
-                        ),
+                            ticket?.expiresAtEpochMs ?? Number.POSITIVE_INFINITY
+                        )
                     };
-                }),
+                })
             };
-        },
+        }
     };
 }
 
 async function issueTickets(
     config: Parameters<typeof createBrowserAgentLaunchService>[0],
     agentIds: readonly string[],
-    signal: AbortSignal | undefined,
+    signal: AbortSignal | undefined
 ) {
     if (
         config.providerMode !== 'browser-rallar' ||
@@ -144,7 +136,7 @@ async function issueTickets(
     }
     if (!config.authSession) {
         throw new Error(
-            'Browser-rallar agent launch requires a valid logged-in operator session.',
+            'Browser-rallar agent launch requires a valid logged-in operator session.'
         );
     }
     const response = await (config.issueAgentTickets ?? issueAgentSessionTicketsAt)(
@@ -153,15 +145,15 @@ async function issueTickets(
         {
             requestId: crypto.randomUUID(),
             authSession: config.authSession,
-            signal,
-        },
+            signal
+        }
     );
     const tickets = new Map(
-        response.tickets.map((ticket) => [ticket.agentId, ticket] as const),
+        response.tickets.map((ticket) => [ticket.agentId, ticket] as const)
     );
     if (response.tickets.length !== agentIds.length || tickets.size !== agentIds.length) {
         throw new Error(
-            'Agent session ticket response must contain one unique ticket per requested agent.',
+            'Agent session ticket response must contain one unique ticket per requested agent.'
         );
     }
     for (const agentId of agentIds) {
@@ -178,17 +170,17 @@ async function issueTickets(
     for (const ticket of response.tickets) {
         if (!agentIds.includes(ticket.agentId)) {
             throw new Error(
-                `Agent session ticket response contains unexpected agent ${ticket.agentId}.`,
+                `Agent session ticket response contains unexpected agent ${ticket.agentId}.`
             );
         }
     }
     assertUniqueAuthority(
         response.tickets.map((ticket) => ticket.ticket),
-        'Agent session tickets',
+        'Agent session tickets'
     );
     assertUniqueAuthority(
         response.tickets.map((ticket) => ticket.sessionId),
-        'Agent session IDs',
+        'Agent session IDs'
     );
     return tickets;
 }
@@ -211,18 +203,20 @@ function validatedAgentIds(values: readonly string[]): readonly string[] {
 }
 
 function validatedGroup(
-    value: RallarBlackBoxDistributedGroupRef,
+    value: RallarBlackBoxDistributedGroupRef
 ): RallarBlackBoxDistributedGroupRef {
     return {
         applicationId: requiredId(value.applicationId, 'Application ID'),
         workspaceId: requiredId(value.workspaceId, 'Workspace ID'),
-        groupId: requiredId(value.groupId, 'Group ID'),
+        groupId: requiredId(value.groupId, 'Group ID')
     };
 }
 
 function requiredId(value: string, label: string): string {
     const trimmed = value.trim();
-    if (!trimmed) throw new Error(`${label} is required.`);
+    if (!trimmed) {
+        throw new Error(`${label} is required.`);
+    }
     return trimmed;
 }
 
@@ -230,7 +224,7 @@ function validateRunToken(
     token: ControlRunToken,
     runId: string,
     agentId: string,
-    allowAnonymous: boolean,
+    allowAnonymous: boolean
 ): void {
     if (
         token.runId !== runId ||
@@ -241,7 +235,7 @@ function validateRunToken(
         token.expiresAtEpochMs <= token.issuedAtEpochMs
     ) {
         throw new Error(
-            `Control token response does not match requested run ${runId} and agent ${agentId}.`,
+            `Control token response does not match requested run ${runId} and agent ${agentId}.`
         );
     }
 }

@@ -1,16 +1,9 @@
-import type {
-    GroupMember,
-    GroupMemberStatus,
-    GroupPresenceSession,
-} from '../api/group-types.ts';
-import type {
-    RallarMatchParticipant,
-    RallarMatchParticipantsInput,
-} from './types.ts';
+import type { GroupMember, GroupMemberStatus, GroupPresenceSession } from '../api/group-types.ts';
 import { compareRallarMatchOrdinalStrings } from './internal.ts';
+import type { RallarMatchParticipant, RallarMatchParticipantsInput } from './types.ts';
 
 export function deriveRallarMatchParticipants(
-    input: RallarMatchParticipantsInput,
+    input: RallarMatchParticipantsInput
 ): readonly RallarMatchParticipant[] {
     if (input.members) {
         return Array.from(input.members).sort(compareParticipants);
@@ -32,7 +25,7 @@ export function deriveRallarMatchParticipants(
                 principalId: member.principalId,
                 role: member.role,
                 status: member.status,
-                sessionIds,
+                sessionIds
             };
 
             return {
@@ -43,14 +36,14 @@ export function deriveRallarMatchParticipants(
                 role: member.role,
                 status: member.status,
                 online: sessionIds.length > 0,
-                sessionIds,
+                sessionIds
             } satisfies RallarMatchParticipant;
         })
         .sort(compareParticipants);
 }
 
 function groupSessionsByPrincipal(
-    sessions: readonly Pick<GroupPresenceSession, 'principalId' | 'sessionId'>[],
+    sessions: readonly Pick<GroupPresenceSession, 'principalId' | 'sessionId'>[]
 ): ReadonlyMap<string, readonly string[]> {
     const grouped = new Map<string, string[]>();
     for (const session of sessions) {
@@ -68,11 +61,11 @@ function groupSessionsByPrincipal(
 
 function compareParticipants(
     left: Pick<RallarMatchParticipant, 'participantId'>,
-    right: Pick<RallarMatchParticipant, 'participantId'>,
+    right: Pick<RallarMatchParticipant, 'participantId'>
 ): number {
     return compareRallarMatchOrdinalStrings(
         left.participantId,
-        right.participantId,
+        right.participantId
     );
 }
 
@@ -80,5 +73,4 @@ export function isActiveGroupMemberStatus(status: GroupMemberStatus): boolean {
     return status === 'active';
 }
 
-export type RallarMatchParticipantMemberInput =
-    Pick<GroupMember, 'principalId' | 'role' | 'status'>;
+export type RallarMatchParticipantMemberInput = Pick<GroupMember, 'principalId' | 'role' | 'status'>;

@@ -37,7 +37,7 @@ export function isAllowedToAddTask(tasksInFlight: readonly TrackedTask[], maxCon
 export async function waitForAll(
     tasks: readonly TrackedTask[],
     maxWaitMs: number,
-    opts: { sleep?: SleepFn; nowMs?: NowMsFn; pollIntervalMs?: number } = {},
+    opts: { sleep?: SleepFn; nowMs?: NowMsFn; pollIntervalMs?: number; } = {}
 ): Promise<TrackedTask[]> {
     const sleep = opts.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));
     const nowMs = opts.nowMs ?? (() => Date.now());
@@ -46,11 +46,15 @@ export async function waitForAll(
     const deadline = nowMs() + maxWaitMs;
 
     // quick exit
-    if (tasks.every((t) => t.done)) return [];
+    if (tasks.every((t) => t.done)) {
+        return [];
+    }
 
     while (nowMs() < deadline) {
         const remaining = tasks.filter((t) => !t.done);
-        if (remaining.length === 0) return [];
+        if (remaining.length === 0) {
+            return [];
+        }
         await sleep(poll);
     }
 
@@ -61,7 +65,7 @@ export async function waitForAll(
 export function toExponentialBackoffMs(
     attempt: number,
     maxBackoffMs: number,
-    baseMs = 10,
+    baseMs = 10
 ): number {
     // base * 2^(attempt-1), capped
     const raw = baseMs * Math.pow(2, Math.max(0, attempt - 1));
@@ -109,7 +113,7 @@ export function submitAsyncTasks(input: SubmitAsyncTasksInputDto): SubmitAsyncTa
 
     return {
         tasksInFlight: active.concat(created),
-        tasksCreated: toCreate,
+        tasksCreated: toCreate
     };
 }
 
@@ -153,7 +157,9 @@ export async function runLoopWhileWork(input: LoopInputDto): Promise<LoopCompute
         let isWork = true;
         if (allowed) {
             isWork = await input.isWork();
-            if (!isWork) break;
+            if (!isWork) {
+                break;
+            }
         }
 
         if (allowed) {
@@ -161,7 +167,7 @@ export async function runLoopWhileWork(input: LoopInputDto): Promise<LoopCompute
                 runnable: input.runnable,
                 ongoingTasks: tasksInFlight,
                 maxConcurrency: maxConc,
-                executor: input.executor,
+                executor: input.executor
             });
 
             tasksInFlight = computed.tasksInFlight;
@@ -169,12 +175,14 @@ export async function runLoopWhileWork(input: LoopInputDto): Promise<LoopCompute
 
             if (computed.tasksCreated > 0) {
                 numSuccessiveNoTasksCreated = 0;
-            } else {
+            }
+            else {
                 numSuccessiveNoTasksCreated++;
                 const backoff = toExponentialBackoffMs(numSuccessiveNoTasksCreated, input.maxBackoffMs);
                 await sleep(backoff);
             }
-        } else {
+        }
+        else {
             tasksInFlight = filterOutFinishedTasks(tasksInFlight);
             numSuccessiveNoTasksCreated++;
             const backoff = toExponentialBackoffMs(numSuccessiveNoTasksCreated, input.maxBackoffMs);
@@ -186,7 +194,7 @@ export async function runLoopWhileWork(input: LoopInputDto): Promise<LoopCompute
         tasksInFlight,
         tasksCreatedTotal,
         numIsWorkIterations: numIsWorkIterations - 1,
-        numNoTasksCreatedIterations: numSuccessiveNoTasksCreated,
+        numNoTasksCreatedIterations: numSuccessiveNoTasksCreated
     };
 }
 
@@ -231,7 +239,7 @@ export async function runLoopsWhileWork(input: LoopsInputDto): Promise<LoopsComp
     const tasks: LoopsComputedTaskDto[] = input.tasks.map((t) => ({
         inputTask: t,
         tasksInFlight: filterOutFinishedTasks(t.ongoingTasks),
-        tasksCreated: 0,
+        tasksCreated: 0
     }));
 
     let numIsWorkIterations = 0;
@@ -241,8 +249,7 @@ export async function runLoopsWhileWork(input: LoopsInputDto): Promise<LoopsComp
     while (
         numIsWorkIterations <= input.maxIsWorkIterations &&
         numSuccessiveNoTasksCreated <= input.maxSuccessiveNoTasksCreated
-        ) {
-
+    ) {
         numIsWorkIterations++;
 
         // one "round" across all tasks
@@ -257,12 +264,13 @@ export async function runLoopsWhileWork(input: LoopsInputDto): Promise<LoopsComp
                     runnable: ct.inputTask.runnable,
                     ongoingTasks: ct.tasksInFlight,
                     maxConcurrency: maxConc,
-                    executor: ct.inputTask.executor,
+                    executor: ct.inputTask.executor
                 });
                 ct.tasksInFlight = computed.tasksInFlight;
                 ct.tasksCreated = computed.tasksCreated;
                 createdThisRound += computed.tasksCreated;
-            } else {
+            }
+            else {
                 ct.tasksInFlight = filterOutFinishedTasks(ct.tasksInFlight);
                 ct.tasksCreated = 0;
             }
@@ -272,7 +280,8 @@ export async function runLoopsWhileWork(input: LoopsInputDto): Promise<LoopsComp
 
         if (createdThisRound > 0) {
             numSuccessiveNoTasksCreated = 0;
-        } else {
+        }
+        else {
             numSuccessiveNoTasksCreated++;
             if (
                 numIsWorkIterations > input.maxIsWorkIterations ||

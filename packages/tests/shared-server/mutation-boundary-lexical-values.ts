@@ -1,346 +1,392 @@
-import {
-  createMutationBoundaryLexicalBindings,
-  type MutationBoundaryLexicalBindings,
-} from './mutation-boundary-lexical-bindings.ts';
+import { createMutationBoundaryLexicalBindings, type MutationBoundaryLexicalBindings } from './mutation-boundary-lexical-bindings.ts';
 
-type AstNode = { readonly type: string; readonly [key: string]: unknown };
+type AstNode = { readonly type: string; readonly [key: string]: unknown; };
 
 interface LexicalWrite {
-  readonly position: number;
-  readonly value?: AstNode;
-  readonly conditional: boolean;
+    readonly position: number;
+    readonly value?: AstNode;
+    readonly conditional: boolean;
 }
 
 export interface LexicalImportBinding {
-  readonly imported: string;
-  readonly source: string;
-  readonly namespace: boolean;
+    readonly imported: string;
+    readonly source: string;
+    readonly namespace: boolean;
 }
 
 export interface LexicalValueResolution {
-  readonly values: readonly AstNode[];
-  readonly unknown: boolean;
+    readonly values: readonly AstNode[];
+    readonly unknown: boolean;
 }
 
 export interface MutationBoundaryLexicalValues {
-  readonly bindings: MutationBoundaryLexicalBindings;
-  resolveIdentifier(value: unknown, position?: number): LexicalValueResolution;
-  importBinding(value: unknown): LexicalImportBinding | undefined;
+    readonly bindings: MutationBoundaryLexicalBindings;
+    resolveIdentifier(value: unknown, position?: number): LexicalValueResolution;
+    importBinding(value: unknown): LexicalImportBinding | undefined;
 }
 
 interface MutationBoundaryLexicalOverlay {
-  readonly overrides: ReadonlyMap<string, LexicalValueResolution>;
-  readonly root: MutationBoundaryLexicalValues;
+    readonly overrides: ReadonlyMap<string, LexicalValueResolution>;
+    readonly root: MutationBoundaryLexicalValues;
 }
 
 const LEXICAL_OVERLAYS = new WeakMap<object, MutationBoundaryLexicalOverlay>();
 
 export function createMutationBoundaryLexicalValues(
-  program: AstNode,
+    program: AstNode
 ): MutationBoundaryLexicalValues {
-  const bindings = createMutationBoundaryLexicalBindings(program);
-  const programFunctionKey = bindings.functionKey(program);
-  const writes = new Map<string, LexicalWrite[]>();
-  const imports = new Map<string, LexicalImportBinding>();
+    const bindings = createMutationBoundaryLexicalBindings(program);
+    const programFunctionKey = bindings.functionKey(program);
+    const writes = new Map<string, LexicalWrite[]>();
+    const imports = new Map<string, LexicalImportBinding>();
 
-  const append = (
-    target: unknown,
-    value: unknown,
-    position: number,
-    conditional: boolean,
-  ): void => {
-    const key = bindings.identifierKey(target);
-    if (!key) return;
-    const entries = writes.get(key) ?? [];
-    entries.push({ position, value: asNode(value), conditional });
-    writes.set(key, entries);
-  };
-
-  const scan = (value: unknown, conditional = false): void => {
-    if (!value || typeof value !== 'object') return;
-    if (Array.isArray(value)) {
-      for (const child of value) scan(child, conditional);
-      return;
-    }
-    const node = value as AstNode;
-    if (node.type === 'ImportDeclaration') {
-      for (const specifier of asNodes(node.specifiers)) {
-        const local = asNode(specifier.local);
-        const key = bindings.identifierKey(local);
-        if (!key) continue;
-        imports.set(key, {
-          imported: readName(specifier.imported) || 'default',
-          source: readString(node.source),
-          namespace: specifier.type === 'ImportNamespaceSpecifier',
-        });
-      }
-    } else if (node.type === 'FunctionDeclaration') {
-      append(node.id, node, Number.NEGATIVE_INFINITY, conditional);
-      appendDefaultParameters(node, conditional, append);
-    } else if (node.type === 'VariableDeclarator') {
-      const id = asNode(node.id);
-      const position = id?.type === 'Identifier' &&
-          bindings.identifierFunctionKey(id) === programFunctionKey
-        ? Number.NEGATIVE_INFINITY
-        : positionOf(node);
-      appendPattern(node.id, node.init, position, conditional, append);
-    } else if (node.type === 'AssignmentExpression' && node.operator === '=') {
-      appendPattern(
-        node.left,
-        node.right,
-        positionOf(node),
-        conditional,
-        append,
-      );
-    } else if (isFunction(node)) {
-      appendDefaultParameters(node, conditional, append);
-    }
-    for (const [name, child] of Object.entries(node)) {
-      if (IGNORED_KEYS.has(name)) continue;
-      const branch = conditional || isConditionalChild(node, name);
-      scan(child, branch);
-    }
-  };
-  scan(program);
-  for (const entries of writes.values()) {
-    entries.sort((left, right) => left.position - right.position);
-  }
-
-  return {
-    bindings,
-    resolveIdentifier: (value, position) => {
-      const node = asNode(value);
-      if (node?.type !== 'Identifier') return { values: [], unknown: true };
-      const entries = writes.get(bindings.identifierKey(node)) ?? [];
-      const at = position ?? positionOf(node);
-      let current: readonly AstNode[] = [];
-      let unknown = true;
-      for (const entry of entries) {
-        if (entry.position > at) break;
-        if (!entry.conditional) {
-          current = entry.value ? [entry.value] : [];
-          unknown = !entry.value;
-        } else {
-          current = deduplicate(
-            entry.value ? [...current, entry.value] : current,
-          );
-          unknown = true;
+    const append = (
+        target: unknown,
+        value: unknown,
+        position: number,
+        conditional: boolean
+    ): void => {
+        const key = bindings.identifierKey(target);
+        if (!key) {
+            return;
         }
-      }
-      return { values: current, unknown };
-    },
-    importBinding: (value) => {
-      const node = asNode(value);
-      return node?.type === 'Identifier' ? imports.get(bindings.identifierKey(node)) : undefined;
-    },
-  };
+        const entries = writes.get(key) ?? [];
+        entries.push({ position, value: asNode(value), conditional });
+        writes.set(key, entries);
+    };
+
+    const scan = (value: unknown, conditional = false): void => {
+        if (!value || typeof value !== 'object') {
+            return;
+        }
+        if (Array.isArray(value)) {
+            for (const child of value) {
+                scan(child, conditional);
+            }
+            return;
+        }
+        const node = value as AstNode;
+        if (node.type === 'ImportDeclaration') {
+            for (const specifier of asNodes(node.specifiers)) {
+                const local = asNode(specifier.local);
+                const key = bindings.identifierKey(local);
+                if (!key) {
+                    continue;
+                }
+                imports.set(key, {
+                    imported: readName(specifier.imported) || 'default',
+                    source: readString(node.source),
+                    namespace: specifier.type === 'ImportNamespaceSpecifier'
+                });
+            }
+        }
+        else if (node.type === 'FunctionDeclaration') {
+            append(node.id, node, Number.NEGATIVE_INFINITY, conditional);
+            appendDefaultParameters(node, conditional, append);
+        }
+        else if (node.type === 'VariableDeclarator') {
+            const id = asNode(node.id);
+            const position = id?.type === 'Identifier' &&
+                    bindings.identifierFunctionKey(id) === programFunctionKey
+                ? Number.NEGATIVE_INFINITY
+                : positionOf(node);
+            appendPattern(node.id, node.init, position, conditional, append);
+        }
+        else if (node.type === 'AssignmentExpression' && node.operator === '=') {
+            appendPattern(
+                node.left,
+                node.right,
+                positionOf(node),
+                conditional,
+                append
+            );
+        }
+        else if (isFunction(node)) {
+            appendDefaultParameters(node, conditional, append);
+        }
+        for (const [name, child] of Object.entries(node)) {
+            if (IGNORED_KEYS.has(name)) {
+                continue;
+            }
+            const branch = conditional || isConditionalChild(node, name);
+            scan(child, branch);
+        }
+    };
+    scan(program);
+    for (const entries of writes.values()) {
+        entries.sort((left, right) => left.position - right.position);
+    }
+
+    return {
+        bindings,
+        resolveIdentifier: (value, position) => {
+            const node = asNode(value);
+            if (node?.type !== 'Identifier') {
+                return { values: [], unknown: true };
+            }
+            const entries = writes.get(bindings.identifierKey(node)) ?? [];
+            const at = position ?? positionOf(node);
+            let current: readonly AstNode[] = [];
+            let unknown = true;
+            for (const entry of entries) {
+                if (entry.position > at) {
+                    break;
+                }
+                if (!entry.conditional) {
+                    current = entry.value ? [entry.value] : [];
+                    unknown = !entry.value;
+                }
+                else {
+                    current = deduplicate(
+                        entry.value ? [...current, entry.value] : current
+                    );
+                    unknown = true;
+                }
+            }
+            return { values: current, unknown };
+        },
+        importBinding: (value) => {
+            const node = asNode(value);
+            return node?.type === 'Identifier' ? imports.get(bindings.identifierKey(node)) : undefined;
+        }
+    };
 }
 
 export function withMutationBoundaryLexicalOverrides(
-  lexical: MutationBoundaryLexicalValues,
-  overrides: ReadonlyMap<string, LexicalValueResolution>,
+    lexical: MutationBoundaryLexicalValues,
+    overrides: ReadonlyMap<string, LexicalValueResolution>
 ): MutationBoundaryLexicalValues {
-  const prior = LEXICAL_OVERLAYS.get(lexical);
-  const merged = new Map(prior?.overrides);
-  for (const [key, resolution] of overrides) merged.set(key, resolution);
-  const root = prior?.root ?? lexical;
-  const overlaid: MutationBoundaryLexicalValues = {
-    ...lexical,
-    resolveIdentifier: (value, position) => {
-      const key = lexical.bindings.identifierKey(value);
-      return merged.get(key) ?? root.resolveIdentifier(value, position);
-    },
-  };
-  LEXICAL_OVERLAYS.set(overlaid, { overrides: merged, root });
-  return overlaid;
+    const prior = LEXICAL_OVERLAYS.get(lexical);
+    const merged = new Map(prior?.overrides);
+    for (const [key, resolution] of overrides) {
+        merged.set(key, resolution);
+    }
+    const root = prior?.root ?? lexical;
+    const overlaid: MutationBoundaryLexicalValues = {
+        ...lexical,
+        resolveIdentifier: (value, position) => {
+            const key = lexical.bindings.identifierKey(value);
+            return merged.get(key) ?? root.resolveIdentifier(value, position);
+        }
+    };
+    LEXICAL_OVERLAYS.set(overlaid, { overrides: merged, root });
+    return overlaid;
 }
 
 export function withExecutedMutationBoundaryLexicalWrite(
-  lexical: MutationBoundaryLexicalValues,
-  node: AstNode,
+    lexical: MutationBoundaryLexicalValues,
+    node: AstNode
 ): MutationBoundaryLexicalValues {
-  const target = node.type === 'VariableDeclarator'
-    ? asNode(node.id)
-    : node.type === 'AssignmentExpression'
-    ? asNode(node.left)
-    : node.type === 'UpdateExpression'
-    ? asNode(node.argument)
-    : undefined;
-  if (target?.type !== 'Identifier') return lexical;
-  const key = lexical.bindings.identifierKey(target);
-  if (!key) return lexical;
-  const exact = node.type === 'VariableDeclarator' ||
-    (node.type === 'AssignmentExpression' && node.operator === '=');
-  const value = node.type === 'VariableDeclarator'
-    ? asNode(node.init)
-    : node.type === 'AssignmentExpression'
-    ? asNode(node.right)
-    : undefined;
-  return withMutationBoundaryLexicalOverrides(
-    lexical,
-    new Map([[
-      key,
-      { values: exact && value ? [value] : [], unknown: !exact || !value },
-    ]]),
-  );
+    const target = node.type === 'VariableDeclarator'
+        ? asNode(node.id)
+        : node.type === 'AssignmentExpression'
+        ? asNode(node.left)
+        : node.type === 'UpdateExpression'
+        ? asNode(node.argument)
+        : undefined;
+    if (target?.type !== 'Identifier') {
+        return lexical;
+    }
+    const key = lexical.bindings.identifierKey(target);
+    if (!key) {
+        return lexical;
+    }
+    const exact = node.type === 'VariableDeclarator' ||
+        (node.type === 'AssignmentExpression' && node.operator === '=');
+    const value = node.type === 'VariableDeclarator'
+        ? asNode(node.init)
+        : node.type === 'AssignmentExpression'
+        ? asNode(node.right)
+        : undefined;
+    return withMutationBoundaryLexicalOverrides(
+        lexical,
+        new Map([[
+            key,
+            { values: exact && value ? [value] : [], unknown: !exact || !value }
+        ]])
+    );
 }
 
 export function mutationBoundaryLexicalValuesEqual(
-  left: MutationBoundaryLexicalValues | undefined,
-  right: MutationBoundaryLexicalValues | undefined,
+    left: MutationBoundaryLexicalValues | undefined,
+    right: MutationBoundaryLexicalValues | undefined
 ): boolean {
-  if (left === right) return true;
-  if (!left || !right) return false;
-  const leftOverlay = LEXICAL_OVERLAYS.get(left);
-  const rightOverlay = LEXICAL_OVERLAYS.get(right);
-  if (!leftOverlay || !rightOverlay || leftOverlay.root !== rightOverlay.root) return false;
-  if (leftOverlay.overrides.size !== rightOverlay.overrides.size) return false;
-  return [...leftOverlay.overrides].every(([key, resolution]) => {
-    const candidate = rightOverlay.overrides.get(key);
-    return !!candidate && lexicalResolutionsEqual(resolution, candidate, left);
-  });
+    if (left === right) {
+        return true;
+    }
+    if (!left || !right) {
+        return false;
+    }
+    const leftOverlay = LEXICAL_OVERLAYS.get(left);
+    const rightOverlay = LEXICAL_OVERLAYS.get(right);
+    if (!leftOverlay || !rightOverlay || leftOverlay.root !== rightOverlay.root) {
+        return false;
+    }
+    if (leftOverlay.overrides.size !== rightOverlay.overrides.size) {
+        return false;
+    }
+    return [...leftOverlay.overrides].every(([key, resolution]) => {
+        const candidate = rightOverlay.overrides.get(key);
+        return !!candidate && lexicalResolutionsEqual(resolution, candidate, left);
+    });
 }
 
 function lexicalResolutionsEqual(
-  left: LexicalValueResolution,
-  right: LexicalValueResolution,
-  lexical: MutationBoundaryLexicalValues,
+    left: LexicalValueResolution,
+    right: LexicalValueResolution,
+    lexical: MutationBoundaryLexicalValues
 ): boolean {
-  if (left.unknown !== right.unknown || left.values.length !== right.values.length) return false;
-  const unmatched = [...right.values];
-  for (const value of left.values) {
-    const index = unmatched.findIndex((candidate) => lexicalNodesEqual(value, candidate, lexical));
-    if (index < 0) return false;
-    unmatched.splice(index, 1);
-  }
-  return true;
+    if (left.unknown !== right.unknown || left.values.length !== right.values.length) {
+        return false;
+    }
+    const unmatched = [...right.values];
+    for (const value of left.values) {
+        const index = unmatched.findIndex((candidate) => lexicalNodesEqual(value, candidate, lexical));
+        if (index < 0) {
+            return false;
+        }
+        unmatched.splice(index, 1);
+    }
+    return true;
 }
 
 function lexicalNodesEqual(
-  left: AstNode,
-  right: AstNode,
-  lexical: MutationBoundaryLexicalValues,
+    left: AstNode,
+    right: AstNode,
+    lexical: MutationBoundaryLexicalValues
 ): boolean {
-  if (left === right) return true;
-  if (left.type !== right.type) return false;
-  if (left.type === 'Identifier') {
-    return lexical.bindings.identifierKey(left) === lexical.bindings.identifierKey(right);
-  }
-  if (left.type === 'NullLiteral') return true;
-  return (
-    ['BooleanLiteral', 'NumericLiteral', 'StringLiteral'].includes(left.type) &&
-    left.value === right.value
-  );
+    if (left === right) {
+        return true;
+    }
+    if (left.type !== right.type) {
+        return false;
+    }
+    if (left.type === 'Identifier') {
+        return lexical.bindings.identifierKey(left) === lexical.bindings.identifierKey(right);
+    }
+    if (left.type === 'NullLiteral') {
+        return true;
+    }
+    return (
+        ['BooleanLiteral', 'NumericLiteral', 'StringLiteral'].includes(left.type) &&
+        left.value === right.value
+    );
 }
 
 type AppendWrite = (
-  target: unknown,
-  value: unknown,
-  position: number,
-  conditional: boolean,
+    target: unknown,
+    value: unknown,
+    position: number,
+    conditional: boolean
 ) => void;
 
 function appendDefaultParameters(
-  node: AstNode,
-  conditional: boolean,
-  append: AppendWrite,
+    node: AstNode,
+    conditional: boolean,
+    append: AppendWrite
 ): void {
-  for (const parameter of asNodes(node.params)) {
-    const actual = parameter.type === 'TSParameterProperty'
-      ? asNode(parameter.parameter)
-      : parameter;
-    if (actual?.type === 'AssignmentPattern') {
-      appendPattern(
-        actual.left,
-        actual.right,
-        positionOf(actual),
-        conditional,
-        append,
-      );
+    for (const parameter of asNodes(node.params)) {
+        const actual = parameter.type === 'TSParameterProperty'
+            ? asNode(parameter.parameter)
+            : parameter;
+        if (actual?.type === 'AssignmentPattern') {
+            appendPattern(
+                actual.left,
+                actual.right,
+                positionOf(actual),
+                conditional,
+                append
+            );
+        }
     }
-  }
 }
 
 function appendPattern(
-  pattern: unknown,
-  value: unknown,
-  position: number,
-  conditional: boolean,
-  append: AppendWrite,
+    pattern: unknown,
+    value: unknown,
+    position: number,
+    conditional: boolean,
+    append: AppendWrite
 ): void {
-  const node = asNode(pattern);
-  if (!node) return;
-  if (node.type === 'Identifier') append(node, value, position, conditional);
-  else if (node.type === 'AssignmentPattern') {
-    appendPattern(
-      node.left,
-      value ?? node.right,
-      position,
-      conditional,
-      append,
-    );
-  }
+    const node = asNode(pattern);
+    if (!node) {
+        return;
+    }
+    if (node.type === 'Identifier') {
+        append(node, value, position, conditional);
+    }
+    else if (node.type === 'AssignmentPattern') {
+        appendPattern(
+            node.left,
+            value ?? node.right,
+            position,
+            conditional,
+            append
+        );
+    }
 }
 
 function isConditionalChild(node: AstNode, name: string): boolean {
-  if (node.type === 'IfStatement') {
-    return name === 'consequent' || name === 'alternate';
-  }
-  if (node.type === 'ConditionalExpression') {
-    return name === 'consequent' || name === 'alternate';
-  }
-  if (node.type === 'LogicalExpression') return name === 'right';
-  return (
-    [
-      'ForStatement',
-      'ForInStatement',
-      'ForOfStatement',
-      'WhileStatement',
-      'DoWhileStatement',
-    ].includes(node.type) && name === 'body'
-  );
+    if (node.type === 'IfStatement') {
+        return name === 'consequent' || name === 'alternate';
+    }
+    if (node.type === 'ConditionalExpression') {
+        return name === 'consequent' || name === 'alternate';
+    }
+    if (node.type === 'LogicalExpression') {
+        return name === 'right';
+    }
+    return (
+        [
+            'ForStatement',
+            'ForInStatement',
+            'ForOfStatement',
+            'WhileStatement',
+            'DoWhileStatement'
+        ].includes(node.type) && name === 'body'
+    );
 }
 
 function isFunction(node: AstNode): boolean {
-  return [
-    'FunctionDeclaration',
-    'FunctionExpression',
-    'ArrowFunctionExpression',
-    'ObjectMethod',
-    'ClassMethod',
-    'ClassPrivateMethod',
-  ].includes(node.type);
+    return [
+        'FunctionDeclaration',
+        'FunctionExpression',
+        'ArrowFunctionExpression',
+        'ObjectMethod',
+        'ClassMethod',
+        'ClassPrivateMethod'
+    ].includes(node.type);
 }
 
 function deduplicate(values: readonly AstNode[]): readonly AstNode[] {
-  return [...new Set(values)];
+    return [...new Set(values)];
 }
 
 function positionOf(value: unknown): number {
-  const node = asNode(value);
-  return node && typeof node.start === 'number' ? node.start : Number.POSITIVE_INFINITY;
+    const node = asNode(value);
+    return node && typeof node.start === 'number' ? node.start : Number.POSITIVE_INFINITY;
 }
 
 function readName(value: unknown): string {
-  const node = asNode(value);
-  return node && typeof node.name === 'string' ? node.name : '';
+    const node = asNode(value);
+    return node && typeof node.name === 'string' ? node.name : '';
 }
 
 function readString(value: unknown): string {
-  const node = asNode(value);
-  return node && typeof node.value === 'string' ? node.value : '';
+    const node = asNode(value);
+    return node && typeof node.value === 'string' ? node.value : '';
 }
 
 function asNode(value: unknown): AstNode | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as AstNode)
-    : undefined;
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as AstNode)
+        : undefined;
 }
 
 function asNodes(value: unknown): readonly AstNode[] {
-  return Array.isArray(value)
-    ? value.map(asNode).filter((node): node is AstNode => node !== undefined)
-    : [];
+    return Array.isArray(value)
+        ? value.map(asNode).filter((node): node is AstNode => node !== undefined)
+        : [];
 }
 
 const IGNORED_KEYS = new Set(['loc', 'start', 'end', 'comments', 'tokens']);

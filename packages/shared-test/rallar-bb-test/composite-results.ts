@@ -6,7 +6,7 @@ import type {
     RallarBlackBoxTestParallelResultValue,
     RallarBlackBoxTestRedactionOptions,
     RallarBlackBoxTestResult,
-    RallarBlackBoxTestResultStatus,
+    RallarBlackBoxTestResultStatus
 } from './types.ts';
 
 export const RALLAR_BLACK_BOX_COMPOSITE_RESULT_PATH_VERSION = 1;
@@ -103,14 +103,14 @@ type WalkContext = Readonly<{
 export function rallarBlackBoxLoopChildResultPath(
     parentPath: string,
     iteration: number,
-    commandIndex: number,
+    commandIndex: number
 ): string {
     return `${parentPath}.iterations[${iteration}].commands[${commandIndex}]`;
 }
 
 export function rallarBlackBoxLoopChildSourceRecipePath(
     parentSourceRecipePath: string,
-    commandIndex: number,
+    commandIndex: number
 ): string {
     return `${parentSourceRecipePath}.commands[${commandIndex}]`;
 }
@@ -119,7 +119,7 @@ export function rallarBlackBoxParallelChildResultPath(
     parentPath: string,
     groupIndex: number,
     groupId: string,
-    commandIndex: number,
+    commandIndex: number
 ): string {
     return `${parentPath}.groups[${groupIndex}=${encodeURIComponent(groupId)}].commands[${commandIndex}]`;
 }
@@ -127,14 +127,14 @@ export function rallarBlackBoxParallelChildResultPath(
 export function rallarBlackBoxParallelChildSourceRecipePath(
     parentSourceRecipePath: string,
     groupIndex: number,
-    commandIndex: number,
+    commandIndex: number
 ): string {
     return `${parentSourceRecipePath}.groups[${groupIndex}].commands[${commandIndex}]`;
 }
 
 export function flattenRallarBlackBoxCompositeResults(
     input: RallarBlackBoxTestResult | readonly RallarBlackBoxTestResult[],
-    options: FlattenOptions = {},
+    options: FlattenOptions = {}
 ): readonly RallarBlackBoxCompositeResultFlatEntry[] {
     const includeRoot = options.includeRoot !== false;
     const roots = Array.isArray(input) ? input : [input];
@@ -144,12 +144,17 @@ export function flattenRallarBlackBoxCompositeResults(
         const rootPath = roots.length === 1
             ? RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH
             : `${RALLAR_BLACK_BOX_COMPOSITE_RESULT_ROOT_PATH}.results[${index}]`;
-        walkResult(result, {
-            path: rootPath,
-            sourceRecipePath: rootPath,
-            commandId: result.commandId,
-            depth: 0,
-        }, includeRoot, entries);
+        walkResult(
+            result,
+            {
+                path: rootPath,
+                sourceRecipePath: rootPath,
+                commandId: result.commandId,
+                depth: 0
+            },
+            includeRoot,
+            entries
+        );
     });
 
     return entries;
@@ -157,7 +162,7 @@ export function flattenRallarBlackBoxCompositeResults(
 
 export function toRallarBlackBoxCompositeResultTimeline(
     input: RallarBlackBoxTestResult | readonly RallarBlackBoxTestResult[],
-    options: FlattenOptions = {},
+    options: FlattenOptions = {}
 ): readonly RallarBlackBoxCompositeResultFlatEntry[] {
     return [...flattenRallarBlackBoxCompositeResults(input, options)]
         .sort((left, right) =>
@@ -169,7 +174,7 @@ export function toRallarBlackBoxCompositeResultTimeline(
 
 export function toRallarBlackBoxCompositeResultTree(
     input: RallarBlackBoxTestResult | readonly RallarBlackBoxTestResult[],
-    options: FlattenOptions = {},
+    options: FlattenOptions = {}
 ): readonly RallarBlackBoxCompositeResultTreeNode[] {
     const entries = flattenRallarBlackBoxCompositeResults(input, options);
     const byPath = new Map<string, RallarBlackBoxCompositeResultTreeNode>();
@@ -178,7 +183,7 @@ export function toRallarBlackBoxCompositeResultTree(
     for (const entry of entries) {
         byPath.set(entry.path, {
             entry,
-            children: [],
+            children: []
         });
     }
 
@@ -191,7 +196,8 @@ export function toRallarBlackBoxCompositeResultTree(
         const parent = entry.parentPath ? byPath.get(entry.parentPath) : undefined;
         if (parent) {
             (parent.children as RallarBlackBoxCompositeResultTreeNode[]).push(node);
-        } else {
+        }
+        else {
             roots.push(node);
         }
     }
@@ -201,7 +207,7 @@ export function toRallarBlackBoxCompositeResultTree(
 
 export function summarizeRallarBlackBoxCompositeResults(
     input: RallarBlackBoxTestResult | readonly RallarBlackBoxTestResult[],
-    options: FlattenOptions & Readonly<{ redaction?: RallarBlackBoxTestRedactionOptions }> = {},
+    options: FlattenOptions & Readonly<{ redaction?: RallarBlackBoxTestRedactionOptions; }> = {}
 ): RallarBlackBoxCompositeResultSummary {
     const entries = flattenRallarBlackBoxCompositeResults(input, options);
     const firstFailure = findFirstFailedRallarBlackBoxCompositeResult(input, options);
@@ -212,12 +218,12 @@ export function summarizeRallarBlackBoxCompositeResults(
     return {
         pathVersion: RALLAR_BLACK_BOX_COMPOSITE_RESULT_PATH_VERSION,
         total: entries.length,
-        passed: entries.filter(entry => entry.status === 'ok').length,
-        failed: entries.filter(entry => entry.status === 'failed').length,
-        cancelled: entries.filter(entry => entry.status === 'cancelled').length,
-        skipped: entries.filter(entry => entry.status === 'skipped').length,
-        composite: entries.filter(entry => isCompositeResult(entry.result)).length,
-        leaf: entries.filter(entry => !isCompositeResult(entry.result)).length,
+        passed: entries.filter((entry) => entry.status === 'ok').length,
+        failed: entries.filter((entry) => entry.status === 'failed').length,
+        cancelled: entries.filter((entry) => entry.status === 'cancelled').length,
+        skipped: entries.filter((entry) => entry.status === 'skipped').length,
+        composite: entries.filter((entry) => isCompositeResult(entry.result)).length,
+        leaf: entries.filter((entry) => !isCompositeResult(entry.result)).length,
         firstFailure: firstFailure
             ? {
                 path: firstFailure.path,
@@ -225,27 +231,27 @@ export function summarizeRallarBlackBoxCompositeResults(
                 commandId: firstFailure.commandId,
                 kind: firstFailure.kind,
                 status: firstFailure.status,
-                message: firstFailureError?.message,
+                message: firstFailureError?.message
             }
-            : undefined,
+            : undefined
     };
 }
 
 export function findFirstFailedRallarBlackBoxCompositeResult(
     input: RallarBlackBoxTestResult | readonly RallarBlackBoxTestResult[],
-    options: FlattenOptions = {},
+    options: FlattenOptions = {}
 ): RallarBlackBoxCompositeResultFlatEntry | undefined {
     const timeline = toRallarBlackBoxCompositeResultTimeline(input, options);
-    return timeline.find(entry => !entry.ok && entry.depth > 0) ??
-        timeline.find(entry => !entry.ok);
+    return timeline.find((entry) => !entry.ok && entry.depth > 0) ??
+        timeline.find((entry) => !entry.ok);
 }
 
 export function toRallarBlackBoxCompositeDisplayResults(
     input: RallarBlackBoxTestResult | readonly RallarBlackBoxTestResult[],
-    options: FlattenOptions & Readonly<{ redaction?: RallarBlackBoxTestRedactionOptions }> = {},
+    options: FlattenOptions & Readonly<{ redaction?: RallarBlackBoxTestRedactionOptions; }> = {}
 ): readonly RallarBlackBoxCompositeDisplayResult[] {
     return flattenRallarBlackBoxCompositeResults(input, options)
-        .map(entry => ({
+        .map((entry) => ({
             path: entry.path,
             sourceRecipePath: entry.sourceRecipePath,
             parentPath: entry.parentPath,
@@ -265,7 +271,7 @@ export function toRallarBlackBoxCompositeDisplayResults(
             endedAtEpochMs: entry.endedAtEpochMs,
             durationMs: entry.durationMs,
             value: redactRallarBlackBoxValue(entry.result.value, options.redaction),
-            error: redactRallarBlackBoxValue(entry.result.error, options.redaction),
+            error: redactRallarBlackBoxValue(entry.result.error, options.redaction)
         }));
 }
 
@@ -273,7 +279,7 @@ function walkResult(
     result: RallarBlackBoxTestResult,
     context: WalkContext,
     includeCurrent: boolean,
-    entries: RallarBlackBoxCompositeResultFlatEntry[],
+    entries: RallarBlackBoxCompositeResultFlatEntry[]
 ): void {
     if (includeCurrent) {
         entries.push({
@@ -295,7 +301,7 @@ function walkResult(
             startedAtEpochMs: result.startedAtEpochMs,
             endedAtEpochMs: result.endedAtEpochMs,
             durationMs: result.durationMs,
-            result,
+            result
         });
     }
 
@@ -311,7 +317,12 @@ function walkResult(
         const value = parallelResultValue(result.value);
         value?.groups.forEach((group, groupIndex) => {
             group.results.forEach((child, childIndex) => {
-                walkResult(child.result, parallelChildContext(child, childIndex, group, groupIndex, context), true, entries);
+                walkResult(
+                    child.result,
+                    parallelChildContext(child, childIndex, group, groupIndex, context),
+                    true,
+                    entries
+                );
             });
         });
     }
@@ -320,7 +331,7 @@ function walkResult(
 function loopChildContext(
     child: RallarBlackBoxTestCompositeChildResult,
     childIndex: number,
-    parent: WalkContext,
+    parent: WalkContext
 ): WalkContext {
     const iteration = child.iteration ?? 0;
     const commandIndex = child.commandIndex;
@@ -328,12 +339,12 @@ function loopChildContext(
         path: composeChildPath(
             parent.path,
             child.path,
-            rallarBlackBoxLoopChildResultPath(parent.path, iteration, commandIndex),
+            rallarBlackBoxLoopChildResultPath(parent.path, iteration, commandIndex)
         ),
         sourceRecipePath: composeChildPath(
             parent.sourceRecipePath,
             child.sourceRecipePath,
-            rallarBlackBoxLoopChildSourceRecipePath(parent.sourceRecipePath, commandIndex),
+            rallarBlackBoxLoopChildSourceRecipePath(parent.sourceRecipePath, commandIndex)
         ),
         parentPath: parent.path,
         parentCommandId: child.parentCommandId ?? parent.commandId,
@@ -342,7 +353,7 @@ function loopChildContext(
         childIndex: child.childIndex ?? childIndex,
         commandIndex,
         iteration,
-        originalCommandId: child.originalCommandId,
+        originalCommandId: child.originalCommandId
     };
 }
 
@@ -351,7 +362,7 @@ function parallelChildContext(
     childIndex: number,
     group: RallarBlackBoxTestParallelGroupResult,
     groupIndex: number,
-    parent: WalkContext,
+    parent: WalkContext
 ): WalkContext {
     const commandIndex = child.commandIndex;
     const groupId = child.groupId ?? group.groupId;
@@ -359,12 +370,12 @@ function parallelChildContext(
         path: composeChildPath(
             parent.path,
             child.path,
-            rallarBlackBoxParallelChildResultPath(parent.path, groupIndex, groupId, commandIndex),
+            rallarBlackBoxParallelChildResultPath(parent.path, groupIndex, groupId, commandIndex)
         ),
         sourceRecipePath: composeChildPath(
             parent.sourceRecipePath,
             child.sourceRecipePath,
-            rallarBlackBoxParallelChildSourceRecipePath(parent.sourceRecipePath, groupIndex, commandIndex),
+            rallarBlackBoxParallelChildSourceRecipePath(parent.sourceRecipePath, groupIndex, commandIndex)
         ),
         parentPath: parent.path,
         parentCommandId: child.parentCommandId ?? parent.commandId,
@@ -374,7 +385,7 @@ function parallelChildContext(
         commandIndex,
         groupId,
         groupIndex: child.groupIndex ?? groupIndex,
-        originalCommandId: child.originalCommandId,
+        originalCommandId: child.originalCommandId
     };
 }
 

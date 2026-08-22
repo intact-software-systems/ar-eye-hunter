@@ -14,7 +14,7 @@ export type CommandCenterRestActionLog = Readonly<{
 
 export function restLogEntry(
     label: string,
-    response: RallarServerRestResponse,
+    response: RallarServerRestResponse
 ): CommandCenterRestActionLog {
     return {
         actionId: `${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now()}`,
@@ -25,6 +25,6 @@ export function restLogEntry(
         statusText: response.statusText,
         durationMs: response.durationMs,
         errorKind: response.error?.kind,
-        bodyJson: response.bodyJson,
+        bodyJson: response.bodyJson
     };
 }

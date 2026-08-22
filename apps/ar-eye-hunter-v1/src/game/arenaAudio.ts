@@ -1,5 +1,5 @@
-import type { WeaponKind } from './types.ts';
 import type { ArenaLinkTone } from './squadLink.ts';
+import type { WeaponKind } from './types.ts';
 
 export type ArenaAudioSettings = Readonly<{
     masterVolume: number;
@@ -12,7 +12,7 @@ export type ArenaAudioSettings = Readonly<{
 }>;
 
 export type ArenaAudioEvent =
-    | Readonly<{ kind: 'shot'; weaponKind: WeaponKind }>
+    | Readonly<{ kind: 'shot'; weaponKind: WeaponKind; }>
     | Readonly<{
         kind:
             | 'hit'
@@ -28,7 +28,7 @@ export type ArenaAudioEvent =
             | 'wave-complete'
             | 'low-health-warning';
     }>
-    | Readonly<{ kind: 'eye-drone'; threatCount: number; distanceFactor?: number }>;
+    | Readonly<{ kind: 'eye-drone'; threatCount: number; distanceFactor?: number; }>;
 
 export type ArenaAudioEffectiveLevels = Readonly<{
     music: number;
@@ -77,7 +77,7 @@ const DEFAULT_ARENA_AUDIO_SETTINGS: ArenaAudioSettings = {
     eyeDroneVolume: 0.16,
     muted: false,
     reducedIntensity: false,
-    autoStartOnGesture: true,
+    autoStartOnGesture: true
 };
 
 const MUSIC_OSCILLATOR_GAIN = 0.056;
@@ -90,7 +90,7 @@ const ARENA_MUSIC_LAYER_KEYS = [
     'matchClock',
     'lowHealth',
     'rewardShimmer',
-    'linkStatic',
+    'linkStatic'
 ] as const;
 type ArenaMusicLayerKey = typeof ARENA_MUSIC_LAYER_KEYS[number];
 const ZERO_MUSIC_LAYER_STATE: ArenaMusicLayerState = {
@@ -101,7 +101,7 @@ const ZERO_MUSIC_LAYER_STATE: ArenaMusicLayerState = {
     lowHealth: 0,
     rewardShimmer: 0,
     linkStatic: 0,
-    intensity: 0,
+    intensity: 0
 };
 
 export function createDefaultArenaAudioSettings(): ArenaAudioSettings {
@@ -109,7 +109,7 @@ export function createDefaultArenaAudioSettings(): ArenaAudioSettings {
 }
 
 export function normalizeArenaAudioSettings(
-    value: Partial<ArenaAudioSettings>,
+    value: Partial<ArenaAudioSettings>
 ): ArenaAudioSettings {
     return {
         masterVolume: clampVolume(value.masterVolume, DEFAULT_ARENA_AUDIO_SETTINGS.masterVolume),
@@ -120,12 +120,12 @@ export function normalizeArenaAudioSettings(
         reducedIntensity: Boolean(value.reducedIntensity),
         autoStartOnGesture: typeof value.autoStartOnGesture === 'boolean'
             ? value.autoStartOnGesture
-            : DEFAULT_ARENA_AUDIO_SETTINGS.autoStartOnGesture,
+            : DEFAULT_ARENA_AUDIO_SETTINGS.autoStartOnGesture
     };
 }
 
 export function loadArenaAudioSettings(
-    read: (key: string) => string | null,
+    read: (key: string) => string | null
 ): ArenaAudioSettings {
     const raw = read(ARENA_AUDIO_STORAGE_KEY);
     if (!raw) {
@@ -133,14 +133,15 @@ export function loadArenaAudioSettings(
     }
     try {
         return normalizeArenaAudioSettings(JSON.parse(raw) as Partial<ArenaAudioSettings>);
-    } catch {
+    }
+    catch {
         return createDefaultArenaAudioSettings();
     }
 }
 
 export function saveArenaAudioSettings(
     settings: ArenaAudioSettings,
-    write: (key: string, value: string) => void,
+    write: (key: string, value: string) => void
 ): void {
     write(ARENA_AUDIO_STORAGE_KEY, JSON.stringify(normalizeArenaAudioSettings(settings)));
 }
@@ -148,7 +149,7 @@ export function saveArenaAudioSettings(
 export function shouldPlayArenaAudioVoice(
     settings: ArenaAudioSettings,
     activeVoices: number,
-    maxVoices: number,
+    maxVoices: number
 ): boolean {
     return !settings.muted &&
         settings.masterVolume > 0 &&
@@ -156,20 +157,20 @@ export function shouldPlayArenaAudioVoice(
 }
 
 export function calculateArenaAudioEffectiveLevels(
-    settings: ArenaAudioSettings,
+    settings: ArenaAudioSettings
 ): ArenaAudioEffectiveLevels {
     const normalized = normalizeArenaAudioSettings(settings);
     const master = normalized.muted ? 0 : normalized.masterVolume;
     return {
         music: round4(master * normalized.musicVolume * MUSIC_OSCILLATOR_GAIN),
         shot: round4(master * normalized.sfxVolume * SHOT_PEAK_GAIN),
-        eyeDrone: round4(master * normalized.eyeDroneVolume * EYE_DRONE_PEAK_GAIN),
+        eyeDrone: round4(master * normalized.eyeDroneVolume * EYE_DRONE_PEAK_GAIN)
     };
 }
 
 export function calculateArenaMusicLayerState(
     input: ArenaMusicInput,
-    settings: ArenaAudioSettings,
+    settings: ArenaAudioSettings
 ): ArenaMusicLayerState {
     const normalized = normalizeArenaAudioSettings(settings);
     const master = normalized.muted ? 0 : normalized.masterVolume;
@@ -201,20 +202,23 @@ export function calculateArenaMusicLayerState(
         lowHealth: round4(musicBase * 0.18 * lowHealthPressure * intensityScale),
         rewardShimmer: round4(musicBase * 0.13 * reward * intensityScale),
         linkStatic: round4(musicBase * 0.08 * linkPressure * intensityScale),
-        intensity: 0,
+        intensity: 0
     };
 
     return {
         ...state,
-        intensity: round4(Math.min(1, (
-            state.baseHum +
-            state.pulseBass +
-            state.threatDrone +
-            state.matchClock +
-            state.lowHealth +
-            state.rewardShimmer +
-            state.linkStatic
-        ) / Math.max(0.001, musicBase * 0.78))),
+        intensity: round4(Math.min(
+            1,
+            (
+                state.baseHum +
+                state.pulseBass +
+                state.threatDrone +
+                state.matchClock +
+                state.lowHealth +
+                state.rewardShimmer +
+                state.linkStatic
+            ) / Math.max(0.001, musicBase * 0.78)
+        ))
     };
 }
 
@@ -235,7 +239,7 @@ export class ProceduralArenaAudio {
 
     constructor(
         settings: ArenaAudioSettings = createDefaultArenaAudioSettings(),
-        maxVoices = 10,
+        maxVoices = 10
     ) {
         this.settings = settings;
         this.maxVoices = maxVoices;
@@ -257,7 +261,7 @@ export class ProceduralArenaAudio {
             muted: this.settings.muted,
             activeVoices: this.activeVoices,
             musicLayer: readDominantMusicLayer(this.musicLayerState),
-            musicIntensity: this.musicLayerState.intensity,
+            musicIntensity: this.musicLayerState.intensity
         };
     }
 
@@ -341,13 +345,13 @@ export class ProceduralArenaAudio {
             return;
         }
         const layers = Object.fromEntries(
-            ARENA_MUSIC_LAYER_KEYS.map((key) => [key, context.createGain()]),
+            ARENA_MUSIC_LAYER_KEYS.map((key) => [key, context.createGain()])
         ) as Record<ArenaMusicLayerKey, GainNode>;
         this.musicLayerGains = layers;
         createLoopingTone(context, layers.baseHum, [
             [55, -9, 'sine'],
             [82.4, 7, 'sine'],
-            [110, 3, 'sine'],
+            [110, 3, 'sine']
         ], this.musicOscillators);
         createLoopingTone(context, layers.pulseBass, [[38, -2, 'triangle']], this.musicOscillators);
         createLoopingTone(context, layers.threatDrone, [[72, 5, 'sawtooth']], this.musicOscillators);
@@ -422,7 +426,7 @@ export class ProceduralArenaAudio {
         gain.gain.setValueAtTime(0.0001, now);
         gain.gain.exponentialRampToValueAtTime(
             Math.max(0.006, Math.min(0.05, EYE_DRONE_PEAK_GAIN * distanceFactor)),
-            now + 0.04,
+            now + 0.04
         );
         gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
         oscillator.connect(gain);
@@ -453,7 +457,7 @@ export class ProceduralArenaAudio {
     private startTransientVoice(
         oscillator: OscillatorNode,
         now: number,
-        durationSeconds: number,
+        durationSeconds: number
     ): void {
         this.activeVoices += 1;
         oscillator.start(now);
@@ -495,7 +499,7 @@ function createLoopingTone(
     context: AudioContext,
     destination: GainNode,
     tones: readonly (readonly [number, number, OscillatorType])[],
-    registry: OscillatorNode[],
+    registry: OscillatorNode[]
 ): void {
     for (const [frequency, detune, type] of tones) {
         const oscillator = context.createOscillator();
@@ -509,7 +513,7 @@ function createLoopingTone(
 }
 
 function readUiPulseTone(
-    kind: Exclude<ArenaAudioEvent['kind'], 'shot' | 'eye-drone'>,
+    kind: Exclude<ArenaAudioEvent['kind'], 'shot' | 'eye-drone'>
 ): Readonly<{
     frequency: number;
     gain: number;

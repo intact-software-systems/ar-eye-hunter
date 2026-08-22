@@ -1,32 +1,29 @@
-import {
-    distanceRallarMotionVec3,
-    distanceRallarMotionWrappedVec3,
-} from './math.ts';
+import { distanceRallarMotionVec3, distanceRallarMotionWrappedVec3 } from './math.ts';
 import type {
     RallarMotionSendGate,
     RallarMotionSendGateOptions,
     RallarMotionSendSampleLike,
     RallarMotionSendUpdateDecision,
     RallarMotionSendUpdateInput,
-    RallarMotionSendUpdateReason,
+    RallarMotionSendUpdateReason
 } from './types.ts';
 
 export function shouldSendRallarMotionSample(
     nowEpochMs: number,
     nextAllowedEpochMs: number,
-    cadenceMs: number,
+    cadenceMs: number
 ): boolean {
     return cadenceMs <= 0 || nowEpochMs >= nextAllowedEpochMs;
 }
 
 export function shouldSendRallarMotionUpdate(
-    input: RallarMotionSendUpdateInput,
+    input: RallarMotionSendUpdateInput
 ): RallarMotionSendUpdateDecision {
     if (!input.lastSentSample || input.lastSentAtEpochMs === undefined) {
         return {
             shouldSend: true,
             reason: 'initial',
-            nextAllowedEpochMs: input.nowEpochMs + normalizedCadence(input),
+            nextAllowedEpochMs: input.nowEpochMs + normalizedCadence(input)
         };
     }
 
@@ -38,7 +35,7 @@ export function shouldSendRallarMotionUpdate(
         return {
             shouldSend: true,
             reason: 'force',
-            nextAllowedEpochMs: input.nowEpochMs + normalizedCadence(input),
+            nextAllowedEpochMs: input.nowEpochMs + normalizedCadence(input)
         };
     }
 
@@ -50,12 +47,12 @@ export function shouldSendRallarMotionUpdate(
             shouldSend: shouldSendRallarMotionSample(
                 input.nowEpochMs,
                 nextAllowedEpochMs,
-                cadenceMs,
+                cadenceMs
             ),
             reason: input.nowEpochMs >= nextAllowedEpochMs
                 ? movementReason
                 : 'waiting',
-            nextAllowedEpochMs,
+            nextAllowedEpochMs
         };
     }
 
@@ -65,19 +62,19 @@ export function shouldSendRallarMotionUpdate(
         return {
             shouldSend: input.nowEpochMs >= nextAllowedEpochMs,
             reason: input.nowEpochMs >= nextAllowedEpochMs ? 'idle' : 'waiting',
-            nextAllowedEpochMs,
+            nextAllowedEpochMs
         };
     }
 
     return {
         shouldSend: false,
         reason: 'waiting',
-        nextAllowedEpochMs: input.lastSentAtEpochMs + normalizedCadence(input),
+        nextAllowedEpochMs: input.lastSentAtEpochMs + normalizedCadence(input)
     };
 }
 
 export function createRallarMotionSendGate(
-    options: RallarMotionSendGateOptions = {},
+    options: RallarMotionSendGateOptions = {}
 ): RallarMotionSendGate {
     let lastSentSample: RallarMotionSendSampleLike | undefined;
     let lastSentAtEpochMs: number | undefined;
@@ -89,7 +86,7 @@ export function createRallarMotionSendGate(
                 nowEpochMs,
                 lastSentAtEpochMs,
                 lastSentSample,
-                nextSample: sample,
+                nextSample: sample
             });
         },
         recordSent(sample, nowEpochMs): void {
@@ -99,17 +96,17 @@ export function createRallarMotionSendGate(
         reset(): void {
             lastSentSample = undefined;
             lastSentAtEpochMs = undefined;
-        },
+        }
     };
 }
 
 function movementReasonFor(
-    input: RallarMotionSendUpdateInput,
+    input: RallarMotionSendUpdateInput
 ): Exclude<RallarMotionSendUpdateReason, 'initial' | 'force' | 'idle' | 'waiting'> | undefined {
     if (
         distanceRallarMotionVec3(
             input.lastSentSample!.position,
-            input.nextSample.position,
+            input.nextSample.position
         ) > Math.max(0, input.minPositionDelta ?? 0)
     ) {
         return 'position';
@@ -121,7 +118,7 @@ function movementReasonFor(
         distanceRallarMotionWrappedVec3(
                 input.lastSentSample!.rotation,
                 input.nextSample.rotation,
-                input.rotationWrap,
+                input.rotationWrap
             ) > Math.max(0, input.minRotationDelta ?? 0)
     ) {
         return 'rotation';
@@ -132,7 +129,7 @@ function movementReasonFor(
         input.nextSample.velocity &&
         distanceRallarMotionVec3(
                 input.lastSentSample!.velocity,
-                input.nextSample.velocity,
+                input.nextSample.velocity
             ) > Math.max(0, input.minVelocityDelta ?? 0)
     ) {
         return 'velocity';

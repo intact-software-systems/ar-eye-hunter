@@ -2,15 +2,15 @@
 
 Status: **Phases 0–4 landed on the default branch. Phase 5 is next and not started.**
 
-| Phase | State | Delivery | Measured results |
-| --- | --- | --- | --- |
-| 0 — Metrics and baseline | Landed | — | `baselines/2026-08-08-formation-burst-baseline.md` |
-| 1 — Overlay precedence | Landed | PR #138 | `baselines/2026-08-09-phase1-overlay-precedence-results.md` |
-| 2 — Server damping (M1) | Landed | PR #152 | `baselines/2026-08-11-phase2-server-damping-results.md` |
-| 3 — Delta dissemination | Landed | PR #214 | `baselines/2026-08-13-phase3-delta-dissemination-results.md` |
-| 4 — Stable topology evolution (M6, M8, M11, M9) | Landed | PR #223 | `baselines/2026-08-15-phase4-stable-topology-evolution-results.md` |
-| 5 — Formation epochs (M7) + activation reconciliation | Not started | — | — |
-| 6 — Contention and scale-out polish | Measurement-gated | — | — |
+| Phase                                                 | State             | Delivery | Measured results                                                   |
+| ----------------------------------------------------- | ----------------- | -------- | ------------------------------------------------------------------ |
+| 0 — Metrics and baseline                              | Landed            | —        | `baselines/2026-08-08-formation-burst-baseline.md`                 |
+| 1 — Overlay precedence                                | Landed            | PR #138  | `baselines/2026-08-09-phase1-overlay-precedence-results.md`        |
+| 2 — Server damping (M1)                               | Landed            | PR #152  | `baselines/2026-08-11-phase2-server-damping-results.md`            |
+| 3 — Delta dissemination                               | Landed            | PR #214  | `baselines/2026-08-13-phase3-delta-dissemination-results.md`       |
+| 4 — Stable topology evolution (M6, M8, M11, M9)       | Landed            | PR #223  | `baselines/2026-08-15-phase4-stable-topology-evolution-results.md` |
+| 5 — Formation epochs (M7) + activation reconciliation | Not started       | —        | —                                                                  |
+| 6 — Contention and scale-out polish                   | Measurement-gated | —        | —                                                                  |
 
 Carried into Phase 5 from the landed phases:
 

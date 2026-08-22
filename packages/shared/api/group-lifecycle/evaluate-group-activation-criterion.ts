@@ -11,14 +11,14 @@ export const MAX_FORMATION_RETRY_BACKOFF_MS = 60_000;
 export function computeFormationRetryBackoffMs(nextAttemptCount: number): number {
     return Math.min(
         DEFAULT_FORMATION_RETRY_BACKOFF_MS * Math.max(1, nextAttemptCount),
-        MAX_FORMATION_RETRY_BACKOFF_MS,
+        MAX_FORMATION_RETRY_BACKOFF_MS
     );
 }
 
 export type GroupActivationDecision =
-    | Readonly<{ decision: 'wait' }>
-    | Readonly<{ decision: 'activate' | 'activate-degraded' }>
-    | Readonly<{ decision: 'below-floor'; retryAllowed: boolean }>;
+    | Readonly<{ decision: 'wait'; }>
+    | Readonly<{ decision: 'activate' | 'activate-degraded'; }>
+    | Readonly<{ decision: 'below-floor'; retryAllowed: boolean; }>;
 
 /**
  * The criterion, decided against two rates: at or above `successRate` the
@@ -28,13 +28,15 @@ export type GroupActivationDecision =
  * always waits because activation is then an operator command, and a missing
  * deadline anchor waits because the deadline half has nothing to measure from.
  */
-export function evaluateGroupActivationCriterion(input: Readonly<{
-    activation: GroupActivationCriterion;
-    observedRate: number;
-    establishmentStartedAtEpochMs: number | null;
-    formationAttemptCount: number;
-    nowEpochMs: number;
-}>): GroupActivationDecision {
+export function evaluateGroupActivationCriterion(
+    input: Readonly<{
+        activation: GroupActivationCriterion;
+        observedRate: number;
+        establishmentStartedAtEpochMs: number | null;
+        formationAttemptCount: number;
+        nowEpochMs: number;
+    }>
+): GroupActivationDecision {
     const { activation, observedRate } = input;
     if (activation.mode === 'manual') {
         return { decision: 'wait' };
@@ -61,6 +63,6 @@ export function evaluateGroupActivationCriterion(input: Readonly<{
     }
     return {
         decision: 'below-floor',
-        retryAllowed: input.formationAttemptCount + 1 < activation.maxFormationAttempts,
+        retryAllowed: input.formationAttemptCount + 1 < activation.maxFormationAttempts
     };
 }

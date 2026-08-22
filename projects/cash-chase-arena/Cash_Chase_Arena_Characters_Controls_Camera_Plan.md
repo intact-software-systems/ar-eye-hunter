@@ -88,14 +88,14 @@ MVP distributes curated preset IDs, not arbitrary cosmetic structures in every s
 type CosmeticPresetId = string;
 
 type CharacterVisualPreset = Readonly<{
-  id: CosmeticPresetId;
-  silhouetteId: string;
-  headgearId: string;
-  torsoId: string;
-  legsId: string;
-  accentColor: string;
-  accentPattern: string;
-  trailFxId: string;
+    id: CosmeticPresetId;
+    silhouetteId: string;
+    headgearId: string;
+    torsoId: string;
+    legsId: string;
+    accentColor: string;
+    accentPattern: string;
+    trailFxId: string;
 }>;
 ```
 
@@ -182,15 +182,15 @@ Rallar Game envelope supplies trusted sender, sequence, sender time, match, and 
 
 ```ts
 type CashChaseInput = Readonly<{
-  version: 1;
-  clientTick: number;
-  moveX: number;
-  moveY: number;
-  cameraYaw: number;
-  sprintHeld: boolean;
-  dashPressed: boolean;
-  vaultPressed: boolean;
-  interactPressed: boolean;
+    version: 1;
+    clientTick: number;
+    moveX: number;
+    moveY: number;
+    cameraYaw: number;
+    sprintHeld: boolean;
+    dashPressed: boolean;
+    vaultPressed: boolean;
+    interactPressed: boolean;
 }>;
 ```
 

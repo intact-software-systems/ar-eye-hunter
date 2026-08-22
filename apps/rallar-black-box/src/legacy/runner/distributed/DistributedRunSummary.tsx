@@ -4,7 +4,7 @@ import { json } from '../../shared/json-presentation.ts';
 import { Metric } from '../../shared/Metric.tsx';
 
 export function DistributedRunSummary({
-    run,
+    run
 }: {
     run: ControlDistributedRunSnapshot;
 }) {

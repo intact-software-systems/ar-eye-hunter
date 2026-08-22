@@ -1,26 +1,23 @@
-import type {
-    RallarGameDiagnostics,
-    RallarGameDiagnosticsInput,
-} from './types.ts';
+import type { RallarGameDiagnostics, RallarGameDiagnosticsInput } from './types.ts';
 
 export function deriveRallarGameDiagnostics(
-    input: RallarGameDiagnosticsInput,
+    input: RallarGameDiagnosticsInput
 ): RallarGameDiagnostics {
     const generatedAtEpochMs = input.nowEpochMs ?? Date.now();
     const egress = input.status.egress ?? {
         reliable: 'empty' as const,
-        realtime: 'empty' as const,
+        realtime: 'empty' as const
     };
     const directorAuthority = input.status.directorAuthority ?? 'none';
     const readyPeerIds = uniqueSorted([
         ...(input.peerReadiness?.readyPeerIds ?? []),
-        ...(input.rtcStatus?.readyPeerIds ?? []),
+        ...(input.rtcStatus?.readyPeerIds ?? [])
     ]);
     const notReadyPeerIds = uniqueSorted(input.peerReadiness?.notReadyPeerIds ?? []);
     const knownPeerIds = uniqueSorted([
         ...(input.rtcStatus?.knownPeerIds ?? []),
         ...readyPeerIds,
-        ...notReadyPeerIds,
+        ...notReadyPeerIds
     ]);
     const issues = deriveIssues(input);
 
@@ -51,10 +48,10 @@ export function deriveRallarGameDiagnostics(
             ? {
                 ...input.appointment,
                 lastResultStatus: input.lastAppointment?.status,
-                lastReason: input.lastAppointment?.reason,
+                lastReason: input.lastAppointment?.reason
             }
             : undefined,
-        issues,
+        issues
     };
 }
 
@@ -71,7 +68,8 @@ function deriveIssues(input: RallarGameDiagnosticsInput): readonly string[] {
 
     if (!input.status.directorPeerId) {
         issues.push('no-director');
-    } else if (!input.status.directorIsFresh) {
+    }
+    else if (!input.status.directorIsFresh) {
         issues.push('stale-director');
     }
 
@@ -89,14 +87,16 @@ function deriveIssues(input: RallarGameDiagnosticsInput): readonly string[] {
 
     const egress = input.status.egress ?? {
         reliable: 'empty' as const,
-        realtime: 'empty' as const,
+        realtime: 'empty' as const
     };
 
     if (egress.realtime === 'warming') {
         issues.push('rtc-warming');
-    } else if (egress.realtime === 'timeout') {
+    }
+    else if (egress.realtime === 'timeout') {
         issues.push('rtc-timeout');
-    } else if (egress.realtime === 'failed') {
+    }
+    else if (egress.realtime === 'failed') {
         issues.push('rtc-failed');
     }
 

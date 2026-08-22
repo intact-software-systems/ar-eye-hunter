@@ -4,7 +4,7 @@ import {
     createRallarBlackBoxTestRuntime,
     normalizeRallarBlackBoxRuntimeDiagnostic,
     selectRallarBlackBoxDiagnostics,
-    type RallarBlackBoxTestWaitResultValue,
+    type RallarBlackBoxTestWaitResultValue
 } from '../../shared-test/rallar-bb-test/mod.ts';
 
 describe('rallar-bb-test runtime diagnostics', () => {
@@ -23,11 +23,11 @@ describe('rallar-bb-test runtime diagnostics', () => {
                 data: {
                     typeId: 'room.unknown',
                     payload: {
-                        text: 'ignored',
-                    },
+                        text: 'ignored'
+                    }
                 },
-                source: 'unit-test',
-            }),
+                source: 'unit-test'
+            })
         });
 
         const waitResult = await runtime.execute({
@@ -39,15 +39,15 @@ describe('rallar-bb-test runtime diagnostics', () => {
                 transport: 'ws',
                 severity: 'warning',
                 payloadPath: 'diagnosticTypeId',
-                equals: 'rallar.browser.ws.unhandled_message',
-            },
+                equals: 'rallar.browser.ws.unhandled_message'
+            }
         });
         const assertResult = await runtime.execute({
             kind: 'assert',
             commandId: 'assert-ws-warning',
             source: 'recentDiagnostics.0.payload.data.typeId',
             operator: 'equals',
-            expected: 'room.unknown',
+            expected: 'room.unknown'
         });
 
         expect(waitResult.ok).toBe(true);
@@ -59,8 +59,8 @@ describe('rallar-bb-test runtime diagnostics', () => {
             severity: 'warning',
             message: 'Unhandled WS message: room.unknown',
             data: {
-                typeId: 'room.unknown',
-            },
+                typeId: 'room.unknown'
+            }
         });
         expect(assertResult.ok).toBe(true);
     });
@@ -77,8 +77,8 @@ describe('rallar-bb-test runtime diagnostics', () => {
             remotePeerId: 'bob-session',
             data: {
                 expectedDataChannelName: 'rtc-realtime',
-                actualDataChannelName: 'rtc-data-channel',
-            },
+                actualDataChannelName: 'rtc-data-channel'
+            }
         });
 
         const diagnostic = selectRallarBlackBoxDiagnostics(runtime.state())[0];
@@ -86,7 +86,7 @@ describe('rallar-bb-test runtime diagnostics', () => {
             topic: 'rallar.browser.rtc.data_channel_label_mismatch',
             connection: 'aliceRtc',
             transport: 'realtime',
-            severity: 'warning',
+            severity: 'warning'
         });
         expect(diagnostic.payload).toMatchObject({
             diagnosticSchemaVersion: 1,
@@ -95,8 +95,8 @@ describe('rallar-bb-test runtime diagnostics', () => {
             remotePeerId: 'bob-session',
             data: {
                 expectedDataChannelName: 'rtc-realtime',
-                actualDataChannelName: 'rtc-data-channel',
-            },
+                actualDataChannelName: 'rtc-data-channel'
+            }
         });
     });
 
@@ -107,12 +107,12 @@ describe('rallar-bb-test runtime diagnostics', () => {
                 send: async () => ({
                     status: 'no-peers',
                     peerIds: ['bob-session'],
-                    health: [],
+                    health: []
                 }),
                 refreshRoom: async () => undefined,
                 close: async () => ({ closed: true }),
-                health: async () => ({ connected: true }),
-            },
+                health: async () => ({ connected: true })
+            }
         });
 
         const result = await runtime.execute({
@@ -122,12 +122,12 @@ describe('rallar-bb-test runtime diagnostics', () => {
             transport: 'realtime',
             send: {
                 data: {
-                    text: 'hello',
-                },
-            },
+                    text: 'hello'
+                }
+            }
         });
         const diagnostic = selectRallarBlackBoxDiagnostics(runtime.state())
-            .find(event => event.topic === 'rallar.bb.rtc.send_failed');
+            .find((event) => event.topic === 'rallar.bb.rtc.send_failed');
 
         expect(result.status).toBe('failed');
         expect(diagnostic?.payload).toMatchObject({
@@ -140,11 +140,11 @@ describe('rallar-bb-test runtime diagnostics', () => {
             message: 'RTC send resolved no target peers.',
             data: {
                 status: 'no-peers',
-                peerIds: ['bob-session'],
+                peerIds: ['bob-session']
             },
             error: {
-                code: 'RALLAR_BB_RTC_NO_PEERS',
-            },
+                code: 'RALLAR_BB_RTC_NO_PEERS'
+            }
         });
     });
 });

@@ -2,16 +2,11 @@ import {
     controlSnapshotSelectionIndexWorkForTest,
     createControlSnapshotSelectionIndex,
     type ControlSnapshotSelectionIndex,
-    type ControlSnapshotSelectionIndexWork,
+    type ControlSnapshotSelectionIndexWork
 } from '@shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
-import type { ControlServerSnapshot } from
-    '@shared-test/rallar-bb-test/control-snapshots.ts';
-import {
-    controlSnapshotRevisionOf,
-    type ControlSnapshotRevision,
-} from './control-snapshot-revision.ts';
-import { bindControlSelectionIndexToSnapshot } from
-    '../../control-selection-index-binding.ts';
+import type { ControlServerSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { bindControlSelectionIndexToSnapshot } from '../../control-selection-index-binding.ts';
+import { controlSnapshotRevisionOf, type ControlSnapshotRevision } from './control-snapshot-revision.ts';
 
 export type { ControlSnapshotSelectionIndex };
 
@@ -65,7 +60,7 @@ export function createControlSelectionIndexCache(): ControlSelectionIndexCache {
         hitCount: 0,
         missCount: 0,
         indexBuildCount: 0,
-        lastLookup: emptyLookupWork(false),
+        lastLookup: emptyLookupWork(false)
     };
     const cache: ControlSelectionIndexCache = Object.freeze({
         get(snapshot: ControlServerSnapshot): ControlSnapshotSelectionIndex {
@@ -83,7 +78,7 @@ export function createControlSelectionIndexCache(): ControlSelectionIndexCache {
 
             const index = bindControlSelectionIndexToSnapshot(
                 snapshot,
-                createControlSnapshotSelectionIndex(snapshot),
+                createControlSnapshotSelectionIndex(snapshot)
             );
             const indexWork = controlSnapshotSelectionIndexWorkForTest(index);
             work.missCount += 1;
@@ -95,33 +90,33 @@ export function createControlSelectionIndexCache(): ControlSelectionIndexCache {
                 distributedRunVisitCount: indexWork?.distributedRunVisitCount ?? 0,
                 selectionIndexLoopVisitCount: indexWork
                     ? selectionIndexLoopVisitCount(indexWork)
-                    : 0,
+                    : 0
             };
             entry = revision
                 ? { kind: 'revision', revision, index }
                 : { kind: 'identity', snapshot: new WeakRef(snapshot), index };
             publishWork(cache, work);
             return index;
-        },
+        }
     });
     publishWork(cache, work);
     return cache;
 }
 
 export function controlSelectionIndexCacheWorkForTest(
-    cache: ControlSelectionIndexCache,
+    cache: ControlSelectionIndexCache
 ): ControlSelectionIndexCacheWork | undefined {
     return workByCache.get(cache);
 }
 
 export function controlSelectionIndexCacheLastLookup(
-    cache: ControlSelectionIndexCache,
+    cache: ControlSelectionIndexCache
 ): ControlSelectionIndexCacheLookupWork | undefined {
     return workByCache.get(cache)?.lastLookup;
 }
 
 function selectionIndexLoopVisitCount(
-    work: ControlSnapshotSelectionIndexWork,
+    work: ControlSnapshotSelectionIndexWork
 ): number {
     return work.controlRunVisitCount +
         work.controlAgentVisitCount +
@@ -145,19 +140,22 @@ function emptyLookupWork(cacheHit: boolean): ControlSelectionIndexCacheLookupWor
         indexBuildCount: 0,
         controlRunVisitCount: 0,
         distributedRunVisitCount: 0,
-        selectionIndexLoopVisitCount: 0,
+        selectionIndexLoopVisitCount: 0
     });
 }
 
 function publishWork(
     cache: ControlSelectionIndexCache,
-    work: MutableCacheWork,
+    work: MutableCacheWork
 ): void {
-    workByCache.set(cache, Object.freeze({
-        lookupCount: work.lookupCount,
-        hitCount: work.hitCount,
-        missCount: work.missCount,
-        indexBuildCount: work.indexBuildCount,
-        lastLookup: Object.freeze({ ...work.lastLookup }),
-    }));
+    workByCache.set(
+        cache,
+        Object.freeze({
+            lookupCount: work.lookupCount,
+            hitCount: work.hitCount,
+            missCount: work.missCount,
+            indexBuildCount: work.indexBuildCount,
+            lastLookup: Object.freeze({ ...work.lastLookup })
+        })
+    );
 }

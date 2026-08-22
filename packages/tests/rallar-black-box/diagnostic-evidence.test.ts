@@ -1,13 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type {
-    RallarBlackBoxTestEvent,
-    RallarBlackBoxTestState,
-} from '../../shared-test/rallar-bb-test/types.ts';
-import {
-    completedActionFeedback,
-    idleActionFeedback,
-    runningActionFeedback,
-} from '../../../apps/rallar-black-box/src/legacy/diagnostics/shared/action-feedback.ts';
 import {
     DEFAULT_EVENT_FILTERS,
     eventFilterFromValue,
@@ -15,7 +6,7 @@ import {
     eventMatchesFilters,
     eventPeerValue,
     eventSelectorValue,
-    type EventFilters,
+    type EventFilters
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/events/event-filters.ts';
 import {
     eventFailureText,
@@ -25,13 +16,19 @@ import {
     isRallarTraceEvent,
     rallarTraceSource,
     traceMetaText,
-    traceTimingText,
+    traceTimingText
 } from '../../../apps/rallar-black-box/src/legacy/diagnostics/events/event-presentation.ts';
+import {
+    completedActionFeedback,
+    idleActionFeedback,
+    runningActionFeedback
+} from '../../../apps/rallar-black-box/src/legacy/diagnostics/shared/action-feedback.ts';
 import { optionalNumber } from '../../../apps/rallar-black-box/src/legacy/shared/finite-number.ts';
 import { deriveRallarBrowserStatus } from '../../../apps/rallar-black-box/src/legacy/shell/rallar-browser-status.ts';
+import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
 
 function event(
-    overrides: Partial<RallarBlackBoxTestEvent> = {},
+    overrides: Partial<RallarBlackBoxTestEvent> = {}
 ): RallarBlackBoxTestEvent {
     return {
         eventId: 'event-1',
@@ -48,27 +45,27 @@ function event(
                 roomRef: { groupId: 'group-1' },
                 remotePeerId: 'peer-1',
                 topicId: 'chat',
-                typeId: 'message',
-            },
+                typeId: 'message'
+            }
         },
-        ...overrides,
+        ...overrides
     };
 }
 
 function state(
-    events: readonly RallarBlackBoxTestEvent[],
+    events: readonly RallarBlackBoxTestEvent[]
 ): RallarBlackBoxTestState {
     return {
         status: 'completed',
         currentConfig: {
             roomId: 'config-room',
             transport: 'ws',
-            defaults: { connection: 'config-connection' },
+            defaults: { connection: 'config-connection' }
         },
         commandHistory: [],
         events,
         failures: [],
-        resultCache: {},
+        resultCache: {}
     };
 }
 
@@ -88,28 +85,30 @@ describe('diagnostic event filters', () => {
             peer: 'peer-1',
             selector: 'chat / message',
             topic: 'BROWSER.RTC',
-            severity: 'warning',
+            severity: 'warning'
         };
         expect(eventMatchesFilters(candidate, matching)).toBe(true);
 
-        for (const [field, value] of Object.entries({
-            kind: 'message',
-            commandId: 'other-command',
-            connection: 'other-connection',
-            actor: 'bob',
-            transport: 'ws',
-            group: 'other-group',
-            peer: 'other-peer',
-            selector: 'other / selector',
-            topic: 'missing-topic',
-            severity: 'error',
-        })) {
+        for (
+            const [field, value] of Object.entries({
+                kind: 'message',
+                commandId: 'other-command',
+                connection: 'other-connection',
+                actor: 'bob',
+                transport: 'ws',
+                group: 'other-group',
+                peer: 'other-peer',
+                selector: 'other / selector',
+                topic: 'missing-topic',
+                severity: 'error'
+            })
+        ) {
             expect(
                 eventMatchesFilters(candidate, {
                     ...DEFAULT_EVENT_FILTERS,
-                    [field]: value,
+                    [field]: value
                 }),
-                field,
+                field
             ).toBe(false);
         }
     });
@@ -125,15 +124,15 @@ describe('diagnostic event filters', () => {
                     roomRef: { groupId: 'nested-group' },
                     remotePeerId: 'nested-peer',
                     topicId: 'nested-topic',
-                    typeId: 'nested-type',
-                },
-            },
+                    typeId: 'nested-type'
+                }
+            }
         });
 
         expect(eventGroupValue(candidate)).toBe('nested-group');
         expect(eventPeerValue(candidate)).toBe('nested-peer');
         expect(eventSelectorValue(candidate)).toBe(
-            'nested-topic / nested-type',
+            'nested-topic / nested-type'
         );
     });
 });
@@ -147,14 +146,14 @@ describe('diagnostic event presentation', () => {
                 data: {
                     phase: 'nested phase',
                     status: { readyState: 'open' },
-                    message: 'nested failure',
-                },
-            },
+                    message: 'nested failure'
+                }
+            }
         });
 
         expect(eventPayloadDetails(candidate)).toMatchObject({
             phase: 'nested phase',
-            message: 'nested failure',
+            message: 'nested failure'
         });
         expect(eventPayloadText(candidate)).toBe('nested phase - open');
         expect(eventFailureText(candidate)).toBe('nested failure');
@@ -162,32 +161,32 @@ describe('diagnostic event presentation', () => {
         expect(isRallarTraceEvent(candidate)).toBe(true);
         expect(rallarTraceSource(candidate)).toBe('browser');
         expect(
-            rallarTraceSource(event({ topic: 'rallar.direct.ws.send' })),
+            rallarTraceSource(event({ topic: 'rallar.direct.ws.send' }))
         ).toBe('direct');
         expect(
-            rallarTraceSource(event({ topic: 'rallar.server.rest' })),
+            rallarTraceSource(event({ topic: 'rallar.server.rest' }))
         ).toBe('server');
         expect(
-            isRallarTraceEvent(event({ topic: 'unrelated.runtime' })),
+            isRallarTraceEvent(event({ topic: 'unrelated.runtime' }))
         ).toBe(false);
     });
 
     it('formats failure fallback, timing, and trace metadata', () => {
         const candidate = event({
             atEpochMs: 1_200,
-            payload: { error: { message: 'lane failed' } },
+            payload: { error: { message: 'lane failed' } }
         });
         const previous = event({ eventId: 'previous', atEpochMs: 1_000 });
 
         expect(eventFailureText(candidate)).toBe('lane failed');
         expect(traceTimingText(candidate, previous, 2_200)).toMatch(
-            / - 1s ago - \+200 ms$/,
+            / - 1s ago - \+200 ms$/
         );
         expect(traceTimingText(candidate, undefined, 2_200)).toMatch(
-            / - 1s ago - first$/,
+            / - 1s ago - first$/
         );
         expect(traceMetaText(candidate)).toBe(
-            'browser - diagnostic - warning - realtime - aliceRtc - alice',
+            'browser - diagnostic - warning - realtime - aliceRtc - alice'
         );
     });
 });
@@ -205,21 +204,21 @@ describe('Rallar browser status evidence', () => {
                                 reconnectExhausted: true,
                                 connectState: 'connecting',
                                 reconnectAttempts: 3,
-                                maxReconnectAttempts: 4,
+                                maxReconnectAttempts: 4
                             },
                             rtcStatus: {
                                 knownPeerIds: ['one', 'two'],
                                 activePeerIds: ['one'],
                                 readyPeerIds: ['one'],
-                                peerIdsWithNoReconnectableLanes: ['two'],
+                                peerIdsWithNoReconnectableLanes: ['two']
                             },
                             roomRef: { groupId: 'event-group' },
                             laneId: 'lane-1',
-                            rallarConnected: true,
-                        },
-                    },
-                }),
-            ]),
+                            rallarConnected: true
+                        }
+                    }
+                })
+            ])
         );
 
         expect(summary).toMatchObject({
@@ -235,7 +234,7 @@ describe('Rallar browser status evidence', () => {
             peerSummary: 'ready 1 / active 1 / known 2',
             latestTopic: 'rallar.browser.rtc.connect_completed',
             latestAtEpochMs: 1_000,
-            rallarConnected: true,
+            rallarConnected: true
         });
     });
 
@@ -249,7 +248,7 @@ describe('Rallar browser status evidence', () => {
             rtcGroup: 'config-room',
             rtcConnection: 'config-connection',
             rtcTransport: 'ws',
-            peerSummary: 'ready 0 / active 0 / known 0',
+            peerSummary: 'ready 0 / active 0 / known 0'
         });
 
         const degraded = deriveRallarBrowserStatus(
@@ -259,11 +258,11 @@ describe('Rallar browser status evidence', () => {
                     payload: {
                         rtcStatus: {
                             knownPeerIds: ['one'],
-                            readyPeerIds: ['one'],
-                        },
-                    },
-                }),
-            ]),
+                            readyPeerIds: ['one']
+                        }
+                    }
+                })
+            ])
         );
         expect(degraded.rtcLabel).toBe('closed');
         expect(degraded.rtcTone).toBe('muted');
@@ -281,39 +280,39 @@ describe('diagnostic action feedback', () => {
 
         expect(idleActionFeedback('Ready.')).toEqual({
             state: 'idle',
-            message: 'Ready.',
+            message: 'Ready.'
         });
         expect(runningActionFeedback('Send', '/target')).toEqual({
             state: 'running',
             label: 'Send',
             target: '/target',
             message: 'Action is running.',
-            atEpochMs: 2_000,
+            atEpochMs: 2_000
         });
         expect(
             completedActionFeedback({
                 label: 'Send',
                 startedAtEpochMs: 1_500,
                 ok: true,
-                durationMs: 75,
-            }),
+                durationMs: 75
+            })
         ).toMatchObject({
             state: 'success',
             durationMs: 75,
-            atEpochMs: 2_000,
+            atEpochMs: 2_000
         });
         expect(
             completedActionFeedback({
                 label: 'Send',
                 startedAtEpochMs: 2_500,
                 ok: false,
-                message: 'failed',
-            }),
+                message: 'failed'
+            })
         ).toMatchObject({
             state: 'error',
             durationMs: 0,
             message: 'failed',
-            atEpochMs: 2_000,
+            atEpochMs: 2_000
         });
     });
 

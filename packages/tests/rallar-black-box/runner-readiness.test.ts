@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-    runnerDisabledReason,
-    runnerFriendlyErrorMessage,
-    runnerReadinessStatus,
-} from '../../../apps/rallar-black-box/src/runner-readiness.ts';
+import { runnerDisabledReason, runnerFriendlyErrorMessage, runnerReadinessStatus } from '../../../apps/rallar-black-box/src/runner-readiness.ts';
 
 describe('runner readiness', () => {
     it('allows local runs before distributed agents are connected', () => {
@@ -14,13 +10,13 @@ describe('runner readiness', () => {
             controlStatus: 'offline',
             controlRunId: '',
             connectedAgentCount: 0,
-            targetableAgentCount: 0,
+            targetableAgentCount: 0
         });
 
         expect(readiness.canRunLocal).toBe(true);
         expect(readiness.canRunDistributed).toBe(false);
         expect(readiness.primaryMessage).toBe(
-            'Ready to run in this browser. Distributed: Control server offline',
+            'Ready to run in this browser. Distributed: Control server offline'
         );
         expect(runnerDisabledReason(readiness, 'local-browser')).toBeUndefined();
         expect(runnerDisabledReason(readiness, 'connected-agents')).toBe('Control server offline');
@@ -35,7 +31,7 @@ describe('runner readiness', () => {
             controlRunId: 'run-1',
             connectedAgentCount: 2,
             targetableAgentCount: 2,
-            recipePrerequisiteIssues: ['Recipe JSON is not bundled.'],
+            recipePrerequisiteIssues: ['Recipe JSON is not bundled.']
         });
 
         expect(readiness.canRunLocal).toBe(false);
@@ -60,7 +56,7 @@ describe('runner readiness', () => {
             controlRunId: 'run-1',
             connectedAgentCount: 1,
             targetableAgentCount: 1,
-            turnStatus: 'empty',
+            turnStatus: 'empty'
         });
 
         expect(readiness.canRunLocal).toBe(true);
@@ -70,7 +66,7 @@ describe('runner readiness', () => {
         expect(readiness.checks).toContainEqual(expect.objectContaining({
             id: 'turn',
             status: 'warning',
-            message: 'No TURN/STUN servers returned. Cross-region WebRTC may fail; configure Metered TURN.',
+            message: 'No TURN/STUN servers returned. Cross-region WebRTC may fail; configure Metered TURN.'
         }));
     });
 
@@ -84,7 +80,7 @@ describe('runner readiness', () => {
             connectedAgentCount: 1,
             targetableAgentCount: 1,
             turnStatus: 'error',
-            turnDetail: 'HTTP 502',
+            turnDetail: 'HTTP 502'
         });
 
         expect(readiness.canRunLocal).toBe(true);
@@ -92,7 +88,7 @@ describe('runner readiness', () => {
         expect(readiness.checks).toContainEqual(expect.objectContaining({
             id: 'turn',
             status: 'warning',
-            message: 'TURN/STUN check failed: HTTP 502',
+            message: 'TURN/STUN check failed: HTTP 502'
         }));
     });
 });

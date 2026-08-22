@@ -1,24 +1,18 @@
+import { computeGroupAdmissionDecision, type ComputeGroupAdmissionDecisionInput } from '@shared/api/group-lifecycle/compute-group-admission-decision.ts';
+import type { GroupAdmissionPolicy, GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { describe, expect, it } from 'vitest';
-import {
-    computeGroupAdmissionDecision,
-    type ComputeGroupAdmissionDecisionInput,
-} from '@shared/api/group-lifecycle/compute-group-admission-decision.ts';
-import type {
-    GroupAdmissionPolicy,
-    GroupLifecycleState,
-} from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 
 const NOW = 1_700_000_000_000;
 const STATES: readonly GroupLifecycleState[] = [
     'forming',
     'establishing',
     'active',
-    'reconfiguring',
+    'reconfiguring'
 ];
 
 function decision(
     admission: Partial<GroupAdmissionPolicy>,
-    overrides: Partial<Omit<ComputeGroupAdmissionDecisionInput, 'admission'>> = {},
+    overrides: Partial<Omit<ComputeGroupAdmissionDecisionInput, 'admission'>> = {}
 ) {
     return computeGroupAdmissionDecision({
         admission: { mode: 'open', untilEpochMs: null, untilMemberCount: null, ...admission },
@@ -26,7 +20,7 @@ function decision(
         activeMemberCount: 2,
         invited: false,
         nowEpochMs: NOW,
-        ...overrides,
+        ...overrides
     });
 }
 
@@ -60,10 +54,10 @@ describe('group admission decision', () => {
             .toEqual({ kind: 'admit' });
         expect(deniedCode(decision({ mode: 'closed' }, {
             lifecycleState: 'active',
-            invited: true,
+            invited: true
         }))).toBe('group-admission-closed');
         expect(deniedCode(decision({ mode: 'manager-approval', untilMemberCount: 2 }, {
-            invited: true,
+            invited: true
         }))).toBe('group-admission-capacity-reached');
     });
 

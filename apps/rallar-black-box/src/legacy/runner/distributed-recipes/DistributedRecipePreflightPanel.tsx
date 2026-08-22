@@ -4,7 +4,7 @@ import { formatDuration } from '../../shared/time-format.ts';
 
 export function DistributedRecipePreflightPanel({
     preflight,
-    compact = false,
+    compact = false
 }: {
     preflight: DistributedRecipePreflightSummary;
     compact?: boolean;
@@ -27,16 +27,12 @@ export function DistributedRecipePreflightPanel({
                 <Metric label="Max depth" value={String(preflight.maxDepth)} />
                 <Metric
                     label="Frames"
-                    value={
-                        preflight.effectiveFrameCount === undefined
-                            ? '-'
-                            : String(preflight.effectiveFrameCount)
-                    }
-                    tone={
-                        preflight.effectiveFrameCount === undefined
-                            ? 'muted'
-                            : 'active'
-                    }
+                    value={preflight.effectiveFrameCount === undefined
+                        ? '-'
+                        : String(preflight.effectiveFrameCount)}
+                    tone={preflight.effectiveFrameCount === undefined
+                        ? 'muted'
+                        : 'active'}
                 />
                 <Metric
                     label="Loops"
@@ -48,12 +44,10 @@ export function DistributedRecipePreflightPanel({
                     value={String(
                         preflight.parallelGroups.reduce(
                             (sum, entry) => sum + entry.groupCount,
-                            0,
-                        ),
+                            0
+                        )
                     )}
-                    tone={
-                        preflight.parallelGroups.length > 0 ? 'active' : 'muted'
-                    }
+                    tone={preflight.parallelGroups.length > 0 ? 'active' : 'muted'}
                 />
             </div>
             <div className="badge-list distributed-preflight-badges">
@@ -112,7 +106,7 @@ export function DistributedRecipePreflightPanel({
                                         : `${loop.durationMs} ms duration`,
                                     loop.frameCount === undefined
                                         ? undefined
-                                        : `${loop.frameCount} frames`,
+                                        : `${loop.frameCount} frames`
                                 ]
                                     .filter(Boolean)
                                     .join(' - ')}
@@ -132,8 +126,7 @@ export function DistributedRecipePreflightPanel({
                                 {parallel.groupCount === 1 ? '' : 's'}
                             </span>
                             <small>
-                                concurrency {parallel.maxConcurrency} -{' '}
-                                {parallel.effectiveCommandCount} ops -{' '}
+                                concurrency {parallel.maxConcurrency} - {parallel.effectiveCommandCount} ops -{' '}
                                 {parallel.groups.join(', ')}
                             </small>
                         </div>
@@ -146,8 +139,7 @@ export function DistributedRecipePreflightPanel({
                             <strong>{wait.commandId ?? wait.path}</strong>
                             <span>Wait/assert guard</span>
                             <small>
-                                wait {formatDuration(wait.timeoutMs)} -{' '}
-                                {wait.matchSummary}
+                                wait {formatDuration(wait.timeoutMs)} - {wait.matchSummary}
                             </small>
                         </div>
                     ))}
@@ -170,9 +162,7 @@ export function DistributedRecipePreflightPanel({
                     <strong>Live requirements</strong>
                     <ul>
                         {preflight.liveServiceRequirements.map(
-                            (requirement) => (
-                                <li key={requirement}>{requirement}</li>
-                            ),
+                            (requirement) => <li key={requirement}>{requirement}</li>
                         )}
                     </ul>
                 </div>
@@ -202,8 +192,7 @@ export function DistributedRecipePreflightPanel({
                 {compact && preflight.tree.length > treeRows.length && (
                     <div className="distributed-preflight-tree-row muted">
                         <small>
-                            {preflight.tree.length - treeRows.length} more
-                            command row(s) in the raw manifest
+                            {preflight.tree.length - treeRows.length} more command row(s) in the raw manifest
                         </small>
                     </div>
                 )}

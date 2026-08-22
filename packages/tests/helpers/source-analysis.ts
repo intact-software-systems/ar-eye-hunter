@@ -57,7 +57,7 @@ const WALK_IGNORED_KEYS = new Set([
     'extra',
     'errors',
     'comments',
-    'tokens',
+    'tokens'
 ]);
 
 export function analyzeSource(source: string, filePath: string): SourceAnalysis {
@@ -74,13 +74,14 @@ export function analyzeSource(source: string, filePath: string): SourceAnalysis 
             sourceType: 'module',
             sourceFilename: filePath,
             createImportExpressions: true,
-            plugins,
+            plugins
         });
         body = parsed.program.body as unknown as readonly AstNode[];
-    } catch (error) {
+    }
+    catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         throw new Error(`Unable to parse ${displayPath(filePath)}: ${message}`, {
-            cause: error,
+            cause: error
         });
     }
 
@@ -110,7 +111,7 @@ export function analyzeSource(source: string, filePath: string): SourceAnalysis 
         }
 
         topLevelDeclarations.push(
-            ...normalizeDeclarations(statement, false, false),
+            ...normalizeDeclarations(statement, false, false)
         );
     }
 
@@ -149,7 +150,7 @@ export function analyzeSource(source: string, filePath: string): SourceAnalysis 
         exports,
         dynamicImports,
         topLevelDeclarations,
-        identifierNames,
+        identifierNames
     };
 }
 
@@ -159,7 +160,7 @@ export function analyzeSourceFile(filePath: string): SourceAnalysis {
 
 export function resolveRelativeTypeScriptDependency(
     importerPath: string,
-    specifier: string,
+    specifier: string
 ): string | undefined {
     if (!specifier.startsWith('.')) {
         return undefined;
@@ -175,18 +176,16 @@ export function resolveRelativeTypeScriptDependency(
 
     const candidates = [
         ...TYPESCRIPT_EXTENSIONS.map(
-            (extension) => `${unresolvedPath}${extension}`,
+            (extension) => `${unresolvedPath}${extension}`
         ),
-        ...TYPESCRIPT_EXTENSIONS.map((extension) =>
-            path.join(unresolvedPath, `index${extension}`),
-        ),
+        ...TYPESCRIPT_EXTENSIONS.map((extension) => path.join(unresolvedPath, `index${extension}`))
     ];
 
     return candidates.find(isFile);
 }
 
 export function buildRelativeTypeScriptGraph(
-    entryPaths: readonly string[],
+    entryPaths: readonly string[]
 ): ReadonlyMap<string, readonly string[]> {
     const graph = new Map<string, readonly string[]>();
     const pending = [...new Set(entryPaths.map((entryPath) => path.resolve(entryPath)))]
@@ -202,20 +201,18 @@ export function buildRelativeTypeScriptGraph(
         const analysis = analyzeSourceFile(filePath);
         const moduleSpecifiers = [
             ...analysis.imports.map((entry) => entry.specifier),
-            ...analysis.exports.flatMap((entry) =>
-                entry.specifier ? [entry.specifier] : [],
-            ),
+            ...analysis.exports.flatMap((entry) => entry.specifier ? [entry.specifier] : [])
         ];
         const dependencies = [
             ...new Set(
                 moduleSpecifiers.flatMap((specifier) => {
                     const dependency = resolveRelativeTypeScriptDependency(
                         filePath,
-                        specifier,
+                        specifier
                     );
                     return dependency ? [dependency] : [];
-                }),
-            ),
+                })
+            )
         ].sort();
 
         graph.set(filePath, dependencies);
@@ -230,7 +227,7 @@ export function buildRelativeTypeScriptGraph(
 }
 
 export function findDependencyCycles(
-    graph: ReadonlyMap<string, readonly string[]>,
+    graph: ReadonlyMap<string, readonly string[]>
 ): readonly (readonly string[])[] {
     const state = new Map<string, 'visiting' | 'visited'>();
     const stack: string[] = [];
@@ -258,7 +255,7 @@ export function findDependencyCycles(
                 if (cycleStart !== undefined) {
                     const cycle = canonicalizeCycle([
                         ...stack.slice(cycleStart),
-                        dependency,
+                        dependency
                     ]);
                     cycles.set(cycle.join('\u0000'), cycle);
                 }
@@ -276,9 +273,7 @@ export function findDependencyCycles(
         }
     }
 
-    return [...cycles.values()].sort((left, right) =>
-        left.join('\u0000').localeCompare(right.join('\u0000')),
-    );
+    return [...cycles.values()].sort((left, right) => left.join('\u0000').localeCompare(right.join('\u0000')));
 }
 
 function normalizeImport(statement: AstNode): SourceImport {
@@ -304,7 +299,7 @@ function normalizeImport(statement: AstNode): SourceImport {
             namedImports.push({
                 imported: readNodeName(specifier.imported) ?? localName,
                 local: localName,
-                typeOnly: importTypeOnly || specifier.importKind === 'type',
+                typeOnly: importTypeOnly || specifier.importKind === 'type'
             });
         }
     }
@@ -315,14 +310,14 @@ function normalizeImport(statement: AstNode): SourceImport {
         sideEffectOnly: specifiers.length === 0,
         defaultImport,
         namespaceImport,
-        namedImports,
+        namedImports
     };
 }
 
 function normalizeNamedExport(
     statement: AstNode,
     exports: SourceExport[],
-    declarations: SourceDeclaration[],
+    declarations: SourceDeclaration[]
 ): void {
     const declaration = isAstNode(statement.declaration)
         ? statement.declaration
@@ -331,7 +326,7 @@ function normalizeNamedExport(
         const normalizedDeclarations = normalizeDeclarations(
             declaration,
             true,
-            false,
+            false
         );
         declarations.push(...normalizedDeclarations);
         for (const normalized of normalizedDeclarations) {
@@ -339,7 +334,7 @@ function normalizeNamedExport(
                 kind: 'declaration',
                 exportedName: normalized.name,
                 localName: normalized.name,
-                typeOnly: normalized.kind === 'type',
+                typeOnly: normalized.kind === 'type'
             });
         }
     }
@@ -356,7 +351,7 @@ function normalizeNamedExport(
                 kind: 'namespace',
                 exportedName: readNodeName(specifier.exported),
                 specifier: source,
-                typeOnly: statementTypeOnly || specifier.exportKind === 'type',
+                typeOnly: statementTypeOnly || specifier.exportKind === 'type'
             });
             continue;
         }
@@ -367,7 +362,7 @@ function normalizeNamedExport(
                 exportedName: readNodeName(specifier.exported),
                 localName: readNodeName(specifier.local),
                 specifier: source,
-                typeOnly: statementTypeOnly || specifier.exportKind === 'type',
+                typeOnly: statementTypeOnly || specifier.exportKind === 'type'
             });
         }
     }
@@ -375,21 +370,21 @@ function normalizeNamedExport(
 
 function normalizeAllExport(
     statement: AstNode,
-    exports: SourceExport[],
+    exports: SourceExport[]
 ): void {
     const exportedName = readNodeName(statement.exported);
     exports.push({
         kind: exportedName ? 'namespace' : 'star',
         exportedName,
         specifier: readStringValue(statement.source),
-        typeOnly: statement.exportKind === 'type',
+        typeOnly: statement.exportKind === 'type'
     });
 }
 
 function normalizeDefaultExport(
     statement: AstNode,
     exports: SourceExport[],
-    declarations: SourceDeclaration[],
+    declarations: SourceDeclaration[]
 ): void {
     const declaration = isAstNode(statement.declaration)
         ? statement.declaration
@@ -402,16 +397,15 @@ function normalizeDefaultExport(
     exports.push({
         kind: 'default',
         exportedName: 'default',
-        localName:
-            normalizedDeclarations[0]?.name ?? readNodeName(statement.declaration),
-        typeOnly: false,
+        localName: normalizedDeclarations[0]?.name ?? readNodeName(statement.declaration),
+        typeOnly: false
     });
 }
 
 function normalizeDeclarations(
     node: AstNode,
     exported: boolean,
-    defaultExport: boolean,
+    defaultExport: boolean
 ): readonly SourceDeclaration[] {
     if (node.type === 'VariableDeclaration') {
         const declarators = Array.isArray(node.declarations)
@@ -422,8 +416,8 @@ function normalizeDeclarations(
                 name,
                 kind: 'value' as const,
                 exported,
-                defaultExport,
-            })),
+                defaultExport
+            }))
         );
     }
 
@@ -477,20 +471,20 @@ function readBindingNames(value: unknown): readonly string[] {
                 return property.type === 'RestElement'
                     ? readBindingNames(property.argument)
                     : readBindingNames(property.value);
-            },
+            }
         );
     }
     if (value.type === 'ArrayPattern') {
         return (Array.isArray(value.elements) ? value.elements : []).flatMap(
-            readBindingNames,
+            readBindingNames
         );
     }
     return [];
 }
 
 function normalizeDynamicImport(
-    source: unknown,
-): Readonly<{ specifier?: string; literal: boolean }> {
+    source: unknown
+): Readonly<{ specifier?: string; literal: boolean; }> {
     const specifier = readStringValue(source);
     return specifier === undefined
         ? { specifier: undefined, literal: false }
@@ -529,8 +523,8 @@ function readNodeName(value: unknown): string | undefined {
 
 function readStringValue(value: unknown): string | undefined {
     return isAstNode(value) &&
-        (value.type === 'StringLiteral' || value.type === 'Literal') &&
-        typeof value.value === 'string'
+            (value.type === 'StringLiteral' || value.type === 'Literal') &&
+            typeof value.value === 'string'
         ? value.value
         : undefined;
 }
@@ -546,7 +540,7 @@ function isAstNode(value: unknown): value is AstNode {
 
 function isTypeScriptExtension(extension: string): boolean {
     return TYPESCRIPT_EXTENSIONS.includes(
-        extension as (typeof TYPESCRIPT_EXTENSIONS)[number],
+        extension as (typeof TYPESCRIPT_EXTENSIONS)[number]
     );
 }
 
@@ -556,7 +550,8 @@ function isFile(filePath: string): boolean {
     }
     try {
         return statSync(filePath).isFile();
-    } catch {
+    }
+    catch {
         return false;
     }
 }
@@ -569,11 +564,9 @@ function canonicalizeCycle(cycle: readonly string[]): readonly string[] {
 
     const rotations = members.map((_, index) => [
         ...members.slice(index),
-        ...members.slice(0, index),
+        ...members.slice(0, index)
     ]);
-    rotations.sort((left, right) =>
-        left.join('\u0000').localeCompare(right.join('\u0000')),
-    );
+    rotations.sort((left, right) => left.join('\u0000').localeCompare(right.join('\u0000')));
     const canonicalMembers = rotations[0];
     return [...canonicalMembers, canonicalMembers[0]];
 }

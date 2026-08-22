@@ -5,12 +5,9 @@ send commands through REST or a validated WS topic; the server mutates durable
 app data, then publishes a room snapshot to the players in that room.
 
 ```ts
-import type { RallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
 import type { RallarServerRuntime } from '@shared-server/rallar-facade/RallarServer.ts';
-import {
-    newALBroadcastMessage,
-    newALRoute,
-} from '@shared/al-contracts/al-contract.ts';
+import type { RallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
+import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 
 type GameCommand = {
     gameId: string;
@@ -29,20 +26,20 @@ type GameState = {
 type GameSnapshot = Pick<GameState, 'gameId' | 'revision' | 'readyPeerIds'>;
 
 export async function installGameAuthority(
-    rallar: RallarServerApplication<RallarServerRuntime, unknown>,
+    rallar: RallarServerApplication<RallarServerRuntime, unknown>
 ) {
     const games = await rallar.data.open<GameState>('demo-games', {
         namespace: 'demo-game',
         schemaVersion: 1,
         readConsistency: 'fresh',
-        maxConflictRetries: 8,
+        maxConflictRetries: 8
     });
 
     async function publishSnapshot(state: GameState): Promise<void> {
         const snapshot: GameSnapshot = {
             gameId: state.gameId,
             revision: state.revision,
-            readyPeerIds: state.readyPeerIds,
+            readyPeerIds: state.readyPeerIds
         };
 
         await rallar.ws.publish(
@@ -51,23 +48,23 @@ export async function installGameAuthority(
                 newALRoute(
                     'room.demo.snapshot',
                     state.roomId,
-                    `${state.gameId}:${state.revision}`,
+                    `${state.gameId}:${state.revision}`
                 ),
                 'room',
                 'room.demo.snapshot.v1',
                 snapshot,
                 {
                     reliability: 'at-least-once',
-                    ttlMs: 15_000,
-                },
+                    ttlMs: 15_000
+                }
             ),
-            'live-only',
+            'live-only'
         );
     }
 
     async function applyCommand(
         command: GameCommand,
-        senderId: string,
+        senderId: string
     ): Promise<GameSnapshot> {
         const state = await games.updateOrCreate(command.gameId, (current) => {
             const previous: GameState = current ?? {
@@ -75,7 +72,7 @@ export async function installGameAuthority(
                 roomId: command.gameId,
                 revision: 0,
                 readyPeerIds: [],
-                events: [],
+                events: []
             };
 
             if (
@@ -93,8 +90,8 @@ export async function installGameAuthority(
                     : previous.readyPeerIds,
                 events: [
                     ...previous.events,
-                    `${senderId}:${command.seq}:${command.action}`,
-                ],
+                    `${senderId}:${command.seq}:${command.action}`
+                ]
             };
         });
 
@@ -102,7 +99,7 @@ export async function installGameAuthority(
         return {
             gameId: state.gameId,
             revision: state.revision,
-            readyPeerIds: state.readyPeerIds,
+            readyPeerIds: state.readyPeerIds
         };
     }
 
@@ -115,17 +112,17 @@ export async function installGameAuthority(
         validate: (value, context) =>
             isGameCommand(value) &&
             context.roomId !== undefined &&
-            value.gameId === context.roomId,
+            value.gameId === context.roomId
     });
 
     rallar.ws.on<GameCommand>(
         {
             topicId: 'room.demo.command',
-            typeId: 'room.demo.command.v1',
+            typeId: 'room.demo.command.v1'
         },
         async (message, context) => {
             await applyCommand(message.payload, context.senderId);
-        },
+        }
     );
 
     return {
@@ -136,10 +133,10 @@ export async function installGameAuthority(
                 ? {
                     gameId: state.gameId,
                     revision: state.revision,
-                    readyPeerIds: state.readyPeerIds,
+                    readyPeerIds: state.readyPeerIds
                 }
                 : undefined;
-        },
+        }
     };
 }
 

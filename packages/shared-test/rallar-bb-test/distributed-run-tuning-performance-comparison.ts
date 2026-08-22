@@ -1,6 +1,4 @@
-import type {
-    DistributedRunPerformanceAnalysis,
-} from './distributed-artifact-analysis.ts';
+import type { DistributedRunPerformanceAnalysis } from './distributed-artifact-analysis.ts';
 
 export type DistributedRunTuningTimingMetric =
     | 'command-duration'
@@ -17,10 +15,12 @@ export type DistributedRunTuningNumericDelta = Readonly<{
 export type DistributedRunTuningPerformanceComparison = Readonly<{
     timingMetric: DistributedRunTuningTimingMetric;
     availability: 'complete' | 'partial' | 'unavailable';
-    selected: DistributedRunTuningNumericDelta & Readonly<{
-        statistic: 'p95' | 'max' | 'achieved-completion';
-        unit: 'ms' | 'hz';
-    }>;
+    selected:
+        & DistributedRunTuningNumericDelta
+        & Readonly<{
+            statistic: 'p95' | 'max' | 'achieved-completion';
+            unit: 'ms' | 'hz';
+        }>;
     rtc: Readonly<{
         plannedFrames: DistributedRunTuningNumericDelta;
         completedFrames: DistributedRunTuningNumericDelta;
@@ -35,11 +35,13 @@ export type DistributedRunTuningPerformanceComparison = Readonly<{
     }>;
 }>;
 
-export function compareDistributedRunTuningPerformance(input: Readonly<{
-    timingMetric: DistributedRunTuningTimingMetric;
-    left?: DistributedRunPerformanceAnalysis;
-    right?: DistributedRunPerformanceAnalysis;
-}>): DistributedRunTuningPerformanceComparison {
+export function compareDistributedRunTuningPerformance(
+    input: Readonly<{
+        timingMetric: DistributedRunTuningTimingMetric;
+        left?: DistributedRunPerformanceAnalysis;
+        right?: DistributedRunPerformanceAnalysis;
+    }>
+): DistributedRunTuningPerformanceComparison {
     const definition = metricDefinition(input.timingMetric);
     const left = definition.value(input.left);
     const right = definition.value(input.right);
@@ -55,7 +57,7 @@ export function compareDistributedRunTuningPerformance(input: Readonly<{
         selected: {
             statistic: definition.statistic,
             unit: definition.unit,
-            ...numericDelta(left, right),
+            ...numericDelta(left, right)
         },
         rtc: {
             plannedFrames: numericDelta(leftStream?.plannedFrames, rightStream?.plannedFrames),
@@ -64,17 +66,17 @@ export function compareDistributedRunTuningPerformance(input: Readonly<{
             droppedFrames: numericDelta(leftStream?.droppedFrames, rightStream?.droppedFrames),
             inFlightLimitDropCount: numericDelta(
                 leftStream?.inFlightLimitDropCount,
-                rightStream?.inFlightLimitDropCount,
+                rightStream?.inFlightLimitDropCount
             ),
             backpressureCount: numericDelta(leftStream?.backpressureCount, rightStream?.backpressureCount),
             requestedRateHz: numericDelta(leftStream?.requestedRateHz, rightStream?.requestedRateHz),
             achievedCompletionHz: numericDelta(
                 leftStream?.achievedCompletionHz,
-                rightStream?.achievedCompletionHz,
+                rightStream?.achievedCompletionHz
             ),
             maxStartDriftMs: numericDelta(leftStream?.maxStartDriftMs, rightStream?.maxStartDriftMs),
-            lateFrameCount: numericDelta(leftStream?.lateFrameCount, rightStream?.lateFrameCount),
-        },
+            lateFrameCount: numericDelta(leftStream?.lateFrameCount, rightStream?.lateFrameCount)
+        }
     };
 }
 
@@ -83,44 +85,40 @@ function metricDefinition(metric: DistributedRunTuningTimingMetric) {
         return {
             statistic: 'p95' as const,
             unit: 'ms' as const,
-            value: (value?: DistributedRunPerformanceAnalysis) =>
-                value?.commandTiming.p95Ms,
+            value: (value?: DistributedRunPerformanceAnalysis) => value?.commandTiming.p95Ms
         };
     }
     if (metric === 'stream-send-duration') {
         return {
             statistic: 'p95' as const,
             unit: 'ms' as const,
-            value: (value?: DistributedRunPerformanceAnalysis) =>
-                value?.streamTiming?.duration.p95Ms,
+            value: (value?: DistributedRunPerformanceAnalysis) => value?.streamTiming?.duration.p95Ms
         };
     }
     if (metric === 'stream-drift') {
         return {
             statistic: 'max' as const,
             unit: 'ms' as const,
-            value: (value?: DistributedRunPerformanceAnalysis) =>
-                value?.streamTiming?.maxStartDriftMs,
+            value: (value?: DistributedRunPerformanceAnalysis) => value?.streamTiming?.maxStartDriftMs
         };
     }
     return {
         statistic: 'achieved-completion' as const,
         unit: 'hz' as const,
-        value: (value?: DistributedRunPerformanceAnalysis) =>
-            value?.streamTiming?.achievedCompletionHz,
+        value: (value?: DistributedRunPerformanceAnalysis) => value?.streamTiming?.achievedCompletionHz
     };
 }
 
 function numericDelta(
     left: number | undefined,
-    right: number | undefined,
+    right: number | undefined
 ): DistributedRunTuningNumericDelta {
     return {
         left,
         right,
         delta: left !== undefined && right !== undefined
             ? round(right - left)
-            : undefined,
+            : undefined
     };
 }
 

@@ -1,17 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { createRelicGame, RELIC_PROTOCOL_VERSION, toPublicRelicSnapshot } from '@ar-eye-hunter/relic-hunters/mod.ts';
+import type { RallarGameAuthorityEnvelope } from '@ar-eye-hunter/shared/rallar-game/mod.ts';
 import type { AuthSession } from 'api/api-config.ts';
-import {
-    createRelicGame,
-    RELIC_PROTOCOL_VERSION,
-    toPublicRelicSnapshot,
-} from '@ar-eye-hunter/relic-hunters/mod.ts';
+import { describe, expect, it } from 'vitest';
 import {
     createRelicAuthorityPresence,
     RELIC_AUTHORITY_REF,
     shouldAcceptRelicAuthoritySnapshotRepair,
-    toRelicAuthoritySnapshotEvent,
+    toRelicAuthoritySnapshotEvent
 } from '../src/game/rallar-game-authority-adapter.ts';
-import type { RallarGameAuthorityEnvelope } from '@ar-eye-hunter/shared/rallar-game/mod.ts';
 
 describe('Relic Rallar Game Authority adapter', () => {
     it('maps browser presence without exposing gameplay authority', () => {
@@ -21,25 +17,25 @@ describe('Relic Rallar Game Authority adapter', () => {
                 sessionId: 'alice-session',
                 username: 'Alice',
                 roomId: 'room-1',
-                sentAtEpochMs: 1_700_000_000_000,
+                sentAtEpochMs: 1_700_000_000_000
             });
     });
 
     it('wraps snapshots as regular relic server events', () => {
         const snapshot = toPublicRelicSnapshot(
-            createRelicGame('game-1', 'room-1', 1_700_000_000_000),
+            createRelicGame('game-1', 'room-1', 1_700_000_000_000)
         );
 
         expect(toRelicAuthoritySnapshotEvent(snapshot)).toEqual({
             protocolVersion: RELIC_PROTOCOL_VERSION,
             gameId: 'game-1',
-            snapshot,
+            snapshot
         });
     });
 
     it('accepts peer repair only for the configured server authority and room', () => {
         const snapshot = toPublicRelicSnapshot(
-            createRelicGame('game-1', 'room-1', 1_700_000_000_000),
+            createRelicGame('game-1', 'room-1', 1_700_000_000_000)
         );
         const envelope: RallarGameAuthorityEnvelope<typeof snapshot> = {
             protocol: 'relic-hunters.authority.v1',
@@ -49,7 +45,7 @@ describe('Relic Rallar Game Authority adapter', () => {
             seq: 1,
             sentAtEpochMs: 1_700_000_000_500,
             authority: RELIC_AUTHORITY_REF,
-            payload: snapshot,
+            payload: snapshot
         };
 
         expect(shouldAcceptRelicAuthoritySnapshotRepair(envelope, 'room-1'))
@@ -58,7 +54,7 @@ describe('Relic Rallar Game Authority adapter', () => {
             .toBe(false);
         expect(shouldAcceptRelicAuthoritySnapshotRepair({
             ...envelope,
-            authority: { ...RELIC_AUTHORITY_REF, id: 'other-server' },
+            authority: { ...RELIC_AUTHORITY_REF, id: 'other-server' }
         }, 'room-1')).toBe(false);
     });
 });
@@ -69,6 +65,6 @@ function session(): AuthSession {
         accessToken: 'token-1',
         username: 'Alice',
         sessionId: 'alice-session',
-        expiresAtEpochMs: 1_700_000_060_000,
+        expiresAtEpochMs: 1_700_000_060_000
     };
 }

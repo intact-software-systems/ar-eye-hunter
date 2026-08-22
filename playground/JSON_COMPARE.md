@@ -4,17 +4,17 @@
 
 It can compare JSON structures in four modes:
 
-| Mode | Compares values | Requires exact structure |
-|---|---:|---:|
-| `compatibleStructure` | No | No |
-| `compatible` | Yes | No |
-| `exactStructure` | No | Yes |
-| `exact` | Yes | Yes |
+| Mode                  | Compares values | Requires exact structure |
+| --------------------- | --------------: | -----------------------: |
+| `compatibleStructure` |              No |                       No |
+| `compatible`          |             Yes |                       No |
+| `exactStructure`      |              No |                      Yes |
+| `exact`               |             Yes |                      Yes |
 
 ## Import
 
 ```ts
-import {CompareJson} from './CompareJson.ts';
+import { CompareJson } from './CompareJson.ts';
 ```
 
 ## Basic usage
@@ -23,14 +23,14 @@ import {CompareJson} from './CompareJson.ts';
 const expected = {
     id: 'integer',
     name: 'string',
-    status: 'ACTIVE|PENDING',
+    status: 'ACTIVE|PENDING'
 };
 
 const actual = {
     id: 123,
     name: 'Alice',
     status: 'ACTIVE',
-    createdAt: '2026-05-11T18:00:00Z',
+    createdAt: '2026-05-11T18:00:00Z'
 };
 
 const result = CompareJson.compatible(expected, actual);
@@ -67,7 +67,7 @@ Matches any actual value.
 
 ```ts
 {
-    id: 'any'
+    id: 'any';
 }
 ```
 
@@ -77,7 +77,7 @@ Matches an integer number or integer string.
 
 ```ts
 {
-    id: 'integer'
+    id: 'integer';
 }
 ```
 
@@ -85,7 +85,7 @@ Matches:
 
 ```ts
 {
-    id: 123
+    id: 123;
 }
 ```
 
@@ -93,7 +93,7 @@ Also matches:
 
 ```ts
 {
-    id: '123'
+    id: '123';
 }
 ```
 
@@ -103,7 +103,7 @@ Matches a non-integer finite number or float string.
 
 ```ts
 {
-    amount: 'float'
+    amount: 'float';
 }
 ```
 
@@ -111,7 +111,7 @@ Matches:
 
 ```ts
 {
-    amount: 42.75
+    amount: 42.75;
 }
 ```
 
@@ -121,7 +121,7 @@ Matches any string.
 
 ```ts
 {
-    name: 'string'
+    name: 'string';
 }
 ```
 
@@ -131,7 +131,7 @@ A string containing `|` is treated as a list of allowed values.
 
 ```ts
 {
-    status: 'ACTIVE|PENDING|DISABLED'
+    status: 'ACTIVE|PENDING|DISABLED';
 }
 ```
 
@@ -139,7 +139,7 @@ Matches:
 
 ```ts
 {
-    status: 'ACTIVE'
+    status: 'ACTIVE';
 }
 ```
 
@@ -152,13 +152,13 @@ Extra fields in actual are allowed.
 ```ts
 const expected = {
     id: 'integer',
-    name: 'string',
+    name: 'string'
 };
 
 const actual = {
     id: 123,
     name: 'Alice',
-    createdAt: '2026-05-11T18:00:00Z',
+    createdAt: '2026-05-11T18:00:00Z'
 };
 
 CompareJson.assertCompatible(expected, actual);
@@ -171,13 +171,13 @@ Exact comparison requires the same structure and matching values.
 ```ts
 const expected = {
     id: 'integer',
-    name: 'string',
+    name: 'string'
 };
 
 const actual = {
     id: 123,
     name: 'Alice',
-    createdAt: '2026-05-11T18:00:00Z',
+    createdAt: '2026-05-11T18:00:00Z'
 };
 
 const result = CompareJson.exact(expected, actual);
@@ -192,12 +192,12 @@ Structure-only comparison ignores values.
 ```ts
 const expected = {
     id: 1,
-    name: 'Alice',
+    name: 'Alice'
 };
 
 const actual = {
     id: 999,
-    name: 'Bob',
+    name: 'Bob'
 };
 
 CompareJson.assertCompatibleStructure(expected, actual);
@@ -211,7 +211,7 @@ Use `ignoreJsonKeys` to ignore fields by name anywhere in the JSON tree.
 
 ```ts
 CompareJson.assertCompatible(expected, actual, {
-    ignoreJsonKeys: ['traceId', 'timestamp'],
+    ignoreJsonKeys: ['traceId', 'timestamp']
 });
 ```
 
@@ -221,7 +221,7 @@ Use `ignoreJsonPaths` to ignore a field at a specific path.
 
 ```ts
 CompareJson.assertCompatible(expected, actual, {
-    ignoreJsonPaths: ['metadata.createdAt'],
+    ignoreJsonPaths: ['metadata.createdAt']
 });
 ```
 
@@ -232,7 +232,7 @@ const expected = {
     type: 'room.joined',
     roomId: 'string',
     clientId: 'string',
-    timestamp: 'any',
+    timestamp: 'any'
 };
 
 const actual = {
@@ -240,7 +240,7 @@ const actual = {
     roomId: 'room-1',
     clientId: 'client-123',
     timestamp: '2026-05-11T18:00:00Z',
-    serverInstanceId: 'api-1',
+    serverInstanceId: 'api-1'
 };
 
 CompareJson.assertCompatible(expected, actual);
@@ -252,13 +252,13 @@ CompareJson.assertCompatible(expected, actual);
 const expected = {
     id: 'integer',
     displayName: 'string',
-    role: 'ADMIN|USER',
+    role: 'ADMIN|USER'
 };
 
 const actual = await response.json();
 
 CompareJson.assertCompatible(expected, actual, {
-    ignoreJsonKeys: ['traceId'],
+    ignoreJsonKeys: ['traceId']
 });
 ```
 
@@ -270,10 +270,10 @@ const expected = {
     overlayId: 'string',
     senderId: 'string',
     kind: 'chat.message|game.move|presence.update',
-    payload: 'any',
+    payload: 'any'
 };
 
 CompareJson.assertCompatible(expected, actualMessage, {
-    ignoreJsonPaths: ['runtime.receivedAt'],
+    ignoreJsonPaths: ['runtime.receivedAt']
 });
 ```

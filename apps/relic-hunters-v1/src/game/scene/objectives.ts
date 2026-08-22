@@ -24,7 +24,7 @@ export type SceneObjective = Readonly<{
 export function deriveSceneObjective({
     snapshot,
     localPlayerId,
-    primedAction,
+    primedAction
 }: Readonly<{
     snapshot?: RelicPublicSnapshot;
     localPlayerId?: string;
@@ -35,7 +35,7 @@ export function deriveSceneObjective({
             eyebrow: 'Expedition',
             title: 'Enter the castle',
             detail: 'Create or join a room to begin the expedition.',
-            tone: 'neutral',
+            tone: 'neutral'
         });
     }
 
@@ -45,7 +45,7 @@ export function deriveSceneObjective({
             eyebrow: 'Expedition',
             title: 'Join the party',
             detail: 'Choose a hunter before the castle starts falling apart.',
-            tone: 'neutral',
+            tone: 'neutral'
         });
     }
 
@@ -58,7 +58,7 @@ export function deriveSceneObjective({
                 : 'The expedition is over',
             detail: 'Scores are final. The ruin has gone quiet.',
             tone: snapshot.winnerIds.includes(player.playerId) ? 'success' : 'neutral',
-            roomId: room?.id,
+            roomId: room?.id
         });
     }
 
@@ -68,7 +68,7 @@ export function deriveSceneObjective({
             title: 'Gather the hunters',
             detail: 'Start the expedition when the party is ready.',
             tone: 'neutral',
-            roomId: room?.id,
+            roomId: room?.id
         });
     }
 
@@ -77,7 +77,7 @@ export function deriveSceneObjective({
             eyebrow: 'Lost',
             title: 'Find your footing',
             detail: 'The castle map has not caught up with your hunter.',
-            tone: 'danger',
+            tone: 'danger'
         });
     }
 
@@ -90,7 +90,7 @@ export function deriveSceneObjective({
             title: 'You are outside the ruin',
             detail: 'Watch the others decide whether to risk one more room.',
             tone: 'success',
-            roomId: room.id,
+            roomId: room.id
         });
     }
 
@@ -101,7 +101,7 @@ export function deriveSceneObjective({
             detail: 'The castle keeps your relics unless the expedition still turns.',
             tone: 'danger',
             roomId: room.id,
-            urgent: true,
+            urgent: true
         });
     }
 
@@ -118,7 +118,7 @@ export function deriveSceneObjective({
             investigated,
             investigationSummary: investigation?.summary,
             investigationHint: investigation?.hint,
-            danger: investigation?.danger,
+            danger: investigation?.danger
         });
     }
 
@@ -136,7 +136,7 @@ export function deriveSceneObjective({
             investigationSummary: investigation?.summary,
             investigationHint: investigation?.hint,
             danger: investigation?.danger,
-            urgent: !!room.unstable,
+            urgent: !!room.unstable
         });
     }
 
@@ -154,7 +154,7 @@ export function deriveSceneObjective({
             investigationSummary: investigation?.summary,
             investigationHint: investigation?.hint,
             danger: investigation?.danger,
-            urgent: !!room.unstable || !!investigation?.danger,
+            urgent: !!room.unstable || !!investigation?.danger
         });
     }
 
@@ -169,7 +169,7 @@ export function deriveSceneObjective({
             investigated,
             investigationSummary: investigation?.summary,
             investigationHint: investigation?.hint,
-            danger: investigation?.danger,
+            danger: investigation?.danger
         });
     }
 
@@ -189,7 +189,7 @@ export function deriveSceneObjective({
             investigationSummary: investigation?.summary,
             investigationHint: investigation?.hint,
             danger: investigation?.danger,
-            urgent: roundsLeft(snapshot) <= 2,
+            urgent: roundsLeft(snapshot) <= 2
         });
     }
 
@@ -207,7 +207,7 @@ export function deriveSceneObjective({
             recommendedAction: { kind: 'search' },
             clueHotspotId: clue.id,
             investigated,
-            urgent: !!room.unstable,
+            urgent: !!room.unstable
         });
     }
 
@@ -215,7 +215,7 @@ export function deriveSceneObjective({
         snapshot,
         room,
         player.relicIds.length > 0,
-        investigation?.revealedRoomId,
+        investigation?.revealedRoomId
     );
     if (route) {
         const clueRoute = route.source === 'revealed' && investigation;
@@ -227,8 +227,8 @@ export function deriveSceneObjective({
             detail: clueRoute
                 ? `Next step: Move to ${route.next.name}. ${investigation.hint}`
                 : investigation?.hint ?? (player.relicIds.length > 0
-                ? 'Carry your relics toward the Exit before the ruin closes.'
-                : 'Push deeper toward rooms with better relic odds.'),
+                    ? 'Carry your relics toward the Exit before the ruin closes.'
+                    : 'Push deeper toward rooms with better relic odds.'),
             tone: room.unstable || investigation?.danger ? 'danger' : 'neutral',
             roomId: room.id,
             recommendedAction: { kind: 'move', targetRoomId: route.next.id },
@@ -239,7 +239,7 @@ export function deriveSceneObjective({
             investigationSummary: investigation?.summary,
             investigationHint: investigation?.hint,
             danger: investigation?.danger,
-            urgent: !!room.unstable || !!investigation?.danger,
+            urgent: !!room.unstable || !!investigation?.danger
         });
     }
 
@@ -253,17 +253,15 @@ export function deriveSceneObjective({
         investigationSummary: investigation?.summary,
         investigationHint: investigation?.hint,
         danger: investigation?.danger,
-        urgent: true,
+        urgent: true
     });
 }
 
 export function roomHasResolvedClue(
     snapshot: RelicPublicSnapshot,
-    roomId: string,
+    roomId: string
 ): boolean {
-    if (snapshot.roomInvestigations?.some((investigation) =>
-        investigation.roomId === roomId
-    )) {
+    if (snapshot.roomInvestigations?.some((investigation) => investigation.roomId === roomId)) {
         return true;
     }
 
@@ -275,7 +273,7 @@ export function roomHasResolvedClue(
 export function shortestOpenRoomPath(
     rooms: readonly RelicRoom[],
     fromRoomId: string,
-    toRoomId: string,
+    toRoomId: string
 ): readonly string[] | undefined {
     const roomById = new Map(rooms.map((room) => [room.id, room]));
     const start = roomById.get(fromRoomId);
@@ -322,27 +320,26 @@ export function shortestOpenRoomPath(
 
 function roomInvestigation(
     snapshot: RelicPublicSnapshot,
-    roomId: string,
+    roomId: string
 ): RelicPublicSnapshot['roomInvestigations'][number] | undefined {
-    return snapshot.roomInvestigations?.find((investigation) =>
-        investigation.roomId === roomId
-    );
+    return snapshot.roomInvestigations?.find((investigation) => investigation.roomId === roomId);
 }
 
-function objective(values: Omit<SceneObjective, 'investigated' | 'urgent'> & Partial<Pick<
-    SceneObjective,
-    'investigated' | 'urgent'
->>): SceneObjective {
+function objective(
+    values:
+        & Omit<SceneObjective, 'investigated' | 'urgent'>
+        & Partial<Pick<SceneObjective, 'investigated' | 'urgent'>>
+): SceneObjective {
     return {
         investigated: false,
         urgent: false,
-        ...values,
+        ...values
     };
 }
 
 function roomHasHiddenRelic(
     snapshot: RelicPublicSnapshot,
-    roomId: string,
+    roomId: string
 ): boolean {
     return snapshot.relics.some((relic) =>
         relic.roomId === roomId && !relic.foundBy && !relic.carriedBy && !relic.escapedBy
@@ -384,7 +381,7 @@ function recommendedMoveRoute(
     snapshot: RelicPublicSnapshot,
     room: RelicRoom,
     carryingRelics: boolean,
-    revealedRoomId: string | undefined,
+    revealedRoomId: string | undefined
 ): RecommendedMoveRoute | undefined {
     const openNeighbors = room.neighbors
         .map((roomId) => snapshot.map.find((candidate) => candidate.id === roomId))
@@ -429,12 +426,12 @@ function recommendedMoveRoute(
 
 function highestValueRelicNeighbor(
     snapshot: RelicPublicSnapshot,
-    neighbors: readonly RelicRoom[],
+    neighbors: readonly RelicRoom[]
 ): RelicRoom | undefined {
     return neighbors
         .map((neighbor) => ({
             neighbor,
-            value: highestHiddenRelicValue(snapshot, neighbor.id),
+            value: highestHiddenRelicValue(snapshot, neighbor.id)
         }))
         .filter((candidate) => candidate.value > 0)
         .sort((left, right) => right.value - left.value)[0]?.neighbor;
@@ -442,7 +439,7 @@ function highestValueRelicNeighbor(
 
 function highestHiddenRelicValue(
     snapshot: RelicPublicSnapshot,
-    roomId: string,
+    roomId: string
 ): number {
     return Math.max(
         0,
@@ -453,14 +450,14 @@ function highestHiddenRelicValue(
                 !relic.carriedBy &&
                 !relic.escapedBy
             )
-            .map((relic) => relic.value),
+            .map((relic) => relic.value)
     );
 }
 
 function nextStepToward(
     rooms: readonly RelicRoom[],
     fromRoomId: string,
-    toRoomId: string,
+    toRoomId: string
 ): RelicRoom | undefined {
     const path = shortestOpenRoomPath(rooms, fromRoomId, toRoomId);
     if (!path || path.length < 2) {
@@ -473,7 +470,7 @@ function nextStepToward(
 
 function clueRouteTitle(
     investigation: RelicPublicSnapshot['roomInvestigations'][number],
-    target: RelicRoom,
+    target: RelicRoom
 ): string {
     switch (investigation.effect) {
         case 'map-fragment':

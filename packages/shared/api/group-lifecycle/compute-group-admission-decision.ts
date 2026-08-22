@@ -1,8 +1,5 @@
 import type { GroupPolicyDenied } from '../group-policy-types.ts';
-import type {
-    GroupAdmissionPolicy,
-    GroupLifecycleState,
-} from './group-lifecycle-policy.ts';
+import type { GroupAdmissionPolicy, GroupLifecycleState } from './group-lifecycle-policy.ts';
 
 export interface ComputeGroupAdmissionDecisionInput {
     readonly admission: GroupAdmissionPolicy;
@@ -19,9 +16,9 @@ export interface ComputeGroupAdmissionDecisionInput {
 }
 
 export type GroupAdmissionDecision =
-    | Readonly<{ kind: 'admit' }>
-    | Readonly<{ kind: 'park' }>
-    | Readonly<{ kind: 'deny'; denial: GroupPolicyDenied }>;
+    | Readonly<{ kind: 'admit'; }>
+    | Readonly<{ kind: 'park'; }>
+    | Readonly<{ kind: 'deny'; denial: GroupPolicyDenied; }>;
 
 /**
  * The admission decision, binding per mode as plan decision 5.2 fixes
@@ -32,14 +29,14 @@ export type GroupAdmissionDecision =
  * they pass, so they are decided first.
  */
 export function computeGroupAdmissionDecision(
-    input: ComputeGroupAdmissionDecisionInput,
+    input: ComputeGroupAdmissionDecisionInput
 ): GroupAdmissionDecision {
     const { admission } = input;
 
     if (admission.untilEpochMs !== null && input.nowEpochMs >= admission.untilEpochMs) {
         return deny(
             'group-admission-deadline-passed',
-            'Group admission closed at its deadline.',
+            'Group admission closed at its deadline.'
         );
     }
 
@@ -49,7 +46,7 @@ export function computeGroupAdmissionDecision(
     ) {
         return deny(
             'group-admission-capacity-reached',
-            'Group admission closed at its member-count limit.',
+            'Group admission closed at its member-count limit.'
         );
     }
 
@@ -67,7 +64,7 @@ export function computeGroupAdmissionDecision(
 
 function deny(
     code: GroupPolicyDenied['code'],
-    message: string,
+    message: string
 ): GroupAdmissionDecision {
     return { kind: 'deny', denial: { allowed: false, code, message } };
 }

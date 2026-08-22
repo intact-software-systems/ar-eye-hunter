@@ -1,16 +1,13 @@
+import { isOverlayForGroupRef, toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { OverlayInfo, PeerId } from '../api/api-config.ts';
 import type { GroupRef } from '../api/group-types.ts';
-import {
-    isOverlayForGroupRef,
-    toScopedOverlayId,
-} from '@shared/api/api-type-utils.ts';
 import type { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
 
 export type OverlayCacheReader = ReadableKeyedValues<string, OverlayInfo>;
 
 export function readOverlayForGroup(
     overlayCache: OverlayCacheReader | undefined,
-    groupRef: GroupRef,
+    groupRef: GroupRef
 ): OverlayInfo | undefined {
     if (!overlayCache) {
         return undefined;
@@ -33,7 +30,7 @@ export function readOverlayForGroup(
 
 export function readAuthoritativeOverlayForGroup(
     overlayCache: OverlayCacheReader | undefined,
-    groupRef: GroupRef,
+    groupRef: GroupRef
 ): OverlayInfo | undefined {
     const overlay = readOverlayForGroup(overlayCache, groupRef);
     return overlay?.degreeLimit !== undefined ? overlay : undefined;
@@ -41,7 +38,7 @@ export function readAuthoritativeOverlayForGroup(
 
 export function computeOverlayRttReportingDegreeLimit(
     overlayCache: OverlayCacheReader | undefined,
-    groupRefs: readonly GroupRef[],
+    groupRefs: readonly GroupRef[]
 ): number | undefined {
     const limits = groupRefs
         .map((groupRef) => readOverlayForGroup(overlayCache, groupRef)?.degreeLimit)
@@ -52,7 +49,7 @@ export function computeOverlayRttReportingDegreeLimit(
 export function computeServerDesiredPeerIds(
     overlayCache: OverlayCacheReader | undefined,
     groupRefs: readonly GroupRef[],
-    localSessionId: string,
+    localSessionId: string
 ): ReadonlySet<PeerId> {
     const serverDesiredPeerIds = new Set<PeerId>();
 

@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-    deriveArenaLinkState,
-    deriveArenaPresenceNotices,
-    type ArenaLinkState,
-} from '../../../apps/ar-eye-hunter-v1/src/game/squadLink.ts';
+import { deriveArenaLinkState, deriveArenaPresenceNotices, type ArenaLinkState } from '../../../apps/ar-eye-hunter-v1/src/game/squadLink.ts';
 
 describe('AR Eye Hunter squad link awareness', () => {
     it('maps transport state to player-facing squad link labels', () => {
@@ -13,11 +9,11 @@ describe('AR Eye Hunter squad link awareness', () => {
             networkEnabled: false,
             roomSelected: false,
             playerCount: 0,
-            rtcLanes: [],
+            rtcLanes: []
         })).toMatchObject({
             tone: 'offline',
             label: 'Offline preview',
-            actionNeeded: true,
+            actionNeeded: true
         });
 
         expect(deriveArenaLinkState({
@@ -25,11 +21,11 @@ describe('AR Eye Hunter squad link awareness', () => {
             networkEnabled: true,
             roomSelected: true,
             playerCount: 1,
-            rtcLanes: [],
+            rtcLanes: []
         })).toMatchObject({
             tone: 'live',
             label: 'Solo arena',
-            detail: 'No squadmates linked yet.',
+            detail: 'No squadmates linked yet.'
         });
 
         expect(deriveArenaLinkState({
@@ -37,11 +33,11 @@ describe('AR Eye Hunter squad link awareness', () => {
             networkEnabled: true,
             roomSelected: true,
             playerCount: 3,
-            rtcLanes: [{ laneId: 'motion', status: 'partial', readyPeers: 1, notReadyPeers: 1 }],
+            rtcLanes: [{ laneId: 'motion', status: 'partial', readyPeers: 1, notReadyPeers: 1 }]
         })).toMatchObject({
             tone: 'forming',
             label: 'Squad link forming',
-            playerCount: 3,
+            playerCount: 3
         });
 
         expect(deriveArenaLinkState({
@@ -49,11 +45,11 @@ describe('AR Eye Hunter squad link awareness', () => {
             networkEnabled: true,
             roomSelected: true,
             playerCount: 2,
-            rtcLanes: [{ laneId: 'motion', status: 'open', readyPeers: 1, notReadyPeers: 0 }],
+            rtcLanes: [{ laneId: 'motion', status: 'open', readyPeers: 1, notReadyPeers: 0 }]
         })).toMatchObject({
             tone: 'live',
             label: '2 hunters linked',
-            actionNeeded: false,
+            actionNeeded: false
         });
 
         expect(deriveArenaLinkState({
@@ -62,11 +58,11 @@ describe('AR Eye Hunter squad link awareness', () => {
             roomSelected: true,
             playerCount: 2,
             rtcLanes: [{ laneId: 'motion', status: 'closed', readyPeers: 0, notReadyPeers: 1 }],
-            wsTicketBackoffStatus: 'cooldown',
+            wsTicketBackoffStatus: 'cooldown'
         })).toMatchObject({
             tone: 'rejoining',
             label: 'Rejoining arena...',
-            actionNeeded: false,
+            actionNeeded: false
         });
     });
 
@@ -76,66 +72,68 @@ describe('AR Eye Hunter squad link awareness', () => {
             label: 'Squad link forming',
             detail: 'Syncing squad movement.',
             playerCount: 1,
-            actionNeeded: false,
+            actionNeeded: false
         };
         const nextLink: ArenaLinkState = {
             tone: 'live',
             label: '2 hunters linked',
             detail: 'Movement is live.',
             playerCount: 2,
-            actionNeeded: false,
+            actionNeeded: false
         };
 
         const notices = deriveArenaPresenceNotices({
             previousPlayers: [{ sessionId: 'alice', username: 'Alice' }],
             nextPlayers: [
                 { sessionId: 'alice', username: 'Alice' },
-                { sessionId: 'bob', username: 'Bob' },
+                { sessionId: 'bob', username: 'Bob' }
             ],
             previousLink,
             nextLink,
             previousDirectorLabel: 'peer mode',
             nextDirectorLabel: 'you',
-            nowEpochMs: 1_000,
+            nowEpochMs: 1_000
         });
 
         expect(notices.map((notice) => notice.message)).toEqual([
             'Bob entered the arena',
             'Squad linked',
-            'You run this arena',
+            'You run this arena'
         ]);
 
         expect(deriveArenaPresenceNotices({
             previousPlayers: [
                 { sessionId: 'alice', username: 'Alice' },
-                { sessionId: 'bob', username: 'Bob' },
+                { sessionId: 'bob', username: 'Bob' }
             ],
             nextPlayers: [
                 { sessionId: 'alice', username: 'Alice' },
-                { sessionId: 'bob', username: 'Bob' },
+                { sessionId: 'bob', username: 'Bob' }
             ],
             previousLink: nextLink,
             nextLink,
             previousDirectorLabel: 'you',
             nextDirectorLabel: 'you',
-            nowEpochMs: 1_100,
+            nowEpochMs: 1_100
         })).toEqual([]);
 
-        expect(deriveArenaPresenceNotices({
-            previousPlayers: [
-                { sessionId: 'alice', username: 'Alice' },
-                { sessionId: 'bob', username: 'Bob' },
-            ],
-            nextPlayers: [{ sessionId: 'alice', username: 'Alice' }],
-            previousLink: nextLink,
-            nextLink: previousLink,
-            previousDirectorLabel: 'you',
-            nextDirectorLabel: 'peer mode',
-            nowEpochMs: 1_200,
-        }).map((notice) => notice.message)).toEqual([
+        expect(
+            deriveArenaPresenceNotices({
+                previousPlayers: [
+                    { sessionId: 'alice', username: 'Alice' },
+                    { sessionId: 'bob', username: 'Bob' }
+                ],
+                nextPlayers: [{ sessionId: 'alice', username: 'Alice' }],
+                previousLink: nextLink,
+                nextLink: previousLink,
+                previousDirectorLabel: 'you',
+                nextDirectorLabel: 'peer mode',
+                nowEpochMs: 1_200
+            }).map((notice) => notice.message)
+        ).toEqual([
             'Bob lost signal',
             'Squad link forming',
-            'Arena host is changing',
+            'Arena host is changing'
         ]);
     });
 });

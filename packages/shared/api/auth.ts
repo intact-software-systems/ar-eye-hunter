@@ -27,7 +27,9 @@ export function readAuthSessionStorageKind(): AuthSessionStorageKind {
 export function readSession(): AuthSession | undefined {
     const storage = readStorage();
     const raw = storage.getItem(KEY);
-    if (!raw || raw.length === 0) return undefined;
+    if (!raw || raw.length === 0) {
+        return undefined;
+    }
 
     try {
         const s = JSON.parse(raw) as AuthSession;
@@ -37,7 +39,9 @@ export function readSession(): AuthSession | undefined {
             !s.username ||
             !s.sessionId ||
             !Number.isFinite(s.expiresAtEpochMs)
-        ) return undefined;
+        ) {
+            return undefined;
+        }
 
         if (s.expiresAtEpochMs <= Date.now()) {
             clearSession();
@@ -45,7 +49,8 @@ export function readSession(): AuthSession | undefined {
         }
 
         return s;
-    } catch {
+    }
+    catch {
         return undefined;
     }
 }
@@ -59,7 +64,7 @@ export function readSessionAsClientInfo(): ClientInfo {
     return {
         clientId: session.clientId,
         sessionId: session.sessionId,
-        isOnline: true,
+        isOnline: true
     };
 }
 

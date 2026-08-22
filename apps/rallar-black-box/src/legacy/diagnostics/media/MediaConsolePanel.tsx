@@ -1,19 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import type { RallarBlackBoxTestSeverity, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type {
-    RallarBlackBoxTestSeverity,
-    RallarBlackBoxTestState,
-} from '@shared-test/rallar-bb-test/types.ts';
+import { useEffect, useRef, useState } from 'react';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from '../../../client-defaults.ts';
 import { createDirectRallarRuntimeEvent } from '../../../direct-rallar-operations.ts';
-import {
-    type RallarBlackBoxBootstrapConfig,
-    rallarBlackBoxRuntimeStore,
-} from '../../../runtime-store.ts';
+import { rallarBlackBoxRuntimeStore, type RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { loadBrowserRallarFacade } from '../../rallar/load-browser-rallar-facade.ts';
 import { CollapsiblePanelSection } from '../../shared/CollapsiblePanelSection.tsx';
-import { Metric } from '../../shared/Metric.tsx';
 import { json, parseJsonText } from '../../shared/json-presentation.ts';
+import { Metric } from '../../shared/Metric.tsx';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 import { formatTime } from '../../shared/time-format.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
@@ -29,7 +23,7 @@ export function MediaConsolePanel({
     state,
     bootstrap,
     authSession,
-    globalValues,
+    globalValues
 }: {
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
@@ -41,16 +35,14 @@ export function MediaConsolePanel({
     const [policyText, setPolicyText] = useState(() =>
         json({
             receiveAudio: true,
-            receiveVideo: true,
-        }),
+            receiveVideo: true
+        })
     );
     const [localStreamId, setLocalStreamId] = useState<string | undefined>();
     const [busyAction, setBusyAction] = useState<string | undefined>();
     const [localError, setLocalError] = useState<string | undefined>();
     const [result, setResult] = useState<unknown>();
-    const [remoteStreams, setRemoteStreams] = useState<
-        readonly MediaRemoteStreamRow[]
-    >([]);
+    const [remoteStreams, setRemoteStreams] = useState<readonly MediaRemoteStreamRow[]>([]);
     const unsubscribeRef = useRef<(() => void) | undefined>(undefined);
     const providerMode = bootstrap.providerMode;
     const realBackendReady = providerMode === 'browser-rallar';
@@ -60,14 +52,14 @@ export function MediaConsolePanel({
         () => () => {
             unsubscribeRef.current?.();
         },
-        [],
+        []
     );
 
     const recordMediaEvent = (
         topic: string,
         severity: RallarBlackBoxTestSeverity,
         payload: unknown,
-        lastAction: string,
+        lastAction: string
     ): void => {
         rallarBlackBoxRuntimeStore.recordRuntimeEvent(
             createDirectRallarRuntimeEvent({
@@ -78,32 +70,31 @@ export function MediaConsolePanel({
                     applicationId: globalValues.applicationId,
                     workspaceId: globalValues.workspaceId,
                     roomId: globalValues.roomId,
-                    actor:
-                        authSession?.username ??
+                    actor: authSession?.username ??
                         authSession?.clientId ??
                         bootstrap.actor,
                     connection: 'media',
-                    authSession,
+                    authSession
                 },
                 transport: 'realtime',
                 severity,
-                payload,
+                payload
             }),
-            lastAction,
+            lastAction
         );
     };
 
     const withFacade = async <T,>(
         action: (
-            facade: Awaited<ReturnType<typeof loadBrowserRallarFacade>>,
-        ) => Promise<T>,
+            facade: Awaited<ReturnType<typeof loadBrowserRallarFacade>>
+        ) => Promise<T>
     ): Promise<T> => {
         if (!realBackendReady) {
             throw new Error('Media console requires provider=browser-rallar.');
         }
         if (!authSession) {
             throw new Error(
-                'Media console requires a logged-in browser session.',
+                'Media console requires a logged-in browser session.'
             );
         }
         const facade = await loadBrowserRallarFacade();
@@ -113,27 +104,27 @@ export function MediaConsolePanel({
             workspaceId: globalValues.workspaceId,
             room: globalValues.roomId
                 ? {
-                      roomId: globalValues.roomId,
-                      roomRef: {
-                          applicationId: globalValues.applicationId,
-                          workspaceId: globalValues.workspaceId,
-                          groupId: globalValues.roomId,
-                      },
-                  }
-                : undefined,
+                    roomId: globalValues.roomId,
+                    roomRef: {
+                        applicationId: globalValues.applicationId,
+                        workspaceId: globalValues.workspaceId,
+                        groupId: globalValues.roomId
+                    }
+                }
+                : undefined
         });
         await facade.start({
             connect: true,
             refreshRooms: false,
             refreshPeople: false,
-            timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
+            timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs
         });
         return await action(facade);
     };
 
     const runMediaAction = async (
         label: string,
-        action: () => Promise<unknown>,
+        action: () => Promise<unknown>
     ): Promise<void> => {
         setBusyAction(label);
         setLocalError(undefined);
@@ -144,19 +135,20 @@ export function MediaConsolePanel({
                 `rallar.direct.media.${label.toLowerCase().replaceAll(' ', '_')}.completed`,
                 'info',
                 nextResult,
-                `${label} completed`,
+                `${label} completed`
             );
-        } catch (error) {
-            const message =
-                error instanceof Error ? error.message : String(error);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
             setLocalError(message);
             recordMediaEvent(
                 `rallar.direct.media.${label.toLowerCase().replaceAll(' ', '_')}.failed`,
                 'error',
                 { error: message },
-                `${label} failed`,
+                `${label} failed`
             );
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -165,12 +157,12 @@ export function MediaConsolePanel({
         runMediaAction('Attach local stream', async () => {
             if (!navigator.mediaDevices?.getUserMedia) {
                 throw new Error(
-                    'Browser mediaDevices.getUserMedia is not available.',
+                    'Browser mediaDevices.getUserMedia is not available.'
                 );
             }
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: audioEnabled,
-                video: videoEnabled,
+                video: videoEnabled
             });
             await withFacade(async (facade) => {
                 await facade.media.setLocalStream(stream);
@@ -181,8 +173,8 @@ export function MediaConsolePanel({
                 tracks: stream.getTracks().map((track) => ({
                     kind: track.kind,
                     enabled: track.enabled,
-                    readyState: track.readyState,
-                })),
+                    readyState: track.readyState
+                }))
             };
         });
 
@@ -222,7 +214,7 @@ export function MediaConsolePanel({
             const policy = parseJsonText(policyText, {});
             await withFacade(async (facade) => {
                 await facade.media.setPolicy(
-                    policy as Parameters<typeof facade.media.setPolicy>[0],
+                    policy as Parameters<typeof facade.media.setPolicy>[0]
                 );
             });
             return policy;
@@ -238,18 +230,16 @@ export function MediaConsolePanel({
                             rowId: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
                             atEpochMs: Date.now(),
                             peerId: remote.peerId,
-                            streamId: remote.stream.id,
+                            streamId: remote.stream.id
                         };
-                        setRemoteStreams((current) =>
-                            [...current, row].slice(-30),
-                        );
+                        setRemoteStreams((current) => [...current, row].slice(-30));
                         recordMediaEvent(
                             'rallar.direct.media.remote_stream',
                             'info',
                             row,
-                            'Remote media stream observed',
+                            'Remote media stream observed'
                         );
-                    },
+                    }
                 );
                 return { subscribed: true };
             });
@@ -266,17 +256,18 @@ export function MediaConsolePanel({
                     policy: (() => {
                         try {
                             return parseJsonText(policyText, {});
-                        } catch {
+                        }
+                        catch {
                             return policyText;
                         }
                     })(),
                     remoteStreams,
                     result,
-                    localError,
+                    localError
                 },
                 state,
-                authSession,
-            ),
+                authSession
+            )
         );
     };
 
@@ -293,8 +284,8 @@ export function MediaConsolePanel({
                     {localStreamId
                         ? 'local attached'
                         : realBackendReady
-                          ? 'idle'
-                          : 'real backend required'}
+                        ? 'idle'
+                        : 'real backend required'}
                 </span>
             </div>
             <div className="media-summary-grid">
@@ -387,9 +378,7 @@ export function MediaConsolePanel({
                         <span>Media Policy JSON</span>
                         <textarea
                             value={policyText}
-                            onChange={(event) =>
-                                setPolicyText(event.target.value)
-                            }
+                            onChange={(event) => setPolicyText(event.target.value)}
                             spellCheck={false}
                         />
                     </label>
@@ -439,17 +428,15 @@ export function MediaConsolePanel({
                 !realBackendReady ||
                 !authSession) && (
                 <div
-                    className={
-                        localError ? 'workbench-error' : 'command-center-status'
-                    }
+                    className={localError ? 'workbench-error' : 'command-center-status'}
                     role="status"
                 >
                     {localError ??
                         (!realBackendReady
                             ? 'Media console requires provider=browser-rallar.'
                             : !authSession
-                              ? 'Media console requires a logged-in browser session.'
-                              : busyAction)}
+                            ? 'Media console requires a logged-in browser session.'
+                            : busyAction)}
                 </div>
             )}
         </section>

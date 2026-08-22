@@ -1,13 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
-import type { AuthSession } from '@shared/api/api-config.ts';
-import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
 import {
     createRallarConnectionFacade,
     type CreateRallarConnectionFacadeOptions,
     type RallarFlow,
-    type RallarFlowPolicies,
+    type RallarFlowPolicies
 } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarSubscriptionScope } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { CommandsOrchestrator } from '@shared/cache/CommandsOrchestrator.ts';
+import { describe, expect, it, vi } from 'vitest';
 import { createApiMiddlewareTestDouble } from './api-middleware-test-double.ts';
 
 describe('Rallar connection facade factory', () => {
@@ -17,7 +17,7 @@ describe('Rallar connection facade factory', () => {
         const subscriptionScope: RallarSubscriptionScope = {
             add: vi.fn((): RallarSubscriptionScope => subscriptionScope),
             unsubscribe: vi.fn(),
-            size: vi.fn(() => 0),
+            size: vi.fn(() => 0)
         };
         // `flow` is generic per call, so the double builds a real orchestrator each time and
         // records the instance; the delegation assertion below compares that exact instance.
@@ -31,7 +31,7 @@ describe('Rallar connection facade factory', () => {
             start: vi.fn(async () => ({
                 session,
                 connected: true,
-                middleware,
+                middleware
             })),
             disconnect: vi.fn(async () => undefined),
             status: vi.fn(() => 'connected' as const),
@@ -43,7 +43,7 @@ describe('Rallar connection facade factory', () => {
                 const created = CommandsOrchestrator.withPolicies<K, V>(policies);
                 lastFlow = created;
                 return created;
-            },
+            }
         };
 
         const facade = createRallarConnectionFacade(operations);
@@ -52,12 +52,12 @@ describe('Rallar connection facade factory', () => {
         facade.setDefaults({ applicationId: 'app-1' });
 
         await expect(facade.connect({ timeoutMs: 50 })).resolves.toBe(
-            middleware,
+            middleware
         );
         await expect(facade.start({ connect: true })).resolves.toEqual({
             session,
             connected: true,
-            middleware,
+            middleware
         });
         await expect(facade.disconnect()).resolves.toBeUndefined();
 
@@ -68,20 +68,20 @@ describe('Rallar connection facade factory', () => {
         expect(facade.subscriptions()).toBe(subscriptionScope);
         expect(facade.flow({ command: { maxAttempts: 1 } })).toBe(lastFlow);
         expect(vi.mocked(operations.configure)).toHaveBeenCalledWith({
-            apiBaseUrl: 'https://api.example.test',
+            apiBaseUrl: 'https://api.example.test'
         });
         expect(vi.mocked(operations.setDefaults)).toHaveBeenCalledWith({
-            applicationId: 'app-1',
+            applicationId: 'app-1'
         });
         expect(vi.mocked(operations.connect)).toHaveBeenCalledWith({
-            timeoutMs: 50,
+            timeoutMs: 50
         });
         expect(vi.mocked(operations.start)).toHaveBeenCalledWith({
-            connect: true,
+            connect: true
         });
         expect(vi.mocked(operations.disconnect)).toHaveBeenCalledOnce();
         expect(flowPolicies).toHaveBeenCalledWith({
-            command: { maxAttempts: 1 },
+            command: { maxAttempts: 1 }
         });
     });
 });
@@ -92,6 +92,6 @@ function createSession(): AuthSession {
         sessionId: 'session-1',
         username: 'user-1',
         accessToken: 'token-1',
-        expiresAtEpochMs: Date.now() + 60_000,
+        expiresAtEpochMs: Date.now() + 60_000
     };
 }

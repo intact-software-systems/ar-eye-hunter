@@ -78,19 +78,19 @@ npm --workspace @ar-eye-hunter/shared-test run rtc:browser:validate -- \
 
 Supported modes:
 
-| Mode | Meaning |
-| --- | --- |
+| Mode      | Meaning                                                                             |
+| --------- | ----------------------------------------------------------------------------------- |
 | `dry-run` | Runs the scenario engine with `--dry-run`; no browser/network transport is invoked. |
-| `live` | Runs the selected browser RTC scenarios against deployed Rallar services. |
-| `both` | Runs dry-run first, then live. |
+| `live`    | Runs the selected browser RTC scenarios against deployed Rallar services.           |
+| `both`    | Runs dry-run first, then live.                                                      |
 
 Supported transports:
 
-| Transport | Scenario |
-| --- | --- |
-| `realtime` | `examples/rtc-rallar-browser-realtime.json` |
+| Transport      | Scenario                                        |
+| -------------- | ----------------------------------------------- |
+| `realtime`     | `examples/rtc-rallar-browser-realtime.json`     |
 | `messages.rtc` | `examples/rtc-rallar-browser-messages-rtc.json` |
-| `both` | Runs both scenarios. |
+| `both`         | Runs both scenarios.                            |
 
 Live mode fails before starting the scenario runner unless these variables are set:
 
@@ -207,12 +207,12 @@ Keep CI headless. Headful mode is only for local investigation.
 
 Use short timeouts for deterministic fake providers and longer timeouts for real browser RTC:
 
-| Setting | Local suggested value | CI suggested value |
-| --- | --- | --- |
-| `browser.timeoutMs` | `15000` | `30000` |
-| `rallar.timeoutMs` | `15000` | `30000` |
-| `rallar.openTimeoutMs` | `10000` | `20000` |
-| `expect.withinMs` | `10000` | `20000` |
+| Setting                | Local suggested value | CI suggested value |
+| ---------------------- | --------------------- | ------------------ |
+| `browser.timeoutMs`    | `15000`               | `30000`            |
+| `rallar.timeoutMs`     | `15000`               | `30000`            |
+| `rallar.openTimeoutMs` | `10000`               | `20000`            |
+| `expect.withinMs`      | `10000`               | `20000`            |
 
 Increase these only when the deployed service or CI runner is known to be slow. Large timeouts make failed RTC runs expensive.
 
@@ -293,8 +293,8 @@ credentials, Playwright, and optional control-server agent are configured.
 
 ## Provider Choice
 
-| Provider | Use when |
-| --- | --- |
-| `rallar-memory` | Testing runner parsing, matching, routing, reconnect, close, and report behavior without network/browser cost. |
-| `rallar` | Checking only the current WebSocket signaling-only provider behavior. It is not a real WebRTC data path. |
+| Provider         | Use when                                                                                                                  |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `rallar-memory`  | Testing runner parsing, matching, routing, reconnect, close, and report behavior without network/browser cost.            |
+| `rallar`         | Checking only the current WebSocket signaling-only provider behavior. It is not a real WebRTC data path.                  |
 | `rallar-browser` | Verifying deployed Rallar auth, room join, browser WebRTC setup, realtime data-channel sends, and `messages.rtc` routing. |

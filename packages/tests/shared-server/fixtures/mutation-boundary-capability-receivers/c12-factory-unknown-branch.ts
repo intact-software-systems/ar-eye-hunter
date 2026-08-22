@@ -3,11 +3,11 @@ import type { ClientStateRepository } from '@shared-server/mod.ts';
 declare const unknownFactory: () => ClientStateRepository;
 
 export function mutatePossibleFactory(enabled: boolean): void {
-  const selected = enabled ? createRepository : unknownFactory;
-  const repository = selected();
-  void repository.insertPrincipal({} as never);
+    const selected = enabled ? createRepository : unknownFactory;
+    const repository = selected();
+    void repository.insertPrincipal({} as never);
 }
 
 function createRepository(): ClientStateRepository {
-  throw new Error('analysis fixture');
+    throw new Error('analysis fixture');
 }

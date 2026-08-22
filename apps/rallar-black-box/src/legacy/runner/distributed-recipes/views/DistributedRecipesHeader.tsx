@@ -7,7 +7,7 @@ type DistributedRecipesHeaderProps = Readonly<{
     baseUrl: string;
     token: string;
     selectedRunId: string;
-    runOptions: readonly Readonly<{ runId: string }>[];
+    runOptions: readonly Readonly<{ runId: string; }>[];
     group: RallarBlackBoxDistributedGroupRef;
     selectedRecipeCount: number;
     liveSelectedRecipeCount: number;
@@ -39,18 +39,14 @@ export function DistributedRecipesHeader(props: DistributedRecipesHeaderProps) {
                     <span>Control HTTP Base URL</span>
                     <input
                         value={props.baseUrl}
-                        onChange={(event) =>
-                            props.onBaseUrlChange(event.target.value)
-                        }
+                        onChange={(event) => props.onBaseUrlChange(event.target.value)}
                     />
                 </label>
                 <label className="field">
                     <span>Token</span>
                     <input
                         value={props.token}
-                        onChange={(event) =>
-                            props.onTokenChange(event.target.value)
-                        }
+                        onChange={(event) => props.onTokenChange(event.target.value)}
                         type="password"
                         autoComplete="off"
                     />
@@ -59,9 +55,7 @@ export function DistributedRecipesHeader(props: DistributedRecipesHeaderProps) {
                     <span>Control Run</span>
                     <select
                         value={props.selectedRunId}
-                        onChange={(event) =>
-                            void props.onRunChange(event.target.value)
-                        }
+                        onChange={(event) => void props.onRunChange(event.target.value)}
                     >
                         <option value="">Select run</option>
                         {props.runOptions.map((option) => (
@@ -108,7 +102,9 @@ export function DistributedRecipesHeader(props: DistributedRecipesHeaderProps) {
                         : `${props.selectedAgentCount}/${props.targetableAgentCount}`}
                     tone={props.usesWorldFleetTargets
                         ? props.worldFleetStageStartBlocked ? 'bad' : 'active'
-                        : props.selectedAgentCount > 0 ? 'active' : 'bad'}
+                        : props.selectedAgentCount > 0
+                        ? 'active'
+                        : 'bad'}
                 />
                 <Metric
                     label="Live recipes"
@@ -132,8 +128,7 @@ export function DistributedRecipesHeader(props: DistributedRecipesHeaderProps) {
             )}
             {props.liveSelectedRecipeCount > 0 && (
                 <div className="distributed-warning" role="status">
-                    Live recipes can send real HTTP, WebSocket, or RTC traffic
-                    through connected browser agents.
+                    Live recipes can send real HTTP, WebSocket, or RTC traffic through connected browser agents.
                 </div>
             )}
         </>

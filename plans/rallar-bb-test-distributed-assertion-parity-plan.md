@@ -20,15 +20,15 @@ The stack's structural-lineage manifest was retired with the final merge
 issue
 [#176](https://github.com/intact-software-systems/ar-eye-hunter/issues/176).
 
-| Workstream | Status | Branch / PR |
-|---|---|---|
-| D0 fail-closed `rtc.send.expect` + http result redaction | merged | [#180](https://github.com/intact-software-systems/ar-eye-hunter/pull/180) |
-| D1 `wait` absence mode | merged | [#181](https://github.com/intact-software-systems/ar-eye-hunter/pull/181) |
-| D2 assert operator extension | merged | [#182](https://github.com/intact-software-systems/ar-eye-hunter/pull/182) |
-| D3 `loop` until-success polling | merged | [#187](https://github.com/intact-software-systems/ar-eye-hunter/pull/187) |
-| D4 capability advertisement + preflight gating | merged | [#190](https://github.com/intact-software-systems/ar-eye-hunter/pull/190) |
-| D5 parity and conformance deepening | merged | [#192](https://github.com/intact-software-systems/ar-eye-hunter/pull/192) |
-| D6 coordinator-evaluated group assertions | implemented, draft PR in review (Hetzner dispatch of `17-group-assertions-2-agent` pending explicit approval) | [#216](https://github.com/intact-software-systems/ar-eye-hunter/pull/216) |
+| Workstream                                               | Status                                                                                                        | Branch / PR                                                               |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| D0 fail-closed `rtc.send.expect` + http result redaction | merged                                                                                                        | [#180](https://github.com/intact-software-systems/ar-eye-hunter/pull/180) |
+| D1 `wait` absence mode                                   | merged                                                                                                        | [#181](https://github.com/intact-software-systems/ar-eye-hunter/pull/181) |
+| D2 assert operator extension                             | merged                                                                                                        | [#182](https://github.com/intact-software-systems/ar-eye-hunter/pull/182) |
+| D3 `loop` until-success polling                          | merged                                                                                                        | [#187](https://github.com/intact-software-systems/ar-eye-hunter/pull/187) |
+| D4 capability advertisement + preflight gating           | merged                                                                                                        | [#190](https://github.com/intact-software-systems/ar-eye-hunter/pull/190) |
+| D5 parity and conformance deepening                      | merged                                                                                                        | [#192](https://github.com/intact-software-systems/ar-eye-hunter/pull/192) |
+| D6 coordinator-evaluated group assertions                | implemented, draft PR in review (Hetzner dispatch of `17-group-assertions-2-agent` pending explicit approval) | [#216](https://github.com/intact-software-systems/ar-eye-hunter/pull/216) |
 
 Plan evidence base: authored 2026-08-11 after the W1–W8 assertion-coverage
 stack landed on `main` at `93483f47` (Branch Release Gate green on
@@ -49,7 +49,7 @@ and bound step latency. The distributed dialect cannot express any of that:
 - `wait` matches only `kind/topic/commandId/connection/transport/severity` +
   payload-path `equals|contains|exists` (`types.ts:181-191`); there is no
   absence concept. The composite-conformance "negative" case is a no-peer
-  *send failure*, not a non-delivery assertion.
+  _send failure_, not a non-delivery assertion.
 - `assert` has six operators (`equals|notEquals|contains|exists|gte|lte`,
   `runtime.ts:2342-2366`) and its comparison primitive is
   `JSON.stringify` equality (`sameJsonValue`, `runtime.ts:420`). `gte/lte`
@@ -129,14 +129,14 @@ untouched repository legacy (including the runner/bb-test dual-dialect
 architecture itself, guarded by D5's outcome-parity suite) is outside this
 gate.
 
-| Item (path / symbol) | Purpose | Canonical owner | Disposition |
-|---|---|---|---|
-| `types.ts` `RallarBlackBoxTestRtcSendCommand.expect` | in-process runner-adapter parity data; rejected by control validators | `black-box-runner-adapter.ts` | minimized-boundary (D0, owner-merged #180/#182) |
-| manual-workbench rtc.send `expect` blobs | vacuous negative-snippet expectations | removed; intent lives in snippet `metadata` | removed (D0) |
-| assert `notEquals` missing-path pass; strictly numeric `gte`/`lte` | historical operator semantics old recipes rely on | `assert/assert-value-operators.ts` | retained, documented (D2, owner-merged #182); revisit only with a versioned operator change |
-| `sameJsonValue` JSON.stringify equality | wait/assert equality primitive | `wait/wait-event-match.ts` | retained for agent-side matching; **disqualified for D6 `allEqual`** — D6 ships `deepEqualJson` (key-order insensitive, array-order sensitive) as a separate named primitive; three comparison vocabularies then exist deliberately: `sameJsonValue` (agent match), `json-compare` (shape modes), `deepEqualJson` (group agreement). D6 documents the boundary in `schema-and-capabilities.md`; a fourth vocabulary is prohibited |
-| `plans/repo-style-lineages/rallar-bb-test-distributed-assertion-parity.json` | style-gate extraction lineage for D0-D5 | — | removed (retired with #192) |
-| stale `crdt`-only agent capability advertisements on world-fleet agents | pre-D4 agents lacking the `assertions` block | `distributed/control-agent-capabilities.ts` + staging gate | minimized-boundary: gated by `missing-assertion-capability` staging blockers until fleets roll forward; exit = world-fleet rollout advertising the block |
+| Item (path / symbol)                                                         | Purpose                                                               | Canonical owner                                            | Disposition                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `types.ts` `RallarBlackBoxTestRtcSendCommand.expect`                         | in-process runner-adapter parity data; rejected by control validators | `black-box-runner-adapter.ts`                              | minimized-boundary (D0, owner-merged #180/#182)                                                                                                                                                                                                                                                                                                                                                                                   |
+| manual-workbench rtc.send `expect` blobs                                     | vacuous negative-snippet expectations                                 | removed; intent lives in snippet `metadata`                | removed (D0)                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| assert `notEquals` missing-path pass; strictly numeric `gte`/`lte`           | historical operator semantics old recipes rely on                     | `assert/assert-value-operators.ts`                         | retained, documented (D2, owner-merged #182); revisit only with a versioned operator change                                                                                                                                                                                                                                                                                                                                       |
+| `sameJsonValue` JSON.stringify equality                                      | wait/assert equality primitive                                        | `wait/wait-event-match.ts`                                 | retained for agent-side matching; **disqualified for D6 `allEqual`** — D6 ships `deepEqualJson` (key-order insensitive, array-order sensitive) as a separate named primitive; three comparison vocabularies then exist deliberately: `sameJsonValue` (agent match), `json-compare` (shape modes), `deepEqualJson` (group agreement). D6 documents the boundary in `schema-and-capabilities.md`; a fourth vocabulary is prohibited |
+| `plans/repo-style-lineages/rallar-bb-test-distributed-assertion-parity.json` | style-gate extraction lineage for D0-D5                               | —                                                          | removed (retired with #192)                                                                                                                                                                                                                                                                                                                                                                                                       |
+| stale `crdt`-only agent capability advertisements on world-fleet agents      | pre-D4 agents lacking the `assertions` block                          | `distributed/control-agent-capabilities.ts` + staging gate | minimized-boundary: gated by `missing-assertion-capability` staging blockers until fleets roll forward; exit = world-fleet rollout advertising the block                                                                                                                                                                                                                                                                          |
 
 Exit criteria: every row above stays in its recorded disposition; D6 adds no
 new comparison primitive beyond `deepEqualJson`, imports agent predicates
@@ -434,7 +434,7 @@ v1 aggregate vocabulary — fixed, strict, deterministic:
 
 Authoring rule recorded in the prompt guide: when the expected value is
 known, use `allMatch equals X` — `allEqual` alone passes when every agent
-agrees on the same *wrong* value; `allEqual` is for values the test cannot
+agrees on the same _wrong_ value; `allEqual` is for values the test cannot
 predict, and the two compose ("all equal AND the first one matches X").
 
 **Participation rules — mandatory on every group assertion:**
@@ -455,7 +455,7 @@ analysis, percentiles and other performance calculations, and set-union /
 cross-agent message-ID reconciliation.
 
 **Open product decision (plan owner):** are group assertions exclusively
-run-failing *correctness* gates, or may fleet performance/SLO checks also
+run-failing _correctness_ gates, or may fleet performance/SLO checks also
 fail a run? Recommendation: correctness-only in v1 — performance stays in
 artifact-analysis thresholds (`performance-thresholds.md`), matching the
 repo's "no latency SLOs in gates" doctrine — with a deliberate, per-contract
@@ -575,14 +575,14 @@ declared complete:
 
 ## Sequencing and guardrails
 
-| # | Depends on | Notes |
-|---|---|---|
-| D0 | — | ship first; pure hardening |
-| D1 | — | independent of D0 |
-| D2 | — | independent; introduces the json-compare dependency |
-| D3 | — | independent |
-| D4 | D1–D3 shapes | capability names must match shipped fields |
-| D5 | D1–D3 | parity needs both sides implemented |
+| #  | Depends on                                        | Notes                                                                                                                            |
+| -- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| D0 | —                                                 | ship first; pure hardening                                                                                                       |
+| D1 | —                                                 | independent of D0                                                                                                                |
+| D2 | —                                                 | independent; introduces the json-compare dependency                                                                              |
+| D3 | —                                                 | independent                                                                                                                      |
+| D4 | D1–D3 shapes                                      | capability names must match shipped fields                                                                                       |
+| D5 | D1–D3                                             | parity needs both sides implemented                                                                                              |
 | D6 | D2's pure operator module + D1–D3 evidence shapes | coordinator-side only; old agents work unchanged, so D4's gate does not apply; one open product decision recorded in its section |
 
 - One capability per PR; every PR carries its schema branch, capability

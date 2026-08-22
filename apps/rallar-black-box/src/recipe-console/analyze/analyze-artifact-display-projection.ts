@@ -1,32 +1,31 @@
 import type {
     DistributedArtifactInventoryItem,
-    DistributedArtifactWorkspaceIssue,
+    DistributedArtifactWorkspaceIssue
 } from '@shared-test/rallar-bb-test/mod.ts';
+import { minimalAnalyzeAnalysis, projectAnalyzeAnalysis } from './analyze-analysis-projection.ts';
 import type { AnalyzeArtifactModel } from './analyze-artifact-model.ts';
-import { minimalAnalyzeAnalysis, projectAnalyzeAnalysis } from
-    './analyze-analysis-projection.ts';
-import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
 import {
     boundedText,
     finiteNumber,
     MAX_ANALYSIS_ROWS,
     MAX_METADATA_BYTES,
     MAX_SUMMARY_BYTES,
-    PROJECTION_OMISSION_MESSAGE,
     projectAuthorityIdentifier,
+    PROJECTION_OMISSION_MESSAGE,
     projectOpaqueIdentifier,
-    withinSerializedLimit,
+    withinSerializedLimit
 } from './analyze-projection-bounds.ts';
+import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
 
 export function projectAnalyzeArtifactModel(
-    model: AnalyzeArtifactModel,
+    model: AnalyzeArtifactModel
 ): AnalyzeArtifactProjection {
     const candidate: AnalyzeArtifactProjection = {
         distributedRunId: projectAuthorityIdentifier(model.distributedRunId),
         ...(model.controlRunId
             ? {
-                  controlRunId: projectAuthorityIdentifier(model.controlRunId),
-              }
+                controlRunId: projectAuthorityIdentifier(model.controlRunId)
+            }
             : {}),
         identity: projectAnalyzeIdentity(model.identity),
         workspace: {
@@ -41,32 +40,32 @@ export function projectAnalyzeArtifactModel(
                 .map(projectInventoryItem),
             issues: model.workspace.issues
                 .slice(0, MAX_ANALYSIS_ROWS)
-                .map(projectWorkspaceIssue),
+                .map(projectWorkspaceIssue)
         },
         analysis: projectAnalyzeAnalysis(model.analysis),
         issueMarkdown: boundedText(model.issueMarkdown),
         provenance: projectProvenance(model, true),
         ...(model.firstActionableEvidenceId
             ? {
-                  firstActionableEvidenceId: projectOpaqueIdentifier(
-                      model.firstActionableEvidenceId,
-                  ),
-              }
+                firstActionableEvidenceId: projectOpaqueIdentifier(
+                    model.firstActionableEvidenceId
+                )
+            }
             : {}),
         ...(model.primaryResultFailure
             ? {
-                  primaryResultFailure: projectPrimaryResultFailure(
-                      model.primaryResultFailure,
-                      true,
-                  ),
-              }
-            : {}),
+                primaryResultFailure: projectPrimaryResultFailure(
+                    model.primaryResultFailure,
+                    true
+                )
+            }
+            : {})
     };
     return withinSerializedLimit(candidate, () => minimalArtifactProjection(model));
 }
 
 export function projectAnalyzeIdentity(
-    identity: AnalyzeArtifactModel['identity'],
+    identity: AnalyzeArtifactModel['identity']
 ): AnalyzeArtifactProjection['identity'] {
     const distributedRunId = projectAuthorityIdentifier(identity.distributedRunId);
     const controlRunId = identity.controlRunId
@@ -79,18 +78,18 @@ export function projectAnalyzeIdentity(
             : { distributedRunIdExact: false }),
         ...(controlRunId
             ? {
-                  controlRunId,
-                  ...(controlRunId === identity.controlRunId
-                      ? {}
-                      : { controlRunIdExact: false }),
-              }
-            : {}),
+                controlRunId,
+                ...(controlRunId === identity.controlRunId
+                    ? {}
+                    : { controlRunIdExact: false })
+            }
+            : {})
     };
 }
 
 function projectProvenance(
     model: AnalyzeArtifactModel,
-    includeIgnoredFiles: boolean,
+    includeIgnoredFiles: boolean
 ): AnalyzeArtifactProjection['provenance'] {
     return {
         source: model.provenance.source,
@@ -102,31 +101,31 @@ function projectProvenance(
         loadedFileCount: finiteNumber(model.provenance.loadedFileCount),
         ignoredFileCount: finiteNumber(model.provenance.ignoredFileCount),
         workspaceIgnoredFileCount: finiteNumber(
-            model.provenance.workspaceIgnoredFileCount,
+            model.provenance.workspaceIgnoredFileCount
         ),
         ignoredFiles: includeIgnoredFiles
-            ? model.provenance.ignoredFiles.slice(0, MAX_ANALYSIS_ROWS).map(file => ({
-                  basename: boundedText(file.basename, MAX_METADATA_BYTES),
-                  sourcePath: boundedText(file.sourcePath, MAX_METADATA_BYTES),
-                  reason: boundedText(file.reason, MAX_SUMMARY_BYTES),
-              }))
-            : [],
+            ? model.provenance.ignoredFiles.slice(0, MAX_ANALYSIS_ROWS).map((file) => ({
+                basename: boundedText(file.basename, MAX_METADATA_BYTES),
+                sourcePath: boundedText(file.sourcePath, MAX_METADATA_BYTES),
+                reason: boundedText(file.reason, MAX_SUMMARY_BYTES)
+            }))
+            : []
     };
 }
 
 function projectInventoryItem(
-    item: DistributedArtifactInventoryItem,
+    item: DistributedArtifactInventoryItem
 ): DistributedArtifactInventoryItem {
     return {
         fileName: boundedText(item.fileName, MAX_METADATA_BYTES),
         status: item.status,
         requirement: item.requirement,
-        ...(item.message ? { message: boundedText(item.message, MAX_SUMMARY_BYTES) } : {}),
+        ...(item.message ? { message: boundedText(item.message, MAX_SUMMARY_BYTES) } : {})
     };
 }
 
 export function projectWorkspaceIssue(
-    issue: DistributedArtifactWorkspaceIssue,
+    issue: DistributedArtifactWorkspaceIssue
 ): DistributedArtifactWorkspaceIssue {
     return {
         code: issue.code,
@@ -134,7 +133,7 @@ export function projectWorkspaceIssue(
         message: boundedText(issue.message, MAX_SUMMARY_BYTES),
         ...(issue.fileName
             ? { fileName: boundedText(issue.fileName, MAX_METADATA_BYTES) }
-            : {}),
+            : {})
     };
 }
 
@@ -143,8 +142,8 @@ function minimalArtifactProjection(model: AnalyzeArtifactModel): AnalyzeArtifact
         distributedRunId: projectAuthorityIdentifier(model.distributedRunId),
         ...(model.controlRunId
             ? {
-                  controlRunId: projectAuthorityIdentifier(model.controlRunId),
-              }
+                controlRunId: projectAuthorityIdentifier(model.controlRunId)
+            }
             : {}),
         identity: projectAnalyzeIdentity(model.identity),
         workspace: {
@@ -158,33 +157,33 @@ function minimalArtifactProjection(model: AnalyzeArtifactModel): AnalyzeArtifact
             issues: [{
                 code: 'ignored-file',
                 severity: 'warning',
-                message: PROJECTION_OMISSION_MESSAGE,
-            }],
+                message: PROJECTION_OMISSION_MESSAGE
+            }]
         },
         analysis: minimalAnalyzeAnalysis(model.analysis),
         issueMarkdown: PROJECTION_OMISSION_MESSAGE,
         provenance: projectProvenance(model, false),
         ...(model.firstActionableEvidenceId
             ? {
-                  firstActionableEvidenceId: projectOpaqueIdentifier(
-                      model.firstActionableEvidenceId,
-                  ),
-              }
+                firstActionableEvidenceId: projectOpaqueIdentifier(
+                    model.firstActionableEvidenceId
+                )
+            }
             : {}),
         ...(model.primaryResultFailure
             ? {
-                  primaryResultFailure: projectPrimaryResultFailure(
-                      model.primaryResultFailure,
-                      false,
-                  ),
-              }
-            : {}),
+                primaryResultFailure: projectPrimaryResultFailure(
+                    model.primaryResultFailure,
+                    false
+                )
+            }
+            : {})
     };
 }
 
 function projectPrimaryResultFailure(
     failure: NonNullable<AnalyzeArtifactModel['primaryResultFailure']>,
-    includeStack: boolean,
+    includeStack: boolean
 ): NonNullable<AnalyzeArtifactProjection['primaryResultFailure']> {
     return {
         evidenceId: projectOpaqueIdentifier(failure.evidenceId),
@@ -201,7 +200,7 @@ function projectPrimaryResultFailure(
                 : {}),
             ...(includeStack && failure.failureDetails.stack
                 ? { stack: boundedText(failure.failureDetails.stack) }
-                : {}),
-        },
+                : {})
+        }
     };
 }

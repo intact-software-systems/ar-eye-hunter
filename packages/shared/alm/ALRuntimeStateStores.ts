@@ -1,11 +1,11 @@
-import type { ALReadyable } from '../al-contracts/al-runtime.ts';
 import type { ALMessage } from '../al-contracts/al-contract.ts';
 import type { ALMessageHandlingPlan } from '../al-contracts/al-policy.ts';
+import type { ALReadyable } from '../al-contracts/al-runtime.ts';
 import type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
 import type { Key } from '../queuebox/ResourceEntry.ts';
 import { resolveExplicitOutboundMessageExpireAtMs } from './ALMessageExpiry.ts';
 import type { ALRuntimeStoreRetentionConfig, NormalizedALRuntimeStoreRetentionConfig } from './ALStoreRetention.ts';
-import { normalizeALRuntimeStoreRetention, resolveExpireAtTimestampWithFallback, } from './ALStoreRetention.ts';
+import { normalizeALRuntimeStoreRetention, resolveExpireAtTimestampWithFallback } from './ALStoreRetention.ts';
 
 export type ALBufferedOrderedMessageSnapshot = Readonly<{
     trackKey: string;
@@ -35,7 +35,7 @@ export class InMemoryALInboundRuntimeStateStore implements ALInboundRuntimeState
     async setBufferedMessage(snapshot: ALBufferedOrderedMessageSnapshot): Promise<void> {
         this.bufferedMessagesByKey.set(
             toBufferedMessagePersistenceKey(snapshot.trackKey, snapshot.seq),
-            snapshot,
+            snapshot
         );
     }
 
@@ -51,7 +51,7 @@ export class PersistentALInboundRuntimeStateStore implements ALInboundRuntimeSta
 
     constructor(
         bufferedMessageProvider: PersistenceProvider<string, ALBufferedOrderedMessageSnapshot>,
-        retention?: ALRuntimeStoreRetentionConfig,
+        retention?: ALRuntimeStoreRetentionConfig
     ) {
         this.bufferedMessageProvider = bufferedMessageProvider;
         this.retention = normalizeALRuntimeStoreRetention(retention);
@@ -71,15 +71,15 @@ export class PersistentALInboundRuntimeStateStore implements ALInboundRuntimeSta
             {
                 expireAtTimestamp: resolveExpireAtTimestampWithFallback(
                     snapshot.msg.constraints?.expiresAtMs,
-                    this.retention.bufferedMessageTtlMs,
-                ),
-            },
+                    this.retention.bufferedMessageTtlMs
+                )
+            }
         );
     }
 
     async removeBufferedMessage(trackKey: string, seq: number): Promise<void> {
         await this.bufferedMessageProvider.removeItem(
-            toBufferedMessagePersistenceKey(trackKey, seq),
+            toBufferedMessagePersistenceKey(trackKey, seq)
         );
     }
 }
@@ -182,7 +182,7 @@ export class PersistentALOutboundRuntimeStateStore implements ALOutboundRuntimeS
         sentMessageProvider: PersistenceProvider<string, ALOutboundSentMessageSnapshot>,
         pendingAckProvider: PersistenceProvider<string, ALOutboundPendingAckSnapshot>,
         repairAttemptProvider: PersistenceProvider<string, ALOutboundRepairAttemptSnapshot>,
-        retention?: ALRuntimeStoreRetentionConfig,
+        retention?: ALRuntimeStoreRetentionConfig
     ) {
         this.sentMessageProvider = sentMessageProvider;
         this.pendingAckProvider = pendingAckProvider;
@@ -204,9 +204,9 @@ export class PersistentALOutboundRuntimeStateStore implements ALOutboundRuntimeS
             {
                 expireAtTimestamp: resolveExpireAtTimestampWithFallback(
                     resolveExplicitOutboundMessageExpireAtMs(snapshot.msg),
-                    this.retention.sentMessageTtlMs,
-                ),
-            },
+                    this.retention.sentMessageTtlMs
+                )
+            }
         );
     }
 
@@ -223,8 +223,8 @@ export class PersistentALOutboundRuntimeStateStore implements ALOutboundRuntimeS
             snapshot.msgId,
             snapshot,
             {
-                expireAtTimestamp: toPendingAckExpireAtTimestamp(snapshot),
-            },
+                expireAtTimestamp: toPendingAckExpireAtTimestamp(snapshot)
+            }
         );
     }
 
@@ -243,9 +243,9 @@ export class PersistentALOutboundRuntimeStateStore implements ALOutboundRuntimeS
             {
                 expireAtTimestamp: resolveExpireAtTimestampWithFallback(
                     undefined,
-                    this.retention.repairAttemptTtlMs,
-                ),
-            },
+                    this.retention.repairAttemptTtlMs
+                )
+            }
         );
     }
 
@@ -255,7 +255,7 @@ export class PersistentALOutboundRuntimeStateStore implements ALOutboundRuntimeS
 }
 
 async function readAllValues<V>(
-    provider: PersistenceProvider<string, V>,
+    provider: PersistenceProvider<string, V>
 ): Promise<V[]> {
     const values: V[] = [];
 

@@ -84,11 +84,11 @@ stylesheet.
 - Produces: the task contract used by all Iteration 12 implementers/reviewers.
 
 - [x] Verify this plan against Iteration 12, all 14 Ready-State bullets, the
-  current migration register, and current source/test paths.
+      current migration register, and current source/test paths.
 - [x] Scan for placeholders, contradictory task requirements, and nonexistent
-  commands or files.
+      commands or files.
 - [x] Record the Iteration 12 plan path and Task 0 completion in
-  `.superpowers/sdd/progress.md`.
+      `.superpowers/sdd/progress.md`.
 - [x] Commit `docs: bind final Recipe Console cutover`.
 
 ## Task 1: Blank-URL Default And Explicit Legacy Compatibility
@@ -110,7 +110,7 @@ stylesheet.
   aliases still win; blank/provider-only URLs enter Recipe Console.
 
 - [x] RED `experience-route.test.ts`: remove blank search from the legacy alias
-  table, import `DEFAULT_APP_EXPERIENCE`, and assert:
+      table, import `DEFAULT_APP_EXPERIENCE`, and assert:
 
   ```ts
   expect(DEFAULT_APP_EXPERIENCE).toBe('recipe-console');
@@ -123,24 +123,24 @@ stylesheet.
   and control-agent launch URLs resolve to legacy.
 
 - [x] Run
-  `./node_modules/.bin/vitest run packages/tests/rallar-black-box/experience-route.test.ts`
-  and verify only the new default assertions fail because the constant is
-  still `legacy`.
+      `./node_modules/.bin/vitest run packages/tests/rallar-black-box/experience-route.test.ts`
+      and verify only the new default assertions fail because the constant is
+      still `legacy`.
 - [x] Make legacy-intent Playwright setup explicit by adding
-  `experience=legacy` to provider-only routes in `tabbed-navigation.spec.ts`
-  (Quick Test default, browser-Rallar Quick Test, persistence reload),
-  `recipe-console-shell.spec.ts` (legacy side of the lazy round trip), and
-  `recipe-console-chunks.spec.ts` (legacy cold entries). Do not change old
-  compatibility routes that already contain a legacy key such as `tab`.
+      `experience=legacy` to provider-only routes in `tabbed-navigation.spec.ts`
+      (Quick Test default, browser-Rallar Quick Test, persistence reload),
+      `recipe-console-shell.spec.ts` (legacy side of the lazy round trip), and
+      `recipe-console-chunks.spec.ts` (legacy cold entries). Do not change old
+      compatibility routes that already contain a legacy key such as `tab`.
 - [x] Add exact browser acceptance `blank URL opens Recipe Console Execute
   after the final ready-state flip`. Seed a valid local auth session plus stale
-  stored legacy mode/tab, navigate literal `/`, and assert canonical Execute,
-  Recipe Console navigation, no `.app-shell`, no legacy owner, no
-  `LegacyExperience` request, and canonical v1 URL replacement.
+      stored legacy mode/tab, navigate literal `/`, and assert canonical Execute,
+      Recipe Console navigation, no `.app-shell`, no legacy owner, no
+      `LegacyExperience` request, and canonical v1 URL replacement.
 - [x] Before changing production, run the exact named browser acceptance and
-  observe RED because blank `/` still resolves to legacy. Keep the explicit
-  legacy-intent route corrections in this test-only RED patch so unrelated
-  legacy cases do not fail merely because they depended on the old default.
+      observe RED because blank `/` still resolves to legacy. Keep the explicit
+      legacy-intent route corrections in this test-only RED patch so unrelated
+      legacy cases do not fail merely because they depended on the old default.
 - [x] GREEN the smallest production change:
 
   ```ts
@@ -148,16 +148,16 @@ stylesheet.
   ```
 
 - [x] Change the Iteration 11 cold default proof in
-  `recipe-console-advanced.spec.ts` and the recipe side of
-  `recipe-console-chunks.spec.ts` to enter through `/` (using auth setup where
-  the browser-Rallar login gate applies). Preserve reciprocal explicit legacy
-  chunk proof and credential-origin policy tests.
+      `recipe-console-advanced.spec.ts` and the recipe side of
+      `recipe-console-chunks.spec.ts` to enter through `/` (using auth setup where
+      the browser-Rallar login gate applies). Preserve reciprocal explicit legacy
+      chunk proof and credential-origin policy tests.
 - [x] Run focused Vitest, the exact shell/default test, chunks 10/10, Advanced
-  3/3, and full `tabbed-navigation.spec.ts`. Review every changed test route to
-  ensure it expresses product intent rather than depending on the old default.
+      3/3, and full `tabbed-navigation.spec.ts`. Review every changed test route to
+      ensure it expresses product intent rather than depending on the old default.
 - [x] Dispatch a fresh specification reviewer and then a code-quality reviewer
-  for Task 1. Fix every Critical or Important finding test-first, rerun the
-  focused gates, and obtain a clean re-review before advancing.
+      for Task 1. Fix every Critical or Important finding test-first, rerun the
+      focused gates, and obtain a clean re-review before advancing.
 - [x] Commit `feat: make Recipe Console the default`.
 
 ### Task 1 qualification — 2026-07-14
@@ -202,16 +202,16 @@ stylesheet.
   scroll locally.
 
 - [x] RED the legacy import inventory and browser matrix. Require the new
-  side-effect import immediately after `../../styles.css`, require both CSS
-  fixtures to load it after legacy base CSS, then measure visible actions at
-  1440×900, 430×932 touch, and 932×430 touch. Verify CRDT portrait currently
-  overflows or keeps multi-column tracks and the registered targets are below
-  44px.
+      side-effect import immediately after `../../styles.css`, require both CSS
+      fixtures to load it after legacy base CSS, then measure visible actions at
+      1440×900, 430×932 touch, and 932×430 touch. Verify CRDT portrait currently
+      overflows or keeps multi-column tracks and the registered targets are below
+      44px.
 - [x] Run the focused structure test and the new legacy accessibility case;
-  confirm failures identify only the missing stylesheet/import and the recorded
-  size/overflow debts.
+      confirm failures identify only the missing stylesheet/import and the recorded
+      size/overflow debts.
 - [x] Add only scoped rules rooted at `.app-shell` and the six panel classes.
-  The core contract is:
+      The core contract is:
 
   ```css
   .app-shell :is(
@@ -257,15 +257,15 @@ stylesheet.
 - [x] In the same new spec add exact Ready-State #14 acceptance `exposes
   equivalent keyboard touch and persistent evidence at desktop portrait and
   landscape viewports`. Across the three required viewports, exercise primary
-  keyboard navigation, a real visible selection/disclosure, persistent
-  Advanced evidence without hover, 44px representative controls, reduced
-  motion, and zero document overflow. The 900×900 tablet remains covered by the
-  complete responsive suite.
+      keyboard navigation, a real visible selection/disclosure, persistent
+      Advanced evidence without hover, 44px representative controls, reduced
+      motion, and zero document overflow. The 900×900 tablet remains covered by the
+      complete responsive suite.
 - [x] GREEN the focused structure/browser tests, both CSS load orders, existing
-  responsive/accessibility cases, and legacy AppTabs focus tests. Inspect
-  desktop/portrait/landscape screenshots at original resolution.
+      responsive/accessibility cases, and legacy AppTabs focus tests. Inspect
+      desktop/portrait/landscape screenshots at original resolution.
 - [x] Dispatch fresh Task 2 specification and code-quality reviewers. Fix every
-  Critical or Important finding test-first and re-review before advancing.
+      Critical or Important finding test-first and re-review before advancing.
 - [x] Commit `fix: close final accessibility debt`.
 
 ### Task 2 qualification — 2026-07-14
@@ -313,31 +313,31 @@ stylesheet.
   404 state that retains prior usable evidence without inventing data.
 
 - [x] Add pure test-local RGB parsing, relative luminance, and contrast-ratio
-  helpers. For every running/passed/failed/warning/stale/partial/disabled mark,
-  assert text/background at least 4.5:1 and border/background at least 3:1.
-  Also assert selected primary-navigation text/background at least 4.5:1 and
-  its border/background and focus-outline/surrounding-background at least 3:1.
+      helpers. For every running/passed/failed/warning/stale/partial/disabled mark,
+      assert text/background at least 4.5:1 and border/background at least 3:1.
+      Also assert selected primary-navigation text/background at least 4.5:1 and
+      its border/background and focus-outline/surrounding-background at least 3:1.
 - [x] RED an Analyze safety case that first loads a valid Control artifact,
-  configures the fixture's next artifact request to return 404, clicks the
-  visible load action, and expects `Needs attention`, an accessible error that
-  names unavailable/missing evidence without leaking a response body, the
-  previous verdict/evidence still visible, and no fabricated replacement
-  identity.
+      configures the fixture's next artifact request to return 404, clicks the
+      visible load action, and expects `Needs attention`, an accessible error that
+      names unavailable/missing evidence without leaking a response body, the
+      previous verdict/evidence still visible, and no fabricated replacement
+      identity.
 - [x] Run both focused specs before production edits. Verify contrast RED names
-  the actual failing rendered token/ratio, and artifact RED fails only because
-  the fixture lacks a one-shot HTTP failure or production exposes/mishandles
-  that observable state.
+      the actual failing rendered token/ratio, and artifact RED fails only because
+      the fixture lacks a one-shot HTTP failure or production exposes/mishandles
+      that observable state.
 - [x] Add a one-shot `failNextArtifactResponse(status, body)` fixture seam. If
-  production already meets the acceptance, make no production change. If not,
-  apply the smallest Analyze state/controller fix and keep derivation outside
-  React.
+      production already meets the acceptance, make no production change. If not,
+      apply the smallest Analyze state/controller fix and keep derivation outside
+      React.
 - [x] Run status, Analyze safety, all operational-state cases, responsive CSS,
-  and app typecheck.
+      and app typecheck.
 - [x] When that broader gate exposes a keyboard-focus gap on the actual
-  short-landscape Fleet scroll owner, reproduce it alone, target the named
-  scroll region in the acceptance, and add only semantic focus ownership.
+      short-landscape Fleet scroll owner, reproduce it alone, target the named
+      scroll region in the acceptance, and add only semantic focus ownership.
 - [x] Dispatch fresh Task 3 specification and code-quality reviewers. Fix every
-  Critical or Important finding test-first and re-review before advancing.
+      Critical or Important finding test-first and re-review before advancing.
 - [x] Commit `test: prove final operational accessibility`.
 
 ### Task 3 qualification — 2026-07-14
@@ -385,11 +385,11 @@ stylesheet.
   an independently reviewed local branch.
 
 - [x] Dispatch independent reviews for default/compatibility routing,
-  accessibility/contrast, React/CSS/chunk ownership, operational state, and
-  final Ready-State traceability. RED/GREEN every Critical or Important
-  finding, then re-review.
+      accessibility/contrast, React/CSS/chunk ownership, operational state, and
+      final Ready-State traceability. RED/GREEN every Critical or Important
+      finding, then re-review.
 - [x] Run the following exact non-browser qualification commands and record
-  their exit code and test count separately:
+      their exit code and test count separately:
 
   ```bash
   npx vitest run \
@@ -421,9 +421,9 @@ stylesheet.
   ```
 
 - [x] Run the following exact browser commands. The first command is the
-  complete Recipe Console config; the remaining commands provide separately
-  countable cutover, legacy, responsive, operational, CSS, keyboard/reduced-
-  motion, and no-update visual evidence:
+      complete Recipe Console config; the remaining commands provide separately
+      countable cutover, legacy, responsive, operational, CSS, keyboard/reduced-
+      motion, and no-update visual evidence:
 
   ```bash
   npx playwright test \
@@ -456,22 +456,22 @@ stylesheet.
   review console/page errors; never use `--update-snapshots` unless an
   intentional reviewed visual change requires it.
 - [x] Attempt
-  `npm run test:e2e:rallar-black-box:full-stack:real:distributed`. Record a
-  real pass only on successful configured execution; otherwise record the exact
-  unavailable prerequisite from Global Constraints as skipped.
+      `npm run test:e2e:rallar-black-box:full-stack:real:distributed`. Record a
+      real pass only on successful configured execution; otherwise record the exact
+      unavailable prerequisite from Global Constraints as skipped.
 - [x] Verify actual line counts and structure boundaries for `App.tsx`,
-  `RecipeConsoleApp.tsx`, and `LegacyAppShell.tsx`; verify old deep links,
-  explicit `experience=legacy`, Advanced Legacy, and runner-agent launch remain
-  operational.
+      `RecipeConsoleApp.tsx`, and `LegacyAppShell.tsx`; verify old deep links,
+      explicit `experience=legacy`, Advanced Legacy, and runner-agent launch remain
+      operational.
 - [x] Update all five evidence documents with actual hashes, commits, counts,
-  viewports, skips, cutover proof, rollback, remaining risks, and Ready-State
-  #1–#14 dispositions. Mark #3 code-backed/conditionally available while
-  leaving the configured live execution explicitly skipped if unavailable.
+      viewports, skips, cutover proof, rollback, remaining risks, and Ready-State
+      #1–#14 dispositions. Mark #3 code-backed/conditionally available while
+      leaving the configured live execution explicitly skipped if unavailable.
 - [x] Run `git diff --check`, documentation consistency searches, and a final
-  whole-branch independent review. Do not accept unresolved Critical or
-  Important findings.
+      whole-branch independent review. Do not accept unresolved Critical or
+      Important findings.
 - [x] Commit `docs: qualify Recipe Console final cutover`. Do not push or open a
-  pull request.
+      pull request.
 
 ### Task 4 qualification — 2026-07-14
 
@@ -513,19 +513,19 @@ stylesheet.
 ## Iteration 12 Exit Criteria
 
 - [x] Authenticated blank `/` resolves to canonical Recipe Console Execute and
-  does not load legacy resources; explicit old aliases/deep links remain legacy.
+      does not load legacy resources; explicit old aliases/deep links remain legacy.
 - [x] The six registered legacy accessibility debts are closed with 44px
-  actions, narrow CRDT containment, and no page overflow.
+      actions, narrow CRDT containment, and no page overflow.
 - [x] Desktop, tablet, genuine-touch portrait/landscape, keyboard, reduced
-  motion, persistent non-hover evidence, contrast, operational states, and CSS
-  isolation pass executable browser gates.
+      motion, persistent non-hover evidence, contrast, operational states, and CSS
+      isolation pass executable browser gates.
 - [x] Ready-State #14 has the exact named browser acceptance; #1–#14 have
-  code-backed evidence. The deterministic config's opt-in live wrapper remains
-  an exact skip; the separately configured owner executes and passes 4/4.
+      code-backed evidence. The deterministic config's opt-in live wrapper remains
+      an exact skip; the separately configured owner executes and passes 4/4.
 - [x] `App.tsx`, `RecipeConsoleApp.tsx`, and `LegacyAppShell.tsx` remain bounded
-  glue; no registry, shell, or stylesheet monolith is introduced.
+      glue; no registry, shell, or stylesheet monolith is introduced.
 - [x] Legacy rollback navigation, all old routes, public exports, and existing
-  control contracts remain operational; nothing is retired.
+      control contracts remain operational; nothing is retired.
 - [x] All available focused, complete, build, Deno, browser, visual, and review
-  gates are green, docs match repository truth, and cohesive local milestone
-  commits exist on the isolated `codex/` branch.
+      gates are green, docs match repository truth, and cohesive local milestone
+      commits exist on the isolated `codex/` branch.

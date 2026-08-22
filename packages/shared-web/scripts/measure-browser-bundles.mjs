@@ -13,7 +13,7 @@ const esbuildBin = path.join(
     repoRoot,
     'node_modules',
     '.bin',
-    process.platform === 'win32' ? 'esbuild.cmd' : 'esbuild',
+    process.platform === 'win32' ? 'esbuild.cmd' : 'esbuild'
 );
 
 const entries = [
@@ -21,43 +21,43 @@ const entries = [
         label: 'browser/rallar.ts',
         entry: 'packages/shared-web/browser/rallar.ts',
         output: 'rallar-browser-facade.min.js',
-        brotliBudgetKiB: 160,
+        brotliBudgetKiB: 160
     },
     {
         label: 'browser/rallar-core.ts',
         entry: 'packages/shared-web/browser/rallar-core.ts',
         output: 'rallar-browser-core.min.js',
-        brotliBudgetKiB: 100,
+        brotliBudgetKiB: 100
     },
     {
         label: 'browser/rallar-realtime.ts',
         entry: 'packages/shared-web/browser/rallar-realtime.ts',
         output: 'rallar-browser-realtime.min.js',
-        brotliBudgetKiB: 100,
+        brotliBudgetKiB: 100
     },
     {
         label: 'browser/rallar-data.ts',
         entry: 'packages/shared-web/browser/rallar-data.ts',
         output: 'rallar-browser-data.min.js',
-        brotliBudgetKiB: 20,
+        brotliBudgetKiB: 20
     },
     {
         label: 'browser/rallar-crdt.ts',
         entry: 'packages/shared-web/browser/rallar-crdt.ts',
         output: 'rallar-browser-crdt.min.js',
-        brotliBudgetKiB: 30,
+        brotliBudgetKiB: 30
     },
     {
         label: 'browser/rallar-media-calls.ts',
         entry: 'packages/shared-web/browser/rallar-media-calls.ts',
         output: 'rallar-browser-media-calls.min.js',
-        brotliBudgetKiB: 10,
+        brotliBudgetKiB: 10
     },
     {
         label: 'shared-web/mod.ts',
         entry: 'packages/shared-web/mod.ts',
-        output: 'rallar-shared-web-mod.min.js',
-    },
+        output: 'rallar-shared-web-mod.min.js'
+    }
 ];
 
 if (!existsSync(esbuildBin)) {
@@ -74,7 +74,9 @@ console.log('| Entry | Minified | Gzip | Brotli | Budget | Status | Output |');
 console.log('|---|---:|---:|---:|---:|---|---|');
 for (const result of results) {
     console.log(
-        `| ${result.label} | ${formatKiB(result.minifiedBytes)} | ${formatKiB(result.gzipBytes)} | ${formatKiB(result.brotliBytes)} | ${formatBudget(result.brotliBudgetBytes)} | ${toBudgetStatus(result)} | ${result.outputPath} |`,
+        `| ${result.label} | ${formatKiB(result.minifiedBytes)} | ${formatKiB(result.gzipBytes)} | ${
+            formatKiB(result.brotliBytes)
+        } | ${formatBudget(result.brotliBudgetBytes)} | ${toBudgetStatus(result)} | ${result.outputPath} |`
     );
 }
 console.log('');
@@ -82,13 +84,15 @@ if (checkMode) {
     const failures = results.filter((result) => result.isOverBudget);
     if (failures.length > 0) {
         console.error(
-            `Bundle budget check failed for ${failures.map((result) => result.label).join(', ')}.`,
+            `Bundle budget check failed for ${failures.map((result) => result.label).join(', ')}.`
         );
         process.exitCode = 1;
-    } else {
+    }
+    else {
         console.log('Bundle budget check passed.');
     }
-} else {
+}
+else {
     console.log('These are reporting-only measurements; run with --check to enforce budgets.');
 }
 
@@ -104,19 +108,19 @@ function measureEntry(entry) {
             '--platform=browser',
             '--target=es2022',
             '--tsconfig=packages/shared-web/tsconfig.json',
-            `--outfile=${outputPath}`,
+            `--outfile=${outputPath}`
         ],
         {
             cwd: repoRoot,
-            stdio: ['ignore', 'ignore', 'pipe'],
-        },
+            stdio: ['ignore', 'ignore', 'pipe']
+        }
     );
 
     const bytes = readFileSync(outputPath);
     const brotliBytes = brotliCompressSync(bytes, {
         params: {
-            [constants.BROTLI_PARAM_QUALITY]: 11,
-        },
+            [constants.BROTLI_PARAM_QUALITY]: 11
+        }
     }).length;
     const brotliBudgetBytes = toBudgetBytes(entry.brotliBudgetKiB);
     return {
@@ -127,7 +131,7 @@ function measureEntry(entry) {
         brotliBytes,
         brotliBudgetBytes,
         isOverBudget: brotliBudgetBytes !== undefined &&
-            brotliBytes >= brotliBudgetBytes,
+            brotliBytes >= brotliBudgetBytes
     };
 }
 

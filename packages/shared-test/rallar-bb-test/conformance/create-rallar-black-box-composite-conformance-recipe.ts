@@ -1,11 +1,12 @@
-import type {
-    RallarBlackBoxTestRecipe,
-} from '../types.ts';
+import type { RallarBlackBoxTestRecipe } from '../types.ts';
 
+import { assertShapeCompleteViolatedRecipe } from '../assert/assert-shape-complete-violated-recipe.ts';
 import type {
     RallarBlackBoxCompositeConformanceCaseId,
-    RallarBlackBoxCompositeConformanceRecipeOptions,
+    RallarBlackBoxCompositeConformanceRecipeOptions
 } from '../composite-conformance.ts';
+import { loopUntilConvergenceRecipe, loopUntilExhaustedRecipe } from '../loop/loop-until-conformance-recipes.ts';
+import { waitAbsenceHoldRecipe, waitAbsenceViolatedRecipe } from '../wait/wait-absence-conformance-recipes.ts';
 import {
     closeCommand,
     commandMetadata,
@@ -18,24 +19,13 @@ import {
     rtcConnectCommand,
     scopeFields,
     statsCommand,
-    timeoutMs,
+    timeoutMs
 } from './composite-conformance-command-fixtures.ts';
-import {
-    waitAbsenceHoldRecipe,
-    waitAbsenceViolatedRecipe,
-} from '../wait/wait-absence-conformance-recipes.ts';
-import {
-    assertShapeCompleteViolatedRecipe,
-} from '../assert/assert-shape-complete-violated-recipe.ts';
-import {
-    loopUntilConvergenceRecipe,
-    loopUntilExhaustedRecipe,
-} from '../loop/loop-until-conformance-recipes.ts';
 import { waitAssertRecipe } from './wait-assert-recipe.ts';
 
 export function createRallarBlackBoxCompositeConformanceRecipe(
     caseId: RallarBlackBoxCompositeConformanceCaseId,
-    options: RallarBlackBoxCompositeConformanceRecipeOptions = {},
+    options: RallarBlackBoxCompositeConformanceRecipeOptions = {}
 ): RallarBlackBoxTestRecipe {
     switch (caseId) {
         case 'looped-rtc-send':
@@ -62,7 +52,7 @@ export function createRallarBlackBoxCompositeConformanceRecipe(
 }
 
 function loopedRtcRecipe(
-    options: RallarBlackBoxCompositeConformanceRecipeOptions,
+    options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): RallarBlackBoxTestRecipe {
     const connection = options.connection ?? DEFAULT_CONNECTION;
     const roomId = options.roomId ?? DEFAULT_ROOM_ID;
@@ -80,7 +70,7 @@ function loopedRtcRecipe(
                 connection,
                 roomId,
                 transport,
-                options,
+                options
             ),
             {
                 kind: 'loop',
@@ -89,7 +79,7 @@ function loopedRtcRecipe(
                 intervalMs: 10,
                 thresholds: {
                     minSendSuccessRatio: 1,
-                    maxStartDriftMs: 1_000,
+                    maxStartDriftMs: 1_000
                 },
                 metadata: commandMetadata('looped-rtc-send', 'looped-rtc-send-loop'),
                 commands: [
@@ -104,23 +94,23 @@ function loopedRtcRecipe(
                                 topic: 'rallar.conformance.looped-rtc-send',
                                 frame: '{loop.index}',
                                 iteration: '{loop.iteration}',
-                                elapsedMs: '{loop.elapsedMs}',
+                                elapsedMs: '{loop.elapsedMs}'
                             },
                             roomId,
-                            ...scopeFields(options),
+                            ...scopeFields(options)
                         },
-                        metadata: commandMetadata('looped-rtc-send', 'looped-rtc-send-frame'),
-                    },
-                ],
+                        metadata: commandMetadata('looped-rtc-send', 'looped-rtc-send-frame')
+                    }
+                ]
             },
             statsCommand('looped-rtc-send-stats', 'looped-rtc-send'),
-            closeCommand('looped-rtc-send-close', 'looped-rtc-send'),
-        ],
+            closeCommand('looped-rtc-send-close', 'looped-rtc-send')
+        ]
     };
 }
 
 function parallelWsRtcRecipe(
-    options: RallarBlackBoxCompositeConformanceRecipeOptions,
+    options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): RallarBlackBoxTestRecipe {
     const connection = options.connection ?? DEFAULT_CONNECTION;
     const wsConnection = options.wsConnection ?? DEFAULT_WS_CONNECTION;
@@ -139,7 +129,7 @@ function parallelWsRtcRecipe(
                 connection: wsConnection,
                 url: '{config.wsBaseUrl}/api/ws',
                 timeoutMs: timeoutMs(options),
-                metadata: commandMetadata('parallel-ws-rtc-groups', 'parallel-ws-open'),
+                metadata: commandMetadata('parallel-ws-rtc-groups', 'parallel-ws-open')
             },
             rtcConnectCommand(
                 'parallel-ws-rtc-groups',
@@ -147,7 +137,7 @@ function parallelWsRtcRecipe(
                 connection,
                 roomId,
                 transport,
-                options,
+                options
             ),
             {
                 kind: 'parallel',
@@ -164,15 +154,15 @@ function parallelWsRtcRecipe(
                                 data: {
                                     topic: 'rallar.conformance.parallel.ws',
                                     payload: {
-                                        source: 'ws',
-                                    },
+                                        source: 'ws'
+                                    }
                                 },
                                 metadata: commandMetadata(
                                     'parallel-ws-rtc-groups',
-                                    'parallel-ws-send',
-                                ),
-                            },
-                        ],
+                                    'parallel-ws-send'
+                                )
+                            }
+                        ]
                     },
                     {
                         groupId: 'rtc',
@@ -186,20 +176,20 @@ function parallelWsRtcRecipe(
                                 send: {
                                     payload: {
                                         topic: 'rallar.conformance.parallel.rtc',
-                                        source: 'rtc',
+                                        source: 'rtc'
                                     },
                                     roomId,
-                                    ...scopeFields(options),
+                                    ...scopeFields(options)
                                 },
                                 metadata: commandMetadata(
                                     'parallel-ws-rtc-groups',
-                                    'parallel-rtc-send',
-                                ),
-                            },
-                        ],
-                    },
+                                    'parallel-rtc-send'
+                                )
+                            }
+                        ]
+                    }
                 ],
-                metadata: commandMetadata('parallel-ws-rtc-groups', 'parallel-ws-rtc'),
+                metadata: commandMetadata('parallel-ws-rtc-groups', 'parallel-ws-rtc')
             },
             statsCommand('parallel-ws-rtc-stats', 'parallel-ws-rtc-groups'),
             {
@@ -208,15 +198,15 @@ function parallelWsRtcRecipe(
                 connection: wsConnection,
                 code: 1000,
                 reason: 'conformance complete',
-                metadata: commandMetadata('parallel-ws-rtc-groups', 'parallel-ws-close'),
+                metadata: commandMetadata('parallel-ws-rtc-groups', 'parallel-ws-close')
             },
-            closeCommand('parallel-close', 'parallel-ws-rtc-groups'),
-        ],
+            closeCommand('parallel-close', 'parallel-ws-rtc-groups')
+        ]
     };
 }
 
 function cancelDuringLoopRecipe(
-    options: RallarBlackBoxCompositeConformanceRecipeOptions,
+    options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): RallarBlackBoxTestRecipe {
     return {
         recipeId: recipeId('cancel-during-loop', options),
@@ -235,23 +225,23 @@ function cancelDuringLoopRecipe(
                     {
                         kind: 'health',
                         commandId: 'cancel-loop-health',
-                        metadata: commandMetadata('cancel-during-loop', 'cancel-loop-health'),
+                        metadata: commandMetadata('cancel-during-loop', 'cancel-loop-health')
                     },
                     {
                         kind: 'recipe.cancel',
                         commandId: 'cancel-loop-request',
                         reason: 'composite conformance cancellation case',
-                        metadata: commandMetadata('cancel-during-loop', 'cancel-loop-request'),
-                    },
-                ],
+                        metadata: commandMetadata('cancel-during-loop', 'cancel-loop-request')
+                    }
+                ]
             },
-            statsCommand('cancel-during-loop-stats', 'cancel-during-loop'),
-        ],
+            statsCommand('cancel-during-loop-stats', 'cancel-during-loop')
+        ]
     };
 }
 
 function negativeNoPeerRecipe(
-    options: RallarBlackBoxCompositeConformanceRecipeOptions,
+    options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): RallarBlackBoxTestRecipe {
     const connection = options.connection ?? DEFAULT_CONNECTION;
     const roomId = options.roomId ?? DEFAULT_ROOM_ID;
@@ -269,7 +259,7 @@ function negativeNoPeerRecipe(
                 connection,
                 roomId,
                 transport,
-                options,
+                options
             ),
             {
                 kind: 'rtc.send',
@@ -280,15 +270,15 @@ function negativeNoPeerRecipe(
                 send: {
                     data: {
                         topic: 'rallar.conformance.negative-no-peer',
-                        marker: 'negative-no-peer',
+                        marker: 'negative-no-peer'
                     },
                     roomId,
                     peerIds: ['missing-peer'],
-                    ...scopeFields(options),
+                    ...scopeFields(options)
                 },
-                metadata: commandMetadata('negative-no-peer', 'negative-no-peer-send'),
+                metadata: commandMetadata('negative-no-peer', 'negative-no-peer-send')
             },
-            statsCommand('negative-no-peer-stats', 'negative-no-peer'),
-        ],
+            statsCommand('negative-no-peer-stats', 'negative-no-peer')
+        ]
     };
 }

@@ -30,13 +30,13 @@ export const RALLAR_BLACK_BOX_CLIENT_DEFAULTS = {
     statsIntervalMs: 5_000,
     demoUsername: 'alice',
     demoPassword: 'local-demo-password',
-    demoToken: 'local-demo-token',
+    demoToken: 'local-demo-token'
 } as const;
 
 export type RallarBlackBoxClientDefaults = typeof RALLAR_BLACK_BOX_CLIENT_DEFAULTS;
 
 export function parseRallarBlackBoxProviderMode(
-    value: string | undefined,
+    value: string | undefined
 ): RallarBlackBoxProviderMode {
     return value === 'browser-rallar'
         ? 'browser-rallar'

@@ -8,9 +8,11 @@ export type ApiRequestOptions = Readonly<{
     authSession?: AuthSession | null;
 }>;
 
-export type ApiMutationRequestOptions = ApiRequestOptions & Readonly<{
-    requestId: string;
-}>;
+export type ApiMutationRequestOptions =
+    & ApiRequestOptions
+    & Readonly<{
+        requestId: string;
+    }>;
 
 export async function executeHttpRequest<Request, Result>(
     baseUrl: string,
@@ -18,12 +20,12 @@ export async function executeHttpRequest<Request, Result>(
     method: ApiHttpMethod,
     body: Request | undefined,
     options: ApiRequestOptions = {},
-    requestHeaders: Readonly<Record<string, string>> = {},
+    requestHeaders: Readonly<Record<string, string>> = {}
 ): Promise<Result> {
     const init: RequestInit = {
         method,
         headers: { 'content-type': 'application/json', ...requestHeaders },
-        signal: options.signal,
+        signal: options.signal
     };
     const session = options.authSession === undefined ? readSession() : options.authSession;
     addAuthHeaders(init, session);
@@ -35,14 +37,16 @@ export async function executeHttpRequest<Request, Result>(
             path,
             response.status,
             await readErrorBody(response),
-            response.headers,
+            response.headers
         );
     }
     return (await response.json()) as Result;
 }
 
 function addAuthHeaders(init: RequestInit, session: AuthSession | null | undefined): void {
-    if (!session) return;
+    if (!session) {
+        return;
+    }
     const headers = new Headers(init.headers);
     headers.set('authorization', `Bearer ${session.accessToken}`);
     headers.set('x-client-id', session.clientId);
@@ -54,14 +58,15 @@ function addRequestBody<Request>(
     method: ApiHttpMethod,
     path: string,
     body: Request | undefined,
-    options: ApiRequestOptions,
+    options: ApiRequestOptions
 ): void {
     if (method === 'POST' || method === 'PUT') {
         if (body === undefined) {
             throw new Error(`${method} ${path} requires a body`);
         }
         init.body = JSON.stringify(toHttpRequestBody(body, options));
-    } else if (method === 'DELETE' && body !== undefined) {
+    }
+    else if (method === 'DELETE' && body !== undefined) {
         init.body = JSON.stringify(toHttpRequestBody(body, options));
     }
 }
@@ -82,7 +87,8 @@ function toHttpRequestBody<Request>(body: Request, options: ApiRequestOptions): 
 async function readErrorBody(response: Response): Promise<string> {
     try {
         return await response.text();
-    } catch {
+    }
+    catch {
         return '';
     }
 }

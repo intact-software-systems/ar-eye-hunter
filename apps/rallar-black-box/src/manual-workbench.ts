@@ -2,16 +2,13 @@ import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestConfig,
     RallarBlackBoxTestEvent,
-    RallarBlackBoxTestTransport,
+    RallarBlackBoxTestTransport
 } from '@shared-test/rallar-bb-test/types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { RALLAR_BLACK_BOX_CLIENT_DEFAULTS } from './client-defaults.ts';
 import type { RallarBlackBoxProviderMode } from './client-defaults.ts';
 
-export type ManualWorkbenchTransport = Extract<
-    RallarBlackBoxTestTransport,
-    'realtime' | 'messages.rtc' | 'ws'
->;
+export type ManualWorkbenchTransport = Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc' | 'ws'>;
 
 export type ManualDeliveryMode = 'direct' | 'multicast' | 'broadcast';
 
@@ -80,8 +77,8 @@ export type ManualReceivedMessage = Readonly<{
 }>;
 
 export type JsonParseResult =
-    | Readonly<{ ok: true; value: unknown }>
-    | Readonly<{ ok: false; error: string }>;
+    | Readonly<{ ok: true; value: unknown; }>
+    | Readonly<{ ok: false; error: string; }>;
 
 export const MANUAL_PAYLOAD_PRESETS: readonly ManualPayloadPreset[] = [
     {
@@ -90,8 +87,8 @@ export const MANUAL_PAYLOAD_PRESETS: readonly ManualPayloadPreset[] = [
         payload: {
             topic: 'manual.ping',
             kind: 'ping',
-            seq: 1,
-        },
+            seq: 1
+        }
     },
     {
         presetId: 'parity-probe',
@@ -99,17 +96,17 @@ export const MANUAL_PAYLOAD_PRESETS: readonly ManualPayloadPreset[] = [
         payload: {
             topic: 'manual.parity',
             probeId: 'manual-parity-1',
-            sentAt: 'manual-clock',
-        },
+            sentAt: 'manual-clock'
+        }
     },
     {
         presetId: 'membership-probe',
         label: 'Membership Probe',
         payload: {
             topic: 'manual.membership',
-            expectedClients: [],
-        },
-    },
+            expectedClients: []
+        }
+    }
 ];
 
 export const DEFAULT_MANUAL_WORKBENCH_VALUES: ManualWorkbenchValues = {
@@ -139,7 +136,7 @@ export const DEFAULT_MANUAL_WORKBENCH_VALUES: ManualWorkbenchValues = {
     rallarRegister: false,
     rallarRestoreSession: false,
     rallarLogoutOnClose: false,
-    rallarLeaveRoomOnClose: true,
+    rallarLeaveRoomOnClose: true
 };
 
 function clean(value: string): string | undefined {
@@ -150,8 +147,8 @@ function clean(value: string): string | undefined {
 function cleanList(value: string): readonly string[] {
     return value
         .split(',')
-        .map(entry => entry.trim())
-        .filter(entry => entry.length > 0);
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
 }
 
 function timeoutMs(value: ManualWorkbenchValues): number | undefined {
@@ -171,7 +168,8 @@ function parseOptionalRecord(text: string): Readonly<Record<string, unknown>> | 
         return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
             ? parsed as Record<string, unknown>
             : undefined;
-    } catch {
+    }
+    catch {
         return undefined;
     }
 }
@@ -188,7 +186,7 @@ function defaultRoomRef(values: ManualWorkbenchValues): Readonly<Record<string, 
 }
 
 function scopedRtcFields(
-    values: ManualWorkbenchValues,
+    values: ManualWorkbenchValues
 ): Readonly<{
     applicationId?: string;
     workspaceId?: string;
@@ -207,12 +205,12 @@ function scopedRtcFields(
             : {}),
         ...(minSnapshotVersionFrom(values) !== undefined
             ? { minSnapshotVersion: minSnapshotVersionFrom(values) }
-            : {}),
+            : {})
     };
 }
 
 function rallarConfigFrom(
-    values: ManualWorkbenchValues,
+    values: ManualWorkbenchValues
 ): Readonly<Record<string, unknown>> | undefined {
     if (values.providerMode !== 'browser-rallar') {
         return undefined;
@@ -227,17 +225,17 @@ function rallarConfigFrom(
         ...(values.rallarRestoreSession ? { restoreSession: true } : {}),
         ...(values.rallarLogoutOnClose ? { logoutOnClose: true } : {}),
         leaveRoomOnClose: values.rallarLeaveRoomOnClose,
-        ...scopedRtcFields(values),
+        ...scopedRtcFields(values)
     };
 
     return Object.keys(rallar).length > 0 ? rallar : undefined;
 }
 
 function redactionFrom(
-    values: ManualWorkbenchValues,
+    values: ManualWorkbenchValues
 ): RallarBlackBoxTestConfig['redaction'] | undefined {
     const secretValues = [
-        values.rallarPassword,
+        values.rallarPassword
     ].filter((value): value is string => Boolean(value && value.length > 0));
 
     return secretValues.length > 0 ? { secretValues } : undefined;
@@ -248,8 +246,8 @@ function commandId(action: string, sequence: number): string {
 }
 
 function asRtcSendCommand(
-    command: RallarBlackBoxTestCommand,
-): Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send' }> {
+    command: RallarBlackBoxTestCommand
+): Extract<RallarBlackBoxTestCommand, { kind: 'rtc.send'; }> {
     if (command.kind !== 'rtc.send') {
         throw new Error(`Expected rtc.send command, got ${command.kind}.`);
     }
@@ -276,7 +274,7 @@ function targetsFor(values: ManualWorkbenchValues): readonly string[] {
 
 function withPayloadEnvelope(
     values: ManualWorkbenchValues,
-    payload: unknown,
+    payload: unknown
 ): Record<string, unknown> {
     const targets = targetsFor(values);
     return {
@@ -284,7 +282,7 @@ function withPayloadEnvelope(
         topic: clean(values.topic),
         deliveryMode: values.deliveryMode,
         targets,
-        payload,
+        payload
     };
 }
 
@@ -292,19 +290,20 @@ export function parseManualPayload(text: string): JsonParseResult {
     try {
         return {
             ok: true,
-            value: JSON.parse(text) as unknown,
+            value: JSON.parse(text) as unknown
         };
-    } catch (error) {
+    }
+    catch (error) {
         return {
             ok: false,
-            error: error instanceof Error ? error.message : String(error),
+            error: error instanceof Error ? error.message : String(error)
         };
     }
 }
 
 export function manualConfigureCommand(
     values: ManualWorkbenchValues,
-    sequence: number,
+    sequence: number
 ): RallarBlackBoxTestCommand {
     const rallar = rallarConfigFrom(values);
     const redaction = redactionFrom(values);
@@ -321,29 +320,29 @@ export function manualConfigureCommand(
             mode: 'manual-workbench',
             providerMode: values.providerMode,
             protocolVersion: 1,
-            connected: false,
+            connected: false
         },
         defaults: {
             timeoutMs: timeoutMs(values),
             connection: clean(values.connection),
             providerMode: values.providerMode,
-            ...scopedRtcFields(values),
+            ...scopedRtcFields(values)
         },
         ...(rallar ? { rallar } : {}),
-        ...(redaction ? { redaction } : {}),
+        ...(redaction ? { redaction } : {})
     };
 
     return {
         kind: 'configure',
         commandId: commandId('configure', sequence),
         label: 'Configure manual group',
-        config,
+        config
     };
 }
 
 export function manualConnectCommand(
     values: ManualWorkbenchValues,
-    sequence: number,
+    sequence: number
 ): RallarBlackBoxTestCommand {
     if (values.transport === 'ws') {
         return {
@@ -356,9 +355,9 @@ export function manualConnectCommand(
             metadata: {
                 manual: {
                     groupId: clean(values.groupId),
-                    actor: clean(values.actor),
-                },
-            },
+                    actor: clean(values.actor)
+                }
+            }
         };
     }
 
@@ -373,20 +372,20 @@ export function manualConnectCommand(
         transport: values.transport,
         timeoutMs: timeoutMs(values),
         rallar: {
-            sessionId: clean(values.sessionId),
+            sessionId: clean(values.sessionId)
         },
         metadata: {
             manual: {
                 deliveryMode: values.deliveryMode,
-                expectedClients: targetsFor(values),
-            },
-        },
+                expectedClients: targetsFor(values)
+            }
+        }
     };
 }
 
 export function manualCreateGroupCommand(
     values: ManualWorkbenchValues,
-    sequence: number,
+    sequence: number
 ): RallarBlackBoxTestCommand {
     const groupId = clean(values.groupId) ?? RALLAR_BLACK_BOX_CLIENT_DEFAULTS.roomId;
     const applicationId = clean(values.applicationId) ?? DEFAULT_STATE_APPLICATION_ID;
@@ -409,28 +408,28 @@ export function manualCreateGroupCommand(
                 metadata: {
                     source: 'rallar-black-box',
                     surface: 'manual-rallar',
-                    ...scopedRtcFields(values),
-                },
-            },
+                    ...scopedRtcFields(values)
+                }
+            }
         },
         response: {
-            body: 'json',
+            body: 'json'
         },
         metadata: {
             manual: {
                 groupId,
                 action: 'create-group',
                 applicationId,
-                workspaceId,
-            },
-        },
+                workspaceId
+            }
+        }
     };
 }
 
 export function manualSendCommand(
     values: ManualWorkbenchValues,
     payload: unknown,
-    sequence: number,
+    sequence: number
 ): RallarBlackBoxTestCommand {
     const targets = targetsFor(values);
     const manual = {
@@ -438,7 +437,7 @@ export function manualSendCommand(
         topic: clean(values.topic),
         deliveryMode: values.deliveryMode,
         targets,
-        ...scopedRtcFields(values),
+        ...scopedRtcFields(values)
     };
 
     if (values.transport === 'ws') {
@@ -450,8 +449,8 @@ export function manualSendCommand(
             data: withPayloadEnvelope(values, payload),
             timeoutMs: timeoutMs(values),
             metadata: {
-                manual,
-            },
+                manual
+            }
         };
     }
 
@@ -460,17 +459,18 @@ export function manualSendCommand(
             payload,
             roomId: clean(values.groupId),
             typeId: clean(values.typeId),
-            topicId: clean(values.topicId) ?? clean(values.topic),
+            topicId: clean(values.topicId) ?? clean(values.topic)
         }
         : {
             data: payload,
-            roomId: clean(values.groupId),
+            roomId: clean(values.groupId)
         };
 
     if (values.deliveryMode !== 'broadcast' && targets.length > 0) {
         if (values.transport === 'messages.rtc') {
             basePayload.nextHopPeerIds = targets;
-        } else {
+        }
+        else {
             basePayload.peerIds = targets;
         }
     }
@@ -485,8 +485,8 @@ export function manualSendCommand(
         send: basePayload,
         timeoutMs: timeoutMs(values),
         metadata: {
-            manual,
-        },
+            manual
+        }
     };
 }
 
@@ -494,12 +494,12 @@ export function manualRtcDeliveryMatrixCommands(
     values: ManualWorkbenchValues,
     payload: unknown,
     sequence: number,
-    transport: Extract<ManualWorkbenchTransport, 'realtime' | 'messages.rtc'>,
+    transport: Extract<ManualWorkbenchTransport, 'realtime' | 'messages.rtc'>
 ): readonly RallarBlackBoxTestCommand[] {
     const baseValues: ManualWorkbenchValues = {
         ...values,
         transport,
-        deliveryMode: 'direct',
+        deliveryMode: 'direct'
     };
     const commands: RallarBlackBoxTestCommand[] = [manualConfigureCommand(baseValues, sequence)];
     let nextSequence = sequence + 1;
@@ -513,10 +513,14 @@ export function manualRtcDeliveryMatrixCommands(
     nextSequence += 1;
 
     for (const deliveryMode of ['direct', 'multicast', 'broadcast'] as const) {
-        commands.push(manualSendCommand({
-            ...baseValues,
-            deliveryMode,
-        }, payload, nextSequence));
+        commands.push(manualSendCommand(
+            {
+                ...baseValues,
+                deliveryMode
+            },
+            payload,
+            nextSequence
+        ));
         nextSequence += 1;
     }
 
@@ -526,14 +530,14 @@ export function manualRtcDeliveryMatrixCommands(
 export function manualRtcNackProbeCommands(
     values: ManualWorkbenchValues,
     payload: unknown,
-    sequence: number,
+    sequence: number
 ): readonly RallarBlackBoxTestCommand[] {
     const transport = values.transport === 'messages.rtc' ? 'messages.rtc' : 'realtime';
     const scopedValues: ManualWorkbenchValues = {
         ...values,
         transport,
         deliveryMode: 'direct',
-        minSnapshotVersion: Math.max(values.minSnapshotVersion, 9_999_999),
+        minSnapshotVersion: Math.max(values.minSnapshotVersion, 9_999_999)
     };
     const send = asRtcSendCommand(manualSendCommand(scopedValues, payload, sequence));
     return [{
@@ -543,47 +547,55 @@ export function manualRtcNackProbeCommands(
         metadata: {
             ...send.metadata,
             negativeCase: 'not-yet-in-sync',
-            expectedOutcome: 'nack',
-        },
+            expectedOutcome: 'nack'
+        }
     }];
 }
 
 export function manualRtcNegativeRecipeSnippet(
     values: ManualWorkbenchValues,
-    payload: unknown,
+    payload: unknown
 ): string {
     const transport = values.transport === 'messages.rtc' ? 'messages.rtc' : 'realtime';
     const baseValues: ManualWorkbenchValues = {
         ...values,
         transport,
-        deliveryMode: 'direct',
+        deliveryMode: 'direct'
     };
     const commands: RallarBlackBoxTestCommand[] = [
         manualConfigureCommand(baseValues, 1),
         manualConnectCommand(baseValues, 2),
         {
-            ...asRtcSendCommand(manualSendCommand({
-                ...baseValues,
-                targetClient: 'missing-peer',
-            }, payload, 3)),
+            ...asRtcSendCommand(manualSendCommand(
+                {
+                    ...baseValues,
+                    targetClient: 'missing-peer'
+                },
+                payload,
+                3
+            )),
             commandId: 'manual-rtc-negative-missing-peer',
             label: 'RTC missing peer negative',
             metadata: {
                 negativeCase: 'missing-peer',
-                expectedOutcome: 'delivery-failure',
-            },
+                expectedOutcome: 'delivery-failure'
+            }
         },
         {
-            ...asRtcSendCommand(manualSendCommand({
-                ...baseValues,
-                targetClient: 'stale-agent',
-            }, payload, 4)),
+            ...asRtcSendCommand(manualSendCommand(
+                {
+                    ...baseValues,
+                    targetClient: 'stale-agent'
+                },
+                payload,
+                4
+            )),
             commandId: 'manual-rtc-negative-stale-agent',
             label: 'RTC stale agent negative',
             metadata: {
                 negativeCase: 'stale-agent',
-                expectedOutcome: 'delivery-failure',
-            },
+                expectedOutcome: 'delivery-failure'
+            }
         },
         {
             ...manualConnectCommand(baseValues, 5),
@@ -591,8 +603,8 @@ export function manualRtcNegativeRecipeSnippet(
             label: 'RTC duplicate session negative',
             metadata: {
                 negativeCase: 'duplicate-session',
-                expectedOutcome: 'permission-failure',
-            },
+                expectedOutcome: 'permission-failure'
+            }
         },
         {
             ...asRtcSendCommand(manualSendCommand(baseValues, payload, 6)),
@@ -600,8 +612,8 @@ export function manualRtcNegativeRecipeSnippet(
             label: 'RTC permission denied negative',
             metadata: {
                 negativeCase: 'permission-denied',
-                expectedOutcome: 'permission-failure',
-            },
+                expectedOutcome: 'permission-failure'
+            }
         },
         manualSimpleCommand('close', 7),
         {
@@ -610,29 +622,34 @@ export function manualRtcNegativeRecipeSnippet(
             label: 'RTC closed transport negative',
             metadata: {
                 negativeCase: 'closed-transport',
-                expectedOutcome: 'transport-failure',
-            },
+                expectedOutcome: 'transport-failure'
+            }
         },
-        ...manualRtcNackProbeCommands(baseValues, payload, 9),
+        ...manualRtcNackProbeCommands(baseValues, payload, 9)
     ];
 
-    return JSON.stringify({
-        recipeId: 'manual-rtc-negative-recipe',
-        name: 'Manual RTC negative recipe',
-        description: 'Missing peer, stale agent, duplicate session, permission denied, closed transport, and not-yet-in-sync/NACK probes.',
-        continueOnFailure: true,
-        commands,
-    }, null, 2);
+    return JSON.stringify(
+        {
+            recipeId: 'manual-rtc-negative-recipe',
+            name: 'Manual RTC negative recipe',
+            description:
+                'Missing peer, stale agent, duplicate session, permission denied, closed transport, and not-yet-in-sync/NACK probes.',
+            continueOnFailure: true,
+            commands
+        },
+        null,
+        2
+    );
 }
 
 export function manualSimpleCommand(
     action: Extract<ManualWorkbenchAction, 'health' | 'close' | 'reset'>,
-    sequence: number,
+    sequence: number
 ): RallarBlackBoxTestCommand {
     return {
         kind: action,
         commandId: commandId(action, sequence),
-        label: `Manual ${action}`,
+        label: `Manual ${action}`
     };
 }
 
@@ -640,7 +657,7 @@ export function buildManualWorkbenchCommands(
     action: ManualWorkbenchAction,
     values: ManualWorkbenchValues,
     payload: unknown,
-    sequence: number,
+    sequence: number
 ): readonly RallarBlackBoxTestCommand[] {
     switch (action) {
         case 'configure':
@@ -650,12 +667,12 @@ export function buildManualWorkbenchCommands(
                 return [
                     manualConfigureCommand(values, sequence),
                     manualCreateGroupCommand(values, sequence + 1),
-                    manualConnectCommand(values, sequence + 2),
+                    manualConnectCommand(values, sequence + 2)
                 ];
             }
             return [
                 manualConfigureCommand(values, sequence),
-                manualConnectCommand(values, sequence + 1),
+                manualConnectCommand(values, sequence + 1)
             ];
         case 'connect':
             return [manualConnectCommand(values, sequence)];
@@ -669,15 +686,19 @@ export function buildManualWorkbenchCommands(
 }
 
 export function manualRecipeSnippet(
-    entries: readonly ManualActionHistoryEntry[],
+    entries: readonly ManualActionHistoryEntry[]
 ): string {
-    const commands = entries.flatMap(entry => entry.commands);
-    return JSON.stringify({
-        recipeId: 'manual-workbench-recipe',
-        name: 'Manual workbench recipe',
-        continueOnFailure: false,
-        commands,
-    }, null, 2);
+    const commands = entries.flatMap((entry) => entry.commands);
+    return JSON.stringify(
+        {
+            recipeId: 'manual-workbench-recipe',
+            name: 'Manual workbench recipe',
+            continueOnFailure: false,
+            commands
+        },
+        null,
+        2
+    );
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -697,11 +718,11 @@ function firstString(...values: readonly unknown[]): string | undefined {
 }
 
 export function deriveManualReceivedMessages(
-    events: readonly RallarBlackBoxTestEvent[],
+    events: readonly RallarBlackBoxTestEvent[]
 ): readonly ManualReceivedMessage[] {
     return events
-        .filter(event => event.kind === 'message')
-        .map(event => {
+        .filter((event) => event.kind === 'message')
+        .map((event) => {
             const payload = asRecord(event.payload);
             const data = asRecord(payload.data);
             const nestedData = asRecord(data.data);
@@ -717,7 +738,7 @@ export function deriveManualReceivedMessages(
                     data.sender,
                     nestedData.senderId,
                     nestedData.sender,
-                    event.actor,
+                    event.actor
                 ) ?? '-',
                 topic: firstString(
                     payload.topicId,
@@ -725,13 +746,13 @@ export function deriveManualReceivedMessages(
                     data.topic,
                     nestedData.topic,
                     envelope.topic,
-                    event.topic,
+                    event.topic
                 ) ?? event.topic,
                 atEpochMs: typeof payload.receivedAtEpochMs === 'number'
                     ? payload.receivedAtEpochMs
                     : event.atEpochMs,
                 payload: payload.data ?? event.payload,
-                commandId: event.commandId,
+                commandId: event.commandId
             };
         });
 }

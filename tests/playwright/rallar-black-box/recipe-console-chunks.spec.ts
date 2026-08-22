@@ -1,12 +1,9 @@
 import { expect, test, type Browser } from '@playwright/test';
-import { installRecipeConsoleTuneFixture } from
-    './recipe-console-tune-fixture.ts';
-import { createAnalyzeLooseFiles } from
-    './recipe-console-analyze-artifacts.ts';
-import { installRecipeConsoleAnalyzeFixture } from
-    './recipe-console-analyze-fixture.ts';
+import { createAnalyzeLooseFiles } from './recipe-console-analyze-artifacts.ts';
+import { installRecipeConsoleAnalyzeFixture } from './recipe-console-analyze-fixture.ts';
 import { chooseAnalyzeFiles } from './recipe-console-analyze-helpers.ts';
 import { ANALYZE_ROUTE } from './recipe-console-analyze-run-data.ts';
+import { installRecipeConsoleTuneFixture } from './recipe-console-tune-fixture.ts';
 
 type ColdEntryOptions = Readonly<{
     baseUrl?: string;
@@ -18,18 +15,21 @@ async function coldEntry(
     browser: Browser,
     url: string,
     visible: '.recipe-console' | '.app-shell',
-    options: ColdEntryOptions = {},
+    options: ColdEntryOptions = {}
 ) {
     const context = await browser.newContext();
     if (options.authenticated) {
         await context.addInitScript(() => {
-            localStorage.setItem('auth.session', JSON.stringify({
-                clientId: 'cold-entry-client',
-                sessionId: 'cold-entry-session',
-                username: 'cold-entry-operator',
-                accessToken: 'cold-entry-session-token',
-                expiresAtEpochMs: 4_000_000_000_000,
-            }));
+            localStorage.setItem(
+                'auth.session',
+                JSON.stringify({
+                    clientId: 'cold-entry-client',
+                    sessionId: 'cold-entry-session',
+                    username: 'cold-entry-operator',
+                    accessToken: 'cold-entry-session-token',
+                    expiresAtEpochMs: 4_000_000_000_000
+                })
+            );
         });
     }
     const page = await context.newPage();
@@ -45,7 +45,7 @@ async function coldEntry(
         await expect(page.locator(options.ready)).toBeVisible();
     }
     await expect(page.locator(
-        visible === '.recipe-console' ? '.app-shell' : '.recipe-console',
+        visible === '.recipe-console' ? '.app-shell' : '.recipe-console'
     )).toHaveCount(0);
     await context.close();
     return requestedResources;
@@ -56,15 +56,17 @@ test('keeps one lazy experience mounted without loading the other experience', a
         browser,
         '/',
         '.recipe-console',
-        { authenticated: true },
+        { authenticated: true }
     );
     expect(recipeScripts.some((url) => url.includes('LegacyExperience')))
         .toBe(false);
 
-    for (const legacyUrl of [
-        '/?provider=simulated&experience=legacy',
-        '/?provider=simulated&tab=monitor',
-    ]) {
+    for (
+        const legacyUrl of [
+            '/?provider=simulated&experience=legacy',
+            '/?provider=simulated&tab=monitor'
+        ]
+    ) {
         const legacyScripts = await coldEntry(browser, legacyUrl, '.app-shell');
         expect(legacyScripts.some((url) => url.includes('RecipeConsoleApp')))
             .toBe(false);
@@ -80,29 +82,26 @@ test('scrubs an explicit Recipe Console URL even while the login gate delays laz
     });
     await page.goto(
         '/?provider=browser-rallar&v=1&experience=recipe-console&view=execute' +
-        '&controlToken=query-secret' +
-        '&controlUrl=wss%3A%2F%2Fcontrol.test%2Fcontrol%3Ftoken%3Dnested-secret' +
-        '#TOKEN=fragment-secret&trace=keep',
+            '&controlToken=query-secret' +
+            '&controlUrl=wss%3A%2F%2Fcontrol.test%2Fcontrol%3Ftoken%3Dnested-secret' +
+            '#TOKEN=fragment-secret&trace=keep'
     );
 
     await expect(page.getByRole('heading', { name: 'Rallar Server Login' }))
         .toBeVisible();
     const url = new URL(page.url());
-    expect([...url.searchParams.keys()].map(key => key.toLowerCase()))
+    expect([...url.searchParams.keys()].map((key) => key.toLowerCase()))
         .not.toEqual(expect.arrayContaining(['controltoken', 'controlurl']));
     expect(url.hash).toBe('#trace=keep');
     expect(url.href).not.toContain('query-secret');
     expect(url.href).not.toContain('nested-secret');
     expect(url.href).not.toContain('fragment-secret');
     await expect(page.locator('.recipe-console')).toHaveCount(0);
-    expect(experienceResources.some(url => url.includes('RecipeConsoleApp')))
+    expect(experienceResources.some((url) => url.includes('RecipeConsoleApp')))
         .toBe(false);
 });
 
-test('does not auto-consume a Recipe Console ticket at a URL-selected API origin', async ({
-    context,
-    page,
-}) => {
+test('does not auto-consume a Recipe Console ticket at a URL-selected API origin', async ({ context, page }) => {
     const untrustedRequests: string[] = [];
     await context.route('https://untrusted-api.test/**', async (route) => {
         untrustedRequests.push(`${route.request().method()} ${route.request().url()}`);
@@ -110,14 +109,14 @@ test('does not auto-consume a Recipe Console ticket at a URL-selected API origin
             status: 500,
             contentType: 'application/json',
             headers: { 'access-control-allow-origin': '*' },
-            body: JSON.stringify({ error: 'Untrusted endpoint should not be called.' }),
+            body: JSON.stringify({ error: 'Untrusted endpoint should not be called.' })
         });
     });
 
     await page.goto(
         '/?provider=browser-rallar&v=1&experience=recipe-console&view=execute' +
-        '&apiBaseUrl=https%3A%2F%2Funtrusted-api.test' +
-        '#agentSessionTicket=victim-one-time-ticket',
+            '&apiBaseUrl=https%3A%2F%2Funtrusted-api.test' +
+            '#agentSessionTicket=victim-one-time-ticket'
     );
     await page.waitForTimeout(250);
 
@@ -133,20 +132,20 @@ test('does not auto-consume a Recipe Console ticket at a URL-selected API origin
     expect(untrustedRequests).toEqual([]);
 });
 
-test('retains endpoint provenance when legacy transitions to Recipe Console', async ({
-    context,
-    page,
-}) => {
+test('retains endpoint provenance when legacy transitions to Recipe Console', async ({ context, page }) => {
     const controlAuthorizations: Array<string | null> = [];
     const brokerAuthorizations: Array<string | null> = [];
     await context.addInitScript(() => {
-        localStorage.setItem('auth.session', JSON.stringify({
-            clientId: 'victim-client',
-            sessionId: 'victim-session',
-            username: 'victim',
-            accessToken: 'victim-primary-session-token',
-            expiresAtEpochMs: 4_000_000_000_000,
-        }));
+        localStorage.setItem(
+            'auth.session',
+            JSON.stringify({
+                clientId: 'victim-client',
+                sessionId: 'victim-session',
+                username: 'victim',
+                accessToken: 'victim-primary-session-token',
+                expiresAtEpochMs: 4_000_000_000_000
+            })
+        );
     });
     await context.route('https://untrusted-control.test/**', async (route) => {
         const authorization = route.request().headers().authorization ?? null;
@@ -155,9 +154,11 @@ test('retains endpoint provenance when legacy transitions to Recipe Console', as
             status: authorization ? 200 : 401,
             contentType: 'application/json',
             headers: { 'access-control-allow-origin': '*' },
-            body: JSON.stringify(authorization
-                ? { runs: [], distributedRuns: [] }
-                : { error: 'Operator token required.' }),
+            body: JSON.stringify(
+                authorization
+                    ? { runs: [], distributedRuns: [] }
+                    : { error: 'Operator token required.' }
+            )
         });
     });
     await context.route('https://untrusted-api.test/**', async (route) => {
@@ -171,15 +172,15 @@ test('retains endpoint provenance when legacy transitions to Recipe Console', as
                 token: 'brokered-operator-secret',
                 issuedAtEpochMs: Date.now(),
                 expiresAtEpochMs: Date.now() + 3_600_000,
-                ttlMs: 3_600_000,
-            }),
+                ttlMs: 3_600_000
+            })
         });
     });
 
     await page.goto(
         '/?provider=simulated&experience=legacy&workspace=rallar&tab=auth' +
-        '&controlUrl=https%3A%2F%2Funtrusted-control.test%2Fcontrol' +
-        '&apiBaseUrl=https%3A%2F%2Funtrusted-api.test',
+            '&controlUrl=https%3A%2F%2Funtrusted-control.test%2Fcontrol' +
+            '&apiBaseUrl=https%3A%2F%2Funtrusted-api.test'
     );
     await expect(page.locator('.app-shell')).toBeVisible();
 
@@ -187,7 +188,7 @@ test('retains endpoint provenance when legacy transitions to Recipe Console', as
         history.pushState(
             {},
             '',
-            '/?provider=simulated&v=1&experience=recipe-console&view=execute',
+            '/?provider=simulated&v=1&experience=recipe-console&view=execute'
         );
         dispatchEvent(new PopStateEvent('popstate'));
     });
@@ -205,38 +206,34 @@ test('proves each production experience static closure without fixture or peer r
         browser,
         '/?provider=simulated&v=1&experience=recipe-console&view=execute',
         '.recipe-console',
-        { baseUrl: productionBaseUrl },
+        { baseUrl: productionBaseUrl }
     );
-    expect(recipeResources.some(url => /\/assets\/RecipeConsoleApp-[^/]+\.js$/.test(url))).toBe(true);
-    expect(recipeResources.some(url => /\/assets\/RecipeConsoleApp-[^/]+\.css$/.test(url))).toBe(true);
-    expect(recipeResources.some(url => url.includes('LegacyExperience'))).toBe(false);
-    expect(recipeResources.some(url => url.includes('recipe-console-css-isolation'))).toBe(false);
+    expect(recipeResources.some((url) => /\/assets\/RecipeConsoleApp-[^/]+\.js$/.test(url))).toBe(true);
+    expect(recipeResources.some((url) => /\/assets\/RecipeConsoleApp-[^/]+\.css$/.test(url))).toBe(true);
+    expect(recipeResources.some((url) => url.includes('LegacyExperience'))).toBe(false);
+    expect(recipeResources.some((url) => url.includes('recipe-console-css-isolation'))).toBe(false);
 
     const legacyResources = await coldEntry(
         browser,
         '/?provider=simulated&experience=legacy&tab=auth',
         '.app-shell',
-        { baseUrl: productionBaseUrl },
+        { baseUrl: productionBaseUrl }
     );
-    expect(legacyResources.some(url => /\/assets\/LegacyExperience-[^/]+\.js$/.test(url))).toBe(true);
-    expect(legacyResources.some(url => /\/assets\/LegacyExperience-[^/]+\.css$/.test(url))).toBe(true);
-    expect(legacyResources.some(url => url.includes('RecipeConsoleApp'))).toBe(false);
-    expect(legacyResources.some(url => url.includes('recipe-console-css-isolation'))).toBe(false);
+    expect(legacyResources.some((url) => /\/assets\/LegacyExperience-[^/]+\.js$/.test(url))).toBe(true);
+    expect(legacyResources.some((url) => /\/assets\/LegacyExperience-[^/]+\.css$/.test(url))).toBe(true);
+    expect(legacyResources.some((url) => url.includes('RecipeConsoleApp'))).toBe(false);
+    expect(legacyResources.some((url) => url.includes('recipe-console-css-isolation'))).toBe(false);
 });
 
-test('loads the production Fleet chunk only for the Fleet route', async ({
-    browser,
-}) => {
+test('loads the production Fleet chunk only for the Fleet route', async ({ browser }) => {
     const productionBaseUrl = 'http://127.0.0.1:4176';
     const executeResources = await coldEntry(
         browser,
         '/?provider=simulated&v=1&experience=recipe-console&view=execute',
         '.recipe-console',
-        { baseUrl: productionBaseUrl },
+        { baseUrl: productionBaseUrl }
     );
-    expect(executeResources.some(url =>
-        /\/assets\/FleetWorkspace-[^/]+\.(?:js|css)$/.test(url)
-    )).toBe(false);
+    expect(executeResources.some((url) => /\/assets\/FleetWorkspace-[^/]+\.(?:js|css)$/.test(url))).toBe(false);
 
     const fleetResources = await coldEntry(
         browser,
@@ -244,24 +241,18 @@ test('loads the production Fleet chunk only for the Fleet route', async ({
         '.recipe-console',
         {
             baseUrl: productionBaseUrl,
-            ready: '[data-fleet-workspace]',
-        },
+            ready: '[data-fleet-workspace]'
+        }
     );
-    expect(fleetResources.some(url =>
-        /\/assets\/FleetWorkspace-[^/]+\.js$/.test(url)
-    )).toBe(true);
-    expect(fleetResources.some(url =>
-        /\/assets\/FleetWorkspace-[^/]+\.css$/.test(url)
-    )).toBe(true);
-    expect(fleetResources.some(url => url.includes('LegacyExperience')))
+    expect(fleetResources.some((url) => /\/assets\/FleetWorkspace-[^/]+\.js$/.test(url))).toBe(true);
+    expect(fleetResources.some((url) => /\/assets\/FleetWorkspace-[^/]+\.css$/.test(url))).toBe(true);
+    expect(fleetResources.some((url) => url.includes('LegacyExperience')))
         .toBe(false);
 });
 
-test('loads the real production Analyze worker only on import and paints pending before start', async ({
-    browser,
-}) => {
+test('loads the real production Analyze worker only on import and paints pending before start', async ({ browser }) => {
     const context = await browser.newContext({
-        baseURL: 'http://127.0.0.1:4176',
+        baseURL: 'http://127.0.0.1:4176'
     });
     await installRecipeConsoleAnalyzeFixture(context);
     await context.addInitScript(() => {
@@ -273,8 +264,8 @@ test('loads the real production Analyze worker only on import and paints pending
         class TrackedWorker extends NativeWorker {
             constructor(url: string | URL, options?: WorkerOptions) {
                 super(url, options);
-                this.addEventListener('message', event => {
-                    const type = (event.data as { type?: unknown } | undefined)?.type;
+                this.addEventListener('message', (event) => {
+                    const type = (event.data as { type?: unknown; } | undefined)?.type;
                     if (typeof type === 'string') {
                         tracked.__analyzeWorkerProtocol?.push(`response:${type}`);
                     }
@@ -285,106 +276,107 @@ test('loads the real production Analyze worker only on import and paints pending
             override postMessage(message: unknown, options?: StructuredSerializeOptions): void;
             override postMessage(
                 message: unknown,
-                transferOrOptions?: Transferable[] | StructuredSerializeOptions,
+                transferOrOptions?: Transferable[] | StructuredSerializeOptions
             ): void {
-                const type = (message as { type?: unknown } | undefined)?.type;
+                const type = (message as { type?: unknown; } | undefined)?.type;
                 if (type === 'start') {
                     const pending = document.querySelector<HTMLElement>(
-                        '[data-analyze-workspace]',
+                        '[data-analyze-workspace]'
                     )?.dataset.analyzePendingPainted;
                     tracked.__analyzeWorkerProtocol?.push(`request:start:pending=${pending}`);
                 }
                 if (Array.isArray(transferOrOptions)) {
                     super.postMessage(message, transferOrOptions);
-                } else {
+                }
+                else {
                     super.postMessage(message, transferOrOptions);
                 }
             }
         }
         Object.defineProperty(window, 'Worker', {
             configurable: true,
-            value: TrackedWorker,
+            value: TrackedWorker
         });
     });
     const page = await context.newPage();
     const workerUrls: string[] = [];
     const resources: string[] = [];
-    page.on('worker', worker => workerUrls.push(worker.url()));
-    page.on('request', request => resources.push(request.url()));
+    page.on('worker', (worker) => workerUrls.push(worker.url()));
+    page.on('request', (request) => resources.push(request.url()));
 
     await page.goto(ANALYZE_ROUTE);
     await expect(page.locator('[data-analyze-workspace]')).toBeVisible();
     expect(workerUrls).toEqual([]);
-    expect(resources.some(url => /analyze-artifact\.worker-[^/]+\.js$/.test(url)))
+    expect(resources.some((url) => /analyze-artifact\.worker-[^/]+\.js$/.test(url)))
         .toBe(false);
 
     await chooseAnalyzeFiles(page, createAnalyzeLooseFiles());
     await expect(page.locator('[data-artifact-status]')).toHaveText('Artifact ready');
-    await expect.poll(() => workerUrls.some(url =>
-        /\/assets\/analyze-artifact\.worker-[^/]+\.js$/.test(url)
-    )).toBe(true);
-    expect(resources.some(url => /analyze-worker-client-[^/]+\.js$/.test(url)))
+    await expect.poll(() => workerUrls.some((url) => /\/assets\/analyze-artifact\.worker-[^/]+\.js$/.test(url))).toBe(
+        true
+    );
+    expect(resources.some((url) => /analyze-worker-client-[^/]+\.js$/.test(url)))
         .toBe(true);
-    const protocol = await page.evaluate(() => (
-        window as typeof window & { __analyzeWorkerProtocol?: string[] }
-    ).__analyzeWorkerProtocol ?? []);
+    const protocol = await page.evaluate(() =>
+        (
+            window as typeof window & { __analyzeWorkerProtocol?: string[]; }
+        ).__analyzeWorkerProtocol ?? []
+    );
     expect(protocol).toEqual(expect.arrayContaining([
         'response:accepted',
         'request:start:pending=true',
-        'response:complete',
+        'response:complete'
     ]));
     expect(protocol.indexOf('response:accepted')).toBeLessThan(
-        protocol.indexOf('request:start:pending=true'),
+        protocol.indexOf('request:start:pending=true')
     );
     expect(protocol.indexOf('request:start:pending=true')).toBeLessThan(
-        protocol.indexOf('response:complete'),
+        protocol.indexOf('response:complete')
     );
     await context.close();
 });
 
-test('loads production History with Tune and retention only after Preview', async ({
-    browser,
-}) => {
+test('loads production History with Tune and retention only after Preview', async ({ browser }) => {
     const context = await browser.newContext({
-        baseURL: 'http://127.0.0.1:4176',
+        baseURL: 'http://127.0.0.1:4176'
     });
     await installRecipeConsoleTuneFixture(context, { retention: 'ready' });
     const page = await context.newPage();
     const resources: string[] = [];
-    page.on('request', request => {
+    page.on('request', (request) => {
         if (['script', 'stylesheet'].includes(request.resourceType())) {
             resources.push(request.url());
         }
     });
     await page.goto(
-        '/?provider=simulated&v=1&experience=recipe-console&view=execute',
+        '/?provider=simulated&v=1&experience=recipe-console&view=execute'
     );
     await expect(page.locator('.recipe-console')).toBeVisible();
-    expect(resources.some(url => /TuneWorkspace-[^/]+\.(?:js|css)$/.test(url)))
+    expect(resources.some((url) => /TuneWorkspace-[^/]+\.(?:js|css)$/.test(url)))
         .toBe(false);
-    expect(resources.some(url => /control-retention-api-[^/]+\.js$/.test(url)))
+    expect(resources.some((url) => /control-retention-api-[^/]+\.js$/.test(url)))
         .toBe(false);
 
     await page.getByRole('button', { name: 'Tune', exact: true }).click();
     await expect(page.locator('[data-history-workspace]')).toBeVisible();
-    expect(resources.some(url => /TuneWorkspace-[^/]+\.js$/.test(url))).toBe(true);
-    expect(resources.some(url => /control-retention-api-[^/]+\.js$/.test(url)))
+    expect(resources.some((url) => /TuneWorkspace-[^/]+\.js$/.test(url))).toBe(true);
+    expect(resources.some((url) => /control-retention-api-[^/]+\.js$/.test(url)))
         .toBe(false);
 
     await page.getByRole('button', {
         name: 'Preview cleanup',
-        exact: true,
+        exact: true
     }).click();
-    await expect.poll(() => resources.some(url =>
-        /control-retention-api-[^/]+\.js$/.test(url)
-    )).toBe(true);
+    await expect.poll(() => resources.some((url) => /control-retention-api-[^/]+\.js$/.test(url))).toBe(true);
     await context.close();
 });
 
-for (const baseUrl of [
-    'http://127.0.0.1:5176',
-    'http://127.0.0.1:4176',
-] as const) {
+for (
+    const baseUrl of [
+        'http://127.0.0.1:5176',
+        'http://127.0.0.1:4176'
+    ] as const
+) {
     test(`scrubs Recipe Console secrets before its lazy script request at ${baseUrl}`, async ({ browser }) => {
         const context = await browser.newContext();
         const page = await context.newPage();
@@ -406,11 +398,11 @@ for (const baseUrl of [
             view: 'execute',
             futureField: 'keep',
             TOKEN: 'query-secret',
-            CONTROLURL: 'wss://control.test/control?token=nested-secret',
+            CONTROLURL: 'wss://control.test/control?token=nested-secret'
         }).toString();
         url.hash = new URLSearchParams({
             agentSessionTicket: 'fragment-secret',
-            trace: 'keep',
+            trace: 'keep'
         }).toString();
 
         await page.goto(url.href);
@@ -419,7 +411,7 @@ for (const baseUrl of [
         expect(hrefAtLazyRequest).toBeDefined();
         const captured = new URL(hrefAtLazyRequest ?? url.href);
         expect(captured.searchParams.get('futureField')).toBe('keep');
-        expect([...captured.searchParams.keys()].map(key => key.toLowerCase()))
+        expect([...captured.searchParams.keys()].map((key) => key.toLowerCase()))
             .not.toEqual(expect.arrayContaining(['token', 'controlurl']));
         expect(captured.hash).toBe('#trace=keep');
         expect(captured.href).not.toContain('query-secret');

@@ -1,36 +1,36 @@
-import type { ALAckPayload, ALNackPayload, ALRepairPayload, } from '../al-contracts/al-control.ts';
-import { parseALControlMessage } from '../al-contracts/al-control.ts';
 import type { ALMessage } from '../al-contracts/al-contract.ts';
+import type { ALAckPayload, ALNackPayload, ALRepairPayload } from '../al-contracts/al-control.ts';
+import { parseALControlMessage } from '../al-contracts/al-control.ts';
 import type {
     ALReadyable,
     ALSupersedenceInput,
     ALSupersedenceObservation,
-    ALSupersedencePersistenceValue,
+    ALSupersedencePersistenceValue
 } from '../al-contracts/al-runtime.ts';
-import type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
-import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
 import { IndexedDbStringPersistenceProvider } from '../persistence/IndexedDbStringPersistenceProvider.ts';
 import { openIndexedDbWithStore } from '../persistence/openIndexedDb.ts';
+import type { PersistenceProvider } from '../persistence/PersistenceProvider.ts';
+import { NEVER_EXPIRE_AT_TIMESTAMP } from '../persistence/PersistenceProvider.ts';
 import type { Key, ResourceEntry } from '../queuebox/ResourceEntry.ts';
+import { ALAdmissionBackendConflictError } from './ALAdmissionBackendConflictError.ts';
+import { acceptSupersedenceObservation } from './ALInboundAdmissionStore.ts';
+import { resolveExplicitOutboundMessageExpireAtMs } from './ALMessageExpiry.ts';
 import type {
     ALOutboundAckTrackingPlan,
     ALOutboundDispatchPhase,
     ALOutboundDispatchPlan,
-    ALOutboundRepairTrigger,
+    ALOutboundRepairTrigger
 } from './ALOutboundMessageRuntime.ts';
 import type {
     ALOutboundPendingAckSnapshot,
     ALOutboundRepairAttemptSnapshot,
-    ALOutboundSentMessageSnapshot,
+    ALOutboundSentMessageSnapshot
 } from './ALRuntimeStateStores.ts';
-import { acceptSupersedenceObservation } from './ALInboundAdmissionStore.ts';
-import { ALAdmissionBackendConflictError } from './ALAdmissionBackendConflictError.ts';
-import { resolveExplicitOutboundMessageExpireAtMs } from './ALMessageExpiry.ts';
 import type { ALRuntimeStoreRetentionConfig, NormalizedALRuntimeStoreRetentionConfig } from './ALStoreRetention.ts';
 import {
     normalizeALRuntimeStoreRetention,
     resolveExpireAtTimestampWithFallback,
-    toExpireAtTimestampFromNow,
+    toExpireAtTimestampFromNow
 } from './ALStoreRetention.ts';
 
 type StoredValue = Readonly<{
@@ -39,8 +39,8 @@ type StoredValue = Readonly<{
     expireAtTimestamp: number;
 }>;
 
-type LatestSupersedenceValue = Extract<ALSupersedencePersistenceValue, Readonly<{ kind: 'latest' }>>;
-type ReplacementSupersedenceValue = Extract<ALSupersedencePersistenceValue, Readonly<{ kind: 'replacement' }>>;
+type LatestSupersedenceValue = Extract<ALSupersedencePersistenceValue, Readonly<{ kind: 'latest'; }>>;
+type ReplacementSupersedenceValue = Extract<ALSupersedencePersistenceValue, Readonly<{ kind: 'replacement'; }>>;
 
 export type ALOutboundVersionedClientRecord = Readonly<{
     senderId: string;
@@ -48,7 +48,7 @@ export type ALOutboundVersionedClientRecord = Readonly<{
 }>;
 
 export type ALOutboundPlanner<TPrepared> = (
-    msg: ALMessage,
+    msg: ALMessage
 ) => ALOutboundDispatchPlan<TPrepared>;
 
 export type ALOutboundSupersedenceReadState = Readonly<{
@@ -96,48 +96,48 @@ export type ALOutboundRepairReadDto<TPrepared> = Readonly<{
 
 export type ALOutboundAdmissionMutation =
     | Readonly<{
-    kind: 'set-msg-owner';
-    msgId: string;
-    senderId: string;
-    expireAtTimestamp?: number;
-}>
+        kind: 'set-msg-owner';
+        msgId: string;
+        senderId: string;
+        expireAtTimestamp?: number;
+    }>
     | Readonly<{
-    kind: 'set-sent-message';
-    snapshot: ALOutboundSentMessageSnapshot;
-    expireAtTimestamp?: number;
-}>
+        kind: 'set-sent-message';
+        snapshot: ALOutboundSentMessageSnapshot;
+        expireAtTimestamp?: number;
+    }>
     | Readonly<{
-    kind: 'delete-sent-message';
-    msgId: string;
-}>
+        kind: 'delete-sent-message';
+        msgId: string;
+    }>
     | Readonly<{
-    kind: 'set-pending-ack';
-    snapshot: ALOutboundPendingAckSnapshot;
-    expireAtTimestamp?: number;
-}>
+        kind: 'set-pending-ack';
+        snapshot: ALOutboundPendingAckSnapshot;
+        expireAtTimestamp?: number;
+    }>
     | Readonly<{
-    kind: 'delete-pending-ack';
-    msgId: string;
-}>
+        kind: 'delete-pending-ack';
+        msgId: string;
+    }>
     | Readonly<{
-    kind: 'set-repair-attempt';
-    snapshot: ALOutboundRepairAttemptSnapshot;
-    expireAtTimestamp?: number;
-}>
+        kind: 'set-repair-attempt';
+        snapshot: ALOutboundRepairAttemptSnapshot;
+        expireAtTimestamp?: number;
+    }>
     | Readonly<{
-    kind: 'delete-repair-attempt';
-    msgId: string;
-}>
+        kind: 'delete-repair-attempt';
+        msgId: string;
+    }>
     | Readonly<{
-    kind: 'set-supersedence-latest';
-    supersedenceKey: string;
-    value: LatestSupersedenceValue;
-}>
+        kind: 'set-supersedence-latest';
+        supersedenceKey: string;
+        value: LatestSupersedenceValue;
+    }>
     | Readonly<{
-    kind: 'set-supersedence-replacement';
-    msgId: string;
-    value: ReplacementSupersedenceValue;
-}>;
+        kind: 'set-supersedence-replacement';
+        msgId: string;
+        value: ReplacementSupersedenceValue;
+    }>;
 
 export type ALOutboundRepairHint = Readonly<{
     trigger: ALOutboundRepairTrigger;
@@ -149,36 +149,36 @@ export type ALOutboundRepairHint = Readonly<{
 
 export type ALOutboundDurableEffect<TPrepared> =
     | Readonly<{
-    kind: 'send-prepared';
-    msg: ALMessage;
-    prepared: TPrepared;
-    phase: ALOutboundDispatchPhase;
-}>
+        kind: 'send-prepared';
+        msg: ALMessage;
+        prepared: TPrepared;
+        phase: ALOutboundDispatchPhase;
+    }>
     | Readonly<{
-    kind: 'enqueue-outbox';
-    msg: ALMessage;
-    entry: ResourceEntry;
-    replaceExisting: boolean;
-}>
+        kind: 'enqueue-outbox';
+        msg: ALMessage;
+        entry: ResourceEntry;
+        replaceExisting: boolean;
+    }>
     | Readonly<{
-    kind: 'fallback-dispatch';
-    msg: ALMessage;
-    entry: ResourceEntry;
-}>
+        kind: 'fallback-dispatch';
+        msg: ALMessage;
+        entry: ResourceEntry;
+    }>
     | Readonly<{
-    kind: 'ack-timeout';
-    msgId: string;
-}>
+        kind: 'ack-timeout';
+        msgId: string;
+    }>
     | Readonly<{
-    kind: 'repair-hint';
-    msgId: string;
-    request: ALOutboundRepairHint;
-}>
+        kind: 'repair-hint';
+        msgId: string;
+        request: ALOutboundRepairHint;
+    }>
     | Readonly<{
-    kind: 'nack-retry';
-    msgId: string;
-    reason: 'not-yet-in-sync';
-}>;
+        kind: 'nack-retry';
+        msgId: string;
+        reason: 'not-yet-in-sync';
+    }>;
 
 export type ALOutboundDurableEffectWrite<TPrepared> = Readonly<{
     effectId: string;
@@ -213,45 +213,45 @@ export type ALOutboundControlAcceptance = Readonly<{
 
 export type ALOutboundAdmissionStoreConfig =
     | Readonly<{
-    kind: 'memory';
-    namespace: string;
-    supersedenceTrackTtlMs: number;
-    retention?: ALRuntimeStoreRetentionConfig;
-    state: ALOutboundAdmissionMemoryState;
-}>
+        kind: 'memory';
+        namespace: string;
+        supersedenceTrackTtlMs: number;
+        retention?: ALRuntimeStoreRetentionConfig;
+        state: ALOutboundAdmissionMemoryState;
+    }>
     | Readonly<{
-    kind: 'backend';
-    namespace: string;
-    backend: ALOutboundAdmissionBackend;
-    supersedenceTrackTtlMs: number;
-    retention?: ALRuntimeStoreRetentionConfig;
-}>
+        kind: 'backend';
+        namespace: string;
+        backend: ALOutboundAdmissionBackend;
+        supersedenceTrackTtlMs: number;
+        retention?: ALRuntimeStoreRetentionConfig;
+    }>
     | Readonly<{
-    kind: 'provider';
-    namespace: string;
-    provider: PersistenceProvider<string, unknown>;
-    coordinationKey?: string;
-    supersedenceTrackTtlMs: number;
-    retention?: ALRuntimeStoreRetentionConfig;
-}>
+        kind: 'provider';
+        namespace: string;
+        provider: PersistenceProvider<string, unknown>;
+        coordinationKey?: string;
+        supersedenceTrackTtlMs: number;
+        retention?: ALRuntimeStoreRetentionConfig;
+    }>
     | Readonly<{
-    kind: 'indexeddb';
-    namespace: string;
-    dbName?: string;
-    storeName?: string;
-    supersedenceTrackTtlMs: number;
-    retention?: ALRuntimeStoreRetentionConfig;
-}>;
+        kind: 'indexeddb';
+        namespace: string;
+        dbName?: string;
+        storeName?: string;
+        supersedenceTrackTtlMs: number;
+        retention?: ALRuntimeStoreRetentionConfig;
+    }>;
 
 export interface ALOutboundAdmissionStore extends ALReadyable {
     readOutgoingMessage<TPrepared>(
         msg: ALMessage,
-        planner: ALOutboundPlanner<TPrepared>,
+        planner: ALOutboundPlanner<TPrepared>
     ): Promise<ALOutboundMessageReadDto<TPrepared>>;
 
     readRepairMessage<TPrepared>(
         msgId: string,
-        planner: ALOutboundPlanner<TPrepared>,
+        planner: ALOutboundPlanner<TPrepared>
     ): Promise<ALOutboundRepairReadDto<TPrepared>>;
 
     getSentMessage(msgId: string): Promise<ALOutboundSentMessageSnapshot | undefined>;
@@ -261,34 +261,34 @@ export interface ALOutboundAdmissionStore extends ALReadyable {
     getPendingAck(msgId: string): Promise<ALOutboundPendingAckSnapshot | undefined>;
 
     commitBundle<TPrepared>(
-        bundle: ALOutboundCommitBundle<TPrepared>,
+        bundle: ALOutboundCommitBundle<TPrepared>
     ): Promise<'committed' | 'conflict'>;
 
     acceptControlMessage<TPrepared>(
-        msg: ALMessage,
+        msg: ALMessage
     ): Promise<ALOutboundControlAcceptance>;
 
     claimReadyEffects<TPrepared>(
         workerId: string,
         maxCount: number,
         leaseMs: number,
-        nowMs?: number,
+        nowMs?: number
     ): Promise<readonly ALPersistedOutboundEffect<TPrepared>[]>;
 
     completeEffect(
         effectId: string,
-        workerId: string,
+        workerId: string
     ): Promise<void>;
 
     rescheduleEffect(
         effectId: string,
         workerId: string,
         retryAtMs: number,
-        lastError?: string,
+        lastError?: string
     ): Promise<void>;
 
     peekNextEffectReadyAt(
-        nowMs?: number,
+        nowMs?: number
     ): Promise<number | undefined>;
 }
 
@@ -316,12 +316,12 @@ const providerWriteTailByCoordinationKey = new Map<string, Promise<void>>();
 export function createInMemoryALOutboundAdmissionState(): ALOutboundAdmissionMemoryState {
     return {
         data: new Map<string, StoredValue>(),
-        writeTail: Promise.resolve(),
+        writeTail: Promise.resolve()
     };
 }
 
 export function createALOutboundAdmissionStore(
-    config: ALOutboundAdmissionStoreConfig,
+    config: ALOutboundAdmissionStoreConfig
 ): ALOutboundAdmissionStore {
     const retention = normalizeALRuntimeStoreRetention(config.retention);
     switch (config.kind) {
@@ -330,14 +330,14 @@ export function createALOutboundAdmissionStore(
                 config.namespace,
                 config.supersedenceTrackTtlMs,
                 retention,
-                new InMemoryOutboundAdmissionBackend(config.state),
+                new InMemoryOutboundAdmissionBackend(config.state)
             );
         case 'backend':
             return new ProviderBackedALOutboundAdmissionStore(
                 config.namespace,
                 config.supersedenceTrackTtlMs,
                 retention,
-                config.backend,
+                config.backend
             );
         case 'provider':
             return new ProviderBackedALOutboundAdmissionStore(
@@ -346,8 +346,8 @@ export function createALOutboundAdmissionStore(
                 retention,
                 new PersistenceProviderOutboundAdmissionBackend(
                     config.provider,
-                    config.coordinationKey ?? config.namespace,
-                ),
+                    config.coordinationKey ?? config.namespace
+                )
             );
         case 'indexeddb':
             return new ProviderBackedALOutboundAdmissionStore(
@@ -356,8 +356,8 @@ export function createALOutboundAdmissionStore(
                 retention,
                 new IndexedDbOutboundAdmissionBackend(
                     config.dbName ?? IndexedDbStringPersistenceProvider.DEFAULT_DB_NAME,
-                    config.storeName ?? IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME,
-                ),
+                    config.storeName ?? IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME
+                )
             );
     }
 }
@@ -372,7 +372,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
         namespace: string,
         supersedenceTrackTtlMs: number,
         retention: NormalizedALRuntimeStoreRetentionConfig,
-        backend: ALOutboundAdmissionBackend,
+        backend: ALOutboundAdmissionBackend
     ) {
         this.namespace = namespace;
         this.supersedenceTrackTtlMs = supersedenceTrackTtlMs;
@@ -386,7 +386,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
 
     async readOutgoingMessage<TPrepared>(
         msg: ALMessage,
-        planner: ALOutboundPlanner<TPrepared>,
+        planner: ALOutboundPlanner<TPrepared>
     ): Promise<ALOutboundMessageReadDto<TPrepared>> {
         const nowMs = Date.now();
         const plan = planner(msg);
@@ -408,7 +408,9 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
             plan,
             sentSnapshot,
             pendingAck: await this.getPendingAck(msg.id.msgId),
-            repairAttempt: await this.backend.get<ALOutboundRepairAttemptSnapshot>(this.toRepairAttemptKey(msg.id.msgId)),
+            repairAttempt: await this.backend.get<ALOutboundRepairAttemptSnapshot>(
+                this.toRepairAttemptKey(msg.id.msgId)
+            ),
             acks: await this.readAcks(msg.id.msgId),
             nacks: await this.readNacks(msg.id.msgId),
             repairs: await this.readRepairs(msg.id.msgId),
@@ -419,16 +421,16 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                     supersedence.latest,
                     supersedence.replacement,
                     nowMs,
-                    this.supersedenceTrackTtlMs,
+                    this.supersedenceTrackTtlMs
                 )
                 : undefined,
-            priorOutboxKey: sentSnapshot?.outboxKey ?? replacedSnapshot?.outboxKey ?? latestSnapshot?.outboxKey,
+            priorOutboxKey: sentSnapshot?.outboxKey ?? replacedSnapshot?.outboxKey ?? latestSnapshot?.outboxKey
         };
     }
 
     async readRepairMessage<TPrepared>(
         msgId: string,
-        planner: ALOutboundPlanner<TPrepared>,
+        planner: ALOutboundPlanner<TPrepared>
     ): Promise<ALOutboundRepairReadDto<TPrepared>> {
         const sentSnapshot = await this.getSentMessage(msgId);
         const msg = sentSnapshot?.msg;
@@ -444,7 +446,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
             repairAttempt: await this.backend.get<ALOutboundRepairAttemptSnapshot>(this.toRepairAttemptKey(msgId)),
             acks: await this.readAcks(msgId),
             nacks: await this.readNacks(msgId),
-            plan: msg ? planner(msg) : undefined,
+            plan: msg ? planner(msg) : undefined
         };
     }
 
@@ -454,11 +456,11 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
 
     async getAllSentMessages(): Promise<readonly ALOutboundSentMessageSnapshot[]> {
         return [...await this.backend.list<ALOutboundSentMessageSnapshot>(this.toSentMessagePrefix())]
-            .map(entry => entry.value)
+            .map((entry) => entry.value)
             .sort(
                 (left, right) =>
-                    (left.msg.audit?.createdTs ?? left.msg.id.ts)
-                    - (right.msg.audit?.createdTs ?? right.msg.id.ts),
+                    (left.msg.audit?.createdTs ?? left.msg.id.ts) -
+                    (right.msg.audit?.createdTs ?? right.msg.id.ts)
             );
     }
 
@@ -467,14 +469,14 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
     }
 
     async commitBundle<TPrepared>(
-        bundle: ALOutboundCommitBundle<TPrepared>,
+        bundle: ALOutboundCommitBundle<TPrepared>
     ): Promise<'committed' | 'conflict'> {
         if (bundle.mutations.length === 0 && bundle.durableEffects.length === 0) {
             return 'committed';
         }
 
         try {
-            return await this.backend.write(async tx => {
+            return await this.backend.write(async (tx) => {
                 const current = await tx.get<ALOutboundVersionedClientRecord>(this.toVersionKey(bundle.senderId));
                 const currentVersion = current?.version;
                 if (currentVersion !== bundle.expectedVersion) {
@@ -492,23 +494,26 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                 await this.bumpVersion(tx, bundle.senderId, currentVersion);
                 return 'committed';
             });
-        } catch (error) {
-            if (error instanceof ALAdmissionBackendConflictError) return 'conflict';
+        }
+        catch (error) {
+            if (error instanceof ALAdmissionBackendConflictError) {
+                return 'conflict';
+            }
             throw error;
         }
     }
 
     async acceptControlMessage<TPrepared>(
-        msg: ALMessage,
+        msg: ALMessage
     ): Promise<ALOutboundControlAcceptance> {
         const parsed = parseALControlMessage(msg);
         if (!parsed) {
             return {
-                handled: false,
+                handled: false
             };
         }
 
-        return await this.backend.write(async tx => {
+        return await this.backend.write(async (tx) => {
             const nowMs = Date.now();
             switch (parsed.type) {
                 case 'ack': {
@@ -516,7 +521,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                     const msgId = payload.ackedMsgId;
                     const nextAcks = appendUniqueAck(
                         toAcks(await tx.get<OutboundControlValue>(this.toControlAcksKey(msgId))),
-                        payload,
+                        payload
                     );
                     const currentPending = await tx.get<ALOutboundPendingAckSnapshot>(this.toPendingAckKey(msgId));
                     const nextPending = acceptAckSnapshot(currentPending, nextAcks, payload);
@@ -525,21 +530,26 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                         this.toControlAcksKey(msgId),
                         {
                             kind: 'acks',
-                            values: nextAcks,
+                            values: nextAcks
                         } satisfies AcksControlValue,
-                        toExpireAtTimestampFromNow(this.retention.controlHistoryTtlMs, nowMs),
+                        toExpireAtTimestampFromNow(this.retention.controlHistoryTtlMs, nowMs)
                     );
 
                     if (nextPending) {
-                        await tx.set(this.toPendingAckKey(msgId), nextPending, toPendingAckExpireAtTimestamp(nextPending));
-                    } else if (currentPending) {
+                        await tx.set(
+                            this.toPendingAckKey(msgId),
+                            nextPending,
+                            toPendingAckExpireAtTimestamp(nextPending)
+                        );
+                    }
+                    else if (currentPending) {
                         await tx.remove(this.toPendingAckKey(msgId));
                         await tx.remove(this.toRepairAttemptKey(msgId));
                     }
 
                     await this.bumpOwnerVersionIfPresent(tx, msgId);
                     return {
-                        handled: true,
+                        handled: true
                     };
                 }
                 case 'nack': {
@@ -547,21 +557,24 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                     const msgId = payload.msgId;
                     const nextNacks = [
                         ...toNacks(await tx.get<OutboundControlValue>(this.toControlNacksKey(msgId))),
-                        payload,
+                        payload
                     ];
                     await tx.set(
                         this.toControlNacksKey(msgId),
                         {
                             kind: 'nacks',
-                            values: nextNacks,
+                            values: nextNacks
                         } satisfies NacksControlValue,
-                        toExpireAtTimestampFromNow(this.retention.controlHistoryTtlMs, nowMs),
+                        toExpireAtTimestampFromNow(this.retention.controlHistoryTtlMs, nowMs)
                     );
 
-                    if (payload.reason === 'expired' || payload.reason === 'unauthorized' || payload.reason === 'stale') {
+                    if (
+                        payload.reason === 'expired' || payload.reason === 'unauthorized' || payload.reason === 'stale'
+                    ) {
                         await tx.remove(this.toPendingAckKey(msgId));
                         await tx.remove(this.toRepairAttemptKey(msgId));
-                    } else if (payload.reason === 'gap') {
+                    }
+                    else if (payload.reason === 'gap') {
                         await this.persistEffect(
                             tx,
                             this.toRepairHintEffectWrite<TPrepared>(
@@ -571,16 +584,16 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                                     requestedByPeerId: payload.fromPeerId,
                                     orderingTrackKey: payload.orderingKey,
                                     missingSeqs: payload.missingSeqs ?? [],
-                                    failedPeerIds: [],
+                                    failedPeerIds: []
                                 },
-                                payload.observedAtEpochMs,
-                            ),
+                                payload.observedAtEpochMs
+                            )
                         );
                     }
 
                     await this.bumpOwnerVersionIfPresent(tx, msgId);
                     return {
-                        handled: true,
+                        handled: true
                     };
                 }
                 case 'repair': {
@@ -588,15 +601,15 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                     const msgId = payload.msgId;
                     const nextRepairs = [
                         ...toRepairs(await tx.get<OutboundControlValue>(this.toControlRepairsKey(msgId))),
-                        payload,
+                        payload
                     ];
                     await tx.set(
                         this.toControlRepairsKey(msgId),
                         {
                             kind: 'repairs',
-                            values: nextRepairs,
+                            values: nextRepairs
                         } satisfies RepairsControlValue,
-                        toExpireAtTimestampFromNow(this.retention.controlHistoryTtlMs, nowMs),
+                        toExpireAtTimestampFromNow(this.retention.controlHistoryTtlMs, nowMs)
                     );
                     await this.persistEffect(
                         tx,
@@ -607,14 +620,14 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                                 requestedByPeerId: payload.fromPeerId,
                                 orderingTrackKey: payload.orderingKey,
                                 missingSeqs: payload.missingSeqs ?? [],
-                                failedPeerIds: [],
+                                failedPeerIds: []
                             },
-                            payload.observedAtEpochMs,
-                        ),
+                            payload.observedAtEpochMs
+                        )
                     );
                     await this.bumpOwnerVersionIfPresent(tx, msgId);
                     return {
-                        handled: true,
+                        handled: true
                     };
                 }
             }
@@ -625,16 +638,16 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
         workerId: string,
         maxCount: number,
         leaseMs: number,
-        nowMs = Date.now(),
+        nowMs = Date.now()
     ): Promise<readonly ALPersistedOutboundEffect<TPrepared>[]> {
         if (maxCount <= 0) {
             return [];
         }
 
-        return await this.backend.write(async tx => {
+        return await this.backend.write(async (tx) => {
             const claimed: ALPersistedOutboundEffect<TPrepared>[] = [];
             const effects = [...await tx.list<ALPersistedOutboundEffect<TPrepared>>(this.toEffectPrefix())]
-                .map(entry => entry.value)
+                .map((entry) => entry.value)
                 .sort((left, right) => left.retryAtMs - right.retryAtMs || left.effectId.localeCompare(right.effectId));
 
             for (const effect of effects) {
@@ -652,7 +665,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                     attempts: effect.attempts + 1,
                     leaseOwner: workerId,
                     leaseUntilMs: nowMs + leaseMs,
-                    updatedAtMs: nowMs,
+                    updatedAtMs: nowMs
                 };
                 await tx.set(this.toEffectKey(effect.effectId), nextEffect, effect.expireAtTimestamp);
                 claimed.push(nextEffect);
@@ -664,9 +677,9 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
 
     async completeEffect(
         effectId: string,
-        workerId: string,
+        workerId: string
     ): Promise<void> {
-        await this.backend.write(async tx => {
+        await this.backend.write(async (tx) => {
             const current = await tx.get<ALPersistedOutboundEffect<unknown>>(this.toEffectKey(effectId));
             if (!current || current.leaseOwner !== workerId) {
                 return;
@@ -680,9 +693,9 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
         effectId: string,
         workerId: string,
         retryAtMs: number,
-        lastError?: string,
+        lastError?: string
     ): Promise<void> {
-        await this.backend.write(async tx => {
+        await this.backend.write(async (tx) => {
             const current = await tx.get<ALPersistedOutboundEffect<unknown>>(this.toEffectKey(effectId));
             if (!current || current.leaseOwner !== workerId) {
                 return;
@@ -697,15 +710,15 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                     leaseOwner: undefined,
                     leaseUntilMs: undefined,
                     lastError,
-                    updatedAtMs: Date.now(),
+                    updatedAtMs: Date.now()
                 } satisfies ALPersistedOutboundEffect<unknown>,
-                current.expireAtTimestamp,
+                current.expireAtTimestamp
             );
         });
     }
 
     async peekNextEffectReadyAt(
-        nowMs = Date.now(),
+        nowMs = Date.now()
     ): Promise<number | undefined> {
         let nextAt: number | undefined;
         for (const entry of await this.backend.list<ALPersistedOutboundEffect<unknown>>(this.toEffectPrefix())) {
@@ -730,7 +743,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
 
     private async readSupersedenceState(
         key: string | undefined,
-        msgId: string,
+        msgId: string
     ): Promise<ALOutboundSupersedenceReadState> {
         if (!key) {
             return {};
@@ -739,11 +752,11 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
         return {
             key,
             latest: toLatestSupersedence(
-                await this.backend.get<ALSupersedencePersistenceValue>(this.toSupersedenceLatestKey(key)),
+                await this.backend.get<ALSupersedencePersistenceValue>(this.toSupersedenceLatestKey(key))
             ),
             replacement: toReplacementSupersedence(
-                await this.backend.get<ALSupersedencePersistenceValue>(this.toSupersedenceReplacementKey(msgId)),
-            ),
+                await this.backend.get<ALSupersedencePersistenceValue>(this.toSupersedenceReplacementKey(msgId))
+            )
         };
     }
 
@@ -761,7 +774,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
 
     private async applyMutation(
         tx: ALOutboundAdmissionWriteContext,
-        mutation: ALOutboundAdmissionMutation,
+        mutation: ALOutboundAdmissionMutation
     ): Promise<void> {
         switch (mutation.kind) {
             case 'set-msg-owner':
@@ -770,8 +783,8 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                     mutation.senderId,
                     resolveExpireAtTimestampWithFallback(
                         mutation.expireAtTimestamp,
-                        this.retention.msgOwnerTtlMs,
-                    ),
+                        this.retention.msgOwnerTtlMs
+                    )
                 );
                 return;
             case 'set-sent-message':
@@ -780,8 +793,8 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                     mutation.snapshot,
                     resolveExpireAtTimestampWithFallback(
                         mutation.expireAtTimestamp,
-                        this.retention.sentMessageTtlMs,
-                    ),
+                        this.retention.sentMessageTtlMs
+                    )
                 );
                 return;
             case 'delete-sent-message':
@@ -791,7 +804,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                 await tx.set(
                     this.toPendingAckKey(mutation.snapshot.msgId),
                     mutation.snapshot,
-                    mutation.expireAtTimestamp ?? toPendingAckExpireAtTimestamp(mutation.snapshot),
+                    mutation.expireAtTimestamp ?? toPendingAckExpireAtTimestamp(mutation.snapshot)
                 );
                 return;
             case 'delete-pending-ack':
@@ -803,8 +816,8 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                     mutation.snapshot,
                     resolveExpireAtTimestampWithFallback(
                         mutation.expireAtTimestamp,
-                        this.retention.repairAttemptTtlMs,
-                    ),
+                        this.retention.repairAttemptTtlMs
+                    )
                 );
                 return;
             case 'delete-repair-attempt':
@@ -814,14 +827,14 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                 await tx.set(
                     this.toSupersedenceLatestKey(mutation.supersedenceKey),
                     mutation.value,
-                    mutation.value.updatedAtMs + this.supersedenceTrackTtlMs,
+                    mutation.value.updatedAtMs + this.supersedenceTrackTtlMs
                 );
                 return;
             case 'set-supersedence-replacement':
                 await tx.set(
                     this.toSupersedenceReplacementKey(mutation.msgId),
                     mutation.value,
-                    mutation.value.updatedAtMs + this.supersedenceTrackTtlMs,
+                    mutation.value.updatedAtMs + this.supersedenceTrackTtlMs
                 );
                 return;
         }
@@ -829,7 +842,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
 
     private async persistEffect<TPrepared>(
         tx: ALOutboundAdmissionWriteContext,
-        effect: ALOutboundDurableEffectWrite<TPrepared>,
+        effect: ALOutboundDurableEffectWrite<TPrepared>
     ): Promise<void> {
         const key = this.toEffectKey(effect.effectId);
         const expireAtTimestamp = effect.expireAtTimestamp ?? this.resolveEffectExpireAtTimestamp(effect.payload);
@@ -852,14 +865,14 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                 attempts: 0,
                 retryAtMs: effect.retryAtMs ?? nowMs,
                 updatedAtMs: nowMs,
-                expireAtTimestamp,
+                expireAtTimestamp
             } satisfies ALPersistedOutboundEffect<TPrepared>,
-            expireAtTimestamp,
+            expireAtTimestamp
         );
     }
 
     private resolveEffectExpireAtTimestamp<TPrepared>(
-        effect: ALOutboundDurableEffect<TPrepared>,
+        effect: ALOutboundDurableEffect<TPrepared>
     ): number {
         switch (effect.kind) {
             case 'send-prepared':
@@ -867,7 +880,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
             case 'fallback-dispatch':
                 return resolveExpireAtTimestampWithFallback(
                     resolveExplicitOutboundMessageExpireAtMs(effect.msg),
-                    this.retention.durableEffectTtlMs,
+                    this.retention.durableEffectTtlMs
                 );
             case 'ack-timeout':
             case 'repair-hint':
@@ -878,7 +891,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
 
     private isEffectReady(
         effect: ALPersistedOutboundEffect<unknown>,
-        nowMs: number,
+        nowMs: number
     ): boolean {
         if (effect.status === 'pending') {
             return effect.retryAtMs <= nowMs;
@@ -890,7 +903,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
     private toRepairHintEffectWrite<TPrepared>(
         msgId: string,
         request: ALOutboundRepairHint,
-        observedAtMs: number,
+        observedAtMs: number
     ): ALOutboundDurableEffectWrite<TPrepared> {
         return {
             effectId: this.toEffectId(
@@ -900,19 +913,19 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
                 request.requestedByPeerId ?? '-',
                 request.orderingTrackKey ?? '-',
                 request.missingSeqs.join(','),
-                observedAtMs,
+                observedAtMs
             ),
             payload: {
                 kind: 'repair-hint',
                 msgId,
-                request,
-            },
+                request
+            }
         };
     }
 
     private async bumpOwnerVersionIfPresent(
         tx: ALOutboundAdmissionWriteContext,
-        msgId: string,
+        msgId: string
     ): Promise<void> {
         const ownerSenderId = await tx.get<string>(this.toMsgOwnerKey(msgId));
         if (ownerSenderId) {
@@ -923,16 +936,17 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
     private async bumpVersion(
         tx: ALOutboundAdmissionWriteContext,
         senderId: string,
-        currentVersion?: number,
+        currentVersion?: number
     ): Promise<void> {
-        const version = currentVersion ?? (await tx.get<ALOutboundVersionedClientRecord>(this.toVersionKey(senderId)))?.version;
+        const version = currentVersion ??
+            (await tx.get<ALOutboundVersionedClientRecord>(this.toVersionKey(senderId)))?.version;
         await tx.set(
             this.toVersionKey(senderId),
             {
                 senderId,
-                version: (version ?? 0) + 1,
+                version: (version ?? 0) + 1
             } satisfies ALOutboundVersionedClientRecord,
-            toExpireAtTimestampFromNow(this.retention.versionTtlMs),
+            toExpireAtTimestampFromNow(this.retention.versionTtlMs)
         );
     }
 
@@ -993,7 +1007,7 @@ class ProviderBackedALOutboundAdmissionStore implements ALOutboundAdmissionStore
     }
 
     private toEffectId(...parts: readonly (number | string)[]): string {
-        return parts.map(part => encodeURIComponent(String(part))).join(':');
+        return parts.map((part) => encodeURIComponent(String(part))).join(':');
     }
 }
 
@@ -1001,7 +1015,7 @@ class InMemoryOutboundAdmissionBackend implements ALOutboundAdmissionBackend {
     private readonly state: ALOutboundAdmissionMemoryState;
 
     constructor(
-        state: ALOutboundAdmissionMemoryState,
+        state: ALOutboundAdmissionMemoryState
     ) {
         this.state = state;
     }
@@ -1037,7 +1051,7 @@ class InMemoryOutboundAdmissionBackend implements ALOutboundAdmissionBackend {
 
             entries.push({
                 key,
-                value: stored.value as V,
+                value: stored.value as V
             });
         }
 
@@ -1047,7 +1061,7 @@ class InMemoryOutboundAdmissionBackend implements ALOutboundAdmissionBackend {
     async write<T>(fn: (tx: ALOutboundAdmissionWriteContext) => Promise<T>): Promise<T> {
         const previous = this.state.writeTail;
         let release: (() => void) | undefined;
-        this.state.writeTail = new Promise<void>(resolve => {
+        this.state.writeTail = new Promise<void>((resolve) => {
             release = resolve;
         });
 
@@ -1055,23 +1069,24 @@ class InMemoryOutboundAdmissionBackend implements ALOutboundAdmissionBackend {
 
         try {
             return await fn({
-                get: async key => await this.get(key),
-                list: async prefix => await this.list(prefix),
+                get: async (key) => await this.get(key),
+                list: async (prefix) => await this.list(prefix),
                 set: async (key, value, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP) => {
                     this.state.data.set(
                         key,
                         {
                             key,
                             value,
-                            expireAtTimestamp,
-                        },
+                            expireAtTimestamp
+                        }
                     );
                 },
-                remove: async key => {
+                remove: async (key) => {
                     this.state.data.delete(key);
-                },
+                }
             });
-        } finally {
+        }
+        finally {
             release?.();
         }
     }
@@ -1085,7 +1100,7 @@ class IndexedDbOutboundAdmissionBackend implements ALOutboundAdmissionBackend {
 
     constructor(
         dbName: string,
-        storeName: string,
+        storeName: string
     ) {
         this.dbName = dbName;
         this.storeName = storeName;
@@ -1121,7 +1136,7 @@ class IndexedDbOutboundAdmissionBackend implements ALOutboundAdmissionBackend {
         const store = tx.objectStore(this.storeName);
         const values: Array<Readonly<{ key: string; value: V; }>> = [];
 
-        await cursorEach(store, async cursor => {
+        await cursorEach(store, async (cursor) => {
             const stored = cursor.value as StoredValue;
             if (!stored.key.startsWith(prefix)) {
                 return;
@@ -1134,7 +1149,7 @@ class IndexedDbOutboundAdmissionBackend implements ALOutboundAdmissionBackend {
 
             values.push({
                 key: stored.key,
-                value: stored.value as V,
+                value: stored.value as V
             });
         });
 
@@ -1163,7 +1178,7 @@ class IndexedDbOutboundAdmissionBackend implements ALOutboundAdmissionBackend {
             },
             list: async <V>(prefix: string): Promise<readonly Readonly<{ key: string; value: V; }>[]> => {
                 const values: Array<Readonly<{ key: string; value: V; }>> = [];
-                await cursorEach(store, async cursor => {
+                await cursorEach(store, async (cursor) => {
                     const stored = cursor.value as StoredValue;
                     if (!stored.key.startsWith(prefix)) {
                         return;
@@ -1176,23 +1191,25 @@ class IndexedDbOutboundAdmissionBackend implements ALOutboundAdmissionBackend {
 
                     values.push({
                         key: stored.key,
-                        value: stored.value as V,
+                        value: stored.value as V
                     });
                 });
                 return values;
             },
             set: async (key, value, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP) => {
                 await requestToPromise(
-                    store.put({
-                        key,
-                        value,
-                        expireAtTimestamp,
-                    } satisfies StoredValue),
+                    store.put(
+                        {
+                            key,
+                            value,
+                            expireAtTimestamp
+                        } satisfies StoredValue
+                    )
                 );
             },
-            remove: async key => {
+            remove: async (key) => {
                 await requestToPromise(store.delete(key));
-            },
+            }
         });
 
         await transactionDone(tx);
@@ -1205,9 +1222,9 @@ class IndexedDbOutboundAdmissionBackend implements ALOutboundAdmissionBackend {
                 this.dbName,
                 {
                     name: this.storeName,
-                    keyPath: 'key',
-                },
-            ).then(db => {
+                    keyPath: 'key'
+                }
+            ).then((db) => {
                 db.onversionchange = () => {
                     db.close();
                     this.dbPromise = undefined;
@@ -1226,7 +1243,7 @@ class PersistenceProviderOutboundAdmissionBackend implements ALOutboundAdmission
 
     constructor(
         provider: PersistenceProvider<string, unknown>,
-        coordinationKey: string,
+        coordinationKey: string
     ) {
         this.provider = provider;
         this.coordinationKey = coordinationKey;
@@ -1254,7 +1271,7 @@ class PersistenceProviderOutboundAdmissionBackend implements ALOutboundAdmission
 
             entries.push({
                 key,
-                value: value as V,
+                value: value as V
             });
         }
 
@@ -1264,7 +1281,7 @@ class PersistenceProviderOutboundAdmissionBackend implements ALOutboundAdmission
     async write<T>(fn: (tx: ALOutboundAdmissionWriteContext) => Promise<T>): Promise<T> {
         const previous = providerWriteTailByCoordinationKey.get(this.coordinationKey) ?? Promise.resolve();
         let release: (() => void) | undefined;
-        const gate = new Promise<void>(resolve => {
+        const gate = new Promise<void>((resolve) => {
             release = resolve;
         });
         const tail = previous.then(() => gate);
@@ -1274,22 +1291,23 @@ class PersistenceProviderOutboundAdmissionBackend implements ALOutboundAdmission
 
         try {
             return await fn({
-                get: async key => await this.get(key),
-                list: async prefix => await this.list(prefix),
+                get: async (key) => await this.get(key),
+                list: async (prefix) => await this.list(prefix),
                 set: async (key, value, expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP) => {
                     await this.provider.setItem(
                         key,
                         value,
                         {
-                            expireAtTimestamp,
-                        },
+                            expireAtTimestamp
+                        }
                     );
                 },
-                remove: async key => {
+                remove: async (key) => {
                     await this.provider.removeItem(key);
-                },
+                }
             });
-        } finally {
+        }
+        finally {
             release?.();
             if (providerWriteTailByCoordinationKey.get(this.coordinationKey) === tail) {
                 providerWriteTailByCoordinationKey.delete(this.coordinationKey);
@@ -1317,7 +1335,7 @@ type OutboundControlValue = AcksControlValue | NacksControlValue | RepairsContro
 
 function toSupersedenceInput<TPrepared>(
     msg: ALMessage,
-    plan: ALOutboundDispatchPlan<TPrepared>,
+    plan: ALOutboundDispatchPlan<TPrepared>
 ): ALSupersedenceInput | undefined {
     const tracking = plan.supersedenceTracking;
     if (!tracking?.enabled || !tracking.key) {
@@ -1329,12 +1347,12 @@ function toSupersedenceInput<TPrepared>(
         msgId: msg.id.msgId,
         replacesMsgId: tracking.replacesMsgId,
         seq: msg.ordering?.seq,
-        ts: msg.audit?.createdTs ?? msg.id.ts,
+        ts: msg.audit?.createdTs ?? msg.id.ts
     };
 }
 
 function toLatestSupersedence(
-    value: ALSupersedencePersistenceValue | undefined,
+    value: ALSupersedencePersistenceValue | undefined
 ): LatestSupersedenceValue | undefined {
     return value?.kind === 'latest'
         ? value
@@ -1342,7 +1360,7 @@ function toLatestSupersedence(
 }
 
 function toReplacementSupersedence(
-    value: ALSupersedencePersistenceValue | undefined,
+    value: ALSupersedencePersistenceValue | undefined
 ): ReplacementSupersedenceValue | undefined {
     return value?.kind === 'replacement'
         ? value
@@ -1363,9 +1381,9 @@ function toRepairs(value: OutboundControlValue | undefined): readonly ALRepairPa
 
 function appendUniqueAck(
     current: readonly ALAckPayload[],
-    next: ALAckPayload,
+    next: ALAckPayload
 ): readonly ALAckPayload[] {
-    if (current.some(ack => ack.fromPeerId === next.fromPeerId && ack.status === next.status)) {
+    if (current.some((ack) => ack.fromPeerId === next.fromPeerId && ack.status === next.status)) {
         return current;
     }
 
@@ -1377,7 +1395,7 @@ export function trackOutboundPendingAckSnapshot(
     current: ALOutboundPendingAckSnapshot | undefined,
     acks: readonly ALAckPayload[],
     tracking: ALOutboundAckTrackingPlan,
-    nowMs: number,
+    nowMs: number
 ): ALOutboundPendingAckSnapshot | undefined {
     const mode = tracking.mode ?? 'merge';
     const expectedPeerIds = mode === 'replace'
@@ -1412,7 +1430,7 @@ export function trackOutboundPendingAckSnapshot(
         timeoutMs: tracking.timeoutMs,
         maxAttempts: tracking.maxAttempts,
         attempts: current?.attempts ?? 0,
-        deadlineAtMs: nowMs + tracking.timeoutMs,
+        deadlineAtMs: nowMs + tracking.timeoutMs
     };
 
     return isAckComplete(next) ? undefined : next;
@@ -1421,7 +1439,7 @@ export function trackOutboundPendingAckSnapshot(
 function acceptAckSnapshot(
     current: ALOutboundPendingAckSnapshot | undefined,
     acks: readonly ALAckPayload[],
-    ack: ALAckPayload,
+    ack: ALAckPayload
 ): ALOutboundPendingAckSnapshot | undefined {
     if (!current) {
         return undefined;
@@ -1440,15 +1458,15 @@ function acceptAckSnapshot(
 
     const next: ALOutboundPendingAckSnapshot = {
         ...current,
-        ackedPeerIds: [...ackedPeerIds],
+        ackedPeerIds: [...ackedPeerIds]
     };
 
     return isAckComplete(next) ? undefined : next;
 }
 
 function isAckComplete(pending: ALOutboundPendingAckSnapshot): boolean {
-    return pending.expectedPeerIds.length === 0
-        || pending.expectedPeerIds.every(peerId => pending.ackedPeerIds.includes(peerId));
+    return pending.expectedPeerIds.length === 0 ||
+        pending.expectedPeerIds.every((peerId) => pending.ackedPeerIds.includes(peerId));
 }
 
 export function toPendingAckExpireAtTimestamp(snapshot: ALOutboundPendingAckSnapshot): number {
@@ -1457,8 +1475,8 @@ export function toPendingAckExpireAtTimestamp(snapshot: ALOutboundPendingAckSnap
 }
 
 export function resolveOutboundMessageExpireAtMs(msg: ALMessage): number {
-    return resolveExplicitOutboundMessageExpireAtMs(msg)
-        ?? NEVER_EXPIRE_AT_TIMESTAMP;
+    return resolveExplicitOutboundMessageExpireAtMs(msg) ??
+        NEVER_EXPIRE_AT_TIMESTAMP;
 }
 
 function isExpired(expireAtTimestamp: number): boolean {
@@ -1466,7 +1484,7 @@ function isExpired(expireAtTimestamp: number): boolean {
 }
 
 async function requestToPromise<T>(
-    request: IDBRequest<T>,
+    request: IDBRequest<T>
 ): Promise<T> {
     return await new Promise<T>((resolve, reject) => {
         request.onsuccess = () => resolve(request.result);
@@ -1476,7 +1494,7 @@ async function requestToPromise<T>(
 
 async function cursorEach(
     store: IDBObjectStore,
-    handler: (cursor: IDBCursorWithValue) => Promise<void> | void,
+    handler: (cursor: IDBCursorWithValue) => Promise<void> | void
 ): Promise<void> {
     await new Promise<void>((resolve, reject) => {
         const request = store.openCursor();
@@ -1496,7 +1514,7 @@ async function cursorEach(
 }
 
 async function transactionDone(
-    tx: IDBTransaction,
+    tx: IDBTransaction
 ): Promise<void> {
     await new Promise<void>((resolve, reject) => {
         tx.oncomplete = () => resolve();

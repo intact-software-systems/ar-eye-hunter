@@ -1,6 +1,6 @@
+import { defaultRepositoryManager } from '../cache/defaultRepositoryManager.ts';
 import { RepositoryManager } from '../cache/RepositoryManager.ts';
 import { RepositoryToken } from '../cache/RepositoryToken.ts';
-import { defaultRepositoryManager } from '../cache/defaultRepositoryManager.ts';
 import type { ALInboundRuntimeStores } from './ALInboundMessageRuntime.ts';
 import type { ALOutboundRuntimeStores } from './ALOutboundMessageRuntime.ts';
 
@@ -17,7 +17,7 @@ export type ALRuntimeStoreScope = Readonly<{
 export function configureALRuntimeStoreFactories(
     id: string,
     factories: ALRuntimeStoreFactories,
-    manager: RepositoryManager = defaultRepositoryManager,
+    manager: RepositoryManager = defaultRepositoryManager
 ): ALRuntimeStoreFactories {
     manager.set(toALRuntimeStoreFactoryToken(id), factories);
     return factories;
@@ -25,7 +25,7 @@ export function configureALRuntimeStoreFactories(
 
 export function configureALRuntimeStoreScopes(
     scopes: readonly ALRuntimeStoreScope[],
-    manager: RepositoryManager = defaultRepositoryManager,
+    manager: RepositoryManager = defaultRepositoryManager
 ): void {
     for (const scope of scopes) {
         configureALRuntimeStoreFactories(scope.id, scope.factories, manager);
@@ -34,14 +34,14 @@ export function configureALRuntimeStoreScopes(
 
 export function resolveALRuntimeStoreFactories(
     id: string,
-    manager: RepositoryManager = defaultRepositoryManager,
+    manager: RepositoryManager = defaultRepositoryManager
 ): ALRuntimeStoreFactories {
     return manager.require(toALRuntimeStoreFactoryToken(id));
 }
 
 export function resolveALInboundRuntimeStores(
     id: string,
-    manager: RepositoryManager = defaultRepositoryManager,
+    manager: RepositoryManager = defaultRepositoryManager
 ): ALInboundRuntimeStores {
     const factories = resolveALRuntimeStoreFactories(id, manager);
 
@@ -54,7 +54,7 @@ export function resolveALInboundRuntimeStores(
 
 export function resolveALOutboundRuntimeStores(
     id: string,
-    manager: RepositoryManager = defaultRepositoryManager,
+    manager: RepositoryManager = defaultRepositoryManager
 ): ALOutboundRuntimeStores {
     const factories = resolveALRuntimeStoreFactories(id, manager);
 
@@ -66,12 +66,12 @@ export function resolveALOutboundRuntimeStores(
 }
 
 function toALRuntimeStoreFactoryToken(
-    id: string,
+    id: string
 ): RepositoryToken<ALRuntimeStoreFactories> {
     return new RepositoryToken(
         `shared.services.al-runtime-stores:${id}`,
         () => {
             throw new Error(`AL runtime stores are not configured: ${id}`);
-        },
+        }
     );
 }

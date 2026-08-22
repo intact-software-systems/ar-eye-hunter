@@ -4,7 +4,7 @@ export const MAX_SCENE_EVENT_CUES_PER_SYNC = 1;
 
 export function selectRenderableSceneEventCues(
     events: readonly RelicEvent[],
-    maxCues = MAX_SCENE_EVENT_CUES_PER_SYNC,
+    maxCues = MAX_SCENE_EVENT_CUES_PER_SYNC
 ): readonly RelicEvent[] {
     if (maxCues <= 0) {
         return [];
@@ -21,9 +21,13 @@ export function selectRenderableSceneEventCues(
     return candidates
         .sort((left, right) => {
             const priority = left.priority - right.priority;
-            if (priority !== 0) return priority;
+            if (priority !== 0) {
+                return priority;
+            }
             const created = right.event.createdAtEpochMs - left.event.createdAtEpochMs;
-            if (created !== 0) return created;
+            if (created !== 0) {
+                return created;
+            }
             return right.index - left.index;
         })
         .slice(0, maxCues)

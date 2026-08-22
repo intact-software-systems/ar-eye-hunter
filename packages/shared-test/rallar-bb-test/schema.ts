@@ -1,41 +1,38 @@
 import {
-    RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
-    RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
-    type RallarBlackBoxTestCommand,
-} from './types.ts';
-import {
     RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_ORDERINGS,
     RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_POLICY_MODES,
     RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_PATTERNS,
     RALLAR_BLACK_BOX_DISTRIBUTED_START_MODES,
-    RALLAR_BLACK_BOX_DISTRIBUTED_TARGET_POLICY_MODES,
+    RALLAR_BLACK_BOX_DISTRIBUTED_TARGET_POLICY_MODES
 } from './distributed-run.ts';
-import {
-    RALLAR_BLACK_BOX_GROUP_ASSERTIONS_SCHEMA,
-} from './distributed/rallar-black-box-group-assertions-schema.ts';
+import { RALLAR_BLACK_BOX_GROUP_ASSERTIONS_SCHEMA } from './distributed/rallar-black-box-group-assertions-schema.ts';
 import {
     formatJsonSchemaValidationErrors,
     isJsonRecordValue,
     validateJsonSchema,
     type JsonSchema,
     type JsonSchemaValidationIssue,
-    type JsonSchemaValidationResult,
+    type JsonSchemaValidationResult
 } from './schema/json-schema-validation.ts';
+import {
+    RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
+    RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
+    type RallarBlackBoxTestCommand
+} from './types.ts';
 
 export {
     formatJsonSchemaValidationErrors,
-    validateJsonSchema,
     type JsonSchema,
     type JsonSchemaValidationIssue,
     type JsonSchemaValidationResult,
+    validateJsonSchema
 };
 
 export const RALLAR_BLACK_BOX_SCHEMA_VERSION = 1;
 export const RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION = RALLAR_BLACK_BOX_SCHEMA_VERSION;
 export const RALLAR_BLACK_BOX_SUPPORTED_RECIPE_SCHEMA_VERSIONS = [
-    RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION,
+    RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION
 ] as const;
-
 
 export type RallarBlackBoxRecipeCompatibilityResult =
     | Readonly<{
@@ -94,7 +91,7 @@ const integerSchema: JsonSchema = { type: 'integer' };
 const booleanSchema: JsonSchema = { type: 'boolean' };
 const recordSchema: JsonSchema = { type: 'object', additionalProperties: true };
 const stringRecordSchema: JsonSchema = { type: 'object', additionalProperties: stringSchema };
-const recursiveCommandSchema = {} as JsonSchema & { oneOf?: readonly JsonSchema[] };
+const recursiveCommandSchema = {} as JsonSchema & { oneOf?: readonly JsonSchema[]; };
 
 function commandBaseProperties(kind: RallarBlackBoxCommandCapability['kind']): Record<string, JsonSchema> {
     return {
@@ -103,23 +100,23 @@ function commandBaseProperties(kind: RallarBlackBoxCommandCapability['kind']): R
         label: stringSchema,
         deadlineEpochMs: integerSchema,
         timeoutMs: integerSchema,
-        metadata: recordSchema,
+        metadata: recordSchema
     };
 }
 
 function strictCommandSchema(
     kind: RallarBlackBoxCommandCapability['kind'],
     required: readonly string[],
-    properties: Readonly<Record<string, JsonSchema>> = {},
+    properties: Readonly<Record<string, JsonSchema>> = {}
 ): JsonSchema {
     return {
         type: 'object',
         required: ['kind', ...required],
         properties: {
             ...commandBaseProperties(kind),
-            ...properties,
+            ...properties
         },
-        additionalProperties: false,
+        additionalProperties: false
     };
 }
 
@@ -141,13 +138,13 @@ const shallowRecipeSchema: JsonSchema = {
                 properties: {
                     kind: { type: 'string', enum: RALLAR_BLACK_BOX_TEST_COMMAND_KINDS },
                     commandId: stringSchema,
-                    label: stringSchema,
+                    label: stringSchema
                 },
-                additionalProperties: true,
-            },
-        },
+                additionalProperties: true
+            }
+        }
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 
 const configSchema: JsonSchema = {
@@ -171,12 +168,12 @@ const configSchema: JsonSchema = {
                 keys: { type: 'array', items: stringSchema },
                 keySubstrings: { type: 'array', items: stringSchema },
                 secretValues: { type: 'array', items: stringSchema },
-                replacement: stringSchema,
+                replacement: stringSchema
             },
-            additionalProperties: false,
-        },
+            additionalProperties: false
+        }
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 
 const rtcTransportSchema: JsonSchema = { type: 'string', enum: ['realtime', 'messages.rtc'] };
@@ -185,9 +182,9 @@ const rtcConnectReadinessSchema: JsonSchema = {
     properties: {
         minReadyPeers: { type: 'integer', minimum: 1 },
         timeoutMs: { type: 'integer', minimum: 1 },
-        intervalMs: { type: 'integer', minimum: 1 },
+        intervalMs: { type: 'integer', minimum: 1 }
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 const rtcStreamThresholdsSchema: JsonSchema = {
     type: 'object',
@@ -199,25 +196,25 @@ const rtcStreamThresholdsSchema: JsonSchema = {
         maxP99SendDurationMs: { type: 'number', minimum: 0 },
         maxAverageStartDriftMs: { type: 'number', minimum: 0 },
         maxStartDriftMs: { type: 'number', minimum: 0 },
-        maxJitterMs: { type: 'number', minimum: 0 },
+        maxJitterMs: { type: 'number', minimum: 0 }
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 const crdtTransportSchema: JsonSchema = {
     type: 'string',
-    enum: ['local-only', 'ws', 'rtc', 'ws-then-rtc', 'rtc-with-ws-fallback'],
+    enum: ['local-only', 'ws', 'rtc', 'ws-then-rtc', 'rtc-with-ws-fallback']
 };
 const crdtDurableCatchUpSchema: JsonSchema = {
     oneOf: [
         { const: false },
-        { const: 'http' },
-    ],
+        { const: 'http' }
+    ]
 };
 const crdtPathSchema: JsonSchema = { type: 'array', items: stringSchema };
 const crdtUpdateIdArraySchema: JsonSchema = { type: 'array', items: stringSchema };
 const crdtWaitOperatorSchema: JsonSchema = {
     type: 'string',
-    enum: ['equals', 'notEquals', 'contains', 'exists', 'gte', 'lte'],
+    enum: ['equals', 'notEquals', 'contains', 'exists', 'gte', 'lte']
 };
 const crdtOperationSchema: JsonSchema = {
     oneOf: [
@@ -228,9 +225,9 @@ const crdtOperationSchema: JsonSchema = {
                 kind: { const: 'orset.add' },
                 path: crdtPathSchema,
                 elementId: stringSchema,
-                value: anySchema,
+                value: anySchema
             },
-            additionalProperties: false,
+            additionalProperties: false
         },
         {
             type: 'object',
@@ -239,9 +236,9 @@ const crdtOperationSchema: JsonSchema = {
                 kind: { const: 'orset.remove' },
                 path: crdtPathSchema,
                 elementId: stringSchema,
-                observedAddUpdateIds: crdtUpdateIdArraySchema,
+                observedAddUpdateIds: crdtUpdateIdArraySchema
             },
-            additionalProperties: false,
+            additionalProperties: false
         },
         {
             type: 'object',
@@ -250,9 +247,9 @@ const crdtOperationSchema: JsonSchema = {
                 kind: { const: 'register.set' },
                 path: crdtPathSchema,
                 value: anySchema,
-                policy: { type: 'string', enum: ['lww', 'multi'] },
+                policy: { type: 'string', enum: ['lww', 'multi'] }
             },
-            additionalProperties: false,
+            additionalProperties: false
         },
         {
             type: 'object',
@@ -261,9 +258,9 @@ const crdtOperationSchema: JsonSchema = {
                 kind: { const: 'map.set' },
                 path: crdtPathSchema,
                 key: stringSchema,
-                value: anySchema,
+                value: anySchema
             },
-            additionalProperties: false,
+            additionalProperties: false
         },
         {
             type: 'object',
@@ -272,9 +269,9 @@ const crdtOperationSchema: JsonSchema = {
                 kind: { const: 'map.delete' },
                 path: crdtPathSchema,
                 key: stringSchema,
-                observedUpdateIds: crdtUpdateIdArraySchema,
+                observedUpdateIds: crdtUpdateIdArraySchema
             },
-            additionalProperties: false,
+            additionalProperties: false
         },
         {
             type: 'object',
@@ -284,9 +281,9 @@ const crdtOperationSchema: JsonSchema = {
                 path: crdtPathSchema,
                 elementId: stringSchema,
                 positionId: stringSchema,
-                value: anySchema,
+                value: anySchema
             },
-            additionalProperties: false,
+            additionalProperties: false
         },
         {
             type: 'object',
@@ -295,9 +292,9 @@ const crdtOperationSchema: JsonSchema = {
                 kind: { const: 'sequence.delete' },
                 path: crdtPathSchema,
                 elementId: stringSchema,
-                observedUpdateIds: crdtUpdateIdArraySchema,
+                observedUpdateIds: crdtUpdateIdArraySchema
             },
-            additionalProperties: false,
+            additionalProperties: false
         },
         {
             type: 'object',
@@ -307,9 +304,9 @@ const crdtOperationSchema: JsonSchema = {
                 path: crdtPathSchema,
                 elementId: stringSchema,
                 positionId: stringSchema,
-                observedUpdateIds: crdtUpdateIdArraySchema,
+                observedUpdateIds: crdtUpdateIdArraySchema
             },
-            additionalProperties: false,
+            additionalProperties: false
         },
         {
             type: 'object',
@@ -317,9 +314,9 @@ const crdtOperationSchema: JsonSchema = {
             properties: {
                 kind: { const: 'counter.add' },
                 path: crdtPathSchema,
-                delta: numberSchema,
+                delta: numberSchema
             },
-            additionalProperties: false,
+            additionalProperties: false
         },
         {
             type: 'object',
@@ -327,9 +324,9 @@ const crdtOperationSchema: JsonSchema = {
             properties: {
                 kind: { const: 'number.min' },
                 path: crdtPathSchema,
-                value: numberSchema,
+                value: numberSchema
             },
-            additionalProperties: false,
+            additionalProperties: false
         },
         {
             type: 'object',
@@ -337,11 +334,11 @@ const crdtOperationSchema: JsonSchema = {
             properties: {
                 kind: { const: 'number.max' },
                 path: crdtPathSchema,
-                value: numberSchema,
+                value: numberSchema
             },
-            additionalProperties: false,
-        },
-    ],
+            additionalProperties: false
+        }
+    ]
 };
 const crdtOperationBatchSchema: JsonSchema = {
     type: 'object',
@@ -351,20 +348,20 @@ const crdtOperationBatchSchema: JsonSchema = {
         operations: {
             type: 'array',
             minItems: 1,
-            items: crdtOperationSchema,
+            items: crdtOperationSchema
         },
         operationGroupId: stringSchema,
-        metadata: recordSchema,
+        metadata: recordSchema
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 const crdtOperationArraySchema: JsonSchema = {
     type: 'array',
-    items: crdtOperationSchema,
+    items: crdtOperationSchema
 };
 const crdtPoliciesSchema: JsonSchema = {
     type: 'array',
-    items: recordSchema,
+    items: recordSchema
 };
 const crdtWaitConditionSchema: JsonSchema = {
     type: 'object',
@@ -373,9 +370,9 @@ const crdtWaitConditionSchema: JsonSchema = {
         source: { type: 'string', enum: ['value', 'health'] },
         path: stringSchema,
         operator: crdtWaitOperatorSchema,
-        expected: anySchema,
+        expected: anySchema
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 
 const directorRoomProperties: Readonly<Record<string, JsonSchema>> = {
@@ -383,7 +380,7 @@ const directorRoomProperties: Readonly<Record<string, JsonSchema>> = {
     applicationId: stringSchema,
     workspaceId: stringSchema,
     scope: recordSchema,
-    roomRef: recordSchema,
+    roomRef: recordSchema
 };
 
 const directorRelayConfigProperties: Readonly<Record<string, JsonSchema>> = {
@@ -397,7 +394,7 @@ const directorRelayConfigProperties: Readonly<Record<string, JsonSchema>> = {
     syncRequestTypeId: stringSchema,
     heartbeatIntervalMs: { type: 'integer', minimum: 0 },
     snapshotIntervalMs: { type: 'integer', minimum: 0 },
-    snapshot: anySchema,
+    snapshot: anySchema
 };
 const crdtWaitSyncSchema: JsonSchema = {
     oneOf: [
@@ -406,11 +403,11 @@ const crdtWaitSyncSchema: JsonSchema = {
             type: 'object',
             properties: {
                 reason: stringSchema,
-                transport: crdtTransportSchema,
+                transport: crdtTransportSchema
             },
-            additionalProperties: false,
-        },
-    ],
+            additionalProperties: false
+        }
+    ]
 };
 
 const httpRequestSchema: JsonSchema = {
@@ -422,9 +419,9 @@ const httpRequestSchema: JsonSchema = {
         headers: stringRecordSchema,
         body: anySchema,
         credentials: { type: 'string', enum: ['omit', 'same-origin', 'include'] },
-        mode: { type: 'string', enum: ['cors', 'navigate', 'no-cors', 'same-origin'] },
+        mode: { type: 'string', enum: ['cors', 'navigate', 'no-cors', 'same-origin'] }
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 
 const httpResponseSchema: JsonSchema = {
@@ -435,10 +432,10 @@ const httpResponseSchema: JsonSchema = {
         acceptedStatusCodes: {
             type: 'array',
             minItems: 1,
-            items: { type: 'integer', minimum: 100, maximum: 599 },
-        },
+            items: { type: 'integer', minimum: 100, maximum: 599 }
+        }
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 
 const waitMatchSchema: JsonSchema = {
@@ -453,9 +450,9 @@ const waitMatchSchema: JsonSchema = {
         payloadPath: stringSchema,
         equals: anySchema,
         contains: stringSchema,
-        exists: booleanSchema,
+        exists: booleanSchema
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 
 const assertOperatorSchema: JsonSchema = {
@@ -473,8 +470,8 @@ const assertOperatorSchema: JsonSchema = {
         'length',
         'matches',
         'matchesShape',
-        'matchesShapeComplete',
-    ],
+        'matchesShapeComplete'
+    ]
 };
 
 const parallelGroupSchema: JsonSchema = {
@@ -486,11 +483,11 @@ const parallelGroupSchema: JsonSchema = {
         commands: {
             type: 'array',
             minItems: 1,
-            items: recursiveCommandSchema,
+            items: recursiveCommandSchema
         },
-        metadata: recordSchema,
+        metadata: recordSchema
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 
 const loopThresholdsSchema: JsonSchema = {
@@ -501,39 +498,39 @@ const loopThresholdsSchema: JsonSchema = {
         maxStartDriftMs: { type: 'number', minimum: 0 },
         maxJitterMs: { type: 'number', minimum: 0 },
         minSendSuccessRatio: { type: 'number', minimum: 0, maximum: 1 },
-        failOnBackpressure: booleanSchema,
+        failOnBackpressure: booleanSchema
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 
 const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], JsonSchema>> = {
     configure: strictCommandSchema('configure', ['config'], {
-        config: configSchema,
+        config: configSchema
     }),
     'recipe.load': strictCommandSchema('recipe.load', ['recipe'], {
-        recipe: shallowRecipeSchema,
+        recipe: shallowRecipeSchema
     }),
     'recipe.run': strictCommandSchema('recipe.run', [], {
-        recipe: shallowRecipeSchema,
+        recipe: shallowRecipeSchema
     }),
     'recipe.cancel': strictCommandSchema('recipe.cancel', [], {
-        reason: stringSchema,
+        reason: stringSchema
     }),
     loop: strictCommandSchema('loop', ['commands'], {
         commands: {
             type: 'array',
             minItems: 1,
-            items: recursiveCommandSchema,
+            items: recursiveCommandSchema
         },
         count: {
             type: 'integer',
             minimum: 1,
-            maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopCount,
+            maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopCount
         },
         durationMs: {
             type: 'integer',
             minimum: 1,
-            maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs,
+            maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs
         },
         intervalMs: { type: 'integer', minimum: 0 },
         delayMs: { type: 'integer', minimum: 0 },
@@ -543,32 +540,32 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         maxCommands: {
             type: 'integer',
             minimum: 1,
-            maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands,
+            maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxExpandedCommands
         },
-        thresholds: loopThresholdsSchema,
+        thresholds: loopThresholdsSchema
     }),
     parallel: strictCommandSchema('parallel', ['groups'], {
         groups: {
             type: 'array',
             minItems: 1,
-            items: parallelGroupSchema,
+            items: parallelGroupSchema
         },
         maxConcurrency: {
             type: 'integer',
             minimum: 1,
-            maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxParallelConcurrency,
+            maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxParallelConcurrency
         },
         failFast: booleanSchema,
-        continueOnFailure: booleanSchema,
+        continueOnFailure: booleanSchema
     }),
     wait: strictCommandSchema('wait', ['match'], {
         match: waitMatchSchema,
-        absent: { const: true },
+        absent: { const: true }
     }),
     assert: strictCommandSchema('assert', ['source', 'operator'], {
         source: stringSchema,
         operator: assertOperatorSchema,
-        expected: anySchema,
+        expected: anySchema
     }),
     'rtc.connect': strictCommandSchema('rtc.connect', [], {
         connection: stringSchema,
@@ -581,7 +578,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         minSnapshotVersion: numberSchema,
         transport: rtcTransportSchema,
         rallar: recordSchema,
-        readiness: rtcConnectReadinessSchema,
+        readiness: rtcConnectReadinessSchema
     }),
     'rtc.send': strictCommandSchema('rtc.send', [], {
         connection: stringSchema,
@@ -591,7 +588,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         scope: recordSchema,
         roomRef: recordSchema,
         minSnapshotVersion: numberSchema,
-        transport: rtcTransportSchema,
+        transport: rtcTransportSchema
     }),
     'rtc.stream': {
         ...strictCommandSchema('rtc.stream', ['send'], {
@@ -609,7 +606,7 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
             durationMs: {
                 type: 'integer',
                 minimum: 1,
-                maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs,
+                maximum: RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS.maxLoopDurationMs
             },
             intervalMs: { type: 'integer', minimum: 1 },
             rateHz: { type: 'number', exclusiveMinimum: 0 },
@@ -618,18 +615,18 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
             continueOnSendFailure: booleanSchema,
             progressEveryMs: { type: 'integer', minimum: 1 },
             sampleEvery: { type: 'integer', minimum: 1 },
-            thresholds: rtcStreamThresholdsSchema,
+            thresholds: rtcStreamThresholdsSchema
         }),
         requiredAnyOf: [
             {
                 properties: ['count', 'durationMs'],
-                message: 'rtc.stream requires count or durationMs.',
+                message: 'rtc.stream requires count or durationMs.'
             },
             {
                 properties: ['intervalMs', 'rateHz'],
-                message: 'rtc.stream requires intervalMs or rateHz.',
-            },
-        ],
+                message: 'rtc.stream requires intervalMs or rateHz.'
+            }
+        ]
     },
     'ws.open': strictCommandSchema('ws.open', [], {
         connection: stringSchema,
@@ -637,23 +634,23 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         protocols: {
             oneOf: [
                 stringSchema,
-                { type: 'array', items: stringSchema },
-            ],
+                { type: 'array', items: stringSchema }
+            ]
         },
-        headers: stringRecordSchema,
+        headers: stringRecordSchema
     }),
     'ws.send': strictCommandSchema('ws.send', [], {
         connection: stringSchema,
-        data: anySchema,
+        data: anySchema
     }),
     'ws.close': strictCommandSchema('ws.close', [], {
         connection: stringSchema,
         code: integerSchema,
-        reason: stringSchema,
+        reason: stringSchema
     }),
     'http.request': strictCommandSchema('http.request', ['request'], {
         request: httpRequestSchema,
-        response: httpResponseSchema,
+        response: httpResponseSchema
     }),
     'crdt.open': strictCommandSchema('crdt.open', ['name'], {
         handle: stringSchema,
@@ -673,22 +670,22 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         policies: crdtPoliciesSchema,
         validation: recordSchema,
         encryption: recordSchema,
-        durableCatchUp: crdtDurableCatchUpSchema,
+        durableCatchUp: crdtDurableCatchUpSchema
     }),
     'crdt.apply': strictCommandSchema('crdt.apply', ['handle', 'batch'], {
         handle: stringSchema,
-        batch: crdtOperationBatchSchema,
+        batch: crdtOperationBatchSchema
     }),
     'crdt.read': strictCommandSchema('crdt.read', ['handle'], {
-        handle: stringSchema,
+        handle: stringSchema
     }),
     'crdt.sync': strictCommandSchema('crdt.sync', ['handle'], {
         handle: stringSchema,
         reason: stringSchema,
-        transport: crdtTransportSchema,
+        transport: crdtTransportSchema
     }),
     'crdt.health': strictCommandSchema('crdt.health', ['handle'], {
-        handle: stringSchema,
+        handle: stringSchema
     }),
     'crdt.wait': strictCommandSchema('crdt.wait', ['handle', 'conditions'], {
         handle: stringSchema,
@@ -698,60 +695,60 @@ const COMMAND_SCHEMAS: Readonly<Record<RallarBlackBoxCommandCapability['kind'], 
         conditions: {
             type: 'array',
             minItems: 1,
-            items: crdtWaitConditionSchema,
-        },
+            items: crdtWaitConditionSchema
+        }
     }),
     'crdt.undo': strictCommandSchema('crdt.undo', ['handle', 'targetOperationGroupId', 'operations'], {
         handle: stringSchema,
         targetOperationGroupId: stringSchema,
         operations: crdtOperationArraySchema,
-        operationGroupId: stringSchema,
+        operationGroupId: stringSchema
     }),
     'crdt.redo': strictCommandSchema('crdt.redo', ['handle', 'targetOperationGroupId', 'operations'], {
         handle: stringSchema,
         targetOperationGroupId: stringSchema,
         operations: crdtOperationArraySchema,
-        operationGroupId: stringSchema,
+        operationGroupId: stringSchema
     }),
     'crdt.close': strictCommandSchema('crdt.close', ['handle'], {
-        handle: stringSchema,
+        handle: stringSchema
     }),
     'crdt.destroy': strictCommandSchema('crdt.destroy', ['handle'], {
-        handle: stringSchema,
+        handle: stringSchema
     }),
     'director.appoint': strictCommandSchema('director.appoint', [], {
         ...directorRoomProperties,
-        heartbeatTtlMs: { type: 'integer', minimum: 1 },
+        heartbeatTtlMs: { type: 'integer', minimum: 1 }
     }),
     'director.resign': strictCommandSchema('director.resign', [], {
-        ...directorRoomProperties,
+        ...directorRoomProperties
     }),
     'director.status': strictCommandSchema('director.status', [], {
         ...directorRoomProperties,
         refresh: booleanSchema,
-        now: numberSchema,
+        now: numberSchema
     }),
     'director.relay.start': strictCommandSchema('director.relay.start', ['handle', 'intentTypeId', 'outputTypeId'], {
         ...directorRoomProperties,
-        ...directorRelayConfigProperties,
+        ...directorRelayConfigProperties
     }),
     'director.intent': strictCommandSchema('director.intent', ['handle', 'intent'], {
         handle: stringSchema,
-        intent: anySchema,
+        intent: anySchema
     }),
     'director.sync.request': strictCommandSchema('director.sync.request', ['handle'], {
         handle: stringSchema,
-        payload: anySchema,
+        payload: anySchema
     }),
     'director.relay.stop': strictCommandSchema('director.relay.stop', ['handle'], {
-        handle: stringSchema,
+        handle: stringSchema
     }),
     health: strictCommandSchema('health', [], {
-        includeRtcDiagnostics: booleanSchema,
+        includeRtcDiagnostics: booleanSchema
     }),
     stats: strictCommandSchema('stats', []),
     close: strictCommandSchema('close', []),
-    reset: strictCommandSchema('reset', []),
+    reset: strictCommandSchema('reset', [])
 };
 
 export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxCommandCapability[] = [
@@ -761,7 +758,14 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         description: 'Sets run, agent, provider, default room, transport, browser, control, and redaction context.',
         requiredFields: ['config'],
         optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'rallar-memory', 'mixed'],
+        supportedProviderModes: [
+            'simulated',
+            'browser-rallar',
+            'rallar-browser',
+            'rallar-remote-browser',
+            'rallar-memory',
+            'mixed'
+        ],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: [],
         artifactExpectations: ['runtime configuration snapshot', 'redacted config in reports'],
@@ -775,9 +779,9 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
                 apiBaseUrl: 'http://localhost:8080',
                 actor: 'alice',
                 roomId: 'bb-group',
-                transport: 'realtime',
-            },
-        },
+                transport: 'realtime'
+            }
+        }
     },
     {
         kind: 'recipe.load',
@@ -794,9 +798,9 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             commandId: 'load-health-recipe',
             recipe: {
                 recipeId: 'health-only',
-                commands: [{ kind: 'health', commandId: 'loaded-health' }],
-            },
-        },
+                commands: [{ kind: 'health', commandId: 'loaded-health' }]
+            }
+        }
     },
     {
         kind: 'recipe.run',
@@ -813,9 +817,9 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             commandId: 'run-health-recipe',
             recipe: {
                 recipeId: 'health-run',
-                commands: [{ kind: 'health', commandId: 'run-health' }],
-            },
-        },
+                commands: [{ kind: 'health', commandId: 'run-health' }]
+            }
+        }
     },
     {
         kind: 'recipe.cancel',
@@ -830,13 +834,14 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         example: {
             kind: 'recipe.cancel',
             commandId: 'cancel-active-recipe',
-            reason: 'operator requested cancellation',
-        },
+            reason: 'operator requested cancellation'
+        }
     },
     {
         kind: 'loop',
         title: 'Loop Commands',
-        description: 'Composite browser-agent command that repeats child commands with bounded count or duration and optional cadence.',
+        description:
+            'Composite browser-agent command that repeats child commands with bounded count or duration and optional cadence.',
         requiredFields: ['commands'],
         optionalFields: [
             'count',
@@ -852,9 +857,16 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             'label',
             'timeoutMs',
             'deadlineEpochMs',
-            'metadata',
+            'metadata'
         ],
-        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'rallar-memory', 'mixed'],
+        supportedProviderModes: [
+            'simulated',
+            'browser-rallar',
+            'rallar-browser',
+            'rallar-remote-browser',
+            'rallar-memory',
+            'mixed'
+        ],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['same live requirements as its child commands'],
         artifactExpectations: ['parent loop rollup', 'per-child command results', 'iteration metadata'],
@@ -865,7 +877,7 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             intervalMs: 50,
             thresholds: {
                 minAchievedRateHz: 10,
-                minSendSuccessRatio: 0.95,
+                minSendSuccessRatio: 0.95
             },
             commands: [
                 {
@@ -877,17 +889,18 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
                         roomId: 'bb-group',
                         data: {
                             topic: 'schema.example.loop.position',
-                            seq: '{loop.index}',
-                        },
-                    },
-                },
-            ],
-        },
+                            seq: '{loop.index}'
+                        }
+                    }
+                }
+            ]
+        }
     },
     {
         kind: 'parallel',
         title: 'Parallel Command Groups',
-        description: 'Composite browser-agent command that runs bounded groups concurrently while each group runs its child commands sequentially.',
+        description:
+            'Composite browser-agent command that runs bounded groups concurrently while each group runs its child commands sequentially.',
         requiredFields: ['groups'],
         optionalFields: [
             'maxConcurrency',
@@ -897,9 +910,16 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             'label',
             'timeoutMs',
             'deadlineEpochMs',
-            'metadata',
+            'metadata'
         ],
-        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'rallar-memory', 'mixed'],
+        supportedProviderModes: [
+            'simulated',
+            'browser-rallar',
+            'rallar-browser',
+            'rallar-remote-browser',
+            'rallar-memory',
+            'mixed'
+        ],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['same live requirements as its child commands'],
         artifactExpectations: ['parent parallel rollup', 'per-group summaries', 'per-child command results'],
@@ -919,28 +939,29 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
                             data: {
                                 typeId: 'schema.example.parallel.alice',
                                 payload: {
-                                    text: 'alice',
-                                },
-                            },
-                        },
-                    ],
+                                    text: 'alice'
+                                }
+                            }
+                        }
+                    ]
                 },
                 {
                     groupId: 'bob-sends',
                     commands: [
                         {
                             kind: 'health',
-                            commandId: 'bob-health',
-                        },
-                    ],
-                },
-            ],
-        },
+                            commandId: 'bob-health'
+                        }
+                    ]
+                }
+            ]
+        }
     },
     {
         kind: 'wait',
         title: 'Wait For Runtime Evidence',
-        description: 'Waits for a matching runtime event; with absent: true it instead holds the full window and fails when any buffered or new event matches.',
+        description:
+            'Waits for a matching runtime event; with absent: true it instead holds the full window and fails when any buffered or new event matches.',
         requiredFields: ['match'],
         optionalFields: [
             'absent',
@@ -948,11 +969,20 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             'label',
             'timeoutMs',
             'deadlineEpochMs',
-            'metadata',
+            'metadata'
         ],
-        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'rallar-memory', 'mixed'],
+        supportedProviderModes: [
+            'simulated',
+            'browser-rallar',
+            'rallar-browser',
+            'rallar-remote-browser',
+            'rallar-memory',
+            'mixed'
+        ],
         runtimeSurfaces: ['spa-local', 'control-agent'],
-        liveServiceRequirements: ['the matching evidence must be emitted by earlier or concurrent commands, browser adapters, or provider event bridges'],
+        liveServiceRequirements: [
+            'the matching evidence must be emitted by earlier or concurrent commands, browser adapters, or provider event bridges'
+        ],
         artifactExpectations: ['matched event in the command result', 'timeout failure when evidence does not appear'],
         example: {
             kind: 'wait',
@@ -963,27 +993,38 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
                 topic: 'rallar.browser.realtime.message',
                 transport: 'realtime',
                 payloadPath: 'data.topic',
-                equals: 'room.position',
-            },
-        },
+                equals: 'room.position'
+            }
+        }
     },
     {
         kind: 'assert',
         title: 'Assert Runtime Evidence',
-        description: 'Checks a read-only browser-agent evidence source with equality, containment, numeric-bound, length, regex, and JSON-shape operators.',
+        description:
+            'Checks a read-only browser-agent evidence source with equality, containment, numeric-bound, length, regex, and JSON-shape operators.',
         requiredFields: ['source', 'operator'],
         optionalFields: ['expected', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'rallar-memory', 'mixed'],
+        supportedProviderModes: [
+            'simulated',
+            'browser-rallar',
+            'rallar-browser',
+            'rallar-remote-browser',
+            'rallar-memory',
+            'mixed'
+        ],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: ['the asserted source must be present in the browser-agent runtime state'],
-        artifactExpectations: ['assert result with redacted actual and expected values', 'failed command result when the assertion is false'],
+        artifactExpectations: [
+            'assert result with redacted actual and expected values',
+            'failed command result when the assertion is false'
+        ],
         example: {
             kind: 'assert',
             commandId: 'assert-received-count',
             source: 'state.messages.length',
             operator: 'gte',
-            expected: 1,
-        },
+            expected: 1
+        }
     },
     {
         kind: 'rtc.connect',
@@ -1006,9 +1047,15 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             'label',
             'timeoutMs',
             'deadlineEpochMs',
-            'metadata',
+            'metadata'
         ],
-        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'rallar-memory'],
+        supportedProviderModes: [
+            'simulated',
+            'browser-rallar',
+            'rallar-browser',
+            'rallar-remote-browser',
+            'rallar-memory'
+        ],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['Rallar API and signaling when provider mode is browser-rallar or rallar-browser'],
         artifactExpectations: ['connect diagnostics', 'readiness diagnostics', 'RTC stats'],
@@ -1023,10 +1070,10 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             readiness: {
                 minReadyPeers: 1,
                 timeoutMs: 10_000,
-                intervalMs: 100,
+                intervalMs: 100
             },
-            timeoutMs: 15_000,
-        },
+            timeoutMs: 15_000
+        }
     },
     {
         kind: 'rtc.send',
@@ -1046,12 +1093,25 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             'label',
             'timeoutMs',
             'deadlineEpochMs',
-            'metadata',
+            'metadata'
         ],
-        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'rallar-memory'],
+        supportedProviderModes: [
+            'simulated',
+            'browser-rallar',
+            'rallar-browser',
+            'rallar-remote-browser',
+            'rallar-memory'
+        ],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['active RTC connection', 'Rallar signaling when using browser-rallar or rallar-browser'],
-        artifactExpectations: ['send result', 'message events', 'NACK/failure diagnostics when delivery cannot complete'],
+        liveServiceRequirements: [
+            'active RTC connection',
+            'Rallar signaling when using browser-rallar or rallar-browser'
+        ],
+        artifactExpectations: [
+            'send result',
+            'message events',
+            'NACK/failure diagnostics when delivery cannot complete'
+        ],
         example: {
             kind: 'rtc.send',
             commandId: 'send-rtc-json',
@@ -1061,16 +1121,17 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
                 roomId: 'bb-group',
                 data: {
                     topic: 'schema.example.rtc',
-                    text: 'hello over RTC',
-                },
+                    text: 'hello over RTC'
+                }
             },
-            timeoutMs: 5_000,
-        },
+            timeoutMs: 5_000
+        }
     },
     {
         kind: 'rtc.stream',
         title: 'RTC Stream',
-        description: 'Schedules a bounded RTC/realtime frame stream inside one browser-agent command and records aggregate pacing, delivery, and latency metrics.',
+        description:
+            'Schedules a bounded RTC/realtime frame stream inside one browser-agent command and records aggregate pacing, delivery, and latency metrics.',
         requiredFields: ['send'],
         optionalFields: [
             'connection',
@@ -1096,12 +1157,19 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             'label',
             'timeoutMs',
             'deadlineEpochMs',
-            'metadata',
+            'metadata'
         ],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser'],
         runtimeSurfaces: ['control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['active RTC connection', 'Rallar signaling when using browser-rallar or rallar-browser'],
-        artifactExpectations: ['stream started/progress/completed diagnostics', 'aggregate frame delivery metrics', 'p50/p95/p99/max send duration'],
+        liveServiceRequirements: [
+            'active RTC connection',
+            'Rallar signaling when using browser-rallar or rallar-browser'
+        ],
+        artifactExpectations: [
+            'stream started/progress/completed diagnostics',
+            'aggregate frame delivery metrics',
+            'p50/p95/p99/max send duration'
+        ],
         example: {
             kind: 'rtc.stream',
             commandId: 'stream-rtc-position',
@@ -1120,22 +1188,32 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
                     topic: 'schema.example.rtc.stream.position',
                     seq: '{stream.index}',
                     frame: '{stream.iteration}',
-                    tMs: '{stream.elapsedMs}',
-                },
+                    tMs: '{stream.elapsedMs}'
+                }
             },
             thresholds: {
                 minSendSuccessRatio: 0.99,
-                maxDroppedFrames: 0,
+                maxDroppedFrames: 0
             },
-            timeoutMs: 10_000,
-        },
+            timeoutMs: 10_000
+        }
     },
     {
         kind: 'ws.open',
         title: 'WebSocket Open',
         description: 'Opens a browser-agent WebSocket connection.',
         requiredFields: [],
-        optionalFields: ['connection', 'url', 'protocols', 'headers', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
+        optionalFields: [
+            'connection',
+            'url',
+            'protocols',
+            'headers',
+            'commandId',
+            'label',
+            'timeoutMs',
+            'deadlineEpochMs',
+            'metadata'
+        ],
         supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-server', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['WebSocket endpoint and ticket/token when the target server requires auth'],
@@ -1145,8 +1223,8 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             commandId: 'open-api-websocket',
             connection: 'apiWs',
             url: 'ws://localhost:8080/api/ws/{auth.sessionId}?ticket={auth.wsTicket}',
-            timeoutMs: 10_000,
-        },
+            timeoutMs: 10_000
+        }
     },
     {
         kind: 'ws.send',
@@ -1166,18 +1244,27 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
                 typeId: 'schema.example.ws',
                 topicId: 'schema.example.ws',
                 payload: {
-                    text: 'hello over WebSocket',
-                },
+                    text: 'hello over WebSocket'
+                }
             },
-            timeoutMs: 5_000,
-        },
+            timeoutMs: 5_000
+        }
     },
     {
         kind: 'ws.close',
         title: 'WebSocket Close',
         description: 'Closes a named WebSocket connection.',
         requiredFields: [],
-        optionalFields: ['connection', 'code', 'reason', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
+        optionalFields: [
+            'connection',
+            'code',
+            'reason',
+            'commandId',
+            'label',
+            'timeoutMs',
+            'deadlineEpochMs',
+            'metadata'
+        ],
         supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-server', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['open or known WebSocket connection'],
@@ -1187,13 +1274,14 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             commandId: 'close-api-websocket',
             connection: 'apiWs',
             code: 1000,
-            reason: 'schema example complete',
-        },
+            reason: 'schema example complete'
+        }
     },
     {
         kind: 'http.request',
         title: 'HTTP Request',
-        description: 'Runs a fetch-compatible HTTP request and stores response metadata/body according to response options.',
+        description:
+            'Runs a fetch-compatible HTTP request and stores response metadata/body according to response options.',
         requiredFields: ['request'],
         optionalFields: ['response', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
         supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-server', 'mixed'],
@@ -1205,13 +1293,13 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             commandId: 'get-rallar-health',
             request: {
                 method: 'GET',
-                path: '/health',
+                path: '/health'
             },
             response: {
-                body: 'json',
+                body: 'json'
             },
-            timeoutMs: 5_000,
-        },
+            timeoutMs: 5_000
+        }
     },
     {
         kind: 'crdt.open',
@@ -1240,11 +1328,13 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             'label',
             'timeoutMs',
             'deadlineEpochMs',
-            'metadata',
+            'metadata'
         ],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['Rallar browser runtime with CRDT facade; live service only when transport is not local-only'],
+        liveServiceRequirements: [
+            'Rallar browser runtime with CRDT facade; live service only when transport is not local-only'
+        ],
         artifactExpectations: ['document ref', 'handle', 'transport strategy', 'initial health'],
         example: {
             kind: 'crdt.open',
@@ -1256,22 +1346,22 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             documentType: 'checklist',
             documentId: 'room-1',
             scope: {
-                kind: 'room',
+                kind: 'room'
             },
             roomRef: {
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
-                groupId: 'room-1',
+                groupId: 'room-1'
             },
             transport: 'ws',
             persist: true,
             tabSync: true,
             durableCatchUp: 'http',
             initialValue: {
-                items: [],
+                items: []
             },
-            timeoutMs: 10_000,
-        },
+            timeoutMs: 10_000
+        }
     },
     {
         kind: 'crdt.apply',
@@ -1295,11 +1385,11 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
                         kind: 'register.set',
                         path: ['title'],
                         value: 'Ready',
-                        policy: 'lww',
-                    },
-                ],
-            },
-        },
+                        policy: 'lww'
+                    }
+                ]
+            }
+        }
     },
     {
         kind: 'crdt.read',
@@ -1314,8 +1404,8 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         example: {
             kind: 'crdt.read',
             commandId: 'read-crdt-checklist',
-            handle: 'checklist',
-        },
+            handle: 'checklist'
+        }
     },
     {
         kind: 'crdt.sync',
@@ -1333,8 +1423,8 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             handle: 'checklist',
             reason: 'black-box-convergence-check',
             transport: 'ws',
-            timeoutMs: 10_000,
-        },
+            timeoutMs: 10_000
+        }
     },
     {
         kind: 'crdt.health',
@@ -1349,19 +1439,35 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         example: {
             kind: 'crdt.health',
             commandId: 'health-crdt-checklist',
-            handle: 'checklist',
-        },
+            handle: 'checklist'
+        }
     },
     {
         kind: 'crdt.wait',
         title: 'CRDT Wait',
         description: 'Polls an opened CRDT document until materialized value or health conditions match.',
         requiredFields: ['handle', 'conditions'],
-        optionalFields: ['intervalMs', 'stableForMs', 'sync', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
+        optionalFields: [
+            'intervalMs',
+            'stableForMs',
+            'sync',
+            'commandId',
+            'label',
+            'timeoutMs',
+            'deadlineEpochMs',
+            'metadata'
+        ],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
-        liveServiceRequirements: ['opened CRDT document handle; live transport or HTTP catch-up when sync is requested'],
-        artifactExpectations: ['matched materialized value or health', 'attempt count', 'wait duration', 'last sync result'],
+        liveServiceRequirements: [
+            'opened CRDT document handle; live transport or HTTP catch-up when sync is requested'
+        ],
+        artifactExpectations: [
+            'matched materialized value or health',
+            'attempt count',
+            'wait duration',
+            'last sync result'
+        ],
         example: {
             kind: 'crdt.wait',
             commandId: 'wait-crdt-checklist-converged',
@@ -1371,29 +1477,29 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             stableForMs: 500,
             sync: {
                 reason: 'black-box-crdt-wait',
-                transport: 'ws',
+                transport: 'ws'
             },
             conditions: [
                 {
                     source: 'value',
                     path: 'title',
                     operator: 'equals',
-                    expected: 'Ready',
+                    expected: 'Ready'
                 },
                 {
                     source: 'health',
                     path: 'pendingUpdateCount',
                     operator: 'equals',
-                    expected: 0,
+                    expected: 0
                 },
                 {
                     source: 'health',
                     path: 'dependencyBlockedUpdateCount',
                     operator: 'equals',
-                    expected: 0,
-                },
-            ],
-        },
+                    expected: 0
+                }
+            ]
+        }
     },
     {
         kind: 'crdt.undo',
@@ -1416,10 +1522,10 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
                     kind: 'register.set',
                     path: ['title'],
                     value: 'Untitled',
-                    policy: 'lww',
-                },
-            ],
-        },
+                    policy: 'lww'
+                }
+            ]
+        }
     },
     {
         kind: 'crdt.redo',
@@ -1442,10 +1548,10 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
                     kind: 'register.set',
                     path: ['title'],
                     value: 'Ready',
-                    policy: 'lww',
-                },
-            ],
-        },
+                    policy: 'lww'
+                }
+            ]
+        }
     },
     {
         kind: 'crdt.close',
@@ -1460,8 +1566,8 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         example: {
             kind: 'crdt.close',
             commandId: 'close-crdt-checklist',
-            handle: 'checklist',
-        },
+            handle: 'checklist'
+        }
     },
     {
         kind: 'crdt.destroy',
@@ -1476,15 +1582,27 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         example: {
             kind: 'crdt.destroy',
             commandId: 'destroy-crdt-checklist',
-            handle: 'checklist',
-        },
+            handle: 'checklist'
+        }
     },
     {
         kind: 'director.appoint',
         title: 'Appoint SPA Director',
         description: 'Appoints the current browser session as the Rallar group director through the browser facade.',
         requiredFields: [],
-        optionalFields: ['roomId', 'applicationId', 'workspaceId', 'scope', 'roomRef', 'heartbeatTtlMs', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
+        optionalFields: [
+            'roomId',
+            'applicationId',
+            'workspaceId',
+            'scope',
+            'roomRef',
+            'heartbeatTtlMs',
+            'commandId',
+            'label',
+            'timeoutMs',
+            'deadlineEpochMs',
+            'metadata'
+        ],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['connected browser Rallar session with group update authorization'],
@@ -1495,15 +1613,26 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             roomId: 'bb-group',
             applicationId: 'rallar-server',
             workspaceId: 'default',
-            heartbeatTtlMs: 1_200,
-        },
+            heartbeatTtlMs: 1_200
+        }
     },
     {
         kind: 'director.resign',
         title: 'Resign SPA Director',
         description: 'Clears the current browser session director appointment when it is the appointed director.',
         requiredFields: [],
-        optionalFields: ['roomId', 'applicationId', 'workspaceId', 'scope', 'roomRef', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
+        optionalFields: [
+            'roomId',
+            'applicationId',
+            'workspaceId',
+            'scope',
+            'roomRef',
+            'commandId',
+            'label',
+            'timeoutMs',
+            'deadlineEpochMs',
+            'metadata'
+        ],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['connected browser Rallar session'],
@@ -1513,15 +1642,29 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             commandId: 'resign-director',
             roomId: 'bb-group',
             applicationId: 'rallar-server',
-            workspaceId: 'default',
-        },
+            workspaceId: 'default'
+        }
     },
     {
         kind: 'director.status',
         title: 'Read SPA Director Status',
-        description: 'Reads local director appointment, freshness, and role state, optionally refreshing room metadata first.',
+        description:
+            'Reads local director appointment, freshness, and role state, optionally refreshing room metadata first.',
         requiredFields: [],
-        optionalFields: ['roomId', 'applicationId', 'workspaceId', 'scope', 'roomRef', 'refresh', 'now', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
+        optionalFields: [
+            'roomId',
+            'applicationId',
+            'workspaceId',
+            'scope',
+            'roomRef',
+            'refresh',
+            'now',
+            'commandId',
+            'label',
+            'timeoutMs',
+            'deadlineEpochMs',
+            'metadata'
+        ],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
         liveServiceRequirements: ['connected browser Rallar session; Rallar API when refresh is true'],
@@ -1532,13 +1675,14 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             roomId: 'bb-group',
             applicationId: 'rallar-server',
             workspaceId: 'default',
-            refresh: true,
-        },
+            refresh: true
+        }
     },
     {
         kind: 'director.relay.start',
         title: 'Start SPA Director Relay',
-        description: 'Starts a deterministic test relay backed by rallar.director.createRelay and stores it under a handle.',
+        description:
+            'Starts a deterministic test relay backed by rallar.director.createRelay and stores it under a handle.',
         requiredFields: ['handle', 'intentTypeId', 'outputTypeId'],
         optionalFields: [
             'roomId',
@@ -1558,7 +1702,7 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             'label',
             'timeoutMs',
             'deadlineEpochMs',
-            'metadata',
+            'metadata'
         ],
         supportedProviderModes: ['browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'mixed'],
         runtimeSurfaces: ['spa-local', 'control-agent', 'black-box-runner-adapter'],
@@ -1575,8 +1719,8 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             intentTypeId: 'app.black-box.director.intent',
             outputTypeId: 'app.black-box.director.output',
             heartbeatIntervalMs: 300,
-            snapshotIntervalMs: 500,
-        },
+            snapshotIntervalMs: 500
+        }
     },
     {
         kind: 'director.intent',
@@ -1596,9 +1740,9 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
                 intentId: 'intent-1',
                 action: 'move',
                 x: 1,
-                y: 0,
-            },
-        },
+                y: 0
+            }
+        }
     },
     {
         kind: 'director.sync.request',
@@ -1615,9 +1759,9 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
             commandId: 'request-director-sync',
             handle: 'game-director',
             payload: {
-                reason: 'late-join',
-            },
-        },
+                reason: 'late-join'
+            }
+        }
     },
     {
         kind: 'director.relay.stop',
@@ -1632,8 +1776,8 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         example: {
             kind: 'director.relay.stop',
             commandId: 'stop-director-relay',
-            handle: 'game-director',
-        },
+            handle: 'game-director'
+        }
     },
     {
         kind: 'health',
@@ -1641,15 +1785,22 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         description: 'Returns browser-agent runtime health without network side effects.',
         requiredFields: [],
         optionalFields: ['includeRtcDiagnostics', 'commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'rallar-memory', 'mixed'],
+        supportedProviderModes: [
+            'simulated',
+            'browser-rallar',
+            'rallar-browser',
+            'rallar-remote-browser',
+            'rallar-memory',
+            'mixed'
+        ],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: [],
         artifactExpectations: ['runtime status snapshot'],
         example: {
             kind: 'health',
             commandId: 'health-check',
-            label: 'Health check',
-        },
+            label: 'Health check'
+        }
     },
     {
         kind: 'stats',
@@ -1657,14 +1808,21 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         description: 'Captures a browser-agent stats snapshot.',
         requiredFields: [],
         optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'rallar-memory', 'mixed'],
+        supportedProviderModes: [
+            'simulated',
+            'browser-rallar',
+            'rallar-browser',
+            'rallar-remote-browser',
+            'rallar-memory',
+            'mixed'
+        ],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: [],
         artifactExpectations: ['command counts', 'event counts', 'latest status'],
         example: {
             kind: 'stats',
-            commandId: 'stats-snapshot',
-        },
+            commandId: 'stats-snapshot'
+        }
     },
     {
         kind: 'close',
@@ -1672,14 +1830,21 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         description: 'Closes active browser-agent transports without clearing the whole runtime state.',
         requiredFields: [],
         optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'rallar-memory', 'mixed'],
+        supportedProviderModes: [
+            'simulated',
+            'browser-rallar',
+            'rallar-browser',
+            'rallar-remote-browser',
+            'rallar-memory',
+            'mixed'
+        ],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: [],
         artifactExpectations: ['transport close events', 'final stats'],
         example: {
             kind: 'close',
-            commandId: 'close-transports',
-        },
+            commandId: 'close-transports'
+        }
     },
     {
         kind: 'reset',
@@ -1687,15 +1852,22 @@ export const RALLAR_BLACK_BOX_COMMAND_CAPABILITIES: readonly RallarBlackBoxComma
         description: 'Resets browser-agent runtime command state and closes active transports.',
         requiredFields: [],
         optionalFields: ['commandId', 'label', 'timeoutMs', 'deadlineEpochMs', 'metadata'],
-        supportedProviderModes: ['simulated', 'browser-rallar', 'rallar-browser', 'rallar-remote-browser', 'rallar-memory', 'mixed'],
+        supportedProviderModes: [
+            'simulated',
+            'browser-rallar',
+            'rallar-browser',
+            'rallar-remote-browser',
+            'rallar-memory',
+            'mixed'
+        ],
         runtimeSurfaces: ['spa-local', 'control-agent'],
         liveServiceRequirements: [],
         artifactExpectations: ['reset result', 'new idle runtime state'],
         example: {
             kind: 'reset',
-            commandId: 'reset-agent',
-        },
-    },
+            commandId: 'reset-agent'
+        }
+    }
 ];
 
 export const RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA: JsonSchema = {
@@ -1703,8 +1875,8 @@ export const RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA: JsonSchema = {
     $id: `${SCHEMA_BASE_ID}/rallar-bb-test-command.schema.json`,
     title: 'Rallar black-box browser-agent command',
     description: 'Command JSON accepted by the SPA runtime and browser control agents.',
-    oneOf: RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map(capability => COMMAND_SCHEMAS[capability.kind]),
-    examples: RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map(capability => capability.example),
+    oneOf: RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map((capability) => COMMAND_SCHEMAS[capability.kind]),
+    examples: RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map((capability) => capability.example)
 };
 
 recursiveCommandSchema.oneOf = RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA.oneOf;
@@ -1725,10 +1897,10 @@ export const RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA: JsonSchema = {
         metadata: recordSchema,
         commands: {
             type: 'array',
-            items: RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
-        },
+            items: RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA
+        }
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 
 export const RALLAR_BLACK_BOX_CONTROL_COMMAND_ENVELOPE_SCHEMA: JsonSchema = {
@@ -1745,9 +1917,9 @@ export const RALLAR_BLACK_BOX_CONTROL_COMMAND_ENVELOPE_SCHEMA: JsonSchema = {
         agentId: stringSchema,
         commandId: stringSchema,
         command: RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
-        deadlineEpochMs: integerSchema,
+        deadlineEpochMs: integerSchema
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 
 export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
@@ -1769,9 +1941,9 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
             properties: {
                 applicationId: stringSchema,
                 workspaceId: stringSchema,
-                groupId: stringSchema,
+                groupId: stringSchema
             },
-            additionalProperties: false,
+            additionalProperties: false
         },
         recipes: {
             type: 'array',
@@ -1784,10 +1956,10 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
                     recipe: RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
                     variables: recordSchema,
                     secretRefs: { type: 'array', items: stringSchema },
-                    required: booleanSchema,
+                    required: booleanSchema
                 },
-                additionalProperties: false,
-            },
+                additionalProperties: false
+            }
         },
         targetPolicy: {
             type: 'object',
@@ -1795,7 +1967,7 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
             properties: {
                 mode: {
                     type: 'string',
-                    enum: RALLAR_BLACK_BOX_DISTRIBUTED_TARGET_POLICY_MODES,
+                    enum: RALLAR_BLACK_BOX_DISTRIBUTED_TARGET_POLICY_MODES
                 },
                 expectedParticipantCount: { type: 'integer', minimum: 1 },
                 agentIds: { type: 'array', items: stringSchema },
@@ -1803,12 +1975,12 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
                     type: 'object',
                     additionalProperties: {
                         type: 'array',
-                        items: stringSchema,
-                    },
+                        items: stringSchema
+                    }
                 },
-                includeOfflineExpectedAgents: booleanSchema,
+                includeOfflineExpectedAgents: booleanSchema
             },
-            additionalProperties: false,
+            additionalProperties: false
         },
         variables: recordSchema,
         secretRefs: { type: 'array', items: stringSchema },
@@ -1822,10 +1994,10 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
                     agentId: stringSchema,
                     recipeIds: { type: 'array', items: stringSchema },
                     required: booleanSchema,
-                    variables: recordSchema,
+                    variables: recordSchema
                 },
-                additionalProperties: false,
-            },
+                additionalProperties: false
+            }
         },
         roleAssignmentPolicy: {
             type: 'object',
@@ -1833,31 +2005,31 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
             properties: {
                 mode: {
                     type: 'string',
-                    enum: RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_POLICY_MODES,
+                    enum: RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_POLICY_MODES
                 },
                 pattern: {
                     type: 'string',
-                    enum: RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_PATTERNS,
+                    enum: RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_PATTERNS
                 },
                 orderBy: {
                     type: 'string',
-                    enum: RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_ORDERINGS,
-                },
+                    enum: RALLAR_BLACK_BOX_DISTRIBUTED_ROLE_ASSIGNMENT_ORDERINGS
+                }
             },
-            additionalProperties: false,
+            additionalProperties: false
         },
         ackTimeoutMs: { type: 'integer', minimum: 1 },
         barrier: {
             type: 'object',
             properties: {
                 enabled: booleanSchema,
-                timeoutMs: { type: 'integer', minimum: 1 },
+                timeoutMs: { type: 'integer', minimum: 1 }
             },
-            additionalProperties: false,
+            additionalProperties: false
         },
         startMode: {
             type: 'string',
-            enum: RALLAR_BLACK_BOX_DISTRIBUTED_START_MODES,
+            enum: RALLAR_BLACK_BOX_DISTRIBUTED_START_MODES
         },
         startDeadlineEpochMs: integerSchema,
         artifactPolicy: {
@@ -1868,14 +2040,14 @@ export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA: JsonSchema = {
                 includeResultJsonl: booleanSchema,
                 includeFailureBundle: booleanSchema,
                 includeDistributedMetadata: booleanSchema,
-                retentionDays: { type: 'integer', minimum: 1 },
+                retentionDays: { type: 'integer', minimum: 1 }
             },
-            additionalProperties: false,
+            additionalProperties: false
         },
         groupAssertions: RALLAR_BLACK_BOX_GROUP_ASSERTIONS_SCHEMA,
-        metadata: recordSchema,
+        metadata: recordSchema
     },
-    additionalProperties: false,
+    additionalProperties: false
 };
 
 export const RALLAR_BLACK_BOX_SCHEMA_CATALOG = {
@@ -1883,12 +2055,11 @@ export const RALLAR_BLACK_BOX_SCHEMA_CATALOG = {
     command: RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
     recipe: RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
     controlCommandEnvelope: RALLAR_BLACK_BOX_CONTROL_COMMAND_ENVELOPE_SCHEMA,
-    distributedRunManifest: RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
+    distributedRunManifest: RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA
 } as const;
 
-
 export function validateRallarBlackBoxRecipeCompatibility(
-    value: unknown,
+    value: unknown
 ): RallarBlackBoxRecipeCompatibilityResult {
     const root = isJsonRecordValue(value) ? value : {};
     const explicitSchemaVersion = root.schemaVersion;
@@ -1896,7 +2067,7 @@ export function validateRallarBlackBoxRecipeCompatibility(
     const warnings: JsonSchemaValidationIssue[] = explicitSchemaVersion === undefined
         ? [{
             path: '$.schemaVersion',
-            message: 'No explicit schemaVersion was found; treating recipe as compatible v1.',
+            message: 'No explicit schemaVersion was found; treating recipe as compatible v1.'
         }]
         : [];
 
@@ -1909,7 +2080,7 @@ export function validateRallarBlackBoxRecipeCompatibility(
             explicitSchemaVersion,
             legacy: explicitSchemaVersion === undefined,
             warnings,
-            errors: schemaValidation.errors,
+            errors: schemaValidation.errors
         };
     }
 
@@ -1921,6 +2092,6 @@ export function validateRallarBlackBoxRecipeCompatibility(
             : undefined,
         legacy: explicitSchemaVersion === undefined,
         warnings,
-        errors: [],
+        errors: []
     };
 }

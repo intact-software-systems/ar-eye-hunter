@@ -1,6 +1,6 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { json } from '../../shared/json-presentation.ts';
 import { uiSecretValues } from '../../shared/redaction-presentation.ts';
@@ -14,50 +14,49 @@ function webSocketConfigureCommand(
         providerMode: string;
         authSession?: AuthSession;
         sequence: number;
-    }>,
+    }>
 ): RallarBlackBoxTestCommand {
     const browserRallar = input.providerMode === 'browser-rallar';
     const rallar = browserRallar
         ? {
-              ...((input.authSession?.username ??
-              input.bootstrap.rallarUsername)
-                  ? {
-                        username:
-                            input.authSession?.username ??
-                            input.bootstrap.rallarUsername,
+            ...((input.authSession?.username ??
+                    input.bootstrap.rallarUsername)
+                ? {
+                    username: input.authSession?.username ??
+                        input.bootstrap.rallarUsername
+                }
+                : {}),
+            ...(input.bootstrap.rallarPassword
+                ? { password: input.bootstrap.rallarPassword }
+                : {}),
+            ...(input.authSession || input.bootstrap.rallarRestoreSession
+                ? { restoreSession: true }
+                : {}),
+            ...(input.bootstrap.rallarRegister
+                ? { register: input.bootstrap.rallarRegister }
+                : {}),
+            ...(input.bootstrap.rallarLogoutOnClose
+                ? { logoutOnClose: true }
+                : {}),
+            leaveRoomOnClose: input.bootstrap.rallarLeaveRoomOnClose,
+            applicationId: input.values.applicationId,
+            workspaceId: input.values.workspaceId,
+            scope: {
+                applicationId: input.values.applicationId,
+                workspaceId: input.values.workspaceId
+            },
+            ...(input.values.groupId
+                ? {
+                    roomRef: {
+                        applicationId: input.values.applicationId,
+                        workspaceId: input.values.workspaceId,
+                        groupId: input.values.groupId
                     }
-                  : {}),
-              ...(input.bootstrap.rallarPassword
-                  ? { password: input.bootstrap.rallarPassword }
-                  : {}),
-              ...(input.authSession || input.bootstrap.rallarRestoreSession
-                  ? { restoreSession: true }
-                  : {}),
-              ...(input.bootstrap.rallarRegister
-                  ? { register: input.bootstrap.rallarRegister }
-                  : {}),
-              ...(input.bootstrap.rallarLogoutOnClose
-                  ? { logoutOnClose: true }
-                  : {}),
-              leaveRoomOnClose: input.bootstrap.rallarLeaveRoomOnClose,
-              applicationId: input.values.applicationId,
-              workspaceId: input.values.workspaceId,
-              scope: {
-                  applicationId: input.values.applicationId,
-                  workspaceId: input.values.workspaceId,
-              },
-              ...(input.values.groupId
-                  ? {
-                        roomRef: {
-                            applicationId: input.values.applicationId,
-                            workspaceId: input.values.workspaceId,
-                            groupId: input.values.groupId,
-                        },
-                    }
-                  : {}),
-              typeId: input.values.typeId,
-              topicId: input.values.topicId,
-          }
+                }
+                : {}),
+            typeId: input.values.typeId,
+            topicId: input.values.topicId
+        }
         : undefined;
 
     return {
@@ -70,8 +69,7 @@ function webSocketConfigureCommand(
             environment: input.bootstrap.environment,
             apiBaseUrl: input.values.apiBaseUrl,
             actor: input.authSession?.username ?? input.bootstrap.actor,
-            sessionId:
-                input.authSession?.sessionId ?? input.bootstrap.sessionId,
+            sessionId: input.authSession?.sessionId ?? input.bootstrap.sessionId,
             roomId: input.values.groupId,
             transport: 'ws',
             ...(rallar ? { rallar } : {}),
@@ -79,21 +77,21 @@ function webSocketConfigureCommand(
                 mode: 'websocket-command-center',
                 providerMode: input.providerMode,
                 protocolVersion: 1,
-                connected: false,
+                connected: false
             },
             defaults: {
                 timeoutMs: input.values.timeoutMs,
                 connection: input.values.connection,
-                providerMode: input.providerMode,
-            },
-        },
+                providerMode: input.providerMode
+            }
+        }
     };
 }
 
 function webSocketOpenCommand(
     values: WebSocketCommandCenterValues,
     sequence: number,
-    url = values.wsUrl,
+    url = values.wsUrl
 ): RallarBlackBoxTestCommand {
     const protocols = values.protocols
         .split(',')
@@ -106,14 +104,14 @@ function webSocketOpenCommand(
         connection: values.connection,
         url,
         ...(protocols.length > 0 ? { protocols } : {}),
-        timeoutMs: values.timeoutMs,
+        timeoutMs: values.timeoutMs
     };
 }
 
 function webSocketSendCommand(
     values: WebSocketCommandCenterValues,
     payload: unknown,
-    sequence: number,
+    sequence: number
 ): RallarBlackBoxTestCommand {
     return {
         kind: 'ws.send',
@@ -121,14 +119,14 @@ function webSocketSendCommand(
         label: 'Send WebSocket JSON',
         connection: values.connection,
         data: webSocketSendData(values, payload),
-        timeoutMs: values.timeoutMs,
+        timeoutMs: values.timeoutMs
     };
 }
 
 function webSocketCloseCommand(
     values: WebSocketCommandCenterValues,
     sequence: number,
-    reason = values.closeReason,
+    reason = values.closeReason
 ): RallarBlackBoxTestCommand {
     return {
         kind: 'ws.close',
@@ -137,7 +135,7 @@ function webSocketCloseCommand(
         connection: values.connection,
         code: Number.isFinite(values.closeCode) ? values.closeCode : 1000,
         reason,
-        timeoutMs: values.timeoutMs,
+        timeoutMs: values.timeoutMs
     };
 }
 
@@ -150,12 +148,12 @@ export function webSocketCommandCenterRecipe(
         authSession?: AuthSession;
         sequence: number;
         includeRtcParity?: boolean;
-    }>,
+    }>
 ): string {
     const commands: RallarBlackBoxTestCommand[] = [
         webSocketConfigureCommand(input),
         webSocketOpenCommand(input.values, input.sequence + 1),
-        webSocketSendCommand(input.values, input.payload, input.sequence + 2),
+        webSocketSendCommand(input.values, input.payload, input.sequence + 2)
     ];
     if (input.includeRtcParity) {
         commands.push(
@@ -169,10 +167,9 @@ export function webSocketCommandCenterRecipe(
                 transport: 'realtime',
                 timeoutMs: input.values.timeoutMs,
                 rallar: {
-                    sessionId:
-                        input.authSession?.sessionId ??
-                        input.bootstrap.sessionId,
-                },
+                    sessionId: input.authSession?.sessionId ??
+                        input.bootstrap.sessionId
+                }
             },
             {
                 kind: 'rtc.send',
@@ -181,15 +178,15 @@ export function webSocketCommandCenterRecipe(
                 connection: `${input.values.connection}-rtc`,
                 transport: 'realtime',
                 send: input.payload,
-                timeoutMs: input.values.timeoutMs,
-            },
+                timeoutMs: input.values.timeoutMs
+            }
         );
     }
     commands.push(
         webSocketCloseCommand(
             input.values,
-            input.sequence + commands.length + 1,
-        ),
+            input.sequence + commands.length + 1
+        )
     );
 
     return json({
@@ -202,8 +199,8 @@ export function webSocketCommandCenterRecipe(
         continueOnFailure: false,
         commands: redactRallarBlackBoxValue(commands, {
             secretValues: uiSecretValues(undefined, input.authSession, [
-                input.bootstrap.rallarPassword,
-            ]),
-        }),
+                input.bootstrap.rallarPassword
+            ])
+        })
     });
 }

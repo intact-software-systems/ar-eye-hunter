@@ -2,7 +2,7 @@ import type {
     AppInboxFailure,
     AppInboxFailureDenial,
     AppInboxFailureIssue,
-    AppInboxFailureRetry,
+    AppInboxFailureRetry
 } from './app-inbox-failure.ts';
 import { readLegacyPersistedAppInboxFailure } from './app-inbox-legacy-failure-decoding.ts';
 
@@ -13,11 +13,11 @@ const CANONICAL_V1_FAILURE_KEYS = [
     'message',
     'issues',
     'denial',
-    'retry',
+    'retry'
 ] as const;
 const CANONICAL_V2_FAILURE_KEYS = [
     ...CANONICAL_V1_FAILURE_KEYS,
-    'version',
+    'version'
 ] as const;
 
 export function readPersistedAppInboxFailure(resource: string): AppInboxFailure {
@@ -31,13 +31,14 @@ export function readPersistedAppInboxFailure(resource: string): AppInboxFailure 
             return readRetryExhaustedPersistedFailure(parsed);
         }
         return readAppInboxFailure(parsed);
-    } catch {
+    }
+    catch {
         return malformedPersistedAppInboxFailure();
     }
 }
 
 function readRetryExhaustedPersistedFailure(
-    value: Record<string, unknown>,
+    value: Record<string, unknown>
 ): AppInboxFailure {
     const timingKeys = Object.hasOwn(value, 'exhaustedAtEpochMs')
         ? ['exhaustedAtEpochMs']
@@ -56,7 +57,7 @@ function readRetryExhaustedPersistedFailure(
         'lastError',
         'queueAgeMs',
         'dueAgeMs',
-        ...timingKeys,
+        ...timingKeys
     ], 'AppInbox retry exhaustion failure');
     const status = requireHttpFailureStatus(record.status);
     if (status !== 503 || record.issues !== null || record.denial !== null) {
@@ -65,7 +66,7 @@ function readRetryExhaustedPersistedFailure(
     const commandIdentity = requireExactRecord(
         record.commandIdentity,
         ['contextId', 'resourceId', 'topicId', 'operation', 'operationSource'],
-        'AppInbox retry exhaustion command identity',
+        'AppInbox retry exhaustion command identity'
     );
     for (const key of ['contextId', 'resourceId', 'topicId', 'operation'] as const) {
         requireNonEmptyString(commandIdentity[key], `AppInbox command identity ${key}`);
@@ -76,7 +77,7 @@ function readRetryExhaustedPersistedFailure(
     const lastError = requireExactRecord(
         record.lastError,
         ['source', 'code', 'message'],
-        'AppInbox retry exhaustion last error',
+        'AppInbox retry exhaustion last error'
     );
     if (!['processing', 'finalization-recovery'].includes(String(lastError.source))) {
         throw new TypeError('AppInbox retry exhaustion last error source is invalid');
@@ -85,15 +86,15 @@ function readRetryExhaustedPersistedFailure(
     requireNonEmptyString(lastError.message, 'AppInbox retry exhaustion last error message');
     const selectedLane = requireNonEmptyString(
         record.selectedLane,
-        'AppInbox retry exhaustion selected lane',
+        'AppInbox retry exhaustion selected lane'
     );
     const processingAttempts = requirePositiveInteger(
         record.processingAttempts,
-        'AppInbox retry exhaustion processing attempts',
+        'AppInbox retry exhaustion processing attempts'
     );
     const reservationAttempt = requirePositiveInteger(
         record.reservationAttempt,
-        'AppInbox retry exhaustion reservation attempt',
+        'AppInbox retry exhaustion reservation attempt'
     );
     if (reservationAttempt < processingAttempts) {
         throw new TypeError('AppInbox retry exhaustion reservation attempt is invalid');
@@ -121,7 +122,7 @@ function readRetryExhaustedPersistedFailure(
         message: requireNonEmptyString(record.message, 'AppInbox failure message'),
         issues: null,
         denial: null,
-        retry,
+        retry
     };
 }
 
@@ -134,7 +135,7 @@ export function readAppInboxFailure(value: unknown): AppInboxFailure {
         version === 'canonical.v2'
             ? CANONICAL_V2_FAILURE_KEYS
             : CANONICAL_V1_FAILURE_KEYS,
-        'AppInbox failure',
+        'AppInbox failure'
     );
     if (record.type !== 'app-inbox-failure') {
         throw new TypeError('AppInbox failure type is invalid');
@@ -160,7 +161,7 @@ function malformedPersistedAppInboxFailure(): AppInboxFailure {
         message: 'Persisted AppInbox failure is malformed',
         issues: null,
         denial: null,
-        retry: null,
+        retry: null
     };
 }
 
@@ -175,13 +176,13 @@ function readIssues(value: unknown): readonly AppInboxFailureIssue[] | null {
         const record = requireExactRecord(
             issue,
             ['code', 'path', 'message', 'details'],
-            `AppInbox failure issue ${index}`,
+            `AppInbox failure issue ${index}`
         );
         return {
             code: requireNonEmptyString(record.code, 'AppInbox failure issue code'),
             path: readPath(record.path),
             message: requireNonEmptyString(record.message, 'AppInbox failure issue message'),
-            details: readNullableRecord(record.details, 'AppInbox failure issue details'),
+            details: readNullableRecord(record.details, 'AppInbox failure issue details')
         };
     });
 }
@@ -193,12 +194,12 @@ function readDenial(value: unknown): AppInboxFailureDenial | null {
     const record = requireExactRecord(
         value,
         ['code', 'message', 'details'],
-        'AppInbox failure denial',
+        'AppInbox failure denial'
     );
     return {
         code: requireNonEmptyString(record.code, 'AppInbox failure denial code'),
         message: requireNonEmptyString(record.message, 'AppInbox failure denial message'),
-        details: readNullableRecord(record.details, 'AppInbox failure denial details'),
+        details: readNullableRecord(record.details, 'AppInbox failure denial details')
     };
 }
 
@@ -209,7 +210,7 @@ function readRetry(value: unknown): AppInboxFailureRetry | null {
     const record = requireExactRecord(
         value,
         ['kind', 'attempts', 'lane', 'queueAgeMs', 'dueAgeMs'],
-        'AppInbox failure retry',
+        'AppInbox failure retry'
     );
     if (record.kind !== 'unavailable' && record.kind !== 'exhausted') {
         throw new TypeError('AppInbox failure retry kind is invalid');
@@ -221,7 +222,7 @@ function readRetry(value: unknown): AppInboxFailureRetry | null {
             ? null
             : requireNonEmptyString(record.lane, 'AppInbox failure retry lane'),
         queueAgeMs: readNullableNonNegativeNumber(record.queueAgeMs, 'queueAgeMs'),
-        dueAgeMs: readNullableNonNegativeNumber(record.dueAgeMs, 'dueAgeMs'),
+        dueAgeMs: readNullableNonNegativeNumber(record.dueAgeMs, 'dueAgeMs')
     };
 }
 
@@ -240,7 +241,7 @@ function readPath(value: unknown): readonly (string | number)[] | null {
 
 function readNullableRecord(
     value: unknown,
-    label: string,
+    label: string
 ): Readonly<Record<string, unknown>> | null {
     if (value === null) {
         return null;
@@ -302,7 +303,7 @@ function requireNonEmptyString(value: unknown, label: string): string {
 function requireExactRecord(
     value: unknown,
     expectedKeys: readonly string[],
-    label: string,
+    label: string
 ): Record<string, unknown> {
     if (!isRecord(value)) {
         throw new TypeError(`${label} is invalid`);

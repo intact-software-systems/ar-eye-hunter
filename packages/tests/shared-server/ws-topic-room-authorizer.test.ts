@@ -1,30 +1,15 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-    newALBroadcastMessage,
-    newALEventRoute,
-    newALMulticastMessage,
-} from '@shared/al-contracts/al-contract.ts';
-import type {
-    AuditStamp,
-    Group,
-    GroupMember,
-    GroupPresenceSummary,
-    GroupSnapshot,
-} from '@shared/api/group-types.ts';
-import {
-    findGroupStateSnapshotByRef,
-    setGroupStateSnapshot,
-} from '@shared/repository/group-state-snapshots-repository.ts';
-import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/services/ws-topic-room-authorizer.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts';
-import {
-    createCachedGroupStateService,
-} from '@shared-server/rallar-system/services/cached-group-state-service.ts';
+import { createCachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
 import type { GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts';
+import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/services/ws-topic-room-authorizer.ts';
+import { newALBroadcastMessage, newALEventRoute, newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
+import type { AuditStamp, Group, GroupMember, GroupPresenceSummary, GroupSnapshot } from '@shared/api/group-types.ts';
+import { findGroupStateSnapshotByRef, setGroupStateSnapshot } from '@shared/repository/group-state-snapshots-repository.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
-import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 import { createTestGroup } from '../create-test-group.ts';
+import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('createGroupRoomWsAuthorizer', () => {
     afterEach(() => {
@@ -37,31 +22,30 @@ describe('createGroupRoomWsAuthorizer', () => {
             'app-1',
             'workspace-a',
             ['session-a'],
-            1,
+            1
         );
         const workspaceB = createGroupSnapshot(
             'shared-room',
             'app-1',
             'workspace-b',
             ['session-b'],
-            1,
+            1
         );
         const authorizer = createGroupRoomWsAuthorizer({
             findGroupSnapshotById: () => workspaceA,
             resolveGroupRef: (input) => ({
                 applicationId: 'app-1',
                 workspaceId: 'workspace-b',
-                groupId: input.roomId,
+                groupId: input.roomId
             }),
-            findGroupSnapshotByRef: (ref) =>
-                ref.workspaceId === 'workspace-b' ? workspaceB : undefined,
+            findGroupSnapshotByRef: (ref) => ref.workspaceId === 'workspace-b' ? workspaceB : undefined
         });
         const message = newALBroadcastMessage(
             'session-b',
             newALEventRoute('room.chat', 'shared-room', 'msg-1'),
             'room',
             'chat.message.v1',
-            { text: 'workspace-b' },
+            { text: 'workspace-b' }
         );
 
         const decision = await Promise.resolve(authorizer({
@@ -69,7 +53,7 @@ describe('createGroupRoomWsAuthorizer', () => {
             roomId: 'shared-room',
             senderId: 'session-b',
             topicId: 'room.chat',
-            typeId: 'chat.message.v1',
+            typeId: 'chat.message.v1'
         }));
 
         expect(decision).toBe(true);
@@ -81,19 +65,18 @@ describe('createGroupRoomWsAuthorizer', () => {
             'app-1',
             'workspace-a',
             ['session-a'],
-            1,
+            1
         );
         const workspaceB = createGroupSnapshot(
             'shared-room',
             'app-1',
             'workspace-b',
             ['session-b'],
-            1,
+            1
         );
         const authorizer = createGroupRoomWsAuthorizer({
             findGroupSnapshotById: () => workspaceA,
-            findGroupSnapshotByRef: (ref) =>
-                ref.workspaceId === 'workspace-b' ? workspaceB : undefined,
+            findGroupSnapshotByRef: (ref) => ref.workspaceId === 'workspace-b' ? workspaceB : undefined
         });
         const message = {
             ...newALMulticastMessage(
@@ -101,8 +84,8 @@ describe('createGroupRoomWsAuthorizer', () => {
                 newALEventRoute('room.chat', 'shared-room', 'msg-1'),
                 workspaceB.group,
                 'chat.message.v1',
-                { text: 'workspace-b' },
-            ),
+                { text: 'workspace-b' }
+            )
         };
 
         const decision = await Promise.resolve(authorizer({
@@ -110,7 +93,7 @@ describe('createGroupRoomWsAuthorizer', () => {
             roomId: 'shared-room',
             senderId: 'session-b',
             topicId: 'room.chat',
-            typeId: 'chat.message.v1',
+            typeId: 'chat.message.v1'
         }));
 
         expect(decision).toBe(true);
@@ -122,19 +105,18 @@ describe('createGroupRoomWsAuthorizer', () => {
             'app-1',
             'workspace-a',
             ['session-a'],
-            1,
+            1
         );
         const workspaceB = createGroupSnapshot(
             'shared-room',
             'app-1',
             'workspace-b',
             ['session-b'],
-            1,
+            1
         );
         const authorizer = createGroupRoomWsAuthorizer({
             findGroupSnapshotById: () => workspaceA,
-            findGroupSnapshotByRef: (ref) =>
-                ref.workspaceId === 'workspace-b' ? workspaceB : undefined,
+            findGroupSnapshotByRef: (ref) => ref.workspaceId === 'workspace-b' ? workspaceB : undefined
         });
         const message = newALBroadcastMessage(
             'session-b',
@@ -143,8 +125,8 @@ describe('createGroupRoomWsAuthorizer', () => {
             'chat.message.v1',
             { text: 'workspace-b' },
             {
-                groupRef: workspaceB.group,
-            },
+                groupRef: workspaceB.group
+            }
         );
 
         const decision = await Promise.resolve(authorizer({
@@ -152,7 +134,7 @@ describe('createGroupRoomWsAuthorizer', () => {
             roomId: 'shared-room',
             senderId: 'session-b',
             topicId: 'room.chat',
-            typeId: 'chat.message.v1',
+            typeId: 'chat.message.v1'
         }));
 
         expect(decision).toBe(true);
@@ -168,18 +150,18 @@ describe('createGroupRoomWsAuthorizer', () => {
             'app-1',
             'workspace-b',
             ['session-b'],
-            3,
+            3
         );
         await putDurableSnapshot(groupRepository, group);
 
         const readThroughCache = createGroupStateSnapshotReadThroughCache({
-            groupsRepository: groupRepository,
+            groupsRepository: groupRepository
         });
         const authorizer = createGroupRoomWsAuthorizer({
             findGroupSnapshotByRef: async (ref, input) =>
                 await readThroughCache.findOrLoadByRef(ref, {
-                    minSnapshotVersion: input.minSnapshotVersion,
-                }),
+                    minSnapshotVersion: input.minSnapshotVersion
+                })
         });
         const message = newALBroadcastMessage(
             'session-b',
@@ -189,8 +171,8 @@ describe('createGroupRoomWsAuthorizer', () => {
             { text: 'cold cache' },
             {
                 groupRef: group.group,
-                minSnapshotVersion: 3,
-            },
+                minSnapshotVersion: 3
+            }
         );
 
         expect(findGroupStateSnapshotByRef(group.group)).toBeUndefined();
@@ -201,7 +183,7 @@ describe('createGroupRoomWsAuthorizer', () => {
             senderId: 'session-b',
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
-            minSnapshotVersion: 3,
+            minSnapshotVersion: 3
         }));
 
         expect(decision).toBe(true);
@@ -218,34 +200,34 @@ describe('createGroupRoomWsAuthorizer', () => {
             'app-1',
             'workspace-b',
             ['session-b'],
-            1,
+            1
         );
         const currentGroup = createGroupSnapshot(
             'shared-room',
             'app-1',
             'workspace-b',
             ['session-b'],
-            4,
+            4
         );
         const readThroughCache = createGroupStateSnapshotReadThroughCache({
-            groupsRepository: groupRepository,
+            groupsRepository: groupRepository
         });
         await putDurableSnapshot(groupRepository, staleGroup);
         expect(await readThroughCache.findOrLoadByRef(staleGroup.group)).toEqual({
             ...staleGroup,
             stateRevision: 2,
-            causalRevision: { groupRevision: 1, presenceRevision: 1 },
+            causalRevision: { groupRevision: 1, presenceRevision: 1 }
         });
         expect(
-            findGroupStateSnapshotByRef(staleGroup.group)?.group.snapshotVersion,
+            findGroupStateSnapshotByRef(staleGroup.group)?.group.snapshotVersion
         ).toBe(1);
         await putDurableSnapshot(groupRepository, currentGroup);
 
         const authorizer = createGroupRoomWsAuthorizer({
             findGroupSnapshotByRef: async (ref, input) =>
                 await readThroughCache.findOrLoadByRef(ref, {
-                    minSnapshotVersion: input.minSnapshotVersion,
-                }),
+                    minSnapshotVersion: input.minSnapshotVersion
+                })
         });
         const message = {
             ...newALMulticastMessage(
@@ -255,9 +237,9 @@ describe('createGroupRoomWsAuthorizer', () => {
                 'chat.message.v1',
                 { text: 'refresh stale cache' },
                 {
-                    minSnapshotVersion: 4,
-                },
-            ),
+                    minSnapshotVersion: 4
+                }
+            )
         };
 
         const decision = await Promise.resolve(authorizer({
@@ -266,12 +248,12 @@ describe('createGroupRoomWsAuthorizer', () => {
             senderId: 'session-b',
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
-            minSnapshotVersion: 4,
+            minSnapshotVersion: 4
         }));
 
         expect(decision).toBe(true);
         expect(
-            findGroupStateSnapshotByRef(currentGroup.group)?.group.snapshotVersion,
+            findGroupStateSnapshotByRef(currentGroup.group)?.group.snapshotVersion
         ).toBe(4);
     });
 
@@ -288,16 +270,16 @@ describe('createGroupRoomWsAuthorizer', () => {
             'workspace-b',
             ['session-b'],
             3,
-            1_000,
+            1_000
         );
         const readThroughCache = createGroupStateSnapshotReadThroughCache({
-            groupsRepository: groupRepository,
+            groupsRepository: groupRepository
         });
         await putDurableSnapshot(groupRepository, group);
         await expect(readThroughCache.findOrLoadByRef(group.group)).resolves.toEqual({
             ...group,
             stateRevision: 6,
-            causalRevision: { groupRevision: 3, presenceRevision: 3 },
+            causalRevision: { groupRevision: 3, presenceRevision: 3 }
         });
 
         vi.setSystemTime(1_001);
@@ -305,8 +287,8 @@ describe('createGroupRoomWsAuthorizer', () => {
         const authorizer = createGroupRoomWsAuthorizer({
             findGroupSnapshotByRef: async (ref, input) =>
                 await readThroughCache.findOrLoadByRef(ref, {
-                    minSnapshotVersion: input.minSnapshotVersion,
-                }),
+                    minSnapshotVersion: input.minSnapshotVersion
+                })
         });
         const message = newALBroadcastMessage(
             'session-b',
@@ -315,8 +297,8 @@ describe('createGroupRoomWsAuthorizer', () => {
             'chat.message.v1',
             { text: 'expired session' },
             {
-                groupRef: group.group,
-            },
+                groupRef: group.group
+            }
         );
 
         await expect(Promise.resolve(authorizer({
@@ -324,11 +306,11 @@ describe('createGroupRoomWsAuthorizer', () => {
             roomId: 'shared-room',
             senderId: 'session-b',
             topicId: 'room.chat',
-            typeId: 'chat.message.v1',
+            typeId: 'chat.message.v1'
         }))).resolves.toMatchObject({
             authorized: false,
             reason: 'unauthorized',
-            logMessage: expect.stringContaining('member-not-active'),
+            logMessage: expect.stringContaining('member-not-active')
         });
         expect(findGroupStateSnapshotByRef(group.group)?.activeSessions).toEqual([]);
     });
@@ -345,39 +327,41 @@ describe('createGroupRoomWsAuthorizer', () => {
             'app-1',
             'workspace-b',
             ['session-b'],
-            3,
+            3
         );
         await putDurableSnapshot(groupRepository, group);
         const readThroughCache = createGroupStateSnapshotReadThroughCache({
-            groupsRepository: groupRepository,
+            groupsRepository: groupRepository
         });
         await expect(readThroughCache.findOrLoadByRef(group.group)).resolves
             .toMatchObject({ activeSessions: [{ sessionId: 'session-b' }] });
         const stored = await groupRepository.findPresenceEntry({
             ...group.group,
-            sessionId: 'session-b',
+            sessionId: 'session-b'
         });
-        if (!stored) throw new Error('Expected persisted room session');
-        expect(await groupRepository.updatePresence({
-            ...stored.value,
-            status: 'disconnected',
-            disconnectedAtEpochMs: 1_000,
-            disconnectReason: 'client-disconnect',
-        }, stored.entry.revision)).toMatchObject({ status: 'applied' });
+        if (!stored) {
+            throw new Error('Expected persisted room session');
+        }
+        expect(
+            await groupRepository.updatePresence({
+                ...stored.value,
+                status: 'disconnected',
+                disconnectedAtEpochMs: 1_000,
+                disconnectReason: 'client-disconnect'
+            }, stored.entry.revision)
+        ).toMatchObject({ status: 'applied' });
 
         const currentService = createCachedGroupStateService({
             durable: {
-                readSnapshot: (ref) => groupRepository.readSnapshot(ref),
+                readSnapshot: (ref) => groupRepository.readSnapshot(ref)
             } as GroupStateService,
             cache: {
-                findOrLoadByRef: (ref, options) =>
-                    readThroughCache.findOrLoadByRef(ref, options),
-                observe: (snapshot) => readThroughCache.observe(snapshot),
-            },
+                findOrLoadByRef: (ref, options) => readThroughCache.findOrLoadByRef(ref, options),
+                observe: (snapshot) => readThroughCache.observe(snapshot)
+            }
         });
         const authorizer = createGroupRoomWsAuthorizer({
-            findGroupSnapshotByRef: (ref) =>
-                currentService.readCurrentSnapshot(ref),
+            findGroupSnapshotByRef: (ref) => currentService.readCurrentSnapshot(ref)
         });
         const message = newALBroadcastMessage(
             'session-b',
@@ -385,7 +369,7 @@ describe('createGroupRoomWsAuthorizer', () => {
             'room',
             'chat.message.v1',
             { text: 'stale disconnect' },
-            { groupRef: group.group },
+            { groupRef: group.group }
         );
 
         await expect(Promise.resolve(authorizer({
@@ -393,11 +377,11 @@ describe('createGroupRoomWsAuthorizer', () => {
             roomId: group.group.groupId,
             senderId: 'session-b',
             topicId: 'room.chat',
-            typeId: 'chat.message.v1',
+            typeId: 'chat.message.v1'
         }))).resolves.toMatchObject({
             authorized: false,
             reason: 'unauthorized',
-            logMessage: expect.stringContaining('member-not-active'),
+            logMessage: expect.stringContaining('member-not-active')
         });
         expect(readThroughCache.peek(group.group)?.activeSessions).toHaveLength(1);
     });
@@ -409,21 +393,21 @@ describe('createGroupRoomWsAuthorizer', () => {
                 'app-1',
                 'workspace-b',
                 ['session-b'],
-                3,
+                3
             );
             const snapshot: GroupSnapshot = {
                 ...group,
-                group: withGroupStatus(group.group, status),
+                group: withGroupStatus(group.group, status)
             };
             const authorizer = createGroupRoomWsAuthorizer({
-                findGroupSnapshotById: () => snapshot,
+                findGroupSnapshotById: () => snapshot
             });
             const message = newALBroadcastMessage(
                 'session-b',
                 newALEventRoute('room.chat', snapshot.group.groupId, `msg-${status}`),
                 'room',
                 'chat.message.v1',
-                { text: status },
+                { text: status }
             );
 
             const decision = await Promise.resolve(authorizer({
@@ -431,13 +415,13 @@ describe('createGroupRoomWsAuthorizer', () => {
                 roomId: snapshot.group.groupId,
                 senderId: 'session-b',
                 topicId: 'room.chat',
-                typeId: 'chat.message.v1',
+                typeId: 'chat.message.v1'
             }));
 
             expect(decision).toMatchObject({
                 authorized: false,
                 reason: 'unauthorized',
-                logMessage: expect.stringContaining(`group-${status}`),
+                logMessage: expect.stringContaining(`group-${status}`)
             });
         }
     });
@@ -452,10 +436,10 @@ describe('createGroupRoomWsAuthorizer', () => {
                         'app-1',
                         'workspace-b',
                         ['session-b'],
-                        3,
-                    ),
+                        3
+                    )
                 ),
-                expectedCode: 'member-not-active',
+                expectedCode: 'member-not-active'
             },
             {
                 name: 'removed-member',
@@ -465,11 +449,11 @@ describe('createGroupRoomWsAuthorizer', () => {
                         'app-1',
                         'workspace-b',
                         ['session-b'],
-                        3,
+                        3
                     ),
-                    'removed',
+                    'removed'
                 ),
-                expectedCode: 'member-removed',
+                expectedCode: 'member-removed'
             },
             {
                 name: 'banned-member',
@@ -479,25 +463,25 @@ describe('createGroupRoomWsAuthorizer', () => {
                         'app-1',
                         'workspace-b',
                         ['session-b'],
-                        3,
+                        3
                     ),
-                    'banned',
+                    'banned'
                 ),
-                expectedCode: 'member-banned',
-            },
+                expectedCode: 'member-banned'
+            }
         ] as const;
 
         for (const { name, snapshot, expectedCode } of cases) {
             const authorizer = createGroupRoomWsAuthorizer({
                 findGroupSnapshotById: () => snapshot,
-                now: () => 1,
+                now: () => 1
             });
             const message = newALBroadcastMessage(
                 'session-b',
                 newALEventRoute('room.chat', snapshot.group.groupId, `msg-${name}`),
                 'room',
                 'chat.message.v1',
-                { text: name },
+                { text: name }
             );
 
             const decision = await Promise.resolve(authorizer({
@@ -505,13 +489,13 @@ describe('createGroupRoomWsAuthorizer', () => {
                 roomId: snapshot.group.groupId,
                 senderId: 'session-b',
                 topicId: 'room.chat',
-                typeId: 'chat.message.v1',
+                typeId: 'chat.message.v1'
             }));
 
             expect(decision).toMatchObject({
                 authorized: false,
                 reason: 'unauthorized',
-                logMessage: expect.stringContaining(expectedCode),
+                logMessage: expect.stringContaining(expectedCode)
             });
         }
     });
@@ -526,7 +510,7 @@ describe('createGroupRoomWsAuthorizer', () => {
             'app-1',
             'workspace-b',
             ['session-b'],
-            1,
+            1
         );
         const currentGroup = withMemberStatus(
             createGroupSnapshot(
@@ -534,26 +518,26 @@ describe('createGroupRoomWsAuthorizer', () => {
                 'app-1',
                 'workspace-b',
                 ['session-b'],
-                4,
+                4
             ),
-            'banned',
+            'banned'
         );
         const readThroughCache = createGroupStateSnapshotReadThroughCache({
-            groupsRepository: groupRepository,
+            groupsRepository: groupRepository
         });
         await putDurableSnapshot(groupRepository, staleGroup);
         await expect(readThroughCache.findOrLoadByRef(staleGroup.group)).resolves.toEqual({
             ...staleGroup,
             stateRevision: 2,
-            causalRevision: { groupRevision: 1, presenceRevision: 1 },
+            causalRevision: { groupRevision: 1, presenceRevision: 1 }
         });
         await putDurableSnapshot(groupRepository, currentGroup);
 
         const authorizer = createGroupRoomWsAuthorizer({
             findGroupSnapshotByRef: async (ref, input) =>
                 await readThroughCache.findOrLoadByRef(ref, {
-                    minSnapshotVersion: input.minSnapshotVersion,
-                }),
+                    minSnapshotVersion: input.minSnapshotVersion
+                })
         });
         const message = {
             ...newALMulticastMessage(
@@ -563,9 +547,9 @@ describe('createGroupRoomWsAuthorizer', () => {
                 'chat.message.v1',
                 { text: 'refresh banned member' },
                 {
-                    minSnapshotVersion: 4,
-                },
-            ),
+                    minSnapshotVersion: 4
+                }
+            )
         };
 
         const decision = await Promise.resolve(authorizer({
@@ -574,17 +558,17 @@ describe('createGroupRoomWsAuthorizer', () => {
             senderId: 'session-b',
             topicId: 'room.chat',
             typeId: 'chat.message.v1',
-            minSnapshotVersion: 4,
+            minSnapshotVersion: 4
         }));
 
         expect(decision).toMatchObject({
             authorized: false,
             reason: 'unauthorized',
             logMessage: expect.stringContaining('member-not-active'),
-            serverSnapshotVersion: 4,
+            serverSnapshotVersion: 4
         });
         expect(findGroupStateSnapshotByRef(currentGroup.group)?.group.snapshotVersion).toBe(
-            4,
+            4
         );
     });
 
@@ -594,18 +578,18 @@ describe('createGroupRoomWsAuthorizer', () => {
             'app-1',
             'workspace-a',
             ['session-a'],
-            1,
+            1
         );
         const workspaceB = createGroupSnapshot(
             'shared-room',
             'app-1',
             'workspace-b',
             ['session-b'],
-            1,
+            1
         );
         const authorizer = createGroupRoomWsAuthorizer({
             findGroupSnapshotById: () => workspaceA,
-            findGroupSnapshotByRef: () => undefined,
+            findGroupSnapshotByRef: () => undefined
         });
         const message = newALBroadcastMessage(
             'session-b',
@@ -614,8 +598,8 @@ describe('createGroupRoomWsAuthorizer', () => {
             'chat.message.v1',
             { text: 'wrong scope' },
             {
-                groupRef: workspaceB.group,
-            },
+                groupRef: workspaceB.group
+            }
         );
 
         const decision = await Promise.resolve(authorizer({
@@ -623,13 +607,13 @@ describe('createGroupRoomWsAuthorizer', () => {
             roomId: 'shared-room',
             senderId: 'session-b',
             topicId: 'room.chat',
-            typeId: 'chat.message.v1',
+            typeId: 'chat.message.v1'
         }));
 
         expect(decision).toMatchObject({
             authorized: false,
             reason: 'unauthorized',
-            logMessage: expect.stringContaining('scope'),
+            logMessage: expect.stringContaining('scope')
         });
     });
 });
@@ -638,13 +622,13 @@ function withoutActiveSessions(snapshot: GroupSnapshot): GroupSnapshot {
     return {
         ...snapshot,
         activeSessions: [],
-        onlineMemberCount: 0,
+        onlineMemberCount: 0
     };
 }
 
 function withMemberStatus(
     snapshot: GroupSnapshot,
-    status: 'removed' | 'banned',
+    status: 'removed' | 'banned'
 ): GroupSnapshot {
     const target = snapshot.members[0];
     if (!target) {
@@ -658,14 +642,14 @@ function withMemberStatus(
         joined: target.updated,
         left: null,
         removed: null,
-        banned: null,
+        banned: null
     };
     return {
         ...snapshot,
         group: {
             ...snapshot.group,
             ownerPrincipalId: fixtureOwner.principalId,
-            activeMemberCount: 1,
+            activeMemberCount: 1
         },
         members: [
             ...snapshot.members.map((member): GroupMember =>
@@ -676,7 +660,7 @@ function withMemberStatus(
                         status: 'removed',
                         left: null,
                         removed: member.updated,
-                        banned: null,
+                        banned: null
                     }
                     : {
                         ...member,
@@ -684,25 +668,23 @@ function withMemberStatus(
                         status: 'banned',
                         left: null,
                         removed: null,
-                        banned: member.updated,
+                        banned: member.updated
                     }
             ),
-            fixtureOwner,
+            fixtureOwner
         ],
-        memberCount: 1,
+        memberCount: 1
     };
 }
 
 async function putDurableSnapshot(
     repository: GroupStateRepository,
-    snapshot: GroupSnapshot,
+    snapshot: GroupSnapshot
 ): Promise<void> {
     await repository.putGroup(snapshot.group);
     await Promise.all(snapshot.members.map((member) => repository.putMember(member)));
     await Promise.all(
-        snapshot.activeSessions.map((session) =>
-            repository.putPresenceSession(session)
-        ),
+        snapshot.activeSessions.map((session) => repository.putPresenceSession(session))
     );
     const group = await repository.findGroupEntry(snapshot.group);
     if (!group) {
@@ -715,20 +697,19 @@ async function putDurableSnapshot(
         groupId: snapshot.group.groupId,
         causalRevision: {
             groupRevision: group.entry.revision + 1,
-            presenceRevision: snapshot.group.presenceVersion,
+            presenceRevision: snapshot.group.presenceVersion
         },
-        activePrincipalIds: snapshot.activeSessions.map((session) =>
-            session.principalId
-        ),
+        activePrincipalIds: snapshot.activeSessions.map((session) => session.principalId),
         activeSessionIds: snapshot.activeSessions.map((session) => session.sessionId),
         activeSessions: snapshot.activeSessions,
         activePrincipalCount: snapshot.onlineMemberCount,
         activeSessionCount: snapshot.activeSessions.length,
-        computedAtEpochMs: snapshot.group.updated.atEpochMs,
+        computedAtEpochMs: snapshot.group.updated.atEpochMs
     };
     if (current) {
         await repository.updatePresenceSummary(summary, current.entry.revision);
-    } else {
+    }
+    else {
         await repository.insertPresenceSummary(summary);
     }
 }
@@ -739,7 +720,7 @@ function createGroupSnapshot(
     workspaceId: string,
     sessionIds: readonly [string, ...string[]],
     snapshotVersion: number,
-    expiresAtEpochMs = 4_000_000_000_000,
+    expiresAtEpochMs = 4_000_000_000_000
 ): GroupSnapshot {
     const created = createAuditStamp(1);
     const updated = createAuditStamp(snapshotVersion);
@@ -747,7 +728,7 @@ function createGroupSnapshot(
         stateRevision: snapshotVersion,
         causalRevision: {
             groupRevision: snapshotVersion,
-            presenceRevision: snapshotVersion,
+            presenceRevision: snapshotVersion
         },
         group: createTestGroup({
             applicationId,
@@ -761,7 +742,7 @@ function createGroupSnapshot(
             ownerPrincipalId: sessionIds[0],
             activeMemberCount: sessionIds.length,
             created,
-            updated,
+            updated
         }),
         members: sessionIds.map((sessionId, index) => ({
             applicationId,
@@ -776,7 +757,7 @@ function createGroupSnapshot(
             invitationExpiresAtEpochMs: null,
             left: null,
             removed: null,
-            banned: null,
+            banned: null
         })),
         activeSessions: sessionIds.map((sessionId) => ({
             applicationId,
@@ -791,10 +772,10 @@ function createGroupSnapshot(
             disconnectReason: null,
             connectedAtEpochMs: 1,
             lastHeartbeatAtEpochMs: snapshotVersion,
-            expiresAtEpochMs,
+            expiresAtEpochMs
         })),
         memberCount: sessionIds.length,
-        onlineMemberCount: sessionIds.length,
+        onlineMemberCount: sessionIds.length
     };
 }
 
@@ -804,14 +785,14 @@ function withGroupStatus(group: Group, status: 'archived' | 'deleted'): Group {
             ...group,
             status: 'archived',
             archived: group.updated,
-            deleted: null,
+            deleted: null
         };
     }
     return {
         ...group,
         status: 'deleted',
         archived: null,
-        deleted: group.updated,
+        deleted: group.updated
     };
 }
 
@@ -821,6 +802,6 @@ function createAuditStamp(atEpochMs: number): AuditStamp {
         actor: { kind: 'service', serviceId: 'test' },
         reason: null,
         traceId: null,
-        requestId: null,
+        requestId: null
     };
 }

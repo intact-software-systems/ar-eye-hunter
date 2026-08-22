@@ -3,19 +3,19 @@ import { ALMessage } from '../al-contracts/al-contract.ts';
 export const QRtcSignalingType = {
     Offer: 'Offer',
     Answer: 'Answer',
-    IceCandidate: 'IceCandidate',
+    IceCandidate: 'IceCandidate'
 } as const;
 
 export type QRtcSignalingType = (typeof QRtcSignalingType)[keyof typeof QRtcSignalingType];
 
 export const QRtcSignalingChannel = {
-    RtcSignal: 'RtcSignal',
+    RtcSignal: 'RtcSignal'
 } as const;
 
 export type QRtcSignalingChannel = (typeof QRtcSignalingChannel)[keyof typeof QRtcSignalingChannel];
 
 export const QRtcSignalingMsgType = {
-    Signal: 'Signal',
+    Signal: 'Signal'
 } as const;
 
 export type QRtcSignalingMsgType = (typeof QRtcSignalingMsgType)[keyof typeof QRtcSignalingMsgType];
@@ -39,10 +39,10 @@ export type QRtcSignalingTransportCallbacks = {
 };
 
 export type QRtcSignalingTransportInputDto = {
-    readonly callbacks: QRtcSignalingTransportCallbacks
-    readonly sessionId: string
-    readonly token: string
-}
+    readonly callbacks: QRtcSignalingTransportCallbacks;
+    readonly sessionId: string;
+    readonly token: string;
+};
 
 export interface QRtcSignalingSender {
     send(payload: QRtcSignalingMessage): Promise<void>;

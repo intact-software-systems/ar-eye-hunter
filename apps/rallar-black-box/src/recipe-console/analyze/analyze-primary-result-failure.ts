@@ -1,10 +1,9 @@
 import type {
     DistributedArtifactEvidenceFailureDetails,
     DistributedArtifactEvidenceIndex,
-    DistributedRunAnalysis,
+    DistributedRunAnalysis
 } from '@shared-test/rallar-bb-test/mod.ts';
-import { selectPrimaryDistributedArtifactResultFailure } from
-    '@shared-test/rallar-bb-test/mod.ts';
+import { selectPrimaryDistributedArtifactResultFailure } from '@shared-test/rallar-bb-test/mod.ts';
 
 export type AnalyzePrimaryResultFailure = Readonly<{
     evidenceId: string;
@@ -14,17 +13,17 @@ export type AnalyzePrimaryResultFailure = Readonly<{
 
 export function deriveAnalyzePrimaryResultFailure(
     analysis: DistributedRunAnalysis,
-    evidenceEntries: DistributedArtifactEvidenceIndex['entries'],
+    evidenceEntries: DistributedArtifactEvidenceIndex['entries']
 ): AnalyzePrimaryResultFailure | undefined {
     const entry = selectPrimaryDistributedArtifactResultFailure(
         evidenceEntries,
-        analysis.failure?.commandId,
+        analysis.failure?.commandId
     );
     return entry?.failureDetails
         ? {
-              evidenceId: entry.id,
-              sourceFile: entry.sourceFile,
-              failureDetails: entry.failureDetails,
-          }
+            evidenceId: entry.id,
+            sourceFile: entry.sourceFile,
+            failureDetails: entry.failureDetails
+        }
         : undefined;
 }

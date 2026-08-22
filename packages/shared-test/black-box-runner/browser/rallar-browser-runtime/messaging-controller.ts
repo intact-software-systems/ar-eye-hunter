@@ -7,7 +7,7 @@ import type {
     BlackBoxRallarSendDiagnostics,
     BlackBoxRallarSendInput,
     BlackBoxRallarTransport,
-    BlackBoxRallarWsSendDiagnostics,
+    BlackBoxRallarWsSendDiagnostics
 } from './contracts.ts';
 import type { BlackBoxRallarGenerationPort } from './ports.ts';
 
@@ -25,7 +25,7 @@ export type BlackBoxRallarMessagingResourceController = Readonly<{
 export type CreateBlackBoxRallarMessagingResourceControllerOptions = BlackBoxRallarGenerationPort;
 
 export function createBlackBoxRallarMessagingResourceController(
-    options: CreateBlackBoxRallarMessagingResourceControllerOptions,
+    options: CreateBlackBoxRallarMessagingResourceControllerOptions
 ): BlackBoxRallarMessagingResourceController {
     const wsSubscriptions = new Map<string, () => void>();
 
@@ -48,7 +48,7 @@ export function createBlackBoxRallarMessagingResourceController(
                 unsubscribe();
             }
             return subscriptions.length;
-        },
+        }
     };
 }
 
@@ -63,8 +63,9 @@ type ScopeDiagnostics = Readonly<{
     workspaceId?: string;
 }>;
 
-export type CreateBlackBoxRallarMessagingControllerOptions = BlackBoxRallarGenerationPort &
-    Readonly<{
+export type CreateBlackBoxRallarMessagingControllerOptions =
+    & BlackBoxRallarGenerationPort
+    & Readonly<{
         facade: MessagingFacade;
         requireConfig(): BlackBoxRallarConnectionConfig;
         transportOf(config: BlackBoxRallarConnectionConfig): BlackBoxRallarTransport;
@@ -101,7 +102,7 @@ function wsScopeValue(value: unknown): 'room' | 'world' | 'all' | undefined {
 }
 
 function maybeStringArray(value: unknown): readonly string[] | undefined {
-    return Array.isArray(value) && value.every(entry => typeof entry === 'string')
+    return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
         ? value
         : undefined;
 }
@@ -139,7 +140,7 @@ function normalizeMessagesRtcSendInput(input: BlackBoxRallarSendInput | unknown)
 
 function summarizeRealtimeSendResults(results: readonly RallarRealtimeSendResult[]): unknown {
     const statuses: Record<string, number> = {};
-    const attentionResults = results.filter(entry => {
+    const attentionResults = results.filter((entry) => {
         const status = entry.result.status;
         statuses[status] = (statuses[status] ?? 0) + 1;
         return status !== 'sent';
@@ -147,8 +148,8 @@ function summarizeRealtimeSendResults(results: readonly RallarRealtimeSendResult
     return {
         total: results.length,
         statuses,
-        peerIds: results.map(entry => entry.peerId),
-        attentionResults,
+        peerIds: results.map((entry) => entry.peerId),
+        attentionResults
     };
 }
 
@@ -157,14 +158,14 @@ function realtimeSendStatusCount(summary: any, status: string): number {
 }
 
 export function createBlackBoxRallarMessagingController(
-    options: CreateBlackBoxRallarMessagingControllerOptions,
+    options: CreateBlackBoxRallarMessagingControllerOptions
 ): BlackBoxRallarMessagingController {
     const resources = createBlackBoxRallarMessagingResourceController(options);
     const rallar = options.facade;
 
     const emitRealtimeSendOutcomeDiagnostics = (
         config: BlackBoxRallarConnectionConfig,
-        diagnostics: BlackBoxRallarSendDiagnostics,
+        diagnostics: BlackBoxRallarSendDiagnostics
     ): void => {
         const results = diagnostics.results ?? [];
         const summary = summarizeRealtimeSendResults(results);
@@ -174,7 +175,7 @@ export function createBlackBoxRallarMessagingController(
                 laneId: diagnostics.laneId,
                 peerIds: diagnostics.peerIds,
                 health: diagnostics.health,
-                summary,
+                summary
             });
         }
         if (realtimeSendStatusCount(summary, 'closed') > 0) {
@@ -183,7 +184,7 @@ export function createBlackBoxRallarMessagingController(
                 laneId: diagnostics.laneId,
                 peerIds: diagnostics.peerIds,
                 health: diagnostics.health,
-                summary,
+                summary
             });
         }
         if (
@@ -197,7 +198,7 @@ export function createBlackBoxRallarMessagingController(
                 laneId: diagnostics.laneId,
                 peerIds: diagnostics.peerIds,
                 health: diagnostics.health,
-                summary,
+                summary
             });
         }
     };
@@ -205,16 +206,15 @@ export function createBlackBoxRallarMessagingController(
     const sendRealtime = async (
         input: BlackBoxRallarSendInput | unknown,
         config: BlackBoxRallarConnectionConfig,
-        lease: BlackBoxRallarMessagingLease,
+        lease: BlackBoxRallarMessagingLease
     ): Promise<BlackBoxRallarSendDiagnostics> => {
         const normalized = normalizeSendInput(input);
-        const peerIds =
-            normalized.peerIds ??
+        const peerIds = normalized.peerIds ??
             (normalized.remotePeerId
                 ? [normalized.remotePeerId]
                 : config.remotePeerId
-                  ? [config.remotePeerId]
-                  : config.rallar.peerIds);
+                ? [config.remotePeerId]
+                : config.rallar.peerIds);
         const laneId = normalized.laneId ?? options.laneIdOf(config);
         const roomId = normalized.roomId ?? config.roomId;
         const roomRef = options.roomRefOf(config, normalized);
@@ -224,7 +224,7 @@ export function createBlackBoxRallarMessagingController(
             roomRef,
             ...options.scopeDiagnostics(config, normalized),
             laneId,
-            peerIds,
+            peerIds
         });
         const results = await rallar.realtime.sendJson({
             data,
@@ -234,7 +234,7 @@ export function createBlackBoxRallarMessagingController(
             peerIds,
             openTimeoutMs: normalized.openTimeoutMs ?? config.rallar.openTimeoutMs,
             key: normalized.key,
-            maxAgeMs: normalized.maxAgeMs,
+            maxAgeMs: normalized.maxAgeMs
         });
         resources.assertCurrent(lease, 'Rallar send completed after the runtime closed.');
         const diagnostics: BlackBoxRallarSendDiagnostics = {
@@ -247,7 +247,7 @@ export function createBlackBoxRallarMessagingController(
             laneId,
             peerIds,
             results,
-            health: options.readHealth(config),
+            health: options.readHealth(config)
         };
         emitRealtimeSendOutcomeDiagnostics(config, diagnostics);
         options.emitDiagnostic(config, 'rallar.browser.realtime.send_completed', diagnostics);
@@ -257,7 +257,7 @@ export function createBlackBoxRallarMessagingController(
     const sendMessagesRtc = async (
         input: BlackBoxRallarSendInput | unknown,
         config: BlackBoxRallarConnectionConfig,
-        lease: BlackBoxRallarMessagingLease,
+        lease: BlackBoxRallarMessagingLease
     ): Promise<BlackBoxRallarSendDiagnostics> => {
         const normalized = normalizeMessagesRtcSendInput(input);
         const typeId = normalized.typeId ?? options.typeIdOf(config);
@@ -267,10 +267,10 @@ export function createBlackBoxRallarMessagingController(
         const contextId = normalized.contextId ?? config.rallar.contextId;
         const resourceId = normalized.resourceId ?? config.rallar.resourceId;
         const minSnapshotVersion = options.toOptionalNumber(
-            normalized.minSnapshotVersion ?? config.rallar.minSnapshotVersion,
+            normalized.minSnapshotVersion ?? config.rallar.minSnapshotVersion
         );
-        const nextHopPeerIds =
-            normalized.nextHopPeerIds ?? normalized.peerIds ?? config.rallar.nextHopPeerIds ?? config.rallar.peerIds;
+        const nextHopPeerIds = normalized.nextHopPeerIds ?? normalized.peerIds ?? config.rallar.nextHopPeerIds ??
+            config.rallar.peerIds;
         const payload = 'payload' in normalized ? normalized.payload : normalized.data;
         options.emitDiagnostic(config, 'rallar.browser.messages.rtc.send_started', {
             roomId,
@@ -281,7 +281,7 @@ export function createBlackBoxRallarMessagingController(
             topicId,
             contextId,
             resourceId,
-            minSnapshotVersion,
+            minSnapshotVersion
         });
         const message = await rallar.messages.rtc.send({
             typeId,
@@ -302,7 +302,7 @@ export function createBlackBoxRallarMessagingController(
             orderingKey: normalized.orderingKey ?? config.rallar.orderingKey,
             nextHopPeerIds,
             overlayId: normalized.overlayId ?? config.rallar.overlayId,
-            fanoutLimit: normalized.fanoutLimit ?? config.rallar.fanoutLimit,
+            fanoutLimit: normalized.fanoutLimit ?? config.rallar.fanoutLimit
         } as any);
         resources.assertCurrent(lease, 'Rallar send completed after the runtime closed.');
         const diagnostics: BlackBoxRallarSendDiagnostics = {
@@ -319,7 +319,7 @@ export function createBlackBoxRallarMessagingController(
             resourceId,
             minSnapshotVersion,
             message,
-            health: options.readHealth(config),
+            health: options.readHealth(config)
         };
         options.emitDiagnostic(config, 'rallar.browser.messages.rtc.send_completed', diagnostics);
         return diagnostics;
@@ -328,12 +328,12 @@ export function createBlackBoxRallarMessagingController(
     const ensureWsMessageSubscription = (
         config: BlackBoxRallarConnectionConfig,
         typeId: string,
-        topicId?: string,
+        topicId?: string
     ): void => {
         resources.ensureWsSubscription(wsSelectorKey(typeId, topicId), () => {
             const unsubscribe = rallar.messages.ws.onMessage(
                 { typeId, ...(topicId ? { topicId } : {}) },
-                message => {
+                (message) => {
                     options.emit({
                         kind: 'message',
                         topic: 'rallar.browser.ws.message',
@@ -347,9 +347,9 @@ export function createBlackBoxRallarMessagingController(
                         topicId: message.topicId,
                         contextId: message.contextId,
                         resourceId: message.resourceId,
-                        data: message.payload,
+                        data: message.payload
                     });
-                },
+                }
             );
             options.emit({
                 kind: 'diagnostic',
@@ -360,14 +360,14 @@ export function createBlackBoxRallarMessagingController(
                 roomId: config.roomId,
                 ...options.scopeDiagnostics(config),
                 typeId,
-                topicId,
+                topicId
             });
             return unsubscribe;
         });
     };
 
     return {
-        send: async input => {
+        send: async (input) => {
             const config = options.requireConfig();
             const lease = resources.lease();
             resources.assertCurrent(lease, 'Rallar send completed after the runtime closed.');
@@ -375,14 +375,15 @@ export function createBlackBoxRallarMessagingController(
                 return options.transportOf(config) === 'messages.rtc'
                     ? await sendMessagesRtc(input, config, lease)
                     : await sendRealtime(input, config, lease);
-            } catch (error) {
+            }
+            catch (error) {
                 options.emitError(config, `rallar.browser.${options.transportOf(config)}.send_failed`, error, {
-                    transport: options.transportOf(config),
+                    transport: options.transportOf(config)
                 });
                 throw error;
             }
         },
-        sendWs: async input => {
+        sendWs: async (input) => {
             const config = options.requireConfig();
             const lease = resources.lease();
             resources.assertCurrent(lease, 'Rallar send completed after the runtime closed.');
@@ -391,8 +392,7 @@ export function createBlackBoxRallarMessagingController(
             const scope = wsScopeValue(normalized.scope) ?? (roomId ? 'room' : 'all');
             const scopedInput = { ...normalized, ...(roomId ? { roomId } : {}) } as BlackBoxRallarSendInput;
             const roomRef = roomId ? options.roomRefOf(config, scopedInput) : undefined;
-            const typeId =
-                stringValue(normalized.typeId) ??
+            const typeId = stringValue(normalized.typeId) ??
                 stringValue(normalized.topic) ??
                 stringValue(normalized.kind) ??
                 'rallar.black-box.ws.json';
@@ -400,9 +400,13 @@ export function createBlackBoxRallarMessagingController(
             const contextId = stringValue(normalized.contextId) ?? roomId ?? scope;
             const resourceId = stringValue(normalized.resourceId);
             const minSnapshotVersion = options.toOptionalNumber(
-                normalized.minSnapshotVersion ?? config.rallar.minSnapshotVersion,
+                normalized.minSnapshotVersion ?? config.rallar.minSnapshotVersion
             );
-            const payload = 'payload' in normalized ? normalized.payload : 'data' in normalized ? normalized.data : input;
+            const payload = 'payload' in normalized
+                ? normalized.payload
+                : 'data' in normalized
+                ? normalized.data
+                : input;
             ensureWsMessageSubscription(config, typeId, topicId);
             options.emit({
                 kind: 'diagnostic',
@@ -417,7 +421,7 @@ export function createBlackBoxRallarMessagingController(
                 topicId,
                 contextId,
                 resourceId,
-                data: { scope, minSnapshotVersion, wsStatus: options.wsStatus() },
+                data: { scope, minSnapshotVersion, wsStatus: options.wsStatus() }
             });
             try {
                 const result = await rallar.messages.ws.send({
@@ -435,7 +439,7 @@ export function createBlackBoxRallarMessagingController(
                     ttlMs: options.toOptionalNumber(normalized.ttlMs ?? config.rallar.ttlMs),
                     reliability: normalized.reliability ?? config.rallar.reliability,
                     ack: normalized.ack ?? config.rallar.ack,
-                    ownership: normalized.ownership ?? config.rallar.ownership,
+                    ownership: normalized.ownership ?? config.rallar.ownership
                 } as any);
                 resources.assertCurrent(lease, 'Rallar send completed after the runtime closed.');
                 const diagnostics: BlackBoxRallarWsSendDiagnostics = {
@@ -455,7 +459,7 @@ export function createBlackBoxRallarMessagingController(
                     message: payload,
                     result,
                     wsStatus: options.wsStatus(),
-                    rtcStatus: options.rtcStatus(config),
+                    rtcStatus: options.rtcStatus(config)
                 };
                 options.emit({
                     kind: 'diagnostic',
@@ -470,10 +474,11 @@ export function createBlackBoxRallarMessagingController(
                     topicId,
                     contextId,
                     resourceId,
-                    data: diagnostics,
+                    data: diagnostics
                 });
                 return diagnostics;
-            } catch (error) {
+            }
+            catch (error) {
                 options.emitError(config, 'rallar.browser.ws.send_failed', error, {
                     transport: 'ws',
                     roomId,
@@ -482,11 +487,11 @@ export function createBlackBoxRallarMessagingController(
                     topicId,
                     contextId,
                     resourceId,
-                    scope,
+                    scope
                 });
                 throw error;
             }
         },
-        cleanupWsSubscriptions: resources.cleanupWsSubscriptions,
+        cleanupWsSubscriptions: resources.cleanupWsSubscriptions
     };
 }

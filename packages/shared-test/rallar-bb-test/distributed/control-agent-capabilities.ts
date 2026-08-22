@@ -1,15 +1,15 @@
 // deno-lint-ignore-file no-explicit-any
 import { RALLAR_BLACK_BOX_ASSERT_OPERATORS } from '../assert/assert-value-operators.ts';
 import type {
-    RallarBlackBoxControlAgentCapabilities,
     RallarBlackBoxControlAgentAssertionsCapability,
+    RallarBlackBoxControlAgentCapabilities
 } from '../distributed-run.ts';
 import type {
     RallarBlackBoxTestAssertOperator,
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestConfig,
     RallarBlackBoxTestCrdtTransport,
-    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestRecipe
 } from '../types.ts';
 
 const CONTROL_AGENT_CRDT_TRANSPORTS = [
@@ -17,7 +17,7 @@ const CONTROL_AGENT_CRDT_TRANSPORTS = [
     'ws',
     'rtc',
     'ws-then-rtc',
-    'rtc-with-ws-fallback',
+    'rtc-with-ws-fallback'
 ] as const;
 
 const BASELINE_ASSERT_OPERATORS: readonly RallarBlackBoxTestAssertOperator[] = [
@@ -26,12 +26,12 @@ const BASELINE_ASSERT_OPERATORS: readonly RallarBlackBoxTestAssertOperator[] = [
     'contains',
     'exists',
     'gte',
-    'lte',
+    'lte'
 ];
 
-export const RALLAR_BLACK_BOX_EXTENDED_ASSERT_OPERATORS:
-    readonly RallarBlackBoxTestAssertOperator[] = RALLAR_BLACK_BOX_ASSERT_OPERATORS
-        .filter(operator => !BASELINE_ASSERT_OPERATORS.includes(operator));
+export const RALLAR_BLACK_BOX_EXTENDED_ASSERT_OPERATORS: readonly RallarBlackBoxTestAssertOperator[] =
+    RALLAR_BLACK_BOX_ASSERT_OPERATORS
+        .filter((operator) => !BASELINE_ASSERT_OPERATORS.includes(operator));
 
 export interface DistributedAssertionFeatures {
     readonly absence: boolean;
@@ -49,7 +49,7 @@ export interface ToControlAgentCapabilitiesInput {
 // evaluates absence waits, until loops, and the full operator set, so the
 // capability block mirrors the runtime feature set rather than configuration.
 export function toControlAgentCapabilities(
-    input: ToControlAgentCapabilitiesInput,
+    input: ToControlAgentCapabilitiesInput
 ): RallarBlackBoxControlAgentCapabilities {
     const crdtSupported = isCrdtCapableProvider(input.providerMode) ||
         hasCrdtRuntimeHints(input.config);
@@ -58,18 +58,18 @@ export function toControlAgentCapabilities(
             supported: crdtSupported,
             transports: crdtSupported ? CONTROL_AGENT_CRDT_TRANSPORTS : [],
             runtimeSurface: input.providerMode,
-            apiBaseUrlConfigured: Boolean(input.apiBaseUrl),
+            apiBaseUrlConfigured: Boolean(input.apiBaseUrl)
         },
         assertions: {
             absence: true,
             untilLoop: true,
-            operators: RALLAR_BLACK_BOX_ASSERT_OPERATORS,
-        },
+            operators: RALLAR_BLACK_BOX_ASSERT_OPERATORS
+        }
     };
 }
 
 export function parseControlAgentCapabilities(
-    value: any,
+    value: any
 ): RallarBlackBoxControlAgentCapabilities | undefined {
     if (!isRecord(value)) {
         return undefined;
@@ -94,14 +94,14 @@ export function parseControlAgentCapabilities(
             runtimeSurface: optionalString(crdt.runtimeSurface),
             apiBaseUrlConfigured: typeof crdt.apiBaseUrlConfigured === 'boolean'
                 ? crdt.apiBaseUrlConfigured
-                : undefined,
+                : undefined
         },
-        ...(assertions ? { assertions } : {}),
+        ...(assertions ? { assertions } : {})
     };
 }
 
 export function collectDistributedAssertionFeatures(
-    recipes: readonly RallarBlackBoxTestRecipe[],
+    recipes: readonly RallarBlackBoxTestRecipe[]
 ): DistributedAssertionFeatures {
     let absence = false;
     let untilLoop = false;
@@ -118,7 +118,7 @@ export function collectDistributedAssertionFeatures(
             command.commands.forEach(visit);
         }
         if (command.kind === 'parallel') {
-            command.groups.forEach(group => group.commands.forEach(visit));
+            command.groups.forEach((group) => group.commands.forEach(visit));
         }
         if (
             command.kind === 'assert' &&
@@ -130,18 +130,18 @@ export function collectDistributedAssertionFeatures(
             command.recipe.commands.forEach(visit);
         }
     };
-    recipes.forEach(recipe => recipe.commands.forEach(visit));
+    recipes.forEach((recipe) => recipe.commands.forEach(visit));
 
     return {
         absence,
         untilLoop,
-        operators: [...operators].sort(),
+        operators: [...operators].sort()
     };
 }
 
 export function validateAgentAssertionCapability(
     features: DistributedAssertionFeatures,
-    capabilities: RallarBlackBoxControlAgentCapabilities | undefined,
+    capabilities: RallarBlackBoxControlAgentCapabilities | undefined
 ): string | undefined {
     const missing: string[] = [];
     const assertions = capabilities?.assertions;
@@ -153,7 +153,7 @@ export function validateAgentAssertionCapability(
     }
     const advertisedOperators = assertions?.operators ?? [];
     const missingOperators = features.operators
-        .filter(operator => !advertisedOperators.includes(operator));
+        .filter((operator) => !advertisedOperators.includes(operator));
     if (missingOperators.length > 0) {
         missing.push(`assert operators: ${missingOperators.join(', ')}`);
     }
@@ -164,7 +164,7 @@ export function validateAgentAssertionCapability(
 }
 
 function parseAssertionsCapability(
-    value: any,
+    value: any
 ): RallarBlackBoxControlAgentAssertionsCapability | undefined {
     if (!isRecord(value)) {
         return undefined;
@@ -182,7 +182,7 @@ function parseAssertionsCapability(
     return {
         absence: value.absence,
         untilLoop: value.untilLoop,
-        operators,
+        operators
     };
 }
 
@@ -198,7 +198,7 @@ function hasCrdtRuntimeHints(config: RallarBlackBoxTestConfig | undefined): bool
     return Boolean(
         rallar.crdt === true ||
             typeof rallar.crdtTransport === 'string' ||
-            rallar.crdtRuntime === true,
+            rallar.crdtRuntime === true
     );
 }
 

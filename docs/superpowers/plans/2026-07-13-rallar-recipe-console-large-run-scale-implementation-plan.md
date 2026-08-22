@@ -80,25 +80,25 @@ justifies that accessibility cost.
 ## Task 0: Freeze Baseline, Harness, Budgets, And Ownership
 
 - [x] Add a deterministic synthetic large distributed-artifact fixture and a
-  read-only root `scripts/perf/rallar-recipe-console-scale-bench.ts` harness.
+      read-only root `scripts/perf/rallar-recipe-console-scale-bench.ts` harness.
 - [x] Assert fixture byte size explicitly: every file <=16 MiB and aggregate
-  <=48 MiB under the existing intake contract.
+      <=48 MiB under the existing intake contract.
 - [x] Record warm-up plus five-run 500/2,000/15,000-row baseline measurements:
-  model/search duration, pipeline/file/row parse counters, heap delta, and
-  source/index/match counts.
+      model/search duration, pipeline/file/row parse counters, heap delta, and
+      source/index/match counts.
 - [x] Persist commit, runtime, fixture bytes, flags, warm-up/run count, per-run
-  samples, median, and approximate p95/max under `tmp/perf/results/**`. Invoke
-  Node with `--expose-gc --import tsx` whenever heap delta is recorded.
+      samples, median, and approximate p95/max under `tmp/perf/results/**`. Invoke
+      Node with `--expose-gc --import tsx` whenever heap delta is recorded.
 - [x] After the harness-only commit and before algorithm changes, run the fenced
-  benchmark command with `--out=tmp/perf/results/iteration-9-base.json`; run the
-  identical flags at Task 8 with `iteration-9-candidate.json`.
+      benchmark command with `--out=tmp/perf/results/iteration-9-base.json`; run the
+      identical flags at Task 8 with `iteration-9-candidate.json`.
 - [x] Record 5,000 run-pair and 2,000-command Tune baselines, including global
-  selection work, projected rows/options, mounted DOM, and heartbeat progress.
+      selection work, projected rows/options, mounted DOM, and heartbeat progress.
 - [x] RED-prove safe extrema with a portable 200,000-value correctness case,
-  late evidence beyond the retained index is unsearchable, and current Monitor
-  and History prefixes are not browseable.
+      late evidence beyond the retained index is unsearchable, and current Monitor
+      and History prefixes are not browseable.
 - [x] Capture the existing focused unit/app/browser/build/chunk baseline and
-  exact configured-live skip/pass state.
+      exact configured-live skip/pass state.
 
 ### Task 0 checkpoint — `166b40b`
 
@@ -155,21 +155,21 @@ Important issue.
 ## Task 1: Add One Parsed Artifact Pipeline And Safe Linear Primitives
 
 - [x] Add an additive parsed distributed-artifact representation under
-  `packages/shared-test/rallar-bb-test/**`; reuse it for compatibility,
-  snapshots, analysis, monitor/report, and evidence derivation.
+      `packages/shared-test/rallar-bb-test/**`; reuse it for compatibility,
+      snapshots, analysis, monitor/report, and evidence derivation.
 - [x] Preserve existing public functions as delegating compatibility surfaces.
 - [x] Replace externally sized spread extrema with single-pass reducers.
 - [x] Replace quadratic stream-sample equivalence scans with deterministic
-  keyed buckets while preserving precedence and collision behavior.
+      keyed buckets while preserving precedence and collision behavior.
 - [x] Reuse one derived Monitor/report where current pipelines recompute it.
 - [x] GREEN shared tests for exact old behavior, one source-file pass and at
-  most one `JSON.parse` per JSON document/nonempty JSONL record in the new
-  pipeline, 200k-value safety, stable output, and linear-work counters.
+      most one `JSON.parse` per JSON document/nonempty JSONL record in the new
+      pipeline, 200k-value safety, stable output, and linear-work counters.
 - [x] Telemetry distinguishes `pipelinePassCount`, JSON document parses, JSONL
-  file passes, and nonempty JSONL row parses; no aggregate "parse count" may
-  conceal repeated source scans.
+      file passes, and nonempty JSONL row parses; no aggregate "parse count" may
+      conceal repeated source scans.
 - [x] Measure the same harness before/after; accept only with correctness green
-  and no material regression in the target large workload.
+      and no material regression in the target large workload.
 
 Task 1 safe primitives are green through `31a7779` and `a357e27`. The public
 200,000-value artifact performance case and 200,000-command preflight case are
@@ -226,14 +226,14 @@ focused 28-test analysis suite and shared TypeScript/Deno checks pass.
 ## Task 2: Add Deterministic Cursor/Window And Compaction Contracts
 
 - [x] Add opaque artifact/model/query-bound cursor and explicit window types in
-  shared-test. Reject stale, foreign, malformed, and tampered cursors.
+      shared-test. Reject stale, foreign, malformed, and tampered cursors.
 - [x] Traverse retained evidence in stable source/order semantics with no gaps
-  or duplicates; filter changes reset the cursor.
+      or duplicates; filter changes reset the cursor.
 - [x] Keep current search API unchanged and add a full retained-catalog search
-  window API with an explicit hard bound and exact upstream omission truth.
+      window API with an explicit hard bound and exact upstream omission truth.
 - [x] GREEN shared tests for first/middle/last needles, exact totals, all cursor
-  boundaries, the 20,000-entry ceiling/retention policy, three distinct
-  omission classes, and standalone generic handoff.
+      boundaries, the 20,000-entry ceiling/retention policy, three distinct
+      omission classes, and standalone generic handoff.
 
 Task 2 is green through `4e89a17`. The additive catalog retains at most 20,000
 entries with primary-failure/latest-diagnostic anchors and stable newest-row
@@ -267,43 +267,43 @@ four Important RED/GREEN fixes; final re-review is clean.
 ## Task 3: Move Analyze Derivation And Search Off The Blocking Main Thread
 
 - [x] Add a focused `src/recipe-console/analyze/**` lifetime worker and typed
-  request/response adapter; keep it lazy to Analyze import/load and absent from
-  the eager shell.
+      request/response adapter; keep it lazy to Analyze import/load and absent from
+      the eager shell.
 - [x] Keep raw/parsed files, the full evidence catalog, search haystacks, and
-  cursor execution worker-owned. The main thread receives only compact summary,
-  analysis/quality/performance projections, the current <=64-row window, and
-  the selected evidence projection—not duplicate artifact strings/snapshots.
+      cursor execution worker-owned. The main thread receives only compact summary,
+      analysis/quality/performance projections, the current <=64-row window, and
+      the selected evidence projection—not duplicate artifact strings/snapshots.
 - [x] Export/reimport bytes on demand through a Blob or transferable buffer;
-  never structured-clone accepted 48 MiB strings back and forth per operation.
+      never structured-clone accepted 48 MiB strings back and forth per operation.
 - [x] Separate in-flight candidate and accepted artifact lifetimes. Abort/
-  terminate a candidate on authority loss; keep the accepted worker across
-  Analyze→Tune and ordinary view/context changes until Clear, replacement,
-  Recipe Console unmount, crash, or explicit disposal.
+      terminate a candidate on authority loss; keep the accepted worker across
+      Analyze→Tune and ordinary view/context changes until Clear, replacement,
+      Recipe Console unmount, crash, or explicit disposal.
 - [x] Retain one exportable Blob/transferable envelope outside the worker so
-  accepted export remains available without a second Control request even if
-  the worker fails. Handle `error`, `messageerror`, and unexpected exit with
-  last-usable bounded projection truth.
+      accepted export remains available without a second Control request even if
+      the worker fails. Handle `error`, `messageerror`, and unexpected exit with
+      last-usable bounded projection truth.
 - [x] Reuse existing operation authority: validate Control identity before
-  accepting the candidate and patch the URL only after accepted completion.
+      accepting the candidate and patch the URL only after accepted completion.
 - [x] Expose an on-demand bounded Tune facade containing manifest, focused/
-  compared-run truth, tuning inventory/candidate inputs, and received-message
-  deltas without raw event/result arrays.
+      compared-run truth, tuning inventory/candidate inputs, and received-message
+      deltas without raw event/result arrays.
 - [x] Return only bounded clone-safe projections plus numeric telemetry. Errors
-  cross a typed secret-free boundary.
+      cross a typed secret-free boundary.
 - [x] Emit local performance measures for parse/model/search and DOM attributes
-  for source/index/match/mounted/render counts.
+      for source/index/match/mounted/render counts.
 - [x] Make responsiveness deterministic: worker posts `accepted`; adapter paints
-  pending on the next rAF; only then it sends `start`. Assert protocol order
-  `accepted → pending-painted/start → complete`. Use a controllable fake to
-  prove input/navigation during held search/window replies; real-browser proof
-  asserts the actual worker asset/request.
+      pending on the next rAF; only then it sends `start`. Assert protocol order
+      `accepted → pending-painted/start → complete`. Use a controllable fake to
+      prove input/navigation during held search/window replies; real-browser proof
+      asserts the actual worker asset/request.
 - [x] Give build/search/window requests monotonically generated authority.
-  Query A→B and window N→N+1 must suppress late A/N responses, selection, and
-  telemetry.
+      Query A→B and window N→N+1 must suppress late A/N responses, selection, and
+      telemetry.
 - [x] GREEN Analyze→Tune→Analyze, compare/candidate, export-after-navigation,
-  candidate rejection, worker crash/disposal, and stale search/window tests.
-  Telemetry is finite, exact, token/payload-free, non-persistent, and clears/
-  bounds performance entries so they cannot grow per search.
+      candidate rejection, worker crash/disposal, and stale search/window tests.
+      Telemetry is finite, exact, token/payload-free, non-persistent, and clears/
+      bounds performance entries so they cannot grow per search.
 
 Task 3 is green through `77b0922`. Analyze now lazy-loads a focused worker only
 after artifact import/load, paints accepted pending state before `start`, keeps
@@ -334,14 +334,14 @@ or cutover status changed.
 ## Task 4: Add Reusable Accessible Window Controls
 
 - [x] Add bounded UI/model owners under `src/recipe-console/ui/**`; do not grow
-  a global registry or stylesheet.
+      a global registry or stylesheet.
 - [x] Render native list/table children for one explicit range with
-  Previous/Next, range/total, disabled boundaries, aria-live announcements,
-  and deterministic reset on fingerprint change.
+      Previous/Next, range/total, disabled boundaries, aria-live announcements,
+      and deterministic reset on fingerprint change.
 - [x] Preserve focus when the active row stays in range; return focus to the
-  range control when a row leaves the mounted window.
+      range control when a row leaves the mounted window.
 - [x] Meet 44px touch targets, reduced motion, RTL/bidi-safe exact identifiers,
-  short-landscape containment, and keyboard operation.
+      short-landscape containment, and keyboard operation.
 - [x] GREEN focused model/component tests before composing feature UI.
 
 The behavior-neutral reusable primitive is green through `bbf2385`: a pure
@@ -358,16 +358,16 @@ here.
 ## Task 5: Window Analyze Search Without Losing Late Evidence
 
 - [x] Compose shared full-catalog search windows in Analyze while preserving
-  v1 URL filters and existing inspector selection semantics.
+      v1 URL filters and existing inspector selection semantics.
 - [x] Find exact last-event and last-result needles beyond the former 500-entry
-  cap and browse every retained match with at most 64 mounted rows.
+      cap and browse every retained match with at most 64 mounted rows.
 - [x] Display producer-compacted, index-omitted, matching, and render-window
-  states separately. Analyze says producer compaction is unavailable; never
-  synthesize it from the 20,000-entry catalog cap or label omissions searchable.
+      states separately. Analyze says producer compaction is unavailable; never
+      synthesize it from the 20,000-entry catalog cap or label omissions searchable.
 - [x] Keep result selection, inspector focus, local/control import, export/
-  reimport, and legacy Shared Test handoff operational.
+      reimport, and legacy Shared Test handoff operational.
 - [x] GREEN unit plus real-browser tests for search, cursor reset, focus,
-  telemetry, offline/error/partial/future-schema states, and CSS isolation.
+      telemetry, offline/error/partial/future-schema states, and CSS isolation.
 
 Tasks 4–5 are green through `6d90061`. Analyze composes the shared full-catalog
 cursor contract into one native `<ol>` with at most 64 mounted rows, exact
@@ -409,21 +409,21 @@ row, mount policy, deep link, rollback URL, default, or cutover changed.
 ## Task 6: Replace Monitor Prefix Caps With Browseable Windows
 
 - [x] Reuse one indexed Monitor/report/verdict derivation per snapshot and avoid
-  repeated per-agent/per-recipe scans where proven by counters.
+      repeated per-agent/per-recipe scans where proven by counters.
 - [x] Add reusable run-by-control/agent/command indexes for the always-on root
-  control selection path; unchanged five-second polls must not repeat expensive
-  global board/options work.
+      control selection path; unchanged five-second polls must not repeat expensive
+      global board/options work.
 - [x] Retain Analyze artifacts across views without sorting/filtering all run
-  selector options while Analyze is inactive.
+      selector options while Analyze is inactive.
 - [x] Window events, timeline, composite results, diagnostics, failures,
-  participant matrix, and recipe/readiness tables only where collections can
-  exceed their existing visible bounds.
+      participant matrix, and recipe/readiness tables only where collections can
+      exceed their existing visible bounds.
 - [x] Preserve failure-first order, selected evidence/inspector links,
-  current/last-known truth, polling/action authority, and exact omission truth.
+      current/last-known truth, polling/action authority, and exact omission truth.
 - [x] GREEN tests that late events/results/agents are reachable, filters reset
-  the correct window, no section mounts beyond its budget, and polling does not
-  repeat unchanged expensive derivation. Include exact global-selection and
-  inactive-Analyze work counters under 5,000 run pairs.
+      the correct window, no section mounts beyond its budget, and polling does not
+      repeat unchanged expensive derivation. Include exact global-selection and
+      inactive-Analyze work counters under 5,000 run pairs.
 
 Task 6 is green through `0b260ec`, `a258a9e`, `bbb2548`, `ef78e75`, and the
 composed code milestone `8c630fc`. Monitor/report/verdict share one linear
@@ -510,64 +510,64 @@ row was hidden.
 ## Task 7: Window History, Retention Consequences, And Proven Pressure Lists
 
 - [x] Replace History's first-100 dead end with a 5,000-row deterministic
-  window while preserving full-set counts, quarantine, Baseline/Candidate,
-  saved filters, copied URLs, and cleanup reconciliation.
+      window while preserving full-set counts, quarantine, Baseline/Candidate,
+      saved filters, copied URLs, and cleanup reconciliation.
 - [x] Slice the History window before per-row label projection, Tune catalog/
-  quarantine work, connected-agent scans, and action projection. Assert the
-  expensive projected-row counter never exceeds the active window budget.
+      quarantine work, connected-agent scans, and action projection. Assert the
+      expensive projected-row counter never exceeds the active window budget.
 - [x] Bound retention candidate/linked/global-ID DOM with explicit windows;
-  exact server consequences and confirmation fingerprints remain unchanged.
+      exact server consequences and confirmation fingerprints remain unchanged.
 - [x] Profile and then window the proven 2,000-command Tune maximum, unbounded
-  run selectors, and target collections to <=100 mounted options/rows while
-  preserving catalog/selection semantics and event-loop heartbeat progress.
+      run selectors, and target collections to <=100 mounted options/rows while
+      preserving catalog/selection semantics and event-loop heartbeat progress.
 - [x] Replace pressure-path native selects with an accessible searchable
-  combobox/listbox window; native `<select>` children are not silently sliced.
-  Build only cheap run identity indexes globally and derive Tune performance
-  for the focused/compared pair, never every 5,000-run catalog entry.
+      combobox/listbox window; native `<select>` children are not silently sliced.
+      Build only cheap run identity indexes globally and derive Tune performance
+      for the focused/compared pair, never every 5,000-run catalog entry.
 - [x] Present existing generic `artifact-index.json` compaction/truncation in
-  `src/legacy/runner/shared-test/**` only; keep the generic handoff, identity,
-  parsing, rollback route, and mount policy unchanged.
+      `src/legacy/runner/shared-test/**` only; keep the generic handoff, identity,
+      parsing, rollback route, and mount policy unchanged.
 - [x] GREEN `recipe-console-shared-test-compaction.test.ts` and exact browser
-  `recipe-console-legacy-shared-test-compaction.spec.ts` — `shows bounded
+      `recipe-console-legacy-shared-test-compaction.spec.ts` — `shows bounded
   generic artifact compaction without changing the Shared Test fallback`.
 - [x] GREEN component/browser tests for last-window reachability, long exact IDs,
-  keyboard/touch/focus, dialog safety, and no destructive-request regression.
+      keyboard/touch/focus, dialog safety, and no destructive-request regression.
 
 ## Task 8: Canonical Production Scale Acceptance And Profiling
 
 - [x] GREEN exact Ready-State #10 title against production port 4176.
 - [x] Assert 15,000 source rows, exact late needles, <=64 mounted Analyze rows,
-  5,000 History pairs, <=80 mounted History rows, finite telemetry, one parsed
-  representation with exact file/record counters, responsive search/window
-  actions, and no document overflow.
+      5,000 History pairs, <=80 mounted History rows, finite telemetry, one parsed
+      representation with exact file/record counters, responsive search/window
+      actions, and no document overflow.
 - [x] Assert <=100 mounted options/rows for 2,000-command Tune, run selectors,
-  targets, Monitor pressure lists, and retention consequences; assert bounded
-  global-selection/Tune-derivation and History-projection work counters plus
-  heartbeat progress. Traverse first/middle/last evidence inside the exact test.
+      targets, Monitor pressure lists, and retention consequences; assert bounded
+      global-selection/Tune-derivation and History-projection work counters plus
+      heartbeat progress. Traverse first/middle/last evidence inside the exact test.
 - [x] Exercise desktop 1440x900, tablet 900x900, portrait 430x932, landscape
-  932x430, keyboard, touch, reduced motion, operational states, both CSS load
-  orders, lazy chunks, and unmount cleanup.
+      932x430, keyboard, touch, reduced motion, operational states, both CSS load
+      orders, lazy chunks, and unmount cleanup.
 - [x] Record five-run candidate measurements and compare model/search median,
-  approximate p95-max, and heap/count signals to Task 0 without turning
-  machine-dependent milliseconds into CI gates. Browser responsiveness is the
-  deterministic accepted→paint→start/held-RPC protocol gate, not a synthetic
-  long-task before/after claim.
+      approximate p95-max, and heap/count signals to Task 0 without turning
+      machine-dependent milliseconds into CI gates. Browser responsiveness is the
+      deterministic accepted→paint→start/held-RPC protocol gate, not a synthetic
+      long-task before/after claim.
 - [x] Record Canvas as deferred with measured reason unless the profile shows
-  a real dense-DOM bottleneck requiring a separate accessible design.
+      a real dense-DOM bottleneck requiring a separate accessible design.
 
 ## Task 9: Reviews, Fresh Exit, Documentation, And Milestone Commits
 
 - [x] Dispatch independent shared-algorithm/performance, worker/state,
-  UI/accessibility/browser, and strangler/cutover reviews; RED/GREEN every
-  Critical or Important finding.
+      UI/accessibility/browser, and strangler/cutover reviews; RED/GREEN every
+      Critical or Important finding.
 - [x] Run focused shared/app tests, complete app suite, shared/app TypeScript and
-  Deno checks, build/chunk assertion, complete Recipe Console config, exact
-  legacy navigation/ticket pair, and control-server tests if touched.
+      Deno checks, build/chunk assertion, complete Recipe Console config, exact
+      legacy navigation/ticket pair, and control-server tests if touched.
 - [x] Try the in-app Browser and record exact availability; report configured
-  live/Postgres tests as skipped with the exact reason when unavailable.
+      live/Postgres tests as skipped with the exact reason when unavailable.
 - [x] Update this plan, parent ledger/risks, product spec, migration register,
-  and fidelity ledger with commits, counts, measurements, proof, skips,
-  unchanged rollback/cutover status, and remaining Iterations 10–12 risks.
+      and fidelity ledger with commits, counts, measurements, proof, skips,
+      unchanged rollback/cutover status, and remaining Iterations 10–12 risks.
 - [x] Make cohesive local green milestone commits. Do not push or open a PR.
 
 ### Tasks 7–8 and canonical scale exit — `58070bf` through `796fa59`

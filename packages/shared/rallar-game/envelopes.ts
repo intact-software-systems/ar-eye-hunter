@@ -6,27 +6,25 @@ import type {
     RallarGameAuthorityKind,
     RallarGameAuthoritySequenceAcceptConstraints,
     RallarGameAuthoritySequenceAcceptResult,
-    RallarGameAuthoritySequenceTracker,
+    RallarGameAuthoritySequenceTracker
 } from './types.ts';
 
-const RALLAR_GAME_AUTHORITY_ENVELOPE_KINDS = new Set<
-    RallarGameAuthorityEnvelopeKind
->([
+const RALLAR_GAME_AUTHORITY_ENVELOPE_KINDS = new Set<RallarGameAuthorityEnvelopeKind>([
     'command',
     'command-result',
     'event',
     'snapshot',
     'sync-request',
-    'presence',
+    'presence'
 ]);
 
 const RALLAR_GAME_AUTHORITY_KINDS = new Set<RallarGameAuthorityKind>([
     'server',
-    'browser-director',
+    'browser-director'
 ]);
 
 export function createRallarGameAuthorityEnvelope<T>(
-    input: RallarGameAuthorityEnvelopeCreateInput<T>,
+    input: RallarGameAuthorityEnvelopeCreateInput<T>
 ): RallarGameAuthorityEnvelope<T> {
     return {
         protocol: input.protocol,
@@ -36,13 +34,13 @@ export function createRallarGameAuthorityEnvelope<T>(
         seq: input.seq,
         sentAtEpochMs: input.sentAtEpochMs ?? Date.now(),
         authority: input.authority,
-        payload: input.payload,
+        payload: input.payload
     };
 }
 
 export function isRallarGameAuthorityEnvelope(
     value: unknown,
-    protocol: string,
+    protocol: string
 ): value is RallarGameAuthorityEnvelope<unknown> {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         return false;
@@ -52,7 +50,7 @@ export function isRallarGameAuthorityEnvelope(
     return envelope.protocol === protocol &&
         typeof envelope.kind === 'string' &&
         RALLAR_GAME_AUTHORITY_ENVELOPE_KINDS.has(
-            envelope.kind as RallarGameAuthorityEnvelopeKind,
+            envelope.kind as RallarGameAuthorityEnvelopeKind
         ) &&
         typeof envelope.roomId === 'string' &&
         envelope.roomId.length > 0 &&
@@ -73,14 +71,14 @@ export function createRallarGameAuthoritySequenceTracker(): RallarGameAuthorityS
     return {
         accept(
             envelope: RallarGameAuthorityEnvelope<unknown>,
-            constraints: RallarGameAuthoritySequenceAcceptConstraints = {},
+            constraints: RallarGameAuthoritySequenceAcceptConstraints = {}
         ): RallarGameAuthoritySequenceAcceptResult {
             const rejected = rejectByConstraints(envelope, constraints);
             if (rejected) {
                 return {
                     accepted: false,
                     reason: rejected,
-                    envelope,
+                    envelope
                 };
             }
 
@@ -91,7 +89,7 @@ export function createRallarGameAuthoritySequenceTracker(): RallarGameAuthorityS
                     return {
                         accepted: false,
                         reason: 'duplicate-sequence',
-                        envelope,
+                        envelope
                     };
                 }
 
@@ -99,7 +97,7 @@ export function createRallarGameAuthoritySequenceTracker(): RallarGameAuthorityS
                     return {
                         accepted: false,
                         reason: 'stale-sequence',
-                        envelope,
+                        envelope
                     };
                 }
             }
@@ -112,7 +110,7 @@ export function createRallarGameAuthoritySequenceTracker(): RallarGameAuthorityS
         },
         reset(): void {
             lastSeqByKey.clear();
-        },
+        }
     };
 }
 
@@ -137,7 +135,7 @@ function isRallarGameAuthorityRef(value: unknown): boolean {
 
 function rejectByConstraints(
     envelope: RallarGameAuthorityEnvelope<unknown>,
-    constraints: RallarGameAuthoritySequenceAcceptConstraints,
+    constraints: RallarGameAuthoritySequenceAcceptConstraints
 ): RallarGameAuthorityEnvelopeRejectReason | undefined {
     if (constraints.protocol && envelope.protocol !== constraints.protocol) {
         return 'wrong-protocol';
@@ -177,10 +175,7 @@ function rejectByConstraints(
 }
 
 function sequenceKey(
-    envelope: Pick<
-        RallarGameAuthorityEnvelope<unknown>,
-        'roomId' | 'authority' | 'senderId' | 'kind'
-    >,
+    envelope: Pick<RallarGameAuthorityEnvelope<unknown>, 'roomId' | 'authority' | 'senderId' | 'kind'>
 ): string {
     return [
         envelope.roomId,
@@ -188,6 +183,6 @@ function sequenceKey(
         envelope.authority.id,
         envelope.authority.epoch,
         envelope.senderId,
-        envelope.kind,
+        envelope.kind
     ].join('\u001f');
 }

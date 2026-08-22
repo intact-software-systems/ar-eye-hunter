@@ -1,16 +1,16 @@
 import type {
     DistributedArtifactEvidenceCatalog,
-    DistributedArtifactEvidenceWindow,
+    DistributedArtifactEvidenceWindow
 } from '@shared-test/rallar-bb-test/mod.ts';
 import {
     AnalyzeArtifactModelError,
     prepareAnalyzeArtifactModel,
-    type AnalyzeArtifactModel,
+    type AnalyzeArtifactModel
 } from './analyze-artifact-model.ts';
 import {
     ANALYZE_WORKER_EVIDENCE_WINDOW_SIZE,
     type AnalyzeWorkerErrorProjection,
-    type AnalyzeWorkerTelemetry,
+    type AnalyzeWorkerTelemetry
 } from './analyze-worker-contract.ts';
 
 export type AnalyzeWorkerActiveModel = Readonly<{
@@ -28,7 +28,7 @@ export class AnalyzeControlEnvelopeIdentityError extends Error {}
 export function analyzeWorkerTelemetry(
     active: AnalyzeWorkerActiveModel,
     window: DistributedArtifactEvidenceWindow | undefined,
-    durationMs: number,
+    durationMs: number
 ): AnalyzeWorkerTelemetry {
     return {
         durationMs,
@@ -36,8 +36,7 @@ export function analyzeWorkerTelemetry(
         sourceFileCount: active.sourceFileCount,
         sourceBytes: active.sourceBytes,
         pipelinePassCount: active.pipelineTelemetry.pipelinePassCount,
-        sourceCollectionPassCount:
-            active.pipelineTelemetry.sourceCollectionPassCount,
+        sourceCollectionPassCount: active.pipelineTelemetry.sourceCollectionPassCount,
         sourceFileVisitCount: active.pipelineTelemetry.sourceFileVisitCount,
         documentParseCount: active.pipelineTelemetry.jsonDocumentParseCount,
         jsonlFilePassCount: active.pipelineTelemetry.jsonlFilePassCount,
@@ -48,8 +47,8 @@ export function analyzeWorkerTelemetry(
         matchedEntryCount: window?.counts.retainedMatches ?? 0,
         projectedEntryCount: Math.min(
             window?.entries.length ?? 0,
-            ANALYZE_WORKER_EVIDENCE_WINDOW_SIZE,
-        ),
+            ANALYZE_WORKER_EVIDENCE_WINDOW_SIZE
+        )
     };
 }
 
@@ -59,7 +58,7 @@ export function analyzeWorkerDuration(endedAt: number, startedAt: number): numbe
 }
 
 export function analyzeWorkerModelError(
-    error: unknown,
+    error: unknown
 ): AnalyzeWorkerErrorProjection {
     if (error instanceof AnalyzeControlEnvelopeIdentityError) {
         return { code: 'identity-mismatch', stage: 'model', recoverable: true };
@@ -72,7 +71,7 @@ export function analyzeWorkerModelError(
                 ? 'unusable-artifact'
                 : 'invalid-artifact',
             stage: 'model',
-            recoverable: true,
+            recoverable: true
         };
     }
     return { code: 'invalid-artifact', stage: 'parse', recoverable: true };

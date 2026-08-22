@@ -1,9 +1,5 @@
-import type {
-    RallarAiJsonResult,
-    RallarAiJsonSource,
-    RallarAiResultLifecycleState,
-} from './rallar-ai-types.ts';
 import { getRallarAiResultDedupeId } from './rallar-ai-proposals.ts';
+import type { RallarAiJsonResult, RallarAiJsonSource, RallarAiResultLifecycleState } from './rallar-ai-types.ts';
 
 export type RallarAiReplayEnvelopeSummary = Readonly<{
     generationId: string;
@@ -34,7 +30,7 @@ export type RallarAiReplayLogSummary = Readonly<{
 }>;
 
 export function summarizeRallarAiReplayEnvelope(
-    result: RallarAiJsonResult,
+    result: RallarAiJsonResult
 ): RallarAiReplayEnvelopeSummary {
     return {
         generationId: result.generationId,
@@ -50,12 +46,12 @@ export function summarizeRallarAiReplayEnvelope(
         validationOk: result.validation.ok,
         createdAtEpochMs: result.createdAtEpochMs,
         baseStateRevision: result.baseStateRevision,
-        supersedesGenerationId: result.supersedesGenerationId,
+        supersedesGenerationId: result.supersedesGenerationId
     };
 }
 
 export function summarizeRallarAiReplayLog(
-    results: readonly RallarAiJsonResult[],
+    results: readonly RallarAiJsonResult[]
 ): RallarAiReplayLogSummary {
     const entries = results.map(summarizeRallarAiReplayEnvelope);
     const seen = new Set<string>();
@@ -76,6 +72,6 @@ export function summarizeRallarAiReplayLog(
             .length,
         validationFailed: entries.filter((entry) => !entry.validationOk).length,
         duplicateDedupeIds: Array.from(duplicates).sort(),
-        entries,
+        entries
     };
 }

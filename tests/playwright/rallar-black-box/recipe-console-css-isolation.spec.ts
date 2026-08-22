@@ -1,18 +1,11 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
-import {
-    FLEET_ROUTE,
-    installRecipeConsoleFleetFixture,
-} from './recipe-console-fleet-fixture.ts';
-import {
-    installRecipeConsoleMonitorFixture,
-    MONITOR_ROUTE,
-} from './recipe-console-monitor-fixture.ts';
+import { FLEET_ROUTE, installRecipeConsoleFleetFixture } from './recipe-console-fleet-fixture.ts';
+import { installRecipeConsoleMonitorFixture, MONITOR_ROUTE } from './recipe-console-monitor-fixture.ts';
 import { installRecipeConsoleTuneFixture } from './recipe-console-tune-fixture.ts';
 import { TUNE_COMPARE_ROUTE } from './recipe-console-tune-run-data.ts';
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
-const RECIPE_URL =
-    '/?provider=simulated&v=1&experience=recipe-console&view=execute' +
+const RECIPE_URL = '/?provider=simulated&v=1&experience=recipe-console&view=execute' +
     '&applicationId=rallar-black-box&workspaceId=default' +
     '&roomId=rallar-black-box-room&controlRunId=execute-control-a';
 const ADVANCED_URL = RECIPE_URL.replace('view=execute', 'view=advanced');
@@ -22,8 +15,8 @@ const TUNE_CSS_FIXTURE = {
     tuneScale: {
         runCount: 120,
         commandCount: 4,
-        initial: true,
-    },
+        initial: true
+    }
 } as const;
 
 const legacySelectors = [
@@ -32,7 +25,7 @@ const legacySelectors = [
     '[data-isolation-legacy-metric]',
     '[data-isolation-legacy-form]',
     '[data-isolation-legacy-table]',
-    '[data-isolation-legacy-dialog]',
+    '[data-isolation-legacy-dialog]'
 ] as const;
 const recipeSelectors = [
     '[data-isolation-recipe-surface]',
@@ -40,23 +33,23 @@ const recipeSelectors = [
     '[data-isolation-recipe-status] [data-status="failed"]',
     '[data-isolation-recipe-form]',
     '[data-isolation-recipe-table]',
-    '[data-isolation-recipe-dialog] [data-inspector-host]',
+    '[data-isolation-recipe-dialog] [data-inspector-host]'
 ] as const;
 
 async function capture(
     page: Page,
     mode: string,
     selectors: readonly string[],
-    fixture = '/test/fixtures/recipe-console-css-isolation.html',
+    fixture = '/test/fixtures/recipe-console-css-isolation.html'
 ) {
     const requests: string[] = [];
     const listener = (request: import('@playwright/test').Request) => requests.push(request.url());
     page.on('request', listener);
     await page.goto(`${fixture}?mode=${mode}`);
-    const styles = await Promise.all(selectors.map(async selector => {
+    const styles = await Promise.all(selectors.map(async (selector) => {
         const element = page.locator(selector);
         await expect(element, selector).toHaveCount(1);
-        return element.evaluate(node => {
+        return element.evaluate((node) => {
             const style = getComputedStyle(node);
             return {
                 backgroundColor: style.backgroundColor,
@@ -66,7 +59,7 @@ async function capture(
                 fontSize: style.fontSize,
                 fontWeight: style.fontWeight,
                 lineHeight: style.lineHeight,
-                padding: style.padding,
+                padding: style.padding
             };
         });
     }));
@@ -80,9 +73,9 @@ function liveExecuteSnapshot() {
     const group = {
         applicationId: 'rallar-black-box',
         workspaceId: 'default',
-        groupId: 'rallar-black-box-room',
+        groupId: 'rallar-black-box-room'
     } as const;
-    const agents = ['execute-agent-a', 'execute-agent-b'].map(agentId => ({
+    const agents = ['execute-agent-a', 'execute-agent-b'].map((agentId) => ({
         runId,
         agentId,
         connected: true,
@@ -96,14 +89,14 @@ function liveExecuteSnapshot() {
             ...group,
             providerMode: 'browser-rallar',
             browserName: 'chromium',
-            region: 'eu-north',
+            region: 'eu-north'
         },
         connectionSequence: 1,
         reconnectCount: 0,
         receivedResultCount: 0,
         receivedEventCount: 0,
         completedCommandIds: [],
-        resumeCompletedCommandIds: [],
+        resumeCompletedCommandIds: []
     }));
     return {
         runs: [{
@@ -116,31 +109,31 @@ function liveExecuteSnapshot() {
             events: [],
             stats: [],
             reports: [],
-            heartbeats: [],
+            heartbeats: []
         }],
-        distributedRuns: [],
+        distributedRuns: []
     };
 }
 
 async function routeLiveExecuteControl(context: BrowserContext): Promise<void> {
-    await context.route(CONTROL_ROUTE, async route => {
+    await context.route(CONTROL_ROUTE, async (route) => {
         const snapshot = liveExecuteSnapshot();
         const pathname = new URL(route.request().url()).pathname;
         const runId = /^\/runs\/([^/]+)$/.exec(pathname)?.[1];
         const run = runId
-            ? snapshot.runs.find(candidate => candidate.runId === decodeURIComponent(runId))
+            ? snapshot.runs.find((candidate) => candidate.runId === decodeURIComponent(runId))
             : undefined;
         await route.fulfill({
             status: runId && !run ? 404 : 200,
             contentType: 'application/json',
             headers: { 'access-control-allow-origin': '*' },
-            body: JSON.stringify(runId ? run ?? { error: 'Control run not found.' } : snapshot),
+            body: JSON.stringify(runId ? run ?? { error: 'Control run not found.' } : snapshot)
         });
     });
 }
 
 async function navigateInApp(page: Page, url: string): Promise<void> {
-    await page.evaluate(nextUrl => {
+    await page.evaluate((nextUrl) => {
         history.pushState({}, '', nextUrl);
         dispatchEvent(new PopStateEvent('popstate'));
     }, url);
@@ -159,33 +152,58 @@ async function captureRealRecipeStyles(page: Page) {
     const style = async (selector: ReturnType<Page['locator']>, properties: readonly string[]) =>
         selector.evaluate((node, names) => {
             const computed = getComputedStyle(node);
-            return Object.fromEntries(names.map(name => [name, computed.getPropertyValue(name)]));
+            return Object.fromEntries(names.map((name) => [name, computed.getPropertyValue(name)]));
         }, properties);
 
     return {
         catalog: await style(catalog, [
-            'background-color', 'border-top-color', 'display', 'grid-template-rows',
+            'background-color',
+            'border-top-color',
+            'display',
+            'grid-template-rows'
         ]),
         targets: await style(targets, [
-            'background-color', 'border-top-color', 'display', 'min-width',
+            'background-color',
+            'border-top-color',
+            'display',
+            'min-width'
         ]),
         actionBand: await style(actionBand, [
-            'background-color', 'border-top-color', 'display', 'grid-template-columns',
+            'background-color',
+            'border-top-color',
+            'display',
+            'grid-template-columns'
         ]),
-        controlRunSelect: await style(targets.locator(
-            '[data-execute-control-run-picker] [data-searchable-listbox-trigger]',
-        ), [
-            'background-color', 'border-radius', 'border-top-color', 'min-height',
-        ]),
+        controlRunSelect: await style(
+            targets.locator(
+                '[data-execute-control-run-picker] [data-searchable-listbox-trigger]'
+            ),
+            [
+                'background-color',
+                'border-radius',
+                'border-top-color',
+                'min-height'
+            ]
+        ),
         checkbox: await style(targetRow.getByRole('checkbox'), [
-            'accent-color', 'height', 'width',
+            'accent-color',
+            'height',
+            'width'
         ]),
         status: await style(targetRow.locator('[data-status="passed"]'), [
-            'background-color', 'border-top-color', 'border-radius', 'color', 'padding',
+            'background-color',
+            'border-top-color',
+            'border-radius',
+            'color',
+            'padding'
         ]),
         reason: await style(targetRow.getByText(MATCHED_REASON, { exact: true }), [
-            'color', 'font-size', 'line-height', 'overflow', 'white-space',
-        ]),
+            'color',
+            'font-size',
+            'line-height',
+            'overflow',
+            'white-space'
+        ])
     };
 }
 
@@ -201,33 +219,51 @@ async function captureRealMonitorStyles(page: Page) {
     }
     const style = async (
         owner: ReturnType<Page['locator']>,
-        properties: readonly string[],
+        properties: readonly string[]
     ) => owner.evaluate((node, names) => {
         const computed = getComputedStyle(node);
-        return Object.fromEntries(names.map(name => [
+        return Object.fromEntries(names.map((name) => [
             name,
-            computed.getPropertyValue(name),
+            computed.getPropertyValue(name)
         ]));
     }, properties);
     return {
         verdict: await style(verdict, [
-            'background-color', 'border-top-color', 'display', 'padding',
+            'background-color',
+            'border-top-color',
+            'display',
+            'padding'
         ]),
         failure: await style(failure, [
-            'background-color', 'border-left-color', 'min-height', 'display',
+            'background-color',
+            'border-left-color',
+            'min-height',
+            'display'
         ]),
         matrix: await style(matrix, [
-            'background-color', 'border-top-color', 'display', 'min-width',
+            'background-color',
+            'border-top-color',
+            'display',
+            'min-width'
         ]),
         evidence: await style(evidence, [
-            'background-color', 'min-height', 'padding', 'font-weight',
+            'background-color',
+            'min-height',
+            'padding',
+            'font-weight'
         ]),
         actions: await style(actions, [
-            'background-color', 'border-top-color', 'display', 'position',
+            'background-color',
+            'border-top-color',
+            'display',
+            'position'
         ]),
         inspector: await style(inspector, [
-            'display', 'min-width', 'overflow-wrap', 'padding',
-        ]),
+            'display',
+            'min-width',
+            'overflow-wrap',
+            'padding'
+        ])
     };
 }
 
@@ -239,51 +275,75 @@ async function captureRealFleetStyles(page: Page) {
     const map = workspace.getByRole('region', { name: 'Fleet evidence map' });
     const mapLayer = map.locator('[data-fleet-map-layer="live-agents"]');
     const artifact = workspace.getByRole('region', {
-        name: 'Selected report artifact',
+        name: 'Selected report artifact'
     });
-    for (const owner of [
-        workspace,
-        operational,
-        summary,
-        liveBoard,
-        map,
-        mapLayer,
-        artifact,
-    ]) {
+    for (
+        const owner of [
+            workspace,
+            operational,
+            summary,
+            liveBoard,
+            map,
+            mapLayer,
+            artifact
+        ]
+    ) {
         await expect(owner).toBeVisible();
     }
     const style = async (
         owner: ReturnType<Page['locator']>,
-        properties: readonly string[],
+        properties: readonly string[]
     ) => owner.evaluate((node, names) => {
         const computed = getComputedStyle(node);
-        return Object.fromEntries(names.map(name => [
+        return Object.fromEntries(names.map((name) => [
             name,
-            computed.getPropertyValue(name),
+            computed.getPropertyValue(name)
         ]));
     }, properties);
     return {
         workspace: await style(workspace, [
-            'display', 'gap', 'min-width', 'overflow-y', 'padding-bottom',
+            'display',
+            'gap',
+            'min-width',
+            'overflow-y',
+            'padding-bottom'
         ]),
         operational: await style(operational, [
-            'background-color', 'border-top-color', 'display', 'min-width',
+            'background-color',
+            'border-top-color',
+            'display',
+            'min-width'
         ]),
         summary: await style(summary, [
-            'background-color', 'border-top-color', 'display', 'padding',
+            'background-color',
+            'border-top-color',
+            'display',
+            'padding'
         ]),
         liveBoard: await style(liveBoard, [
-            'background-color', 'border-top-color', 'display', 'min-width',
+            'background-color',
+            'border-top-color',
+            'display',
+            'min-width'
         ]),
         map: await style(map, [
-            'background-color', 'border-top-color', 'display', 'min-width',
+            'background-color',
+            'border-top-color',
+            'display',
+            'min-width'
         ]),
         mapLayer: await style(mapLayer, [
-            'background-color', 'border-radius', 'border-top-color', 'min-height',
+            'background-color',
+            'border-radius',
+            'border-top-color',
+            'min-height'
         ]),
         artifact: await style(artifact, [
-            'background-color', 'border-top-color', 'display', 'min-width',
-        ]),
+            'background-color',
+            'border-top-color',
+            'display',
+            'min-width'
+        ])
     };
 }
 
@@ -294,20 +354,22 @@ async function captureRealAdvancedStyles(page: Page) {
     const providerRow = context.locator('[data-context-field="provider"]');
     const catalog = workspace.locator('[data-advanced-catalog]');
     const category = catalog.locator(
-        '[data-advanced-category="direct-diagnostics"]',
+        '[data-advanced-category="direct-diagnostics"]'
     );
     const surfaceLink = category.locator('[data-surface-id="direct.auth"]');
     const routeLabel = surfaceLink.locator('span').nth(1);
-    for (const owner of [
-        workspace,
-        context,
-        contextGrid,
-        providerRow,
-        catalog,
-        category,
-        surfaceLink,
-        routeLabel,
-    ]) {
+    for (
+        const owner of [
+            workspace,
+            context,
+            contextGrid,
+            providerRow,
+            catalog,
+            category,
+            surfaceLink,
+            routeLabel
+        ]
+    ) {
         await expect(owner).toBeVisible();
     }
     await expect(workspace.locator('[data-advanced-category]')).toHaveCount(3);
@@ -315,53 +377,79 @@ async function captureRealAdvancedStyles(page: Page) {
 
     const style = async (
         owner: ReturnType<Page['locator']>,
-        properties: readonly string[],
+        properties: readonly string[]
     ) => owner.evaluate((node, names) => {
         const computed = getComputedStyle(node);
-        return Object.fromEntries(names.map(name => [
+        return Object.fromEntries(names.map((name) => [
             name,
-            computed.getPropertyValue(name),
+            computed.getPropertyValue(name)
         ]));
     }, properties);
     return {
         workspace: await style(workspace, [
-            'display', 'gap', 'min-width', 'padding-bottom',
+            'display',
+            'gap',
+            'min-width',
+            'padding-bottom'
         ]),
         context: await style(context, [
-            'background-color', 'border-bottom-color', 'border-top-color',
-            'display', 'min-width',
+            'background-color',
+            'border-bottom-color',
+            'border-top-color',
+            'display',
+            'min-width'
         ]),
         contextGrid: await style(contextGrid, [
-            'border-top-color', 'display', 'grid-template-columns', 'min-width',
+            'border-top-color',
+            'display',
+            'grid-template-columns',
+            'min-width'
         ]),
         providerRow: await style(providerRow, [
-            'background-color', 'border-bottom-color', 'border-right-color',
-            'display', 'grid-template-columns', 'padding',
+            'background-color',
+            'border-bottom-color',
+            'border-right-color',
+            'display',
+            'grid-template-columns',
+            'padding'
         ]),
         catalog: await style(catalog, [
-            'display', 'gap', 'min-width',
+            'display',
+            'gap',
+            'min-width'
         ]),
         category: await style(category, [
-            'background-color', 'border-bottom-color', 'border-top-color',
-            'min-width',
+            'background-color',
+            'border-bottom-color',
+            'border-top-color',
+            'min-width'
         ]),
         surfaceLink: await style(surfaceLink, [
-            'background-color', 'border-radius', 'color', 'display',
-            'grid-template-columns', 'min-height', 'padding',
+            'background-color',
+            'border-radius',
+            'color',
+            'display',
+            'grid-template-columns',
+            'min-height',
+            'padding'
         ]),
         routeLabel: await style(routeLabel, [
-            'color', 'font-family', 'font-size', 'line-height', 'overflow-wrap',
-        ]),
+            'color',
+            'font-family',
+            'font-size',
+            'line-height',
+            'overflow-wrap'
+        ])
     };
 }
 
 async function openTuneBaselineRunPopup(page: Page) {
     const picker = page.getByRole('group', {
         name: 'Baseline run',
-        exact: true,
+        exact: true
     });
     const trigger = picker.getByRole('button', {
-        name: /^Baseline run\b/u,
+        name: /^Baseline run\b/u
     });
     await expect(picker).toBeVisible();
     await expect(trigger).toHaveAttribute('aria-expanded', 'false');
@@ -369,35 +457,37 @@ async function openTuneBaselineRunPopup(page: Page) {
 
     const search = picker.getByRole('combobox', {
         name: 'Search Baseline run',
-        exact: true,
+        exact: true
     });
     const listbox = picker.getByRole('listbox', {
         name: 'Baseline run options',
-        exact: true,
+        exact: true
     });
     const option = listbox.getByRole('option').first();
     const popup = listbox.locator('..');
     const windowControls = picker.getByRole('group', {
         name: 'Baseline run options window',
-        exact: true,
+        exact: true
     });
     const previous = windowControls.getByRole('button', {
         name: 'Previous',
-        exact: true,
+        exact: true
     });
     const next = windowControls.getByRole('button', {
         name: 'Next',
-        exact: true,
+        exact: true
     });
-    for (const owner of [
-        popup,
-        search,
-        listbox,
-        option,
-        windowControls,
-        previous,
-        next,
-    ]) {
+    for (
+        const owner of [
+            popup,
+            search,
+            listbox,
+            option,
+            windowControls,
+            previous,
+            next
+        ]
+    ) {
         await expect(owner).toBeVisible();
     }
     await expect(trigger).toHaveAttribute('aria-expanded', 'true');
@@ -411,7 +501,7 @@ async function openTuneBaselineRunPopup(page: Page) {
         option,
         windowControls,
         previous,
-        next,
+        next
     };
 }
 
@@ -425,114 +515,161 @@ async function captureRealTuneStyles(page: Page) {
     const candidateInput = candidate.getByLabel('Candidate value');
     const metric = source.getByRole('button', {
         name: 'Send duration',
-        exact: true,
+        exact: true
     });
     const history = page.locator('[data-history-workspace]');
     const filters = history.locator('[data-history-filters]');
     const savedFilters = history.locator('[data-history-saved-filters]');
     const historyTable = history.getByRole('region', {
-        name: 'Recipe run history',
+        name: 'Recipe run history'
     });
     const retention = history.locator('[data-retention-panel]');
     const retentionPreview = retention.getByRole('button', {
         name: 'Preview cleanup',
-        exact: true,
+        exact: true
     });
-    for (const owner of [
-        source,
-        hints,
-        commandTiming,
-        streamHealth,
-        candidate,
-        comparison,
-        candidateInput,
-        metric,
-        history,
-        filters,
-        savedFilters,
-        historyTable,
-        retention,
-        retentionPreview,
-    ]) {
+    for (
+        const owner of [
+            source,
+            hints,
+            commandTiming,
+            streamHealth,
+            candidate,
+            comparison,
+            candidateInput,
+            metric,
+            history,
+            filters,
+            savedFilters,
+            historyTable,
+            retention,
+            retentionPreview
+        ]
+    ) {
         await expect(owner).toBeVisible();
     }
     await expect(metric).toHaveAttribute('aria-pressed', 'true');
 
     const style = async (
         owner: ReturnType<Page['locator']>,
-        properties: readonly string[],
+        properties: readonly string[]
     ) => owner.evaluate((node, names) => {
         const computed = getComputedStyle(node);
-        return Object.fromEntries(names.map(name => [
+        return Object.fromEntries(names.map((name) => [
             name,
-            computed.getPropertyValue(name),
+            computed.getPropertyValue(name)
         ]));
     }, properties);
     const panelProperties = [
-        'background-color', 'border-top-color', 'display', 'min-width', 'padding',
+        'background-color',
+        'border-top-color',
+        'display',
+        'min-width',
+        'padding'
     ] as const;
     const runPicker = await openTuneBaselineRunPopup(page);
     const runPickerStyles = {
         popup: await style(runPicker.popup, [
-            'background-color', 'border-radius', 'border-top-color', 'box-shadow',
-            'display', 'max-height', 'overflow', 'padding', 'position', 'z-index',
+            'background-color',
+            'border-radius',
+            'border-top-color',
+            'box-shadow',
+            'display',
+            'max-height',
+            'overflow',
+            'padding',
+            'position',
+            'z-index'
         ]),
         trigger: await style(runPicker.trigger, [
-            'background-color', 'border-radius', 'border-top-color', 'color',
-            'display', 'min-height', 'padding',
+            'background-color',
+            'border-radius',
+            'border-top-color',
+            'color',
+            'display',
+            'min-height',
+            'padding'
         ]),
         search: await style(runPicker.search, [
-            'background-color', 'border-radius', 'border-top-color', 'color',
-            'min-height', 'padding',
+            'background-color',
+            'border-radius',
+            'border-top-color',
+            'color',
+            'min-height',
+            'padding'
         ]),
         option: await style(runPicker.option, [
-            'background-color', 'border-radius', 'border-top-color', 'color',
-            'display', 'min-height', 'padding', 'width',
+            'background-color',
+            'border-radius',
+            'border-top-color',
+            'color',
+            'display',
+            'min-height',
+            'padding',
+            'width'
         ]),
         windowControls: await style(runPicker.windowControls, [
-            'display', 'gap', 'grid-template-columns', 'min-width',
+            'display',
+            'gap',
+            'grid-template-columns',
+            'min-width'
         ]),
         windowPrevious: await style(runPicker.previous, [
-            'background-color', 'border-radius', 'border-top-color', 'color',
-            'cursor', 'font-weight', 'min-height', 'padding',
+            'background-color',
+            'border-radius',
+            'border-top-color',
+            'color',
+            'cursor',
+            'font-weight',
+            'min-height',
+            'padding'
         ]),
         windowNext: await style(runPicker.next, [
-            'background-color', 'border-radius', 'border-top-color', 'color',
-            'cursor', 'font-weight', 'min-height', 'padding',
-        ]),
+            'background-color',
+            'border-radius',
+            'border-top-color',
+            'color',
+            'cursor',
+            'font-weight',
+            'min-height',
+            'padding'
+        ])
     };
     await page.keyboard.press('Escape');
     await expect(runPicker.trigger).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByRole('listbox', {
         name: 'Baseline run options',
-        exact: true,
+        exact: true
     })).toHaveCount(0);
     await expect(page.locator('[data-searchable-listbox-popup]')).toHaveCount(0);
 
-    await retentionPreview.evaluate(button => {
+    await retentionPreview.evaluate((button) => {
         button.setAttribute('disabled', '');
     });
     const disabledRetentionAction = await style(retentionPreview, [
-        'cursor', 'opacity',
+        'cursor',
+        'opacity'
     ]);
-    await retentionPreview.evaluate(button => {
+    await retentionPreview.evaluate((button) => {
         button.removeAttribute('disabled');
     });
-    if (await history.getByRole('button', {
-        name: 'Review cleanup',
-        exact: true,
-    }).count() === 0) {
+    if (
+        await history.getByRole('button', {
+            name: 'Review cleanup',
+            exact: true
+        }).count() === 0
+    ) {
         await history.getByRole('button', {
             name: 'Preview cleanup',
-            exact: true,
+            exact: true
         }).click();
     }
     await history.getByRole('button', {
         name: 'Review cleanup',
-        exact: true,
+        exact: true
     }).click();
     const dialog = page.getByRole('alertdialog', {
-        name: 'Delete previewed runs?',
+        name: 'Delete previewed runs?'
     });
     await expect(dialog).toBeVisible();
     const result = {
@@ -543,26 +680,40 @@ async function captureRealTuneStyles(page: Page) {
         candidate: await style(candidate, panelProperties),
         comparison: await style(comparison, panelProperties),
         candidateInput: await style(candidateInput, [
-            'background-color', 'border-radius', 'border-top-color', 'color',
-            'min-height',
+            'background-color',
+            'border-radius',
+            'border-top-color',
+            'color',
+            'min-height'
         ]),
         metric: await style(metric, [
-            'background-color', 'border-radius', 'border-top-color', 'color',
-            'font-weight', 'min-height',
+            'background-color',
+            'border-radius',
+            'border-top-color',
+            'color',
+            'font-weight',
+            'min-height'
         ]),
         runPicker: runPickerStyles,
         history: await style(history, panelProperties),
         filters: await style(filters, panelProperties),
         savedFilters: await style(savedFilters, panelProperties),
         historyTable: await style(historyTable, [
-            'border-top-color', 'display', 'max-width', 'overflow-x',
+            'border-top-color',
+            'display',
+            'max-width',
+            'overflow-x'
         ]),
         retention: await style(retention, panelProperties),
         disabledRetentionAction,
         dialog: await style(dialog, [
-            'background-color', 'border-top-color', 'display', 'max-height',
-            'overflow', 'padding',
-        ]),
+            'background-color',
+            'border-top-color',
+            'display',
+            'max-height',
+            'overflow',
+            'padding'
+        ])
     };
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
@@ -576,23 +727,20 @@ test('is independent of stylesheet load order', async ({ page }) => {
         page,
         'both',
         legacySelectors,
-        '/test/fixtures/recipe-console-css-isolation-recipe-first.html',
+        '/test/fixtures/recipe-console-css-isolation-recipe-first.html'
     );
     const recipeFirstRecipe = await capture(
         page,
         'both',
         recipeSelectors,
-        '/test/fixtures/recipe-console-css-isolation-recipe-first.html',
+        '/test/fixtures/recipe-console-css-isolation-recipe-first.html'
     );
 
     expect(recipeFirstLegacy.styles).toEqual(legacyFirstLegacy.styles);
     expect(recipeFirstRecipe.styles).toEqual(legacyFirstRecipe.styles);
 });
 
-test('survives Recipe Console to legacy to Recipe Console navigation', async ({
-    context,
-    page,
-}) => {
+test('survives Recipe Console to legacy to Recipe Console navigation', async ({ context, page }) => {
     await routeLiveExecuteControl(context);
     await page.goto(RECIPE_URL);
     const before = await captureRealRecipeStyles(page);
@@ -607,10 +755,7 @@ test('survives Recipe Console to legacy to Recipe Console navigation', async ({
     expect(after).toEqual(before);
 });
 
-test('matches cold Recipe styles when legacy components load first', async ({
-    context,
-    page,
-}) => {
+test('matches cold Recipe styles when legacy components load first', async ({ context, page }) => {
     await routeLiveExecuteControl(context);
     await page.goto(RECIPE_URL);
     const coldRecipe = await captureRealRecipeStyles(page);
@@ -618,8 +763,8 @@ test('matches cold Recipe styles when legacy components load first', async ({
     const legacyFirst = await context.newPage();
     await legacyFirst.goto(
         '/?provider=simulated&experience=legacy&tab=auth' +
-        '&applicationId=rallar-black-box&workspaceId=default' +
-        '&roomId=rallar-black-box-room',
+            '&applicationId=rallar-black-box&workspaceId=default' +
+            '&roomId=rallar-black-box-room'
     );
     await expect(legacyFirst.locator('.app-shell')).toBeVisible();
     await expect(legacyFirst.locator('.recipe-console')).toHaveCount(0);
@@ -630,10 +775,7 @@ test('matches cold Recipe styles when legacy components load first', async ({
     await legacyFirst.close();
 });
 
-test('preserves live Monitor styles across a legacy round trip', async ({
-    context,
-    page,
-}) => {
+test('preserves live Monitor styles across a legacy round trip', async ({ context, page }) => {
     await installRecipeConsoleMonitorFixture(context);
     await page.goto(MONITOR_ROUTE);
     const before = await captureRealMonitorStyles(page);
@@ -646,10 +788,7 @@ test('preserves live Monitor styles across a legacy round trip', async ({
     expect(await captureRealMonitorStyles(page)).toEqual(before);
 });
 
-test('matches cold Monitor styles when legacy components load first', async ({
-    context,
-    page,
-}) => {
+test('matches cold Monitor styles when legacy components load first', async ({ context, page }) => {
     await installRecipeConsoleMonitorFixture(context);
     await page.goto(MONITOR_ROUTE);
     const coldMonitor = await captureRealMonitorStyles(page);
@@ -664,10 +803,7 @@ test('matches cold Monitor styles when legacy components load first', async ({
     await legacyFirst.close();
 });
 
-test('preserves real Tune styles across a legacy round trip', async ({
-    context,
-    page,
-}) => {
+test('preserves real Tune styles across a legacy round trip', async ({ context, page }) => {
     await installRecipeConsoleTuneFixture(context, TUNE_CSS_FIXTURE);
     await page.goto(TUNE_COMPARE_ROUTE);
     const before = await captureRealTuneStyles(page);
@@ -680,7 +816,7 @@ test('preserves real Tune styles across a legacy round trip', async ({
     await expect(page.locator('[data-tune-workspace]')).toHaveCount(0);
     await expect(page.getByRole('listbox', {
         name: 'Baseline run options',
-        exact: true,
+        exact: true
     })).toHaveCount(0);
     await expect(page.locator('[data-searchable-listbox-popup]')).toHaveCount(0);
     await navigateInApp(page, TUNE_COMPARE_ROUTE);
@@ -689,10 +825,7 @@ test('preserves real Tune styles across a legacy round trip', async ({
     expect(await captureRealTuneStyles(page)).toEqual(before);
 });
 
-test('matches cold Tune styles when legacy components load first', async ({
-    context,
-    page,
-}) => {
+test('matches cold Tune styles when legacy components load first', async ({ context, page }) => {
     await installRecipeConsoleTuneFixture(context, TUNE_CSS_FIXTURE);
     await page.goto(TUNE_COMPARE_ROUTE);
     const coldTune = await captureRealTuneStyles(page);
@@ -708,10 +841,7 @@ test('matches cold Tune styles when legacy components load first', async ({
     await legacyFirst.close();
 });
 
-test('matches cold Fleet styles when legacy Fleet loads first', async ({
-    context,
-    page,
-}) => {
+test('matches cold Fleet styles when legacy Fleet loads first', async ({ context, page }) => {
     await installRecipeConsoleFleetFixture(context, page);
     await page.goto(FLEET_ROUTE);
     const coldFleet = await captureRealFleetStyles(page);
@@ -720,7 +850,7 @@ test('matches cold Fleet styles when legacy Fleet loads first', async ({
     await installRecipeConsoleFleetFixture(context, legacyFirst);
     await legacyFirst.goto(
         '/?provider=simulated&experience=legacy' +
-        '&workspace=black-box-runner&tab=fleet',
+            '&workspace=black-box-runner&tab=fleet'
     );
     await expect(legacyFirst.locator('.runner-fleet-panel')).toBeVisible();
     await expect(legacyFirst.locator('[data-fleet-workspace]')).toHaveCount(0);
@@ -731,35 +861,31 @@ test('matches cold Fleet styles when legacy Fleet loads first', async ({
     await legacyFirst.close();
 });
 
-test('preserves real Advanced styles across a Recipe-first legacy round trip',
-    async ({ context, page }) => {
-        await routeLiveExecuteControl(context);
-        await page.goto(ADVANCED_URL);
-        const before = await captureRealAdvancedStyles(page);
+test('preserves real Advanced styles across a Recipe-first legacy round trip', async ({ context, page }) => {
+    await routeLiveExecuteControl(context);
+    await page.goto(ADVANCED_URL);
+    const before = await captureRealAdvancedStyles(page);
 
-        await navigateInApp(
-            page,
-            '/?provider=simulated&experience=legacy&workspace=rallar&tab=auth',
-        );
-        await expect(page.locator('#panel-auth')).toBeVisible();
-        await expect(page.locator('[data-advanced-workspace]')).toHaveCount(0);
+    await navigateInApp(
+        page,
+        '/?provider=simulated&experience=legacy&workspace=rallar&tab=auth'
+    );
+    await expect(page.locator('#panel-auth')).toBeVisible();
+    await expect(page.locator('[data-advanced-workspace]')).toHaveCount(0);
 
-        await navigateInApp(page, ADVANCED_URL);
-        await expect(page.locator('.app-shell')).toHaveCount(0);
-        expect(await captureRealAdvancedStyles(page)).toEqual(before);
-    });
+    await navigateInApp(page, ADVANCED_URL);
+    await expect(page.locator('.app-shell')).toHaveCount(0);
+    expect(await captureRealAdvancedStyles(page)).toEqual(before);
+});
 
-test('matches cold Advanced styles when legacy components load first', async ({
-    context,
-    page,
-}) => {
+test('matches cold Advanced styles when legacy components load first', async ({ context, page }) => {
     await routeLiveExecuteControl(context);
     await page.goto(ADVANCED_URL);
     const coldAdvanced = await captureRealAdvancedStyles(page);
 
     const legacyFirst = await context.newPage();
     await legacyFirst.goto(
-        '/?provider=simulated&experience=legacy&workspace=rallar&tab=auth',
+        '/?provider=simulated&experience=legacy&workspace=rallar&tab=auth'
     );
     await expect(legacyFirst.locator('#panel-auth')).toBeVisible();
     await expect(legacyFirst.locator('[data-advanced-workspace]')).toHaveCount(0);
@@ -770,15 +896,12 @@ test('matches cold Advanced styles when legacy components load first', async ({
     await legacyFirst.close();
 });
 
-test('lazy-loads Tune only on demand and unmounts it when leaving', async ({
-    context,
-    page,
-}) => {
+test('lazy-loads Tune only on demand and unmounts it when leaving', async ({ context, page }) => {
     await installRecipeConsoleTuneFixture(context, { retention: 'ready' });
     const tuneModuleRequests: string[] = [];
     const historyModuleRequests: string[] = [];
     const retentionModuleRequests: string[] = [];
-    page.on('request', request => {
+    page.on('request', (request) => {
         if (request.url().includes('/recipe-console/tune/')) {
             tuneModuleRequests.push(request.url());
         }
@@ -803,25 +926,23 @@ test('lazy-loads Tune only on demand and unmounts it when leaving', async ({
     await expect(page.locator('[data-tune-workspace]')).toBeVisible();
     await expect(page.locator('[data-history-workspace]')).toBeVisible();
     await expect(page.locator('[data-retention-panel]')).toBeVisible();
-    expect(tuneModuleRequests.some(url => url.includes('TuneWorkspace.tsx'))).toBe(true);
-    expect(historyModuleRequests.some(url => url.includes('HistoryWorkspace.tsx')))
+    expect(tuneModuleRequests.some((url) => url.includes('TuneWorkspace.tsx'))).toBe(true);
+    expect(historyModuleRequests.some((url) => url.includes('HistoryWorkspace.tsx')))
         .toBe(true);
     expect(retentionModuleRequests).toEqual([]);
 
     await page.getByRole('button', {
         name: 'Preview cleanup',
-        exact: true,
+        exact: true
     }).click();
     await expect.poll(() => retentionModuleRequests.length).toBeGreaterThan(0);
-    expect(retentionModuleRequests.some(url =>
-        url.includes('control-retention-api.ts')
-    )).toBe(true);
+    expect(retentionModuleRequests.some((url) => url.includes('control-retention-api.ts'))).toBe(true);
     await page.getByRole('button', {
         name: 'Review cleanup',
-        exact: true,
+        exact: true
     }).click();
     await expect(page.getByRole('alertdialog', {
-        name: 'Delete previewed runs?',
+        name: 'Delete previewed runs?'
     })).toBeVisible();
 
     await navigateInApp(page, RECIPE_URL);
@@ -832,13 +953,10 @@ test('lazy-loads Tune only on demand and unmounts it when leaving', async ({
     await expect(page.locator('[data-retention-confirm-dialog]')).toHaveCount(0);
 });
 
-test('lazy-loads Fleet on demand and leaves no inactive artifact owner', async ({
-    context,
-    page,
-}) => {
+test('lazy-loads Fleet on demand and leaves no inactive artifact owner', async ({ context, page }) => {
     const fixture = await installRecipeConsoleFleetFixture(context, page);
     const fleetModuleRequests: string[] = [];
-    page.on('request', request => {
+    page.on('request', (request) => {
         if (request.url().includes('/recipe-console/fleet/')) {
             fleetModuleRequests.push(request.url());
         }
@@ -848,7 +966,7 @@ test('lazy-loads Fleet on demand and leaves no inactive artifact owner', async (
     await page.goto(executeRoute);
     await expect(page.locator('.recipe-console')).toHaveAttribute(
         'data-view',
-        'execute',
+        'execute'
     );
     await expect(page.locator('[data-fleet-workspace]')).toHaveCount(0);
     expect(fleetModuleRequests).toEqual([]);
@@ -858,7 +976,7 @@ test('lazy-loads Fleet on demand and leaves no inactive artifact owner', async (
     const fleet = page.locator('[data-fleet-workspace]');
     await expect(fleet.locator('[data-fleet-operational-state="live"]'))
         .toBeVisible();
-    expect(fleetModuleRequests.some(url => url.includes('FleetWorkspace.tsx')))
+    expect(fleetModuleRequests.some((url) => url.includes('FleetWorkspace.tsx')))
         .toBe(true);
     await fleet.getByRole('button', { name: 'Load artifact bundle' }).click();
     await expect.poll(fixture.artifactRequestCount).toBe(1);
@@ -867,11 +985,11 @@ test('lazy-loads Fleet on demand and leaves no inactive artifact owner', async (
     await page.getByRole('button', { name: 'Execute', exact: true }).click();
     await expect(page.locator('.recipe-console')).toHaveAttribute(
         'data-view',
-        'execute',
+        'execute'
     );
     await expect(page.locator('[data-fleet-workspace]')).toHaveCount(0);
     await expect(page.getByRole('region', {
-        name: 'Selected report artifact',
+        name: 'Selected report artifact'
     })).toHaveCount(0);
 
     const rootRequestsBeforeRefresh = fixture.rootRequestCount();
@@ -882,16 +1000,15 @@ test('lazy-loads Fleet on demand and leaves no inactive artifact owner', async (
     expect(fleetModuleRequests).toHaveLength(fleetRequestsAtLeave);
 });
 
-test('keeps complete target status evidence reachable across Execute viewports', async ({
-    context,
-    page,
-}) => {
+test('keeps complete target status evidence reachable across Execute viewports', async ({ context, page }) => {
     await routeLiveExecuteControl(context);
-    for (const contract of [
-        { name: 'desktop', viewport: { width: 1440, height: 900 }, overflow: false },
-        { name: 'portrait', viewport: { width: 430, height: 932 }, overflow: true },
-        { name: 'short landscape', viewport: { width: 932, height: 430 }, overflow: false },
-    ] as const) {
+    for (
+        const contract of [
+            { name: 'desktop', viewport: { width: 1440, height: 900 }, overflow: false },
+            { name: 'portrait', viewport: { width: 430, height: 932 }, overflow: true },
+            { name: 'short landscape', viewport: { width: 932, height: 430 }, overflow: false }
+        ] as const
+    ) {
         await page.setViewportSize(contract.viewport);
         await page.goto(RECIPE_URL);
 
@@ -902,113 +1019,114 @@ test('keeps complete target status evidence reachable across Execute viewports',
         const reason = row.getByText(MATCHED_REASON, { exact: true });
         await expect(scroller, `${contract.name} target scroller`).toHaveAttribute(
             'tabindex',
-            '0',
+            '0'
         );
         await expect(status, `${contract.name} matched status`).toBeVisible();
         await expect(reason, `${contract.name} full target reason`).toHaveText(MATCHED_REASON);
 
         const overflow = await scroller.evaluate(
-            element => element.scrollWidth - element.clientWidth,
+            (element) => element.scrollWidth - element.clientWidth
         );
         if (contract.overflow) {
             expect(overflow, `${contract.name} horizontal overflow`).toBeGreaterThan(1);
             const modalInspector = page.getByRole('dialog', { name: 'Inspector' });
             if (await modalInspector.count() > 0) {
                 await modalInspector.getByRole('button', {
-                    name: 'Close inspector',
+                    name: 'Close inspector'
                 }).click();
                 await expect(modalInspector).toHaveCount(0);
             }
             await scroller.focus();
             await expect(scroller).toBeFocused();
-            const modifiedShortcuts = await scroller.evaluate(element => {
+            const modifiedShortcuts = await scroller.evaluate((element) => {
                 return (['altKey', 'ctrlKey', 'metaKey', 'shiftKey'] as const)
-                    .map(modifier => {
+                    .map((modifier) => {
                         element.scrollLeft = 0;
                         const event = new KeyboardEvent('keydown', {
                             [modifier]: true,
                             bubbles: true,
                             cancelable: true,
-                            key: 'ArrowRight',
+                            key: 'ArrowRight'
                         });
                         const dispatched = element.dispatchEvent(event);
                         return {
                             after: element.scrollLeft,
                             defaultPrevented: event.defaultPrevented,
                             dispatched,
-                            modifier,
+                            modifier
                         };
                     });
             });
             expect(modifiedShortcuts, `${contract.name} modified shortcuts`).toEqual(
-                ['altKey', 'ctrlKey', 'metaKey', 'shiftKey'].map(modifier => ({
+                ['altKey', 'ctrlKey', 'metaKey', 'shiftKey'].map((modifier) => ({
                     after: 0,
                     defaultPrevented: false,
                     dispatched: true,
-                    modifier,
-                })),
+                    modifier
+                }))
             );
-            let scroll = await scroller.evaluate(element => ({
+            let scroll = await scroller.evaluate((element) => ({
                 left: element.scrollLeft,
-                remaining: element.scrollWidth - element.clientWidth - element.scrollLeft,
+                remaining: element.scrollWidth - element.clientWidth - element.scrollLeft
             }));
             for (let repeat = 0; repeat < 64 && scroll.remaining > 1; repeat += 1) {
                 const previousLeft = scroll.left;
                 await page.keyboard.press('ArrowRight');
                 await expect.poll(
-                    () => scroller.evaluate(element => element.scrollLeft),
-                    { message: `${contract.name} ArrowRight scroll` },
+                    () => scroller.evaluate((element) => element.scrollLeft),
+                    { message: `${contract.name} ArrowRight scroll` }
                 ).toBeGreaterThan(previousLeft);
-                scroll = await scroller.evaluate(element => ({
+                scroll = await scroller.evaluate((element) => ({
                     left: element.scrollLeft,
-                    remaining: element.scrollWidth - element.clientWidth - element.scrollLeft,
+                    remaining: element.scrollWidth - element.clientWidth - element.scrollLeft
                 }));
             }
             expect(scroll.remaining).toBeLessThanOrEqual(1);
-            const rightEdge = await scroller.evaluate(element => {
+            const rightEdge = await scroller.evaluate((element) => {
                 element.scrollLeft = element.scrollWidth;
                 const before = element.scrollLeft;
                 const event = new KeyboardEvent('keydown', {
                     bubbles: true,
                     cancelable: true,
-                    key: 'ArrowRight',
+                    key: 'ArrowRight'
                 });
                 const dispatched = element.dispatchEvent(event);
                 return {
                     after: element.scrollLeft,
                     before,
                     defaultPrevented: event.defaultPrevented,
-                    dispatched,
+                    dispatched
                 };
             });
             expect(rightEdge, `${contract.name} right edge`).toEqual({
                 after: rightEdge.before,
                 before: rightEdge.before,
                 defaultPrevented: false,
-                dispatched: true,
+                dispatched: true
             });
-        } else {
+        }
+        else {
             expect(overflow, `${contract.name} horizontal overflow`).toBeLessThanOrEqual(1);
-            const noOverflow = await scroller.evaluate(element => {
+            const noOverflow = await scroller.evaluate((element) => {
                 const before = element.scrollLeft;
                 const event = new KeyboardEvent('keydown', {
                     bubbles: true,
                     cancelable: true,
-                    key: 'ArrowRight',
+                    key: 'ArrowRight'
                 });
                 const dispatched = element.dispatchEvent(event);
                 return {
                     after: element.scrollLeft,
                     before,
                     defaultPrevented: event.defaultPrevented,
-                    dispatched,
+                    dispatched
                 };
             });
             expect(noOverflow, `${contract.name} no overflow`).toEqual({
                 after: noOverflow.before,
                 before: noOverflow.before,
                 defaultPrevented: false,
-                dispatched: true,
+                dispatched: true
             });
         }
 
@@ -1016,9 +1134,11 @@ test('keeps complete target status evidence reachable across Execute viewports',
             const scrollerBounds = element.getBoundingClientRect();
             const statusNode = element.querySelector(selectors.status);
             const reasonNode = Array.from(element.querySelectorAll('span')).find(
-                node => node.textContent === selectors.reason,
+                (node) => node.textContent === selectors.reason
             );
-            if (!statusNode || !reasonNode) return undefined;
+            if (!statusNode || !reasonNode) {
+                return undefined;
+            }
             const statusBounds = statusNode.getBoundingClientRect();
             const reasonBounds = reasonNode.getBoundingClientRect();
             return {
@@ -1027,11 +1147,11 @@ test('keeps complete target status evidence reachable across Execute viewports',
                 reasonRight: reasonBounds.right,
                 scrollerLeft: scrollerBounds.left,
                 scrollerRight: scrollerBounds.right,
-                statusLeft: statusBounds.left,
+                statusLeft: statusBounds.left
             };
         }, {
             status: '[data-target-status="matched"] [data-status="passed"]',
-            reason: MATCHED_REASON,
+            reason: MATCHED_REASON
         });
         expect(reachability, `${contract.name} target evidence bounds`).toBeDefined();
         expect(reachability?.statusLeft, `${contract.name} status left edge`)
@@ -1051,11 +1171,11 @@ test('keeps representative legacy and recipe console styles isolated', async ({ 
 
     expect(mixedLegacy.styles).toEqual(legacyOnly.styles);
     expect(mixedRecipe.styles).toEqual(recipeOnly.styles);
-    expect(legacyOnly.requests.some(url => url.includes('tokens.css'))).toBe(false);
-    expect(legacyOnly.requests.some(url => url.includes('primitives.module.css'))).toBe(false);
-    expect(recipeOnly.requests.some(url => url.endsWith('/src/styles.css'))).toBe(false);
-    expect(mixedLegacy.requests.some(url => url.endsWith('/src/styles.css'))).toBe(true);
-    expect(mixedRecipe.requests.some(url => url.includes('tokens.css'))).toBe(true);
+    expect(legacyOnly.requests.some((url) => url.includes('tokens.css'))).toBe(false);
+    expect(legacyOnly.requests.some((url) => url.includes('primitives.module.css'))).toBe(false);
+    expect(recipeOnly.requests.some((url) => url.endsWith('/src/styles.css'))).toBe(false);
+    expect(mixedLegacy.requests.some((url) => url.endsWith('/src/styles.css'))).toBe(true);
+    expect(mixedRecipe.requests.some((url) => url.includes('tokens.css'))).toBe(true);
 
     await page.goto('/test/fixtures/recipe-console-css-isolation.html?mode=both');
     const recipeSurface = page.locator('[data-isolation-recipe-surface]');

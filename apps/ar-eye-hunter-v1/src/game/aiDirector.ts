@@ -3,24 +3,20 @@ import {
     createRallarAiMockProvider,
     type RallarAiJsonProvider,
     type RallarAiJsonRequest,
-    type RallarAiJsonSchema,
+    type RallarAiJsonSchema
 } from '@shared/rallar-ai/mod.ts';
 
+import { ARENA_LAYOUT_SCHEMA_ID, ARENA_LAYOUT_SCHEMA_VERSION, validateArenaLayoutSpec } from './arenaLayout.ts';
+import { arenaRevisionKey, type ArenaSimulationState } from './simulation.ts';
 import {
     type AiDirectorProposal,
     type AiDirectorProposalValue,
-    type ArenaLayoutSpec,
     type ArenaEvent,
     type ArenaEventKind,
+    type ArenaLayoutSpec,
     type ArenaSnapshot,
-    type TargetRarity,
+    type TargetRarity
 } from './types.ts';
-import { arenaRevisionKey, type ArenaSimulationState } from './simulation.ts';
-import {
-    ARENA_LAYOUT_SCHEMA_ID,
-    ARENA_LAYOUT_SCHEMA_VERSION,
-    validateArenaLayoutSpec,
-} from './arenaLayout.ts';
 
 export const AI_DIRECTOR_SCHEMA_ID = 'ar-eye-hunter.ai-director-event';
 export const AI_DIRECTOR_SCHEMA_VERSION = '1';
@@ -49,8 +45,8 @@ export const AI_DIRECTOR_EVENT_SCHEMA: RallarAiJsonSchema = {
                         'overdrive-window',
                         'weapon-drop',
                         'layout-shift',
-                        'chaos-modifier',
-                    ],
+                        'chaos-modifier'
+                    ]
                 },
                 targetId: { type: 'string', minLength: 1, maxLength: 80 },
                 radius: { type: 'number', minimum: 1, maximum: 12 },
@@ -58,28 +54,26 @@ export const AI_DIRECTOR_EVENT_SCHEMA: RallarAiJsonSchema = {
                 durationMs: { type: 'integer', minimum: 2500, maximum: 16000 },
                 rarity: {
                     type: 'string',
-                    enum: ['common', 'volatile', 'bounty', 'rift'],
+                    enum: ['common', 'volatile', 'bounty', 'rift']
                 },
                 scoreBonus: { type: 'integer', minimum: 25, maximum: 500 },
-                headline: { type: 'string', minLength: 1, maxLength: 48 },
-            },
+                headline: { type: 'string', minLength: 1, maxLength: 48 }
+            }
         },
         urgency: { type: 'string', enum: ['low', 'medium', 'high'] },
-        reason: { type: 'string', minLength: 1, maxLength: 140 },
-    },
+        reason: { type: 'string', minLength: 1, maxLength: 140 }
+    }
 };
 
 export type AiDirectorValidation =
-    | Readonly<{ ok: true; value: AiDirectorProposalValue }>
-    | Readonly<{ ok: false; reason: string }>;
+    | Readonly<{ ok: true; value: AiDirectorProposalValue; }>
+    | Readonly<{ ok: false; reason: string; }>;
 
 export type AiLayoutValidation =
-    | Readonly<{ ok: true; layout: ArenaLayoutSpec }>
-    | Readonly<{ ok: false; reason: string; layout: ArenaLayoutSpec }>;
+    | Readonly<{ ok: true; layout: ArenaLayoutSpec; }>
+    | Readonly<{ ok: false; reason: string; layout: ArenaLayoutSpec; }>;
 
-export const acceptedAiDirectorTracker = createRallarAiAcceptedResultTracker<
-    AiDirectorProposalValue
->();
+export const acceptedAiDirectorTracker = createRallarAiAcceptedResultTracker<AiDirectorProposalValue>();
 
 const ALLOWED_EVENTS: readonly ArenaEventKind[] = [
     'spawn-eye',
@@ -91,14 +85,14 @@ const ALLOWED_EVENTS: readonly ArenaEventKind[] = [
     'overdrive-window',
     'weapon-drop',
     'layout-shift',
-    'chaos-modifier',
+    'chaos-modifier'
 ];
 
 const ALLOWED_RARITIES: readonly TargetRarity[] = [
     'common',
     'volatile',
     'bounty',
-    'rift',
+    'rift'
 ];
 
 export function createAiDirectorMockProvider(): RallarAiJsonProvider {
@@ -130,19 +124,19 @@ export function createAiDirectorMockProvider(): RallarAiJsonProvider {
                         ? 'Mandatory fun crate inbound'
                         : kind === 'chaos-modifier'
                         ? 'Compliance audit has feelings'
-                        : 'Bounty eye marked',
+                        : 'Bounty eye marked'
                 },
                 urgency: 'medium',
-                reason: 'Keep the arena tempo changing without requiring server input.',
+                reason: 'Keep the arena tempo changing without requiring server input.'
             };
-        },
+        }
     });
 }
 
 export function createAiArenaLayoutRequest(
     state: ArenaSimulationState,
     roomId: string | undefined,
-    signal?: AbortSignal,
+    signal?: AbortSignal
 ): RallarAiJsonRequest<AiDirectorContext> {
     return {
         requestId: `ar-eye-layout:${roomId ?? 'solo'}:${state.revision}`,
@@ -161,7 +155,7 @@ export function createAiArenaLayoutRequest(
                 'spawnPoints',
                 'pickupAnchors',
                 'props',
-                'signs',
+                'signs'
             ],
             additionalProperties: true,
             properties: {
@@ -175,13 +169,13 @@ export function createAiArenaLayoutRequest(
                 spawnPoints: { type: 'array', minItems: 2, maxItems: 10 },
                 pickupAnchors: { type: 'array', minItems: 3, maxItems: 18 },
                 props: { type: 'array', maxItems: 24 },
-                signs: { type: 'array', maxItems: 10 },
-            },
+                signs: { type: 'array', maxItems: 10 }
+            }
         },
         prompt: [
             'Create one bounded JSON arena layout for AR Eye Hunter.',
             'Use a bright neon matrix FPS arena with black-glass cover, readable sightlines, safe spawns, pickup anchors, and dry black humour signs.',
-            'Keep halfSize near 60 for a 120m x 120m arena. Do not overcrowd the crosshair sightlines.',
+            'Keep halfSize near 60 for a 120m x 120m arena. Do not overcrowd the crosshair sightlines.'
         ].join(' '),
         context: buildAiDirectorContext(state, roomId),
         baseStateRevision: arenaRevisionKey(state),
@@ -189,7 +183,7 @@ export function createAiArenaLayoutRequest(
         maxOutputTokens: 1_200,
         temperature: 0.7,
         timeoutMs: 4_000,
-        signal,
+        signal
     };
 }
 
@@ -218,7 +212,7 @@ export type AiDirectorContext = Readonly<{
 
 export function buildAiDirectorContext(
     state: ArenaSimulationState,
-    roomId?: string,
+    roomId?: string
 ): AiDirectorContext {
     const activeEventKind = state.activeEvent?.kind;
     return {
@@ -228,22 +222,22 @@ export function buildAiDirectorContext(
         waveNumber: state.wave.number,
         wavePhase: state.wave.phase,
         targetCount: state.targets.length,
-        hostileCount: state.targets.filter((target) =>
-            target.threat?.kind === 'beam-sentry' || target.threat?.kind === 'boss'
-        ).length,
+        hostileCount:
+            state.targets.filter((target) => target.threat?.kind === 'beam-sentry' || target.threat?.kind === 'boss')
+                .length,
         bountyCount: state.targets.filter((target) => target.rarity === 'bounty').length,
         targets: state.targets.slice(0, 10).map((target) => ({
             id: target.id,
             rarity: target.rarity,
-            health: target.health,
-        })),
+            health: target.health
+        }))
     };
 }
 
 export function createAiDirectorRequest(
     state: ArenaSimulationState,
     roomId: string | undefined,
-    signal?: AbortSignal,
+    signal?: AbortSignal
 ): RallarAiJsonRequest<AiDirectorContext> {
     const context = buildAiDirectorContext(state, roomId);
     const baseStateRevision = arenaRevisionKey(state);
@@ -257,7 +251,7 @@ export function createAiDirectorRequest(
             'Return one legal JSON event that makes the next 10 seconds faster, stranger, and rewarding.',
             'Use wave context to escalate pressure every few waves with bounded chaos modifiers, weapon drops, bounty targets, or readable arena shifts.',
             'Only use target ids from context when a target id is needed.',
-            'Keep effects readable for a first-person shooter.',
+            'Keep effects readable for a first-person shooter.'
         ].join(' '),
         context,
         baseStateRevision,
@@ -265,13 +259,13 @@ export function createAiDirectorRequest(
         maxOutputTokens: 180,
         temperature: 0.65,
         timeoutMs: 3_000,
-        signal,
+        signal
     };
 }
 
 export function validateAiDirectorProposalValue(
     value: unknown,
-    snapshot: ArenaSnapshot | ArenaSimulationState,
+    snapshot: ArenaSnapshot | ArenaSimulationState
 ): AiDirectorValidation {
     if (!isRecord(value)) {
         return { ok: false, reason: 'AI proposal must be an object.' };
@@ -295,7 +289,7 @@ export function validateAiDirectorProposalValue(
     const intensity = clampNumber(event['intensity'], 0.25, 4, 1);
     const scoreBonus = clampNumber(event['scoreBonus'], 25, 500, undefined);
     const rarity = typeof event['rarity'] === 'string' &&
-        ALLOWED_RARITIES.includes(event['rarity'] as TargetRarity)
+            ALLOWED_RARITIES.includes(event['rarity'] as TargetRarity)
         ? event['rarity'] as TargetRarity
         : undefined;
     const headline = typeof event['headline'] === 'string' && event['headline'].trim()
@@ -319,18 +313,18 @@ export function validateAiDirectorProposalValue(
                 durationMs,
                 rarity,
                 scoreBonus,
-                headline,
+                headline
             },
             urgency,
-            reason,
-        },
+            reason
+        }
     };
 }
 
 export function materializeAiArenaEvent(
     proposal: AiDirectorProposal,
     revision: number,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): ArenaEvent {
     const durationMs = proposal.value.event.durationMs ?? 8_000;
     return {
@@ -346,7 +340,7 @@ export function materializeAiArenaEvent(
         expiresAtEpochMs: nowEpochMs + durationMs,
         revision,
         source: 'ai',
-        headline: proposal.value.event.headline,
+        headline: proposal.value.event.headline
     };
 }
 
@@ -389,7 +383,7 @@ function clampNumber(
     value: unknown,
     min: number,
     max: number,
-    fallback: number | undefined,
+    fallback: number | undefined
 ): number | undefined {
     if (typeof value !== 'number' || !Number.isFinite(value)) {
         return fallback;

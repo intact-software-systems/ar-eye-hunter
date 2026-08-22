@@ -1,7 +1,7 @@
-import { ALMessage, ALPayload } from '@shared/al-contracts/al-contract.ts';
 import { getMiddleware } from '@shared-web/browser/app-context.ts';
+import { ALMessage, ALPayload } from '@shared/al-contracts/al-contract.ts';
 
-export type WsInboxCallback = (data: ALPayload) => Promise<void>
+export type WsInboxCallback = (data: ALPayload) => Promise<void>;
 
 export function addWebSocketInboxCallback(
     typeId: string,
@@ -9,13 +9,13 @@ export function addWebSocketInboxCallback(
 ) {
     getMiddleware().middleware
         .webSocketQueueBox.onInboxMessageDo(
-        typeId,
-        {
-            onMessage: async (data: ALMessage) => {
-                await handler(data.payload);
+            typeId,
+            {
+                onMessage: async (data: ALMessage) => {
+                    await handler(data.payload);
+                }
             }
-        }
-    );
+        );
 }
 
 export function removeWebSocketInboxCallback(typeId: string) {

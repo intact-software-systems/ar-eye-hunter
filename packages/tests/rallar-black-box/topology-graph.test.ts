@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type {
-    RallarBlackBoxTestEvent,
-    RallarBlackBoxTestState,
-} from '../../shared-test/rallar-bb-test/types.ts';
-import {
-    deriveRallarTopologyGraph,
-    visibleTopologyCounts,
-} from '../../../apps/rallar-black-box/src/topology-graph.ts';
+import { deriveRallarTopologyGraph, visibleTopologyCounts } from '../../../apps/rallar-black-box/src/topology-graph.ts';
+import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '../../shared-test/rallar-bb-test/types.ts';
 
 function baseState(events: readonly RallarBlackBoxTestEvent[]): RallarBlackBoxTestState {
     return {
@@ -19,13 +13,13 @@ function baseState(events: readonly RallarBlackBoxTestEvent[]): RallarBlackBoxTe
             roomId: 'room-1',
             transport: 'realtime',
             defaults: {
-                connection: 'aliceRtc',
-            },
+                connection: 'aliceRtc'
+            }
         },
         commandHistory: [],
         events,
         failures: [],
-        resultCache: {},
+        resultCache: {}
     };
 }
 
@@ -44,8 +38,8 @@ describe('rallar-black-box topology graph', () => {
                 payload: {
                     roomId: 'room-1',
                     sessionId: 'alice-session',
-                    observedClients: ['alice-session', 'bob-session'],
-                },
+                    observedClients: ['alice-session', 'bob-session']
+                }
             },
             {
                 eventId: 'event-message',
@@ -62,10 +56,10 @@ describe('rallar-black-box topology graph', () => {
                     peerIds: ['bob-session'],
                     data: {
                         topic: 'room.manual.message',
-                        text: 'hello',
-                    },
-                },
-            },
+                        text: 'hello'
+                    }
+                }
+            }
         ]));
 
         expect(topology.graph.hasNode('room:room-1')).toBe(true);
@@ -76,7 +70,7 @@ describe('rallar-black-box topology graph', () => {
             rooms: 1,
             sessions: 2,
             routes: 1,
-            failedNodes: 0,
+            failedNodes: 0
         });
     });
 
@@ -95,10 +89,10 @@ describe('rallar-black-box topology graph', () => {
                     roomId: 'room-1',
                     sessionId: 'alice-session',
                     error: {
-                        message: 'channel timeout',
-                    },
-                },
-            },
+                        message: 'channel timeout'
+                    }
+                }
+            }
         ]));
 
         expect(topology.summary.failedNodes).toBeGreaterThan(0);
@@ -106,7 +100,7 @@ describe('rallar-black-box topology graph', () => {
         expect(visibleTopologyCounts(topology.graph, 'failed').nodes).toBe(topology.summary.failedNodes);
         expect(visibleTopologyCounts(topology.graph, 'all')).toEqual({
             nodes: topology.graph.order,
-            edges: topology.graph.size,
+            edges: topology.graph.size
         });
     });
 
@@ -127,9 +121,9 @@ describe('rallar-black-box topology graph', () => {
                     peerId: 'bob-session',
                     remotePeerId: 'alice-session',
                     data: {
-                        smokeId: 'two-agent-realtime',
-                    },
-                },
+                        smokeId: 'two-agent-realtime'
+                    }
+                }
             },
             {
                 eventId: 'event-browser-messages-rtc',
@@ -147,10 +141,10 @@ describe('rallar-black-box topology graph', () => {
                     remotePeerId: 'bob-session',
                     senderId: 'bob-session',
                     data: {
-                        smokeId: 'two-agent-messages-rtc',
-                    },
-                },
-            },
+                        smokeId: 'two-agent-messages-rtc'
+                    }
+                }
+            }
         ]));
 
         expect(topology.graph.hasEdge('route:session:alice-session->session:bob-session')).toBe(true);
@@ -159,7 +153,7 @@ describe('rallar-black-box topology graph', () => {
             rooms: 1,
             sessions: 2,
             routes: 2,
-            failedNodes: 0,
+            failedNodes: 0
         });
     });
 });

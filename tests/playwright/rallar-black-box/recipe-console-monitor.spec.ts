@@ -1,10 +1,4 @@
-import {
-    expect,
-    test,
-    type BrowserContext,
-    type Locator,
-    type Page,
-} from '@playwright/test';
+import { expect, test, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import {
     installRecipeConsoleMonitorFixture,
@@ -17,7 +11,7 @@ import {
     MONITOR_FAILURE_COMMAND_ID,
     MONITOR_FAILURE_MESSAGE,
     MONITOR_FAILURE_RECIPE_ID,
-    MONITOR_ROUTE,
+    MONITOR_ROUTE
 } from './recipe-console-monitor-fixture.ts';
 
 const EXPECTED_SECTION_ORDER = [
@@ -25,7 +19,7 @@ const EXPECTED_SECTION_ORDER = [
     'actions',
     'failures',
     'matrix',
-    'timeline',
+    'timeline'
 ] as const;
 
 function monitorInspector(page: Page): Locator {
@@ -50,7 +44,7 @@ function currentUrl(page: Page): URL {
 }
 
 async function installAbortIgnoringArtifactGate(
-    context: BrowserContext,
+    context: BrowserContext
 ): Promise<void> {
     await context.addInitScript((pathname) => {
         const originalFetch = window.fetch.bind(window);
@@ -61,14 +55,14 @@ async function installAbortIgnoringArtifactGate(
         const state = { pathname, started: false, release };
         Object.defineProperty(window, '__monitorArtifactFetchGate', {
             configurable: true,
-            value: state,
+            value: state
         });
         window.fetch = async (input, init) => {
             const url = new URL(
                 typeof input === 'string' ? input : input instanceof URL
                     ? input.href
                     : input.url,
-                location.href,
+                location.href
             );
             if (url.pathname !== state.pathname) {
                 return originalFetch(input, init);
@@ -82,17 +76,19 @@ async function installAbortIgnoringArtifactGate(
 }
 
 async function waitForAbortIgnoringArtifact(page: Page): Promise<void> {
-    await page.waitForFunction(() => Boolean(
-        (window as unknown as {
-            __monitorArtifactFetchGate?: { started: boolean };
-        }).__monitorArtifactFetchGate?.started,
-    ));
+    await page.waitForFunction(() =>
+        Boolean(
+            (window as unknown as {
+                __monitorArtifactFetchGate?: { started: boolean; };
+            }).__monitorArtifactFetchGate?.started
+        )
+    );
 }
 
 async function releaseAbortIgnoringArtifact(page: Page): Promise<void> {
     await page.evaluate(() => {
         (window as unknown as {
-            __monitorArtifactFetchGate?: { release(): void };
+            __monitorArtifactFetchGate?: { release(): void; };
         }).__monitorArtifactFetchGate?.release();
     });
 }
@@ -127,14 +123,11 @@ function expectedDestinationUrl(destination: EvidenceDestination) {
     return {
         agentId: MONITOR_FAILURE_AGENT_ID,
         recipeId: hasRecipe ? MONITOR_FAILURE_RECIPE_ID : null,
-        commandId: MONITOR_FAILURE_COMMAND_ID,
+        commandId: MONITOR_FAILURE_COMMAND_ID
     };
 }
 
-test('places the failure verdict and failure list before raw event evidence', async ({
-    context,
-    page,
-}) => {
+test('places the failure verdict and failure list before raw event evidence', async ({ context, page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     const fixture = await installRecipeConsoleMonitorFixture(context);
 
@@ -144,9 +137,8 @@ test('places the failure verdict and failure list before raw event evidence', as
 
     const sections = page.locator('[data-monitor-section]');
     await expect(sections).toHaveCount(EXPECTED_SECTION_ORDER.length);
-    expect(await sections.evaluateAll(nodes => nodes.map(node =>
-        node.getAttribute('data-monitor-section')
-    ))).toEqual(EXPECTED_SECTION_ORDER);
+    expect(await sections.evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-monitor-section'))))
+        .toEqual(EXPECTED_SECTION_ORDER);
 
     const verdict = page.locator('[data-monitor-section="verdict"]');
     const failures = page.locator('[data-monitor-section="failures"]');
@@ -158,7 +150,7 @@ test('places the failure verdict and failure list before raw event evidence', as
     await expect(verdict.locator('[data-status="failed"]')).toContainText('Failed');
     await expect(verdict).toContainText(MONITOR_FAILURE_AGENT_ID);
     await expect(verdict).toContainText(
-        `Open command ${MONITOR_FAILURE_COMMAND_ID} on ${MONITOR_FAILURE_AGENT_ID}.`,
+        `Open command ${MONITOR_FAILURE_COMMAND_ID} on ${MONITOR_FAILURE_AGENT_ID}.`
     );
     await expect(page.locator('[data-failure-key]')).toHaveCount(1);
     await expect(failureRow(page)).toContainText(MONITOR_FAILURE_CODE);
@@ -167,9 +159,9 @@ test('places the failure verdict and failure list before raw event evidence', as
     await expect(rawEvidence.locator('details[open]')).toHaveCount(0);
 
     const verticalOrder = await Promise.all(
-        [verdict, failures, matrix, rawEvidence].map(async section =>
+        [verdict, failures, matrix, rawEvidence].map(async (section) =>
             (await section.boundingBox())?.y ?? Number.POSITIVE_INFINITY
-        ),
+        )
     );
     expect(verticalOrder).toEqual([...verticalOrder].sort((left, right) => left - right));
 
@@ -182,19 +174,15 @@ test('places the failure verdict and failure list before raw event evidence', as
         .toBeVisible();
     await expect(inspector).toContainText(MONITOR_FAILURE_MESSAGE);
     await expect(inspector).toContainText(
-        'Open the composite drilldown and runtime diagnostics for the failing agent, then compare expected vs observed payload evidence.',
+        'Open the composite drilldown and runtime diagnostics for the failing agent, then compare expected vs observed payload evidence.'
     );
 });
 
-test('opens all available correlated evidence from a failure row', async ({
-    baseURL,
-    context,
-    page,
-}) => {
+test('opens all available correlated evidence from a failure row', async ({ baseURL, context, page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await context.grantPermissions(
         ['clipboard-read', 'clipboard-write'],
-        { origin: new URL(baseURL ?? 'http://127.0.0.1:5176').origin },
+        { origin: new URL(baseURL ?? 'http://127.0.0.1:5176').origin }
     );
     const fixture = await installRecipeConsoleMonitorFixture(context);
 
@@ -208,10 +196,12 @@ test('opens all available correlated evidence from a failure row', async ({
     const download = await downloadPromise;
     await expect.poll(fixture.artifactRequestCount).toBe(2);
     expect(download.suggestedFilename()).toBe(
-        `${MONITOR_DISTRIBUTED_RUN_ID}-artifact.json`,
+        `${MONITOR_DISTRIBUTED_RUN_ID}-artifact.json`
     );
     const downloadPath = await download.path();
-    if (!downloadPath) throw new Error('Monitor artifact download path is unavailable.');
+    if (!downloadPath) {
+        throw new Error('Monitor artifact download path is unavailable.');
+    }
     expect(JSON.parse(await readFile(downloadPath, 'utf8'))).toMatchObject({
         artifactSchemaVersion: 2,
         distributedRunId: MONITOR_DISTRIBUTED_RUN_ID,
@@ -219,18 +209,20 @@ test('opens all available correlated evidence from a failure row', async ({
         files: {
             'distributed-run.json': expect.any(String),
             'manifest.json': expect.any(String),
-            'control-run.json': expect.any(String),
-        },
+            'control-run.json': expect.any(String)
+        }
     });
 
     const failureInspector = await selectFailure(page);
     const destinations = await failureInspector
         .locator('[data-evidence-destination][data-evidence-id]')
-        .evaluateAll(buttons => buttons.map(button => ({
-            kind: button.getAttribute('data-evidence-destination'),
-            id: button.getAttribute('data-evidence-id'),
-        }))) as EvidenceDestination[];
-    expect([...new Set(destinations.map(destination => destination.kind))])
+        .evaluateAll((buttons) =>
+            buttons.map((button) => ({
+                kind: button.getAttribute('data-evidence-destination'),
+                id: button.getAttribute('data-evidence-id')
+            }))
+        ) as EvidenceDestination[];
+    expect([...new Set(destinations.map((destination) => destination.kind))])
         .toEqual(['agent', 'recipe', 'command', 'diagnostic', 'timeline', 'event', 'artifact']);
     expect(destinations.length).toBeGreaterThan(7);
 
@@ -238,13 +230,13 @@ test('opens all available correlated evidence from a failure row', async ({
         const inspector = await selectFailure(page);
         const button = inspector.locator(
             `[data-evidence-destination="${destination.kind}"]` +
-            `[data-evidence-id="${destination.id}"]`,
+                `[data-evidence-id="${destination.id}"]`
         );
         await expect(button, `${destination.kind}:${destination.id}`).toHaveCount(1);
         await button.click();
         await expect(monitorInspector(page)).toHaveAttribute(
             'data-selection-kind',
-            destination.kind,
+            destination.kind
         );
         await expect(monitorInspector(page).locator('header code'))
             .toHaveText(destination.id);
@@ -267,7 +259,7 @@ test('opens all available correlated evidence from a failure row', async ({
     await diagnostics.getByLabel('Transport').selectOption('messages.rtc');
     await expect(monitorInspector(page)).toHaveAttribute(
         'data-selection-kind',
-        'diagnostic',
+        'diagnostic'
     );
     await expect(monitorInspector(page)).toContainText(MONITOR_DIAGNOSTIC_ID);
     expect(currentUrl(page).searchParams.get('diagnosticSeverity')).toBe('error');
@@ -312,10 +304,7 @@ test('opens all available correlated evidence from a failure row', async ({
     await expect(monitorInspector(page)).toContainText(MONITOR_FAILURE_COMMAND_ID);
 });
 
-test('preserves last-known evidence while a selected run refresh fails', async ({
-    context,
-    page,
-}) => {
+test('preserves last-known evidence while a selected run refresh fails', async ({ context, page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     const fixture = await installRecipeConsoleMonitorFixture(context);
 
@@ -363,16 +352,13 @@ test('preserves last-known evidence while a selected run refresh fails', async (
     await expect(page.getByRole('heading', { name: 'Select a distributed run' }))
         .toBeVisible();
     await expect(page.locator('[data-monitor-run-selector]')).toContainText(
-        `Distributed run ${MONITOR_DISTRIBUTED_RUN_ID} is not available in the selected control run.`,
+        `Distributed run ${MONITOR_DISTRIBUTED_RUN_ID} is not available in the selected control run.`
     );
     await expect(failureRow(page)).toHaveCount(0);
     await expect(page.locator('[data-monitor-section="matrix"]')).toHaveCount(0);
 });
 
-test('confirms a visible armed Monitor cancellation and projects cancelled truth', async ({
-    context,
-    page,
-}) => {
+test('confirms a visible armed Monitor cancellation and projects cancelled truth', async ({ context, page }) => {
     const fixture = await installRecipeConsoleMonitorFixture(context);
     fixture.setRunState('running');
     await page.goto(MONITOR_ROUTE);
@@ -384,7 +370,7 @@ test('confirms a visible armed Monitor cancellation and projects cancelled truth
     await actions.getByRole('button', { name: 'Cancel run', exact: true }).click();
 
     const dialog = page.getByRole('alertdialog', {
-        name: 'Cancel distributed run?',
+        name: 'Cancel distributed run?'
     });
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText(MONITOR_DISTRIBUTED_RUN_ID);
@@ -400,10 +386,7 @@ test('confirms a visible armed Monitor cancellation and projects cancelled truth
         .toBeDisabled();
 });
 
-test('browses secondary Monitor events with exact window truth', async ({
-    context,
-    page,
-}) => {
+test('browses secondary Monitor events with exact window truth', async ({ context, page }) => {
     const fixture = await installRecipeConsoleMonitorFixture(context);
     fixture.setAdditionalEventCount(45);
     await page.goto(MONITOR_ROUTE);
@@ -415,12 +398,14 @@ test('browses secondary Monitor events with exact window truth', async ({
     const window = eventEvidence.getByRole('group', { name: 'Events window' });
     await expect(eventEvidence.locator('li')).toHaveCount(40);
     await expect(window.getByRole('status')).toHaveText(
-        'Showing 1–40 of 47 events.',
+        'Showing 1–40 of 47 events.'
     );
     await expect(eventEvidence.getByText(
-        '7 events outside this render window and browseable.', {
-        exact: true,
-    })).toBeVisible();
+        '7 events outside this render window and browseable.',
+        {
+            exact: true
+        }
+    )).toBeVisible();
     await expect(window.getByRole('button', { name: 'Previous' })).toBeDisabled();
     await expect(window.getByRole('button', { name: 'Next' })).toBeEnabled();
 
@@ -429,20 +414,19 @@ test('browses secondary Monitor events with exact window truth', async ({
     await expect(page).toHaveURL(url);
     await expect(eventEvidence.locator('li')).toHaveCount(7);
     await expect(window.getByRole('status')).toHaveText(
-        'Showing 41–47 of 47 events.',
+        'Showing 41–47 of 47 events.'
     );
     await expect(eventEvidence.getByText(
-        '40 events outside this render window and browseable.', {
-        exact: true,
-    })).toBeVisible();
+        '40 events outside this render window and browseable.',
+        {
+            exact: true
+        }
+    )).toBeVisible();
     await expect(window.getByRole('button', { name: 'Previous' })).toBeEnabled();
     await expect(window.getByRole('button', { name: 'Next' })).toBeDisabled();
 });
 
-test('renders operational and control-truth transitions from live Monitor evidence', async ({
-    context,
-    page,
-}) => {
+test('renders operational and control-truth transitions from live Monitor evidence', async ({ context, page }) => {
     const fixture = await installRecipeConsoleMonitorFixture(context);
     fixture.setSingleAgentFailure();
     fixture.failNextRunRead();
@@ -502,15 +486,17 @@ test('renders operational and control-truth transitions from live Monitor eviden
         .filter({ has: page.locator('summary', { hasText: 'Events (' }) });
     await eventEvidence.locator('summary').click();
     await expect(eventEvidence).toContainText(
-        'Agent reconnected after a transient control disconnect.',
+        'Agent reconnected after a transient control disconnect.'
     );
 
-    for (const [state, status, label] of [
-        ['passed', 'passed', 'Passed'],
-        ['failed', 'failed', 'Failed'],
-        ['timed-out', 'failed', 'Failed'],
-        ['cancelled', 'warning', 'Attention'],
-    ] as const) {
+    for (
+        const [state, status, label] of [
+            ['passed', 'passed', 'Passed'],
+            ['failed', 'failed', 'Failed'],
+            ['timed-out', 'failed', 'Failed'],
+            ['cancelled', 'warning', 'Attention']
+        ] as const
+    ) {
         fixture.setRunState(state);
         await refreshMonitor(page, fixture.runRequestCount);
         await expect(verdict).toHaveAttribute('data-run-state', state);
@@ -534,10 +520,7 @@ test('renders operational and control-truth transitions from live Monitor eviden
     await expect(verdict).toHaveAttribute('data-evidence-completeness', 'complete');
 });
 
-test('rejects an abort-ignoring late artifact response after Monitor context changes', async ({
-    context,
-    page,
-}) => {
+test('rejects an abort-ignoring late artifact response after Monitor context changes', async ({ context, page }) => {
     await installAbortIgnoringArtifactGate(context);
     const fixture = await installRecipeConsoleMonitorFixture(context);
     await page.goto(MONITOR_ROUTE);
@@ -564,7 +547,7 @@ test('rejects an abort-ignoring late artifact response after Monitor context cha
 
     await page.goBack();
     await expect(page).toHaveURL(
-        new RegExp(`distributedRunId=${MONITOR_DISTRIBUTED_RUN_ID}`),
+        new RegExp(`distributedRunId=${MONITOR_DISTRIBUTED_RUN_ID}`)
     );
     const restoredActions = page.getByRole('region', { name: 'Monitor actions' });
     await expect(restoredActions).toHaveAttribute('aria-busy', 'false');

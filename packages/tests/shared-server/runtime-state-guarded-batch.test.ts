@@ -1,16 +1,13 @@
-import { describe, expect, it } from 'vitest';
-import type {
-    PSqlSql,
-    PSqlTransactionSql,
-} from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import {
     isRuntimeStateGuardedBatchRepositoryLike,
-    type RuntimeStateGuardedBatch,
-    type RuntimeStateGuardedBatchResult,
     validateRuntimeStateGuardedBatch,
     validateRuntimeStateGuardedBatchResult,
+    type RuntimeStateGuardedBatch,
+    type RuntimeStateGuardedBatchResult
 } from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
+import { describe, expect, it } from 'vitest';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 
@@ -24,7 +21,7 @@ describe('runtime-state guarded batches', () => {
                 operation: 'delete',
                 namespace: 'guard',
                 key: 'delete',
-                expectedRevision: Number.MAX_SAFE_INTEGER,
+                expectedRevision: Number.MAX_SAFE_INTEGER
             },
             effects: [{
                 effectId: 'maximum-update',
@@ -33,8 +30,8 @@ describe('runtime-state guarded batches', () => {
                 key: 'maximum-update',
                 expectedRevision: Number.MAX_SAFE_INTEGER - 1,
                 value: 'updated',
-                expireAtTimestamp: FUTURE_MS,
-            }],
+                expireAtTimestamp: FUTURE_MS
+            }]
         })).toBeDefined();
     });
 
@@ -45,31 +42,31 @@ describe('runtime-state guarded batches', () => {
                 namespace: 'guard',
                 key: 'root',
                 value: 'root',
-                expireAtTimestamp: FUTURE_MS,
+                expireAtTimestamp: FUTURE_MS
             },
-            effects: [createInsertEffect('effect', 'one')],
+            effects: [createInsertEffect('effect', 'one')]
         }],
         ['empty effects', {
             guard: createInsertGuard(),
-            effects: [],
+            effects: []
         }],
         ['non-array effects', {
             guard: createInsertGuard(),
-            effects: {},
+            effects: {}
         }],
         ['duplicate effect IDs', {
             guard: createInsertGuard(),
             effects: [
                 createInsertEffect('duplicate', 'one'),
-                createInsertEffect('duplicate', 'two'),
-            ],
+                createInsertEffect('duplicate', 'two')
+            ]
         }],
         ['duplicate identities', {
             guard: createInsertGuard(),
             effects: [{
                 ...createInsertEffect('duplicate-identity', 'root'),
-                namespace: 'guard',
-            }],
+                namespace: 'guard'
+            }]
         }],
         ['unknown operation', {
             guard: createInsertGuard(),
@@ -79,12 +76,12 @@ describe('runtime-state guarded batches', () => {
                 namespace: 'effect',
                 key: 'unknown',
                 value: 'value',
-                expireAtTimestamp: FUTURE_MS,
-            }],
-        }],
+                expireAtTimestamp: FUTURE_MS
+            }]
+        }]
     ])('rejects %s before SQL', (_label, input) => {
         expect(() => validateRuntimeStateGuardedBatch(input)).toThrow(
-            /runtime state guarded batch/iu,
+            /runtime state guarded batch/iu
         );
     });
 
@@ -92,38 +89,46 @@ describe('runtime-state guarded batches', () => {
         const sparseEffects = new Array(2);
         sparseEffects[0] = createInsertEffect('one', 'one');
 
-        expect(() => validateRuntimeStateGuardedBatch({
-            guard: createInsertGuard(),
-            effects: sparseEffects,
-        })).toThrow(/dense/iu);
+        expect(() =>
+            validateRuntimeStateGuardedBatch({
+                guard: createInsertGuard(),
+                effects: sparseEffects
+            })
+        ).toThrow(/dense/iu);
 
-        for (const mutation of [
-            { field: 'namespace', value: '' },
-            { field: 'key', value: '' },
-            { field: 'value', value: 1 },
-            { field: 'expireAtTimestamp', value: Number.NaN },
-            { field: 'effectId', value: '' },
-        ] as const) {
+        for (
+            const mutation of [
+                { field: 'namespace', value: '' },
+                { field: 'key', value: '' },
+                { field: 'value', value: 1 },
+                { field: 'expireAtTimestamp', value: Number.NaN },
+                { field: 'effectId', value: '' }
+            ] as const
+        ) {
             const effect = {
                 ...createInsertEffect('valid', 'valid'),
-                [mutation.field]: mutation.value,
+                [mutation.field]: mutation.value
             };
-            expect(() => validateRuntimeStateGuardedBatch({
-                guard: createInsertGuard(),
-                effects: [effect],
-            })).toThrow(/runtime state guarded batch/iu);
+            expect(() =>
+                validateRuntimeStateGuardedBatch({
+                    guard: createInsertGuard(),
+                    effects: [effect]
+                })
+            ).toThrow(/runtime state guarded batch/iu);
         }
     });
 
-    it.each([
-        ['update', -0],
-        ['update', -1],
-        ['update', 0.5],
-        ['update', Number.MAX_SAFE_INTEGER],
-        ['delete', -0],
-        ['delete', -1],
-        ['delete', Number.MAX_SAFE_INTEGER + 1],
-    ] as const)(
+    it.each(
+        [
+            ['update', -0],
+            ['update', -1],
+            ['update', 0.5],
+            ['update', Number.MAX_SAFE_INTEGER],
+            ['delete', -0],
+            ['delete', -1],
+            ['delete', Number.MAX_SAFE_INTEGER + 1]
+        ] as const
+    )(
         'rejects invalid %s expected revision %s before SQL',
         (operation, expectedRevision) => {
             const guard = operation === 'update'
@@ -133,20 +138,22 @@ describe('runtime-state guarded batches', () => {
                     key: 'root',
                     expectedRevision,
                     value: 'updated',
-                    expireAtTimestamp: FUTURE_MS,
+                    expireAtTimestamp: FUTURE_MS
                 }
                 : {
                     operation,
                     namespace: 'guard',
                     key: 'root',
-                    expectedRevision,
+                    expectedRevision
                 };
 
-            expect(() => validateRuntimeStateGuardedBatch({
-                guard,
-                effects: [createInsertEffect('effect', 'one')],
-            })).toThrow(/expected revision/iu);
-        },
+            expect(() =>
+                validateRuntimeStateGuardedBatch({
+                    guard,
+                    effects: [createInsertEffect('effect', 'one')]
+                })
+            ).toThrow(/expected revision/iu);
+        }
     );
 
     it('validates a dense exact result in descriptor order', () => {
@@ -157,7 +164,7 @@ describe('runtime-state guarded batches', () => {
                 operation: 'update',
                 namespace: 'guard',
                 key: 'root',
-                resultingRevision: 1,
+                resultingRevision: 1
             },
             effects: [{
                 status: 'applied',
@@ -165,29 +172,29 @@ describe('runtime-state guarded batches', () => {
                 operation: 'insert',
                 namespace: 'effect',
                 key: 'insert',
-                resultingRevision: 0,
+                resultingRevision: 0
             }, {
                 status: 'applied',
                 effectId: 'update',
                 operation: 'update',
                 namespace: 'effect',
                 key: 'update',
-                resultingRevision: 1,
+                resultingRevision: 1
             }, {
                 status: 'applied',
                 effectId: 'delete',
                 operation: 'delete',
                 namespace: 'effect',
                 key: 'delete',
-                matchedRevision: Number.MAX_SAFE_INTEGER,
+                matchedRevision: Number.MAX_SAFE_INTEGER
             }, {
                 status: 'applied',
                 effectId: 'put',
                 operation: 'put',
                 namespace: 'effect',
                 key: 'put',
-                resultingRevision: 0,
-            }],
+                resultingRevision: 0
+            }]
         };
 
         expect(validateRuntimeStateGuardedBatchResult(batch, result)).toEqual(result);
@@ -201,7 +208,7 @@ describe('runtime-state guarded batches', () => {
                 operation: 'update',
                 namespace: 'guard',
                 key: 'root',
-                reason: 'condition-not-met',
+                reason: 'condition-not-met'
             },
             effects: batch.effects.map((effect) => ({
                 status: 'skipped' as const,
@@ -209,25 +216,25 @@ describe('runtime-state guarded batches', () => {
                 operation: effect.operation,
                 namespace: effect.namespace,
                 key: effect.key,
-                reason: 'guard-conflict' as const,
-            })),
+                reason: 'guard-conflict' as const
+            }))
         };
 
         expect(validateRuntimeStateGuardedBatchResult(batch, result)).toEqual(result);
 
-        for (const malformed of [
-            { ...result, effects: result.effects.slice(0, -1) },
-            {
-                ...result,
-                effects: result.effects.map((effect, index) =>
-                    index === 0 ? { ...effect, effectId: 'unexpected' } : effect
-                ),
-            },
-            {
-                ...result,
-                guard: { ...result.guard, key: 'unexpected' },
-            },
-        ]) {
+        for (
+            const malformed of [
+                { ...result, effects: result.effects.slice(0, -1) },
+                {
+                    ...result,
+                    effects: result.effects.map((effect, index) => index === 0 ? { ...effect, effectId: 'unexpected' } : effect)
+                },
+                {
+                    ...result,
+                    guard: { ...result.guard, key: 'unexpected' }
+                }
+            ]
+        ) {
             expect(() => validateRuntimeStateGuardedBatchResult(batch, malformed))
                 .toThrow(/runtime state guarded batch result/iu);
         }
@@ -242,45 +249,49 @@ describe('runtime-state guarded batches', () => {
                 namespace: 'effect',
                 key: 'put',
                 value: 'put',
-                expireAtTimestamp: FUTURE_MS,
-            }],
+                expireAtTimestamp: FUTURE_MS
+            }]
         };
 
-        expect(() => validateRuntimeStateGuardedBatchResult(batch, {
-            guard: {
-                status: 'applied',
-                operation: 'insert',
-                namespace: 'guard',
-                key: 'root',
-                resultingRevision: 0,
-            },
-            effects: [{
-                status: 'conflict',
-                effectId: 'put',
-                operation: 'put',
-                namespace: 'effect',
-                key: 'put',
-                reason: 'condition-not-met',
-            }],
-        })).toThrow(/put/iu);
+        expect(() =>
+            validateRuntimeStateGuardedBatchResult(batch, {
+                guard: {
+                    status: 'applied',
+                    operation: 'insert',
+                    namespace: 'guard',
+                    key: 'root',
+                    resultingRevision: 0
+                },
+                effects: [{
+                    status: 'conflict',
+                    effectId: 'put',
+                    operation: 'put',
+                    namespace: 'effect',
+                    key: 'put',
+                    reason: 'condition-not-met'
+                }]
+            })
+        ).toThrow(/put/iu);
 
-        expect(() => validateRuntimeStateGuardedBatchResult(batch, {
-            guard: {
-                status: 'applied',
-                operation: 'insert',
-                namespace: 'guard',
-                key: 'root',
-                resultingRevision: 1,
-            },
-            effects: [{
-                status: 'applied',
-                effectId: 'put',
-                operation: 'put',
-                namespace: 'effect',
-                key: 'put',
-                resultingRevision: 0,
-            }],
-        })).toThrow(/revision/iu);
+        expect(() =>
+            validateRuntimeStateGuardedBatchResult(batch, {
+                guard: {
+                    status: 'applied',
+                    operation: 'insert',
+                    namespace: 'guard',
+                    key: 'root',
+                    resultingRevision: 1
+                },
+                effects: [{
+                    status: 'applied',
+                    effectId: 'put',
+                    operation: 'put',
+                    namespace: 'effect',
+                    key: 'put',
+                    resultingRevision: 0
+                }]
+            })
+        ).toThrow(/revision/iu);
     });
 
     it('exposes guarded batches only on transaction-scoped PostgreSQL repositories', async () => {
@@ -290,7 +301,7 @@ describe('runtime-state guarded batches', () => {
 
         expect(isRuntimeStateGuardedBatchRepositoryLike(repository)).toBe(false);
         await expect(repository.executeGuardedBatch(createBatch())).rejects.toThrow(
-            /transaction/iu,
+            /transaction/iu
         );
 
         await repository.begin(async (transactionRepository) => {
@@ -301,12 +312,14 @@ describe('runtime-state guarded batches', () => {
     });
 
     it('rejects malformed guarded-batch capabilities without throwing', () => {
-        for (const candidate of [
-            null,
-            {},
-            { runtimeStateGuardedBatchCapability: false, executeGuardedBatch() {} },
-            { runtimeStateGuardedBatchCapability: true, executeGuardedBatch: null },
-        ]) {
+        for (
+            const candidate of [
+                null,
+                {},
+                { runtimeStateGuardedBatchCapability: false, executeGuardedBatch() {} },
+                { runtimeStateGuardedBatchCapability: true, executeGuardedBatch: null }
+            ]
+        ) {
             expect(() => isRuntimeStateGuardedBatchRepositoryLike(candidate))
                 .not.toThrow();
             expect(isRuntimeStateGuardedBatchRepositoryLike(candidate)).toBe(false);
@@ -321,9 +334,9 @@ describe('runtime-state guarded batches', () => {
                 key: 'root-secret',
                 expectedRevision: 0,
                 value: 'guard-value-secret',
-                expireAtTimestamp: FUTURE_MS,
+                expireAtTimestamp: FUTURE_MS
             },
-            effects: [createInsertEffect('effect-secret', 'insert-secret')],
+            effects: [createInsertEffect('effect-secret', 'insert-secret')]
         };
         const captured: CapturedQuery[] = [];
         const sql = createTransactionalSql(captured, [{
@@ -332,14 +345,14 @@ describe('runtime-state guarded batches', () => {
             operation: 'update',
             store_namespace: 'guard-secret',
             store_key: 'root-secret',
-            revision: 1,
+            revision: 1
         }, {
             result_kind: 'effect',
             effect_id: 'effect-secret',
             operation: 'insert',
             store_namespace: 'effect',
             store_key: 'insert-secret',
-            revision: 0,
+            revision: 0
         }]);
         const repository = new PSqlRuntimeStateRepository(sql);
 
@@ -356,7 +369,7 @@ describe('runtime-state guarded batches', () => {
                 operation: 'update',
                 namespace: 'guard-secret',
                 key: 'root-secret',
-                resultingRevision: 1,
+                resultingRevision: 1
             },
             effects: [{
                 status: 'applied',
@@ -364,8 +377,8 @@ describe('runtime-state guarded batches', () => {
                 operation: 'insert',
                 namespace: 'effect',
                 key: 'insert-secret',
-                resultingRevision: 0,
-            }],
+                resultingRevision: 0
+            }]
         });
         expect(captured).toHaveLength(1);
         const [query] = captured;
@@ -375,33 +388,35 @@ describe('runtime-state guarded batches', () => {
         expect(query.source).toMatch(/authority\s+as/iu);
         for (const cte of ['effect_insert', 'effect_update', 'effect_delete', 'effect_put']) {
             const cteSource = query.source.match(
-                new RegExp(`${cte}\\s+as\\s*\\(([\\s\\S]*?)\\n\\s*\\)`, 'iu'),
+                new RegExp(`${cte}\\s+as\\s*\\(([\\s\\S]*?)\\n\\s*\\)`, 'iu')
             )?.[1] ?? '';
             expect(cteSource).toMatch(/authority/iu);
         }
         expect(query.source).not.toMatch(
-            /for\s+update|pg_advisory|lockKey/iu,
+            /for\s+update|pg_advisory|lockKey/iu
         );
-        for (const secret of [
-            'guard-secret',
-            'root-secret',
-            'guard-value-secret',
-            'effect-secret',
-            'insert-secret',
-        ]) {
+        for (
+            const secret of [
+                'guard-secret',
+                'root-secret',
+                'guard-value-secret',
+                'effect-secret',
+                'insert-secret'
+            ]
+        ) {
             expect(query.source).not.toContain(secret);
         }
         expect(query.values).toContainEqual({
             ...batch.guard,
-            expireAtTimestamp: new Date(FUTURE_MS).toISOString(),
+            expireAtTimestamp: new Date(FUTURE_MS).toISOString()
         });
         expect(query.values).toContainEqual(batch.effects.map((effect) =>
             'expireAtTimestamp' in effect
                 ? {
                     ...effect,
                     expireAtTimestamp: new Date(
-                        effect.expireAtTimestamp,
-                    ).toISOString(),
+                        effect.expireAtTimestamp
+                    ).toISOString()
                 }
                 : effect
         ));
@@ -414,7 +429,7 @@ describe('runtime-state guarded batches', () => {
             operation: 'insert',
             store_namespace: 'effect',
             store_key: 'insert',
-            revision: 0,
+            revision: 0
         }]],
         ['a duplicate guard row', [{
             result_kind: 'guard',
@@ -422,14 +437,14 @@ describe('runtime-state guarded batches', () => {
             operation: 'update',
             store_namespace: 'guard',
             store_key: 'root',
-            revision: 1,
+            revision: 1
         }, {
             result_kind: 'guard',
             effect_id: null,
             operation: 'update',
             store_namespace: 'guard',
             store_key: 'root',
-            revision: 1,
+            revision: 1
         }]],
         ['an unexpected effect identity', [{
             result_kind: 'guard',
@@ -437,18 +452,18 @@ describe('runtime-state guarded batches', () => {
             operation: 'update',
             store_namespace: 'guard',
             store_key: 'root',
-            revision: 1,
+            revision: 1
         }, {
             result_kind: 'effect',
             effect_id: 'insert',
             operation: 'insert',
             store_namespace: 'effect',
             store_key: 'unexpected',
-            revision: 0,
-        }]],
+            revision: 0
+        }]]
     ])('rejects database results containing %s', async (_label, rows) => {
         const repository = new PSqlRuntimeStateRepository(
-            createTransactionalSql([], rows),
+            createTransactionalSql([], rows)
         );
 
         await expect(repository.begin(async (transactionRepository) => {
@@ -466,13 +481,13 @@ function createInsertGuard(): RuntimeStateGuardedBatch['guard'] {
         namespace: 'guard',
         key: 'root',
         value: 'root',
-        expireAtTimestamp: FUTURE_MS,
+        expireAtTimestamp: FUTURE_MS
     };
 }
 
 function createInsertEffect(
     effectId: string,
-    key: string,
+    key: string
 ): RuntimeStateGuardedBatch['effects'][number] {
     return {
         effectId,
@@ -480,7 +495,7 @@ function createInsertEffect(
         namespace: 'effect',
         key,
         value: key,
-        expireAtTimestamp: FUTURE_MS,
+        expireAtTimestamp: FUTURE_MS
     };
 }
 
@@ -492,7 +507,7 @@ function createBatch(): RuntimeStateGuardedBatch {
             key: 'root',
             expectedRevision: 0,
             value: 'root-updated',
-            expireAtTimestamp: FUTURE_MS,
+            expireAtTimestamp: FUTURE_MS
         },
         effects: [{
             effectId: 'insert',
@@ -500,7 +515,7 @@ function createBatch(): RuntimeStateGuardedBatch {
             namespace: 'effect',
             key: 'insert',
             value: 'inserted',
-            expireAtTimestamp: FUTURE_MS,
+            expireAtTimestamp: FUTURE_MS
         }, {
             effectId: 'update',
             operation: 'update',
@@ -508,21 +523,21 @@ function createBatch(): RuntimeStateGuardedBatch {
             key: 'update',
             expectedRevision: 0,
             value: 'updated',
-            expireAtTimestamp: FUTURE_MS,
+            expireAtTimestamp: FUTURE_MS
         }, {
             effectId: 'delete',
             operation: 'delete',
             namespace: 'effect',
             key: 'delete',
-            expectedRevision: Number.MAX_SAFE_INTEGER,
+            expectedRevision: Number.MAX_SAFE_INTEGER
         }, {
             effectId: 'put',
             operation: 'put',
             namespace: 'effect',
             key: 'put',
             value: 'put',
-            expireAtTimestamp: FUTURE_MS,
-        }],
+            expireAtTimestamp: FUTURE_MS
+        }]
     };
 }
 
@@ -533,26 +548,28 @@ type CapturedQuery = Readonly<{
 
 function createTransactionalSql(
     captured: CapturedQuery[],
-    resultRows: readonly unknown[],
+    resultRows: readonly unknown[]
 ): PSqlSql {
     const runNested = async <T>(
-        fn: (sql: PSqlTransactionSql) => Promise<T>,
+        fn: (sql: PSqlTransactionSql) => Promise<T>
     ): Promise<T> => await fn(transactionSql);
     const transactionSql = Object.assign(
         (strings: TemplateStringsArray, ...values: unknown[]) => {
             captured.push({ source: strings.join('?'), values });
             return Promise.resolve(resultRows);
         },
-        { begin: runNested, savepoint: runNested },
-    ) as unknown as PSqlTransactionSql & Readonly<{
-        savepoint<T>(fn: (sql: PSqlTransactionSql) => Promise<T>): Promise<T>;
-    }>;
+        { begin: runNested, savepoint: runNested }
+    ) as unknown as
+        & PSqlTransactionSql
+        & Readonly<{
+            savepoint<T>(fn: (sql: PSqlTransactionSql) => Promise<T>): Promise<T>;
+        }>;
 
     const rootSql = (() => {
         throw new Error('Root SQL should not be called.');
     }) as unknown as PSqlSql;
     rootSql.begin = async <T>(
-        fn: (sql: PSqlTransactionSql) => Promise<T>,
+        fn: (sql: PSqlTransactionSql) => Promise<T>
     ): Promise<T> => await fn(transactionSql);
     return rootSql;
 }

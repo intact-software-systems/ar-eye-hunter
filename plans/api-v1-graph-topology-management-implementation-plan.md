@@ -131,12 +131,12 @@ Graph diagnostic response:
 
 ```ts
 type GraphDiagnosticReadResponse = Readonly<{
-  groupRef: GroupRef;
-  snapshot: SerializedGraphInfoSnapshot;
-  cache: {
-    hit: boolean;
-    refreshed: boolean;
-  };
+    groupRef: GroupRef;
+    snapshot: SerializedGraphInfoSnapshot;
+    cache: {
+        hit: boolean;
+        refreshed: boolean;
+    };
 }>;
 ```
 

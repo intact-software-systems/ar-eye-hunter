@@ -1,29 +1,21 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import {
-    createRallarCrdtDocument,
-    rallarCrdtBatch,
-    type RallarCrdtDocumentRef,
-} from '@shared/crdt/mod.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
-import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import {
     deriveGraphologyFromRallarGraphCrdt,
     rallarGraphCrdtAddEdgeOperation,
     rallarGraphCrdtAddNodeOperation,
     rallarGraphCrdtRemoveNodeOperation,
-    rallarGraphCrdtSetNodePropertyOperation,
+    rallarGraphCrdtSetNodePropertyOperation
 } from '@shared-graph/crdt/graph-crdt.ts';
-import {
-    findGraphByRef,
-    readableGraphCache,
-    setGraph,
-} from '@shared-graph/repository/graphs-repository.ts';
+import { findGraphByRef, readableGraphCache, setGraph } from '@shared-graph/repository/graphs-repository.ts';
 import type { GraphInfoSnapshot } from '@shared-graph/shared-graph-types.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import { createRallarCrdtDocument, rallarCrdtBatch, type RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 
 const roomRef: GroupRef = {
     applicationId: 'rallar-test',
     workspaceId: 'main',
-    groupId: 'room-1',
+    groupId: 'room-1'
 };
 
 const documentRef: RallarCrdtDocumentRef = {
@@ -32,7 +24,7 @@ const documentRef: RallarCrdtDocumentRef = {
     scope: 'room',
     documentType: 'graph-authoring',
     documentId: 'room-1',
-    roomRef,
+    roomRef
 };
 
 describe('Rallar graph CRDT spike', () => {
@@ -46,34 +38,34 @@ describe('Rallar graph CRDT spike', () => {
             ref: documentRef,
             replicaId: 'replica-a',
             now: fixedNow(1_000),
-            createUpdateId: sequenceIds('a'),
+            createUpdateId: sequenceIds('a')
         });
         const second = createRallarCrdtDocument({
             ref: documentRef,
             replicaId: 'replica-b',
             now: fixedNow(1_000),
-            createUpdateId: sequenceIds('b'),
+            createUpdateId: sequenceIds('b')
         });
 
         const addA = first.applyLocal(
             rallarCrdtBatch([
                 rallarGraphCrdtAddNodeOperation({
-                    id: 'a',
-                }),
-            ]),
+                    id: 'a'
+                })
+            ])
         );
         const addBAndEdge = second.applyLocal(
             rallarCrdtBatch([
                 rallarGraphCrdtAddNodeOperation({
-                    id: 'b',
+                    id: 'b'
                 }),
                 rallarGraphCrdtAddEdgeOperation({
                     id: 'ab',
                     source: 'a',
                     target: 'b',
-                    weight: 2,
-                }),
-            ]),
+                    weight: 2
+                })
+            ])
         );
 
         first.apply(addBAndEdge);
@@ -85,9 +77,9 @@ describe('Rallar graph CRDT spike', () => {
                     'a',
                     'label',
                     'Alpha',
-                    'multi',
-                ),
-            ]),
+                    'multi'
+                )
+            ])
         );
         const aardvark = second.applyLocal(
             rallarCrdtBatch([
@@ -95,22 +87,22 @@ describe('Rallar graph CRDT spike', () => {
                     'a',
                     'label',
                     'Aardvark',
-                    'multi',
-                ),
-            ]),
+                    'multi'
+                )
+            ])
         );
 
         first.apply(aardvark);
         second.apply(alpha);
 
         const firstDerived = deriveGraphologyFromRallarGraphCrdt(first.read(), {
-            groupRef: roomRef,
+            groupRef: roomRef
         });
         const secondDerived = deriveGraphologyFromRallarGraphCrdt(
             second.read(),
             {
-                groupRef: roomRef,
-            },
+                groupRef: roomRef
+            }
         );
 
         expect(first.read()).toEqual(second.read());
@@ -119,22 +111,22 @@ describe('Rallar graph CRDT spike', () => {
         expect(firstDerived.graph.hasEdge('a', 'b')).toBe(true);
         expect(
             firstDerived.graph.getEdgeAttributes(
-                firstDerived.graph.edge('a', 'b')!,
-            ),
+                firstDerived.graph.edge('a', 'b')!
+            )
         ).toMatchObject({
             from: 'a',
             to: 'b',
-            weight: 2,
+            weight: 2
         });
         expect(firstDerived.nodeLabels).toEqual({
-            a: 'Aardvark',
+            a: 'Aardvark'
         });
         expect(firstDerived.labelConflicts).toEqual([
             {
                 kind: 'node-label',
                 id: 'a',
-                values: ['Aardvark', 'Alpha'],
-            },
+                values: ['Aardvark', 'Alpha']
+            }
         ]);
     });
 
@@ -144,13 +136,13 @@ describe('Rallar graph CRDT spike', () => {
                 nodes: {
                     a: {
                         id: 'a',
-                        label: 'Alpha',
-                    },
-                },
+                        label: 'Alpha'
+                    }
+                }
             },
             {
-                groupRef: roomRef,
-            },
+                groupRef: roomRef
+            }
         );
         const older = toSnapshot(derived, 1, 1_000);
         const newer = toSnapshot(derived, 2, 2_000);
@@ -165,32 +157,32 @@ describe('Rallar graph CRDT spike', () => {
             ref: documentRef,
             replicaId: 'replica-a',
             now: fixedNow(1_000),
-            createUpdateId: sequenceIds('a'),
+            createUpdateId: sequenceIds('a')
         });
 
         document.applyLocal(
             rallarCrdtBatch([
                 rallarGraphCrdtAddNodeOperation({
-                    id: 'a',
+                    id: 'a'
                 }),
                 rallarGraphCrdtAddNodeOperation({
-                    id: 'b',
+                    id: 'b'
                 }),
                 rallarGraphCrdtAddEdgeOperation({
                     id: 'ab',
                     source: 'a',
-                    target: 'b',
-                }),
-            ]),
+                    target: 'b'
+                })
+            ])
         );
         document.applyLocal(
             rallarCrdtBatch([
-                rallarGraphCrdtRemoveNodeOperation(document, 'a'),
-            ]),
+                rallarGraphCrdtRemoveNodeOperation(document, 'a')
+            ])
         );
 
         const derived = deriveGraphologyFromRallarGraphCrdt(document.read(), {
-            groupRef: roomRef,
+            groupRef: roomRef
         });
 
         expect(derived.graph.nodes()).toEqual(['b']);
@@ -201,7 +193,7 @@ describe('Rallar graph CRDT spike', () => {
 function toSnapshot(
     derived: ReturnType<typeof deriveGraphologyFromRallarGraphCrdt>,
     version: number,
-    createdAtEpochMs: number,
+    createdAtEpochMs: number
 ): GraphInfoSnapshot {
     return {
         groupRef: derived.groupRef,
@@ -209,10 +201,10 @@ function toSnapshot(
             groupRef: derived.groupRef,
             graph: derived.graph,
             groupGraph: derived.graph,
-            coreNodes: derived.graph.nodes(),
+            coreNodes: derived.graph.nodes()
         },
         createdAtEpochMs,
-        version,
+        version
     };
 }
 

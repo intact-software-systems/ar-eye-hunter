@@ -3,17 +3,17 @@ import {
     ADVANCED_DIAGNOSTIC_HANDOFF_MAX_CORRELATED_FAILURE_KEYS,
     ADVANCED_DIAGNOSTIC_HANDOFF_MAX_DIAGNOSTICS,
     ADVANCED_DIAGNOSTIC_HANDOFF_MAX_TEXT_LENGTH,
-    deriveAdvancedDiagnosticHandoffTargets,
+    deriveAdvancedDiagnosticHandoffTargets
 } from '../../shared-test/rallar-bb-test/mod.ts';
 
 const AUTH_AND_WEBSOCKET = [
     { surface: 'auth', label: 'Auth' },
-    { surface: 'websocket', label: 'WebSocket' },
+    { surface: 'websocket', label: 'WebSocket' }
 ] as const;
 
 function diagnostic(
     correlatedFailureKeys: unknown,
-    fields: Readonly<Record<string, unknown>>,
+    fields: Readonly<Record<string, unknown>>
 ): Readonly<Record<string, unknown>> {
     return { correlatedFailureKeys, ...fields };
 }
@@ -24,23 +24,23 @@ describe('advanced diagnostic handoff targets', () => {
             { code: 'BAD_AUTH', message: 'Credentials rejected' },
             { message: 'WebSocket ticket was rejected' },
             { message: 'Request was unauthorized' },
-            { message: 'Operation forbidden for this user' },
+            { message: 'Operation forbidden for this user' }
         ];
 
         authSignals.forEach((failure, index) => {
             expect(deriveAdvancedDiagnosticHandoffTargets({
                 failure: { key: `failure-${index}`, ...failure },
-                diagnostics: [],
+                diagnostics: []
             })).toEqual(AUTH_AND_WEBSOCKET);
         });
     });
 
     it('routes stable RTC no-peer and no-route failure codes to RTC Diagnostics', () => {
-        ['RALLAR_BB_RTC_NO_PEERS', 'RTC_NO_ROUTE'].forEach(code => {
+        ['RALLAR_BB_RTC_NO_PEERS', 'RTC_NO_ROUTE'].forEach((code) => {
             expect(deriveAdvancedDiagnosticHandoffTargets({
-                failure: { key: code, code, message: 'Transport failed' },
+                failure: { key: code, code, message: 'Transport failed' }
             })).toEqual([
-                { surface: 'rtc-diagnostics', label: 'RTC Diagnostics' },
+                { surface: 'rtc-diagnostics', label: 'RTC Diagnostics' }
             ]);
         });
     });
@@ -51,19 +51,19 @@ describe('advanced diagnostic handoff targets', () => {
             diagnostics: [
                 diagnostic(['other'], {
                     diagnosticTypeId: 'rallar.browser.auth.ticket_forbidden',
-                    message: 'Unauthorized ticket',
+                    message: 'Unauthorized ticket'
                 }),
                 diagnostic(['selected'], {
                     diagnosticTypeId: 'rallar.browser.rtc.no_peer',
-                    message: 'No peer was discovered',
+                    message: 'No peer was discovered'
                 }),
                 diagnostic(['selected', 'selected'], {
                     topic: 'rallar.browser.rtc.no_route',
-                    summary: 'No route to the remote peer',
-                }),
-            ],
+                    summary: 'No route to the remote peer'
+                })
+            ]
         })).toEqual([
-            { surface: 'rtc-diagnostics', label: 'RTC Diagnostics' },
+            { surface: 'rtc-diagnostics', label: 'RTC Diagnostics' }
         ]);
     });
 
@@ -72,12 +72,12 @@ describe('advanced diagnostic handoff targets', () => {
             { code: 'GROUP_NOT_FOUND', message: 'Group lookup failed' },
             { code: 'MISSING_MEMBER', message: 'Membership failed' },
             { message: 'Required group is missing' },
-            { message: 'Expected member was not found' },
+            { message: 'Expected member was not found' }
         ].forEach((failure, index) => {
             expect(deriveAdvancedDiagnosticHandoffTargets({
-                failure: { key: `membership-${index}`, ...failure },
+                failure: { key: `membership-${index}`, ...failure }
             })).toEqual([
-                { surface: 'rooms-clients', label: 'Groups/Clients' },
+                { surface: 'rooms-clients', label: 'Groups/Clients' }
             ]);
         });
     });
@@ -87,12 +87,12 @@ describe('advanced diagnostic handoff targets', () => {
             { code: 'HTTP_SERVICE_UNAVAILABLE', message: 'API unavailable' },
             { code: 'HTTP_STATUS_503', message: 'Request failed' },
             { message: 'Rallar Server status 502' },
-            { message: 'HTTP status 500 from the control service' },
+            { message: 'HTTP status 500 from the control service' }
         ].forEach((failure, index) => {
             expect(deriveAdvancedDiagnosticHandoffTargets({
-                failure: { key: `server-${index}`, ...failure },
+                failure: { key: `server-${index}`, ...failure }
             })).toEqual([
-                { surface: 'rallar-server', label: 'Rallar Server' },
+                { surface: 'rallar-server', label: 'Rallar Server' }
             ]);
         });
     });
@@ -101,17 +101,17 @@ describe('advanced diagnostic handoff targets', () => {
         const unrelated = diagnostic(['other'], { code: 'HTTP_SERVICE_UNAVAILABLE' });
         expect(deriveAdvancedDiagnosticHandoffTargets({
             failure: { key: 'selected', message: 'Command failed' },
-            diagnostics: [unrelated],
+            diagnostics: [unrelated]
         })).toEqual([]);
 
         expect(deriveAdvancedDiagnosticHandoffTargets({
             failure: { key: 'selected', message: 'Command failed' },
             diagnostics: [
                 unrelated,
-                diagnostic(['selected'], { code: 'HTTP_SERVICE_UNAVAILABLE' }),
-            ],
+                diagnostic(['selected'], { code: 'HTTP_SERVICE_UNAVAILABLE' })
+            ]
         })).toEqual([
-            { surface: 'rallar-server', label: 'Rallar Server' },
+            { surface: 'rallar-server', label: 'Rallar Server' }
         ]);
     });
 
@@ -120,18 +120,18 @@ describe('advanced diagnostic handoff targets', () => {
             failure: {
                 key: 'mixed',
                 code: 'BAD_AUTH',
-                message: 'Missing group; Rallar Server status 503',
+                message: 'Missing group; Rallar Server status 503'
             },
             diagnostics: [
                 diagnostic(['mixed'], { topic: 'rtc.no_route' }),
                 diagnostic(['mixed'], { message: 'no_peer' }),
-                diagnostic(['mixed'], { topic: 'rtc.no_route' }),
-            ],
+                diagnostic(['mixed'], { topic: 'rtc.no_route' })
+            ]
         })).toEqual([
             ...AUTH_AND_WEBSOCKET,
             { surface: 'rtc-diagnostics', label: 'RTC Diagnostics' },
             { surface: 'rooms-clients', label: 'Groups/Clients' },
-            { surface: 'rallar-server', label: 'Rallar Server' },
+            { surface: 'rallar-server', label: 'Rallar Server' }
         ]);
     });
 
@@ -142,13 +142,16 @@ describe('advanced diagnostic handoff targets', () => {
             {},
             { failure: null, diagnostics: null },
             { failure: { key: [], code: {}, message: 42 }, diagnostics: [{}] },
-            { failure: { key: 'other', message: 'Command timed out' }, diagnostics: [
-                diagnostic('other', { topic: 'rtc.no_route' }),
-                diagnostic([42, null], { message: 'forbidden' }),
-            ] },
+            {
+                failure: { key: 'other', message: 'Command timed out' },
+                diagnostics: [
+                    diagnostic('other', { topic: 'rtc.no_route' }),
+                    diagnostic([42, null], { message: 'forbidden' })
+                ]
+            }
         ];
 
-        inputs.forEach(input => {
+        inputs.forEach((input) => {
             expect(() => deriveAdvancedDiagnosticHandoffTargets(input)).not.toThrow();
             expect(deriveAdvancedDiagnosticHandoffTargets(input)).toEqual([]);
         });
@@ -161,12 +164,12 @@ describe('advanced diagnostic handoff targets', () => {
                 correlatedFailureKeys,
                 code: 'BAD_AUTH',
                 topic: 'rallar.browser.rtc.no_route',
-                summary: 'Rallar Server status 503',
-            }),
+                summary: 'Rallar Server status 503'
+            })
         ]);
         const failure = Object.freeze({
             key: 'selected',
-            message: 'Authentic route selection reached the server retry policy',
+            message: 'Authentic route selection reached the server retry policy'
         });
         const input = Object.freeze({ failure, diagnostics });
         const before = JSON.stringify(input);
@@ -181,24 +184,26 @@ describe('advanced diagnostic handoff targets', () => {
         const textBeyondBound = `${'x'.repeat(ADVANCED_DIAGNOSTIC_HANDOFF_MAX_TEXT_LENGTH)} BAD_AUTH`;
         const diagnostics = Array.from(
             { length: ADVANCED_DIAGNOSTIC_HANDOFF_MAX_DIAGNOSTICS + 1 },
-            (_, index) => index === ADVANCED_DIAGNOSTIC_HANDOFF_MAX_DIAGNOSTICS
-                ? diagnostic(['selected'], { topic: 'rtc.no_route' })
-                : diagnostic(['other'], { topic: 'runtime.info' }),
+            (_, index) =>
+                index === ADVANCED_DIAGNOSTIC_HANDOFF_MAX_DIAGNOSTICS
+                    ? diagnostic(['selected'], { topic: 'rtc.no_route' })
+                    : diagnostic(['other'], { topic: 'runtime.info' })
         );
         const correlationKeys = Array.from(
             { length: ADVANCED_DIAGNOSTIC_HANDOFF_MAX_CORRELATED_FAILURE_KEYS + 1 },
-            (_, index) => index === ADVANCED_DIAGNOSTIC_HANDOFF_MAX_CORRELATED_FAILURE_KEYS
-                ? 'selected'
-                : `other-${index}`,
+            (_, index) =>
+                index === ADVANCED_DIAGNOSTIC_HANDOFF_MAX_CORRELATED_FAILURE_KEYS
+                    ? 'selected'
+                    : `other-${index}`
         );
 
         expect(deriveAdvancedDiagnosticHandoffTargets({
             failure: { key: 'selected', message: textBeyondBound },
-            diagnostics,
+            diagnostics
         })).toEqual([]);
         expect(deriveAdvancedDiagnosticHandoffTargets({
             failure: { key: 'selected', message: 'Command failed' },
-            diagnostics: [diagnostic(correlationKeys, { topic: 'rtc.no_peer' })],
+            diagnostics: [diagnostic(correlationKeys, { topic: 'rtc.no_peer' })]
         })).toEqual([]);
     });
 });

@@ -1,6 +1,6 @@
+import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 
 type DirectOutboxRow = Readonly<{
     ri_resource_id: string;
@@ -39,7 +39,7 @@ export type DirectResourceOutboxLifecycleExpectation = Readonly<{
 
 export async function findDirectResourceOutboxEvidence(
     sql: PSqlSql,
-    resourceIds: readonly string[],
+    resourceIds: readonly string[]
 ): Promise<readonly DirectResourceOutboxEvidence[]> {
     const uniqueResourceIds = [...new Set(resourceIds)];
     const rows = await Promise.all(uniqueResourceIds.map(async (resourceId) =>
@@ -54,18 +54,20 @@ export async function findDirectResourceOutboxEvidence(
         topicId: row.ri_topic_id,
         typeId: row.ri_type_id,
         status: row.ri_status,
-        resource: row.ri_resource,
+        resource: row.ri_resource
     }));
 }
 
 export function expectPendingDirectResourceOutboxEvidence(
     entries: readonly DirectResourceOutboxEvidence[],
-    resourceIds: readonly string[],
+    resourceIds: readonly string[]
 ): void {
     const byResourceId = new Map(entries.map((entry) => [entry.resourceId, entry]));
     for (const resourceId of resourceIds) {
         const entry = byResourceId.get(resourceId);
-        if (!entry) throw new Error(`Missing direct outbox entry: ${resourceId}`);
+        if (!entry) {
+            throw new Error(`Missing direct outbox entry: ${resourceId}`);
+        }
         if (entry.typeId !== EnqueuedType.APP_OUTBOX) {
             throw new Error(`Unexpected direct outbox type for ${resourceId}: ${entry.typeId}`);
         }
@@ -80,12 +82,14 @@ export function expectPendingDirectResourceOutboxEvidence(
 
 export function expectDirectResourceOutboxEvidence(
     entries: readonly DirectResourceOutboxEvidence[],
-    expectedEntries: readonly ExpectedDirectResourceOutboxEvidence[],
+    expectedEntries: readonly ExpectedDirectResourceOutboxEvidence[]
 ): void {
     const byResourceId = new Map(entries.map((entry) => [entry.resourceId, entry]));
     for (const expected of expectedEntries) {
         const entry = byResourceId.get(expected.resourceId);
-        if (!entry) throw new Error(`Missing direct outbox entry: ${expected.resourceId}`);
+        if (!entry) {
+            throw new Error(`Missing direct outbox entry: ${expected.resourceId}`);
+        }
         if (entry.typeId !== expected.typeId) {
             throw new Error(`Unexpected direct outbox type for ${expected.resourceId}: ${entry.typeId}`);
         }
@@ -106,7 +110,7 @@ export function expectDirectResourceOutboxEvidence(
 export function expectAppOutboxWsLink(
     appEntry: DirectResourceOutboxEvidence,
     wsEntry: DirectResourceOutboxEvidence,
-    linkIdentity = appEntry.resourceId,
+    linkIdentity = appEntry.resourceId
 ): void {
     if (appEntry.typeId !== EnqueuedType.APP_OUTBOX) {
         throw new Error(`Expected APP_OUTBOX: ${appEntry.resourceId}`);
@@ -121,7 +125,7 @@ export function expectAppOutboxWsLink(
 
 export function expectDirectResourceOutboxLifecycle(
     entries: readonly DirectResourceOutboxEvidence[],
-    expected: DirectResourceOutboxLifecycleExpectation,
+    expected: DirectResourceOutboxLifecycleExpectation
 ): void {
     expectDirectResourceOutboxEvidence(entries, expected.entries);
     const byResourceId = new Map(entries.map((entry) => [entry.resourceId, entry]));

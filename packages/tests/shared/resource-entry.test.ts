@@ -1,5 +1,4 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it } from 'vitest';
 import {
     COMPLETED_STATUSES,
     EntityStatus,
@@ -14,15 +13,16 @@ import {
     toResourceEntry,
     toResourceEntryKey,
     toResourceEntryWithKey,
-    toUpdatedResourceEntry,
+    toUpdatedResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
+import { describe, expect, it } from 'vitest';
 
 describe('ResourceEntry helpers', () => {
     it('round-trips queue keys through their string representation', () => {
         const key = {
             topicId: 'chat',
             resourceId: 'msg-1',
-            contextId: 'room-1',
+            contextId: 'room-1'
         };
 
         expect(toKeyAsString(key)).toBe('chat/msg-1/room-1');
@@ -31,8 +31,8 @@ describe('ResourceEntry helpers', () => {
         expect(
             isKeysEqual(key, {
                 ...key,
-                resourceId: 'msg-2',
-            }),
+                resourceId: 'msg-2'
+            })
         ).toBe(false);
     });
 
@@ -40,10 +40,10 @@ describe('ResourceEntry helpers', () => {
         const key = {
             topicId: 'presence',
             resourceId: 'alice',
-            contextId: 'room-1',
+            contextId: 'room-1'
         };
         const entry = toResourceEntryWithKey(key, 'presence.state.v1', {
-            online: true,
+            online: true
         });
         const endTs = Temporal.Instant.from('2026-01-01T00:00:00Z');
         const nextTs = endTs.add({ seconds: 30 });
@@ -52,7 +52,7 @@ describe('ResourceEntry helpers', () => {
             entry,
             EntityStatus.RETRY,
             endTs,
-            nextTs,
+            nextTs
         );
 
         expect(updated.key).toBe(entry.key);
@@ -64,13 +64,13 @@ describe('ResourceEntry helpers', () => {
             startTs: entry.dequeueAudit.startTs,
             endTs,
             nextTs,
-            attempts: entry.dequeueAudit.attempts,
+            attempts: entry.dequeueAudit.attempts
         });
     });
 
     it('classifies retryable, failed, and completed statuses consistently', () => {
         const entry = toResourceEntry('chat.message.v1', {
-            text: 'hello',
+            text: 'hello'
         });
 
         expect(entry.status).toBe(EntityStatus.NEW);

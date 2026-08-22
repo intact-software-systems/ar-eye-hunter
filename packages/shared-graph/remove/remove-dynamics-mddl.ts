@@ -1,16 +1,16 @@
 import { VertexId, VertexState, VertexType, WeightedGraph } from '../graph-props.ts';
-import { RemoveDynamicsContext, RemoveResult } from './remove-dynamics-types.ts';
-import { degreeLimitOf, degreeOf, edgeWeightOf, neighborsOf, } from './remove-dynamics-helpers.ts';
 import { cloneGraph } from '../graph/graph-algs.ts';
+import { degreeLimitOf, degreeOf, edgeWeightOf, neighborsOf } from './remove-dynamics-helpers.ts';
+import { RemoveDynamicsContext, RemoveResult } from './remove-dynamics-types.ts';
 
 export type SelectSteinerCandidate = (
     ctx: RemoveDynamicsContext,
-    adjacent: ReadonlySet<VertexId>,
+    adjacent: ReadonlySet<VertexId>
 ) => VertexId | undefined;
 
 export function rvTryReplaceNaive(
     ctx: RemoveDynamicsContext,
-    selectSteinerCandidate?: SelectSteinerCandidate,
+    selectSteinerCandidate?: SelectSteinerCandidate
 ): RemoveResult {
     const actionDegree = degreeOf(ctx.groupGraph, ctx.actionVertexId);
 
@@ -37,7 +37,9 @@ export function rvTryReplaceNaive(
         let tempSumEdges = 0;
 
         for (const other of adjacent) {
-            if (candidate === other) continue;
+            if (candidate === other) {
+                continue;
+            }
             tempSumEdges += edgeWeightOf(ctx.globalGraph, candidate, other);
         }
 
@@ -67,7 +69,8 @@ export function rvTryReplaceNaive(
         steinerSum < actionSum
     ) {
         chosenIntersection = spVertex;
-    } else if (!(bestNeighborSum < actionSum && bestNeighborSum < steinerSum)) {
+    }
+    else if (!(bestNeighborSum < actionSum && bestNeighborSum < steinerSum)) {
         const next = cloneGraph(ctx.groupGraph);
         makeSteiner(next, ctx.globalGraph, ctx.actionVertexId);
         return { graph: next, changed: true };
@@ -91,7 +94,7 @@ export function rvTryReplaceNaive(
 
 export function rvTRMDDLN(
     ctx: RemoveDynamicsContext,
-    selectSteinerCandidate?: SelectSteinerCandidate,
+    selectSteinerCandidate?: SelectSteinerCandidate
 ): RemoveResult {
     const actionDegree = degreeOf(ctx.groupGraph, ctx.actionVertexId);
 
@@ -116,14 +119,13 @@ export function rvTRMDDLN(
     let mcpVertex: VertexId | undefined;
 
     for (const candidate of adjacent) {
-        const projectedDegree =
-            (degreeOf(ctx.groupGraph, candidate) - 1) + (adjacentSize - 1);
+        const projectedDegree = (degreeOf(ctx.groupGraph, candidate) - 1) + (adjacentSize - 1);
 
         if (projectedDegree < degreeLimitOf(ctx.globalGraph, candidate)) {
             const candidateGraph = simulateNeighborIntersection(
                 ctx,
                 candidate,
-                adjacent,
+                adjacent
             );
             const diameter = treeDiameter(candidateGraph);
 
@@ -143,7 +145,7 @@ export function rvTRMDDLN(
         const spGraph = simulateSteinerIntersection(
             ctx,
             spVertex,
-            adjacent,
+            adjacent
         );
         spDiameter = treeDiameter(spGraph);
     }
@@ -158,7 +160,7 @@ export function rvTRMDDLN(
     ) {
         return {
             graph: simulateNeighborIntersection(ctx, mcpVertex, adjacent),
-            changed: true,
+            changed: true
         };
     }
 
@@ -169,27 +171,29 @@ export function rvTRMDDLN(
     ) {
         return {
             graph: simulateSteinerIntersection(ctx, spVertex, adjacent),
-            changed: true,
+            changed: true
         };
     }
 
     return {
         graph: avGraph,
-        changed: true,
+        changed: true
     };
 }
 
 function simulateNeighborIntersection(
     ctx: RemoveDynamicsContext,
     intersection: VertexId,
-    adjacent: ReadonlySet<VertexId>,
+    adjacent: ReadonlySet<VertexId>
 ): WeightedGraph {
     const next = cloneGraph(ctx.groupGraph);
 
     next.dropNode(ctx.actionVertexId);
 
     for (const neighbor of adjacent) {
-        if (neighbor === intersection) continue;
+        if (neighbor === intersection) {
+            continue;
+        }
         upsertWeightedEdge(next, ctx.globalGraph, intersection, neighbor);
     }
 
@@ -199,7 +203,7 @@ function simulateNeighborIntersection(
 function simulateSteinerIntersection(
     ctx: RemoveDynamicsContext,
     spVertex: VertexId,
-    adjacent: ReadonlySet<VertexId>,
+    adjacent: ReadonlySet<VertexId>
 ): WeightedGraph {
     const next = cloneGraph(ctx.groupGraph);
 
@@ -215,7 +219,7 @@ function simulateSteinerIntersection(
 
 function simulateKeepActionAsSteiner(
     ctx: RemoveDynamicsContext,
-    adjacent: ReadonlySet<VertexId>,
+    adjacent: ReadonlySet<VertexId>
 ): WeightedGraph {
     const next = cloneGraph(ctx.groupGraph);
 
@@ -229,10 +233,12 @@ function insertEdgesFromIntersection(
     graph: WeightedGraph,
     globalGraph: WeightedGraph,
     intersection: VertexId,
-    targets: ReadonlySet<VertexId>,
+    targets: ReadonlySet<VertexId>
 ): void {
     for (const target of targets) {
-        if (target === intersection) continue;
+        if (target === intersection) {
+            continue;
+        }
         upsertWeightedEdge(graph, globalGraph, intersection, target);
     }
 }
@@ -241,37 +247,41 @@ function upsertWeightedEdge(
     graph: WeightedGraph,
     globalGraph: WeightedGraph,
     a: VertexId,
-    b: VertexId,
+    b: VertexId
 ): void {
-    if (graph.hasEdge(a, b)) return;
+    if (graph.hasEdge(a, b)) {
+        return;
+    }
 
     graph.addEdge(a, b, {
         from: a,
         to: b,
-        weight: edgeWeightOf(globalGraph, a, b),
+        weight: edgeWeightOf(globalGraph, a, b)
     });
 }
 
 function addSteinerVertexFromGlobal(
     graph: WeightedGraph,
     globalGraph: WeightedGraph,
-    vertexId: VertexId,
+    vertexId: VertexId
 ): void {
-    if (graph.hasNode(vertexId)) return;
+    if (graph.hasNode(vertexId)) {
+        return;
+    }
 
     const attrs = globalGraph.getNodeAttributes(vertexId);
     graph.addNode(vertexId, {
         ...attrs,
         type: VertexType.CORE,
         state: VertexState.STEINER,
-        degreeLimit: globalGraph.getAttributes().degreeLimitSteiner,
+        degreeLimit: globalGraph.getAttributes().degreeLimitSteiner
     });
 }
 
 function makeSteiner(
     graph: WeightedGraph,
     globalGraph: WeightedGraph,
-    vertexId: VertexId,
+    vertexId: VertexId
 ): void {
     if (!graph.hasNode(vertexId)) {
         addSteinerVertexFromGlobal(graph, globalGraph, vertexId);
@@ -283,13 +293,13 @@ function makeSteiner(
         ...attrs,
         type: VertexType.CORE,
         state: VertexState.STEINER,
-        degreeLimit: globalGraph.getAttributes().degreeLimitSteiner,
+        degreeLimit: globalGraph.getAttributes().degreeLimitSteiner
     });
 }
 
 function subtract(
     input: ReadonlySet<VertexId>,
-    value: VertexId,
+    value: VertexId
 ): Set<VertexId> {
     const result = new Set(input);
     result.delete(value);
@@ -302,7 +312,7 @@ function rvODTwoLocal(ctx: RemoveDynamicsContext): RemoveResult {
 
     if (neighbors.length !== 2) {
         throw new Error(
-            `rvODTwo requires degree 2 for ${ctx.actionVertexId}, got ${neighbors.length}`,
+            `rvODTwo requires degree 2 for ${ctx.actionVertexId}, got ${neighbors.length}`
         );
     }
 
@@ -313,7 +323,7 @@ function rvODTwoLocal(ctx: RemoveDynamicsContext): RemoveResult {
         next.addEdge(a, b, {
             from: a,
             to: b,
-            weight: edgeWeightOf(ctx.globalGraph, a, b),
+            weight: edgeWeightOf(ctx.globalGraph, a, b)
         });
     }
 
@@ -338,7 +348,7 @@ function treeDiameter(graph: WeightedGraph): number {
 
 function dijkstra(
     graph: WeightedGraph,
-    source: VertexId,
+    source: VertexId
 ): Map<VertexId, number> {
     const nodes = graph.nodes() as VertexId[];
     const distances = new Map<VertexId, number>();
@@ -354,7 +364,9 @@ function dijkstra(
         let best = Number.POSITIVE_INFINITY;
 
         for (const node of nodes) {
-            if (visited.has(node)) continue;
+            if (visited.has(node)) {
+                continue;
+            }
             const d = distances.get(node) ?? Number.POSITIVE_INFINITY;
             if (d < best) {
                 best = d;
@@ -369,7 +381,9 @@ function dijkstra(
         visited.add(current);
 
         graph.forEachNeighbor(current, (neighbor: string) => {
-            if (visited.has(neighbor)) return;
+            if (visited.has(neighbor)) {
+                return;
+            }
 
             const alt = best + edgeWeightOf(graph, current!, neighbor);
             const prev = distances.get(neighbor) ?? Number.POSITIVE_INFINITY;

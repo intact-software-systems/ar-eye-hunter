@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LoanedValue } from '@shared/cache/LoanedValue.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('LoanedValue', () => {
     afterEach(() => {
@@ -24,8 +24,8 @@ describe('LoanedValue', () => {
                 return deferred.promise;
             },
             {
-                ttlMs: 100,
-            },
+                ttlMs: 100
+            }
         );
 
         const first = loan.get();
@@ -57,19 +57,19 @@ describe('LoanedValue', () => {
 
         expect(await loan.get()).toBe(1);
         expect(await loan.refreshWith(async (current) => (current ?? 0) + 10)).toBe(
-            11,
+            11
         );
         expect(loan.peek()).toBe(11);
 
         await expect(
-            loan.refreshWith(async () => undefined as never),
+            loan.refreshWith(async () => undefined as never)
         ).rejects.toThrow('Refresher returned null or undefined');
         expect(loan.peek()).toBe(11);
     });
 
     it('treats invalid cached values as expired and removable', async () => {
         const loan = new LoanedValue<number>(async () => -1, {
-            isValid: (value) => value > 0,
+            isValid: (value) => value > 0
         });
 
         await expect(loan.get()).resolves.toBe(-1);
@@ -92,6 +92,6 @@ function createDeferred<T>() {
     return {
         promise,
         resolve,
-        reject,
+        reject
     };
 }

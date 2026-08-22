@@ -1,7 +1,4 @@
-import {
-    useRunnerFleetController,
-    type UseRunnerFleetControllerInput,
-} from './use-runner-fleet-controller.ts';
+import { useRunnerFleetController, type UseRunnerFleetControllerInput } from './use-runner-fleet-controller.ts';
 import { RunnerFleetControls } from './views/RunnerFleetControls.tsx';
 import { RunnerFleetOverview } from './views/RunnerFleetOverview.tsx';
 import { RunnerFleetReportAnalysis } from './views/RunnerFleetReportAnalysis.tsx';
@@ -10,7 +7,7 @@ import { RunnerFleetSelectedDetails } from './views/RunnerFleetSelectedDetails.t
 export function RunnerFleetPanel({
     bootstrap,
     control,
-    globalValues,
+    globalValues
 }: UseRunnerFleetControllerInput) {
     const {
         controlBaseUrl,
@@ -56,7 +53,7 @@ export function RunnerFleetPanel({
         updateMapLayer,
         selectMapRegion,
         copyShareLink,
-        exportSelectedReport,
+        exportSelectedReport
     } = useRunnerFleetController({ bootstrap, control, globalValues });
 
     return (

@@ -1,5 +1,5 @@
-import { EdgeProp, GraphProp, MeshGraph, TreeGraph, VertexId, VertexProp, VertexState } from '../graph-props.ts';
 import { UndirectedGraph } from 'graphology';
+import { EdgeProp, GraphProp, MeshGraph, TreeGraph, VertexId, VertexProp, VertexState } from '../graph-props.ts';
 
 export function diameterDistance(graph: TreeGraph): number {
     const nodes = graph.nodes() as string[];
@@ -19,13 +19,15 @@ export function diameterDistance(graph: TreeGraph): number {
 
 export function dijkstraOnTreeFromSource(
     tree: TreeGraph,
-    source: VertexId,
+    source: VertexId
 ): Map<VertexId, number> {
     const nodes = tree.nodes() as VertexId[];
     const distances = new Map<VertexId, number>();
     const visited = new Set<VertexId>();
 
-    for (const node of nodes) distances.set(node, Number.POSITIVE_INFINITY);
+    for (const node of nodes) {
+        distances.set(node, Number.POSITIVE_INFINITY);
+    }
     distances.set(source, 0);
 
     while (visited.size < nodes.length) {
@@ -33,7 +35,9 @@ export function dijkstraOnTreeFromSource(
         let currentDistance = Number.POSITIVE_INFINITY;
 
         for (const node of nodes) {
-            if (visited.has(node)) continue;
+            if (visited.has(node)) {
+                continue;
+            }
             const d = distances.get(node) ?? Number.POSITIVE_INFINITY;
             if (d < currentDistance) {
                 current = node;
@@ -41,18 +45,24 @@ export function dijkstraOnTreeFromSource(
             }
         }
 
-        if (current === undefined || !Number.isFinite(currentDistance)) break;
+        if (current === undefined || !Number.isFinite(currentDistance)) {
+            break;
+        }
 
         visited.add(current);
 
         tree.forEachNeighbor(current, (neighbor: string) => {
-            if (visited.has(neighbor)) return;
+            if (visited.has(neighbor)) {
+                return;
+            }
 
             const weight = getEdgeWeight(tree, current!, neighbor);
             const alt = currentDistance + weight;
             const prev = distances.get(neighbor) ?? Number.POSITIVE_INFINITY;
 
-            if (alt < prev) distances.set(neighbor, alt);
+            if (alt < prev) {
+                distances.set(neighbor, alt);
+            }
         });
     }
 
@@ -85,7 +95,6 @@ export function neighborsOf(tree: TreeGraph, node: VertexId): VertexId[] {
     return tree.neighbors(node) as VertexId[];
 }
 
-
 export function disconnectAllEdges(tree: TreeGraph, node: VertexId): void {
     const incidentEdges = tree.edges(node) as string[];
     for (const edgeKey of incidentEdges) {
@@ -93,10 +102,9 @@ export function disconnectAllEdges(tree: TreeGraph, node: VertexId): void {
     }
 }
 
-
 export function worstCaseDist(
     groupGraph: MeshGraph,
-    source: VertexId,
+    source: VertexId
 ): number {
     const distances = dijkstraDistances(groupGraph, source);
     let maxDistance = 0;
@@ -115,16 +123,17 @@ export function eccentricity(tree: TreeGraph, source: VertexId): number {
     let ecc = 0;
 
     for (const d of distances.values()) {
-        if (Number.isFinite(d) && d > ecc) ecc = d;
+        if (Number.isFinite(d) && d > ecc) {
+            ecc = d;
+        }
     }
 
     return ecc;
 }
 
-
 function dijkstraDistances(
     graph: MeshGraph,
-    source: VertexId,
+    source: VertexId
 ): Map<VertexId, number> {
     const nodes = graph.nodes() as VertexId[];
     const distances = new Map<VertexId, number>();
@@ -140,7 +149,9 @@ function dijkstraDistances(
         let best = Number.POSITIVE_INFINITY;
 
         for (const node of nodes) {
-            if (visited.has(node)) continue;
+            if (visited.has(node)) {
+                continue;
+            }
             const d = distances.get(node) ?? Number.POSITIVE_INFINITY;
             if (d < best) {
                 best = d;
@@ -155,10 +166,14 @@ function dijkstraDistances(
         visited.add(current);
 
         graph.forEachNeighbor(current, (neighbor: string) => {
-            if (visited.has(neighbor)) return;
+            if (visited.has(neighbor)) {
+                return;
+            }
 
             const edgeKey = graph.edge(current!, neighbor);
-            if (edgeKey === undefined) return;
+            if (edgeKey === undefined) {
+                return;
+            }
 
             const weight = graph.getEdgeAttribute(edgeKey, 'weight') as number;
             const alt = best + weight;
@@ -175,7 +190,9 @@ function dijkstraDistances(
 
 export function isValidMesh(groupGraph: MeshGraph): boolean {
     const nodes = groupGraph.nodes() as VertexId[];
-    if (nodes.length <= 1) return true;
+    if (nodes.length <= 1) {
+        return true;
+    }
 
     const visited = new Set<VertexId>();
     const queue: VertexId[] = [nodes[0]];
@@ -226,7 +243,9 @@ export function pruneNonTerminalLeaves(T: TreeGraph): void {
 
         for (const node of T.nodes() as VertexId[]) {
             const attrs = T.getNodeAttributes(node);
-            if (attrs.state !== VertexState.STEINER) continue;
+            if (attrs.state !== VertexState.STEINER) {
+                continue;
+            }
 
             if (T.degree(node) <= 1) {
                 toRemove.push(node);

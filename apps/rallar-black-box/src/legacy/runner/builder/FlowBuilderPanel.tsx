@@ -2,10 +2,7 @@ import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction
 import { uiRedactionOptions } from '../../shared/redaction-presentation.ts';
 import { FlowBuilderEditor } from './FlowBuilderEditor.tsx';
 import { FlowBuilderPreviews } from './FlowBuilderPreviews.tsx';
-import {
-    type UseFlowBuilderControllerInput,
-    useFlowBuilderController,
-} from './use-flow-builder-controller.ts';
+import { useFlowBuilderController, type UseFlowBuilderControllerInput } from './use-flow-builder-controller.ts';
 
 type FlowBuilderPanelProps = UseFlowBuilderControllerInput & {
     busy: boolean;
@@ -16,7 +13,7 @@ export function FlowBuilderPanel({
     authSession,
     globalValues,
     busy,
-    onSelectCommand,
+    onSelectCommand
 }: FlowBuilderPanelProps) {
     const {
         templateId,
@@ -38,12 +35,12 @@ export function FlowBuilderPanel({
         addStep,
         normalizeFlowJson,
         runFlow,
-        copyText,
+        copyText
     } = useFlowBuilderController({
         state,
         authSession,
         globalValues,
-        onSelectCommand,
+        onSelectCommand
     });
     return (
         <section className="panel flow-builder-panel">
@@ -77,7 +74,7 @@ export function FlowBuilderPanel({
                 <div className="workbench-error" role="status">
                     {redactRallarBlackBoxValue(
                         localError ?? parseError,
-                        uiRedactionOptions(state, authSession),
+                        uiRedactionOptions(state, authSession)
                     )}
                 </div>
             )}

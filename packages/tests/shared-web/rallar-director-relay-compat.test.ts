@@ -1,32 +1,21 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import {
-    createActiveGroupMemberFixture,
-    createActiveGroupPresenceSessionFixture,
-    createGroupSnapshotFixture,
-} from './authoritative-group-fixtures.ts';
-import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
-import {
-    DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
-    type QRtcPeerDto,
-    type WebRtcPeerConnectionLeft,
-} from '@shared/services/WebRtcConnectionService.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto, type WebRtcPeerConnectionLeft } from '@shared/services/WebRtcConnectionService.ts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createActiveGroupMemberFixture, createActiveGroupPresenceSessionFixture, createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 
 type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.ts');
 type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
 type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
-type ClientStateSnapshotsRepositoryModule =
-    typeof import('@shared/repository/client-state-snapshots-repository.ts');
+type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
-type GroupStateSnapshotsRepositoryModule =
-    typeof import('@shared/repository/group-state-snapshots-repository.ts');
-type RoomGroupStateWorkflowsModule =
-    typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
+type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
+type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
 
 const mocks = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
@@ -51,51 +40,35 @@ const mocks = await vi.hoisted(async () => {
         writeSession: vi.fn<AuthModule['writeSession']>(),
         hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() => Promise.resolve()),
         onStateCacheChange: vi.fn<DataCachesModule['onStateCacheChange']>(() => vi.fn()),
-        appointStateGroupDirector: vi.fn<
-            ApiWorkflowsModule['appointStateGroupDirector']
-        >(() => Promise.reject(new Error('director appointment not mocked'))),
+        appointStateGroupDirector: vi.fn<ApiWorkflowsModule['appointStateGroupDirector']>(() => Promise.reject(new Error('director appointment not mocked'))),
         createAndJoinStateGroup: vi.fn<ApiWorkflowsModule['createAndJoinStateGroup']>(
-            () => Promise.reject(new Error('create not mocked')),
+            () => Promise.reject(new Error('create not mocked'))
         ),
-        joinStateGroup: vi.fn<ApiWorkflowsModule['joinStateGroup']>(() =>
-            Promise.reject(new Error('join not mocked'))
-        ),
-        leaveStateGroup: vi.fn<ApiWorkflowsModule['leaveStateGroup']>(() =>
-            Promise.reject(new Error('leave not mocked'))
-        ),
+        joinStateGroup: vi.fn<ApiWorkflowsModule['joinStateGroup']>(() => Promise.reject(new Error('join not mocked'))),
+        leaveStateGroup: vi.fn<ApiWorkflowsModule['leaveStateGroup']>(() => Promise.reject(new Error('leave not mocked'))),
         updateStateGroupMetadata: vi.fn<ApiWorkflowsModule['updateStateGroupMetadata']>(
-            () => Promise.reject(new Error('metadata update not mocked')),
+            () => Promise.reject(new Error('metadata update not mocked'))
         ),
-        refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(() =>
-            Promise.resolve({ clients: [], groups: [] })
-        ),
+        refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(() => Promise.resolve({ clients: [], groups: [] })),
         loginToApi: vi.fn<AuthApiModule['loginToApi']>(() => Promise.resolve(session)),
-        logoutFromApi: vi.fn<AuthApiModule['logoutFromApi']>(() =>
-            Promise.resolve({ loggedOut: true })
-        ),
+        logoutFromApi: vi.fn<AuthApiModule['logoutFromApi']>(() => Promise.resolve({ loggedOut: true })),
         registerWithApi: vi.fn<AuthApiModule['registerWithApi']>(() =>
             Promise.resolve({
                 clientId: 'client-new',
                 username: 'new-user',
                 displayName: null,
-                registeredAtEpochMs: 1_000,
+                registeredAtEpochMs: 1_000
             })
         ),
-        listStateClientEvents: vi.fn<ApiIntegrationModule['listStateClientEvents']>(() =>
-            Promise.reject(new Error('client events not mocked'))
-        ),
-        listStateClientEventPage: vi.fn<
-            ApiIntegrationModule['listStateClientEventPage']
-        >(() => Promise.reject(new Error('client event page not mocked'))),
-        listStateGroupEvents: vi.fn<ApiIntegrationModule['listStateGroupEvents']>(() =>
-            Promise.reject(new Error('group events not mocked'))
-        ),
+        listStateClientEvents: vi.fn<ApiIntegrationModule['listStateClientEvents']>(() => Promise.reject(new Error('client events not mocked'))),
+        listStateClientEventPage: vi.fn<ApiIntegrationModule['listStateClientEventPage']>(() => Promise.reject(new Error('client event page not mocked'))),
+        listStateGroupEvents: vi.fn<ApiIntegrationModule['listStateGroupEvents']>(() => Promise.reject(new Error('group events not mocked'))),
         listStateGroupEventPage: vi.fn<ApiIntegrationModule['listStateGroupEventPage']>(
-            () => Promise.reject(new Error('group event page not mocked')),
+            () => Promise.reject(new Error('group event page not mocked'))
         ),
         clientRepositoryMissing: vi.fn((): never => {
             throw new Error(
-                'Repository not found: shared.repository.client-state-snapshots',
+                'Repository not found: shared.repository.client-state-snapshots'
             );
         }),
         findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<
@@ -103,12 +76,8 @@ const mocks = await vi.hoisted(async () => {
                 'findFirstGroupStateSnapshotRefSessionIdIsIn'
             ]
         >(),
-        findGroupStateSnapshotByRef: vi.fn<
-            GroupStateSnapshotsRepositoryModule['findGroupStateSnapshotByRef']
-        >(),
-        getAllGroupStateSnapshots: vi.fn<
-            GroupStateSnapshotsRepositoryModule['getAllGroupStateSnapshots']
-        >(),
+        findGroupStateSnapshotByRef: vi.fn<GroupStateSnapshotsRepositoryModule['findGroupStateSnapshotByRef']>(),
+        getAllGroupStateSnapshots: vi.fn<GroupStateSnapshotsRepositoryModule['getAllGroupStateSnapshots']>()
     };
 });
 
@@ -118,8 +87,8 @@ vi.mock(
         clearMiddleware: mocks.clearMiddleware,
         getMiddleware: vi.fn(() => mocks.ctx),
         initMiddleware: mocks.initMiddleware,
-        isMiddlewareReady: mocks.isMiddlewareReady,
-    }),
+        isMiddlewareReady: mocks.isMiddlewareReady
+    })
 );
 
 vi.mock(
@@ -128,14 +97,14 @@ vi.mock(
         listStateClientEventPage: mocks.listStateClientEventPage,
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
-        listStateGroupEvents: mocks.listStateGroupEvents,
-    }),
+        listStateGroupEvents: mocks.listStateGroupEvents
+    })
 );
 
 vi.mock(import('@shared-web/browser/auth/session-http-api.ts'), (): Partial<AuthApiModule> => ({
     loginToApi: mocks.loginToApi,
     logoutFromApi: mocks.logoutFromApi,
-    registerWithApi: mocks.registerWithApi,
+    registerWithApi: mocks.registerWithApi
 }));
 
 vi.mock(
@@ -146,24 +115,24 @@ vi.mock(
         joinStateGroup: mocks.joinStateGroup,
         leaveStateGroup: mocks.leaveStateGroup,
         refreshStateSnapshots: mocks.refreshStateSnapshots,
-        updateStateGroupMetadata: mocks.updateStateGroupMetadata,
-    }),
+        updateStateGroupMetadata: mocks.updateStateGroupMetadata
+    })
 );
 
 vi.mock(
     import('@shared-web/browser/rooms/room-group-state-workflows.ts'),
     (): Partial<RoomGroupStateWorkflowsModule> => ({
         createAndJoinStateGroup: mocks.createAndJoinStateGroup,
-        joinStateGroup: mocks.joinStateGroup,
-    }),
+        joinStateGroup: mocks.joinStateGroup
+    })
 );
 
 vi.mock(
     import('@shared-web/browser/data-caches.ts'),
     (): Partial<DataCachesModule> => ({
         hydrateStateCaches: mocks.hydrateStateCaches,
-        onStateCacheChange: mocks.onStateCacheChange,
-    }),
+        onStateCacheChange: mocks.onStateCacheChange
+    })
 );
 
 vi.mock(
@@ -172,26 +141,25 @@ vi.mock(
         clearSession: mocks.clearSession,
         isLoggedIn: vi.fn(() => true),
         readSession: mocks.readSession,
-        writeSession: mocks.writeSession,
-    }),
+        writeSession: mocks.writeSession
+    })
 );
 
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
     (): Partial<ClientStateSnapshotsRepositoryModule> => ({
         findClientStateSnapshotByPrincipalId: mocks.clientRepositoryMissing,
-        getAllClientStateSnapshots: mocks.clientRepositoryMissing,
-    }),
+        getAllClientStateSnapshots: mocks.clientRepositoryMissing
+    })
 );
 
 vi.mock(
     import('@shared/repository/group-state-snapshots-repository.ts'),
     (): Partial<GroupStateSnapshotsRepositoryModule> => ({
-        findFirstGroupStateSnapshotRefSessionIdIsIn:
-            mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
+        findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
         findGroupStateSnapshotByRef: mocks.findGroupStateSnapshotByRef,
-        getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots,
-    }),
+        getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
+    })
 );
 
 describe('Rallar director relay compatibility', () => {
@@ -200,7 +168,7 @@ describe('Rallar director relay compatibility', () => {
         vi.useRealTimers();
         mocks.clientRepositoryMissing.mockImplementation(() => {
             throw new Error(
-                'Repository not found: shared.repository.client-state-snapshots',
+                'Repository not found: shared.repository.client-state-snapshots'
             );
         });
         mockGroupRepositoryMissing();
@@ -214,10 +182,10 @@ describe('Rallar director relay compatibility', () => {
         mocks.joinStateGroup.mockRejectedValue(new Error('join not mocked'));
         mocks.leaveStateGroup.mockRejectedValue(new Error('leave not mocked'));
         mocks.updateStateGroupMetadata.mockRejectedValue(
-            new Error('metadata update not mocked'),
+            new Error('metadata update not mocked')
         );
         mocks.appointStateGroupDirector.mockRejectedValue(
-            new Error('director appointment not mocked'),
+            new Error('director appointment not mocked')
         );
         mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes
             .mockReturnValue([]);
@@ -229,42 +197,40 @@ describe('Rallar director relay compatibility', () => {
                 Either.ofLeft<WebRtcPeerConnectionLeft, QRtcPeerDto>({
                     kind: 'connect-failed',
                     peerId,
-                    error: new Error('connect not mocked'),
-                }),
+                    error: new Error('connect not mocked')
+                })
         );
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
             async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) => ({
                 status: 'connect-failed',
                 peerId,
                 laneId,
-                error: new Error('connect not mocked'),
-            }),
+                error: new Error('connect not mocked')
+            })
         );
-        mocks.webRtcConnectionService.onRtcPeerLifecycleDo.mockImplementation(() =>
-            mocks.ctx.middleware.webRtcConnectionService
-        );
+        mocks.webRtcConnectionService.onRtcPeerLifecycleDo.mockImplementation(() => mocks.ctx.middleware.webRtcConnectionService);
         mocks.webRtcConnectionService.readPeer.mockReturnValue(undefined);
         mocks.webRtcConnectionService.removeRtcPeerLifecycleById.mockReturnValue(true);
         mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => ({
                 status: 'enqueued',
                 message,
-                entries: [],
-            }),
+                entries: []
+            })
         );
         mocks.rtcRxStreamer.onInboxMessageDo.mockReturnValue(
-            mocks.ctx.middleware.rtcRxStreamer,
+            mocks.ctx.middleware.rtcRxStreamer
         );
         mocks.rtcRxStreamer.removeInboxMessageCallback.mockReturnValue(true);
         mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => ({
                 status: 'enqueued',
                 message,
-                entries: [],
-            }),
+                entries: []
+            })
         );
         mocks.webSocketQueueBox.onAnyInboxMessageDo.mockReturnValue(
-            mocks.ctx.middleware.webSocketQueueBox,
+            mocks.ctx.middleware.webSocketQueueBox
         );
         mocks.webSocketQueueBox.removeAnyInboxMessageCallback.mockReturnValue(true);
         mocks.webSocketQueueBox.readHealth.mockReturnValue({
@@ -276,32 +242,32 @@ describe('Rallar director relay compatibility', () => {
             reconnectEnabled: false,
             reconnectAttempts: 0,
             maxReconnectAttempts: 12,
-            reconnectExhausted: false,
+            reconnectExhausted: false
         });
         mocks.webSocketQueueBox.close.mockImplementation((code, reason) => {
             mocks.webSocket.close(code, reason);
         });
         mocks.webSocket.onWebsocketCallbacksDo.mockReturnValue(
-            mocks.ctx.middleware.webSocketQueueBox.socket,
+            mocks.ctx.middleware.webSocketQueueBox.socket
         );
         mocks.webSocket.removeWebsocketCallbackById.mockReturnValue(true);
         mocks.registerWithApi.mockResolvedValue({
             clientId: 'client-new',
             username: 'new-user',
             displayName: null,
-            registeredAtEpochMs: 1_000,
+            registeredAtEpochMs: 1_000
         });
         mocks.listStateClientEvents.mockRejectedValue(
-            new Error('client events not mocked'),
+            new Error('client events not mocked')
         );
         mocks.listStateClientEventPage.mockRejectedValue(
-            new Error('client event page not mocked'),
+            new Error('client event page not mocked')
         );
         mocks.listStateGroupEvents.mockRejectedValue(
-            new Error('group events not mocked'),
+            new Error('group events not mocked')
         );
         mocks.listStateGroupEventPage.mockRejectedValue(
-            new Error('group event page not mocked'),
+            new Error('group event page not mocked')
         );
     });
 
@@ -314,7 +280,7 @@ describe('Rallar director relay compatibility', () => {
         mocks.appointStateGroupDirector.mockImplementation(
             async (
                 _roomId: string,
-                request: { heartbeatTtlMs?: number },
+                request: { heartbeatTtlMs?: number; }
             ) => {
                 const appointment = {
                     version: 1,
@@ -323,7 +289,7 @@ describe('Rallar director relay compatibility', () => {
                     principalId: 'principal-1',
                     epoch: 1,
                     appointedAtEpochMs: Date.now(),
-                    heartbeatTtlMs: request.heartbeatTtlMs ?? 5_000,
+                    heartbeatTtlMs: request.heartbeatTtlMs ?? 5_000
                 };
                 const updated = {
                     ...snapshot,
@@ -331,38 +297,38 @@ describe('Rallar director relay compatibility', () => {
                         ...snapshot.group,
                         metadata: {
                             ...snapshot.group.metadata,
-                            rallarDirector: appointment,
-                        },
-                    },
+                            rallarDirector: appointment
+                        }
+                    }
                 };
                 mockGroupSnapshot(updated);
                 return updated;
-            },
+            }
         );
 
         const status = await createRallarFacade().director.appoint('room-1', {
-            heartbeatTtlMs: 1_000,
+            heartbeatTtlMs: 1_000
         });
 
         expect(mocks.appointStateGroupDirector).toHaveBeenCalledWith(
             'room-1',
             expect.objectContaining({
-                heartbeatTtlMs: 1_000,
+                heartbeatTtlMs: 1_000
             }),
             'principal-1',
             'session-1',
             expect.objectContaining({
                 applicationId: 'app-1',
-                workspaceId: 'workspace-1',
+                workspaceId: 'workspace-1'
             }),
-            expect.any(Object),
+            expect.any(Object)
         );
         expect(status).toMatchObject({
             role: 'director',
             state: 'fresh',
             isDirector: true,
             isFresh: true,
-            active: true,
+            active: true
         });
     });
 
@@ -374,7 +340,7 @@ describe('Rallar director relay compatibility', () => {
         const rejoinSession = {
             ...mocks.ctx.session,
             sessionId: 'session-2',
-            accessToken: 'token-2',
+            accessToken: 'token-2'
         };
         const rejoined: GroupSnapshot = {
             ...created,
@@ -387,10 +353,10 @@ describe('Rallar director relay compatibility', () => {
                     generationVersion: 2,
                     connectedAtEpochMs: 2,
                     lastHeartbeatAtEpochMs: 2,
-                    expiresAtEpochMs: 61_000,
-                },
+                    expiresAtEpochMs: 61_000
+                }
             ],
-            onlineMemberCount: 1,
+            onlineMemberCount: 1
         };
         mockGroupSnapshot(created);
         mocks.createAndJoinStateGroup.mockResolvedValueOnce(created);
@@ -401,9 +367,9 @@ describe('Rallar director relay compatibility', () => {
         mocks.appointStateGroupDirector.mockImplementationOnce(
             async (
                 _roomId: string,
-                request: { heartbeatTtlMs?: number },
+                request: { heartbeatTtlMs?: number; },
                 principalId: string,
-                sessionId: string,
+                sessionId: string
             ) => {
                 const appointment = {
                     version: 1,
@@ -412,7 +378,7 @@ describe('Rallar director relay compatibility', () => {
                     principalId,
                     epoch: 1,
                     appointedAtEpochMs: Date.now(),
-                    heartbeatTtlMs: request.heartbeatTtlMs ?? 5_000,
+                    heartbeatTtlMs: request.heartbeatTtlMs ?? 5_000
                 };
                 const updated = {
                     ...rejoined,
@@ -420,15 +386,15 @@ describe('Rallar director relay compatibility', () => {
                         ...rejoined.group,
                         metadata: {
                             ...rejoined.group.metadata,
-                            rallarDirector: appointment,
-                        },
-                    },
+                            rallarDirector: appointment
+                        }
+                    }
                 };
                 mockGroupSnapshot(updated);
                 expect(principalId).toBe(rejoinSession.clientId);
                 expect(sessionId).toBe(rejoinSession.sessionId);
                 return updated;
-            },
+            }
         );
 
         const facade = createRallarFacade();
@@ -437,12 +403,12 @@ describe('Rallar director relay compatibility', () => {
         mocks.readSession.mockReturnValue(rejoinSession);
         mocks.initMiddleware.mockResolvedValue({
             ...mocks.ctx,
-            session: rejoinSession,
+            session: rejoinSession
         });
         await facade.rooms.enter('room-1');
 
         const status = await facade.director.appoint('room-1', {
-            heartbeatTtlMs: 1_000,
+            heartbeatTtlMs: 1_000
         });
 
         expect(status).toMatchObject({
@@ -454,8 +420,8 @@ describe('Rallar director relay compatibility', () => {
                 sessionId: 'session-2',
                 principalId: 'principal-1',
                 epoch: 1,
-                heartbeatTtlMs: 1_000,
-            },
+                heartbeatTtlMs: 1_000
+            }
         });
     });
 
@@ -468,21 +434,21 @@ describe('Rallar director relay compatibility', () => {
             principalId: 'director-principal',
             epoch: 2,
             appointedAtEpochMs: Date.now(),
-            heartbeatTtlMs: 5_000,
+            heartbeatTtlMs: 5_000
         }));
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockResolvedValue({
             status: 'timeout',
             peerId: 'director-session',
             laneId: 'director',
-            error: new Error('not ready'),
+            error: new Error('not ready')
         });
         const facade = createRallarFacade();
-        const relay = facade.director.createRelay<{ move: string }, { ok: true }>({
+        const relay = facade.director.createRelay<{ move: string; }, { ok: true; }>({
             roomId: 'room-1',
             laneId: 'director',
             topicId: 'app.game.director',
             intentTypeId: 'game.intent',
-            outputTypeId: 'game.output',
+            outputTypeId: 'game.output'
         });
 
         const result = await relay.sendIntent({ move: 'left' });
@@ -491,20 +457,20 @@ describe('Rallar director relay compatibility', () => {
         expect(result.status).toBe('sent');
         expect(result.rtc).toMatchObject({
             status: 'failed',
-            peerIds: ['director-session'],
+            peerIds: ['director-session']
         });
         expect(mocks.webSocketQueueBox.enqueueOutboxIfAbsent)
             .toHaveBeenCalledWith(
                 expect.objectContaining({
                     targets: {
                         mode: 'unicast',
-                        toPeerId: 'director-session',
+                        toPeerId: 'director-session'
                     },
                     payload: expect.objectContaining({
                         typeId: 'game.intent',
-                        resource: expect.stringContaining('"move":"left"'),
-                    }),
-                }),
+                        resource: expect.stringContaining('"move":"left"')
+                    })
+                })
             );
     });
 
@@ -519,21 +485,21 @@ describe('Rallar director relay compatibility', () => {
             principalId: 'director-principal',
             epoch: 2,
             appointedAtEpochMs: 1,
-            heartbeatTtlMs: 5,
+            heartbeatTtlMs: 5
         }));
-        const relay = createRallarFacade().director.createRelay<{ move: string }, { ok: true }>({
+        const relay = createRallarFacade().director.createRelay<{ move: string; }, { ok: true; }>({
             roomId: 'room-1',
             laneId: 'director',
             topicId: 'app.game.director',
             intentTypeId: 'game.intent',
-            outputTypeId: 'game.output',
+            outputTypeId: 'game.output'
         });
 
         const result = await relay.sendIntent({ move: 'left' });
         relay.stop();
 
         expect(result).toMatchObject({
-            status: 'stale-director',
+            status: 'stale-director'
         });
         expect(mocks.webRtcConnectionService.ensurePeerLaneOpen).not.toHaveBeenCalled();
     });
@@ -549,13 +515,9 @@ describe('Rallar director relay compatibility', () => {
             principalId: 'principal-1',
             epoch: 3,
             appointedAtEpochMs: 1,
-            heartbeatTtlMs: 60_000,
+            heartbeatTtlMs: 60_000
         }));
-        const relay = createRallarFacade().director.createRelay<
-            { move: string },
-            { ok: true },
-            { revision: number }
-        >({
+        const relay = createRallarFacade().director.createRelay<{ move: string; }, { ok: true; }, { revision: number; }>({
             roomId: 'room-1',
             laneId: 'director',
             topicId: 'app.game.director',
@@ -564,7 +526,7 @@ describe('Rallar director relay compatibility', () => {
             heartbeatIntervalMs: 60_000,
             snapshotTypeId: 'game.snapshot',
             snapshotIntervalMs: false,
-            readSnapshot: () => ({ revision: 1 }),
+            readSnapshot: () => ({ revision: 1 })
         });
 
         await vi.advanceTimersByTimeAsync(5_000);
@@ -585,17 +547,14 @@ describe('Rallar director relay compatibility', () => {
             principalId: 'principal-1',
             epoch: 3,
             appointedAtEpochMs: 1,
-            heartbeatTtlMs: 60_000,
+            heartbeatTtlMs: 60_000
         }));
-        const relay = createRallarFacade().director.createRelay<
-            { move: string },
-            { ok: true }
-        >({
+        const relay = createRallarFacade().director.createRelay<{ move: string; }, { ok: true; }>({
             roomId: 'room-1',
             laneId: 'director',
             topicId: 'app.game.director',
             intentTypeId: 'game.intent',
-            outputTypeId: 'game.output',
+            outputTypeId: 'game.output'
         });
 
         const result = await relay.sendOutput({ ok: true });
@@ -605,12 +564,12 @@ describe('Rallar director relay compatibility', () => {
             status: 'sent',
             rtc: {
                 transport: 'rtc',
-                status: 'no-route',
+                status: 'no-route'
             },
             ws: {
                 transport: 'ws',
-                status: 'enqueued',
-            },
+                status: 'enqueued'
+            }
         });
     });
 
@@ -625,16 +584,16 @@ describe('Rallar director relay compatibility', () => {
             principalId: 'principal-1',
             epoch: 3,
             appointedAtEpochMs: 1,
-            heartbeatTtlMs: 60_000,
+            heartbeatTtlMs: 60_000
         }));
         const facade = createRallarFacade();
-        facade.director.createRelay<{ move: string }, { ok: true }>({
+        facade.director.createRelay<{ move: string; }, { ok: true; }>({
             roomId: 'room-1',
             laneId: 'director',
             topicId: 'app.game.director',
             intentTypeId: 'game.intent',
             outputTypeId: 'game.output',
-            heartbeatIntervalMs: 1_000,
+            heartbeatIntervalMs: 1_000
         });
 
         await facade.auth.logout();
@@ -658,14 +617,10 @@ describe('Rallar director relay compatibility', () => {
             principalId: 'principal-1',
             epoch: 3,
             appointedAtEpochMs: 1,
-            heartbeatTtlMs: 60_000,
+            heartbeatTtlMs: 60_000
         }));
         const facade = createRallarFacade();
-        const relay = facade.director.createRelay<
-            { move: string },
-            { ok: true },
-            { revision: number }
-        >(
+        const relay = facade.director.createRelay<{ move: string; }, { ok: true; }, { revision: number; }>(
             {
                 roomId: 'room-1',
                 laneId: 'director',
@@ -675,8 +630,8 @@ describe('Rallar director relay compatibility', () => {
                 heartbeatIntervalMs: 60_000,
                 snapshotTypeId: 'game.snapshot',
                 snapshotIntervalMs: false,
-                readSnapshot: () => ({ revision: 1 }),
-            },
+                readSnapshot: () => ({ revision: 1 })
+            }
         );
 
         await facade.auth.logout();
@@ -689,7 +644,7 @@ describe('Rallar director relay compatibility', () => {
             relay.sendOutput({ ok: true }),
             relay.sendSnapshot({ revision: 2 }),
             relay.sendIntent({ move: 'dash' }),
-            relay.requestSync({ reason: 'late-join' }),
+            relay.requestSync({ reason: 'late-join' })
         ]);
 
         expect(results.every((result) => result.status === 'no-director')).toBe(true);
@@ -711,7 +666,7 @@ function findLatestWsAnyMessageCallback(): OnMessageCallback | undefined {
 function enqueuedWsTypeIds(): readonly string[] {
     return mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mock.calls
         .map(([message]) => {
-            const payload = (message as { payload?: { typeId?: unknown } }).payload;
+            const payload = (message as { payload?: { typeId?: unknown; }; }).payload;
             return typeof payload?.typeId === 'string' ? payload.typeId : undefined;
         })
         .filter((typeId): typeId is string => typeId !== undefined);
@@ -723,7 +678,7 @@ function createChannelHealth(
         label: string;
         state: string;
         readyState: RTCDataChannelState;
-    }>,
+    }>
 ) {
     return {
         peerId: input.peerId,
@@ -742,7 +697,7 @@ function createChannelHealth(
             highWatermarkBytes: 64 * 1024,
             lowWatermarkBytes: 16 * 1024,
             overflow: 'drop-new' as const,
-            maxQueueItems: 32,
+            maxQueueItems: 32
         },
         counters: {
             sent: 0,
@@ -755,8 +710,8 @@ function createChannelHealth(
             droppedStale: 0,
             receivedRaw: 0,
             receivedString: 0,
-            receivedBinary: 0,
-        },
+            receivedBinary: 0
+        }
     };
 }
 
@@ -781,26 +736,26 @@ function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
 function mockGroupRepositoryMissing(): void {
     const throwGroupRepositoryMissing = (): never => {
         throw new Error(
-            'Repository not found: shared.repository.group-state-snapshots',
+            'Repository not found: shared.repository.group-state-snapshots'
         );
     };
     mocks.getAllGroupStateSnapshots.mockImplementation(throwGroupRepositoryMissing);
     mocks.findGroupStateSnapshotByRef.mockImplementation(throwGroupRepositoryMissing);
     mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation(
-        throwGroupRepositoryMissing,
+        throwGroupRepositoryMissing
     );
 }
 
 function withSnapshotVersion(
     snapshot: GroupSnapshot,
-    snapshotVersion: number,
+    snapshotVersion: number
 ): GroupSnapshot {
     return {
         ...snapshot,
         group: {
             ...snapshot.group,
-            snapshotVersion,
-        },
+            snapshotVersion
+        }
     };
 }
 
@@ -810,7 +765,7 @@ function createGroupSnapshot(
     scope: Readonly<{
         applicationId?: string;
         workspaceId?: string;
-    }> = {},
+    }> = {}
 ): GroupSnapshot {
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';
@@ -818,7 +773,7 @@ function createGroupSnapshot(
         applicationId,
         workspaceId,
         groupId,
-        sessionIds,
+        sessionIds
     });
 }
 
@@ -829,18 +784,18 @@ function createDirectorGroupSnapshot(
         epoch: number;
         appointedAtEpochMs: number;
         heartbeatTtlMs: number;
-    }>,
+    }>
 ): GroupSnapshot {
     const snapshot = createGroupSnapshot('room-1', ['session-1']);
     const activeSessions: GroupSnapshot['activeSessions'][number][] = [{
         ...snapshot.activeSessions[0],
         principalId: 'principal-1',
-        sessionId: 'session-1',
+        sessionId: 'session-1'
     }];
     const members: GroupSnapshot['members'][number][] = [{
         ...snapshot.members[0],
         principalId: 'principal-1',
-        role: 'owner',
+        role: 'owner'
     }];
 
     if (appointment) {
@@ -849,7 +804,7 @@ function createDirectorGroupSnapshot(
             workspaceId: 'workspace-1',
             groupId: 'room-1',
             principalId: appointment.principalId,
-            sessionId: appointment.sessionId,
+            sessionId: appointment.sessionId
         }));
         members.push(createActiveGroupMemberFixture({
             applicationId: 'app-1',
@@ -857,7 +812,7 @@ function createDirectorGroupSnapshot(
             groupId: 'room-1',
             principalId: appointment.principalId,
             role: 'member',
-            actorPrincipalId: 'principal-1',
+            actorPrincipalId: 'principal-1'
         }));
     }
 
@@ -867,22 +822,22 @@ function createDirectorGroupSnapshot(
             ...snapshot.group,
             created: {
                 ...snapshot.group.created,
-                actor: { kind: 'principal', principalId: 'principal-1' },
+                actor: { kind: 'principal', principalId: 'principal-1' }
             },
             metadata: appointment
                 ? {
                     rallarDirector: {
                         version: 1,
                         mode: 'appointed-spa',
-                        ...appointment,
-                    },
+                        ...appointment
+                    }
                 }
-                : {},
+                : {}
         },
         members,
         activeSessions,
         memberCount: members.length,
-        onlineMemberCount: activeSessions.length,
+        onlineMemberCount: activeSessions.length
     };
 }
 
@@ -903,7 +858,7 @@ function createDeferred<T>(): {
 
 function createMediaTrack(
     id: string,
-    kind: 'audio' | 'video',
+    kind: 'audio' | 'video'
 ): MediaStreamTrack {
     const listeners = new Set<EventListenerOrEventListenerObject>();
     const track = {
@@ -913,7 +868,7 @@ function createMediaTrack(
         readyState: 'live',
         addEventListener: vi.fn((
             type: string,
-            listener: EventListenerOrEventListenerObject,
+            listener: EventListenerOrEventListenerObject
         ) => {
             if (type === 'ended') {
                 listeners.add(listener);
@@ -921,7 +876,7 @@ function createMediaTrack(
         }),
         removeEventListener: vi.fn((
             type: string,
-            listener: EventListenerOrEventListenerObject,
+            listener: EventListenerOrEventListenerObject
         ) => {
             if (type === 'ended') {
                 listeners.delete(listener);
@@ -933,11 +888,12 @@ function createMediaTrack(
             for (const listener of listeners) {
                 if (typeof listener === 'function') {
                     listener(event);
-                } else {
+                }
+                else {
                     listener.handleEvent(event);
                 }
             }
-        }),
+        })
     };
 
     return track as unknown as MediaStreamTrack;
@@ -945,13 +901,13 @@ function createMediaTrack(
 
 function createMediaStream(
     id: string,
-    tracks: readonly MediaStreamTrack[],
+    tracks: readonly MediaStreamTrack[]
 ): MediaStream {
     return {
         id,
         active: tracks.some((track) => track.readyState !== 'ended'),
         getTracks: vi.fn(() => [...tracks]),
         getAudioTracks: vi.fn(() => tracks.filter((track) => track.kind === 'audio')),
-        getVideoTracks: vi.fn(() => tracks.filter((track) => track.kind === 'video')),
+        getVideoTracks: vi.fn(() => tracks.filter((track) => track.kind === 'video'))
     } as unknown as MediaStream;
 }

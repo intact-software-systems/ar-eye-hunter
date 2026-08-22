@@ -1,23 +1,20 @@
+import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import {
-    type ALMessage,
-    newALBroadcastMessage,
-    newALRoute,
-} from '@shared/al-contracts/al-contract.ts';
 import {
     assertRallarAiAuthorized,
     createRallarAiDiagnosticEvent,
     emitRallarAiDiagnostic,
     providerCanRunOnTarget,
-    type RallarAiDiagnosticEventKind,
     RallarAiError,
     type RallarAiAuthorize,
+    type RallarAiDiagnosticEventKind,
     type RallarAiDiagnosticsSink,
     type RallarAiGenerationPolicy,
     type RallarAiJsonProvider,
     type RallarAiJsonRequest,
-    type RallarAiJsonResult,
+    type RallarAiJsonResult
 } from '@shared/rallar-ai/mod.ts';
+import type { RallarServerAppDataStoreOptions } from '../app-data/RallarServerAppData.ts';
 import type {
     RallarServerWsFanout,
     RallarServerWsHandler,
@@ -25,11 +22,8 @@ import type {
     RallarServerWsMessageContext,
     RallarServerWsPublishResult,
     RallarServerWsSelector,
-    RallarServerWsTopicDefinition,
+    RallarServerWsTopicDefinition
 } from '../rallar-facade/ws-topic-router.ts';
-import type {
-    RallarServerAppDataStoreOptions,
-} from '../app-data/RallarServerAppData.ts';
 
 type RallarServerAiDataStore<V> = Readonly<{
     set(key: string, value: V): Promise<void>;
@@ -40,17 +34,17 @@ export type RallarServerAiRallar = Readonly<{
         defineTopic<T>(definition: RallarServerWsTopicDefinition<T>): unknown;
         on<T>(
             selector: RallarServerWsSelector,
-            handler: RallarServerWsHandler<T>,
+            handler: RallarServerWsHandler<T>
         ): () => boolean;
         publish(
             message: ALMessage,
-            fanout?: RallarServerWsFanout,
+            fanout?: RallarServerWsFanout
         ): Promise<RallarServerWsPublishResult>;
     }>;
     data?: Readonly<{
         open<V>(
             input: string,
-            options?: RallarServerAppDataStoreOptions<V>,
+            options?: RallarServerAppDataStoreOptions<V>
         ): Promise<RallarServerAiDataStore<V>>;
     }>;
 }>;
@@ -62,7 +56,7 @@ export type RallarServerAiRequestContext = Readonly<{
 
 export type RallarServerAiRequestRedactor = <TContext>(
     request: RallarAiJsonRequest<TContext>,
-    context: RallarServerAiRequestContext,
+    context: RallarServerAiRequestContext
 ) => RallarAiJsonRequest<TContext>;
 
 export type RallarServerAiLimits = Readonly<{
@@ -131,16 +125,18 @@ type RallarServerAiRestValidatedGenerateInput = Readonly<{
 export type RallarServerAiRestGenerateResponse<TValue = unknown> = Readonly<{
     status: number;
     headers: Readonly<Record<string, string>>;
-    body: Readonly<{
-        ok: true;
-        result: RallarAiJsonResult<TValue>;
-    }> | Readonly<{
-        ok: false;
-        error: Readonly<{
-            code: string;
-            message: string;
+    body:
+        | Readonly<{
+            ok: true;
+            result: RallarAiJsonResult<TValue>;
+        }>
+        | Readonly<{
+            ok: false;
+            error: Readonly<{
+                code: string;
+                message: string;
+            }>;
         }>;
-    }>;
 }>;
 
 export type RallarServerAiRestPostApp = Readonly<{
@@ -148,8 +144,8 @@ export type RallarServerAiRestPostApp = Readonly<{
         path: string,
         handler: (
             request: unknown,
-            response?: unknown,
-        ) => Promise<unknown> | unknown,
+            response?: unknown
+        ) => Promise<unknown> | unknown
     ): unknown;
 }>;
 
@@ -174,28 +170,28 @@ export type RallarServerAiGenerationTopicOptions = Readonly<{
 export type RallarServerAiFacade = Readonly<{
     generateJson<TValue = unknown, TContext = unknown>(
         request: RallarAiJsonRequest<TContext>,
-        context?: RallarServerAiRequestContext,
+        context?: RallarServerAiRequestContext
     ): Promise<RallarAiJsonResult<TValue>>;
     broadcastJson<TValue = unknown>(
-        input: RallarServerAiBroadcastInput<TValue>,
+        input: RallarServerAiBroadcastInput<TValue>
     ): Promise<RallarServerWsPublishResult>;
     persistJson<TValue = unknown>(
-        input: RallarServerAiPersistInput<TValue>,
+        input: RallarServerAiPersistInput<TValue>
     ): Promise<void>;
     handleRestGenerateJson<TValue = unknown>(
-        input: RallarServerAiRestGenerateInput,
+        input: RallarServerAiRestGenerateInput
     ): Promise<RallarServerAiRestGenerateResponse<TValue>>;
     createRestRouteInstaller(
-        options?: RallarServerAiRestRouteOptions,
+        options?: RallarServerAiRestRouteOptions
     ): (app: RallarServerAiRestPostApp) => void;
     installGenerationTopic(
-        options?: RallarServerAiGenerationTopicOptions,
+        options?: RallarServerAiGenerationTopicOptions
     ): () => boolean;
 }>;
 
 const DEFAULT_SERVER_AI_POLICY: RallarAiGenerationPolicy = {
     mode: 'server-only',
-    staleResultMode: 'allow',
+    staleResultMode: 'allow'
 };
 
 const DEFAULT_LIMITS: Required<RallarServerAiLimits> = {
@@ -203,7 +199,7 @@ const DEFAULT_LIMITS: Required<RallarServerAiLimits> = {
     maxRequestBytes: 256 * 1024,
     maxPromptBytes: 64 * 1024,
     maxSchemaBytes: 128 * 1024,
-    maxContextBytes: 64 * 1024,
+    maxContextBytes: 64 * 1024
 };
 
 const DEFAULT_AI_REST_PATH = '/rallar-ai/generate-json';
@@ -215,18 +211,18 @@ const DEFAULT_AI_RESULT_TYPE_ID = 'rallar.ai.generate-json.result.v1';
 const DEFAULT_SERVER_SENDER_ID = 'rallar-ai-server';
 
 export function createRallarServerAi(
-    options: CreateRallarServerAiOptions,
+    options: CreateRallarServerAiOptions
 ): RallarServerAiFacade {
     const policy = options.policy ?? DEFAULT_SERVER_AI_POLICY;
     const limits = {
         ...DEFAULT_LIMITS,
-        ...options.limits,
+        ...options.limits
     };
     let activeGenerations = 0;
 
     const generateJson = async <TValue = unknown, TContext = unknown>(
         request: RallarAiJsonRequest<TContext>,
-        context: RallarServerAiRequestContext = {},
+        context: RallarServerAiRequestContext = {}
     ): Promise<RallarAiJsonResult<TValue>> => {
         assertServerPolicy(policy, options.provider);
         assertRequestShape(request);
@@ -237,13 +233,13 @@ export function createRallarServerAi(
             action: 'generate',
             source: 'server',
             schemaId: request.schemaId,
-            schemaVersion: request.schemaVersion,
+            schemaVersion: request.schemaVersion
         });
 
         if (activeGenerations >= limits.maxConcurrentGenerations) {
             throw new RallarAiError(
                 'quota-exceeded',
-                'RallarAI server generation concurrency quota was exceeded.',
+                'RallarAI server generation concurrency quota was exceeded.'
             );
         }
 
@@ -262,8 +258,8 @@ export function createRallarServerAi(
                     modelId: options.provider.modelId,
                     schemaId: request.schemaId,
                     schemaVersion: request.schemaVersion,
-                    source: options.provider.source,
-                }),
+                    source: options.provider.source
+                })
             );
             await emitRallarAiDiagnostic(
                 options.diagnostics,
@@ -273,14 +269,14 @@ export function createRallarServerAi(
                     modelId: options.provider.modelId,
                     schemaId: request.schemaId,
                     schemaVersion: request.schemaVersion,
-                    source: options.provider.source,
-                }),
+                    source: options.provider.source
+                })
             );
 
             const result = await generateWithTimeout<TValue, TContext>(
                 options.provider,
                 providerRequest,
-                policy.timeoutMs ?? request.timeoutMs,
+                policy.timeoutMs ?? request.timeoutMs
             );
 
             if (!result.validation.ok) {
@@ -295,13 +291,13 @@ export function createRallarServerAi(
                         schemaVersion: result.schemaVersion,
                         schemaHash: result.schemaHash,
                         source: result.source,
-                        validationOk: false,
-                    }),
+                        validationOk: false
+                    })
                 );
                 throw new RallarAiError(
                     'schema-validation-failed',
                     'RallarAI server provider returned JSON that failed schema validation.',
-                    result.validation,
+                    result.validation
                 );
             }
 
@@ -317,11 +313,12 @@ export function createRallarServerAi(
                     schemaHash: result.schemaHash,
                     source: result.source,
                     validationOk: result.validation.ok,
-                    elapsedMs: Date.now() - startedAtEpochMs,
-                }),
+                    elapsedMs: Date.now() - startedAtEpochMs
+                })
             );
             return result;
-        } catch (error) {
+        }
+        catch (error) {
             await emitFailureDiagnostic(options.diagnostics, error, {
                 requestId: request.requestId,
                 providerId: options.provider.providerId,
@@ -329,10 +326,11 @@ export function createRallarServerAi(
                 schemaId: request.schemaId,
                 schemaVersion: request.schemaVersion,
                 source: options.provider.source,
-                elapsedMs: Date.now() - startedAtEpochMs,
+                elapsedMs: Date.now() - startedAtEpochMs
             });
             throw error;
-        } finally {
+        }
+        finally {
             activeGenerations -= 1;
         }
     };
@@ -340,7 +338,7 @@ export function createRallarServerAi(
     return {
         generateJson,
         broadcastJson: async <TValue = unknown>(
-            input: RallarServerAiBroadcastInput<TValue>,
+            input: RallarServerAiBroadcastInput<TValue>
         ): Promise<RallarServerWsPublishResult> => {
             const target = normalizeBroadcastTarget(input);
             await assertRallarAiAuthorized(options.authorize, {
@@ -351,7 +349,7 @@ export function createRallarServerAi(
                 action: 'broadcast',
                 source: 'server',
                 schemaId: input.result.schemaId,
-                schemaVersion: input.result.schemaVersion,
+                schemaVersion: input.result.schemaVersion
             });
             await emitRallarAiDiagnostic(
                 options.diagnostics,
@@ -364,19 +362,19 @@ export function createRallarServerAi(
                     schemaVersion: input.result.schemaVersion,
                     schemaHash: input.result.schemaHash,
                     source: input.result.source,
-                    validationOk: input.result.validation.ok,
-                }),
+                    validationOk: input.result.validation.ok
+                })
             );
 
             try {
                 const message = toResultBroadcastMessage(
                     input,
                     options.serverSenderId ?? DEFAULT_SERVER_SENDER_ID,
-                    target,
+                    target
                 );
                 const publishResult = await options.rallar.ws.publish(
                     message,
-                    input.fanout,
+                    input.fanout
                 );
                 await emitRallarAiDiagnostic(
                     options.diagnostics,
@@ -389,11 +387,12 @@ export function createRallarServerAi(
                         schemaVersion: input.result.schemaVersion,
                         schemaHash: input.result.schemaHash,
                         source: input.result.source,
-                        validationOk: input.result.validation.ok,
-                    }),
+                        validationOk: input.result.validation.ok
+                    })
                 );
                 return publishResult;
-            } catch (error) {
+            }
+            catch (error) {
                 await emitRallarAiDiagnostic(
                     options.diagnostics,
                     createRallarAiDiagnosticEvent('envelope-broadcast-failed', {
@@ -408,19 +407,19 @@ export function createRallarServerAi(
                         errorCode: error instanceof RallarAiError
                             ? error.code
                             : 'provider-failed',
-                        message: error instanceof Error ? error.message : String(error),
-                    }),
+                        message: error instanceof Error ? error.message : String(error)
+                    })
                 );
                 throw error;
             }
         },
         persistJson: async <TValue = unknown>(
-            input: RallarServerAiPersistInput<TValue>,
+            input: RallarServerAiPersistInput<TValue>
         ): Promise<void> => {
             if (!options.rallar.data) {
                 throw new RallarAiError(
                     'invalid-configuration',
-                    'RallarAI server persistence requires a Rallar data facade.',
+                    'RallarAI server persistence requires a Rallar data facade.'
                 );
             }
             await assertRallarAiAuthorized(options.authorize, {
@@ -429,7 +428,7 @@ export function createRallarServerAi(
                 action: 'persist',
                 source: 'server',
                 schemaId: input.result.schemaId,
-                schemaVersion: input.result.schemaVersion,
+                schemaVersion: input.result.schemaVersion
             });
             await emitRallarAiDiagnostic(
                 options.diagnostics,
@@ -442,18 +441,19 @@ export function createRallarServerAi(
                     schemaVersion: input.result.schemaVersion,
                     schemaHash: input.result.schemaHash,
                     source: input.result.source,
-                    validationOk: input.result.validation.ok,
-                }),
+                    validationOk: input.result.validation.ok
+                })
             );
 
             try {
-                const store = await options.rallar.data.open<
-                    RallarAiJsonResult<TValue>
-                >(input.storeName ?? DEFAULT_AI_RESULT_STORE_NAME, {
-                    namespace: input.namespace ?? 'server',
-                    schemaVersion: 1,
-                    ttlMs: input.ttlMs,
-                });
+                const store = await options.rallar.data.open<RallarAiJsonResult<TValue>>(
+                    input.storeName ?? DEFAULT_AI_RESULT_STORE_NAME,
+                    {
+                        namespace: input.namespace ?? 'server',
+                        schemaVersion: 1,
+                        ttlMs: input.ttlMs
+                    }
+                );
                 await store.set(input.key ?? input.result.generationId, input.result);
                 await emitRallarAiDiagnostic(
                     options.diagnostics,
@@ -466,10 +466,11 @@ export function createRallarServerAi(
                         schemaVersion: input.result.schemaVersion,
                         schemaHash: input.result.schemaHash,
                         source: input.result.source,
-                        validationOk: input.result.validation.ok,
-                    }),
+                        validationOk: input.result.validation.ok
+                    })
                 );
-            } catch (error) {
+            }
+            catch (error) {
                 await emitRallarAiDiagnostic(
                     options.diagnostics,
                     createRallarAiDiagnosticEvent('envelope-persistence-failed', {
@@ -484,43 +485,44 @@ export function createRallarServerAi(
                         errorCode: error instanceof RallarAiError
                             ? error.code
                             : 'provider-failed',
-                        message: error instanceof Error ? error.message : String(error),
-                    }),
+                        message: error instanceof Error ? error.message : String(error)
+                    })
                 );
                 throw error;
             }
         },
         handleRestGenerateJson: async <TValue = unknown>(
-            input: RallarServerAiRestGenerateInput,
+            input: RallarServerAiRestGenerateInput
         ): Promise<RallarServerAiRestGenerateResponse<TValue>> => {
             if (!isRallarAiJsonRequest(input.body)) {
                 return toRestError(
                     new RallarAiError(
                         'invalid-json',
-                        'RallarAI REST generation body must be a JSON request.',
-                    ),
+                        'RallarAI REST generation body must be a JSON request.'
+                    )
                 );
             }
 
             try {
                 const result = await generateJson<TValue>(input.body, {
                     actorId: input.actorId,
-                    roomId: input.roomId,
+                    roomId: input.roomId
                 });
                 return {
                     status: 200,
                     headers: jsonHeaders(),
                     body: {
                         ok: true,
-                        result,
-                    },
+                        result
+                    }
                 };
-            } catch (error) {
+            }
+            catch (error) {
                 return toRestError(error);
             }
         },
         createRestRouteInstaller: (
-            routeOptions: RallarServerAiRestRouteOptions = {},
+            routeOptions: RallarServerAiRestRouteOptions = {}
         ) => {
             return (app: RallarServerAiRestPostApp): void => {
                 app.post(
@@ -533,16 +535,16 @@ export function createRallarServerAi(
                             async (input) =>
                                 await generateJson(input.body, {
                                     actorId: input.actorId,
-                                    roomId: input.roomId,
-                                }),
+                                    roomId: input.roomId
+                                })
                         );
                         return writeRestResponse(response, restResponse);
-                    },
+                    }
                 );
             };
         },
         installGenerationTopic: (
-            topicOptions: RallarServerAiGenerationTopicOptions = {},
+            topicOptions: RallarServerAiGenerationTopicOptions = {}
         ): () => boolean => {
             const requestTopicId = topicOptions.requestTopicId ??
                 DEFAULT_AI_REQUEST_TOPIC_ID;
@@ -563,30 +565,31 @@ export function createRallarServerAi(
                             action: 'generate',
                             source: 'server',
                             schemaId: message.payload.schemaId,
-                            schemaVersion: message.payload.schemaVersion,
+                            schemaVersion: message.payload.schemaVersion
                         });
                         return true;
-                    } catch {
+                    }
+                    catch {
                         return false;
                     }
-                },
+                }
             });
 
             return options.rallar.ws.on<RallarAiJsonRequest>(
                 {
                     topicId: requestTopicId,
-                    typeId: requestTypeId,
+                    typeId: requestTypeId
                 },
                 async (message, context) => {
                     const result = await generateJson(message.payload, {
                         actorId: context.senderId,
-                        roomId: context.roomId,
+                        roomId: context.roomId
                     });
                     const scope = normalizeBroadcastScope(topicOptions.scope);
                     const target: RallarServerAiBroadcastTarget = scope === 'room'
                         ? {
                             scope,
-                            groupRef: requireCompleteGroupRef(context.roomRef),
+                            groupRef: requireCompleteGroupRef(context.roomRef)
                         }
                         : { scope };
                     await options.rallar.ws.publish(
@@ -597,29 +600,29 @@ export function createRallarServerAi(
                                 ...(target.scope === 'room'
                                     ? {
                                         scope: target.scope,
-                                        roomRef: target.groupRef,
+                                        roomRef: target.groupRef
                                     }
                                     : { scope: target.scope }),
                                 topicId: topicOptions.resultTopicId ??
                                     DEFAULT_AI_RESULT_TOPIC_ID,
                                 typeId: topicOptions.resultTypeId ??
                                     DEFAULT_AI_RESULT_TYPE_ID,
-                                fanout: topicOptions.resultFanout,
+                                fanout: topicOptions.resultFanout
                             },
                             options.serverSenderId ?? DEFAULT_SERVER_SENDER_ID,
-                            target,
+                            target
                         ),
-                        topicOptions.resultFanout,
+                        topicOptions.resultFanout
                     );
-                },
+                }
             );
-        },
+        }
     };
 }
 
 function assertServerPolicy(
     policy: RallarAiGenerationPolicy,
-    provider: RallarAiJsonProvider,
+    provider: RallarAiJsonProvider
 ): void {
     if (policy.mode === 'disabled') {
         throw new RallarAiError('disabled', 'RallarAI server generation is disabled.');
@@ -627,19 +630,19 @@ function assertServerPolicy(
     if (policy.mode === 'browser-only') {
         throw new RallarAiError(
             'provider-target-mismatch',
-            'RallarAI server facade cannot run browser-only generation.',
+            'RallarAI server facade cannot run browser-only generation.'
         );
     }
     if (!providerCanRunOnTarget(provider.capabilities, 'server')) {
         throw new RallarAiError(
             'provider-target-mismatch',
-            `RallarAI provider cannot run on the server target: ${provider.providerId}.`,
+            `RallarAI provider cannot run on the server target: ${provider.providerId}.`
         );
     }
     if (!provider.capabilities.supportsJsonSchema) {
         throw new RallarAiError(
             'provider-unavailable',
-            `RallarAI provider does not advertise JSON schema support: ${provider.providerId}.`,
+            `RallarAI provider does not advertise JSON schema support: ${provider.providerId}.`
         );
     }
 }
@@ -648,35 +651,35 @@ function assertRequestShape(request: RallarAiJsonRequest): void {
     if (!isRallarAiJsonRequest(request)) {
         throw new RallarAiError(
             'invalid-json',
-            'RallarAI generation request is not valid.',
+            'RallarAI generation request is not valid.'
         );
     }
 }
 
 function assertRequestWithinLimits(
     request: RallarAiJsonRequest,
-    limits: Required<RallarServerAiLimits>,
+    limits: Required<RallarServerAiLimits>
 ): void {
     const requestBytes = byteLength({
         ...request,
-        signal: undefined,
+        signal: undefined
     });
     if (requestBytes > limits.maxRequestBytes) {
         throw new RallarAiError(
             'request-too-large',
-            `RallarAI request exceeded ${limits.maxRequestBytes} bytes.`,
+            `RallarAI request exceeded ${limits.maxRequestBytes} bytes.`
         );
     }
     if (byteLength(request.prompt) > limits.maxPromptBytes) {
         throw new RallarAiError(
             'request-too-large',
-            `RallarAI prompt exceeded ${limits.maxPromptBytes} bytes.`,
+            `RallarAI prompt exceeded ${limits.maxPromptBytes} bytes.`
         );
     }
     if (byteLength(request.schema) > limits.maxSchemaBytes) {
         throw new RallarAiError(
             'request-too-large',
-            `RallarAI schema exceeded ${limits.maxSchemaBytes} bytes.`,
+            `RallarAI schema exceeded ${limits.maxSchemaBytes} bytes.`
         );
     }
     if (
@@ -685,7 +688,7 @@ function assertRequestWithinLimits(
     ) {
         throw new RallarAiError(
             'request-too-large',
-            `RallarAI context exceeded ${limits.maxContextBytes} bytes.`,
+            `RallarAI context exceeded ${limits.maxContextBytes} bytes.`
         );
     }
 }
@@ -693,7 +696,7 @@ function assertRequestWithinLimits(
 async function generateWithTimeout<TValue, TContext>(
     provider: RallarAiJsonProvider,
     request: RallarAiJsonRequest<TContext>,
-    timeoutMs?: number,
+    timeoutMs?: number
 ): Promise<RallarAiJsonResult<TValue>> {
     if (timeoutMs === undefined) {
         return await provider.generateJson<TValue, TContext>(request);
@@ -703,24 +706,28 @@ async function generateWithTimeout<TValue, TContext>(
     const abortFromRequest = () => controller.abort(request.signal?.reason);
     request.signal?.addEventListener('abort', abortFromRequest, { once: true });
     const timeout = setTimeout(() => {
-        controller.abort(new RallarAiError(
-            'provider-timeout',
-            `RallarAI server generation timed out after ${timeoutMs}ms.`,
-        ));
+        controller.abort(
+            new RallarAiError(
+                'provider-timeout',
+                `RallarAI server generation timed out after ${timeoutMs}ms.`
+            )
+        );
     }, timeoutMs);
 
     try {
         return await provider.generateJson<TValue, TContext>({
             ...request,
             signal: controller.signal,
-            timeoutMs,
+            timeoutMs
         });
-    } catch (error) {
+    }
+    catch (error) {
         if (controller.signal.reason instanceof RallarAiError) {
             throw controller.signal.reason;
         }
         throw error;
-    } finally {
+    }
+    finally {
         clearTimeout(timeout);
         request.signal?.removeEventListener('abort', abortFromRequest);
     }
@@ -729,7 +736,7 @@ async function generateWithTimeout<TValue, TContext>(
 function toResultBroadcastMessage<TValue>(
     input: RallarServerAiBroadcastInput<TValue>,
     senderId: string,
-    target: RallarServerAiBroadcastTarget = normalizeBroadcastTarget(input),
+    target: RallarServerAiBroadcastTarget = normalizeBroadcastTarget(input)
 ): ALMessage {
     const contextId = target.scope === 'room'
         ? target.groupRef.groupId
@@ -739,7 +746,7 @@ function toResultBroadcastMessage<TValue>(
         newALRoute(
             input.topicId ?? DEFAULT_AI_RESULT_TOPIC_ID,
             contextId,
-            input.resourceId ?? input.result.generationId,
+            input.resourceId ?? input.result.generationId
         ),
         target.scope,
         input.typeId ?? DEFAULT_AI_RESULT_TYPE_ID,
@@ -747,8 +754,8 @@ function toResultBroadcastMessage<TValue>(
         {
             groupRef: target.scope === 'room' ? target.groupRef : undefined,
             reliability: 'at-least-once',
-            ack: 'receiver',
-        },
+            ack: 'receiver'
+        }
     );
 }
 
@@ -762,7 +769,7 @@ type RallarServerAiBroadcastTarget =
     }>;
 
 function normalizeBroadcastTarget<TValue>(
-    input: RallarServerAiBroadcastInput<TValue>,
+    input: RallarServerAiBroadcastInput<TValue>
 ): RallarServerAiBroadcastTarget {
     const scope = normalizeBroadcastScope(input.scope);
     if (scope !== 'room') {
@@ -771,7 +778,7 @@ function normalizeBroadcastTarget<TValue>(
 
     return {
         scope,
-        groupRef: requireCompleteGroupRef(input.roomRef),
+        groupRef: requireCompleteGroupRef(input.roomRef)
     };
 }
 
@@ -785,7 +792,7 @@ function normalizeBroadcastScope(value: unknown): RallarServerAiBroadcastTarget[
 
     throw new RallarAiError(
         'invalid-json',
-        'RallarAI broadcast scope must be room, world, or all.',
+        'RallarAI broadcast scope must be room, world, or all.'
     );
 }
 
@@ -801,24 +808,21 @@ function requireCompleteGroupRef(value: unknown): GroupRef {
     ) {
         throw new RallarAiError(
             'invalid-json',
-            'RallarAI room broadcast requires a complete GroupRef.',
+            'RallarAI room broadcast requires a complete GroupRef.'
         );
     }
 
     return {
         applicationId: value.applicationId,
         workspaceId: value.workspaceId,
-        groupId: value.groupId,
+        groupId: value.groupId
     };
 }
 
 async function emitFailureDiagnostic(
     sink: RallarAiDiagnosticsSink | undefined,
     error: unknown,
-    input: Omit<
-        Parameters<typeof createRallarAiDiagnosticEvent>[1],
-        'errorCode' | 'message'
-    >,
+    input: Omit<Parameters<typeof createRallarAiDiagnosticEvent>[1], 'errorCode' | 'message'>
 ): Promise<void> {
     const aiError = error instanceof RallarAiError ? error : undefined;
     await emitRallarAiDiagnostic(
@@ -827,13 +831,13 @@ async function emitFailureDiagnostic(
             ...input,
             validationOk: false,
             errorCode: aiError?.code ?? 'provider-failed',
-            message: error instanceof Error ? error.message : String(error),
-        }),
+            message: error instanceof Error ? error.message : String(error)
+        })
     );
 }
 
 function toGenerationFailureKind(
-    error: RallarAiError | undefined,
+    error: RallarAiError | undefined
 ): RallarAiDiagnosticEventKind {
     if (error?.code === 'provider-timeout') {
         return 'provider-timed-out';
@@ -875,24 +879,24 @@ function optionalNumber(value: unknown): boolean {
 
 function byteLength(value: unknown): number {
     return new TextEncoder().encode(
-        typeof value === 'string' ? value : JSON.stringify(value),
+        typeof value === 'string' ? value : JSON.stringify(value)
     ).length;
 }
 
 function jsonHeaders(): Readonly<Record<string, string>> {
     return {
-        'content-type': 'application/json',
+        'content-type': 'application/json'
     };
 }
 
 function toRestError<TValue = unknown>(
-    error: unknown,
+    error: unknown
 ): RallarServerAiRestGenerateResponse<TValue> {
     const aiError = error instanceof RallarAiError
         ? error
         : new RallarAiError(
             'provider-failed',
-            error instanceof Error ? error.message : String(error),
+            error instanceof Error ? error.message : String(error)
         );
     return {
         status: toHttpStatus(aiError.code),
@@ -901,9 +905,9 @@ function toRestError<TValue = unknown>(
             ok: false,
             error: {
                 code: aiError.code,
-                message: aiError.message,
-            },
-        },
+                message: aiError.message
+            }
+        }
     };
 }
 
@@ -936,8 +940,8 @@ async function handleRestInvocation<TValue>(
     response: unknown,
     routeOptions: RallarServerAiRestRouteOptions,
     generate: (
-        input: RallarServerAiRestValidatedGenerateInput,
-    ) => Promise<RallarAiJsonResult<TValue>>,
+        input: RallarServerAiRestValidatedGenerateInput
+    ) => Promise<RallarAiJsonResult<TValue>>
 ): Promise<RallarServerAiRestGenerateResponse<TValue>> {
     const body = routeOptions.readBody
         ? await routeOptions.readBody(request)
@@ -946,8 +950,8 @@ async function handleRestInvocation<TValue>(
         return toRestError(
             new RallarAiError(
                 'invalid-json',
-                'RallarAI REST generation body must be a JSON request.',
-            ),
+                'RallarAI REST generation body must be a JSON request.'
+            )
         ) as RallarServerAiRestGenerateResponse<TValue>;
     }
 
@@ -962,11 +966,12 @@ async function handleRestInvocation<TValue>(
                     actorId: routeOptions.readActorId?.(request) ??
                         readActorIdFromRequest(request, response),
                     roomId: routeOptions.readRoomId?.(request) ??
-                        readRoomIdFromRequest(request),
-                }),
-            },
+                        readRoomIdFromRequest(request)
+                })
+            }
         };
-    } catch (error) {
+    }
+    catch (error) {
         return toRestError(error) as RallarServerAiRestGenerateResponse<TValue>;
     }
 }
@@ -983,7 +988,7 @@ async function defaultReadBody(request: unknown): Promise<unknown> {
 
 function writeRestResponse(
     response: unknown,
-    restResponse: RallarServerAiRestGenerateResponse,
+    restResponse: RallarServerAiRestGenerateResponse
 ): unknown {
     if (isRecord(response) && typeof response.status === 'function') {
         const statusResult = response.status(restResponse.status);
@@ -1000,7 +1005,7 @@ function writeRestResponse(
     if (typeof Response !== 'undefined') {
         return new Response(JSON.stringify(restResponse.body), {
             status: restResponse.status,
-            headers: restResponse.headers,
+            headers: restResponse.headers
         });
     }
     return restResponse;
@@ -1008,7 +1013,7 @@ function writeRestResponse(
 
 function readActorIdFromRequest(
     request: unknown,
-    response: unknown,
+    response: unknown
 ): string | undefined {
     return readStringPath(request, ['actorId']) ??
         readStringPath(request, ['user', 'id']) ??
@@ -1025,7 +1030,7 @@ function readRoomIdFromRequest(request: unknown): string | undefined {
 
 function readStringPath(
     value: unknown,
-    path: readonly string[],
+    path: readonly string[]
 ): string | undefined {
     let current = value;
     for (const segment of path) {

@@ -1,8 +1,8 @@
 import { chromium, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { createServer, type ViteDevServer } from 'vite';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createServer, type ViteDevServer } from 'vite';
 
 type JsonObject = Record<string, unknown>;
 
@@ -90,8 +90,7 @@ type SpikeReport = {
     }>;
 };
 
-const RALLAR_HARNESS_PATH =
-    '/packages/shared-test/black-box-runner/browser/rallar-browser-harness.html';
+const RALLAR_HARNESS_PATH = '/packages/shared-test/black-box-runner/browser/rallar-browser-harness.html';
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 function usage(): string {
@@ -103,7 +102,7 @@ function usage(): string {
         '  --config <file>       JSON spike config.',
         '  --harness-url <url>   Reuse an already served harness page.',
         '  --headless <bool>     Override browser.headless.',
-        '  --help                Print this help.',
+        '  --help                Print this help.'
     ].join('\n');
 }
 
@@ -185,7 +184,7 @@ function expandEnv(value: unknown): unknown {
     }
     if (isRecord(value)) {
         return Object.fromEntries(
-            Object.entries(value).map(([key, entry]) => [key, expandEnv(entry)]),
+            Object.entries(value).map(([key, entry]) => [key, expandEnv(entry)])
         );
     }
     return value;
@@ -209,17 +208,17 @@ async function startHarnessServer(config: SpikeConfig): Promise<{
                 '@shared-web': path.resolve(repoRoot, 'packages/shared-web'),
                 '@shared-graph': path.resolve(repoRoot, 'packages/shared-graph'),
                 '@shared': path.resolve(repoRoot, 'packages/shared'),
-                '@relic-hunters': path.resolve(repoRoot, 'packages/relic-hunters'),
-            },
+                '@relic-hunters': path.resolve(repoRoot, 'packages/relic-hunters')
+            }
         },
         server: {
             host: config.harness?.host ?? '127.0.0.1',
             port: config.harness?.port ?? 5199,
             strictPort: false,
             fs: {
-                allow: [repoRoot],
-            },
-        },
+                allow: [repoRoot]
+            }
+        }
     });
 
     await server.listen();
@@ -229,7 +228,7 @@ async function startHarnessServer(config: SpikeConfig): Promise<{
         url: new URL(RALLAR_HARNESS_PATH, baseUrl).toString(),
         close: async () => {
             await server.close();
-        },
+        }
     };
 }
 
@@ -237,7 +236,7 @@ async function createConnectionState(
     browser: Browser,
     harnessUrl: string,
     config: SpikeConfig,
-    connection: string,
+    connection: string
 ): Promise<ConnectionState> {
     const timeoutMs = config.browser?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const context = await browser.newContext();
@@ -250,16 +249,18 @@ async function createConnectionState(
         events: [],
         diagnostics: [],
         messages: [],
-        closes: [],
+        closes: []
     };
 
     const record = (event: RuntimeEvent): void => {
         state.events.push(event);
         if (event.kind === 'message') {
             state.messages.push(event);
-        } else if (event.kind === 'close') {
+        }
+        else if (event.kind === 'close') {
             state.closes.push(event);
-        } else {
+        }
+        else {
             state.diagnostics.push(event);
         }
     };
@@ -277,8 +278,8 @@ async function createConnectionState(
             data: {
                 type: message.type(),
                 text: message.text(),
-                location: message.location(),
-            },
+                location: message.location()
+            }
         });
     });
     page.on('pageerror', (error) => {
@@ -287,7 +288,7 @@ async function createConnectionState(
             topic: 'browser.pageerror',
             atEpochMs: Date.now(),
             connection,
-            error: serializeError(error),
+            error: serializeError(error)
         });
     });
     page.on('requestfailed', (request) => {
@@ -299,19 +300,19 @@ async function createConnectionState(
             data: {
                 url: request.url(),
                 method: request.method(),
-                failure: request.failure(),
-            },
+                failure: request.failure()
+            }
         });
     });
 
     await page.goto(harnessUrl, {
         waitUntil: 'domcontentloaded',
-        timeout: timeoutMs,
+        timeout: timeoutMs
     });
     await page.waitForFunction(
-        () => Boolean((window as unknown as { __blackBoxRallar?: unknown }).__blackBoxRallar),
+        () => Boolean((window as unknown as { __blackBoxRallar?: unknown; }).__blackBoxRallar),
         undefined,
-        { timeout: timeoutMs },
+        { timeout: timeoutMs }
     );
     return state;
 }
@@ -321,7 +322,7 @@ async function runConnectStep(
     harnessUrl: string,
     config: SpikeConfig,
     states: Map<string, ConnectionState>,
-    step: SpikeStep,
+    step: SpikeStep
 ): Promise<unknown> {
     const connectionName = requireConnectionName(step);
     const existing = states.get(connectionName);
@@ -345,10 +346,10 @@ async function runConnectStep(
         ...step.request,
         rallar: {
             ...connectionRallar,
-            ...requestRallar,
+            ...requestRallar
         },
         connection: connectionName,
-        actor: String(connectionConfig.actor ?? step.request?.actor ?? connectionName),
+        actor: String(connectionConfig.actor ?? step.request?.actor ?? connectionName)
     };
     const response = await state.page.evaluate(
         async (input) =>
@@ -357,7 +358,7 @@ async function runConnectStep(
                     connect(config: unknown): Promise<JsonObject>;
                 };
             }).__blackBoxRallar.connect(input),
-        runtimeConfig,
+        runtimeConfig
     );
     state.connectDiagnostics = response;
     return response;
@@ -365,7 +366,7 @@ async function runConnectStep(
 
 async function runSendStep(
     states: Map<string, ConnectionState>,
-    step: SpikeStep,
+    step: SpikeStep
 ): Promise<unknown> {
     const connectionName = requireConnectionName(step);
     const state = requireState(states, connectionName);
@@ -390,7 +391,7 @@ async function runSendStep(
                     send(message: unknown): Promise<JsonObject>;
                 };
             }).__blackBoxRallar.send(input),
-        sendInput,
+        sendInput
     );
 
     assertSendResponse(response, Boolean(step.expect));
@@ -405,11 +406,11 @@ async function runSendStep(
             targetState,
             step.expect.message,
             withinMs,
-            targetStartIndex,
+            targetStartIndex
         );
         return {
             send: response,
-            received: event,
+            received: event
         };
     }
 
@@ -418,7 +419,7 @@ async function runSendStep(
 
 async function runWaitStep(
     states: Map<string, ConnectionState>,
-    step: SpikeStep,
+    step: SpikeStep
 ): Promise<unknown> {
     const connectionName = requireConnectionName(step);
     const state = requireState(states, connectionName);
@@ -434,7 +435,7 @@ async function runWaitStep(
 
 async function runHealthStep(
     states: Map<string, ConnectionState>,
-    step: SpikeStep,
+    step: SpikeStep
 ): Promise<unknown> {
     const state = requireState(states, requireConnectionName(step));
     return await state.page.evaluate(
@@ -443,13 +444,13 @@ async function runHealthStep(
                 __blackBoxRallar: {
                     health(): Promise<JsonObject>;
                 };
-            }).__blackBoxRallar.health(),
+            }).__blackBoxRallar.health()
     );
 }
 
 async function runCloseStep(
     states: Map<string, ConnectionState>,
-    step: SpikeStep,
+    step: SpikeStep
 ): Promise<unknown> {
     const connectionName = requireConnectionName(step);
     const state = requireState(states, connectionName);
@@ -459,7 +460,7 @@ async function runCloseStep(
                 __blackBoxRallar: {
                     close(): Promise<JsonObject>;
                 };
-            }).__blackBoxRallar.close(),
+            }).__blackBoxRallar.close()
     );
     await state.context.close();
     state.active = false;
@@ -489,7 +490,7 @@ async function waitForMessage(
     state: ConnectionState,
     expected: unknown,
     timeoutMs: number,
-    fromIndex: number,
+    fromIndex: number
 ): Promise<RuntimeEvent> {
     const startedAt = Date.now();
     while (Date.now() - startedAt <= timeoutMs) {
@@ -503,7 +504,7 @@ async function waitForMessage(
     }
 
     throw new Error(
-        `Timed out after ${timeoutMs}ms waiting for message on ${state.connection}.`,
+        `Timed out after ${timeoutMs}ms waiting for message on ${state.connection}.`
     );
 }
 
@@ -533,9 +534,7 @@ function isSubset(expected: unknown, actual: unknown): boolean {
         if (!isRecord(actual)) {
             return false;
         }
-        return Object.entries(expected).every(([key, value]) =>
-            hasOwn(actual, key) && isSubset(value, actual[key])
-        );
+        return Object.entries(expected).every(([key, value]) => hasOwn(actual, key) && isSubset(value, actual[key]));
     }
     return false;
 }
@@ -553,7 +552,7 @@ async function runStep(
     config: SpikeConfig,
     states: Map<string, ConnectionState>,
     step: SpikeStep,
-    index: number,
+    index: number
 ): Promise<StepReport> {
     const startedAtEpochMs = Date.now();
     const type = actionType(step);
@@ -569,9 +568,10 @@ async function runStep(
             startedAtEpochMs,
             finishedAtEpochMs,
             durationMs: finishedAtEpochMs - startedAtEpochMs,
-            response,
+            response
         };
-    } catch (error) {
+    }
+    catch (error) {
         const finishedAtEpochMs = Date.now();
         return {
             name,
@@ -581,7 +581,7 @@ async function runStep(
             startedAtEpochMs,
             finishedAtEpochMs,
             durationMs: finishedAtEpochMs - startedAtEpochMs,
-            error: serializeError(error),
+            error: serializeError(error)
         };
     }
 }
@@ -592,7 +592,7 @@ async function runStepAction(
     config: SpikeConfig,
     states: Map<string, ConnectionState>,
     step: SpikeStep,
-    type: string,
+    type: string
 ): Promise<unknown> {
     switch (type) {
         case 'connect':
@@ -628,7 +628,7 @@ function requireConnectionName(step: SpikeStep): string {
 
 function requireState(
     states: Map<string, ConnectionState>,
-    connection: string,
+    connection: string
 ): ConnectionState {
     const state = states.get(connection);
     if (!state || !state.active) {
@@ -647,14 +647,15 @@ async function closeRemaining(states: Map<string, ConnectionState>): Promise<voi
                             __blackBoxRallar?: {
                                 close(): Promise<unknown>;
                             };
-                        }).__blackBoxRallar?.close(),
+                        }).__blackBoxRallar?.close()
                 );
-            } catch {
+            }
+            catch {
                 // The report already contains page diagnostics; cleanup should not hide it.
             }
             await state.context.close().catch(() => undefined);
             state.active = false;
-        }),
+        })
     );
 }
 
@@ -667,9 +668,9 @@ function toConnectionReport(states: Map<string, ConnectionState>): SpikeReport['
                 diagnostics: state.diagnostics,
                 messages: state.messages,
                 closeEvents: state.closes,
-                connectDiagnostics: state.connectDiagnostics,
-            },
-        ]),
+                connectDiagnostics: state.connectDiagnostics
+            }
+        ])
     );
 }
 
@@ -678,7 +679,7 @@ function serializeError(error: unknown): unknown {
         return {
             name: error.name,
             message: error.message,
-            stack: error.stack,
+            stack: error.stack
         };
     }
     return error;
@@ -721,7 +722,7 @@ async function main(): Promise<void> {
     const harness = configuredHarnessUrl
         ? {
             url: configuredHarnessUrl,
-            close: async () => undefined,
+            close: async () => undefined
         }
         : await startHarnessServer(config);
     const headless = args.headless ?? config.browser?.headless ?? true;
@@ -730,7 +731,7 @@ async function main(): Promise<void> {
     const browser = await chromium.launch({
         headless,
         slowMo: config.browser?.slowMo,
-        args: [...(config.browser?.launchArgs ?? [])],
+        args: [...(config.browser?.launchArgs ?? [])]
     });
 
     try {
@@ -743,7 +744,7 @@ async function main(): Promise<void> {
                 config,
                 states,
                 step,
-                index,
+                index
             );
             steps.push(report);
             if (report.status === 'failed') {
@@ -762,11 +763,11 @@ async function main(): Promise<void> {
                 failedSteps,
                 startedAtEpochMs,
                 finishedAtEpochMs,
-                durationMs: finishedAtEpochMs - startedAtEpochMs,
+                durationMs: finishedAtEpochMs - startedAtEpochMs
             },
             harnessUrl: harness.url,
             steps,
-            connections: toConnectionReport(states),
+            connections: toConnectionReport(states)
         };
 
         if (config.report?.outFile) {
@@ -777,7 +778,8 @@ async function main(): Promise<void> {
             console.log(JSON.stringify(report, null, 2));
         }
         process.exitCode = failedSteps === 0 ? 0 : 1;
-    } finally {
+    }
+    finally {
         await closeRemaining(states);
         await browser.close();
         await harness.close();
@@ -785,9 +787,13 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-    console.error(JSON.stringify({
-        status: 'failed',
-        error: serializeError(error),
-    }, null, 2));
+    console.error(JSON.stringify(
+        {
+            status: 'failed',
+            error: serializeError(error)
+        },
+        null,
+        2
+    ));
     process.exitCode = 1;
 });

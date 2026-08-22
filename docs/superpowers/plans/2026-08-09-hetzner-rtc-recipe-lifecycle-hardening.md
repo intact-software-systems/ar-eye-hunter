@@ -26,21 +26,21 @@ serializes the complete readiness evidence into command results.
 - [x] Add failing regression tests for live barriers and parity overlap.
 - [x] Make live multi-agent barriers a catalog construction invariant.
 - [x] Insert the parity health loop immediately before close/reset and
-  regenerate checked-in manifests.
+      regenerate checked-in manifests.
 - [x] Add failing artifact assertions for room-refresh counters.
 - [x] Add counters to `RtcConnectReadinessResult` and keep readiness functions
-  below the repository function-size threshold.
+      below the repository function-size threshold.
 - [x] Serialize the counters at the browser artifact boundary after the
-  required size-exception decision in
-  [issue #142](https://github.com/intact-software-systems/ar-eye-hunter/issues/142).
+      required size-exception decision in
+      [issue #142](https://github.com/intact-software-systems/ar-eye-hunter/issues/142).
 - [x] Pass focused tests, typecheck, manifest generation check, and changed-file
-  repository-style review.
+      repository-style review.
 - [x] Pass `npm run test:unit`, `npm run test:ci`, and `npm run build` on the
-  final uncommitted tree.
+      final uncommitted tree.
 - [ ] Publish the final feature commit to one draft PR and verify Branch
-  Release Gate for its exact SHA.
+      Release Gate for its exact SHA.
 - [ ] After merge, verify Run Hetzner Supported Distributed Manifests for the
-  resulting exact default-branch SHA.
+      resulting exact default-branch SHA.
 
 ## Compatibility Checkpoint
 

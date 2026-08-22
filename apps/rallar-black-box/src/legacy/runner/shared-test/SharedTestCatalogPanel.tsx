@@ -2,39 +2,31 @@ import { useMemo, useState } from 'react';
 import { RALLAR_BLACK_BOX_SHARED_TEST_RECIPE_CATALOG } from '../../../shared-test-handoff-fixtures.ts';
 import { Metric } from '../../shared/Metric.tsx';
 import { uniqueValues } from '../../shared/unique-values.ts';
-import {
-    APP_LOCAL_RECIPE_CATALOG,
-    catalogEntryMatches,
-    catalogRequirements,
-} from './shared-test-catalog.ts';
+import { APP_LOCAL_RECIPE_CATALOG, catalogEntryMatches, catalogRequirements } from './shared-test-catalog.ts';
 
 export function SharedTestCatalogPanel() {
     const catalog = RALLAR_BLACK_BOX_SHARED_TEST_RECIPE_CATALOG;
     const profileOptions = useMemo(
         () => uniqueValues(catalog.entries.flatMap((entry) => entry.profiles)),
-        [catalog.entries],
+        [catalog.entries]
     );
     const [query, setQuery] = useState('');
     const [profile, setProfile] = useState('');
     const [selectedEntryId, setSelectedEntryId] = useState(
-        catalog.entries[0]?.id ?? '',
+        catalog.entries[0]?.id ?? ''
     );
     const filteredEntries = useMemo(
-        () =>
-            catalog.entries.filter((entry) =>
-                catalogEntryMatches(entry, query.trim(), profile),
-            ),
-        [catalog.entries, profile, query],
+        () => catalog.entries.filter((entry) => catalogEntryMatches(entry, query.trim(), profile)),
+        [catalog.entries, profile, query]
     );
-    const selectedEntry =
-        catalog.entries.find((entry) => entry.id === selectedEntryId) ??
+    const selectedEntry = catalog.entries.find((entry) => entry.id === selectedEntryId) ??
         filteredEntries[0] ??
         catalog.entries[0];
     const liveCount = catalog.entries.filter(
-        (entry) => entry.support.live,
+        (entry) => entry.support.live
     ).length;
     const replayCount = catalog.entries.filter(
-        (entry) => entry.support.replayArtifacts,
+        (entry) => entry.support.replayArtifacts
     ).length;
 
     const copyText = (value: string): void => {
@@ -121,7 +113,7 @@ export function SharedTestCatalogPanel() {
                                                 <li key={requirement}>
                                                     {requirement}
                                                 </li>
-                                            ),
+                                            )
                                         )}
                                     </ul>
                                 </details>
@@ -150,7 +142,9 @@ export function SharedTestCatalogPanel() {
                             <button
                                 type="button"
                                 key={entry.id}
-                                className={`shared-test-catalog-row ${selectedEntry?.id === entry.id ? 'selected' : ''}`}
+                                className={`shared-test-catalog-row ${
+                                    selectedEntry?.id === entry.id ? 'selected' : ''
+                                }`}
                                 onClick={() => setSelectedEntryId(entry.id)}
                             >
                                 <span>
@@ -158,9 +152,7 @@ export function SharedTestCatalogPanel() {
                                     <small>{entry.recipePath}</small>
                                 </span>
                                 <span className="badge-list">
-                                    {entry.category === 'rallar-crdt' && (
-                                        <span className="pill good">CRDT</span>
-                                    )}
+                                    {entry.category === 'rallar-crdt' && <span className="pill good">CRDT</span>}
                                     <span className="pill active">
                                         {entry.providerMode}
                                     </span>
@@ -184,97 +176,95 @@ export function SharedTestCatalogPanel() {
                         <h3>Selected Recipe</h3>
                         <span>{selectedEntry?.expectedResult ?? '-'}</span>
                     </div>
-                    {selectedEntry ? (
-                        <>
-                            <dl className="config-list shared-test-detail-list">
-                                <div>
-                                    <dt>ID</dt>
-                                    <dd>{selectedEntry.id}</dd>
-                                </div>
-                                <div>
-                                    <dt>Provider</dt>
-                                    <dd>{selectedEntry.providerMode}</dd>
-                                </div>
-                                <div>
-                                    <dt>Category</dt>
-                                    <dd>{selectedEntry.category}</dd>
-                                </div>
-                                <div>
-                                    <dt>Mode</dt>
-                                    <dd>{selectedEntry.executionMode}</dd>
-                                </div>
-                                <div>
-                                    <dt>Artifact</dt>
-                                    <dd>{selectedEntry.artifactName}</dd>
-                                </div>
-                                <div>
-                                    <dt>Surface</dt>
-                                    <dd>
-                                        {
-                                            selectedEntry.uiHints
-                                                .recommendedSurface
-                                        }
-                                    </dd>
-                                </div>
-                            </dl>
-                            <p className="shared-test-description">
-                                {selectedEntry.description}
-                            </p>
-                            <div className="badge-list shared-test-badges">
-                                {selectedEntry.uiHints.badges.map((badge) => (
-                                    <span className="pill muted" key={badge}>
-                                        {badge}
-                                    </span>
-                                ))}
-                            </div>
-                            <div className="shared-test-requirements">
-                                <h3>Prerequisites</h3>
-                                {catalogRequirements(selectedEntry).length ===
-                                0 ? (
-                                    <div className="empty-state">
-                                        No live prerequisites
+                    {selectedEntry
+                        ? (
+                            <>
+                                <dl className="config-list shared-test-detail-list">
+                                    <div>
+                                        <dt>ID</dt>
+                                        <dd>{selectedEntry.id}</dd>
                                     </div>
-                                ) : (
-                                    <ul>
-                                        {catalogRequirements(selectedEntry).map(
-                                            (requirement) => (
-                                                <li key={requirement}>
-                                                    {requirement}
-                                                </li>
-                                            ),
+                                    <div>
+                                        <dt>Provider</dt>
+                                        <dd>{selectedEntry.providerMode}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Category</dt>
+                                        <dd>{selectedEntry.category}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Mode</dt>
+                                        <dd>{selectedEntry.executionMode}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Artifact</dt>
+                                        <dd>{selectedEntry.artifactName}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Surface</dt>
+                                        <dd>
+                                            {selectedEntry.uiHints
+                                                .recommendedSurface}
+                                        </dd>
+                                    </div>
+                                </dl>
+                                <p className="shared-test-description">
+                                    {selectedEntry.description}
+                                </p>
+                                <div className="badge-list shared-test-badges">
+                                    {selectedEntry.uiHints.badges.map((badge) => (
+                                        <span className="pill muted" key={badge}>
+                                            {badge}
+                                        </span>
+                                    ))}
+                                </div>
+                                <div className="shared-test-requirements">
+                                    <h3>Prerequisites</h3>
+                                    {catalogRequirements(selectedEntry).length ===
+                                            0
+                                        ? (
+                                            <div className="empty-state">
+                                                No live prerequisites
+                                            </div>
+                                        )
+                                        : (
+                                            <ul>
+                                                {catalogRequirements(selectedEntry).map(
+                                                    (requirement) => (
+                                                        <li key={requirement}>
+                                                            {requirement}
+                                                        </li>
+                                                    )
+                                                )}
+                                            </ul>
                                         )}
-                                    </ul>
-                                )}
-                            </div>
-                            <div className="shared-test-command-list">
-                                <h3>Commands</h3>
-                                {selectedEntry.commands.map((command) => (
-                                    <article
-                                        className="shared-test-command-row"
-                                        key={command.label}
-                                    >
-                                        <div>
-                                            <strong>{command.label}</strong>
-                                            <small>{command.description}</small>
-                                        </div>
-                                        <pre className="mini-json">
-                                            {command.command}
-                                        </pre>
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                copyText(command.command)
-                                            }
+                                </div>
+                                <div className="shared-test-command-list">
+                                    <h3>Commands</h3>
+                                    {selectedEntry.commands.map((command) => (
+                                        <article
+                                            className="shared-test-command-row"
+                                            key={command.label}
                                         >
-                                            Copy Command
-                                        </button>
-                                    </article>
-                                ))}
-                            </div>
-                        </>
-                    ) : (
-                        <div className="empty-state">No recipe selected</div>
-                    )}
+                                            <div>
+                                                <strong>{command.label}</strong>
+                                                <small>{command.description}</small>
+                                            </div>
+                                            <pre className="mini-json">
+                                            {command.command}
+                                            </pre>
+                                            <button
+                                                type="button"
+                                                onClick={() => copyText(command.command)}
+                                            >
+                                                Copy Command
+                                            </button>
+                                        </article>
+                                    ))}
+                                </div>
+                            </>
+                        )
+                        : <div className="empty-state">No recipe selected</div>}
                 </section>
             </div>
         </section>

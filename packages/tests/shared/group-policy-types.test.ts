@@ -1,11 +1,7 @@
-import { describe, expect, expectTypeOf, it } from 'vitest';
-import type { StateErrorResponse } from '@shared/api/state-types.ts';
 import { GROUP_POLICY_REASON_CODES } from '@shared/api/group-policy-types.ts';
-import type {
-    GroupPolicyDenied,
-    GroupPolicyReasonCode,
-    GroupPolicyResult,
-} from '@shared/api/group-policy-types.ts';
+import type { GroupPolicyDenied, GroupPolicyReasonCode, GroupPolicyResult } from '@shared/api/group-policy-types.ts';
+import type { StateErrorResponse } from '@shared/api/state-types.ts';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 describe('group policy shared error types', () => {
     it('exports stable policy reason codes for browser-safe error handling', () => {
@@ -14,22 +10,22 @@ describe('group policy shared error types', () => {
 
     it('keeps legacy state error responses valid while allowing policy codes', () => {
         const legacy: StateErrorResponse = {
-            error: 'Forbidden: legacy message',
+            error: 'Forbidden: legacy message'
         };
         const policy: StateErrorResponse = {
             error: 'Forbidden: invite required',
             code: 'group-invite-required',
             message: 'Invite required.',
             details: {
-                groupId: 'room-1',
-            },
+                groupId: 'room-1'
+            }
         };
 
         expect(legacy.error).toBe('Forbidden: legacy message');
         expect(policy).toMatchObject({
             error: 'Forbidden: invite required',
             code: 'group-invite-required',
-            message: 'Invite required.',
+            message: 'Invite required.'
         });
     });
 
@@ -38,7 +34,7 @@ describe('group policy shared error types', () => {
         const denied: GroupPolicyDenied = {
             allowed: false,
             code: reason,
-            message: 'Invite required.',
+            message: 'Invite required.'
         };
         const result: GroupPolicyResult = denied;
 
@@ -48,7 +44,7 @@ describe('group policy shared error types', () => {
         }
 
         expectTypeOf<GroupPolicyResult>().toEqualTypeOf<
-            | Readonly<{ allowed: true }>
+            | Readonly<{ allowed: true; }>
             | GroupPolicyDenied
         >();
     });

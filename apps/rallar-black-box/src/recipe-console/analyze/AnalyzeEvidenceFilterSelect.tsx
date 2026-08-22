@@ -2,7 +2,7 @@ export function AnalyzeEvidenceFilterSelect({
     label,
     options,
     value: selected,
-    onChange,
+    onChange
 }: Readonly<{
     label: string;
     options: readonly string[];
@@ -14,13 +14,11 @@ export function AnalyzeEvidenceFilterSelect({
             <span>{label}</span>
             <select
                 aria-label={`${label} filter`}
-                onChange={event => onChange(event.target.value || undefined)}
+                onChange={(event) => onChange(event.target.value || undefined)}
                 value={selected ?? ''}
             >
                 <option value="">Any {label.toLowerCase()}</option>
-                {options.map(option => (
-                    <option key={option} value={option}>{option}</option>
-                ))}
+                {options.map((option) => <option key={option} value={option}>{option}</option>)}
             </select>
         </label>
     );

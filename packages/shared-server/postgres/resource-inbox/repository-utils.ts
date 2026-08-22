@@ -1,5 +1,5 @@
-import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
 import { Temporal } from '@js-temporal/polyfill';
+import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 /**
  * Repository for table `resource_inbox`.
@@ -54,7 +54,7 @@ export function keyToString(k: Key): string {
 }
 
 export function rowsToMap(
-    rows: ResourceInboxRow[],
+    rows: ResourceInboxRow[]
 ): Map<string, ResourceEntry> {
     const m = new Map<string, ResourceEntry>();
     for (const r of rows) {
@@ -73,7 +73,7 @@ export function toDomain(r: ResourceInboxRow): ResourceEntry {
         key: {
             topicId: r.ri_topic_id,
             resourceId: r.ri_resource_id,
-            contextId: r.fk_ext_bank_id,
+            contextId: r.fk_ext_bank_id
         },
         resource: r.ri_resource,
         typeId: r.ri_type_id,
@@ -82,24 +82,24 @@ export function toDomain(r: ResourceInboxRow): ResourceEntry {
             date: Temporal.PlainTime.from(
                 parseTemporalPlainDateTime(r.created_ts)
                     .toPlainTime()
-                    .toString(),
+                    .toString()
             ),
             createdBy: r.created_by,
             createdTs: parseTemporalPlainDateTime(r.created_ts),
             expiryTs: r.expire_ts
                 ? toInstant(r.expire_ts)
-                : NEVER_EXPIRE_TS,
+                : NEVER_EXPIRE_TS
         },
         status: r.ri_status as EntityStatus,
         dequeueAudit: {
             startTs: r.start_ts ? toInstant(r.start_ts) : undefined,
             endTs: r.end_ts ? toInstant(r.end_ts) : undefined,
             nextTs: r.next_ts ? toInstant(r.next_ts) : undefined,
-            attempts,
+            attempts
         },
         db: {
-            id: r.ri_row_id.toString(),
-        },
+            id: r.ri_row_id.toString()
+        }
     };
 }
 
@@ -119,7 +119,7 @@ export function toResultsDomain(r: ResourceInboxResultsRow): ResourceEntry {
         start_ts: null,
         end_ts: null,
         next_ts: null,
-        ri_attempts: null,
+        ri_attempts: null
     });
 }
 
@@ -130,7 +130,7 @@ export function toSystemDate(entry: ResourceEntry): string {
 }
 
 export function toPgTimestamp(
-    t: Temporal.PlainDateTime | Temporal.Instant,
+    t: Temporal.PlainDateTime | Temporal.Instant
 ): string {
     // postgres.js serializes a zone-less string as process-local time. The
     // domain PlainDateTime is a UTC wall clock, so make that zone explicit.
@@ -146,7 +146,7 @@ export function parseTemporalPlainDateTime(ts: string | Date): Temporal.PlainDat
             hour: ts.getHours(),
             minute: ts.getMinutes(),
             second: ts.getSeconds(),
-            millisecond: ts.getMilliseconds(),
+            millisecond: ts.getMilliseconds()
         });
     }
     return Temporal.PlainDateTime.from(ts.replace(' ', 'T'));
@@ -157,7 +157,9 @@ export function toInstant(ts: string | Date): Temporal.Instant {
         return parseTemporalPlainDateTime(ts).toZonedDateTime('UTC').toInstant();
     }
     const normalized = ts.replace(' ', 'T');
-    return Temporal.Instant.from(/[zZ]$|[+-]\d{2}(?::?\d{2})?$/u.test(normalized)
-        ? normalized
-        : `${normalized}Z`);
+    return Temporal.Instant.from(
+        /[zZ]$|[+-]\d{2}(?::?\d{2})?$/u.test(normalized)
+            ? normalized
+            : `${normalized}Z`
+    );
 }

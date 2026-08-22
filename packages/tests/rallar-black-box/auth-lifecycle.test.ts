@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { describe, expect, it } from 'vitest';
 import { readAuthSessionFromRallarAuthState } from '../../../apps/rallar-black-box/src/auth-lifecycle.ts';
 
 const session: AuthSession = {
@@ -7,7 +7,7 @@ const session: AuthSession = {
     accessToken: 'token-1',
     username: 'black-box',
     sessionId: 'session-1',
-    expiresAtEpochMs: Date.now() + 60_000,
+    expiresAtEpochMs: Date.now() + 60_000
 };
 
 describe('rallar black-box auth lifecycle', () => {
@@ -15,7 +15,7 @@ describe('rallar black-box auth lifecycle', () => {
         for (const reason of ['logout', 'expired', 'unauthorized'] as const) {
             expect(readAuthSessionFromRallarAuthState({
                 authenticated: false,
-                reason,
+                reason
             })).toBeUndefined();
         }
     });
@@ -24,12 +24,12 @@ describe('rallar black-box auth lifecycle', () => {
         expect(readAuthSessionFromRallarAuthState({
             authenticated: true,
             reason: 'current',
-            session,
+            session
         })).toBe(session);
         expect(readAuthSessionFromRallarAuthState({
             authenticated: true,
             reason: 'login',
-            session,
+            session
         })).toBe(session);
     });
 });

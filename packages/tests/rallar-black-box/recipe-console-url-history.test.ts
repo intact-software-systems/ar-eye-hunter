@@ -1,14 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import {
-    RECIPE_CONSOLE_SENSITIVE_URL_KEYS,
-} from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
-import {
-    createRecipeConsoleUrlHistory,
-    type RecipeConsoleHistoryPort,
-} from '../../../apps/rallar-black-box/src/recipe-console/routing/url-history.ts';
-import {
-    recipeConsoleExecuteRecipeSelectionPatch,
-} from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-workflow-state.ts';
+import { recipeConsoleExecuteRecipeSelectionPatch } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-workflow-state.ts';
+import { createRecipeConsoleUrlHistory, type RecipeConsoleHistoryPort } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-history.ts';
+import { RECIPE_CONSOLE_SENSITIVE_URL_KEYS } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 
 class MemoryHistoryPort implements RecipeConsoleHistoryPort {
     currentSearch: string;
@@ -52,7 +45,7 @@ function sensitiveSearch(): string {
         provider: 'simulated',
         v: '1',
         experience: 'recipe-console',
-        view: 'execute',
+        view: 'execute'
     });
     for (const key of RECIPE_CONSOLE_SENSITIVE_URL_KEYS) {
         params.append(key.toUpperCase(), `secret-${key}`);
@@ -61,10 +54,10 @@ function sensitiveSearch(): string {
 }
 
 function expectNoSensitiveKeys(search: string): void {
-    const sensitive = new Set(RECIPE_CONSOLE_SENSITIVE_URL_KEYS.map(key => key.toLowerCase()));
+    const sensitive = new Set(RECIPE_CONSOLE_SENSITIVE_URL_KEYS.map((key) => key.toLowerCase()));
     expect(
         [...new URLSearchParams(search).keys()]
-            .filter(key => sensitive.has(key.toLowerCase())),
+            .filter((key) => sensitive.has(key.toLowerCase()))
     ).toEqual([]);
 }
 
@@ -72,8 +65,8 @@ describe('Recipe Console URL history', () => {
     it('commits History Apply and Reset as one push each without clearing unrelated state', () => {
         const port = new MemoryHistoryPort(
             '?provider=simulated&futureField=keep&v=1&experience=recipe-console&view=tune' +
-            '&recipeId=operational-recipe&compareLeft=baseline-a&compareRight=candidate-a' +
-            '&timingMetric=stream-cadence',
+                '&recipeId=operational-recipe&compareLeft=baseline-a&compareRight=candidate-a' +
+                '&timingMetric=stream-cadence'
         );
         const history = createRecipeConsoleUrlHistory(port);
 
@@ -85,7 +78,7 @@ describe('Recipe Console URL history', () => {
             failureCategory: 'readiness',
             status: 'failed',
             from: 100,
-            to: 900,
+            to: 900
         });
 
         expect(port.pushed).toHaveLength(1);
@@ -98,7 +91,7 @@ describe('Recipe Console URL history', () => {
             failureCategory: 'readiness',
             compareLeft: 'baseline-a',
             compareRight: 'candidate-a',
-            timingMetric: 'stream-cadence',
+            timingMetric: 'stream-cadence'
         });
 
         const reset = history.push({
@@ -109,27 +102,29 @@ describe('Recipe Console URL history', () => {
             failureCategory: undefined,
             status: undefined,
             from: undefined,
-            to: undefined,
+            to: undefined
         });
 
         expect(port.pushed).toHaveLength(2);
-        for (const field of [
-            'historyQuery',
-            'historyGroup',
-            'historyRecipeId',
-            'historyProfile',
-            'failureCategory',
-            'status',
-            'from',
-            'to',
-        ]) {
+        for (
+            const field of [
+                'historyQuery',
+                'historyGroup',
+                'historyRecipeId',
+                'historyProfile',
+                'failureCategory',
+                'status',
+                'from',
+                'to'
+            ]
+        ) {
             expect(new URLSearchParams(port.pushed[1]).has(field), field).toBe(false);
         }
         expect(reset.state).toMatchObject({
             recipeId: 'operational-recipe',
             compareLeft: 'baseline-a',
             compareRight: 'candidate-a',
-            timingMetric: 'stream-cadence',
+            timingMetric: 'stream-cadence'
         });
         expect(new URLSearchParams(port.pushed[1]).get('provider')).toBe('simulated');
         expect(new URLSearchParams(port.pushed[1]).get('futureField')).toBe('keep');
@@ -138,14 +133,14 @@ describe('Recipe Console URL history', () => {
     it('changes operational recipe selection independently from the History recipe filter', () => {
         const port = new MemoryHistoryPort(
             '?v=1&experience=recipe-console&view=tune' +
-            '&recipeId=operational-a&historyRecipeId=history-recipe',
+                '&recipeId=operational-a&historyRecipeId=history-recipe'
         );
         const history = createRecipeConsoleUrlHistory(port);
 
         const selected = history.push({ recipeId: 'operational-b' });
         expect(selected.state).toMatchObject({
             recipeId: 'operational-b',
-            historyRecipeId: 'history-recipe',
+            historyRecipeId: 'history-recipe'
         });
 
         const cleared = history.push({ recipeId: undefined });
@@ -156,17 +151,17 @@ describe('Recipe Console URL history', () => {
     it('pushes recipe selection while removing dependent run and command keys', () => {
         const port = new MemoryHistoryPort(
             '?v=1&experience=recipe-console&view=execute&controlRunId=run-a' +
-            '&distributedRunId=distributed-a&commandId=command-a&recipeId=recipe-a',
+                '&distributedRunId=distributed-a&commandId=command-a&recipeId=recipe-a'
         );
         const history = createRecipeConsoleUrlHistory(port);
 
         const next = history.push(
-            recipeConsoleExecuteRecipeSelectionPatch('recipe-b'),
+            recipeConsoleExecuteRecipeSelectionPatch('recipe-b')
         );
 
         expect(next.state).toMatchObject({
             controlRunId: 'run-a',
-            recipeId: 'recipe-b',
+            recipeId: 'recipe-b'
         });
         expect(next.state.distributedRunId).toBeUndefined();
         expect(next.state.commandId).toBeUndefined();
@@ -178,13 +173,13 @@ describe('Recipe Console URL history', () => {
     it('pushes committed patches while preserving safe unknown state', () => {
         const port = new MemoryHistoryPort(
             '?provider=simulated&roomId=room-a&workspace=black-box-runner' +
-            '&v=1&experience=recipe-console&view=execute',
+                '&v=1&experience=recipe-console&view=execute'
         );
         const history = createRecipeConsoleUrlHistory(port);
 
         const next = history.push({
             view: 'monitor',
-            controlRunId: 'run-a',
+            controlRunId: 'run-a'
         });
 
         expect(port.pushed).toHaveLength(1);
@@ -198,7 +193,7 @@ describe('Recipe Console URL history', () => {
 
     it('replaces high-frequency patches without creating a push entry', () => {
         const port = new MemoryHistoryPort(
-            '?future=value&v=1&experience=recipe-console&view=tune&from=100&to=200',
+            '?future=value&v=1&experience=recipe-console&view=tune&from=100&to=200'
         );
         const history = createRecipeConsoleUrlHistory(port);
 
@@ -212,7 +207,7 @@ describe('Recipe Console URL history', () => {
 
     it('does not write an idempotent replacement', () => {
         const port = new MemoryHistoryPort(
-            '?v=1&experience=recipe-console&view=execute&recipeId=recipe-a',
+            '?v=1&experience=recipe-console&view=execute&recipeId=recipe-a'
         );
         const history = createRecipeConsoleUrlHistory(port);
 
@@ -238,33 +233,35 @@ describe('Recipe Console URL history', () => {
 
     it('restores complete validated state on popstate without writing history', () => {
         const port = new MemoryHistoryPort(
-            '?v=1&experience=recipe-console&view=execute',
+            '?v=1&experience=recipe-console&view=execute'
         );
         const history = createRecipeConsoleUrlHistory(port);
-        const received: Array<Readonly<{
-            view: string;
-            historyRecipeId?: string;
-            failureCategory?: string;
-            recipeId?: string;
-            compareLeft?: string;
-            timingMetric?: string;
-        }>> = [];
-        const unsubscribe = history.subscribe(value => {
+        const received: Array<
+            Readonly<{
+                view: string;
+                historyRecipeId?: string;
+                failureCategory?: string;
+                recipeId?: string;
+                compareLeft?: string;
+                timingMetric?: string;
+            }>
+        > = [];
+        const unsubscribe = history.subscribe((value) => {
             received.push({
                 view: value.state.view,
                 historyRecipeId: value.state.historyRecipeId,
                 failureCategory: value.state.failureCategory,
                 recipeId: value.state.recipeId,
                 compareLeft: value.state.compareLeft,
-                timingMetric: value.state.timingMetric,
+                timingMetric: value.state.timingMetric
             });
         });
 
         port.emitPopState(
             '?provider=simulated&futureField=keep&v=1&experience=recipe-console&view=tune' +
-            '&historyRecipeId=history-recipe&failureCategory=barrier' +
-            '&recipeId=operational-recipe&compareLeft=baseline-a' +
-            '&timingMetric=stream-drift',
+                '&historyRecipeId=history-recipe&failureCategory=barrier' +
+                '&recipeId=operational-recipe&compareLeft=baseline-a' +
+                '&timingMetric=stream-drift'
         );
 
         expect(received).toEqual([{
@@ -273,7 +270,7 @@ describe('Recipe Console URL history', () => {
             failureCategory: 'barrier',
             recipeId: 'operational-recipe',
             compareLeft: 'baseline-a',
-            timingMetric: 'stream-drift',
+            timingMetric: 'stream-drift'
         }]);
         expect(port.pushed).toEqual([]);
         expect(port.replaced).toEqual([]);

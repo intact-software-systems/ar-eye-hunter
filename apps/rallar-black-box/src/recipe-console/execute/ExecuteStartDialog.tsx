@@ -1,5 +1,4 @@
-import type { ControlDistributedRunSnapshot } from
-    '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import { useEffect, useRef, type KeyboardEvent } from 'react';
 import styles from './ExecuteStartDialog.module.css';
 
@@ -11,7 +10,7 @@ export function ExecuteStartDialog({
     restoreFocusTo,
     fallbackFocusTo,
     onClose,
-    onConfirm,
+    onConfirm
 }: Readonly<{
     open: boolean;
     run: ControlDistributedRunSnapshot;
@@ -28,7 +27,9 @@ export function ExecuteStartDialog({
     const fallbackTargetRef = useRef<HTMLElement | null | undefined>(undefined);
     fallbackTargetRef.current = fallbackFocusTo;
     useEffect(() => {
-        if (!open) return;
+        if (!open) {
+            return;
+        }
         restoreTargetRef.current = restoreFocusTo ?? (
             document.activeElement instanceof HTMLElement
                 ? document.activeElement
@@ -40,15 +41,21 @@ export function ExecuteStartDialog({
             const fallbackTarget = fallbackTargetRef.current;
             const target = focusable(restoreTarget)
                 ? restoreTarget
-                : focusable(fallbackTarget) ? fallbackTarget : undefined;
+                : focusable(fallbackTarget)
+                ? fallbackTarget
+                : undefined;
             target?.focus();
         };
     }, [open]);
     useEffect(() => {
-        if (open && busy) dialogRef.current?.focus();
+        if (open && busy) {
+            dialogRef.current?.focus();
+        }
     }, [busy, open]);
 
-    if (!open) return null;
+    if (!open) {
+        return null;
+    }
     return (
         <div className={styles.backdrop} data-execute-start-dialog>
             <div
@@ -56,7 +63,7 @@ export function ExecuteStartDialog({
                 aria-labelledby="execute-start-heading"
                 aria-modal="true"
                 className={styles.dialog}
-                onKeyDown={event => trapDialogFocus(event, dialogRef.current, busy, onClose)}
+                onKeyDown={(event) => trapDialogFocus(event, dialogRef.current, busy, onClose)}
                 ref={dialogRef}
                 role="dialog"
                 tabIndex={-1}
@@ -82,14 +89,18 @@ export function ExecuteStartDialog({
                         onClick={onClose}
                         ref={initialFocusRef}
                         type="button"
-                    >Back</button>
+                    >
+                        Back
+                    </button>
                     <button
                         aria-busy={busy}
                         className={styles.confirm}
                         disabled={busy}
                         onClick={() => void onConfirm()}
                         type="button"
-                    >{busy ? 'Starting…' : 'Start distributed run'}</button>
+                    >
+                        {busy ? 'Starting…' : 'Start distributed run'}
+                    </button>
                 </div>
             </div>
         </div>
@@ -100,16 +111,20 @@ function trapDialogFocus(
     event: KeyboardEvent<HTMLDivElement>,
     dialog: HTMLDivElement | null,
     busy: boolean,
-    onClose: () => void,
+    onClose: () => void
 ): void {
     if (event.key === 'Escape') {
         event.preventDefault();
-        if (!busy) onClose();
+        if (!busy) {
+            onClose();
+        }
         return;
     }
-    if (event.key !== 'Tab') return;
+    if (event.key !== 'Tab') {
+        return;
+    }
     const focusableElements = Array.from(
-        dialog?.querySelectorAll<HTMLElement>('button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])') ?? [],
+        dialog?.querySelectorAll<HTMLElement>('button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])') ?? []
     );
     if (focusableElements.length === 0) {
         event.preventDefault();
@@ -121,16 +136,15 @@ function trapDialogFocus(
     if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
+    }
+    else if (!event.shiftKey && document.activeElement === last) {
         event.preventDefault();
         first.focus();
     }
 }
 
 function recipeIds(run: ControlDistributedRunSnapshot): readonly string[] {
-    return run.manifest.recipes.map(item =>
-        item.recipeId ?? item.recipe?.recipeId ?? 'unknown recipe'
-    );
+    return run.manifest.recipes.map((item) => item.recipeId ?? item.recipe?.recipeId ?? 'unknown recipe');
 }
 
 function groupLabel(run: ControlDistributedRunSnapshot): string {
@@ -138,8 +152,15 @@ function groupLabel(run: ControlDistributedRunSnapshot): string {
     return `${group.applicationId} / ${group.workspaceId} / ${group.groupId}`;
 }
 
-function Fact({ label, value }: Readonly<{ label: string; value: string }>) {
-    return <div><dt>{label}</dt><dd><code>{value}</code></dd></div>;
+function Fact({ label, value }: Readonly<{ label: string; value: string; }>) {
+    return (
+        <div>
+            <dt>{label}</dt>
+            <dd>
+                <code>{value}</code>
+            </dd>
+        </div>
+    );
 }
 
 function focusable(target: HTMLElement | null | undefined): target is HTMLElement {

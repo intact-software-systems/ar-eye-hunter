@@ -1,17 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime.ts';
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control-protocol.ts';
-import {
-    RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
-    formatJsonSchemaValidationErrors,
-    validateJsonSchema,
-} from '../../shared-test/rallar-bb-test/schema.ts';
-import type {
-    RallarBlackBoxTestWaitResultValue,
-} from '../../shared-test/rallar-bb-test/types.ts';
+import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime.ts';
+import { formatJsonSchemaValidationErrors, RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema.ts';
+import type { RallarBlackBoxTestWaitResultValue } from '../../shared-test/rallar-bb-test/types.ts';
 
 function sleepMs(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 describe('rallar-bb-test wait absence', () => {
@@ -20,16 +14,16 @@ describe('rallar-bb-test wait absence', () => {
         const sleptDurations: number[] = [];
         const runtime = createRallarBlackBoxTestRuntime({
             now: () => now,
-            sleep: async ms => {
+            sleep: async (ms) => {
                 sleptDurations.push(ms);
                 now += ms;
-            },
+            }
         });
 
         runtime.recordEvent({
             kind: 'message',
             topic: 'room.other-topic',
-            payload: { data: { topic: 'room.allowed' } },
+            payload: { data: { topic: 'room.allowed' } }
         });
 
         const result = await runtime.execute({
@@ -39,8 +33,8 @@ describe('rallar-bb-test wait absence', () => {
             timeoutMs: 2_000,
             match: {
                 kind: 'message',
-                topic: 'room.forbidden-topic',
-            },
+                topic: 'room.forbidden-topic'
+            }
         });
 
         const value = result.value as RallarBlackBoxTestWaitResultValue;
@@ -56,15 +50,15 @@ describe('rallar-bb-test wait absence', () => {
         let now = 1_000;
         const runtime = createRallarBlackBoxTestRuntime({
             now: () => now,
-            sleep: async ms => {
+            sleep: async (ms) => {
                 now += ms;
-            },
+            }
         });
 
         runtime.recordEvent({
             kind: 'message',
             topic: 'room.forbidden-topic',
-            payload: { data: { marker: 'leaked-before-wait' } },
+            payload: { data: { marker: 'leaked-before-wait' } }
         });
 
         const result = await runtime.execute({
@@ -74,8 +68,8 @@ describe('rallar-bb-test wait absence', () => {
             timeoutMs: 1_000,
             match: {
                 kind: 'message',
-                topic: 'room.forbidden-topic',
-            },
+                topic: 'room.forbidden-topic'
+            }
         });
 
         const value = result.value as RallarBlackBoxTestWaitResultValue;
@@ -91,13 +85,13 @@ describe('rallar-bb-test wait absence', () => {
         let releaseHold: (() => void) | undefined;
         const runtime = createRallarBlackBoxTestRuntime({
             now: () => now,
-            sleep: ms =>
-                new Promise<void>(resolve => {
+            sleep: (ms) =>
+                new Promise<void>((resolve) => {
                     releaseHold = () => {
                         now += ms;
                         resolve();
                     };
-                }),
+                })
         });
 
         const pending = runtime.execute({
@@ -109,8 +103,8 @@ describe('rallar-bb-test wait absence', () => {
                 kind: 'message',
                 topic: 'room.forbidden-topic',
                 payloadPath: 'data.secretName',
-                exists: true,
-            },
+                exists: true
+            }
         });
 
         await sleepMs(5);
@@ -120,9 +114,9 @@ describe('rallar-bb-test wait absence', () => {
             payload: {
                 data: {
                     secretName: 'leaked-during-window',
-                    accessToken: 'live-leak-token',
-                },
-            },
+                    accessToken: 'live-leak-token'
+                }
+            }
         });
         expect(releaseHold).toBeDefined();
         releaseHold?.();
@@ -132,9 +126,9 @@ describe('rallar-bb-test wait absence', () => {
         expect(result.status).toBe('failed');
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_WAIT_ABSENCE_VIOLATED');
         expect(value.matched).toBe(true);
-        expect((value.event?.payload as { data: { accessToken: string } }).data.accessToken)
+        expect((value.event?.payload as { data: { accessToken: string; }; }).data.accessToken)
             .toBe('<redacted>');
-        const details = result.error?.details as { event: { payload: { data: { accessToken: string } } } };
+        const details = result.error?.details as { event: { payload: { data: { accessToken: string; }; }; }; };
         expect(details.event.payload.data.accessToken).toBe('<redacted>');
     });
 
@@ -147,15 +141,15 @@ describe('rallar-bb-test wait absence', () => {
             timeoutMs: 500,
             match: {
                 kind: 'message',
-                topic: 'room.forbidden-topic',
-            },
+                topic: 'room.forbidden-topic'
+            }
         });
 
         await sleepMs(10);
         await runtime.execute({
             kind: 'recipe.cancel',
             commandId: 'cancel-absence-hold',
-            reason: 'operator requested stop',
+            reason: 'operator requested stop'
         });
 
         const result = await pending;
@@ -174,8 +168,8 @@ describe('rallar-bb-test wait absence', () => {
             absent: false,
             match: {
                 kind: 'message',
-                topic: 'room.forbidden-topic',
-            },
+                topic: 'room.forbidden-topic'
+            }
         } as never);
 
         expect(result.status).toBe('failed');
@@ -190,8 +184,8 @@ describe('rallar-bb-test wait absence', () => {
             timeoutMs: 1_000,
             match: {
                 kind: 'message',
-                topic: 'room.forbidden-topic',
-            },
+                topic: 'room.forbidden-topic'
+            }
         })).toEqual({ ok: true });
 
         expect(validateRallarBlackBoxTestCommand({
@@ -200,22 +194,24 @@ describe('rallar-bb-test wait absence', () => {
             absent: false,
             match: {
                 kind: 'message',
-                topic: 'room.forbidden-topic',
-            },
+                topic: 'room.forbidden-topic'
+            }
         } as never)).toEqual({
             ok: false,
-            error: 'wait.absent must be true when present.',
+            error: 'wait.absent must be true when present.'
         });
 
-        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
-            kind: 'wait',
-            commandId: 'absence-schema-valid',
-            absent: true,
-            match: {
-                kind: 'message',
-                topic: 'room.forbidden-topic',
-            },
-        }).ok).toBe(true);
+        expect(
+            validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+                kind: 'wait',
+                commandId: 'absence-schema-valid',
+                absent: true,
+                match: {
+                    kind: 'message',
+                    topic: 'room.forbidden-topic'
+                }
+            }).ok
+        ).toBe(true);
 
         const invalid = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
             kind: 'wait',
@@ -223,8 +219,8 @@ describe('rallar-bb-test wait absence', () => {
             absent: 'yes',
             match: {
                 kind: 'message',
-                topic: 'room.forbidden-topic',
-            },
+                topic: 'room.forbidden-topic'
+            }
         });
         expect(invalid.ok).toBe(false);
         if (!invalid.ok) {

@@ -1,32 +1,30 @@
+import type { ALInboundRuntimeStores } from '@shared/alm/ALInboundMessageRuntime.ts';
+import type { ALOutboundRuntimeStores } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import {
-    type ALRuntimeStoreFactories,
-    type ALRuntimeStoreScope,
     configureALRuntimeStoreScopes,
     resolveALInboundRuntimeStores,
     resolveALOutboundRuntimeStores,
+    type ALRuntimeStoreFactories,
+    type ALRuntimeStoreScope
 } from '@shared/alm/ALRuntimeStoreRegistry.ts';
-import type { ALInboundRuntimeStores } from '@shared/alm/ALInboundMessageRuntime.ts';
-import type { ALOutboundRuntimeStores } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import type { ALRuntimeStoreFactoryOptions } from '@shared/alm/ALRuntimeStores.ts';
 import {
     createIndexedDbALInboundRuntimeStores,
     createIndexedDbALOutboundRuntimeStores,
     createInMemoryALInboundRuntimeStores,
     createInMemoryALOutboundRuntimeStores,
-    isIndexedDbALRuntimeStoreSupported,
+    isIndexedDbALRuntimeStoreSupported
 } from '@shared/alm/ALRuntimeStores.ts';
 import { IndexedDbStringPersistenceProvider } from '@shared/persistence/IndexedDbStringPersistenceProvider.ts';
 import { openIndexedDbWithStore } from '@shared/persistence/openIndexedDb.ts';
 import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
 
 export const BROWSER_AL_RUNTIME_DB_NAME = 'ar-eye-hunter-al-runtime';
-export const BROWSER_AL_RUNTIME_STORE_NAME =
-    IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME;
+export const BROWSER_AL_RUNTIME_STORE_NAME = IndexedDbStringPersistenceProvider.DEFAULT_STORE_NAME;
 export const BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX = 'browser:';
 export const BROWSER_AL_RUNTIME_EXPIRY_EVICTION_INTERVAL_MS = 60_000;
 
-type BrowserALRuntimeOptions =
-    Omit<ALRuntimeStoreFactoryOptions, 'dbName' | 'namespace'>;
+type BrowserALRuntimeOptions = Omit<ALRuntimeStoreFactoryOptions, 'dbName' | 'namespace'>;
 
 type RuntimeStoreDirection = 'inbound' | 'outbound';
 
@@ -67,29 +65,29 @@ export function toBrowserALRuntimeEntryKeyPrefix(name: string): string {
 }
 
 export function toBrowserSessionALRuntimeEntryKeyPrefixes(
-    sessionId: string,
+    sessionId: string
 ): readonly string[] {
     return [
         toBrowserALRuntimeEntryKeyPrefix(toBrowserWsClientALRuntimeStoreId(sessionId)),
         toBrowserALRuntimeEntryKeyPrefix(toBrowserRtcRxALRuntimeStoreId(sessionId)),
-        toBrowserALRuntimeEntryKeyPrefix(toBrowserRtcOverlayALRuntimeStoreId(sessionId)),
+        toBrowserALRuntimeEntryKeyPrefix(toBrowserRtcOverlayALRuntimeStoreId(sessionId))
     ];
 }
 
 function createBrowserALRuntimeStores(
     direction: 'inbound',
     name: string,
-    options?: BrowserALRuntimeOptions,
+    options?: BrowserALRuntimeOptions
 ): ALInboundRuntimeStores;
 function createBrowserALRuntimeStores(
     direction: 'outbound',
     name: string,
-    options?: BrowserALRuntimeOptions,
+    options?: BrowserALRuntimeOptions
 ): ALOutboundRuntimeStores;
 function createBrowserALRuntimeStores(
     direction: RuntimeStoreDirection,
     name: string,
-    options: BrowserALRuntimeOptions = {},
+    options: BrowserALRuntimeOptions = {}
 ): ALInboundRuntimeStores | ALOutboundRuntimeStores {
     if (!isIndexedDbALRuntimeStoreSupported()) {
         return direction === 'inbound'
@@ -100,7 +98,7 @@ function createBrowserALRuntimeStores(
     const persistentOptions = {
         ...options,
         dbName: BROWSER_AL_RUNTIME_DB_NAME,
-        namespace: `browser:${name}`,
+        namespace: `browser:${name}`
     };
 
     return direction === 'inbound'
@@ -114,7 +112,7 @@ function createBrowserRuntimeStoreFactories(
         inbound?: boolean;
         outbound?: boolean;
     }>,
-    options: BrowserALRuntimeOptions,
+    options: BrowserALRuntimeOptions
 ): ALRuntimeStoreFactories {
     return {
         createInboundStores: directions.inbound
@@ -122,13 +120,13 @@ function createBrowserRuntimeStoreFactories(
             : undefined,
         createOutboundStores: directions.outbound
             ? () => createBrowserALOutboundRuntimeStores(name, options)
-            : undefined,
+            : undefined
     };
 }
 
 function toBrowserRuntimeStoreScopes(
     sessionId: string,
-    options: BrowserALRuntimeOptions,
+    options: BrowserALRuntimeOptions
 ): readonly ALRuntimeStoreScope[] {
     const wsClientId = toBrowserWsClientALRuntimeStoreId(sessionId);
     const rtcRxId = toBrowserRtcRxALRuntimeStoreId(sessionId);
@@ -140,42 +138,42 @@ function toBrowserRuntimeStoreScopes(
             factories: createBrowserRuntimeStoreFactories(
                 wsClientId,
                 { inbound: true, outbound: true },
-                options,
-            ),
+                options
+            )
         },
         {
             id: rtcRxId,
             factories: createBrowserRuntimeStoreFactories(
                 rtcRxId,
                 { inbound: true },
-                options,
-            ),
+                options
+            )
         },
         {
             id: rtcOverlayId,
             factories: createBrowserRuntimeStoreFactories(
                 rtcOverlayId,
                 { outbound: true },
-                options,
-            ),
-        },
+                options
+            )
+        }
     ];
 }
 
 function resolveBrowserALRuntimeStores(
     direction: 'inbound',
     sessionId: string,
-    toRuntimeStoreId: (sessionId: string) => string,
+    toRuntimeStoreId: (sessionId: string) => string
 ): ALInboundRuntimeStores;
 function resolveBrowserALRuntimeStores(
     direction: 'outbound',
     sessionId: string,
-    toRuntimeStoreId: (sessionId: string) => string,
+    toRuntimeStoreId: (sessionId: string) => string
 ): ALOutboundRuntimeStores;
 function resolveBrowserALRuntimeStores(
     direction: RuntimeStoreDirection,
     sessionId: string,
-    toRuntimeStoreId: (sessionId: string) => string,
+    toRuntimeStoreId: (sessionId: string) => string
 ): ALInboundRuntimeStores | ALOutboundRuntimeStores {
     const runtimeStoreId = toRuntimeStoreId(sessionId);
 
@@ -186,57 +184,57 @@ function resolveBrowserALRuntimeStores(
 
 export function createBrowserALInboundRuntimeStores(
     name: string,
-    options: BrowserALRuntimeOptions = {},
+    options: BrowserALRuntimeOptions = {}
 ): ALInboundRuntimeStores {
     return createBrowserALRuntimeStores('inbound', name, options);
 }
 
 export function createBrowserALOutboundRuntimeStores(
     name: string,
-    options: BrowserALRuntimeOptions = {},
+    options: BrowserALRuntimeOptions = {}
 ): ALOutboundRuntimeStores {
     return createBrowserALRuntimeStores('outbound', name, options);
 }
 
 export function configureBrowserALRuntimeStores(
     sessionId: string,
-    options: BrowserALRuntimeOptions = {},
+    options: BrowserALRuntimeOptions = {}
 ): void {
     configureALRuntimeStoreScopes(toBrowserRuntimeStoreScopes(sessionId, options));
 }
 
 export async function deleteExpiredBrowserALRuntimeEntries(
-    options: DeleteExpiredBrowserALRuntimeEntriesOptions = {},
+    options: DeleteExpiredBrowserALRuntimeEntriesOptions = {}
 ): Promise<BrowserALRuntimeCleanupResult> {
     const nowMs = options.nowMs ?? Date.now();
 
     return await deleteBrowserALRuntimeEntriesMatching({
         keyPrefixes: options.keyPrefixes ?? [BROWSER_AL_RUNTIME_ENTRY_KEY_PREFIX],
-        shouldDelete: (entry) => isExpiredBrowserALRuntimeEntry(entry, nowMs),
+        shouldDelete: (entry) => isExpiredBrowserALRuntimeEntry(entry, nowMs)
     });
 }
 
 export async function deleteExpiredBrowserALRuntimeEntriesForSession(
     sessionId: string,
-    options: Omit<DeleteExpiredBrowserALRuntimeEntriesOptions, 'keyPrefixes'> = {},
+    options: Omit<DeleteExpiredBrowserALRuntimeEntriesOptions, 'keyPrefixes'> = {}
 ): Promise<BrowserALRuntimeCleanupResult> {
     return await deleteExpiredBrowserALRuntimeEntries({
         ...options,
-        keyPrefixes: toBrowserSessionALRuntimeEntryKeyPrefixes(sessionId),
+        keyPrefixes: toBrowserSessionALRuntimeEntryKeyPrefixes(sessionId)
     });
 }
 
 export async function deleteBrowserALRuntimeEntriesForSession(
-    sessionId: string,
+    sessionId: string
 ): Promise<BrowserALRuntimeCleanupResult> {
     return await deleteBrowserALRuntimeEntriesMatching({
         keyPrefixes: toBrowserSessionALRuntimeEntryKeyPrefixes(sessionId),
-        shouldDelete: () => true,
+        shouldDelete: () => true
     });
 }
 
 export async function evictExpiredBrowserALRuntimeEntries(
-    options: DeleteExpiredBrowserALRuntimeEntriesOptions = {},
+    options: DeleteExpiredBrowserALRuntimeEntriesOptions = {}
 ): Promise<BrowserALRuntimeCleanupResult> {
     const result = await deleteExpiredBrowserALRuntimeEntries(options);
     if (result.deleted > 0) {
@@ -247,14 +245,14 @@ export async function evictExpiredBrowserALRuntimeEntries(
 }
 
 export async function initBrowserALRuntimeExpiryEviction(
-    intervalMs: number = BROWSER_AL_RUNTIME_EXPIRY_EVICTION_INTERVAL_MS,
+    intervalMs: number = BROWSER_AL_RUNTIME_EXPIRY_EVICTION_INTERVAL_MS
 ): Promise<void> {
     if (!browserALRuntimeExpiryEvictionPromise) {
         const promise = tryRunInIntervals(
             async () => {
                 await evictExpiredBrowserALRuntimeEntries();
             },
-            intervalMs,
+            intervalMs
         )
             .then(() => undefined)
             .catch((error) => {
@@ -270,42 +268,42 @@ export async function initBrowserALRuntimeExpiryEviction(
 }
 
 export function resolveBrowserWsClientALInboundRuntimeStores(
-    sessionId: string,
+    sessionId: string
 ): ALInboundRuntimeStores {
     return resolveBrowserALRuntimeStores(
         'inbound',
         sessionId,
-        toBrowserWsClientALRuntimeStoreId,
+        toBrowserWsClientALRuntimeStoreId
     );
 }
 
 export function resolveBrowserWsClientALOutboundRuntimeStores(
-    sessionId: string,
+    sessionId: string
 ): ALOutboundRuntimeStores {
     return resolveBrowserALRuntimeStores(
         'outbound',
         sessionId,
-        toBrowserWsClientALRuntimeStoreId,
+        toBrowserWsClientALRuntimeStoreId
     );
 }
 
 export function resolveBrowserRtcRxALInboundRuntimeStores(
-    sessionId: string,
+    sessionId: string
 ): ALInboundRuntimeStores {
     return resolveBrowserALRuntimeStores(
         'inbound',
         sessionId,
-        toBrowserRtcRxALRuntimeStoreId,
+        toBrowserRtcRxALRuntimeStoreId
     );
 }
 
 export function resolveBrowserRtcOverlayALOutboundRuntimeStores(
-    sessionId: string,
+    sessionId: string
 ): ALOutboundRuntimeStores {
     return resolveBrowserALRuntimeStores(
         'outbound',
         sessionId,
-        toBrowserRtcOverlayALRuntimeStoreId,
+        toBrowserRtcOverlayALRuntimeStoreId
     );
 }
 
@@ -313,9 +311,9 @@ async function deleteBrowserALRuntimeEntriesMatching(
     options: Readonly<{
         keyPrefixes: readonly string[];
         shouldDelete: (entry: BrowserALRuntimeStoredEntry) => boolean;
-    }>,
+    }>
 ): Promise<BrowserALRuntimeCleanupResult> {
-    const keyPrefixes = [...new Set(options.keyPrefixes)].filter(prefix => prefix.length > 0);
+    const keyPrefixes = [...new Set(options.keyPrefixes)].filter((prefix) => prefix.length > 0);
     const emptyResult = toBrowserALRuntimeCleanupResult(keyPrefixes, 0, 0);
 
     if (keyPrefixes.length === 0 || !isIndexedDbALRuntimeStoreSupported()) {
@@ -326,8 +324,8 @@ async function deleteBrowserALRuntimeEntriesMatching(
         BROWSER_AL_RUNTIME_DB_NAME,
         {
             name: BROWSER_AL_RUNTIME_STORE_NAME,
-            keyPath: 'key',
-        },
+            keyPath: 'key'
+        }
     );
 
     try {
@@ -338,14 +336,16 @@ async function deleteBrowserALRuntimeEntriesMatching(
             let scanned = 0;
             let deleted = 0;
 
-            tx.oncomplete = () => resolve(
-                toBrowserALRuntimeCleanupResult(keyPrefixes, scanned, deleted),
-            );
+            tx.oncomplete = () =>
+                resolve(
+                    toBrowserALRuntimeCleanupResult(keyPrefixes, scanned, deleted)
+                );
             tx.onabort = () => reject(tx.error ?? new Error('Browser AL runtime cleanup aborted'));
             tx.onerror = () => reject(tx.error ?? new Error('Browser AL runtime cleanup failed'));
-            request.onerror = () => reject(
-                request.error ?? new Error('Browser AL runtime cleanup cursor failed'),
-            );
+            request.onerror = () =>
+                reject(
+                    request.error ?? new Error('Browser AL runtime cleanup cursor failed')
+                );
             request.onsuccess = () => {
                 const cursor = request.result;
                 if (!cursor) {
@@ -366,14 +366,16 @@ async function deleteBrowserALRuntimeEntriesMatching(
 
                 deleted += 1;
                 const deleteRequest = cursor.delete();
-                deleteRequest.onerror = () => reject(
-                    deleteRequest.error
-                    ?? new Error('Browser AL runtime cleanup delete failed'),
-                );
+                deleteRequest.onerror = () =>
+                    reject(
+                        deleteRequest.error ??
+                            new Error('Browser AL runtime cleanup delete failed')
+                    );
                 deleteRequest.onsuccess = () => cursor.continue();
             };
         });
-    } finally {
+    }
+    finally {
         db.close();
     }
 }
@@ -381,28 +383,28 @@ async function deleteBrowserALRuntimeEntriesMatching(
 function toBrowserALRuntimeCleanupResult(
     keyPrefixes: readonly string[],
     scanned: number,
-    deleted: number,
+    deleted: number
 ): BrowserALRuntimeCleanupResult {
     return {
         dbName: BROWSER_AL_RUNTIME_DB_NAME,
         storeName: BROWSER_AL_RUNTIME_STORE_NAME,
         keyPrefixes,
         scanned,
-        deleted,
+        deleted
     };
 }
 
 function matchesAnyBrowserALRuntimePrefix(
     key: string,
-    keyPrefixes: readonly string[],
+    keyPrefixes: readonly string[]
 ): boolean {
-    return keyPrefixes.some(prefix => key.startsWith(prefix));
+    return keyPrefixes.some((prefix) => key.startsWith(prefix));
 }
 
 function isExpiredBrowserALRuntimeEntry(
     entry: BrowserALRuntimeStoredEntry,
-    nowMs: number,
+    nowMs: number
 ): boolean {
-    return !Number.isFinite(entry.expireAtTimestamp)
-        || entry.expireAtTimestamp <= nowMs;
+    return !Number.isFinite(entry.expireAtTimestamp) ||
+        entry.expireAtTimestamp <= nowMs;
 }

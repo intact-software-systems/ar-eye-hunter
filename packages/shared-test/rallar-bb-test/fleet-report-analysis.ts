@@ -4,7 +4,7 @@ import type {
     ControlFleetRegionSummary,
     ControlFleetReportsResponse,
     ControlFleetRunReport,
-    ControlFleetTimingDistribution,
+    ControlFleetTimingDistribution
 } from './fleet-report.ts';
 
 export type FleetReportAnalysisWork = {
@@ -22,13 +22,12 @@ export type FleetReportDerivationPolicy = Readonly<{
     textCollation: 'code-unit' | 'legacy-locale';
 }>;
 
-export const DEFAULT_FLEET_REPORT_DERIVATION_POLICY:
-    FleetReportDerivationPolicy = Object.freeze({
-        reportOrder: 'deterministic',
-        timedOutAsFailed: true,
-        stableTieBreaks: true,
-        textCollation: 'code-unit',
-    });
+export const DEFAULT_FLEET_REPORT_DERIVATION_POLICY: FleetReportDerivationPolicy = Object.freeze({
+    reportOrder: 'deterministic',
+    timedOutAsFailed: true,
+    stableTieBreaks: true,
+    textCollation: 'code-unit'
+});
 
 export type FleetReportHeatmapRow = Readonly<{
     agent: ControlFleetAgentRunOutcome;
@@ -78,16 +77,15 @@ export type FleetReportAnalysisLimits = Readonly<{
     agentDetailRuns: number;
 }>;
 
-export const DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS: FleetReportAnalysisLimits =
-    Object.freeze({
-        heatmapAgentRows: 32,
-        heatmapRunColumns: 8,
-        regionRows: 24,
-        failureRows: 24,
-        timingGroups: 24,
-        missingLabelAgentIds: 40,
-        agentDetailRuns: 12,
-    });
+export const DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS: FleetReportAnalysisLimits = Object.freeze({
+    heatmapAgentRows: 32,
+    heatmapRunColumns: 8,
+    regionRows: 24,
+    failureRows: 24,
+    timingGroups: 24,
+    missingLabelAgentIds: 40,
+    agentDetailRuns: 12
+});
 
 export type FleetReportWindow<T> = Readonly<{
     items: readonly T[];
@@ -100,10 +98,12 @@ export type FleetReportWindowRequest = Readonly<{
     limit?: number;
 }>;
 
-export type FleetReportBoundedWindow<T> = FleetReportWindow<T> & Readonly<{
-    startIndex: number;
-    endIndexExclusive: number;
-}>;
+export type FleetReportBoundedWindow<T> =
+    & FleetReportWindow<T>
+    & Readonly<{
+        startIndex: number;
+        endIndexExclusive: number;
+    }>;
 
 export type FleetReportHeatmap = Readonly<{
     rows: readonly FleetReportHeatmapRow[];
@@ -121,17 +121,21 @@ export type FleetReportHeatmapWindowRequest = Readonly<{
     runLimit?: number;
 }>;
 
-export type FleetReportHeatmapWindow = FleetReportHeatmap & Readonly<{
-    agentStartIndex: number;
-    agentEndIndexExclusive: number;
-    runStartIndex: number;
-    runEndIndexExclusive: number;
-}>;
+export type FleetReportHeatmapWindow =
+    & FleetReportHeatmap
+    & Readonly<{
+        agentStartIndex: number;
+        agentEndIndexExclusive: number;
+        runStartIndex: number;
+        runEndIndexExclusive: number;
+    }>;
 
-export type FleetReportAgentDetailWindow = FleetReportAgentDetail & Readonly<{
-    startIndex: number;
-    endIndexExclusive: number;
-}>;
+export type FleetReportAgentDetailWindow =
+    & FleetReportAgentDetail
+    & Readonly<{
+        startIndex: number;
+        endIndexExclusive: number;
+    }>;
 
 export type FleetReportAnalysis = Readonly<{
     reports: readonly ControlFleetRunReport[];
@@ -159,16 +163,17 @@ type MutableRegion = {
     failureCounts: Map<string, number>;
 };
 
-type MutableFailure = {
-    -readonly [K in keyof Omit<
-        ControlFleetFailureSignature,
-        'affectedAgents' | 'affectedRegions' | 'affectedRuns'
-    >]: ControlFleetFailureSignature[K];
-} & {
-    affectedAgents: Set<string>;
-    affectedRegions: Set<string>;
-    affectedRuns: Set<string>;
-};
+type MutableFailure =
+    & {
+        -readonly [
+            K in keyof Omit<ControlFleetFailureSignature, 'affectedAgents' | 'affectedRegions' | 'affectedRuns'>
+        ]: ControlFleetFailureSignature[K];
+    }
+    & {
+        affectedAgents: Set<string>;
+        affectedRegions: Set<string>;
+        affectedRuns: Set<string>;
+    };
 
 type AgentEntry = Readonly<{
     run: ControlFleetRunReport;
@@ -236,15 +241,17 @@ export function createFleetReportAnalysisWork(): FleetReportAnalysisWork {
         outcomeVisits: 0,
         indexInserts: 0,
         cellLookups: 0,
-        failureSignatureVisits: 0,
+        failureSignatureVisits: 0
     };
 }
 
-export function createFleetReportAnalysisCollection(input: Readonly<{
-    reports: readonly ControlFleetRunReport[];
-    response?: ControlFleetReportsResponse;
-    policy?: Partial<FleetReportDerivationPolicy>;
-}>): FleetReportAnalysisCollection {
+export function createFleetReportAnalysisCollection(
+    input: Readonly<{
+        reports: readonly ControlFleetRunReport[];
+        response?: ControlFleetReportsResponse;
+        policy?: Partial<FleetReportDerivationPolicy>;
+    }>
+): FleetReportAnalysisCollection {
     const work = createFleetReportAnalysisWork();
     const source = indexFleetReports(input.reports, work, input.policy ?? {});
     const regions = regionRowsFromIndex(source);
@@ -253,11 +260,11 @@ export function createFleetReportAnalysisCollection(input: Readonly<{
         source.regionDurations,
         source.policy,
         source.regionDurationLabels,
-        source.regionDurationIds,
+        source.regionDurationIds
     );
     const recipeTiming = timingGroupsFromDurations(
         source.recipeDurations,
-        source.policy,
+        source.policy
     );
     const missingLabelAgentIds = [...source.missingLabelAgentIds]
         .sort(compareText);
@@ -272,88 +279,88 @@ export function createFleetReportAnalysisCollection(input: Readonly<{
         recipeTiming,
         missingLabelAgentIds,
         work,
-        [FLEET_REPORT_COLLECTION_SOURCE]: source,
+        [FLEET_REPORT_COLLECTION_SOURCE]: source
     };
 }
 
 export function deriveFleetReportHeatmapWindow(
     collection: FleetReportAnalysisCollection,
-    request: FleetReportHeatmapWindowRequest = {},
+    request: FleetReportHeatmapWindowRequest = {}
 ): FleetReportHeatmapWindow {
     return heatmapWindowFromIndex(
         collection[FLEET_REPORT_COLLECTION_SOURCE],
         collection.reports,
         request,
         DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.heatmapAgentRows,
-        DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.heatmapRunColumns,
+        DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.heatmapRunColumns
     );
 }
 
 export function deriveFleetReportRegionWindow(
     collection: FleetReportAnalysisCollection,
-    request: FleetReportWindowRequest = {},
+    request: FleetReportWindowRequest = {}
 ): FleetReportBoundedWindow<ControlFleetRegionSummary> {
     return boundedWindow(
         collection.regions,
         request,
-        DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.regionRows,
+        DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.regionRows
     );
 }
 
 export function deriveFleetReportFailureWindow(
     collection: FleetReportAnalysisCollection,
-    request: FleetReportWindowRequest = {},
+    request: FleetReportWindowRequest = {}
 ): FleetReportBoundedWindow<ControlFleetFailureSignature> {
     return boundedWindow(
         collection.failures,
         request,
-        DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.failureRows,
+        DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.failureRows
     );
 }
 
 export function deriveFleetReportRegionTimingWindow(
     collection: FleetReportAnalysisCollection,
-    request: FleetReportWindowRequest = {},
+    request: FleetReportWindowRequest = {}
 ): FleetReportBoundedWindow<FleetReportTimingGroup> {
     return boundedWindow(
         collection.regionTiming,
         request,
-        DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.timingGroups,
+        DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.timingGroups
     );
 }
 
 export function deriveFleetReportRecipeTimingWindow(
     collection: FleetReportAnalysisCollection,
-    request: FleetReportWindowRequest = {},
+    request: FleetReportWindowRequest = {}
 ): FleetReportBoundedWindow<FleetReportTimingGroup> {
     return boundedWindow(
         collection.recipeTiming,
         request,
-        DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.timingGroups,
+        DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.timingGroups
     );
 }
 
 export function deriveFleetReportMissingLabelAgentIdWindow(
     collection: FleetReportAnalysisCollection,
-    request: FleetReportWindowRequest = {},
+    request: FleetReportWindowRequest = {}
 ): FleetReportBoundedWindow<string> {
     return boundedWindow(
         collection.missingLabelAgentIds,
         request,
-        DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.missingLabelAgentIds,
+        DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.missingLabelAgentIds
     );
 }
 
 export function deriveFleetReportAgentDetailWindow(
     agentId: string,
     collection: FleetReportAnalysisCollection,
-    request: FleetReportWindowRequest = {},
+    request: FleetReportWindowRequest = {}
 ): FleetReportAgentDetailWindow | undefined {
     return agentDetailWindowFromIndex(
         agentId,
         collection[FLEET_REPORT_COLLECTION_SOURCE],
         request,
-        DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.agentDetailRuns,
+        DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.agentDetailRuns
     );
 }
 
@@ -362,7 +369,7 @@ export function deriveFleetReportAnalysisFromCollection(
     input: Readonly<{
         selectedAgentId?: string;
         limits?: Partial<FleetReportAnalysisLimits>;
-    }> = {},
+    }> = {}
 ): FleetReportAnalysis {
     const limits = normalizeLimits(input.limits);
     const source = collection[FLEET_REPORT_COLLECTION_SOURCE];
@@ -376,10 +383,10 @@ export function deriveFleetReportAnalysisFromCollection(
         collection.reports,
         {
             agentLimit: limits.heatmapAgentRows,
-            runLimit: limits.heatmapRunColumns,
+            runLimit: limits.heatmapRunColumns
         },
         limits.heatmapAgentRows,
-        limits.heatmapRunColumns,
+        limits.heatmapRunColumns
     ));
     return {
         reports: collection.reports,
@@ -388,48 +395,48 @@ export function deriveFleetReportAnalysisFromCollection(
         regions: compatibilityWindow(boundedWindow(
             collection.regions,
             { limit: limits.regionRows },
-            limits.regionRows,
+            limits.regionRows
         )),
         failures: compatibilityWindow(boundedWindow(
             collection.failures,
             { limit: limits.failureRows },
-            limits.failureRows,
+            limits.failureRows
         )),
         regionTiming: compatibilityWindow(boundedWindow(
             collection.regionTiming,
             { limit: limits.timingGroups },
-            limits.timingGroups,
+            limits.timingGroups
         )),
         recipeTiming: compatibilityWindow(boundedWindow(
             collection.recipeTiming,
             { limit: limits.timingGroups },
-            limits.timingGroups,
+            limits.timingGroups
         )),
         missingLabelAgentIds: compatibilityWindow(
             boundedWindow(
                 collection.missingLabelAgentIds,
                 { limit: limits.missingLabelAgentIds },
-                limits.missingLabelAgentIds,
-            ),
+                limits.missingLabelAgentIds
+            )
         ),
         selectedAgent: input.selectedAgentId
             ? compatibilityAgentDetail(agentDetailWindowFromIndex(
                 input.selectedAgentId,
                 source,
                 { limit: limits.agentDetailRuns },
-                limits.agentDetailRuns,
+                limits.agentDetailRuns
             ))
             : undefined,
         work: {
             ...collection.work,
             cellLookups: collection.work.cellLookups -
-                cellLookupsBeforeProjection,
-        },
+                cellLookupsBeforeProjection
+        }
     };
 }
 
 export function sortFleetRunReports(
-    reports: readonly ControlFleetRunReport[],
+    reports: readonly ControlFleetRunReport[]
 ): readonly ControlFleetRunReport[] {
     return [...reports].sort((left, right) =>
         right.generatedAtEpochMs - left.generatedAtEpochMs ||
@@ -448,7 +455,7 @@ export function deriveFleetReportHeatmapRows(
         timedOutAsFailed?: boolean;
         stableTieBreaks?: boolean;
         textCollation?: FleetReportDerivationPolicy['textCollation'];
-    }> = {},
+    }> = {}
 ): FleetReportHeatmap {
     const source = indexFleetReports(reports, options.work, options);
     return compatibilityHeatmap(heatmapWindowFromIndex(
@@ -456,22 +463,22 @@ export function deriveFleetReportHeatmapRows(
         runs,
         {
             agentLimit: options.agentLimit ?? Number.POSITIVE_INFINITY,
-            runLimit: options.runLimit ?? Number.POSITIVE_INFINITY,
+            runLimit: options.runLimit ?? Number.POSITIVE_INFINITY
         },
         Number.POSITIVE_INFINITY,
-        Number.POSITIVE_INFINITY,
+        Number.POSITIVE_INFINITY
     ));
 }
 
 export function deriveFleetReportRegionRows(
     reports: readonly ControlFleetRunReport[],
-    policy: Partial<FleetReportDerivationPolicy> = {},
+    policy: Partial<FleetReportDerivationPolicy> = {}
 ): readonly ControlFleetRegionSummary[] {
     return regionRowsFromIndex(indexFleetReports(reports, undefined, policy));
 }
 
 export function deriveFleetReportMissingLabelAgentIds(
-    reports: readonly ControlFleetRunReport[],
+    reports: readonly ControlFleetRunReport[]
 ): readonly string[] {
     return [...indexFleetReports(reports).missingLabelAgentIds]
         .sort(compareText);
@@ -486,22 +493,22 @@ export function deriveFleetReportAgentDetail(
         timedOutAsFailed?: boolean;
         stableTieBreaks?: boolean;
         textCollation?: FleetReportDerivationPolicy['textCollation'];
-    }> = {},
+    }> = {}
 ): FleetReportAgentDetail | undefined {
     return compatibilityAgentDetail(agentDetailWindowFromIndex(
         agentId,
         indexFleetReports(reports, undefined, options),
         {
             limit: options.runLimit ??
-                DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.agentDetailRuns,
+                DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.agentDetailRuns
         },
-        Number.POSITIVE_INFINITY,
+        Number.POSITIVE_INFINITY
     ));
 }
 
 export function deriveFleetReportDisplaySummary(
     reports: readonly ControlFleetRunReport[],
-    response: ControlFleetReportsResponse | undefined,
+    response: ControlFleetReportsResponse | undefined
 ): FleetReportDisplaySummary {
     if (reports.length === 0) {
         return aggregateFallbackSummary(response);
@@ -511,34 +518,34 @@ export function deriveFleetReportDisplaySummary(
 
 export function deriveFleetReportFailureRows(
     reports: readonly ControlFleetRunReport[],
-    policy: Partial<FleetReportDerivationPolicy> = {},
+    policy: Partial<FleetReportDerivationPolicy> = {}
 ): readonly ControlFleetFailureSignature[] {
     return failureRowsFromIndex(indexFleetReports(reports, undefined, policy));
 }
 
 export function deriveFleetReportTimingGroupsByRegion(
     reports: readonly ControlFleetRunReport[],
-    policy: Partial<FleetReportDerivationPolicy> = {},
+    policy: Partial<FleetReportDerivationPolicy> = {}
 ): readonly FleetReportTimingGroup[] {
     const source = indexFleetReports(reports, undefined, policy);
     return timingGroupsFromDurations(
         source.regionDurations,
         source.policy,
         source.regionDurationLabels,
-        source.regionDurationIds,
+        source.regionDurationIds
     );
 }
 
 export function deriveFleetReportTimingGroupsByRecipe(
     reports: readonly ControlFleetRunReport[],
-    policy: Partial<FleetReportDerivationPolicy> = {},
+    policy: Partial<FleetReportDerivationPolicy> = {}
 ): readonly FleetReportTimingGroup[] {
     const source = indexFleetReports(reports, undefined, policy);
     return timingGroupsFromDurations(source.recipeDurations, source.policy);
 }
 
 export function deriveFleetReportTimingDistribution(
-    values: readonly number[],
+    values: readonly number[]
 ): ControlFleetTimingDistribution {
     const sorted = values
         .filter((value) => Number.isFinite(value))
@@ -552,42 +559,41 @@ export function deriveFleetReportTimingDistribution(
         p50Ms: nearestRank(sorted, 0.5),
         p90Ms: nearestRank(sorted, 0.9),
         p95Ms: nearestRank(sorted, 0.95),
-        maxMs: sorted[sorted.length - 1],
+        maxMs: sorted[sorted.length - 1]
     };
 }
 
-export function deriveFleetReportAnalysis(input: Readonly<{
-    reports: readonly ControlFleetRunReport[];
-    response?: ControlFleetReportsResponse;
-    selectedAgentId?: string;
-    limits?: Partial<FleetReportAnalysisLimits>;
-}>): FleetReportAnalysis {
+export function deriveFleetReportAnalysis(
+    input: Readonly<{
+        reports: readonly ControlFleetRunReport[];
+        response?: ControlFleetReportsResponse;
+        selectedAgentId?: string;
+        limits?: Partial<FleetReportAnalysisLimits>;
+    }>
+): FleetReportAnalysis {
     return deriveFleetReportAnalysisFromCollection(
         createFleetReportAnalysisCollection({
             reports: input.reports,
-            response: input.response,
+            response: input.response
         }),
         {
             selectedAgentId: input.selectedAgentId,
-            limits: input.limits,
-        },
+            limits: input.limits
+        }
     );
 }
 
 function indexFleetReports(
     reports: readonly ControlFleetRunReport[],
     suppliedWork?: FleetReportAnalysisWork,
-    suppliedPolicy: Partial<FleetReportDerivationPolicy> = {},
+    suppliedPolicy: Partial<FleetReportDerivationPolicy> = {}
 ): FleetReportSourceIndex {
     const work = suppliedWork ?? createFleetReportAnalysisWork();
     const policy = resolveDerivationPolicy(suppliedPolicy);
     const sortedReports = policy.reportOrder === 'input'
         ? [...reports]
         : sortFleetRunReports(reports);
-    const outcomesByRun = new Map<
-        string,
-        ReadonlyMap<string, ControlFleetAgentRunOutcome>
-    >();
+    const outcomesByRun = new Map<string, ReadonlyMap<string, ControlFleetAgentRunOutcome>>();
     const mutableAgentAggregates = new Map<string, MutableAgentAggregate>();
     const regions = new Map<string, MutableRegion>();
     const failures = new Map<string, MutableFailure>();
@@ -626,20 +632,24 @@ function indexFleetReports(
                 failed: 0,
                 missing: 0,
                 reconnectCount: 0,
-                diagnosticCount: 0,
+                diagnosticCount: 0
             };
             aggregate.entries.push({ run: report, outcome });
-            if (outcome.state === 'passed') aggregate.passed += 1;
+            if (outcome.state === 'passed') {
+                aggregate.passed += 1;
+            }
             if (
                 outcome.state === 'failed' ||
                 policy.timedOutAsFailed && outcome.state === 'timed-out'
             ) {
                 aggregate.failed += 1;
             }
-            if (outcome.missing) aggregate.missing += 1;
+            if (outcome.missing) {
+                aggregate.missing += 1;
+            }
             aggregate.reconnectCount = Math.max(
                 aggregate.reconnectCount,
-                outcome.reconnectCount,
+                outcome.reconnectCount
             );
             aggregate.diagnosticCount += outcome.diagnosticCount;
             mutableAgentAggregates.set(outcome.agentId, aggregate);
@@ -661,11 +671,11 @@ function indexFleetReports(
             if (outcome.durationMs !== undefined) {
                 regionDurationLabels.set(
                     regionKey,
-                    fleetReportRegionLabel(outcome),
+                    fleetReportRegionLabel(outcome)
                 );
                 regionDurationIds.set(
                     regionKey,
-                    fleetReportRegionPublicId(outcome),
+                    fleetReportRegionPublicId(outcome)
                 );
                 appendMapValue(regionDurations, regionKey, outcome.durationMs);
             }
@@ -677,15 +687,13 @@ function indexFleetReports(
             agentId,
             Object.freeze({
                 ...aggregate,
-                entries: Object.freeze([...aggregate.entries]),
-            }),
-        ]),
+                entries: Object.freeze([...aggregate.entries])
+            })
+        ])
     );
     const orderedAgents = [...agentAggregates.values()].map(
-        aggregate => aggregate.agent,
-    ).sort((left, right) =>
-        compareHeatmapAgents(left, right, policy)
-    );
+        (aggregate) => aggregate.agent
+    ).sort((left, right) => compareHeatmapAgents(left, right, policy));
 
     return {
         reports: sortedReports,
@@ -705,7 +713,7 @@ function indexFleetReports(
         passedOutcomes,
         outcomeCount,
         work,
-        policy,
+        policy
     };
 }
 
@@ -714,7 +722,7 @@ function heatmapWindowFromIndex(
     requestedRuns: readonly ControlFleetRunReport[],
     request: FleetReportHeatmapWindowRequest,
     maximumAgentLimit: number,
-    maximumRunLimit: number,
+    maximumRunLimit: number
 ): FleetReportHeatmapWindow {
     const runs = requestedRuns === source.reports
         ? source.reports
@@ -725,21 +733,21 @@ function heatmapWindowFromIndex(
         runs.length,
         request.runStartIndex,
         request.runLimit,
-        maximumRunLimit,
+        maximumRunLimit
     );
     const agentWindow = boundedWindowRange(
         source.orderedAgents.length,
         request.agentStartIndex,
         request.agentLimit,
-        maximumAgentLimit,
+        maximumAgentLimit
     );
     const visibleRuns = runs.slice(
         runWindow.startIndex,
-        runWindow.endIndexExclusive,
+        runWindow.endIndexExclusive
     );
     const rows = source.orderedAgents.slice(
         agentWindow.startIndex,
-        agentWindow.endIndexExclusive,
+        agentWindow.endIndexExclusive
     ).map((agent) => ({
         agent,
         region: agent.label.region ?? 'unlabeled',
@@ -747,7 +755,7 @@ function heatmapWindowFromIndex(
         cells: visibleRuns.map((run) => {
             source.work.cellLookups += 1;
             return source.outcomesByRun.get(run.distributedRunId)?.get(agent.agentId);
-        }),
+        })
     }));
     return {
         rows,
@@ -759,12 +767,12 @@ function heatmapWindowFromIndex(
         agentStartIndex: agentWindow.startIndex,
         agentEndIndexExclusive: agentWindow.endIndexExclusive,
         runStartIndex: runWindow.startIndex,
-        runEndIndexExclusive: runWindow.endIndexExclusive,
+        runEndIndexExclusive: runWindow.endIndexExclusive
     };
 }
 
 function regionRowsFromIndex(
-    source: FleetReportSourceIndex,
+    source: FleetReportSourceIndex
 ): readonly ControlFleetRegionSummary[] {
     return [...source.regions.values()].map((row) => {
         const total = row.passed + row.failed + row.missing;
@@ -785,7 +793,7 @@ function regionRowsFromIndex(
                     (source.policy.stableTieBreaks
                         ? compareText(left[0], right[0])
                         : 0)
-                )[0]?.[0],
+                )[0]?.[0]
         };
     }).sort((left, right) =>
         right.failed - left.failed ||
@@ -794,20 +802,20 @@ function regionRowsFromIndex(
             ? comparePolicyText(
                 left.provider ?? '',
                 right.provider ?? '',
-                source.policy,
+                source.policy
             )
             : 0)
     );
 }
 
 function failureRowsFromIndex(
-    source: FleetReportSourceIndex,
+    source: FleetReportSourceIndex
 ): readonly ControlFleetFailureSignature[] {
     return [...source.failures.values()].map((signature) => ({
         ...signature,
         affectedAgents: [...signature.affectedAgents].sort(),
         affectedRegions: [...signature.affectedRegions].sort(),
-        affectedRuns: [...signature.affectedRuns].sort(),
+        affectedRuns: [...signature.affectedRuns].sort()
     })).sort((left, right) =>
         right.count - left.count ||
         (right.lastSeenAtEpochMs ?? 0) - (left.lastSeenAtEpochMs ?? 0) ||
@@ -821,13 +829,13 @@ function timingGroupsFromDurations(
     durations: ReadonlyMap<string, readonly number[]>,
     policy: FleetReportDerivationPolicy,
     displayLabels?: ReadonlyMap<string, string>,
-    displayIds?: ReadonlyMap<string, string>,
+    displayIds?: ReadonlyMap<string, string>
 ): readonly FleetReportTimingGroup[] {
     return [...durations.entries()].map(([identity, values]) => ({
         identity,
         id: displayIds?.get(identity) ?? identity,
         label: displayLabels?.get(identity) ?? identity,
-        timing: deriveFleetReportTimingDistribution(values),
+        timing: deriveFleetReportTimingDistribution(values)
     })).sort((left, right) =>
         (right.timing.p95Ms ?? 0) - (left.timing.p95Ms ?? 0) ||
         (policy.stableTieBreaks ? compareText(left.identity, right.identity) : 0)
@@ -838,7 +846,7 @@ function agentDetailWindowFromIndex(
     agentId: string,
     source: FleetReportSourceIndex,
     request: FleetReportWindowRequest,
-    maximumRunLimit: number,
+    maximumRunLimit: number
 ): FleetReportAgentDetailWindow | undefined {
     const aggregate = source.agentAggregates.get(agentId);
     if (!aggregate) {
@@ -849,7 +857,7 @@ function agentDetailWindowFromIndex(
         entries.length,
         request.startIndex,
         request.limit,
-        maximumRunLimit,
+        maximumRunLimit
     );
     return {
         agent: aggregate.agent,
@@ -863,13 +871,13 @@ function agentDetailWindowFromIndex(
         reconnectCount: aggregate.reconnectCount,
         diagnosticCount: aggregate.diagnosticCount,
         startIndex: window.startIndex,
-        endIndexExclusive: window.endIndexExclusive,
+        endIndexExclusive: window.endIndexExclusive
     };
 }
 
 function displaySummaryFromIndex(
     source: FleetReportSourceIndex,
-    failureCount = failureRowsFromIndex(source).length,
+    failureCount = failureRowsFromIndex(source).length
 ): FleetReportDisplaySummary {
     return {
         runs: source.reports.length,
@@ -880,16 +888,14 @@ function displaySummaryFromIndex(
             : 0,
         failureGroups: failureCount,
         p95DurationMs: deriveFleetReportTimingDistribution(
-            source.reports.flatMap((report) =>
-                report.runDurationMs === undefined ? [] : [report.runDurationMs]
-            ),
+            source.reports.flatMap((report) => report.runDurationMs === undefined ? [] : [report.runDurationMs])
         ).p95Ms,
-        stale: source.staleAgentIds.size,
+        stale: source.staleAgentIds.size
     };
 }
 
 function aggregateFallbackSummary(
-    response: ControlFleetReportsResponse | undefined,
+    response: ControlFleetReportsResponse | undefined
 ): FleetReportDisplaySummary {
     return {
         runs: response?.aggregate.runCount ?? 0,
@@ -898,7 +904,7 @@ function aggregateFallbackSummary(
         passRate: response?.aggregate.passRate ?? 0,
         failureGroups: response?.aggregate.failureGroupCount ?? 0,
         p95DurationMs: response?.aggregate.timing.runs.p95Ms,
-        stale: response?.aggregate.staleAgentCount ?? 0,
+        stale: response?.aggregate.staleAgentCount ?? 0
     };
 }
 
@@ -906,7 +912,7 @@ function aggregateRegion(
     regions: Map<string, MutableRegion>,
     key: string,
     outcome: ControlFleetAgentRunOutcome,
-    policy: FleetReportDerivationPolicy,
+    policy: FleetReportDerivationPolicy
 ): void {
     const row = regions.get(key) ?? {
         region: outcome.label.region ?? 'unlabeled',
@@ -918,17 +924,19 @@ function aggregateRegion(
         flaky: 0,
         stale: 0,
         durations: [],
-        failureCounts: new Map<string, number>(),
+        failureCounts: new Map<string, number>()
     };
     row.agentIds.add(outcome.agentId);
     if (outcome.state === 'passed') {
         row.passed += 1;
-    } else if (
+    }
+    else if (
         outcome.state === 'failed' ||
         policy.timedOutAsFailed && outcome.state === 'timed-out'
     ) {
         row.failed += 1;
-    } else if (outcome.missing) {
+    }
+    else if (outcome.missing) {
         row.missing += 1;
     }
     if (outcome.flaky) {
@@ -943,7 +951,7 @@ function aggregateRegion(
     outcome.failureSignatureIds.forEach((signatureId) => {
         row.failureCounts.set(
             signatureId,
-            (row.failureCounts.get(signatureId) ?? 0) + 1,
+            (row.failureCounts.get(signatureId) ?? 0) + 1
         );
     });
     regions.set(key, row);
@@ -952,7 +960,7 @@ function aggregateRegion(
 function aggregateFailure(
     failures: Map<string, MutableFailure>,
     signature: ControlFleetFailureSignature,
-    distributedRunId: string,
+    distributedRunId: string
 ): void {
     const current = failures.get(signature.signatureId) ?? {
         ...signature,
@@ -961,16 +969,16 @@ function aggregateFailure(
         lastSeenAtEpochMs: signature.lastSeenAtEpochMs,
         affectedAgents: new Set<string>(),
         affectedRegions: new Set<string>(),
-        affectedRuns: new Set<string>(),
+        affectedRuns: new Set<string>()
     };
     current.count += signature.count;
     current.firstSeenAtEpochMs = minDefined(
         current.firstSeenAtEpochMs,
-        signature.firstSeenAtEpochMs,
+        signature.firstSeenAtEpochMs
     );
     current.lastSeenAtEpochMs = maxDefined(
         current.lastSeenAtEpochMs,
-        signature.lastSeenAtEpochMs,
+        signature.lastSeenAtEpochMs
     );
     signature.affectedAgents.forEach((agentId) => current.affectedAgents.add(agentId));
     signature.affectedRegions.forEach((region) => current.affectedRegions.add(region));
@@ -982,45 +990,43 @@ function aggregateFailure(
 function fleetReportRegionKey(outcome: ControlFleetAgentRunOutcome): string {
     return exactTupleIdentity([
         outcome.label.region ?? null,
-        outcome.label.provider ?? null,
+        outcome.label.provider ?? null
     ]);
 }
 
 function fleetReportRegionLabel(outcome: ControlFleetAgentRunOutcome): string {
-    return `${outcome.label.region ?? 'unlabeled'} / ${
-        outcome.label.provider ?? 'unknown'
-    }`;
+    return `${outcome.label.region ?? 'unlabeled'} / ${outcome.label.provider ?? 'unknown'}`;
 }
 
 function fleetReportRegionPublicId(
-    outcome: ControlFleetAgentRunOutcome,
+    outcome: ControlFleetAgentRunOutcome
 ): string {
     return fleetRegionPublicId(
         outcome.label.region,
-        outcome.label.provider,
+        outcome.label.provider
     );
 }
 
 function compareHeatmapAgents(
     left: ControlFleetAgentRunOutcome,
     right: ControlFleetAgentRunOutcome,
-    policy: FleetReportDerivationPolicy,
+    policy: FleetReportDerivationPolicy
 ): number {
     return comparePolicyText(
         left.label.region ?? 'unlabeled',
         right.label.region ?? 'unlabeled',
-        policy,
+        policy
     ) || comparePolicyText(
         left.label.provider ?? 'unknown',
         right.label.provider ?? 'unknown',
-        policy,
+        policy
     ) || comparePolicyText(left.agentId, right.agentId, policy);
 }
 
 function appendMapValue(
     values: Map<string, number[]>,
     key: string,
-    value: number,
+    value: number
 ): void {
     const list = values.get(key) ?? [];
     list.push(value);
@@ -1030,24 +1036,24 @@ function appendMapValue(
 function boundedWindow<T>(
     items: readonly T[],
     request: FleetReportWindowRequest,
-    maximumLimit: number,
+    maximumLimit: number
 ): FleetReportBoundedWindow<T> {
     const range = boundedWindowRange(
         items.length,
         request.startIndex,
         request.limit,
-        maximumLimit,
+        maximumLimit
     );
     const visibleItems = items.slice(
         range.startIndex,
-        range.endIndexExclusive,
+        range.endIndexExclusive
     );
     return {
         items: visibleItems,
         total: items.length,
         omitted: items.length - visibleItems.length,
         startIndex: range.startIndex,
-        endIndexExclusive: range.endIndexExclusive,
+        endIndexExclusive: range.endIndexExclusive
     };
 }
 
@@ -1055,14 +1061,14 @@ function boundedWindowRange(
     total: number,
     requestedStartIndex: number | undefined,
     requestedLimit: number | undefined,
-    maximumLimit: number,
-): Readonly<{ startIndex: number; endIndexExclusive: number }> {
+    maximumLimit: number
+): Readonly<{ startIndex: number; endIndexExclusive: number; }> {
     const maximumWindowSize = boundedLimit(maximumLimit, total);
     const windowSize = requestedLimit === undefined
         ? maximumWindowSize
         : Math.min(
             boundedLimit(requestedLimit, total),
-            maximumWindowSize,
+            maximumWindowSize
         );
     if (total === 0 || windowSize === 0) {
         return { startIndex: 0, endIndexExclusive: 0 };
@@ -1076,22 +1082,22 @@ function boundedWindowRange(
     const startIndex = Math.min(canonicalStart, lastStartIndex);
     return {
         startIndex,
-        endIndexExclusive: Math.min(startIndex + windowSize, total),
+        endIndexExclusive: Math.min(startIndex + windowSize, total)
     };
 }
 
 function compatibilityWindow<T>(
-    window: FleetReportBoundedWindow<T>,
+    window: FleetReportBoundedWindow<T>
 ): FleetReportWindow<T> {
     return {
         items: window.items,
         total: window.total,
-        omitted: window.omitted,
+        omitted: window.omitted
     };
 }
 
 function compatibilityHeatmap(
-    window: FleetReportHeatmapWindow,
+    window: FleetReportHeatmapWindow
 ): FleetReportHeatmap {
     return {
         rows: window.rows,
@@ -1099,12 +1105,12 @@ function compatibilityHeatmap(
         totalAgentRows: window.totalAgentRows,
         omittedAgentRows: window.omittedAgentRows,
         totalRunColumns: window.totalRunColumns,
-        omittedRunColumns: window.omittedRunColumns,
+        omittedRunColumns: window.omittedRunColumns
     };
 }
 
 function compatibilityAgentDetail(
-    window: FleetReportAgentDetailWindow | undefined,
+    window: FleetReportAgentDetailWindow | undefined
 ): FleetReportAgentDetail | undefined {
     if (!window) {
         return undefined;
@@ -1118,47 +1124,47 @@ function compatibilityAgentDetail(
         failed: window.failed,
         missing: window.missing,
         reconnectCount: window.reconnectCount,
-        diagnosticCount: window.diagnosticCount,
+        diagnosticCount: window.diagnosticCount
     };
 }
 
 function normalizeLimits(
-    limits: Partial<FleetReportAnalysisLimits> | undefined,
+    limits: Partial<FleetReportAnalysisLimits> | undefined
 ): FleetReportAnalysisLimits {
     return {
         heatmapAgentRows: normalizeLimit(
             limits?.heatmapAgentRows,
-            DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.heatmapAgentRows,
+            DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.heatmapAgentRows
         ),
         heatmapRunColumns: normalizeLimit(
             limits?.heatmapRunColumns,
-            DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.heatmapRunColumns,
+            DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.heatmapRunColumns
         ),
         regionRows: normalizeLimit(
             limits?.regionRows,
-            DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.regionRows,
+            DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.regionRows
         ),
         failureRows: normalizeLimit(
             limits?.failureRows,
-            DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.failureRows,
+            DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.failureRows
         ),
         timingGroups: normalizeLimit(
             limits?.timingGroups,
-            DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.timingGroups,
+            DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.timingGroups
         ),
         missingLabelAgentIds: normalizeLimit(
             limits?.missingLabelAgentIds,
-            DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.missingLabelAgentIds,
+            DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.missingLabelAgentIds
         ),
         agentDetailRuns: normalizeLimit(
             limits?.agentDetailRuns,
-            DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.agentDetailRuns,
-        ),
+            DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS.agentDetailRuns
+        )
     };
 }
 
 function resolveDerivationPolicy(
-    policy: Partial<FleetReportDerivationPolicy>,
+    policy: Partial<FleetReportDerivationPolicy>
 ): FleetReportDerivationPolicy {
     return {
         reportOrder: policy.reportOrder ??
@@ -1168,7 +1174,7 @@ function resolveDerivationPolicy(
         stableTieBreaks: policy.stableTieBreaks ??
             DEFAULT_FLEET_REPORT_DERIVATION_POLICY.stableTieBreaks,
         textCollation: policy.textCollation ??
-            DEFAULT_FLEET_REPORT_DERIVATION_POLICY.textCollation,
+            DEFAULT_FLEET_REPORT_DERIVATION_POLICY.textCollation
     };
 }
 
@@ -1191,15 +1197,15 @@ function nearestRank(sortedValues: readonly number[], percentile: number): numbe
         0,
         Math.min(
             sortedValues.length - 1,
-            Math.ceil(sortedValues.length * percentile) - 1,
-        ),
+            Math.ceil(sortedValues.length * percentile) - 1
+        )
     );
     return sortedValues[index];
 }
 
 function minDefined(
     left: number | undefined,
-    right: number | undefined,
+    right: number | undefined
 ): number | undefined {
     if (left === undefined) {
         return right;
@@ -1212,7 +1218,7 @@ function minDefined(
 
 function maxDefined(
     left: number | undefined,
-    right: number | undefined,
+    right: number | undefined
 ): number | undefined {
     if (left === undefined) {
         return right;
@@ -1236,7 +1242,7 @@ function compareText(left: string, right: string): number {
 function comparePolicyText(
     left: string,
     right: string,
-    policy: FleetReportDerivationPolicy,
+    policy: FleetReportDerivationPolicy
 ): number {
     return policy.textCollation === 'legacy-locale'
         ? left.localeCompare(right)
@@ -1249,18 +1255,18 @@ function exactTupleIdentity(parts: readonly unknown[]): string {
 
 function fleetRegionPublicId(
     region: string | undefined,
-    provider: string | undefined,
+    provider: string | undefined
 ): string {
-    return `${publicIdentitySegment(region, 'unlabeled')} / ${
-        publicIdentitySegment(provider, 'unknown')
-    }`;
+    return `${publicIdentitySegment(region, 'unlabeled')} / ${publicIdentitySegment(provider, 'unknown')}`;
 }
 
 function publicIdentitySegment(
     value: string | undefined,
-    missingLabel: string,
+    missingLabel: string
 ): string {
-    if (value === undefined) return missingLabel;
+    if (value === undefined) {
+        return missingLabel;
+    }
     const encoded = encodeOperatorText(value);
     return value === missingLabel ? `${encoded}:literal` : encoded;
 }
@@ -1279,7 +1285,8 @@ function encodeOperatorText(value: string): string {
                 index += 1;
                 continue;
             }
-        } else if (codeUnit < 0xd800 || codeUnit > 0xdfff) {
+        }
+        else if (codeUnit < 0xd800 || codeUnit > 0xdfff) {
             continue;
         }
         encoded += encodeURIComponent(value.slice(start, index));

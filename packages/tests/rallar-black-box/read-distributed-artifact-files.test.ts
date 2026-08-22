@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-    type ReadDistributedArtifactFilesOutput,
     readDistributedArtifactFiles,
+    type ReadDistributedArtifactFilesOutput
 } from '../../../apps/rallar-black-box/src/legacy/runner/runs/read-distributed-artifact-files.ts';
 
 describe('distributed artifact file reader', () => {
@@ -20,9 +20,9 @@ describe('distributed artifact file reader', () => {
                     group: {
                         applicationId: 'rallar-server',
                         workspaceId: 'default',
-                        groupId: 'bb-group',
-                    },
-                },
+                        groupId: 'bb-group'
+                    }
+                }
             }),
             artifactFile('control-run.json', {
                 runId: 'run-import',
@@ -32,11 +32,10 @@ describe('distributed artifact file reader', () => {
                 events: [],
                 stats: [],
                 reports: [],
-                heartbeats: [],
-            }),
+                heartbeats: []
+            })
         ];
-        const result: ReadDistributedArtifactFilesOutput =
-            await readDistributedArtifactFiles(files, 1_000);
+        const result: ReadDistributedArtifactFilesOutput = await readDistributedArtifactFiles(files, 1_000);
 
         expect(result.artifactFiles).toHaveProperty('distributed-run.json');
         expect(result.analysis.distributedRunId).toBe('dist-import');
@@ -48,6 +47,6 @@ describe('distributed artifact file reader', () => {
 function artifactFile(name: string, value: unknown): File {
     return {
         name,
-        text: async () => JSON.stringify(value),
+        text: async () => JSON.stringify(value)
     } as File;
 }

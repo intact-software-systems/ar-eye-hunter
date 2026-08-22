@@ -2,20 +2,20 @@ import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { POINTER_LOOK_SENSITIVITY } from './constants.ts';
 
 export type LookState = Readonly<{
-    cameraYaw: { value: number };
-    cameraPitch: { value: number };
+    cameraYaw: { value: number; };
+    cameraPitch: { value: number; };
 }>;
 
 export function applyPointerLook(
     state: LookState,
     movementX: number,
-    movementY: number,
+    movementY: number
 ): void {
     state.cameraYaw.value += movementX * POINTER_LOOK_SENSITIVITY;
     state.cameraPitch.value = clamp(
         state.cameraPitch.value - movementY * POINTER_LOOK_SENSITIVITY,
         -0.66,
-        0.58,
+        0.58
     );
 }
 

@@ -142,7 +142,7 @@ const MATRIX_PROFILE_COMMANDS: Readonly<Record<string, string>> = {
     live: 'test:shared-black-box:matrix:live',
     'live-soak': 'test:shared-black-box:matrix:live:soak',
     'live-traffic': 'test:shared-black-box:matrix:live:traffic',
-    'live-parallel': 'test:shared-black-box:matrix:live:parallel',
+    'live-parallel': 'test:shared-black-box:matrix:live:parallel'
 };
 
 export const BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT: BlackBoxRunnerArtifactBundleContract = {
@@ -151,7 +151,7 @@ export const BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT: BlackBoxRunnerArtifactBu
         'report.json',
         'events.jsonl',
         'failures.json',
-        'metadata.json',
+        'metadata.json'
     ],
     optionalFiles: [
         'artifact-index.json',
@@ -159,7 +159,7 @@ export const BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT: BlackBoxRunnerArtifactBu
         'preflight-report.json',
         'expanded-plan.json',
         'reduced-plan.json',
-        'matrix-summary.json',
+        'matrix-summary.json'
     ],
     eventStream: {
         file: 'events.jsonl',
@@ -172,9 +172,9 @@ export const BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT: BlackBoxRunnerArtifactBu
             'rtc-message',
             'rtc-diagnostic',
             'rtc-close',
-            'artifact-truncated',
+            'artifact-truncated'
         ],
-        truncationEventKind: 'artifact-truncated',
+        truncationEventKind: 'artifact-truncated'
     },
     redaction: {
         placeholderPattern: '<redacted:name>',
@@ -188,9 +188,9 @@ export const BLACK_BOX_RUNNER_ARTIFACT_BUNDLE_CONTRACT: BlackBoxRunnerArtifactBu
             'preflight-report.json',
             'expanded-plan.json',
             'reduced-plan.json',
-            'matrix-summary.json',
-        ],
-    },
+            'matrix-summary.json'
+        ]
+    }
 };
 
 export const BLACK_BOX_RUNNER_COVERAGE_HANDOFF: readonly BlackBoxRunnerCoverageHandoff[] = [
@@ -199,66 +199,66 @@ export const BLACK_BOX_RUNNER_COVERAGE_HANDOFF: readonly BlackBoxRunnerCoverageH
         owns: [
             'JSON recipes for observable HTTP, WS, RTC, ASSERT, and SET behavior',
             'recipe matrix classification, live gates, and artifact bundles',
-            'provider-neutral report, failure, event, and expanded-plan shapes',
+            'provider-neutral report, failure, event, and expanded-plan shapes'
         ],
         doesNotOwn: [
             'Rallar facade correctness beyond provider-observed network behavior',
-            'SPA-only manual workflow ergonomics',
-        ],
+            'SPA-only manual workflow ergonomics'
+        ]
     },
     {
         owner: 'rallar-bb-test',
         owns: [
             'browser command runtime',
             'remote browser/control-agent command execution',
-            'portable browser command recipes used by the command center',
+            'portable browser command recipes used by the command center'
         ],
         doesNotOwn: [
             'generic JSON recipe matrix execution',
-            'Rallar Server implementation correctness',
-        ],
+            'Rallar Server implementation correctness'
+        ]
     },
     {
         owner: 'rallar-black-box-spa',
         owns: [
             'manual command-center workflows',
             'recipe catalog display and artifact browsing',
-            'visual diagnostics for auth, rooms, WS, RTC, topology, and event streams',
+            'visual diagnostics for auth, rooms, WS, RTC, topology, and event streams'
         ],
         doesNotOwn: [
             'shell execution of shared-test commands from the browser',
-            'duplicating black-box-runner assertions or provider internals',
-        ],
+            'duplicating black-box-runner assertions or provider internals'
+        ]
     },
     {
         owner: 'rallar-black-box-control-server',
         owns: [
             'agent registration and command orchestration',
-            'run snapshots, reports, and uploaded command-center artifacts',
+            'run snapshots, reports, and uploaded command-center artifacts'
         ],
         doesNotOwn: [
             'long-term artifact retention policy unless explicitly configured',
-            'Rallar routing or WebRTC behavior',
-        ],
+            'Rallar routing or WebRTC behavior'
+        ]
     },
     {
         owner: 'shared-web-shared-server',
         owns: [
             'facade and server unit/integration correctness',
-            'domain behavior that should be tested below the command-center layer',
+            'domain behavior that should be tested below the command-center layer'
         ],
         doesNotOwn: [
             'black-box recipe catalog display',
-            'manual browser orchestration UX',
-        ],
-    },
+            'manual browser orchestration UX'
+        ]
+    }
 ];
 
 function titleFromId(id: string): string {
     return id
         .split(/[-_]/g)
         .filter(Boolean)
-        .map(part => part.slice(0, 1).toUpperCase() + part.slice(1))
+        .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
         .join(' ');
 }
 
@@ -291,7 +291,7 @@ function toProviderMode(entry: BlackBoxRunnerRecipeMatrixEntry): BlackBoxRunnerP
 }
 
 function toLiveSupport(entry: BlackBoxRunnerRecipeMatrixEntry): BlackBoxRunnerLiveSupport {
-    if (entry.profiles.includes('live') || entry.profiles.some(profile => profile.endsWith('-live'))) {
+    if (entry.profiles.includes('live') || entry.profiles.some((profile) => profile.endsWith('-live'))) {
         return 'gated-live';
     }
 
@@ -303,7 +303,7 @@ function toLiveSupport(entry: BlackBoxRunnerRecipeMatrixEntry): BlackBoxRunnerLi
 }
 
 function primaryProfile(entry: BlackBoxRunnerRecipeMatrixEntry): string {
-    return entry.profiles.find(profile => MATRIX_PROFILE_COMMANDS[profile] !== undefined) ||
+    return entry.profiles.find((profile) => MATRIX_PROFILE_COMMANDS[profile] !== undefined) ||
         entry.profiles[0] ||
         'quick';
 }
@@ -317,7 +317,7 @@ function toCommandSnippets(entry: BlackBoxRunnerRecipeMatrixEntry): readonly Bla
         snippets.push({
             label: 'Root matrix entry',
             command: `npm run ${rootScript} -- --id=${entry.id}`,
-            description: 'Runs this recipe through the shared-test recipe matrix and writes an artifact bundle.',
+            description: 'Runs this recipe through the shared-test recipe matrix and writes an artifact bundle.'
         });
     }
 
@@ -327,9 +327,9 @@ function toCommandSnippets(entry: BlackBoxRunnerRecipeMatrixEntry): readonly Bla
             'deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts',
             `-c packages/shared-test/black-box-runner/${entry.recipe}`,
             entry.mode === 'dry-run' ? '--dry-run' : '',
-            `--artifact-dir=.artifacts/shared-test/${entry.artifactName || entry.id}`,
+            `--artifact-dir=.artifacts/shared-test/${entry.artifactName || entry.id}`
         ].filter(Boolean).join(' '),
-        description: 'Runs the scenario CLI directly for this recipe.',
+        description: 'Runs the scenario CLI directly for this recipe.'
     });
 
     return snippets;
@@ -339,12 +339,12 @@ function toBadges(entry: BlackBoxRunnerRecipeMatrixEntry): readonly string[] {
     return [
         entry.mode,
         entry.expectedExitCode === 0 ? 'expected-pass' : 'expected-failure',
-        ...entry.profiles,
+        ...entry.profiles
     ];
 }
 
 export function toBlackBoxRunnerRecipeCatalogEntry(
-    entry: BlackBoxRunnerRecipeMatrixEntry,
+    entry: BlackBoxRunnerRecipeMatrixEntry
 ): BlackBoxRunnerRecipeCatalogEntry {
     const requiredEnvVars = entry.requires?.env || [];
     const httpServices = entry.requires?.httpServices || [];
@@ -367,7 +367,7 @@ export function toBlackBoxRunnerRecipeCatalogEntry(
             requiredEnvVars,
             httpServices,
             requiresPlaywright: entry.requires?.playwright === true,
-            injectedEnv: entry.env || {},
+            injectedEnv: entry.env || {}
         },
         support: {
             deterministic: entry.profiles.includes('deterministic'),
@@ -375,25 +375,25 @@ export function toBlackBoxRunnerRecipeCatalogEntry(
             live: liveSupport === 'gated-live',
             remoteBrowser: providerMode === 'rallar-remote-browser',
             artifacts: true,
-            replayArtifacts: entry.profiles.includes('traffic') || entry.id.includes('traffic'),
+            replayArtifacts: entry.profiles.includes('traffic') || entry.id.includes('traffic')
         },
         commands: toCommandSnippets(entry),
         uiHints: {
             badges: toBadges(entry),
             recommendedSurface: liveSupport === 'gated-live'
                 ? 'live-runbook'
-                : 'recipe-catalog',
-        },
+                : 'recipe-catalog'
+        }
     };
 }
 
 export function toBlackBoxRunnerRecipeCatalog(
-    matrix: BlackBoxRunnerRecipeMatrix,
+    matrix: BlackBoxRunnerRecipeMatrix
 ): BlackBoxRunnerRecipeCatalog {
     return {
         version: 1,
         generatedFrom: 'recipe-matrix',
-        entries: matrix.entries.map(toBlackBoxRunnerRecipeCatalogEntry),
+        entries: matrix.entries.map(toBlackBoxRunnerRecipeCatalogEntry)
     };
 }
 
@@ -409,7 +409,7 @@ export const BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG: BlackBoxRunnerReci
             profiles: ['quick', 'deterministic'],
             expectedExitCode: 0,
             artifactName: 'memory-delivery',
-            description: 'Deterministic in-memory direct and broadcast delivery smoke.',
+            description: 'Deterministic in-memory direct and broadcast delivery smoke.'
         }),
         toBlackBoxRunnerRecipeCatalogEntry({
             id: 'memory-same-connection-soak',
@@ -419,7 +419,7 @@ export const BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG: BlackBoxRunnerReci
             profiles: ['deterministic', 'soak'],
             expectedExitCode: 0,
             artifactName: 'memory-same-connection-soak',
-            description: 'Same-connection deterministic RTC soak with bounded artifacts.',
+            description: 'Same-connection deterministic RTC soak with bounded artifacts.'
         }),
         toBlackBoxRunnerRecipeCatalogEntry({
             id: 'memory-seeded-traffic',
@@ -429,7 +429,7 @@ export const BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG: BlackBoxRunnerReci
             profiles: ['deterministic', 'traffic'],
             expectedExitCode: 0,
             artifactName: 'memory-seeded-traffic',
-            description: 'Seeded weighted RTC traffic with expanded-plan replay artifacts.',
+            description: 'Seeded weighted RTC traffic with expanded-plan replay artifacts.'
         }),
         toBlackBoxRunnerRecipeCatalogEntry({
             id: 'memory-parallel-groups',
@@ -439,7 +439,7 @@ export const BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG: BlackBoxRunnerReci
             profiles: ['deterministic', 'parallel'],
             expectedExitCode: 0,
             artifactName: 'memory-parallel-groups',
-            description: 'Bounded parallel RTC groups for direct, broadcast, close, and reconnect behavior.',
+            description: 'Bounded parallel RTC groups for direct, broadcast, close, and reconnect behavior.'
         }),
         toBlackBoxRunnerRecipeCatalogEntry({
             id: 'rallar-server-auth-group-ws-smoke-live',
@@ -456,10 +456,10 @@ export const BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG: BlackBoxRunnerReci
                     {
                         name: 'Rallar API',
                         env: 'RALLAR_API_BASE_URL',
-                        default: 'http://localhost:8080',
-                    },
-                ],
-            },
+                        default: 'http://localhost:8080'
+                    }
+                ]
+            }
         }),
         toBlackBoxRunnerRecipeCatalogEntry({
             id: 'browser-messages-rtc-same-connection-soak-live',
@@ -476,17 +476,17 @@ export const BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG: BlackBoxRunnerReci
                     'RALLAR_ALICE_USERNAME',
                     'RALLAR_ALICE_PASSWORD',
                     'RALLAR_BOB_USERNAME',
-                    'RALLAR_BOB_PASSWORD',
+                    'RALLAR_BOB_PASSWORD'
                 ],
                 httpServices: [
                     {
                         name: 'Rallar API',
                         env: 'RALLAR_API_BASE_URL',
-                        default: 'http://localhost:8080',
-                    },
+                        default: 'http://localhost:8080'
+                    }
                 ],
-                playwright: true,
-            },
+                playwright: true
+            }
         }),
         toBlackBoxRunnerRecipeCatalogEntry({
             id: 'browser-messages-rtc-seeded-traffic-live',
@@ -503,17 +503,17 @@ export const BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG: BlackBoxRunnerReci
                     'RALLAR_ALICE_USERNAME',
                     'RALLAR_ALICE_PASSWORD',
                     'RALLAR_BOB_USERNAME',
-                    'RALLAR_BOB_PASSWORD',
+                    'RALLAR_BOB_PASSWORD'
                 ],
                 httpServices: [
                     {
                         name: 'Rallar API',
                         env: 'RALLAR_API_BASE_URL',
-                        default: 'http://localhost:8080',
-                    },
+                        default: 'http://localhost:8080'
+                    }
                 ],
-                playwright: true,
-            },
+                playwright: true
+            }
         }),
         toBlackBoxRunnerRecipeCatalogEntry({
             id: 'browser-messages-rtc-parallel-groups-live',
@@ -530,17 +530,17 @@ export const BLACK_BOX_RUNNER_COMMAND_CENTER_FIXTURE_CATALOG: BlackBoxRunnerReci
                     'RALLAR_ALICE_USERNAME',
                     'RALLAR_ALICE_PASSWORD',
                     'RALLAR_BOB_USERNAME',
-                    'RALLAR_BOB_PASSWORD',
+                    'RALLAR_BOB_PASSWORD'
                 ],
                 httpServices: [
                     {
                         name: 'Rallar API',
                         env: 'RALLAR_API_BASE_URL',
-                        default: 'http://localhost:8080',
-                    },
+                        default: 'http://localhost:8080'
+                    }
                 ],
-                playwright: true,
-            },
-        }),
-    ],
+                playwright: true
+            }
+        })
+    ]
 };

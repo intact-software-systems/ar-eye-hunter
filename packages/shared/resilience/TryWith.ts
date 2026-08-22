@@ -2,7 +2,7 @@ function backoffDelayMs(
     attempt: number,
     base: number,
     max: number = 20_000,
-    jitter: number = 0.2,
+    jitter: number = 0.2
 ): number {
     const raw = Math.min(max, base * Math.pow(2, Math.max(0, attempt - 1)));
     const j = raw * Math.max(0, Math.min(1, jitter));
@@ -19,18 +19,20 @@ export type TryWithRetryContext = Readonly<{
     error: unknown;
 }>;
 
-export type TryWithRetryScheduledContext = TryWithRetryContext & Readonly<{
-    delayMsecs: number;
-    nextAttempt: number;
-}>;
+export type TryWithRetryScheduledContext =
+    & TryWithRetryContext
+    & Readonly<{
+        delayMsecs: number;
+        nextAttempt: number;
+    }>;
 
 export type TryWithRetryPredicate = (
     error: unknown,
-    context: TryWithRetryContext,
+    context: TryWithRetryContext
 ) => boolean | Promise<boolean>;
 
 export type TryWithRetryObserver = (
-    context: TryWithRetryScheduledContext,
+    context: TryWithRetryScheduledContext
 ) => void | Promise<void>;
 
 type TryWithPolicyOptions = Readonly<{
@@ -58,7 +60,7 @@ export class TryWithExhaustedError extends Error {
     constructor(
         message: string,
         context: TryWithRetryContext,
-        options?: ErrorOptions,
+        options?: ErrorOptions
     ) {
         super(message, options);
         this.context = context;
@@ -70,7 +72,7 @@ export class TryWithPolicy {
     private readonly options: TryWithPolicyOptions;
 
     private constructor(
-        options: TryWithPolicyOptions,
+        options: TryWithPolicyOptions
     ) {
         this.options = options;
     }
@@ -82,7 +84,7 @@ export class TryWithPolicy {
             maxRetryIntervalMsecs: 20_000,
             backoffFactor: 2,
             jitterRatio: 0.2,
-            retryIf: () => true,
+            retryIf: () => true
         });
     }
 
@@ -92,13 +94,13 @@ export class TryWithPolicy {
 
     maxAttempts(maxAttempts: number): TryWithPolicy {
         return this.with({
-            maxAttempts: Math.max(1, Math.floor(maxAttempts)),
+            maxAttempts: Math.max(1, Math.floor(maxAttempts))
         });
     }
 
     retryIntervalMsecs(retryIntervalMsecs: number): TryWithPolicy {
         return this.with({
-            retryIntervalMsecs: Math.max(0, retryIntervalMsecs),
+            retryIntervalMsecs: Math.max(0, retryIntervalMsecs)
         });
     }
 
@@ -108,7 +110,7 @@ export class TryWithPolicy {
 
     maxRetryIntervalMsecs(maxRetryIntervalMsecs: number): TryWithPolicy {
         return this.with({
-            maxRetryIntervalMsecs: Math.max(0, maxRetryIntervalMsecs),
+            maxRetryIntervalMsecs: Math.max(0, maxRetryIntervalMsecs)
         });
     }
 
@@ -120,19 +122,19 @@ export class TryWithPolicy {
         return this.with({
             maxElapsedMsecs: maxElapsedMsecs === undefined
                 ? undefined
-                : Math.max(0, maxElapsedMsecs),
+                : Math.max(0, maxElapsedMsecs)
         });
     }
 
     backoffFactor(backoffFactor: number): TryWithPolicy {
         return this.with({
-            backoffFactor: Math.max(1, backoffFactor),
+            backoffFactor: Math.max(1, backoffFactor)
         });
     }
 
     jitterRatio(jitterRatio: number): TryWithPolicy {
         return this.with({
-            jitterRatio: Math.max(0, Math.min(1, jitterRatio)),
+            jitterRatio: Math.max(0, Math.min(1, jitterRatio))
         });
     }
 
@@ -153,11 +155,12 @@ export class TryWithPolicy {
 
             try {
                 return await handler();
-            } catch (error) {
+            }
+            catch (error) {
                 const context = this.toRetryContext(
                     attempt,
                     startedAtMsecs,
-                    error,
+                    error
                 );
 
                 if (attempt >= this.options.maxAttempts) {
@@ -177,7 +180,7 @@ export class TryWithPolicy {
                 if (
                     this.options.maxElapsedMsecs !== undefined &&
                     context.elapsedMsecs + delayMsecs >
-                    this.options.maxElapsedMsecs
+                        this.options.maxElapsedMsecs
                 ) {
                     throw this.toExhaustedError(context, error);
                 }
@@ -185,7 +188,7 @@ export class TryWithPolicy {
                 const scheduledContext: TryWithRetryScheduledContext = {
                     ...context,
                     delayMsecs,
-                    nextAttempt: attempt + 1,
+                    nextAttempt: attempt + 1
                 };
                 await this.options.onRetry?.(scheduledContext);
                 await sleep(delayMsecs);
@@ -196,21 +199,21 @@ export class TryWithPolicy {
     private with(options: Partial<TryWithPolicyOptions>): TryWithPolicy {
         return new TryWithPolicy({
             ...this.options,
-            ...options,
+            ...options
         });
     }
 
     private toRetryContext(
         attempt: number,
         startedAtMsecs: number,
-        error: unknown,
+        error: unknown
     ): TryWithRetryContext {
         return {
             label: this.options.label,
             attempt,
             maxAttempts: this.options.maxAttempts,
             elapsedMsecs: Date.now() - startedAtMsecs,
-            error,
+            error
         };
     }
 
@@ -223,7 +226,7 @@ export class TryWithPolicy {
         const raw = Math.min(
             this.options.maxRetryIntervalMsecs,
             this.options.retryIntervalMsecs *
-            Math.pow(this.options.backoffFactor, Math.max(0, attempt - 1)),
+                Math.pow(this.options.backoffFactor, Math.max(0, attempt - 1))
         );
         const jitter = raw * this.options.jitterRatio;
         const delta = (Math.random() * 2 - 1) * jitter;
@@ -232,13 +235,13 @@ export class TryWithPolicy {
 
     private toExhaustedError(
         context: TryWithRetryContext,
-        cause: unknown,
+        cause: unknown
     ): TryWithExhaustedError {
         const label = this.options.label ? ` for ${this.options.label}` : '';
         return new TryWithExhaustedError(
             `Retry attempts exhausted${label} after ${context.attempt} attempts`,
             context,
-            { cause },
+            { cause }
         );
     }
 }
@@ -253,12 +256,12 @@ export const RetryPolicies = {
             .maxElapsedMsecs(500)
             .jitterRatio(0)
             .retryIf((error) => error instanceof RetryableConflictError);
-    },
+    }
 };
 
 export function tryWithPolicy<T>(
     handler: () => T | Promise<T>,
-    policy: TryWithPolicy = TryWithPolicy.defaults(),
+    policy: TryWithPolicy = TryWithPolicy.defaults()
 ): Promise<T> {
     return policy.run(handler);
 }
@@ -273,16 +276,17 @@ export function tryWith<T>(
     handler: () => T | Promise<T>,
     retryIntervalMsecs: number = 500,
     maxAttempts: number = Number.MAX_VALUE,
-    maxRetryIntervalMsecs: number = 20_000,
+    maxRetryIntervalMsecs: number = 20_000
 ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
         const tryToExecute = async (
             currentRetryIntervalMsecs: number,
-            attempts: number,
+            attempts: number
         ): Promise<void> => {
             try {
                 resolve(await handler());
-            } catch (_) {
+            }
+            catch (_) {
                 if (attempts >= maxAttempts) {
                     reject({ error: 'Unable to do it' });
                     return;
@@ -292,10 +296,10 @@ export function tryWith<T>(
                     () => {
                         void tryToExecute(
                             backoffDelayMs(attempts, retryIntervalMsecs, maxRetryIntervalMsecs),
-                            attempts + 1,
+                            attempts + 1
                         );
                     },
-                    currentRetryIntervalMsecs,
+                    currentRetryIntervalMsecs
                 );
             }
         };
@@ -308,7 +312,7 @@ export function tryRunInIntervals<T>(
     handler: () => T | Promise<T>,
     intervalMsecs: number = 60000,
     retryIntervalMsecs: number = 10000,
-    maxAttempts: number = Number.MAX_VALUE,
+    maxAttempts: number = Number.MAX_VALUE
 ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
         let settled = false;
@@ -317,7 +321,7 @@ export function tryRunInIntervals<T>(
         const schedule = (
             delayMsecs: number,
             nextRetryIntervalMsecs: number,
-            attempts: number,
+            attempts: number
         ) => {
             setTimeout(() => {
                 void tryToExecute(nextRetryIntervalMsecs, attempts);
@@ -326,7 +330,7 @@ export function tryRunInIntervals<T>(
 
         const tryToExecute = async (
             currentRetryIntervalMsecs: number,
-            attempts: number,
+            attempts: number
         ): Promise<void> => {
             if (stopped) {
                 return;
@@ -341,7 +345,8 @@ export function tryRunInIntervals<T>(
                 }
 
                 schedule(intervalMsecs, retryIntervalMsecs, 1);
-            } catch (_) {
+            }
+            catch (_) {
                 if (attempts >= maxAttempts) {
                     stopped = true;
                     if (!settled) {
@@ -353,7 +358,7 @@ export function tryRunInIntervals<T>(
                 schedule(
                     currentRetryIntervalMsecs,
                     backoffDelayMs(attempts, retryIntervalMsecs),
-                    attempts + 1,
+                    attempts + 1
                 );
             }
         };

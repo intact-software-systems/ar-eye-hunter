@@ -6,7 +6,7 @@ import {
     calculateArenaMusicLayerState,
     createDefaultArenaAudioSettings,
     normalizeArenaAudioSettings,
-    shouldPlayArenaAudioVoice,
+    shouldPlayArenaAudioVoice
 } from '../../../apps/ar-eye-hunter-v1/src/game/arenaAudio.ts';
 
 describe('AR Eye Hunter arena audio', () => {
@@ -37,7 +37,7 @@ describe('AR Eye Hunter arena audio', () => {
             sfxVolume: 2,
             eyeDroneVolume: 9,
             muted: true,
-            reducedIntensity: true,
+            reducedIntensity: true
         });
 
         expect(settings.masterVolume).toBe(1);
@@ -68,7 +68,7 @@ describe('AR Eye Hunter arena audio', () => {
             incomingAttack: false,
             healthRatio: 1,
             linkTone: 'live',
-            reducedIntensity: false,
+            reducedIntensity: false
         }, settings);
         const tense = calculateArenaMusicLayerState({
             matchStatus: 'active',
@@ -79,7 +79,7 @@ describe('AR Eye Hunter arena audio', () => {
             incomingAttack: true,
             healthRatio: 0.22,
             linkTone: 'degraded',
-            reducedIntensity: false,
+            reducedIntensity: false
         }, settings);
 
         expect(calm.baseHum).toBeGreaterThan(0);
@@ -102,7 +102,7 @@ describe('AR Eye Hunter arena audio', () => {
             incomingAttack: true,
             healthRatio: 0.1,
             linkTone: 'rejoining',
-            reducedIntensity: false,
+            reducedIntensity: false
         }, settings);
         const reduced = calculateArenaMusicLayerState({
             matchStatus: 'active',
@@ -113,7 +113,7 @@ describe('AR Eye Hunter arena audio', () => {
             incomingAttack: true,
             healthRatio: 0.1,
             linkTone: 'rejoining',
-            reducedIntensity: true,
+            reducedIntensity: true
         }, { ...settings, reducedIntensity: true });
 
         expect(normal.rewardShimmer).toBeGreaterThan(0);

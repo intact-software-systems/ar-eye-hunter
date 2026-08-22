@@ -1,15 +1,12 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { CollapsiblePanelSection } from '../../shared/CollapsiblePanelSection.tsx';
 import { Metric } from '../../shared/Metric.tsx';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 import { formatTime } from '../../shared/time-format.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import type { RallarBrowserStatusSummary } from '../../shell/rallar-browser-status.ts';
-import type {
-    QuickRallarTestViewModel,
-    QuickRallarTransport,
-} from './quick-rallar-contracts.ts';
+import type { QuickRallarTestViewModel, QuickRallarTransport } from './quick-rallar-contracts.ts';
 
 export function QuickRallarTestView({
     state,
@@ -18,7 +15,7 @@ export function QuickRallarTestView({
     browserStatus,
     model,
     onOpenAuth,
-    onOpenRunnerMode,
+    onOpenRunnerMode
 }: {
     state: RallarBlackBoxTestState;
     authSession?: AuthSession;
@@ -56,7 +53,7 @@ export function QuickRallarTestView({
         copyRunnerRecipe,
         setupComplete,
         subscribed,
-        workflowSteps,
+        workflowSteps
     } = model;
 
     return (
@@ -72,8 +69,8 @@ export function QuickRallarTestView({
                     {subscription
                         ? 'listening'
                         : realBackendReady
-                          ? 'ready'
-                          : 'real backend required'}
+                        ? 'ready'
+                        : 'real backend required'}
                 </span>
             </div>
             <div className="quick-workflow-strip" aria-label="Quick Test workflow">
@@ -146,8 +143,7 @@ export function QuickRallarTestView({
                                 : 'No group selected'}
                         </strong>
                         <small>
-                            {globalValues.applicationId || '-'} /{' '}
-                            {globalValues.workspaceId || '-'}
+                            {globalValues.applicationId || '-'} / {globalValues.workspaceId || '-'}
                         </small>
                     </div>
                     <div>
@@ -177,9 +173,7 @@ export function QuickRallarTestView({
                         <span>Group</span>
                         <input
                             value={globalValues.roomId}
-                            onChange={(event) =>
-                                updateGroupId(event.target.value)
-                            }
+                            onChange={(event) => updateGroupId(event.target.value)}
                         />
                     </label>
                     <label className="field">
@@ -189,9 +183,8 @@ export function QuickRallarTestView({
                             onChange={(event) =>
                                 updateValue(
                                     'transport',
-                                    event.target.value as QuickRallarTransport,
-                                )
-                            }
+                                    event.target.value as QuickRallarTransport
+                                )}
                         >
                             <option value="ws">WS group message</option>
                         </select>
@@ -200,36 +193,28 @@ export function QuickRallarTestView({
                         <span>Type ID</span>
                         <input
                             value={values.typeId}
-                            onChange={(event) =>
-                                updateValue('typeId', event.target.value)
-                            }
+                            onChange={(event) => updateValue('typeId', event.target.value)}
                         />
                     </label>
                     <label className="field">
                         <span>Topic ID</span>
                         <input
                             value={values.topicId}
-                            onChange={(event) =>
-                                updateValue('topicId', event.target.value)
-                            }
+                            onChange={(event) => updateValue('topicId', event.target.value)}
                         />
                     </label>
                     <label className="field">
                         <span>Context ID</span>
                         <input
                             value={values.contextId}
-                            onChange={(event) =>
-                                updateValue('contextId', event.target.value)
-                            }
+                            onChange={(event) => updateValue('contextId', event.target.value)}
                         />
                     </label>
                     <label className="field">
                         <span>Resource ID</span>
                         <input
                             value={values.resourceId}
-                            onChange={(event) =>
-                                updateValue('resourceId', event.target.value)
-                            }
+                            onChange={(event) => updateValue('resourceId', event.target.value)}
                         />
                     </label>
                     <label className="field">
@@ -241,9 +226,8 @@ export function QuickRallarTestView({
                             onChange={(event) =>
                                 updateValue(
                                     'timeoutMs',
-                                    Number(event.target.value),
-                                )
-                            }
+                                    Number(event.target.value)
+                                )}
                         />
                     </label>
                 </div>
@@ -292,11 +276,9 @@ export function QuickRallarTestView({
                         <button
                             type="button"
                             className="primary-action"
-                            disabled={
-                                !setupComplete ||
+                            disabled={!setupComplete ||
                                 !activeTypeId ||
-                                !payloadResult.ok
-                            }
+                                !payloadResult.ok}
                             onClick={() => void sendWs()}
                         >
                             Send WS JSON
@@ -364,9 +346,7 @@ export function QuickRallarTestView({
                         <span>Payload JSON</span>
                         <textarea
                             value={values.payloadText}
-                            onChange={(event) =>
-                                updateValue('payloadText', event.target.value)
-                            }
+                            onChange={(event) => updateValue('payloadText', event.target.value)}
                             spellCheck={false}
                         />
                     </label>
@@ -405,16 +385,13 @@ export function QuickRallarTestView({
                                     >
                                         <div>
                                             <strong>
-                                                {message.topicId} /{' '}
-                                                {message.typeId}
+                                                {message.topicId} / {message.typeId}
                                             </strong>
                                             <small>
-                                                {formatTime(message.atEpochMs)}{' '}
-                                                - group {message.roomId}
+                                                {formatTime(message.atEpochMs)} - group {message.roomId}
                                             </small>
                                             <small>
-                                                sender {message.senderId} -
-                                                context {message.contextId}
+                                                sender {message.senderId} - context {message.contextId}
                                             </small>
                                         </div>
                                         <pre className="mini-json">
@@ -436,21 +413,19 @@ export function QuickRallarTestView({
                 !payloadResult.ok ||
                 busyAction) && (
                 <div
-                    className={
-                        localError || !payloadResult.ok
-                            ? 'workbench-error'
-                            : 'command-center-status'
-                    }
+                    className={localError || !payloadResult.ok
+                        ? 'workbench-error'
+                        : 'command-center-status'}
                     role="status"
                 >
                     {localError ??
                         (!payloadResult.ok
                             ? payloadResult.error
                             : !realBackendReady
-                              ? 'Quick Test requires provider=browser-rallar.'
-                              : !authSession
-                                ? 'Quick Test requires a logged-in browser session.'
-                                : busyAction)}
+                            ? 'Quick Test requires provider=browser-rallar.'
+                            : !authSession
+                            ? 'Quick Test requires a logged-in browser session.'
+                            : busyAction)}
                 </div>
             )}
         </section>

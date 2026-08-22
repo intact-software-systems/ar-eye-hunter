@@ -1,24 +1,20 @@
-import type {
-    RallarAiJsonSchema,
-    RallarAiValidationIssue,
-    RallarAiValidationResult,
-} from './rallar-ai-types.ts';
+import type { RallarAiJsonSchema, RallarAiValidationIssue, RallarAiValidationResult } from './rallar-ai-types.ts';
 
 export function okRallarAiValidation(): RallarAiValidationResult {
     return {
         ok: true,
         errors: [],
-        issues: [],
+        issues: []
     };
 }
 
 export function failRallarAiValidation(
-    issues: readonly RallarAiValidationIssue[],
+    issues: readonly RallarAiValidationIssue[]
 ): RallarAiValidationResult {
     return {
         ok: issues.length === 0,
         errors: issues.map((issue) => `${issue.path}: ${issue.message}`),
-        issues,
+        issues
     };
 }
 
@@ -32,9 +28,10 @@ export function parseRallarAiJson(text: string): {
     try {
         return {
             ok: true,
-            value: JSON.parse(text),
+            value: JSON.parse(text)
         };
-    } catch (error) {
+    }
+    catch (error) {
         return {
             ok: false,
             validation: failRallarAiValidation([
@@ -43,9 +40,9 @@ export function parseRallarAiJson(text: string): {
                     code: 'invalid-json',
                     message: error instanceof Error
                         ? error.message
-                        : 'Generated text is not valid JSON.',
-                },
-            ]),
+                        : 'Generated text is not valid JSON.'
+                }
+            ])
         };
     }
 }
@@ -53,7 +50,7 @@ export function parseRallarAiJson(text: string): {
 export function validateRallarAiJsonSchemaValue(
     schema: unknown,
     value: unknown,
-    path = '$',
+    path = '$'
 ): RallarAiValidationResult {
     const issues: RallarAiValidationIssue[] = [];
     validateAgainstSchema(asSchema(schema), value, path, issues);
@@ -61,7 +58,7 @@ export function validateRallarAiJsonSchemaValue(
 }
 
 export function isRallarAiValidationOk(
-    validation: RallarAiValidationResult,
+    validation: RallarAiValidationResult
 ): boolean {
     return validation.ok && validation.issues.length === 0;
 }
@@ -70,13 +67,13 @@ function validateAgainstSchema(
     schema: RallarAiJsonSchema,
     value: unknown,
     path: string,
-    issues: RallarAiValidationIssue[],
+    issues: RallarAiValidationIssue[]
 ): void {
     if (schema.const !== undefined && !jsonValueEquals(value, schema.const)) {
         issues.push({
             path,
             code: 'const-mismatch',
-            message: 'Value does not match required const.',
+            message: 'Value does not match required const.'
         });
     }
 
@@ -84,7 +81,7 @@ function validateAgainstSchema(
         issues.push({
             path,
             code: 'enum-mismatch',
-            message: 'Value is not in the allowed enum.',
+            message: 'Value is not in the allowed enum.'
         });
     }
 
@@ -94,7 +91,7 @@ function validateAgainstSchema(
             issues.push({
                 path,
                 code: 'type-mismatch',
-                message: `Expected ${allowedTypes.join(' or ')}.`,
+                message: `Expected ${allowedTypes.join(' or ')}.`
             });
             return;
         }
@@ -105,14 +102,14 @@ function validateAgainstSchema(
             issues.push({
                 path,
                 code: 'min-length',
-                message: `Expected string length >= ${schema.minLength}.`,
+                message: `Expected string length >= ${schema.minLength}.`
             });
         }
         if (schema.maxLength !== undefined && value.length > schema.maxLength) {
             issues.push({
                 path,
                 code: 'max-length',
-                message: `Expected string length <= ${schema.maxLength}.`,
+                message: `Expected string length <= ${schema.maxLength}.`
             });
         }
     }
@@ -122,14 +119,14 @@ function validateAgainstSchema(
             issues.push({
                 path,
                 code: 'minimum',
-                message: `Expected number >= ${schema.minimum}.`,
+                message: `Expected number >= ${schema.minimum}.`
             });
         }
         if (schema.maximum !== undefined && value > schema.maximum) {
             issues.push({
                 path,
                 code: 'maximum',
-                message: `Expected number <= ${schema.maximum}.`,
+                message: `Expected number <= ${schema.maximum}.`
             });
         }
     }
@@ -139,20 +136,18 @@ function validateAgainstSchema(
             issues.push({
                 path,
                 code: 'min-items',
-                message: `Expected array length >= ${schema.minItems}.`,
+                message: `Expected array length >= ${schema.minItems}.`
             });
         }
         if (schema.maxItems !== undefined && value.length > schema.maxItems) {
             issues.push({
                 path,
                 code: 'max-items',
-                message: `Expected array length <= ${schema.maxItems}.`,
+                message: `Expected array length <= ${schema.maxItems}.`
             });
         }
         if (schema.items) {
-            value.forEach((entry, index) =>
-                validateAgainstSchema(schema.items!, entry, `${path}[${index}]`, issues)
-            );
+            value.forEach((entry, index) => validateAgainstSchema(schema.items!, entry, `${path}[${index}]`, issues));
         }
     }
 
@@ -163,7 +158,7 @@ function validateAgainstSchema(
                 issues.push({
                     path: `${path}.${requiredKey}`,
                     code: 'required',
-                    message: 'Required property is missing.',
+                    message: 'Required property is missing.'
                 });
             }
         }
@@ -174,7 +169,7 @@ function validateAgainstSchema(
                     propertySchema,
                     value[key],
                     `${path}.${key}`,
-                    issues,
+                    issues
                 );
             }
         }
@@ -185,11 +180,12 @@ function validateAgainstSchema(
                     issues.push({
                         path: `${path}.${key}`,
                         code: 'additional-property',
-                        message: 'Additional property is not allowed.',
+                        message: 'Additional property is not allowed.'
                     });
                 }
             }
-        } else if (
+        }
+        else if (
             schema.additionalProperties &&
             typeof schema.additionalProperties === 'object'
         ) {
@@ -199,7 +195,7 @@ function validateAgainstSchema(
                         schema.additionalProperties,
                         entry,
                         `${path}.${key}`,
-                        issues,
+                        issues
                     );
                 }
             }
@@ -246,7 +242,7 @@ function toStableJson(value: unknown): unknown {
     return Object.fromEntries(
         Object.entries(value as Record<string, unknown>)
             .sort(([left], [right]) => left.localeCompare(right))
-            .map(([key, entry]) => [key, toStableJson(entry)]),
+            .map(([key, entry]) => [key, toStableJson(entry)])
     );
 }
 

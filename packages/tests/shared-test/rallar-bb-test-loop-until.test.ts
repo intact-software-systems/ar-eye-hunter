@@ -1,14 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime.ts';
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control-protocol.ts';
-import {
-    RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
-    validateJsonSchema,
-} from '../../shared-test/rallar-bb-test/schema.ts';
-import type {
-    RallarBlackBoxTestLoopResultValue,
-    RallarBlackBoxTestRuntime,
-} from '../../shared-test/rallar-bb-test/types.ts';
+import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime.ts';
+import { RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema.ts';
+import type { RallarBlackBoxTestLoopResultValue, RallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/types.ts';
 
 function createPollingRuntime(): Readonly<{
     runtime: RallarBlackBoxTestRuntime;
@@ -20,10 +14,10 @@ function createPollingRuntime(): Readonly<{
     const runtime = createRallarBlackBoxTestRuntime({
         now: () => now++,
         idFactory: (prefix) => `${prefix}-${sequence++}`,
-        sleep: async ms => {
+        sleep: async (ms) => {
             sleptDurations.push(ms);
             now += ms;
-        },
+        }
     });
     return { runtime, sleptDurations };
 }
@@ -42,16 +36,16 @@ describe('rallar-bb-test loop until first-success', () => {
                 {
                     kind: 'http.request',
                     commandId: 'poll-request',
-                    request: { url: 'https://api.example.test/status' },
+                    request: { url: 'https://api.example.test/status' }
                 },
                 {
                     kind: 'assert',
                     commandId: 'poll-assert-converged',
                     source: 'state.commandHistory.length',
                     operator: 'gte',
-                    expected: 5,
-                },
-            ],
+                    expected: 5
+                }
+            ]
         });
 
         expect(result.ok).toBe(true);
@@ -75,18 +69,18 @@ describe('rallar-bb-test loop until first-success', () => {
                     commandId: 'poll-gate',
                     source: 'state.commandHistory.length',
                     operator: 'gte',
-                    expected: 2,
+                    expected: 2
                 },
                 {
                     kind: 'health',
-                    commandId: 'poll-after-gate',
-                },
-            ],
+                    commandId: 'poll-after-gate'
+                }
+            ]
         });
 
         expect(result.ok).toBe(true);
         const value = result.value as RallarBlackBoxTestLoopResultValue;
-        const attemptChildCounts = value.pacing?.iterations.map(entry => entry.commandCount);
+        const attemptChildCounts = value.pacing?.iterations.map((entry) => entry.commandCount);
         expect(attemptChildCounts).toEqual([1, 1, 2]);
     });
 
@@ -105,16 +99,16 @@ describe('rallar-bb-test loop until first-success', () => {
                     commandId: 'poll-never-converges',
                     source: 'state.commandHistory.length',
                     operator: 'lte',
-                    expected: -1,
-                },
-            ],
+                    expected: -1
+                }
+            ]
         });
 
         expect(result.status).toBe('failed');
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED');
         const details = result.error?.details as {
             attempts: number;
-            lastFailedChildResult: { commandId: string; result: { ok: boolean } };
+            lastFailedChildResult: { commandId: string; result: { ok: boolean; }; };
         };
         expect(details.attempts).toBe(3);
         expect(details.lastFailedChildResult.result.ok).toBe(false);
@@ -139,9 +133,9 @@ describe('rallar-bb-test loop until first-success', () => {
                     commandId: 'poll-backoff-never',
                     source: 'state.commandHistory.length',
                     operator: 'lte',
-                    expected: -1,
-                },
-            ],
+                    expected: -1
+                }
+            ]
         });
 
         expect(result.error?.code).toBe('RALLAR_BLACK_BOX_LOOP_UNTIL_EXHAUSTED');
@@ -156,7 +150,7 @@ describe('rallar-bb-test loop until first-success', () => {
             commandId: 'until-continue-contradiction',
             until: 'first-success',
             continueOnFailure: true,
-            commands: [{ kind: 'health', commandId: 'until-health' }],
+            commands: [{ kind: 'health', commandId: 'until-health' }]
         });
         expect(contradiction.status).toBe('failed');
         expect(contradiction.error?.code).toBe('RALLAR_BLACK_BOX_LOOP_INVALID');
@@ -165,7 +159,7 @@ describe('rallar-bb-test loop until first-success', () => {
             kind: 'loop',
             commandId: 'lone-backoff',
             backoffMultiplier: 2,
-            commands: [{ kind: 'health', commandId: 'lone-backoff-health' }],
+            commands: [{ kind: 'health', commandId: 'lone-backoff-health' }]
         });
         expect(loneBackoff.status).toBe('failed');
         expect(loneBackoff.error?.code).toBe('RALLAR_BLACK_BOX_LOOP_INVALID');
@@ -179,7 +173,7 @@ describe('rallar-bb-test loop until first-success', () => {
             backoffMultiplier: 1.5,
             count: 5,
             intervalMs: 10,
-            commands: [{ kind: 'health', commandId: 'until-child' }],
+            commands: [{ kind: 'health', commandId: 'until-child' }]
         })).toEqual({ ok: true });
 
         expect(validateRallarBlackBoxTestCommand({
@@ -187,20 +181,20 @@ describe('rallar-bb-test loop until first-success', () => {
             commandId: 'until-protocol-contradiction',
             until: 'first-success',
             continueOnFailure: true,
-            commands: [{ kind: 'health', commandId: 'until-child' }],
+            commands: [{ kind: 'health', commandId: 'until-child' }]
         })).toEqual({
             ok: false,
-            error: 'loop.continueOnFailure contradicts until mode.',
+            error: 'loop.continueOnFailure contradicts until mode.'
         });
 
         expect(validateRallarBlackBoxTestCommand({
             kind: 'loop',
             commandId: 'until-protocol-lone-backoff',
             backoffMultiplier: 2,
-            commands: [{ kind: 'health', commandId: 'until-child' }],
+            commands: [{ kind: 'health', commandId: 'until-child' }]
         })).toEqual({
             ok: false,
-            error: 'loop.backoffMultiplier requires until mode.',
+            error: 'loop.backoffMultiplier requires until mode.'
         });
 
         expect(validateRallarBlackBoxTestCommand({
@@ -208,33 +202,39 @@ describe('rallar-bb-test loop until first-success', () => {
             commandId: 'until-protocol-low-backoff',
             until: 'first-success',
             backoffMultiplier: 0.5,
-            commands: [{ kind: 'health', commandId: 'until-child' }],
+            commands: [{ kind: 'health', commandId: 'until-child' }]
         })).toEqual({
             ok: false,
-            error: 'loop.backoffMultiplier must be >= 1.',
+            error: 'loop.backoffMultiplier must be >= 1.'
         });
 
-        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
-            kind: 'loop',
-            commandId: 'until-schema-valid',
-            until: 'first-success',
-            backoffMultiplier: 2,
-            commands: [{ kind: 'health', commandId: 'until-child' }],
-        }).ok).toBe(true);
+        expect(
+            validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+                kind: 'loop',
+                commandId: 'until-schema-valid',
+                until: 'first-success',
+                backoffMultiplier: 2,
+                commands: [{ kind: 'health', commandId: 'until-child' }]
+            }).ok
+        ).toBe(true);
 
-        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
-            kind: 'loop',
-            commandId: 'until-schema-invalid-mode',
-            until: 'always',
-            commands: [{ kind: 'health', commandId: 'until-child' }],
-        }).ok).toBe(false);
+        expect(
+            validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+                kind: 'loop',
+                commandId: 'until-schema-invalid-mode',
+                until: 'always',
+                commands: [{ kind: 'health', commandId: 'until-child' }]
+            }).ok
+        ).toBe(false);
 
-        expect(validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
-            kind: 'loop',
-            commandId: 'until-schema-invalid-backoff',
-            until: 'first-success',
-            backoffMultiplier: 0,
-            commands: [{ kind: 'health', commandId: 'until-child' }],
-        }).ok).toBe(false);
+        expect(
+            validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
+                kind: 'loop',
+                commandId: 'until-schema-invalid-backoff',
+                until: 'first-success',
+                backoffMultiplier: 0,
+                commands: [{ kind: 'health', commandId: 'until-child' }]
+            }).ok
+        ).toBe(false);
     });
 });

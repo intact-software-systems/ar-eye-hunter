@@ -1,17 +1,14 @@
 import type {
     ControlDistributedRunCommandLink,
     ControlDistributedRunSnapshot,
-    ControlRunSnapshot,
+    ControlRunSnapshot
 } from './control-snapshots.ts';
 import { payloadReferencesDistributedRun } from './distributed-artifact-evidence-utils.ts';
 import {
     createDistributedRunMonitorMembershipIndex,
-    type DistributedRunMonitorMembershipIndex,
+    type DistributedRunMonitorMembershipIndex
 } from './distributed-run-monitor-membership-index.ts';
-import type {
-    DistributedRunFailureRow,
-    DistributedRunRuntimeDiagnosticRow,
-} from './distributed-run-monitor.ts';
+import type { DistributedRunFailureRow, DistributedRunRuntimeDiagnosticRow } from './distributed-run-monitor.ts';
 
 type ControlCommandSnapshot = ControlRunSnapshot['commands'][number];
 type ControlResultSnapshot = ControlRunSnapshot['results'][number];
@@ -37,10 +34,13 @@ export type DistributedRunMonitorIndex = Readonly<{
     firstCommandPhasesById: ReadonlyMap<string, DistributedRunCommandPhase>;
     linksByAgentId: ReadonlyMap<string, DistributedRunMonitorAgentLinks>;
     linksByRecipeId: ReadonlyMap<string, readonly ControlDistributedRunCommandLink[]>;
-    progressLinksByRecipeId: ReadonlyMap<string, Readonly<{
-        start: readonly ControlDistributedRunCommandLink[];
-        stage: readonly ControlDistributedRunCommandLink[];
-    }>>;
+    progressLinksByRecipeId: ReadonlyMap<
+        string,
+        Readonly<{
+            start: readonly ControlDistributedRunCommandLink[];
+            stage: readonly ControlDistributedRunCommandLink[];
+        }>
+    >;
     membership: DistributedRunMonitorMembershipIndex;
     commandCounts: Readonly<{
         total: number;
@@ -115,13 +115,11 @@ export type DistributedRunAnalysisReportWork = Readonly<{
 }>;
 
 type MutableDistributedRunMonitorDerivationWork = {
-    -readonly [Key in keyof DistributedRunMonitorDerivationWork]:
-        DistributedRunMonitorDerivationWork[Key];
+    -readonly [Key in keyof DistributedRunMonitorDerivationWork]: DistributedRunMonitorDerivationWork[Key];
 };
 
 type MutableAgentLinks = {
-    -readonly [Key in keyof DistributedRunMonitorAgentLinks]:
-        ControlDistributedRunCommandLink[];
+    -readonly [Key in keyof DistributedRunMonitorAgentLinks]: ControlDistributedRunCommandLink[];
 };
 
 type MutableRecipeProgressLinks = {
@@ -151,14 +149,16 @@ export type DistributedRunMonitorAnalysisReuse = Readonly<{
 const derivationWorkByObservable = new WeakMap<object, DistributedRunMonitorDerivationWork>();
 const analysisReuseByObservable = new WeakMap<object, DistributedRunMonitorAnalysisReuse>();
 
-export function createDistributedRunMonitorIndex(input: Readonly<{
-    distributedRun: ControlDistributedRunSnapshot;
-    controlRun?: ControlRunSnapshot;
-}>): DistributedRunMonitorIndex {
+export function createDistributedRunMonitorIndex(
+    input: Readonly<{
+        distributedRun: ControlDistributedRunSnapshot;
+        controlRun?: ControlRunSnapshot;
+    }>
+): DistributedRunMonitorIndex {
     const work = emptyDerivationWork();
     const membership = createDistributedRunMonitorMembershipIndex(
         input.distributedRun,
-        work,
+        work
     );
     work.commandLinkIndexPassCount = 1;
     const linkedCommandIds = new Set<string>();
@@ -175,7 +175,7 @@ export function createDistributedRunMonitorIndex(input: Readonly<{
         mutableLinksByAgentId.set(agentId, emptyAgentLinks());
     }
     const recipeIds = membership.recipeIds;
-    recipeIds.forEach(recipeId => {
+    recipeIds.forEach((recipeId) => {
         mutableLinksByRecipeId.set(recipeId, []);
         mutableProgressLinksByRecipeId.set(recipeId, { start: [], stage: [] });
     });
@@ -194,7 +194,7 @@ export function createDistributedRunMonitorIndex(input: Readonly<{
         }
         linkCountByCommandId.set(
             link.commandId,
-            (linkCountByCommandId.get(link.commandId) ?? 0) + 1,
+            (linkCountByCommandId.get(link.commandId) ?? 0) + 1
         );
         agentIds.add(link.agentId);
         const agentLinks = mutableLinksByAgentId.get(link.agentId) ?? emptyAgentLinks();
@@ -203,10 +203,18 @@ export function createDistributedRunMonitorIndex(input: Readonly<{
         }
         agentLinks.all.push(link);
         agentLinks[link.phase].push(link);
-        if (link.phase === 'stage') stage += 1;
-        if (link.phase === 'barrier') barrier += 1;
-        if (link.phase === 'start') start += 1;
-        if (link.phase === 'cancel') cancel += 1;
+        if (link.phase === 'stage') {
+            stage += 1;
+        }
+        if (link.phase === 'barrier') {
+            barrier += 1;
+        }
+        if (link.phase === 'start') {
+            start += 1;
+        }
+        if (link.phase === 'cancel') {
+            cancel += 1;
+        }
 
         const recipeId = link.recipeId ??
             (recipeIds.length === 1 ? recipeIds[0] : undefined);
@@ -235,11 +243,17 @@ export function createDistributedRunMonitorIndex(input: Readonly<{
         work.controlResultIndexPassCount = 1;
         for (const result of input.controlRun.results) {
             work.controlResultVisitCount += 1;
-            if (!linkedCommandIds.has(result.commandId)) continue;
+            if (!linkedCommandIds.has(result.commandId)) {
+                continue;
+            }
             linkedResults.push(result);
             resultsByCommandId.set(result.commandId, result);
-            if (result.ok) okResults += 1;
-            else failedResults += 1;
+            if (result.ok) {
+                okResults += 1;
+            }
+            else {
+                failedResults += 1;
+            }
             const durationMs = result.result?.durationMs;
             if (typeof durationMs === 'number' && Number.isFinite(durationMs)) {
                 latencies.push(durationMs);
@@ -256,7 +270,9 @@ export function createDistributedRunMonitorIndex(input: Readonly<{
         if (result !== undefined || command?.completedAtEpochMs !== undefined) {
             completed += linkCount;
         }
-        if (result?.ok === false) failed += linkCount;
+        if (result?.ok === false) {
+            failed += linkCount;
+        }
     });
 
     const linkedControlEvents: ControlEventSnapshot[] = [];
@@ -268,7 +284,7 @@ export function createDistributedRunMonitorIndex(input: Readonly<{
                 (event.commandId !== undefined && linkedCommandIds.has(event.commandId)) ||
                 monitorPayloadReferencesDistributedRun(
                     event.payload,
-                    input.distributedRun.distributedRunId,
+                    input.distributedRun.distributedRunId
                 )
             ) {
                 linkedControlEvents.push(event);
@@ -297,29 +313,31 @@ export function createDistributedRunMonitorIndex(input: Readonly<{
             cancel,
             completed,
             failed,
-            pending: Math.max(0, input.distributedRun.commandLinks.length - completed),
+            pending: Math.max(0, input.distributedRun.commandLinks.length - completed)
         },
         resultCounts: {
             total: linkedResults.length,
             ok: okResults,
-            failed: failedResults,
+            failed: failedResults
         },
         latencies,
-        work,
+        work
     };
 }
 
 export function createDistributedRunMonitorFailureIndex(
     failures: readonly DistributedRunFailureRow[],
-    monitorIndex: DistributedRunMonitorIndex,
+    monitorIndex: DistributedRunMonitorIndex
 ): DistributedRunMonitorFailureIndex {
     const mutablePositionsByCommandKey = new Map<string, number[]>();
     const mutableTimedPositionsByAgentId = new Map<string, TimedFailurePosition[]>();
     failures.forEach((failure, position) => {
         monitorIndex.work.failureIndexVisitCount += 1;
         const commandKeys = new Set([failure.commandId, failure.key]);
-        commandKeys.forEach(commandKey => {
-            if (commandKey === undefined) return;
+        commandKeys.forEach((commandKey) => {
+            if (commandKey === undefined) {
+                return;
+            }
             const positions = mutablePositionsByCommandKey.get(commandKey) ?? [];
             if (!mutablePositionsByCommandKey.has(commandKey)) {
                 mutablePositionsByCommandKey.set(commandKey, positions);
@@ -338,26 +356,24 @@ export function createDistributedRunMonitorFailureIndex(
             positions.push({ atEpochMs: failure.atEpochMs, position });
         }
     });
-    mutableTimedPositionsByAgentId.forEach(positions => {
-        positions.sort((left, right) =>
-            left.atEpochMs - right.atEpochMs || left.position - right.position
-        );
+    mutableTimedPositionsByAgentId.forEach((positions) => {
+        positions.sort((left, right) => left.atEpochMs - right.atEpochMs || left.position - right.position);
     });
     return {
         failures,
         positionsByCommandKey: mutablePositionsByCommandKey,
         timedPositionsByAgentId: mutableTimedPositionsByAgentId,
-        work: monitorIndex.work,
+        work: monitorIndex.work
     };
 }
 
 export function distributedRunCorrelatedFailureKeys(
     diagnostic: Omit<DistributedRunRuntimeDiagnosticRow, 'correlatedFailureKeys'>,
-    index: DistributedRunMonitorFailureIndex,
+    index: DistributedRunMonitorFailureIndex
 ): readonly string[] {
     const positions = new Set<number>();
     if (diagnostic.commandId) {
-        index.positionsByCommandKey.get(diagnostic.commandId)?.forEach(position => {
+        index.positionsByCommandKey.get(diagnostic.commandId)?.forEach((position) => {
             index.work.diagnosticFailureCandidateVisitCount += 1;
             positions.add(position);
         });
@@ -369,26 +385,28 @@ export function distributedRunCorrelatedFailureKeys(
         const start = lowerBoundTimedFailure(timedPositions, minimum);
         for (let cursor = start; cursor < timedPositions.length; cursor += 1) {
             const candidate = timedPositions[cursor]!;
-            if (candidate.atEpochMs > maximum) break;
+            if (candidate.atEpochMs > maximum) {
+                break;
+            }
             index.work.diagnosticFailureCandidateVisitCount += 1;
             positions.add(candidate.position);
         }
     }
     return [...positions]
         .sort((left, right) => left - right)
-        .map(position => index.failures[position]!.key);
+        .map((position) => index.failures[position]!.key);
 }
 
 export function recordDistributedRunMonitorDerivation(
     monitor: object,
     index: DistributedRunMonitorIndex,
-    distributedRun: ControlDistributedRunSnapshot,
+    distributedRun: ControlDistributedRunSnapshot
 ): void {
     analysisReuseByObservable.set(monitor, {
         work: index.work,
         firstCommandPhasesById: index.firstCommandPhasesById,
         distributedRunAuthority: new WeakSet([distributedRun]),
-        commandLinksAuthority: new WeakSet([distributedRun.commandLinks]),
+        commandLinksAuthority: new WeakSet([distributedRun.commandLinks])
     });
     derivationWorkByObservable.set(monitor, Object.freeze({ ...index.work }));
 }
@@ -396,27 +414,27 @@ export function recordDistributedRunMonitorDerivation(
 export function recordDistributedRunAnalysisReportDerivation(
     report: object,
     monitor: object,
-    reportWork: DistributedRunAnalysisReportWork,
+    reportWork: DistributedRunAnalysisReportWork
 ): void {
     const monitorWork = analysisReuseByObservable.get(monitor)?.work ??
         derivationWorkByObservable.get(monitor) ??
         emptyDerivationWork(0);
-    derivationWorkByObservable.set(report, Object.freeze({
-        ...monitorWork,
-        reportDerivationCount: monitorWork.reportDerivationCount + 1,
-        reportCommandLinkLookupCount: reportWork.reportCommandLinkLookupCount,
-        reportFallbackCommandLinkIndexPassCount:
-            reportWork.reportFallbackCommandLinkIndexPassCount,
-        reportFallbackCommandLinkVisitCount:
-            reportWork.reportFallbackCommandLinkVisitCount,
-        reportFallbackCommandPhaseLookupCount:
-            reportWork.reportFallbackCommandPhaseLookupCount,
-    }));
+    derivationWorkByObservable.set(
+        report,
+        Object.freeze({
+            ...monitorWork,
+            reportDerivationCount: monitorWork.reportDerivationCount + 1,
+            reportCommandLinkLookupCount: reportWork.reportCommandLinkLookupCount,
+            reportFallbackCommandLinkIndexPassCount: reportWork.reportFallbackCommandLinkIndexPassCount,
+            reportFallbackCommandLinkVisitCount: reportWork.reportFallbackCommandLinkVisitCount,
+            reportFallbackCommandPhaseLookupCount: reportWork.reportFallbackCommandPhaseLookupCount
+        })
+    );
 }
 
 export function distributedRunMonitorAnalysisReuseFor(
     monitor: object,
-    distributedRun: ControlDistributedRunSnapshot,
+    distributedRun: ControlDistributedRunSnapshot
 ): DistributedRunMonitorAnalysisReuse | undefined {
     const reuse = analysisReuseByObservable.get(monitor);
     return reuse?.distributedRunAuthority.has(distributedRun) === true &&
@@ -427,7 +445,7 @@ export function distributedRunMonitorAnalysisReuseFor(
 
 export function distributedRunMonitorFirstPhaseForCommand(
     reuse: DistributedRunMonitorAnalysisReuse,
-    commandId: string | undefined,
+    commandId: string | undefined
 ): DistributedRunCommandPhase | undefined {
     return commandId === undefined
         ? undefined
@@ -436,7 +454,7 @@ export function distributedRunMonitorFirstPhaseForCommand(
 
 export function distributedRunMonitorAgentLinksForProgress(
     index: DistributedRunMonitorIndex,
-    agentId: string,
+    agentId: string
 ): DistributedRunMonitorAgentLinks {
     index.work.agentLinkBucketLookupCount += 1;
     return index.linksByAgentId.get(agentId) ?? emptyAgentLinks();
@@ -445,7 +463,7 @@ export function distributedRunMonitorAgentLinksForProgress(
 export function distributedRunMonitorAgentEventsForProgress<Value>(
     index: DistributedRunMonitorIndex,
     eventsByAgentId: ReadonlyMap<string, readonly Value[]>,
-    agentId: string,
+    agentId: string
 ): readonly Value[] {
     index.work.agentEventBucketLookupCount += 1;
     return eventsByAgentId.get(agentId) ?? [];
@@ -453,7 +471,7 @@ export function distributedRunMonitorAgentEventsForProgress<Value>(
 
 export function distributedRunMonitorRecipeLinks(
     index: DistributedRunMonitorIndex,
-    recipeId: string,
+    recipeId: string
 ): readonly ControlDistributedRunCommandLink[] {
     index.work.recipeLinkBucketLookupCount += 1;
     const links = index.progressLinksByRecipeId.get(recipeId);
@@ -466,7 +484,7 @@ export function distributedRunMonitorRecipeLinks(
 
 export function distributedRunMonitorReadinessStageLinks(
     index: DistributedRunMonitorIndex,
-    agentId: string,
+    agentId: string
 ): readonly ControlDistributedRunCommandLink[] {
     index.work.readinessLinkBucketLookupCount += 1;
     return index.linksByAgentId.get(agentId)?.stage ?? [];
@@ -474,10 +492,12 @@ export function distributedRunMonitorReadinessStageLinks(
 
 /** Test-only structural work snapshot; deliberately excluded from the public barrel. */
 export function distributedRunMonitorDerivationWorkForTest(
-    observable: object,
+    observable: object
 ): DistributedRunMonitorDerivationWork {
     const work = derivationWorkByObservable.get(observable);
-    if (!work) throw new Error('The distributed run derivation has no work snapshot.');
+    if (!work) {
+        throw new Error('The distributed run derivation has no work snapshot.');
+    }
     return { ...work };
 }
 
@@ -486,7 +506,7 @@ function emptyAgentLinks(): MutableAgentLinks {
 }
 
 function emptyDerivationWork(
-    monitorDerivationCount = 1,
+    monitorDerivationCount = 1
 ): MutableDistributedRunMonitorDerivationWork {
     return {
         monitorDerivationCount,
@@ -531,27 +551,31 @@ function emptyDerivationWork(
         reportCommandLinkLookupCount: 0,
         reportFallbackCommandLinkIndexPassCount: 0,
         reportFallbackCommandLinkVisitCount: 0,
-        reportFallbackCommandPhaseLookupCount: 0,
+        reportFallbackCommandPhaseLookupCount: 0
     };
 }
 
 function lowerBoundTimedFailure(
     values: readonly TimedFailurePosition[],
-    minimum: number,
+    minimum: number
 ): number {
     let low = 0;
     let high = values.length;
     while (low < high) {
         const middle = low + Math.floor((high - low) / 2);
-        if (values[middle]!.atEpochMs < minimum) low = middle + 1;
-        else high = middle;
+        if (values[middle]!.atEpochMs < minimum) {
+            low = middle + 1;
+        }
+        else {
+            high = middle;
+        }
     }
     return low;
 }
 
 function monitorPayloadReferencesDistributedRun(
     payload: unknown,
-    distributedRunId: string,
+    distributedRunId: string
 ): boolean {
     return Boolean(payload) &&
         payloadReferencesDistributedRun(payload, distributedRunId);

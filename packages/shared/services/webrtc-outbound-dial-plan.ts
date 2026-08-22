@@ -29,7 +29,7 @@ export type OutboundDialPlan = Readonly<{
  * pre-Phase-1 dialing.
  */
 export function computeOutboundDialPlan(
-    input: OutboundDialPlanInput,
+    input: OutboundDialPlanInput
 ): OutboundDialPlan {
     if (input.mode === 'legacy-star') {
         return { peersToConnect: input.connectablePeerIds, deferredPeerIds: [] };
@@ -41,7 +41,7 @@ export function computeOutboundDialPlan(
         .filter((peerId) => !input.knownPeerIds.has(peerId));
     const serverFirstCandidates = [
         ...newCandidates.filter((peerId) => input.serverDesiredPeerIds.has(peerId)),
-        ...newCandidates.filter((peerId) => !input.serverDesiredPeerIds.has(peerId)),
+        ...newCandidates.filter((peerId) => !input.serverDesiredPeerIds.has(peerId))
     ];
 
     const desiredKnownCount = Array.from(input.knownPeerIds)
@@ -49,14 +49,14 @@ export function computeOutboundDialPlan(
         .length;
     const newDialBudget = Math.max(
         0,
-        input.maxPeerConnections - desiredKnownCount,
+        input.maxPeerConnections - desiredKnownCount
     );
 
     return {
         peersToConnect: [
             ...alreadyKnown,
-            ...serverFirstCandidates.slice(0, newDialBudget),
+            ...serverFirstCandidates.slice(0, newDialBudget)
         ],
-        deferredPeerIds: serverFirstCandidates.slice(newDialBudget),
+        deferredPeerIds: serverFirstCandidates.slice(newDialBudget)
     };
 }

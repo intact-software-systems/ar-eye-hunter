@@ -3,7 +3,7 @@ import '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import type {
     ControlDistributedRunArtifactBundle,
     ControlDistributedRunSnapshot,
-    ControlRunSnapshot,
+    ControlRunSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 
 describe('rallar-bb-test control snapshot contracts', () => {
@@ -18,7 +18,7 @@ describe('rallar-bb-test control snapshot contracts', () => {
             events: [],
             stats: [],
             reports: [],
-            heartbeats: [],
+            heartbeats: []
         } satisfies ControlRunSnapshot;
 
         const distributedRun = {
@@ -29,13 +29,13 @@ describe('rallar-bb-test control snapshot contracts', () => {
                 group: {
                     applicationId: 'rallar-server',
                     workspaceId: 'default',
-                    groupId: 'room-1',
+                    groupId: 'room-1'
                 },
                 recipes: [],
                 targetPolicy: {
                     mode: 'selected-agents',
-                    agentIds: [],
-                },
+                    agentIds: []
+                }
             },
             state: 'draft',
             createdAtEpochMs: 1,
@@ -58,11 +58,11 @@ describe('rallar-bb-test control snapshot contracts', () => {
                     groupAssertions: 0,
                     passedGroupAssertions: 0,
                     failedGroupAssertions: 0,
-                    blockingFailures: 0,
+                    blockingFailures: 0
                 },
                 groupAssertions: [],
-                failures: [],
-            },
+                failures: []
+            }
         } satisfies ControlDistributedRunSnapshot;
 
         const artifact = {
@@ -77,8 +77,8 @@ describe('rallar-bb-test control snapshot contracts', () => {
                 'results.jsonl': '',
                 'events.jsonl': '',
                 'failures.json': '{}',
-                'metadata.json': '{}',
-            },
+                'metadata.json': '{}'
+            }
         } satisfies ControlDistributedRunArtifactBundle;
 
         expect(artifact.distributedRunId).toBe('dist-1');

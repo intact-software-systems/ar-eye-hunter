@@ -266,12 +266,12 @@ RTT refresh is a latest-value workload and may coalesce while pending:
 
 ```ts
 type RtcTopologyRttRefreshWork = {
-  kind: 'rtt-refresh';
-  groupSnapshot: GroupSnapshot;
-  requestedGroupStateRevision: number;
-  requestedRttVersion: number;
-  overlayId: string;
-  requestedAtEpochMs: number;
+    kind: 'rtt-refresh';
+    groupSnapshot: GroupSnapshot;
+    requestedGroupStateRevision: number;
+    requestedRttVersion: number;
+    overlayId: string;
+    requestedAtEpochMs: number;
 };
 ```
 
@@ -399,11 +399,11 @@ contains only the canonical durable queue key:
 
 ```ts
 type QueueBoxPubSubMessage = {
-  delivery: 'key';
-  publisherId: string;
-  channel: string;
-  typeId: 'WS_OUTBOX';
-  key: { topicId: string; resourceId: string; contextId: string };
+    delivery: 'key';
+    publisherId: string;
+    channel: string;
+    typeId: 'WS_OUTBOX';
+    key: { topicId: string; resourceId: string; contextId: string; };
 };
 ```
 

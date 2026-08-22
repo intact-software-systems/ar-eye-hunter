@@ -6,19 +6,12 @@ import {
     GAME_SNAPSHOT_LANE_ID,
     isArenaAcceptedShotFromSender,
     isArenaPickupIntentFromSender,
-    isArenaPoseIntentFromSender,
     isArenaPlayerHitIntentFromSender,
-    isArenaShotIntentFromSender,
+    isArenaPoseIntentFromSender,
+    isArenaShotIntentFromSender
 } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
-import type {
-    GameRealtimeMessage,
-    PlayerPose,
-    ShotIntent,
-} from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
-import {
-    GAME_AI_TOPIC_ID,
-    GAME_DIRECTOR_TOPIC_ID,
-} from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
+import type { GameRealtimeMessage, PlayerPose, ShotIntent } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
+import { GAME_AI_TOPIC_ID, GAME_DIRECTOR_TOPIC_ID } from '../../../apps/ar-eye-hunter-v1/src/game/types.ts';
 
 describe('AR Eye Hunter Rallar Game match adapter', () => {
     it('maps AR lanes into the generic Rallar Game lane model', () => {
@@ -27,7 +20,7 @@ describe('AR Eye Hunter Rallar Game match adapter', () => {
             intent: 'combat',
             snapshot: GAME_SNAPSHOT_LANE_ID,
             metrics: 'fx',
-            replication: 'ai-events',
+            replication: 'ai-events'
         });
         expect(ARENA_RALLAR_GAME_DATA_CHANNEL_LANES.map((lane) => lane.id))
             .toContain(GAME_SNAPSHOT_LANE_ID);
@@ -43,12 +36,12 @@ describe('AR Eye Hunter Rallar Game match adapter', () => {
         const poseIntent: GameRealtimeMessage = {
             protocol: 'ar-eye-hunter.v1',
             kind: 'player-pose-intent',
-            pose,
+            pose
         };
         const shotIntent: GameRealtimeMessage = {
             protocol: 'ar-eye-hunter.v1',
             kind: 'player-shot-intent',
-            shot: shot('peer-a'),
+            shot: shot('peer-a')
         };
         const acceptedShot: GameRealtimeMessage = {
             protocol: 'ar-eye-hunter.v1',
@@ -63,8 +56,8 @@ describe('AR Eye Hunter Rallar Game match adapter', () => {
                 multiplier: 1,
                 overdrive: 20,
                 revision: 3,
-                acceptedAtEpochMs: 1_000,
-            },
+                acceptedAtEpochMs: 1_000
+            }
         };
         const playerHitIntent: GameRealtimeMessage = {
             protocol: 'ar-eye-hunter.v1',
@@ -73,8 +66,8 @@ describe('AR Eye Hunter Rallar Game match adapter', () => {
                 shot: shot('peer-a'),
                 targetSessionId: 'peer-b',
                 predictedImpact: [0, 2, 4],
-                sentAtEpochMs: 1_000,
-            },
+                sentAtEpochMs: 1_000
+            }
         };
         const pickupIntent: GameRealtimeMessage = {
             protocol: 'ar-eye-hunter.v1',
@@ -84,8 +77,8 @@ describe('AR Eye Hunter Rallar Game match adapter', () => {
                 sessionId: 'peer-a',
                 position: [0, 1, 0],
                 seq: 1,
-                sentAtEpochMs: 1_000,
-            },
+                sentAtEpochMs: 1_000
+            }
         };
 
         expect(isArenaPoseIntentFromSender(poseIntent, 'peer-a')).toBe(true);
@@ -110,7 +103,7 @@ function playerPose(sessionId: string): PlayerPose {
         rotation: [0, 0, 0],
         score: 0,
         seq: 1,
-        sentAtEpochMs: 1_000,
+        sentAtEpochMs: 1_000
     };
 }
 
@@ -122,6 +115,6 @@ function shot(sessionId: string): ShotIntent {
         origin: [0, 2, 0],
         direction: [0, 0, 1],
         seq: 1,
-        sentAtEpochMs: 1_000,
+        sentAtEpochMs: 1_000
     };
 }

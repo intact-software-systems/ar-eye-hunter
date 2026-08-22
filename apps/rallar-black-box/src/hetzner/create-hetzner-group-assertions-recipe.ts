@@ -1,13 +1,13 @@
 import type {
     RallarBlackBoxDistributedGroupAssertion,
-    RallarBlackBoxDistributedGroupRef,
+    RallarBlackBoxDistributedGroupRef
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types.ts';
 
 const CONTROL_TOPIC = 'black-box.group-assertions.control';
 const LEAK_PROBE_TOPIC = 'black-box.group-assertions.leak-probe';
-const ENSURE_GROUP_REQUEST_ID = 'c9602657-7db6-48c2-b9dd-fadf8e4f76eb-{runId}';
-const ENSURE_MEMBER_REQUEST_ID = 'f026327b-5bb1-4246-9694-cec49a0ca372-{runId}';
+const ENSURE_GROUP_REQUEST_ID = 'c9602657-7db6-48c2-b9dd-fadf8e4f76eb-{runtimeIdentity}';
+const ENSURE_MEMBER_REQUEST_ID = 'f026327b-5bb1-4246-9694-cec49a0ca372-{runtimeIdentity}';
 
 export const HETZNER_GROUP_ASSERTIONS_RECIPE_ID = 'group-assertions-recipe';
 
@@ -16,12 +16,12 @@ export const HETZNER_GROUP_ASSERTIONS_RECIPE_ID = 'group-assertions-recipe';
 // the leak-probe marker, then polls the shared group snapshot until both
 // members converged and records one final read as coordinator evidence.
 export function createHetznerGroupAssertionsRecipe(
-    group: RallarBlackBoxDistributedGroupRef,
+    group: RallarBlackBoxDistributedGroupRef
 ): RallarBlackBoxTestRecipe {
     const roomRef = {
         applicationId: group.applicationId,
         workspaceId: group.workspaceId,
-        groupId: group.groupId,
+        groupId: group.groupId
     };
     const statePrefix = `/api/state/apps/${group.applicationId}/workspaces/${group.workspaceId}`;
     const groupSnapshotPath = `${statePrefix}/groups/${group.groupId}`;
@@ -32,7 +32,7 @@ export function createHetznerGroupAssertionsRecipe(
         continueOnFailure: false,
         metadata: {
             profile: 'group-assertions',
-            group: roomRef,
+            group: roomRef
         },
         commands: [
             {
@@ -42,7 +42,7 @@ export function createHetznerGroupAssertionsRecipe(
                 metadata: {
                     purpose: 'Ensure the backend group exists before RTC room join.',
                     idempotent: true,
-                    group: roomRef,
+                    group: roomRef
                 },
                 request: {
                     method: 'POST',
@@ -51,13 +51,13 @@ export function createHetznerGroupAssertionsRecipe(
                         groupId: group.groupId,
                         displayName: group.groupId,
                         kind: 'room',
-                        joinMode: 'open',
-                    },
+                        joinMode: 'open'
+                    }
                 },
                 response: {
                     body: 'json',
-                    acceptedStatusCodes: [200, 201, 409],
-                },
+                    acceptedStatusCodes: [200, 201, 409]
+                }
             },
             {
                 kind: 'http.request',
@@ -67,20 +67,20 @@ export function createHetznerGroupAssertionsRecipe(
                     purpose: 'Ensure the logged-in browser client is an active group member ' +
                         'before RTC room join.',
                     idempotent: true,
-                    group: roomRef,
+                    group: roomRef
                 },
                 request: {
                     method: 'PUT',
                     path: `${statePrefix}/groups/${group.groupId}/members/{auth.clientId}` +
                         `/requests/${ENSURE_MEMBER_REQUEST_ID}`,
                     body: {
-                        status: 'active',
-                    },
+                        status: 'active'
+                    }
                 },
                 response: {
                     body: 'json',
-                    acceptedStatusCodes: [200, 201],
-                },
+                    acceptedStatusCodes: [200, 201]
+                }
             },
             {
                 kind: 'rtc.connect',
@@ -96,8 +96,8 @@ export function createHetznerGroupAssertionsRecipe(
                 readiness: {
                     minReadyPeers: 1,
                     timeoutMs: 10_000,
-                    intervalMs: 100,
-                },
+                    intervalMs: 100
+                }
             },
             {
                 kind: 'rtc.send',
@@ -113,10 +113,10 @@ export function createHetznerGroupAssertionsRecipe(
                     data: {
                         topic: CONTROL_TOPIC,
                         marker: 'same-room-positive-control',
-                        actor: '{auth.clientId}',
-                    },
+                        actor: '{auth.clientId}'
+                    }
                 },
-                timeoutMs: 3_000,
+                timeoutMs: 3_000
             },
             {
                 kind: 'wait',
@@ -124,15 +124,15 @@ export function createHetznerGroupAssertionsRecipe(
                 timeoutMs: 10_000,
                 metadata: {
                     purpose: 'Same-room positive control: the control frame must arrive ' +
-                        'before any absence claim.',
+                        'before any absence claim.'
                 },
                 match: {
                     kind: 'message',
                     connection: 'groupAssertionsRtc',
                     topic: 'rallar.browser.realtime.message',
                     payloadPath: 'data.topic',
-                    equals: CONTROL_TOPIC,
-                },
+                    equals: CONTROL_TOPIC
+                }
             },
             {
                 kind: 'wait',
@@ -141,15 +141,15 @@ export function createHetznerGroupAssertionsRecipe(
                 timeoutMs: 4_000,
                 metadata: {
                     purpose: 'Per-agent absence window; the coordinator noneMatch assertion ' +
-                        'then proves no agent anywhere recorded a leak-probe match.',
+                        'then proves no agent anywhere recorded a leak-probe match.'
                 },
                 match: {
                     kind: 'message',
                     connection: 'groupAssertionsRtc',
                     topic: 'rallar.browser.realtime.message',
                     payloadPath: 'data.topic',
-                    equals: LEAK_PROBE_TOPIC,
-                },
+                    equals: LEAK_PROBE_TOPIC
+                }
             },
             {
                 kind: 'loop',
@@ -164,21 +164,21 @@ export function createHetznerGroupAssertionsRecipe(
                         timeoutMs: 5_000,
                         request: {
                             method: 'GET',
-                            path: groupSnapshotPath,
+                            path: groupSnapshotPath
                         },
                         response: {
                             body: 'json',
-                            acceptedStatusCodes: [200],
-                        },
+                            acceptedStatusCodes: [200]
+                        }
                     },
                     {
                         kind: 'assert',
                         commandId: 'group-assertions-membership-converged',
                         source: 'lastResult.value.body.memberCount',
                         operator: 'gte',
-                        expected: 2,
-                    },
-                ],
+                        expected: 2
+                    }
+                ]
             },
             {
                 kind: 'http.request',
@@ -186,22 +186,22 @@ export function createHetznerGroupAssertionsRecipe(
                 timeoutMs: 5_000,
                 metadata: {
                     purpose: 'Final converged snapshot read; the coordinator allEqual and ' +
-                        'allMatch assertions compare this value across every agent.',
+                        'allMatch assertions compare this value across every agent.'
                 },
                 request: {
                     method: 'GET',
-                    path: groupSnapshotPath,
+                    path: groupSnapshotPath
                 },
                 response: {
                     body: 'json',
-                    acceptedStatusCodes: [200],
-                },
+                    acceptedStatusCodes: [200]
+                }
             },
             {
                 kind: 'stats',
-                commandId: 'group-assertions-stats',
-            },
-        ],
+                commandId: 'group-assertions-stats'
+            }
+        ]
     };
 }
 
@@ -209,7 +209,7 @@ export function createHetznerGroupAssertionsRecipe(
 // when every agent agrees on the same wrong value, so the known expectation
 // rides beside it, and noneMatch states the isolation claim fleet-wide.
 export function createHetznerGroupAssertions(
-    expectedParticipantCount: number,
+    expectedParticipantCount: number
 ): readonly RallarBlackBoxDistributedGroupAssertion[] {
     return [
         {
@@ -219,8 +219,8 @@ export function createHetznerGroupAssertions(
             source: {
                 recipeId: HETZNER_GROUP_ASSERTIONS_RECIPE_ID,
                 commandId: 'group-assertions-members-read',
-                path: 'body.memberCount',
-            },
+                path: 'body.memberCount'
+            }
         },
         {
             groupAssertionId: 'members-expected-count',
@@ -229,12 +229,12 @@ export function createHetznerGroupAssertions(
             source: {
                 recipeId: HETZNER_GROUP_ASSERTIONS_RECIPE_ID,
                 commandId: 'group-assertions-members-read',
-                path: 'body.memberCount',
+                path: 'body.memberCount'
             },
             predicate: {
                 operator: 'equals',
-                expected: expectedParticipantCount,
-            },
+                expected: expectedParticipantCount
+            }
         },
         {
             groupAssertionId: 'no-agent-observed-leak',
@@ -244,12 +244,12 @@ export function createHetznerGroupAssertions(
             source: {
                 recipeId: HETZNER_GROUP_ASSERTIONS_RECIPE_ID,
                 commandId: 'group-assertions-no-leak-probe',
-                path: 'matched',
+                path: 'matched'
             },
             predicate: {
                 operator: 'equals',
-                expected: true,
-            },
-        },
+                expected: true
+            }
+        }
     ];
 }

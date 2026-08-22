@@ -1,28 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import type { ControlRunSnapshot } from
-    '../../shared-test/rallar-bb-test/control-snapshots.ts';
-import type {
-    ControlFleetAgentLabel,
-    ControlFleetAgentRunOutcome,
-    ControlFleetRunReport,
-} from '../../shared-test/rallar-bb-test/fleet-report.ts';
+import type { ControlRunSnapshot } from '../../shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     createFleetGeographyHistoricalCollection,
     deriveFleetGeography,
     deriveFleetGeographyFromHistoricalCollection,
-    fleetGeographyRouteEvidenceFromControlRun,
     FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL,
+    fleetGeographyRouteEvidenceFromControlRun,
     resolveFleetGeographyDocumentedLocation,
-    type FleetGeographyLiveAgentEvidence,
+    type FleetGeographyLiveAgentEvidence
 } from '../../shared-test/rallar-bb-test/fleet-geography.ts';
-import { validateControlFleetRunReportCollection } from
-    '../../shared-test/rallar-bb-test/fleet-report-validation.ts';
+import { validateControlFleetRunReportCollection } from '../../shared-test/rallar-bb-test/fleet-report-validation.ts';
+import type { ControlFleetAgentLabel, ControlFleetAgentRunOutcome, ControlFleetRunReport } from '../../shared-test/rallar-bb-test/fleet-report.ts';
 
 function outcome(
     agentId: string,
     label: Omit<ControlFleetAgentLabel, 'agentId'>,
     state: ControlFleetAgentRunOutcome['state'] = 'passed',
-    failureSignatureIds: readonly string[] = [],
+    failureSignatureIds: readonly string[] = []
 ): ControlFleetAgentRunOutcome {
     return {
         agentId,
@@ -39,20 +33,18 @@ function outcome(
         diagnosticCount: state === 'failed' || state === 'timed-out' ? 1 : 0,
         reconnectCount: 0,
         durationMs: 100,
-        failureSignatureIds,
+        failureSignatureIds
     };
 }
 
 function report(
     distributedRunId: string,
     generatedAtEpochMs: number,
-    agents: readonly ControlFleetAgentRunOutcome[],
+    agents: readonly ControlFleetAgentRunOutcome[]
 ): ControlFleetRunReport {
-    const failed = agents.filter(agent =>
-        agent.state === 'failed' || agent.state === 'timed-out'
-    ).length;
-    const missing = agents.filter(agent => agent.missing).length;
-    const passed = agents.filter(agent => agent.state === 'passed').length;
+    const failed = agents.filter((agent) => agent.state === 'failed' || agent.state === 'timed-out').length;
+    const missing = agents.filter((agent) => agent.missing).length;
+    const passed = agents.filter((agent) => agent.state === 'passed').length;
     return {
         fleetReportSchemaVersion: 1,
         distributedRunId,
@@ -63,19 +55,19 @@ function report(
         group: {
             applicationId: 'rallar-server',
             workspaceId: 'default',
-            groupId: 'fleet',
+            groupId: 'fleet'
         },
         recipeIds: ['rtc-smoke'],
         summary: {
             agents: agents.length,
-            regions: new Set(agents.map(agent => agent.label.region)).size,
+            regions: new Set(agents.map((agent) => agent.label.region)).size,
             passed,
             failed,
             missing,
             flaky: 0,
             stale: 0,
             passRate: agents.length > 0 ? passed / agents.length : 0,
-            failureGroups: failed > 0 ? 1 : 0,
+            failureGroups: failed > 0 ? 1 : 0
         },
         timing: { run: { count: 1 }, commands: { count: agents.length } },
         agents,
@@ -84,14 +76,14 @@ function report(
         artifactRefs: {
             distributedRun: `distributed-run:${distributedRunId}`,
             controlRun: `control-run:control-${distributedRunId}`,
-            fleetReport: `fleet-report:${distributedRunId}`,
-        },
+            fleetReport: `fleet-report:${distributedRunId}`
+        }
     };
 }
 
 function live(
     agentId: string,
-    input: Partial<FleetGeographyLiveAgentEvidence> = {},
+    input: Partial<FleetGeographyLiveAgentEvidence> = {}
 ): FleetGeographyLiveAgentEvidence {
     return {
         agentId,
@@ -99,7 +91,7 @@ function live(
         connected: true,
         synthetic: false,
         observedAtEpochMs: 5_000,
-        ...input,
+        ...input
     };
 }
 
@@ -110,55 +102,60 @@ describe('shared fleet geography', () => {
                 latitude: 59.9139,
                 longitude: 10.7522,
                 label: '',
-                precision: 'approximate',
+                precision: 'approximate'
             },
             provider: 'hetzner',
-            datacenter: 'fsn1',
+            datacenter: 'fsn1'
         })).toEqual({
             latitude: 59.9139,
             longitude: 10.7522,
             label: '',
             precision: 'approximate',
-            source: 'explicit',
+            source: 'explicit'
         });
         expect(resolveFleetGeographyDocumentedLocation({
             provider: ' HETZNER ',
-            datacenter: ' HEL1 ',
+            datacenter: ' HEL1 '
         })).toEqual({
             latitude: 60.1699,
             longitude: 24.9384,
             label: 'Hetzner HEL1, Finland',
             precision: 'approximate',
-            source: 'datacenter-lookup',
+            source: 'datacenter-lookup'
         });
         expect(resolveFleetGeographyDocumentedLocation({
-            region: ' US-WEST ',
+            region: ' US-WEST '
         })).toEqual({
             latitude: 45.5,
             longitude: -122.6,
             label: 'US west',
             precision: 'approximate',
-            source: 'region-lookup',
+            source: 'region-lookup'
         });
         expect(resolveFleetGeographyDocumentedLocation({
             location: { latitude: 91, longitude: 0 },
-            provider: 'private-lab',
+            provider: 'private-lab'
         })).toBeUndefined();
     });
 
     it('uses the bound location precedence with provenance and deterministic historical recency', () => {
         const newest = report('run-new', 4_000, [
-            outcome('agent-a', {
-                region: 'eu-north',
-                provider: 'hetzner',
-                datacenter: 'hel1',
-                location: {
-                    latitude: 61,
-                    longitude: 25,
-                    label: 'Newest historical coordinate',
-                    precision: 'exact',
+            outcome(
+                'agent-a',
+                {
+                    region: 'eu-north',
+                    provider: 'hetzner',
+                    datacenter: 'hel1',
+                    location: {
+                        latitude: 61,
+                        longitude: 25,
+                        label: 'Newest historical coordinate',
+                        precision: 'exact'
+                    }
                 },
-            }, 'failed', ['sig-new']),
+                'failed',
+                ['sig-new']
+            ),
             outcome('agent-b', {
                 region: 'eu-north',
                 provider: 'hetzner',
@@ -166,85 +163,85 @@ describe('shared fleet geography', () => {
                 location: {
                     latitude: 60.25,
                     longitude: 24.8,
-                    label: 'Historical explicit beats live lookup',
-                },
+                    label: 'Historical explicit beats live lookup'
+                }
             }),
             outcome('agent-d', {
                 region: 'us-east',
                 provider: 'hetzner',
-                datacenter: 'ash',
-            }),
+                datacenter: 'ash'
+            })
         ]);
         const older = report('run-old', 3_000, [
             outcome('agent-a', {
                 location: {
                     latitude: 40,
                     longitude: 10,
-                    label: 'Older historical coordinate',
-                },
+                    label: 'Older historical coordinate'
+                }
             }, 'passed'),
             outcome('agent-b', {
                 location: {
                     latitude: 30,
                     longitude: 20,
-                    label: 'Older explicit coordinate',
-                },
-            }),
+                    label: 'Older explicit coordinate'
+                }
+            })
         ]);
         const liveAgents = [
             live('agent-a', {
                 location: {
                     latitude: 59.9139,
                     longitude: 10.7522,
-                    label: 'Live explicit coordinate',
+                    label: 'Live explicit coordinate'
                 },
                 region: 'eu-north',
                 provider: 'hetzner',
-                datacenter: 'fsn1',
+                datacenter: 'fsn1'
             }),
             live('agent-b', {
                 region: 'eu-north',
                 provider: 'hetzner',
-                datacenter: 'fsn1',
+                datacenter: 'fsn1'
             }),
             live('agent-c', {
                 region: 'eu-north',
                 provider: 'hetzner',
-                datacenter: 'fsn1',
+                datacenter: 'fsn1'
             }),
-            live('agent-e', { provider: 'private-lab' }),
+            live('agent-e', { provider: 'private-lab' })
         ];
 
         const model = deriveFleetGeography({
             liveAgents,
-            reports: [older, newest],
+            reports: [older, newest]
         });
 
-        expect(model.agents.find(agent => agent.agentId === 'agent-a')?.location)
+        expect(model.agents.find((agent) => agent.agentId === 'agent-a')?.location)
             .toMatchObject({
                 latitude: 59.9139,
                 source: 'live-explicit',
-                evidenceKind: 'live',
+                evidenceKind: 'live'
             });
-        expect(model.agents.find(agent => agent.agentId === 'agent-b')?.location)
+        expect(model.agents.find((agent) => agent.agentId === 'agent-b')?.location)
             .toMatchObject({
                 latitude: 60.25,
                 source: 'historical-explicit',
                 evidenceKind: 'historical',
-                distributedRunId: 'run-new',
+                distributedRunId: 'run-new'
             });
-        expect(model.agents.find(agent => agent.agentId === 'agent-c')?.location)
+        expect(model.agents.find((agent) => agent.agentId === 'agent-c')?.location)
             .toMatchObject({
                 source: 'live-datacenter-lookup',
-                evidenceKind: 'live',
+                evidenceKind: 'live'
             });
-        expect(model.agents.find(agent => agent.agentId === 'agent-d')?.location)
+        expect(model.agents.find((agent) => agent.agentId === 'agent-d')?.location)
             .toMatchObject({
                 source: 'historical-datacenter-lookup',
                 evidenceKind: 'historical',
-                distributedRunId: 'run-new',
+                distributedRunId: 'run-new'
             });
-        expect(model.agents.find(agent => agent.agentId === 'agent-e')?.location)
+        expect(model.agents.find((agent) => agent.agentId === 'agent-e')?.location)
             .toBeUndefined();
         expect(model.unresolvedAgentIds).toEqual(['agent-e']);
     });
@@ -254,23 +251,23 @@ describe('shared fleet geography', () => {
             liveAgents: [live('agent-a', {
                 state: 'connected',
                 connected: true,
-                region: 'eu-north',
+                region: 'eu-north'
             })],
             reports: [
                 report('run-new', 4_000, [
-                    outcome('agent-a', { region: 'eu-north' }, 'failed', ['sig-a']),
+                    outcome('agent-a', { region: 'eu-north' }, 'failed', ['sig-a'])
                 ]),
                 report('run-old', 3_000, [
-                    outcome('agent-a', { region: 'eu-north' }, 'passed'),
-                ]),
-            ],
+                    outcome('agent-a', { region: 'eu-north' }, 'passed')
+                ])
+            ]
         });
 
         const agent = model.agents[0];
         expect(agent?.live).toMatchObject({ state: 'connected', connected: true });
         expect(agent?.historical?.latest).toMatchObject({
             state: 'failed',
-            distributedRunId: 'run-new',
+            distributedRunId: 'run-new'
         });
         expect(agent?.historical?.failedOutcomes).toBe(1);
         expect(agent?.historical?.runIds).toEqual(['run-new', 'run-old']);
@@ -283,24 +280,24 @@ describe('shared fleet geography', () => {
         const reports = [
             report('run-new', 4_000, [
                 outcome('agent-a', { region: 'eu-north' }, 'failed'),
-                outcome('agent-b', { region: 'us-east' }, 'passed'),
+                outcome('agent-b', { region: 'us-east' }, 'passed')
             ]),
             report('run-old', 3_000, [
-                outcome('agent-a', { region: 'eu-north' }, 'passed'),
-            ]),
+                outcome('agent-a', { region: 'eu-north' }, 'passed')
+            ])
         ];
         const history = createFleetGeographyHistoricalCollection(reports);
         const work = { ...history.work };
 
         const first = deriveFleetGeographyFromHistoricalCollection(history, {
-            liveAgents: [live('agent-a', { connected: true })],
+            liveAgents: [live('agent-a', { connected: true })]
         });
         const second = deriveFleetGeographyFromHistoricalCollection(history, {
             liveAgents: [live('agent-a', {
                 connected: false,
                 state: 'offline',
-                observedAtEpochMs: 6_000,
-            })],
+                observedAtEpochMs: 6_000
+            })]
         });
 
         expect(history.work).toEqual({ reportVisits: 2, outcomeVisits: 3 });
@@ -313,32 +310,38 @@ describe('shared fleet geography', () => {
     it('composes repeated live refreshes without rereading indexed historical arrays', () => {
         let historicalReads = 0;
         let rejectHistoricalReads = false;
-        const guard = <Value extends object>(value: Value): Value => new Proxy(
-            value,
-            {
-                get(target, property, receiver) {
-                    historicalReads += 1;
-                    if (rejectHistoricalReads) {
-                        throw new Error(`historical evidence reread: ${String(property)}`);
+        const guard = <Value extends object>(value: Value): Value =>
+            new Proxy(
+                value,
+                {
+                    get(target, property, receiver) {
+                        historicalReads += 1;
+                        if (rejectHistoricalReads) {
+                            throw new Error(`historical evidence reread: ${String(property)}`);
+                        }
+                        return Reflect.get(target, property, receiver);
                     }
-                    return Reflect.get(target, property, receiver);
-                },
-            },
-        );
+                }
+            );
         const guardedOutcome = guard({
-            ...outcome('agent-a', {
-                region: 'eu-north',
-                location: { latitude: 60.1, longitude: 18.1 },
-            }, 'failed', guard(['sig-a'])),
+            ...outcome(
+                'agent-a',
+                {
+                    region: 'eu-north',
+                    location: { latitude: 60.1, longitude: 18.1 }
+                },
+                'failed',
+                guard(['sig-a'])
+            ),
             label: guard({
                 agentId: 'agent-a',
                 region: 'eu-north',
-                location: { latitude: 60.1, longitude: 18.1 },
-            }),
+                location: { latitude: 60.1, longitude: 18.1 }
+            })
         });
         const source = report('run-history', 4_000, guard([guardedOutcome]));
         const history = createFleetGeographyHistoricalCollection([
-            guard(source),
+            guard(source)
         ]);
         const indexedReadCount = historicalReads;
         rejectHistoricalReads = true;
@@ -348,18 +351,18 @@ describe('shared fleet geography', () => {
             {
                 liveAgents: [live('agent-a', {
                     region: 'us-east',
-                    observedAtEpochMs: 6_000,
-                })],
-            },
+                    observedAtEpochMs: 6_000
+                })]
+            }
         );
         const liveExplicit = deriveFleetGeographyFromHistoricalCollection(
             history,
             {
                 liveAgents: [live('agent-a', {
                     location: { latitude: 40, longitude: -74 },
-                    observedAtEpochMs: 7_000,
-                })],
-            },
+                    observedAtEpochMs: 7_000
+                })]
+            }
         );
 
         expect(historicalReads).toBe(indexedReadCount);
@@ -371,20 +374,20 @@ describe('shared fleet geography', () => {
                 longitude: 18.1,
                 source: 'historical-explicit',
                 evidenceKind: 'historical',
-                distributedRunId: 'run-history',
+                distributedRunId: 'run-history'
             },
             historical: {
                 latest: { distributedRunId: 'run-history', state: 'failed' },
-                failureSignatureIds: ['sig-a'],
+                failureSignatureIds: ['sig-a']
             },
-            live: { region: 'us-east', observedAtEpochMs: 6_000 },
+            live: { region: 'us-east', observedAtEpochMs: 6_000 }
         });
         expect(liveExplicit.agents[0]?.location).toMatchObject({
             latitude: 40,
             longitude: -74,
             source: 'live-explicit',
             evidenceKind: 'live',
-            observedAtEpochMs: 7_000,
+            observedAtEpochMs: 7_000
         });
         expect(liveExplicit.agents[0]?.historical)
             .toBe(historicalFallback.agents[0]?.historical);
@@ -395,19 +398,19 @@ describe('shared fleet geography', () => {
         const reports = [
             report('run-new', 4_000, [
                 outcome('agent-a', { region: 'eu-north' }, 'failed'),
-                outcome('agent-b', { region: 'us-east' }, 'passed'),
+                outcome('agent-b', { region: 'us-east' }, 'passed')
             ]),
             report('run-old', 3_000, [
-                outcome('agent-a', { region: 'eu-north' }, 'passed'),
-            ]),
-        ].map(source => {
+                outcome('agent-a', { region: 'eu-north' }, 'passed')
+            ])
+        ].map((source) => {
             const agents = source.agents;
             return Object.defineProperty({ ...source }, 'agents', {
                 enumerable: true,
                 get() {
                     agentCollectionReads += 1;
                     return agents;
-                },
+                }
             }) as ControlFleetRunReport;
         });
 
@@ -415,29 +418,39 @@ describe('shared fleet geography', () => {
 
         expect(history.work).toEqual({ reportVisits: 2, outcomeVisits: 3 });
         expect(agentCollectionReads).toBe(history.work.reportVisits);
-        expect(history.regions.map(region => region.region))
+        expect(history.regions.map((region) => region.region))
             .toEqual(['eu-north', 'us-east']);
     });
 
     it('is permutation-invariant with stable report, region, and failure tie-breaks', () => {
         const runA = report('run-a', 4_000, [
-            outcome('agent-b', {
-                region: 'EU-NORTH',
-                provider: 'Hetzner',
-                datacenter: 'hel1',
-            }, 'failed', ['sig-z', 'sig-a']),
+            outcome(
+                'agent-b',
+                {
+                    region: 'EU-NORTH',
+                    provider: 'Hetzner',
+                    datacenter: 'hel1'
+                },
+                'failed',
+                ['sig-z', 'sig-a']
+            ),
             outcome('agent-a', {
                 region: 'eu-north',
                 provider: 'hetzner',
-                datacenter: 'hel1',
-            }, 'passed'),
+                datacenter: 'hel1'
+            }, 'passed')
         ]);
         const runB = report('run-b', 4_000, [
-            outcome('agent-b', {
-                region: 'eu-north',
-                provider: 'hetzner',
-                datacenter: 'hel1',
-            }, 'timed-out', ['sig-a', 'sig-z']),
+            outcome(
+                'agent-b',
+                {
+                    region: 'eu-north',
+                    provider: 'hetzner',
+                    datacenter: 'hel1'
+                },
+                'timed-out',
+                ['sig-a', 'sig-z']
+            )
         ]);
         const firstInput = {
             liveAgents: [
@@ -446,25 +459,25 @@ describe('shared fleet geography', () => {
                     lastSeenAtEpochMs: 8_100,
                     state: 'offline',
                     connected: false,
-                    activeRunIds: ['run-input-order'],
+                    activeRunIds: ['run-input-order']
                 }),
                 live('agent-b', {
                     observedAtEpochMs: 8_000,
                     lastSeenAtEpochMs: 8_200,
                     state: 'offline',
                     connected: false,
-                    activeRunIds: ['run-stable'],
+                    activeRunIds: ['run-stable']
                 }),
-                live('agent-a', { observedAtEpochMs: 7_000 }),
+                live('agent-a', { observedAtEpochMs: 7_000 })
             ],
-            reports: [runB, runA],
+            reports: [runB, runA]
         };
         const secondInput = {
             liveAgents: [...firstInput.liveAgents].reverse(),
             reports: [
                 { ...runA, agents: [...runA.agents].reverse() },
-                { ...runB, agents: [...runB.agents].reverse() },
-            ],
+                { ...runB, agents: [...runB.agents].reverse() }
+            ]
         };
         const before = JSON.stringify(firstInput);
 
@@ -473,13 +486,13 @@ describe('shared fleet geography', () => {
 
         expect(second).toEqual(first);
         expect(JSON.stringify(firstInput)).toBe(before);
-        expect(first.agents.map(agent => agent.agentId)).toEqual(['agent-a', 'agent-b']);
-        expect(first.agents.find(agent => agent.agentId === 'agent-b')?.historical?.latest)
+        expect(first.agents.map((agent) => agent.agentId)).toEqual(['agent-a', 'agent-b']);
+        expect(first.agents.find((agent) => agent.agentId === 'agent-b')?.historical?.latest)
             .toMatchObject({ distributedRunId: 'run-a' });
-        expect(first.agents.find(agent => agent.agentId === 'agent-b')?.live)
+        expect(first.agents.find((agent) => agent.agentId === 'agent-b')?.live)
             .toMatchObject({
                 lastSeenAtEpochMs: 8_200,
-                activeRunIds: ['run-stable'],
+                activeRunIds: ['run-stable']
             });
         expect(first.regions).toHaveLength(1);
         expect(first.regions[0]).toMatchObject({
@@ -490,7 +503,7 @@ describe('shared fleet geography', () => {
             failed: 2,
             failedAgentCount: 1,
             dominantFailureSignatureId: 'sig-a',
-            latestDistributedRunId: 'run-a',
+            latestDistributedRunId: 'run-a'
         });
     });
 
@@ -498,29 +511,29 @@ describe('shared fleet geography', () => {
         const model = deriveFleetGeography({
             liveAgents: [
                 live('a->b', {
-                    location: { latitude: 10, longitude: 10 },
+                    location: { latitude: 10, longitude: 10 }
                 }),
                 live('c', {
-                    location: { latitude: 20, longitude: 20 },
+                    location: { latitude: 20, longitude: 20 }
                 }),
                 live('a', {
-                    location: { latitude: 30, longitude: 30 },
+                    location: { latitude: 30, longitude: 30 }
                 }),
                 live('b->c', {
-                    location: { latitude: 40, longitude: 40 },
-                }),
+                    location: { latitude: 40, longitude: 40 }
+                })
             ],
             reports: [report('run-delimiters', 3_000, [
                 outcome('region-left', {
                     region: 'a / b',
                     provider: 'c',
-                    location: { latitude: 10, longitude: 10 },
+                    location: { latitude: 10, longitude: 10 }
                 }),
                 outcome('region-right', {
                     region: 'a',
                     provider: 'b / c',
-                    location: { latitude: 20, longitude: 20 },
-                }),
+                    location: { latitude: 20, longitude: 20 }
+                })
             ])],
             routeEvidence: {
                 source: 'bounded-control-snapshot-events',
@@ -530,36 +543,36 @@ describe('shared fleet geography', () => {
                         sourceAgentId: 'a->b',
                         targetAgentId: 'c',
                         transport: 'd',
-                        failed: false,
+                        failed: false
                     },
                     {
                         sourceAgentId: 'a',
                         targetAgentId: 'b->c',
                         transport: 'd',
-                        failed: true,
-                    },
+                        failed: true
+                    }
                 ],
                 topologyComplete: false,
-                label: FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL,
-            },
+                label: FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL
+            }
         });
 
-        expect(model.regions.map(region => [region.region, region.provider]))
+        expect(model.regions.map((region) => [region.region, region.provider]))
             .toEqual(expect.arrayContaining([
                 ['a', 'b / c'],
-                ['a / b', 'c'],
+                ['a / b', 'c']
             ]));
         expect(model.regions).toHaveLength(2);
-        expect(new Set(model.regions.map(region => region.key)).size).toBe(2);
+        expect(new Set(model.regions.map((region) => region.key)).size).toBe(2);
         expect(model.routes).toHaveLength(2);
-        expect(new Set(model.routes.map(route => route.routeId)).size).toBe(2);
-        expect(model.routes.map(route => [
+        expect(new Set(model.routes.map((route) => route.routeId)).size).toBe(2);
+        expect(model.routes.map((route) => [
             route.sourceAgentId,
             route.targetAgentId,
-            route.transport,
+            route.transport
         ])).toEqual(expect.arrayContaining([
             ['a', 'b->c', 'd'],
-            ['a->b', 'c', 'd'],
+            ['a->b', 'c', 'd']
         ]));
     });
 
@@ -568,37 +581,39 @@ describe('shared fleet geography', () => {
         const targetAgentId = 'target-\udc00';
         const transport = 'rtc-\ud800';
 
-        expect(() => deriveFleetGeography({
-            liveAgents: [
-                live(sourceAgentId, {
-                    location: { latitude: 10, longitude: 10 },
-                }),
-                live(targetAgentId, {
-                    location: { latitude: 20, longitude: 20 },
-                }),
-            ],
-            routeEvidence: {
-                source: 'bounded-control-snapshot-events',
-                sourceEventCount: 1,
-                observations: [{
-                    sourceAgentId,
-                    targetAgentId,
-                    transport,
-                    failed: false,
-                }],
-                topologyComplete: false,
-                label: FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL,
-            },
-        })).not.toThrow();
+        expect(() =>
+            deriveFleetGeography({
+                liveAgents: [
+                    live(sourceAgentId, {
+                        location: { latitude: 10, longitude: 10 }
+                    }),
+                    live(targetAgentId, {
+                        location: { latitude: 20, longitude: 20 }
+                    })
+                ],
+                routeEvidence: {
+                    source: 'bounded-control-snapshot-events',
+                    sourceEventCount: 1,
+                    observations: [{
+                        sourceAgentId,
+                        targetAgentId,
+                        transport,
+                        failed: false
+                    }],
+                    topologyComplete: false,
+                    label: FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL
+                }
+            })
+        ).not.toThrow();
 
         const route = deriveFleetGeography({
             liveAgents: [
                 live(sourceAgentId, {
-                    location: { latitude: 10, longitude: 10 },
+                    location: { latitude: 10, longitude: 10 }
                 }),
                 live(targetAgentId, {
-                    location: { latitude: 20, longitude: 20 },
-                }),
+                    location: { latitude: 20, longitude: 20 }
+                })
             ],
             routeEvidence: {
                 source: 'bounded-control-snapshot-events',
@@ -607,14 +622,14 @@ describe('shared fleet geography', () => {
                     sourceAgentId,
                     targetAgentId,
                     transport,
-                    failed: false,
+                    failed: false
                 }],
                 topologyComplete: false,
-                label: FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL,
-            },
+                label: FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL
+            }
         }).routes[0];
         expect(route?.routeId).toBe(
-            'source-%uD800->target-%uDC00:rtc-%uD800',
+            'source-%uD800->target-%uDC00:rtc-%uD800'
         );
     });
 
@@ -622,11 +637,11 @@ describe('shared fleet geography', () => {
         const model = deriveFleetGeography({
             liveAgents: [
                 live('source', {
-                    location: { latitude: 10, longitude: 10 },
+                    location: { latitude: 10, longitude: 10 }
                 }),
                 live('target', {
-                    location: { latitude: 20, longitude: 20 },
-                }),
+                    location: { latitude: 20, longitude: 20 }
+                })
             ],
             routeEvidence: {
                 source: 'bounded-control-snapshot-events',
@@ -635,32 +650,32 @@ describe('shared fleet geography', () => {
                     {
                         sourceAgentId: 'source',
                         targetAgentId: 'target',
-                        failed: false,
+                        failed: false
                     },
                     {
                         sourceAgentId: 'source',
                         targetAgentId: 'target',
                         transport: 'unknown',
-                        failed: false,
+                        failed: false
                     },
                     {
                         sourceAgentId: 'source',
                         targetAgentId: 'target',
                         transport: 'unknown\u0000',
-                        failed: false,
-                    },
+                        failed: false
+                    }
                 ],
                 topologyComplete: false,
-                label: FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL,
-            },
+                label: FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL
+            }
         });
 
-        expect(model.routes.map(route => route.routeId)).toEqual([
+        expect(model.routes.map((route) => route.routeId)).toEqual([
             'source->target:unknown',
             'source->target:unknown%00',
-            'source->target:unknown%00:literal',
+            'source->target:unknown%00:literal'
         ]);
-        expect(new Set(model.routes.map(route => route.routeId)).size).toBe(3);
+        expect(new Set(model.routes.map((route) => route.routeId)).size).toBe(3);
     });
 
     it('keeps a missing provider distinct from the literal provider unknown', () => {
@@ -668,37 +683,37 @@ describe('shared fleet geography', () => {
             reports: [report('run-provider-sentinels', 3_000, [
                 outcome('agent-missing', {
                     region: 'eu-north',
-                    location: { latitude: 10, longitude: 10 },
+                    location: { latitude: 10, longitude: 10 }
                 }),
                 outcome('agent-literal', {
                     region: 'eu-north',
                     provider: 'unknown',
-                    location: { latitude: 20, longitude: 20 },
-                }),
-            ])],
+                    location: { latitude: 20, longitude: 20 }
+                })
+            ])]
         });
 
-        expect(model.regions.map(region => ({
+        expect(model.regions.map((region) => ({
             provider: region.provider,
             agentCount: region.agentCount,
-            latitude: region.location.latitude,
+            latitude: region.location.latitude
         }))).toEqual([
             { provider: undefined, agentCount: 1, latitude: 10 },
-            { provider: 'unknown', agentCount: 1, latitude: 20 },
+            { provider: 'unknown', agentCount: 1, latitude: 20 }
         ]);
-        expect(new Set(model.regions.map(region => region.key)).size).toBe(2);
+        expect(new Set(model.regions.map((region) => region.key)).size).toBe(2);
     });
 
     it('uses an exact tuple tie-break for NUL-containing live labels', () => {
         const left = live('agent-tie', {
             observedAtEpochMs: 8_000,
             region: 'a\u0000b',
-            provider: 'c',
+            provider: 'c'
         });
         const right = live('agent-tie', {
             observedAtEpochMs: 8_000,
             region: 'a',
-            provider: 'b\u0000c',
+            provider: 'b\u0000c'
         });
 
         const forward = deriveFleetGeography({ liveAgents: [left, right] });
@@ -707,18 +722,18 @@ describe('shared fleet geography', () => {
         expect(reversed).toEqual(forward);
         expect(forward.agents[0]?.live).toMatchObject({
             region: 'a',
-            provider: 'b\u0000c',
+            provider: 'b\u0000c'
         });
     });
 
     it('tie-breaks distinct empty and absent explicit location labels exactly', () => {
         const absent = live('agent-location-tie', {
             observedAtEpochMs: 8_000,
-            location: { latitude: 10, longitude: 10 },
+            location: { latitude: 10, longitude: 10 }
         });
         const empty = live('agent-location-tie', {
             observedAtEpochMs: 8_000,
-            location: { latitude: 10, longitude: 10, label: '' },
+            location: { latitude: 10, longitude: 10, label: '' }
         });
 
         const forward = deriveFleetGeography({ liveAgents: [absent, empty] });
@@ -734,17 +749,21 @@ describe('shared fleet geography', () => {
             report('run-lone-surrogate', 3_000, [
                 outcome('agent-lone-surrogate', {
                     region: loneSurrogate,
-                    location: { latitude: 10, longitude: 10 },
-                }),
-            ]),
+                    location: { latitude: 10, longitude: 10 }
+                })
+            ])
         ]);
 
         expect(validation.ok).toBe(true);
-        expect(() => deriveFleetGeography({
-            reports: validation.reports,
-        })).not.toThrow();
-        expect(deriveFleetGeography({ reports: validation.reports })
-            .regions[0]?.region).toBe(loneSurrogate.toLowerCase());
+        expect(() =>
+            deriveFleetGeography({
+                reports: validation.reports
+            })
+        ).not.toThrow();
+        expect(
+            deriveFleetGeography({ reports: validation.reports })
+                .regions[0]?.region
+        ).toBe(loneSurrogate.toLowerCase());
     });
 
     it('extracts only explicit target-agent fields and labels the bounded observation', () => {
@@ -759,20 +778,20 @@ describe('shared fleet geography', () => {
                 event('agent-a', 2_000, {
                     targetAgentId: 'agent-b',
                     destinationAgentIds: ['agent-c', 'agent-b'],
-                    transport: 'rtc',
+                    transport: 'rtc'
                 }),
                 event('agent-a', 2_100, {
                     peerId: 'agent-peer',
-                    remotePeerId: 'agent-peer-2',
+                    remotePeerId: 'agent-peer-2'
                 }),
                 event('agent-b', 2_200, {
                     data: { targetAgentIds: ['agent-a'] },
-                    severity: 'error',
-                }),
+                    severity: 'error'
+                })
             ],
             stats: [],
             reports: [],
-            heartbeats: [],
+            heartbeats: []
         });
 
         expect(evidence).toMatchObject({
@@ -780,7 +799,7 @@ describe('shared fleet geography', () => {
             controlRunId: 'control-1',
             sourceEventCount: 3,
             topologyComplete: false,
-            label: FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL,
+            label: FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL
         });
         expect(evidence.observations).toEqual([
             {
@@ -788,21 +807,21 @@ describe('shared fleet geography', () => {
                 targetAgentId: 'agent-b',
                 atEpochMs: 2_000,
                 transport: 'rtc',
-                failed: false,
+                failed: false
             },
             {
                 sourceAgentId: 'agent-a',
                 targetAgentId: 'agent-c',
                 atEpochMs: 2_000,
                 transport: 'rtc',
-                failed: false,
+                failed: false
             },
             {
                 sourceAgentId: 'agent-b',
                 targetAgentId: 'agent-a',
                 atEpochMs: 2_200,
-                failed: true,
-            },
+                failed: true
+            }
         ]);
     });
 
@@ -817,35 +836,35 @@ describe('shared fleet geography', () => {
             events: [
                 event('agent-a', 2_000, {
                     targetAgentId: 'agent-b',
-                    transport: 'rtc',
+                    transport: 'rtc'
                 }),
                 event('agent-a', 2_100, {
                     targetAgentId: 'agent-b',
                     transport: 'rtc',
-                    failed: true,
+                    failed: true
                 }),
                 event('agent-a', 2_200, {
                     targetAgentId: 'agent-unresolved',
-                    transport: 'rtc',
+                    transport: 'rtc'
                 }),
                 event('source-unresolved', 2_300, {
                     targetAgentId: 'agent-b',
                     transport: 'ws',
-                    ok: false,
-                }),
+                    ok: false
+                })
             ],
             stats: [],
             reports: [],
-            heartbeats: [],
+            heartbeats: []
         });
         const model = deriveFleetGeography({
             liveAgents: [
                 live('agent-a', { region: 'eu-north' }),
                 live('agent-b', { region: 'us-east' }),
                 live('agent-unresolved'),
-                live('source-unresolved'),
+                live('source-unresolved')
             ],
-            routeEvidence,
+            routeEvidence
         });
 
         expect(model.routes).toHaveLength(1);
@@ -853,7 +872,7 @@ describe('shared fleet geography', () => {
             routeId: 'agent-a->agent-b:rtc',
             eventCount: 2,
             failedCount: 1,
-            lastSeenAtEpochMs: 2_100,
+            lastSeenAtEpochMs: 2_100
         });
         expect(model.routeEvidence).toEqual({
             source: 'bounded-control-snapshot-events',
@@ -865,7 +884,7 @@ describe('shared fleet geography', () => {
             unresolvedEndpointAgentIds: ['agent-unresolved', 'source-unresolved'],
             failedObservationCount: 2,
             topologyComplete: false,
-            label: FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL,
+            label: FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL
         });
         expect(model.summary.routes).toBe(1);
         expect(model.summary.failedRouteObservations).toBe(2);
@@ -875,7 +894,7 @@ describe('shared fleet geography', () => {
 function event(
     agentId: string,
     atEpochMs: number,
-    payload: unknown,
+    payload: unknown
 ): ControlRunSnapshot['events'][number] {
     return {
         kind: 'event',
@@ -883,6 +902,6 @@ function event(
         runId: 'control-1',
         agentId,
         atEpochMs,
-        payload,
+        payload
     };
 }

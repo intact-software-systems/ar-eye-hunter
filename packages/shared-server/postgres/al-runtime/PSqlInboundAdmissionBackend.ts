@@ -1,13 +1,10 @@
 import type {
-    ALInboundAdmissionBackend,
-    ALInboundAdmissionWriteContext,
-} from '@shared/alm/ALInboundAdmissionStore.ts';
-import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
-import type {
-    RuntimeStateOptimisticTransactionalRepositoryLike,
+    RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-import { PSqlAdmissionMutationCollector } from './PSqlAdmissionMutationCollector.ts';
+import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
+import type { ALInboundAdmissionBackend, ALInboundAdmissionWriteContext } from '@shared/alm/ALInboundAdmissionStore.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
+import { PSqlAdmissionMutationCollector } from './PSqlAdmissionMutationCollector.ts';
 
 export class PSqlInboundAdmissionBackend implements ALInboundAdmissionBackend {
     private readonly repository: RuntimeStateOptimisticTransactionalRepositoryLike;
@@ -15,7 +12,7 @@ export class PSqlInboundAdmissionBackend implements ALInboundAdmissionBackend {
 
     constructor(
         repository: RuntimeStateOptimisticTransactionalRepositoryLike,
-        namespace: string,
+        namespace: string
     ) {
         this.repository = repository;
         this.namespace = namespace;
@@ -27,21 +24,21 @@ export class PSqlInboundAdmissionBackend implements ALInboundAdmissionBackend {
     async get<V>(key: string): Promise<V | undefined> {
         return await new PSqlAdmissionMutationCollector(
             this.repository,
-            this.namespace,
+            this.namespace
         ).get<V>(key);
     }
 
-    async list<V>(prefix: string): Promise<readonly Readonly<{ key: string; value: V }>[]> {
+    async list<V>(prefix: string): Promise<readonly Readonly<{ key: string; value: V; }>[]> {
         return await new PSqlAdmissionMutationCollector(
             this.repository,
-            this.namespace,
+            this.namespace
         ).list<V>(prefix);
     }
 
     async write<T>(fn: (tx: ALInboundAdmissionWriteContext) => Promise<T>): Promise<T> {
         const collector = new PSqlAdmissionMutationCollector(
             this.repository,
-            this.namespace,
+            this.namespace
         );
         const result = await fn({
             get: async (key) => await collector.get(key),
@@ -49,15 +46,16 @@ export class PSqlInboundAdmissionBackend implements ALInboundAdmissionBackend {
             set: async (key, value, expireAtTimestamp) => {
                 await collector.set(key, value, expireAtTimestamp);
             },
-            remove: async (key) => await collector.remove(key),
+            remove: async (key) => await collector.remove(key)
         });
         try {
             await collector.apply(collector.mutations());
-        } catch (error) {
+        }
+        catch (error) {
             if (error instanceof RuntimeStateWriteConflictError) {
                 throw new ALAdmissionBackendConflictError(
                     'Inbound admission apply conflict',
-                    { cause: error },
+                    { cause: error }
                 );
             }
             throw error;

@@ -1,13 +1,12 @@
-import type { DistributedRunPerformanceAnalysis } from
-    '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import type { DistributedRunPerformanceAnalysis } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { tuneMilliseconds, tuneNumber } from './tune-format.ts';
 import type { TuneInspection } from './tune-inspection.ts';
-import { TuneSlowAgents } from './TuneSlowAgents.tsx';
 import styles from './TuneEvidence.module.css';
+import { TuneSlowAgents } from './TuneSlowAgents.tsx';
 
 export function TuneCommandTiming({
     performance,
-    onInspect,
+    onInspect
 }: Readonly<{
     performance?: DistributedRunPerformanceAnalysis;
     onInspect(selection: TuneInspection, trigger: HTMLButtonElement): void;
@@ -18,7 +17,7 @@ export function TuneCommandTiming({
         ['P50', tuneMilliseconds(timing?.p50Ms)],
         ['P95', tuneMilliseconds(timing?.p95Ms)],
         ['P99', tuneMilliseconds(timing?.p99Ms)],
-        ['Max', tuneMilliseconds(timing?.maxMs)],
+        ['Max', tuneMilliseconds(timing?.maxMs)]
     ] as const;
     return (
         <section className={styles.section} data-tune-command-timing>
@@ -29,29 +28,33 @@ export function TuneCommandTiming({
                 </div>
                 <span>{timing?.count ?? 0} samples</span>
             </header>
-            {timing && timing.count > 0 ? (
-                <>
-                    <ul className={styles.metricGrid}>
-                        {metrics.map(([label, value]) => (
-                            <li key={label}>
-                                <strong>{`${label} ${value}`}</strong>
-                            </li>
-                        ))}
-                    </ul>
-                    <p className={styles.detailLine}>
-                        Average {tuneMilliseconds(timing.averageMs)} · Spread {tuneNumber(timing.spreadRatio)}× · {timing.outlierCount} outliers
-                    </p>
-                    {performance ? (
-                        <TuneSlowAgents
-                            channel="command"
-                            onInspect={onInspect}
-                            performance={performance}
-                        />
-                    ) : null}
-                </>
-            ) : (
-                <p className={styles.empty}>Command timing is unavailable for this source.</p>
-            )}
+            {timing && timing.count > 0
+                ? (
+                    <>
+                        <ul className={styles.metricGrid}>
+                            {metrics.map(([label, value]) => (
+                                <li key={label}>
+                                    <strong>{`${label} ${value}`}</strong>
+                                </li>
+                            ))}
+                        </ul>
+                        <p className={styles.detailLine}>
+                            Average {tuneMilliseconds(timing.averageMs)} · Spread {tuneNumber(timing.spreadRatio)}× ·
+                            {' '}
+                            {timing.outlierCount} outliers
+                        </p>
+                        {performance
+                            ? (
+                                <TuneSlowAgents
+                                    channel="command"
+                                    onInspect={onInspect}
+                                    performance={performance}
+                                />
+                            )
+                            : null}
+                    </>
+                )
+                : <p className={styles.empty}>Command timing is unavailable for this source.</p>}
         </section>
     );
 }

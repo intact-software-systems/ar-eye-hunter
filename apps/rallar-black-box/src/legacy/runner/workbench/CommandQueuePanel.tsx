@@ -1,10 +1,10 @@
-import type { CommandQueueRow } from '../runner-contracts.ts';
 import { statusTone } from '../../shared/command-presentation.ts';
+import type { CommandQueueRow } from '../runner-contracts.ts';
 
 export function CommandQueuePanel({
     rows,
     selectedCommandId,
-    onSelect,
+    onSelect
 }: {
     rows: readonly CommandQueueRow[];
     selectedCommandId?: string;

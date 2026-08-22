@@ -1,31 +1,31 @@
-import { describe, expect, it } from 'vitest';
 import {
-    RELIC_PROTOCOL_VERSION,
-    type RelicCommand,
-    type RelicGameState,
-    type RelicPublicSnapshot,
     applyRelicCommand,
     createProceduralRelicExpeditionBlueprint,
     createRelicGame,
     createRelicGameFromBlueprint,
     isRelicSnapshot,
+    RELIC_PROTOCOL_VERSION,
     toPublicRelicSnapshot,
+    type RelicCommand,
+    type RelicGameState,
+    type RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
+import { describe, expect, it } from 'vitest';
 
 describe('Relic Hunters game rules', () => {
     it('keeps submitted actions hidden until all active hunters have acted', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 2,
+            now: () => 2
         }).state;
         state = applyRelicCommand(state, join('bob', 'Bob'), {
             senderId: 'bob',
-            now: () => 3,
+            now: () => 3
         }).state;
         state = applyRelicCommand(state, start('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 4,
+            now: () => 4
         }).state;
 
         const afterAlice = applyRelicCommand(
@@ -33,8 +33,8 @@ describe('Relic Hunters game rules', () => {
             submit('alice', 'Alice', { kind: 'search' }),
             {
                 senderId: 'alice',
-                now: () => 5,
-            },
+                now: () => 5
+            }
         );
         const snapshot = toPublicRelicSnapshot(afterAlice.state);
 
@@ -47,31 +47,31 @@ describe('Relic Hunters game rules', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 2,
+            now: () => 2
         }).state;
         state = applyRelicCommand(state, join('bob', 'Bob'), {
             senderId: 'bob',
-            now: () => 3,
+            now: () => 3
         }).state;
         state = applyRelicCommand(state, start('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 4,
+            now: () => 4
         }).state;
         state = applyRelicCommand(
             state,
             submit('alice', 'Alice', { kind: 'search' }),
             {
                 senderId: 'alice',
-                now: () => 5,
-            },
+                now: () => 5
+            }
         ).state;
         const result = applyRelicCommand(
             state,
             submit('bob', 'Bob', { kind: 'move', targetRoomId: 'hallway' }),
             {
                 senderId: 'bob',
-                now: () => 6,
-            },
+                now: () => 6
+            }
         );
 
         expect(result.resolvedRound).toBe(true);
@@ -90,28 +90,28 @@ describe('Relic Hunters game rules', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 2,
+            now: () => 2
         }).state;
         state = applyRelicCommand(state, join('bob', 'Bob'), {
             senderId: 'bob',
-            now: () => 3,
+            now: () => 3
         }).state;
         state = applyRelicCommand(state, start('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 4,
+            now: () => 4
         }).state;
         state = applyRelicCommand(
             state,
             submit('alice', 'Alice', { kind: 'move', targetRoomId: 'hallway' }),
             {
                 senderId: 'alice',
-                now: () => 5,
-            },
+                now: () => 5
+            }
         ).state;
 
         const result = applyRelicCommand(state, forceResolve('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 65_000,
+            now: () => 65_000
         });
 
         expect(result.resolvedRound).toBe(true);
@@ -122,9 +122,7 @@ describe('Relic Hunters game rules', () => {
             .toBe('hallway');
         expect(result.state.players.find((player) => player.playerId === 'bob')?.roomId)
             .toBe('entrance');
-        expect(result.state.events.some((event) =>
-            event.message.includes('Missing plans skipped: Bob')
-        )).toBe(true);
+        expect(result.state.events.some((event) => event.message.includes('Missing plans skipped: Bob'))).toBe(true);
 
         const continued = continueReview(result.state, 65_500);
         expect(continued.round).toBe(2);
@@ -135,21 +133,21 @@ describe('Relic Hunters game rules', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 2,
+            now: () => 2
         }).state;
         state = applyRelicCommand(state, join('bob', 'Bob'), {
             senderId: 'bob',
-            now: () => 3,
+            now: () => 3
         }).state;
         state = applyRelicCommand(state, start('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 4,
+            now: () => 4
         }).state;
 
         expect(() =>
             applyRelicCommand(state, forceResolve('alice', 'Alice'), {
                 senderId: 'alice',
-                now: () => 10,
+                now: () => 10
             })
         ).toThrow('Round timer has not expired.');
         expect(state.round).toBe(1);
@@ -159,27 +157,27 @@ describe('Relic Hunters game rules', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = {
             ...state,
-            relics: state.relics.filter((relic) => relic.roomId !== 'entrance'),
+            relics: state.relics.filter((relic) => relic.roomId !== 'entrance')
         };
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 2,
+            now: () => 2
         }).state;
         state = applyRelicCommand(state, join('bob', 'Bob'), {
             senderId: 'bob',
-            now: () => 3,
+            now: () => 3
         }).state;
         state = applyRelicCommand(state, start('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 4,
+            now: () => 4
         }).state;
         state = applyRelicCommand(
             state,
             submit('alice', 'Alice', { kind: 'search' }),
             {
                 senderId: 'alice',
-                now: () => 5,
-            },
+                now: () => 5
+            }
         ).state;
 
         const result = applyRelicCommand(
@@ -187,11 +185,11 @@ describe('Relic Hunters game rules', () => {
             submit('bob', 'Bob', { kind: 'move', targetRoomId: 'hallway' }),
             {
                 senderId: 'bob',
-                now: () => 6,
-            },
+                now: () => 6
+            }
         );
         const cueByEventType = new Map(
-            result.state.events.map((event) => [event.type, event.animationCue?.type]),
+            result.state.events.map((event) => [event.type, event.animationCue?.type])
         );
 
         expect(cueByEventType.get('action_revealed')).toBe('noise_pulse');
@@ -201,7 +199,7 @@ describe('Relic Hunters game rules', () => {
         expect(result.state.events.find((event) => event.type === 'player_moved')?.animationCue)
             .toMatchObject({
                 fromRoomId: 'entrance',
-                roomId: 'hallway',
+                roomId: 'hallway'
             });
     });
 
@@ -209,16 +207,16 @@ describe('Relic Hunters game rules', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 2,
+            now: () => 2
         }).state;
         state = applyRelicCommand(state, start('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 3,
+            now: () => 3
         }).state;
 
         const result = applyRelicCommand(state, pickup('alice', 'Alice', 'visitor-badge'), {
             senderId: 'alice',
-            now: () => 4,
+            now: () => 4
         });
         const alice = result.state.players.find((player) => player.playerId === 'alice');
 
@@ -228,7 +226,7 @@ describe('Relic Hunters game rules', () => {
         expect(alice?.score).toBeGreaterThan(0);
         expect(result.state.relics.find((relic) => relic.id === 'visitor-badge')).toMatchObject({
             foundBy: 'alice',
-            carriedBy: 'alice',
+            carriedBy: 'alice'
         });
         expect(result.state.events.at(-1)).toMatchObject({
             type: 'relic_picked_up',
@@ -236,8 +234,8 @@ describe('Relic Hunters game rules', () => {
                 type: 'relic_pickup',
                 playerId: 'alice',
                 roomId: 'entrance',
-                relicId: 'visitor-badge',
-            },
+                relicId: 'visitor-badge'
+            }
         });
     });
 
@@ -245,29 +243,29 @@ describe('Relic Hunters game rules', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 2,
+            now: () => 2
         }).state;
         state = applyRelicCommand(state, start('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 3,
+            now: () => 3
         }).state;
 
         expect(() =>
             applyRelicCommand(state, pickup('alice', 'Alice', 'sun-disk'), {
                 senderId: 'alice',
-                now: () => 4,
+                now: () => 4
             })
         ).toThrow('Relic is not in this hunter\'s room.');
 
         state = applyRelicCommand(state, pickup('alice', 'Alice', 'visitor-badge'), {
             senderId: 'alice',
-            now: () => 5,
+            now: () => 5
         }).state;
 
         expect(() =>
             applyRelicCommand(state, pickup('alice', 'Alice', 'visitor-badge'), {
                 senderId: 'alice',
-                now: () => 6,
+                now: () => 6
             })
         ).toThrow('Relic has already been claimed.');
     });
@@ -276,26 +274,26 @@ describe('Relic Hunters game rules', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 2,
+            now: () => 2
         }).state;
         state = applyRelicCommand(state, start('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 3,
+            now: () => 3
         }).state;
         state = applyRelicCommand(
             state,
             submit('alice', 'Alice', { kind: 'move', targetRoomId: 'hallway' }),
             {
                 senderId: 'alice',
-                now: () => 4,
-            },
+                now: () => 4
+            }
         ).state;
 
         expect(state.phase).toBe('review');
         expect(() =>
             applyRelicCommand(state, pickup('alice', 'Alice', 'copper-coin'), {
                 senderId: 'alice',
-                now: () => 5,
+                now: () => 5
             })
         ).toThrow('Review the revealed actions before planning the next turn.');
     });
@@ -304,31 +302,31 @@ describe('Relic Hunters game rules', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 2,
+            now: () => 2
         }).state;
         state = applyRelicCommand(state, join('bob', 'Bob'), {
             senderId: 'bob',
-            now: () => 3,
+            now: () => 3
         }).state;
         state = applyRelicCommand(state, start('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 4,
+            now: () => 4
         }).state;
         state = applyRelicCommand(
             state,
             submit('alice', 'Alice', { kind: 'search' }),
             {
                 senderId: 'alice',
-                now: () => 5,
-            },
+                now: () => 5
+            }
         ).state;
         state = applyRelicCommand(
             state,
             submit('bob', 'Bob', { kind: 'move', targetRoomId: 'hallway' }),
             {
                 senderId: 'bob',
-                now: () => 6,
-            },
+                now: () => 6
+            }
         ).state;
 
         expect(() =>
@@ -336,10 +334,10 @@ describe('Relic Hunters game rules', () => {
                 protocolVersion: RELIC_PROTOCOL_VERSION,
                 kind: 'continue-review',
                 gameId: 'room-1',
-                username: 'Bob',
+                username: 'Bob'
             }, {
                 senderId: 'bob',
-                now: () => 7,
+                now: () => 7
             })
         ).toThrow('Only the administrator can continue the review.');
         expect(continueReview(state, 8).phase).toBe('planning');
@@ -349,31 +347,31 @@ describe('Relic Hunters game rules', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 2,
+            now: () => 2
         }).state;
         state = applyRelicCommand(state, join('bob', 'Bob'), {
             senderId: 'bob',
-            now: () => 3,
+            now: () => 3
         }).state;
         state = applyRelicCommand(state, start('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 4,
+            now: () => 4
         }).state;
         state = applyRelicCommand(
             state,
             submit('alice', 'Alice', { kind: 'move', targetRoomId: 'storage' }),
             {
                 senderId: 'alice',
-                now: () => 5,
-            },
+                now: () => 5
+            }
         ).state;
         state = applyRelicCommand(
             state,
             submit('alice', 'Alice', { kind: 'move', targetRoomId: 'hallway' }),
             {
                 senderId: 'alice',
-                now: () => 6,
-            },
+                now: () => 6
+            }
         ).state;
 
         const result = applyRelicCommand(
@@ -381,8 +379,8 @@ describe('Relic Hunters game rules', () => {
             submit('bob', 'Bob', { kind: 'search' }),
             {
                 senderId: 'bob',
-                now: () => 7,
-            },
+                now: () => 7
+            }
         );
 
         expect(result.resolvedRound).toBe(true);
@@ -395,17 +393,17 @@ describe('Relic Hunters game rules', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 2,
+            now: () => 2
         }).state;
         state = applyRelicCommand(state, start('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 3,
+            now: () => 3
         }).state;
 
         expect(() =>
             applyRelicCommand(state, join('bob', 'Bob'), {
                 senderId: 'bob',
-                now: () => 4,
+                now: () => 4
             })
         ).toThrow('Cannot join an expedition after it has started.');
     });
@@ -414,17 +412,17 @@ describe('Relic Hunters game rules', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 2,
+            now: () => 2
         }).state;
         state = applyRelicCommand(state, join('bob', 'Bob'), {
             senderId: 'bob',
-            now: () => 3,
+            now: () => 3
         }).state;
 
         expect(() =>
             applyRelicCommand(state, start('bob', 'Bob'), {
                 senderId: 'bob',
-                now: () => 4,
+                now: () => 4
             })
         ).toThrow('Only the administrator can start the expedition.');
         expect(state.phase).toBe('lobby');
@@ -434,11 +432,11 @@ describe('Relic Hunters game rules', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 2,
+            now: () => 2
         }).state;
         state = applyRelicCommand(state, start('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 3,
+            now: () => 3
         }).state;
 
         expect(() =>
@@ -447,8 +445,8 @@ describe('Relic Hunters game rules', () => {
                 submit('alice', 'Alice', { kind: 'move', targetRoomId: 'exit' }),
                 {
                     senderId: 'alice',
-                    now: () => 4,
-                },
+                    now: () => 4
+                }
             )
         ).toThrow('Move target is not adjacent.');
         expect(state.pendingActions).toEqual([]);
@@ -458,15 +456,15 @@ describe('Relic Hunters game rules', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = {
             ...state,
-            relics: state.relics.filter((relic) => relic.roomId !== 'entrance'),
+            relics: state.relics.filter((relic) => relic.roomId !== 'entrance')
         };
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 2,
+            now: () => 2
         }).state;
         state = applyRelicCommand(state, start('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 3,
+            now: () => 3
         }).state;
 
         state = applyRelicCommand(
@@ -474,8 +472,8 @@ describe('Relic Hunters game rules', () => {
             submit('alice', 'Alice', { kind: 'search' }),
             {
                 senderId: 'alice',
-                now: () => 4,
-            },
+                now: () => 4
+            }
         ).state;
 
         expect(state.roomInvestigations).toHaveLength(1);
@@ -489,7 +487,7 @@ describe('Relic Hunters game rules', () => {
             summary: 'Entrance was searched clear.',
             hint: 'Move toward a stronger clue or the Exit.',
             effect: 'ordinary-search',
-            revealedRoomId: 'storage',
+            revealedRoomId: 'storage'
         });
         expect(toPublicRelicSnapshot(state).roomInvestigations).toEqual(state.roomInvestigations);
     });
@@ -509,15 +507,15 @@ describe('Relic Hunters game rules', () => {
             ...state,
             relics: [
                 { ...state.relics[0], id: 'hidden-relic-2', foundBy: 'alice' },
-                state.relics[1],
-            ],
+                state.relics[1]
+            ]
         });
         const secondFound = toPublicRelicSnapshot({
             ...state,
             relics: [
                 state.relics[0],
-                { ...state.relics[1], foundBy: 'alice' },
-            ],
+                { ...state.relics[1], foundBy: 'alice' }
+            ]
         });
 
         expect(new Set(firstFound.relics.map((relic) => relic.id)).size).toBe(firstFound.relics.length);
@@ -527,7 +525,7 @@ describe('Relic Hunters game rules', () => {
     it('does not publish the deterministic expedition seed', () => {
         const blueprint = createProceduralRelicExpeditionBlueprint({
             seed: 'server-only-seed',
-            theme: 'Hidden Keep',
+            theme: 'Hidden Keep'
         });
         const state = createRelicGameFromBlueprint(
             'room-1',
@@ -538,8 +536,8 @@ describe('Relic Hunters game rules', () => {
                 source: 'procedural',
                 seed: blueprint.seed,
                 theme: blueprint.theme,
-                blueprintId: `procedural:${blueprint.seed}`,
-            },
+                blueprintId: `procedural:${blueprint.seed}`
+            }
         );
 
         const snapshot = toPublicRelicSnapshot(state);
@@ -565,7 +563,7 @@ describe('Relic Hunters game rules', () => {
             { ...valid, winnerIds: [null] },
             { ...valid, setup: { schemaVersion: 2, source: 'procedural' } },
             { ...valid, setup: { ...valid.setup, seed: 'leaked-seed' } },
-            { ...valid, setup: { ...valid.setup, blueprintId: 'procedural:leaked-seed' } },
+            { ...valid, setup: { ...valid.setup, blueprintId: 'procedural:leaked-seed' } }
         ];
 
         expect(isRelicSnapshot(valid)).toBe(true);
@@ -576,21 +574,23 @@ describe('Relic Hunters game rules', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = {
             ...state,
-            relics: state.relics.filter((relic) => relic.roomId !== 'storage'),
+            relics: state.relics.filter((relic) => relic.roomId !== 'storage')
         };
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 2,
+            now: () => 2
         }).state;
         state = applyRelicCommand(state, start('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 3,
+            now: () => 3
         }).state;
 
-        for (const [index, action] of ([
-            { kind: 'move', targetRoomId: 'storage' },
-            { kind: 'search' },
-        ] as const).entries()) {
+        for (
+            const [index, action] of ([
+                { kind: 'move', targetRoomId: 'storage' },
+                { kind: 'search' }
+            ] as const).entries()
+        ) {
             state = submitAndContinue(state, action, 4 + index);
         }
 
@@ -600,7 +600,7 @@ describe('Relic Hunters game rules', () => {
             summary: 'The crates held a torn supply map, but no relic.',
             hint: 'The supply marks point back toward the Entrance and onward through the Trap Room.',
             effect: 'map-fragment',
-            revealedRoomId: 'trap',
+            revealedRoomId: 'trap'
         }));
     });
 
@@ -608,17 +608,19 @@ describe('Relic Hunters game rules', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 2,
+            now: () => 2
         }).state;
         state = applyRelicCommand(state, start('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 3,
+            now: () => 3
         }).state;
 
-        for (const [index, action] of ([
-            { kind: 'move', targetRoomId: 'storage' },
-            { kind: 'search' },
-        ] as const).entries()) {
+        for (
+            const [index, action] of ([
+                { kind: 'move', targetRoomId: 'storage' },
+                { kind: 'search' }
+            ] as const).entries()
+        ) {
             state = submitAndContinue(state, action, 4 + index);
         }
 
@@ -633,7 +635,7 @@ describe('Relic Hunters game rules', () => {
             hint: 'Carry the relic toward the Exit before the castle closes.',
             effect: 'map-fragment',
             revealedRoomId: 'trap',
-            relicId: 'sun-disk',
+            relicId: 'sun-disk'
         });
         expect(toPublicRelicSnapshot(state).roomInvestigations).toContainEqual({
             roomId: 'storage',
@@ -646,7 +648,7 @@ describe('Relic Hunters game rules', () => {
             hint: 'Carry the relic toward the Exit before the castle closes.',
             effect: 'map-fragment',
             revealedRoomId: 'trap',
-            relicId: 'sun-disk',
+            relicId: 'sun-disk'
         });
     });
 
@@ -654,11 +656,11 @@ describe('Relic Hunters game rules', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 2,
+            now: () => 2
         }).state;
         state = applyRelicCommand(state, start('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 3,
+            now: () => 3
         }).state;
 
         state = submitAndContinue(state, { kind: 'search' }, 4);
@@ -672,23 +674,25 @@ describe('Relic Hunters game rules', () => {
         let state = createRelicGame('room-1', 'room-1', 1);
         state = applyRelicCommand(state, join('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 2,
+            now: () => 2
         }).state;
         state = applyRelicCommand(state, start('alice', 'Alice'), {
             senderId: 'alice',
-            now: () => 3,
+            now: () => 3
         }).state;
 
-        for (const [index, action] of ([
-            { kind: 'move', targetRoomId: 'storage' },
-            { kind: 'search' },
-            { kind: 'move', targetRoomId: 'entrance' },
-            { kind: 'move', targetRoomId: 'hallway' },
-            { kind: 'move', targetRoomId: 'trap' },
-            { kind: 'move', targetRoomId: 'monster' },
-            { kind: 'move', targetRoomId: 'exit' },
-            { kind: 'escape' },
-        ] as const).entries()) {
+        for (
+            const [index, action] of ([
+                { kind: 'move', targetRoomId: 'storage' },
+                { kind: 'search' },
+                { kind: 'move', targetRoomId: 'entrance' },
+                { kind: 'move', targetRoomId: 'hallway' },
+                { kind: 'move', targetRoomId: 'trap' },
+                { kind: 'move', targetRoomId: 'monster' },
+                { kind: 'move', targetRoomId: 'exit' },
+                { kind: 'escape' }
+            ] as const).entries()
+        ) {
             state = submitAndContinue(state, action, 4 + index);
         }
 
@@ -697,11 +701,11 @@ describe('Relic Hunters game rules', () => {
         expect(alice).toMatchObject({
             escaped: true,
             score: 11,
-            relicIds: [],
+            relicIds: []
         });
         expect(state.relics.find((relic) => relic.id === 'sun-disk')).toMatchObject({
             foundBy: 'alice',
-            escapedBy: 'alice',
+            escapedBy: 'alice'
         });
         expect(state.winnerIds).toEqual(['alice']);
     });
@@ -718,7 +722,7 @@ function join(playerId: string, username: string): RelicCommand {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'join-expedition',
         gameId: 'room-1',
-        username,
+        username
     };
 }
 
@@ -728,14 +732,14 @@ function start(playerId: string, username: string): RelicCommand {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'start-expedition',
         gameId: 'room-1',
-        username,
+        username
     };
 }
 
 function submit(
     playerId: string,
     username: string,
-    action: Extract<RelicCommand, { kind: 'submit-action' }>['action'],
+    action: Extract<RelicCommand, { kind: 'submit-action'; }>['action']
 ): RelicCommand {
     void playerId;
     return {
@@ -743,7 +747,7 @@ function submit(
         kind: 'submit-action',
         gameId: 'room-1',
         username,
-        action,
+        action
     };
 }
 
@@ -753,7 +757,7 @@ function forceResolve(playerId: string, username: string): RelicCommand {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'force-resolve-round',
         gameId: 'room-1',
-        username,
+        username
     };
 }
 
@@ -764,7 +768,7 @@ function pickup(playerId: string, username: string, relicId: string): RelicComma
         kind: 'pickup-relic',
         gameId: 'room-1',
         username,
-        relicId,
+        relicId
     };
 }
 
@@ -773,25 +777,25 @@ function continueReview(state: RelicGameState, now: number): RelicGameState {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'continue-review',
         gameId: 'room-1',
-        username: 'Alice',
+        username: 'Alice'
     }, {
         senderId: 'alice',
-        now: () => now,
+        now: () => now
     }).state;
 }
 
 function submitAndContinue(
     state: RelicGameState,
-    action: Extract<RelicCommand, { kind: 'submit-action' }>['action'],
-    now: number,
+    action: Extract<RelicCommand, { kind: 'submit-action'; }>['action'],
+    now: number
 ): RelicGameState {
     const submitted = applyRelicCommand(
         state,
         submit('alice', 'Alice', action),
         {
             senderId: 'alice',
-            now: () => now,
-        },
+            now: () => now
+        }
     ).state;
 
     return submitted.phase === 'review'

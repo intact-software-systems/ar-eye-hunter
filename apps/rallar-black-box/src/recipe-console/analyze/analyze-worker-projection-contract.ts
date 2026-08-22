@@ -10,15 +10,15 @@ import type {
     DistributedRunTuningInventoryLimitation,
     DistributedRunTuningKnob,
     RallarBlackBoxDistributedGroupRef,
+    RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedStartMode,
     RallarBlackBoxDistributedTargetPolicyMode,
-    RallarBlackBoxDistributedRunManifest,
-    RunVerdictView,
+    RunVerdictView
 } from '@shared-test/rallar-bb-test/mod.ts';
 import type {
     AnalyzeArtifactIgnoredFile,
-    AnalyzePrimaryResultFailure,
     AnalyzeArtifactSource,
+    AnalyzePrimaryResultFailure
 } from './analyze-artifact-model.ts';
 
 export type AnalyzeArtifactWorkspaceProjection = Readonly<{
@@ -32,7 +32,7 @@ export type AnalyzeArtifactWorkspaceProjection = Readonly<{
 
 export type AnalyzeWorkerAnalysisProjection = Readonly<
     Omit<DistributedRunAnalysis, 'spa'> & {
-        spa?: Readonly<{ verdict: RunVerdictView }>;
+        spa?: Readonly<{ verdict: RunVerdictView; }>;
     }
 >;
 
@@ -120,22 +120,24 @@ export type AnalyzeTuneArtifactFacade = Readonly<{
         timingMetric?: string;
         artifactRole: 'focus' | 'compare-left' | 'compare-right' | 'unrelated';
     }>;
-    distributedRun: Pick<
-        ControlDistributedRunSnapshot,
-        | 'distributedRunId'
-        | 'controlRunId'
-        | 'state'
-        | 'startedAtEpochMs'
-        | 'completedAtEpochMs'
-        | 'updatedAtEpochMs'
-        | 'rollup'
-    > & Readonly<{
-        targetAgentIds: Readonly<{
-            entries: readonly string[];
-            total: number;
-            omitted: number;
+    distributedRun:
+        & Pick<
+            ControlDistributedRunSnapshot,
+            | 'distributedRunId'
+            | 'controlRunId'
+            | 'state'
+            | 'startedAtEpochMs'
+            | 'completedAtEpochMs'
+            | 'updatedAtEpochMs'
+            | 'rollup'
+        >
+        & Readonly<{
+            targetAgentIds: Readonly<{
+                entries: readonly string[];
+                total: number;
+                omitted: number;
+            }>;
         }>;
-    }>;
     analysis: AnalyzeWorkerAnalysisProjection;
     receivedMessageDeltas: Readonly<{
         entries: readonly Readonly<{

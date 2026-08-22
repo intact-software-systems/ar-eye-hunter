@@ -282,19 +282,19 @@ Recommended shared DTO direction:
 
 ```ts
 type AdminSupportFact = Readonly<{
-  label: string;
-  source: string;
-  value: unknown;
-  certainty: 'exact' | 'inferred' | 'unavailable';
-  redacted?: boolean;
+    label: string;
+    source: string;
+    value: unknown;
+    certainty: 'exact' | 'inferred' | 'unavailable';
+    redacted?: boolean;
 }>;
 
 type AdminSupportTimelineItem = Readonly<{
-  atEpochMs?: number;
-  source: string;
-  eventType: string;
-  summary: string;
-  rawRef?: string;
+    atEpochMs?: number;
+    source: string;
+    eventType: string;
+    summary: string;
+    rawRef?: string;
 }>;
 ```
 
@@ -303,10 +303,10 @@ parsing prose:
 
 ```ts
 type AdminSupportSuggestedAction = Readonly<{
-  code: string;
-  label: string;
-  severity: 'info' | 'warning' | 'urgent';
-  operationRef?: string;
+    code: string;
+    label: string;
+    severity: 'info' | 'warning' | 'urgent';
+    operationRef?: string;
 }>;
 ```
 

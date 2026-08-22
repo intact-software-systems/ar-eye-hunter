@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('Rallar composed facade compatibility', () => {
     it('exposes the expected compatibility facade shape', () => {
@@ -17,7 +17,7 @@ describe('Rallar composed facade compatibility', () => {
                 'isConnected',
                 'session',
                 'subscriptions',
-                'flow',
+                'flow'
             ] as const
         ) {
             expect(typeof facade[method]).toBe('function');
@@ -30,7 +30,7 @@ describe('Rallar composed facade compatibility', () => {
             'onChange',
             'register',
             'registerAndLogin',
-            'restore',
+            'restore'
         ]);
         expect(Object.keys(facade.rooms).sort()).toEqual([
             'acceptInvite',
@@ -59,7 +59,7 @@ describe('Rallar composed facade compatibility', () => {
             'unbanMember',
             'update',
             'updateMetadata',
-            'waitForPresence',
+            'waitForPresence'
         ]);
         expect(Object.keys(facade.people).sort()).toEqual([
             'get',
@@ -70,13 +70,13 @@ describe('Rallar composed facade compatibility', () => {
             'onEvent',
             'refresh',
             'replayEvents',
-            'state',
+            'state'
         ]);
         expect(Object.keys(facade.messages).sort()).toEqual([
             'channel',
             'room',
             'rtc',
-            'ws',
+            'ws'
         ]);
         expect(Object.keys(facade.realtime).sort()).toEqual([
             'health',
@@ -85,7 +85,7 @@ describe('Rallar composed facade compatibility', () => {
             'onJson',
             'room',
             'sendBinary',
-            'sendJson',
+            'sendJson'
         ]);
         expect(Object.keys(facade.rtc).sort()).toEqual([
             'activePeerIds',
@@ -104,20 +104,20 @@ describe('Rallar composed facade compatibility', () => {
             'waitForLane',
             'waitForOpen',
             'waitForRoom',
-            'waitForRoomLane',
+            'waitForRoomLane'
         ]);
         expect(Object.keys(facade.director).sort()).toEqual([
             'appoint',
             'createRelay',
             'onStatus',
             'resign',
-            'status',
+            'status'
         ]);
         expect(Object.keys(facade.calls).sort()).toEqual([
             'invite',
             'onInvite',
             'onSignal',
-            'start',
+            'start'
         ]);
         expect(Object.keys(facade.media).sort()).toEqual([
             'camera',
@@ -128,7 +128,7 @@ describe('Rallar composed facade compatibility', () => {
             'setLocalStream',
             'setPolicy',
             'setVideoEnabled',
-            'stopLocal',
+            'stopLocal'
         ]);
     });
 

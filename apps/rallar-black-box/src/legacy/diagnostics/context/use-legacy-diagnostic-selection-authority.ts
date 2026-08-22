@@ -14,28 +14,31 @@ export type LegacyDiagnosticSelectionAuthority = Readonly<{
 }>;
 
 export function useLegacyDiagnosticSelectionAuthority(
-    requested: boolean,
+    requested: boolean
 ): LegacyDiagnosticSelectionAuthority {
     const [state, setState] = useState<DiagnosticSelectionAuthorityState>({
-        active: requested,
+        active: requested
     });
 
     const finish = (): void => {
-        setState(current => current.active || current.issue
-            ? { active: false }
-            : current);
+        setState((current) =>
+            current.active || current.issue
+                ? { active: false }
+                : current
+        );
     };
 
     return {
         active: state.active,
         issue: state.issue,
         reportIssue: (issue) => {
-            setState(current =>
+            setState((current) =>
                 current.active && current.issue === issue
                     ? current
-                    : { active: true, issue });
+                    : { active: true, issue }
+            );
         },
         acceptManualSelection: finish,
-        finishInitialSelection: finish,
+        finishInitialSelection: finish
     };
 }

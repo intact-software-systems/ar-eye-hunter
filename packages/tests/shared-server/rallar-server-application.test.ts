@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
-import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { createRallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
+import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import { describe, expect, it, vi } from 'vitest';
 
 type App = {
     wsMounted: number;
@@ -14,15 +14,15 @@ describe('RallarServerApplication', () => {
             wsQBoxServerService: {
                 name: 'server-1',
                 onAnyInboxMessageDo,
-                removeAnyInboxMessageCallback: vi.fn(),
+                removeAnyInboxMessageCallback: vi.fn()
             } as unknown as WsQueueBoxServerService,
             qboxEngine: {
-                start: vi.fn(),
-            },
+                start: vi.fn()
+            }
         };
         const app: App = {
             wsMounted: 0,
-            restMounted: 0,
+            restMounted: 0
         };
         const server = createRallarServerApplication<typeof runtime, App>({
             runtime,
@@ -33,9 +33,9 @@ describe('RallarServerApplication', () => {
                 rest: [
                     (target) => {
                         target.restMounted += 1;
-                    },
-                ],
-            },
+                    }
+                ]
+            }
         });
 
         server.ws.mount(app).mount(app);
@@ -45,7 +45,7 @@ describe('RallarServerApplication', () => {
         expect(onAnyInboxMessageDo).toHaveBeenCalledTimes(1);
         expect(app).toEqual({
             wsMounted: 1,
-            restMounted: 1,
+            restMounted: 1
         });
         expect(runtime.qboxEngine.start).toHaveBeenCalledTimes(1);
     });

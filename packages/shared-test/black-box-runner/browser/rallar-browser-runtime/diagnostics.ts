@@ -1,19 +1,19 @@
-export type BlackBoxRallarDiagnostics<TEvent extends Readonly<{ atEpochMs: number }>> = Readonly<{
+export type BlackBoxRallarDiagnostics<TEvent extends Readonly<{ atEpochMs: number; }>> = Readonly<{
     emit(event: Omit<TEvent, 'atEpochMs'>): void;
 }>;
 
-export function createBlackBoxRallarDiagnostics<TEvent extends Readonly<{ atEpochMs: number }>>(
+export function createBlackBoxRallarDiagnostics<TEvent extends Readonly<{ atEpochMs: number; }>>(
     options: Readonly<{
         now(): number;
         emit(event: TEvent): void;
-    }>,
+    }>
 ): BlackBoxRallarDiagnostics<TEvent> {
     return {
-        emit: event =>
+        emit: (event) =>
             options.emit({
                 ...event,
-                atEpochMs: options.now(),
-            } as TEvent),
+                atEpochMs: options.now()
+            } as TEvent)
     };
 }
 
@@ -33,7 +33,7 @@ export type BlackBoxRallarRuntimeDiagnostics = Readonly<{
         config: BlackBoxRallarConnectionConfig | undefined,
         topic: string,
         error: unknown,
-        data?: unknown,
+        data?: unknown
     ): void;
     emitConnectPhaseStarted(config: BlackBoxRallarConnectionConfig, phase: string, data?: unknown): void;
     emitConnectPhaseCompleted(config: BlackBoxRallarConnectionConfig, phase: string, data?: unknown): void;
@@ -46,7 +46,7 @@ export function serializeBlackBoxRallarError(error: unknown): unknown {
         return {
             name: error.name,
             message: error.message,
-            stack: error.stack,
+            stack: error.stack
         };
     }
     return error;
@@ -64,24 +64,25 @@ function consoleWarningPart(value: unknown): string {
     }
     try {
         return JSON.stringify(value);
-    } catch {
+    }
+    catch {
         return String(value);
     }
 }
 
 function classifyConsoleWarning(args: readonly unknown[]):
     | Readonly<{
-          topic: string;
-          transport: BlackBoxRallarTransport | 'ws';
-          message: string;
-      }>
+        topic: string;
+        transport: BlackBoxRallarTransport | 'ws';
+        message: string;
+    }>
     | undefined {
     const message = args.map(consoleWarningPart).join(' ');
     if (message.includes('Unhandled WS message') || message.includes('No callback for typeId')) {
         return {
             topic: 'rallar.browser.ws.unhandled_message',
             transport: 'ws',
-            message,
+            message
         };
     }
     if (
@@ -93,7 +94,7 @@ function classifyConsoleWarning(args: readonly unknown[]):
         return {
             topic: 'rallar.browser.rtc.data_channel_warning',
             transport: 'realtime',
-            message,
+            message
         };
     }
     return undefined;
@@ -107,23 +108,24 @@ export function createBlackBoxRallarRuntimeDiagnostics(
         transportOf(config: BlackBoxRallarConnectionConfig): BlackBoxRallarTransport;
         laneIdOf(config: BlackBoxRallarConnectionConfig): string;
         scopeDiagnostics(config: BlackBoxRallarConnectionConfig): ScopeDiagnostics;
-    }>,
+    }>
 ): BlackBoxRallarRuntimeDiagnostics {
     const events = createBlackBoxRallarDiagnostics<BlackBoxRallarEvent>({
         now: options.now,
-        emit: event => {
+        emit: (event) => {
             try {
                 void Promise.resolve(options.publish(event)).catch(options.onPublishError);
-            } catch (error) {
+            }
+            catch (error) {
                 options.onPublishError(error);
             }
-        },
+        }
     });
     const emit = events.emit;
     const emitDiagnostic = (
         config: BlackBoxRallarConnectionConfig,
         topic: string,
-        data?: unknown,
+        data?: unknown
     ): void => {
         emit({
             kind: 'diagnostic',
@@ -134,14 +136,14 @@ export function createBlackBoxRallarRuntimeDiagnostics(
             roomId: config.roomId,
             ...options.scopeDiagnostics(config),
             laneId: options.laneIdOf(config),
-            data,
+            data
         });
     };
     const emitError = (
         config: BlackBoxRallarConnectionConfig | undefined,
         topic: string,
         error: unknown,
-        data?: unknown,
+        data?: unknown
     ): void => {
         emit({
             kind: 'diagnostic',
@@ -153,7 +155,7 @@ export function createBlackBoxRallarRuntimeDiagnostics(
             ...(config ? options.scopeDiagnostics(config) : {}),
             laneId: config ? options.laneIdOf(config) : undefined,
             data,
-            error: serializeBlackBoxRallarError(error),
+            error: serializeBlackBoxRallarError(error)
         });
     };
     return {
@@ -163,13 +165,13 @@ export function createBlackBoxRallarRuntimeDiagnostics(
         emitConnectPhaseStarted: (config, phase, data) => {
             emitDiagnostic(config, 'rallar.browser.connect.phase_started', {
                 phase,
-                ...diagnosticObject(data),
+                ...diagnosticObject(data)
             });
         },
         emitConnectPhaseCompleted: (config, phase, data) => {
             emitDiagnostic(config, 'rallar.browser.connect.phase_completed', {
                 phase,
-                ...diagnosticObject(data),
+                ...diagnosticObject(data)
             });
         },
         emitConsoleWarning: (config, args) => {
@@ -188,11 +190,11 @@ export function createBlackBoxRallarRuntimeDiagnostics(
                 ...options.scopeDiagnostics(config),
                 data: {
                     message: classified.message,
-                    args,
-                },
+                    args
+                }
             });
         },
-        serializeError: serializeBlackBoxRallarError,
+        serializeError: serializeBlackBoxRallarError
     };
 }
 
@@ -212,7 +214,7 @@ export function createBlackBoxRallarConsoleDiagnostics<TConfig>(
         onWarning(config: TConfig, args: readonly unknown[]): void;
         restoreExisting?(): void;
         publishRestore?(restore: (() => void) | undefined): void;
-    }>,
+    }>
 ): BlackBoxRallarConsoleDiagnostics<TConfig> {
     const configs = new Map<symbol, TConfig>();
     let restore: (() => void) | undefined;
@@ -244,7 +246,7 @@ export function createBlackBoxRallarConsoleDiagnostics<TConfig>(
     };
 
     return {
-        install: config => {
+        install: (config) => {
             const token = Symbol('black-box-rallar-console-diagnostics');
             configs.set(token, config);
             ensurePatch();
@@ -255,11 +257,7 @@ export function createBlackBoxRallarConsoleDiagnostics<TConfig>(
                 }
             };
         },
-        close: () => restorePatch(),
+        close: () => restorePatch()
     };
 }
-import type {
-    BlackBoxRallarConnectionConfig,
-    BlackBoxRallarEvent,
-    BlackBoxRallarTransport,
-} from './contracts.ts';
+import type { BlackBoxRallarConnectionConfig, BlackBoxRallarEvent, BlackBoxRallarTransport } from './contracts.ts';

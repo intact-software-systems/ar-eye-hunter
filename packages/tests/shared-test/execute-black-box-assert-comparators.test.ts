@@ -1,5 +1,5 @@
-import {describe, expect, it} from 'vitest';
-import {executeBlackBox} from '../../shared-test/black-box-runner/execute-black-box.ts';
+import { describe, expect, it } from 'vitest';
+import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
 
 function assertStep(input: {
     actual: unknown;
@@ -11,11 +11,11 @@ function assertStep(input: {
             request: {
                 actual: input.actual,
                 scenarioExecutionNumber: 1,
-                interactionExecutionNumber: 1,
+                interactionExecutionNumber: 1
             },
-            response: input.expectFields,
+            response: input.expectFields
         },
-        [input.name ?? 'assertWithComparators']: {},
+        [input.name ?? 'assertWithComparators']: {}
     };
 }
 
@@ -26,7 +26,7 @@ describe('executeBlackBox ASSERT expect.comparators', () => {
                 actual: {
                     stats: { memberCount: 5, onlineMemberCount: 3 },
                     activeSessions: [{ sessionId: 'session-1' }],
-                    sessionId: 'session-abc-123',
+                    sessionId: 'session-abc-123'
                 },
                 expectFields: {
                     comparators: [
@@ -34,12 +34,12 @@ describe('executeBlackBox ASSERT expect.comparators', () => {
                         { path: 'stats.onlineMemberCount', between: [1, 5] },
                         { path: 'activeSessions', length: 1 },
                         { path: 'sessionId', contains: 'session-' },
-                        { path: 'sessionId', matches: '^session-[a-z]+-[0-9]+$' },
-                    ],
-                },
+                        { path: 'sessionId', matches: '^session-[a-z]+-[0-9]+$' }
+                    ]
+                }
             })],
             0,
-            { failFast: true },
+            { failFast: true }
         );
 
         expect(report.summary.failure).toBe(0);
@@ -52,18 +52,18 @@ describe('executeBlackBox ASSERT expect.comparators', () => {
             [assertStep({
                 actual: {
                     stats: { memberCount: 0 },
-                    activeSessions: [{ sessionId: 'a' }, { sessionId: 'b' }],
+                    activeSessions: [{ sessionId: 'a' }, { sessionId: 'b' }]
                 },
                 expectFields: {
                     comparators: [
                         { path: 'stats.memberCount', gte: 1 },
                         { path: 'activeSessions', length: 1 },
-                        { path: 'stats.missing', gt: 0 },
-                    ],
-                },
+                        { path: 'stats.missing', gt: 0 }
+                    ]
+                }
             })],
             0,
-            { failFast: true },
+            { failFast: true }
         );
 
         expect(report.summary.failure).toBe(1);
@@ -72,7 +72,7 @@ describe('executeBlackBox ASSERT expect.comparators', () => {
         expect(result.result).toBe('Assert comparator failed');
         expect(result.details.failures).toHaveLength(3);
         const comparatorNames = result.details.failures.map(
-            (failure: { comparator: string }) => failure.comparator,
+            (failure: { comparator: string; }) => failure.comparator
         );
         expect(comparatorNames).toEqual(['gte', 'length', 'path']);
     });
@@ -86,31 +86,31 @@ describe('executeBlackBox ASSERT expect.comparators', () => {
                             output: 'floorRevision',
                             value: 3,
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 1,
+                            interactionExecutionNumber: 1
                         },
-                        response: {},
+                        response: {}
                     },
-                    setFloorRevision: {},
+                    setFloorRevision: {}
                 },
                 {
                     ASSERT: {
                         request: {
                             actual: { revision: 7, kind: 'group-state' },
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 2,
+                            interactionExecutionNumber: 2
                         },
                         response: {
                             body: { kind: 'group-state' },
                             comparators: [
-                                { path: 'revision', gte: '{floorRevision}' },
-                            ],
-                        },
+                                { path: 'revision', gte: '{floorRevision}' }
+                            ]
+                        }
                     },
-                    assertBodyAndComparators: {},
-                },
+                    assertBodyAndComparators: {}
+                }
             ],
             0,
-            { failFast: true },
+            { failFast: true }
         );
 
         expect(report.summary.failure).toBe(0);
@@ -122,11 +122,11 @@ describe('executeBlackBox ASSERT expect.comparators', () => {
             [assertStep({
                 actual: { value: 1 },
                 expectFields: {
-                    comparators: [{ path: 'value' }],
-                },
+                    comparators: [{ path: 'value' }]
+                }
             })],
             0,
-            { failFast: true },
+            { failFast: true }
         );
 
         expect(report.summary.failure).toBe(1);
@@ -140,20 +140,20 @@ describe('executeBlackBox ASSERT expect.comparators', () => {
                 actual: {
                     members: [
                         { principalId: 'client-1', status: 'active' },
-                        { principalId: 'intruder', status: 'active' },
-                    ],
+                        { principalId: 'intruder', status: 'active' }
+                    ]
                 },
                 expectFields: {
                     comparison: 'compatible-complete',
                     body: {
                         members: [
-                            { principalId: 'client-1', status: 'active' },
-                        ],
-                    },
-                },
+                            { principalId: 'client-1', status: 'active' }
+                        ]
+                    }
+                }
             })],
             0,
-            { failFast: true },
+            { failFast: true }
         );
 
         expect(report.summary.failure).toBe(1);

@@ -9,14 +9,14 @@ import { registerGroupStateMutationRoutes } from './register-group-state-mutatio
 import { registerGroupStateReadRoutes } from './register-group-state-read-routes.ts';
 
 export function registerGroupStateRoutes(
-  app: Hono,
-  dependencies: GroupStateRouteDependencies,
+    app: Hono,
+    dependencies: GroupStateRouteDependencies
 ): void {
-  const authorization = createGroupStateRouteAuthorization(dependencies);
+    const authorization = createGroupStateRouteAuthorization(dependencies);
 
-  registerGroupStateReadRoutes(app, dependencies, authorization);
-  registerGroupStateMutationRoutes(app, dependencies, authorization);
-  registerGroupAdmissionRoutes(app, dependencies);
-  registerGroupMembershipRoutes(app, dependencies, authorization);
-  registerGroupPresenceRoutes(app, dependencies, authorization);
+    registerGroupStateReadRoutes(app, dependencies, authorization);
+    registerGroupStateMutationRoutes(app, dependencies, authorization);
+    registerGroupAdmissionRoutes(app, dependencies);
+    registerGroupMembershipRoutes(app, dependencies, authorization);
+    registerGroupPresenceRoutes(app, dependencies, authorization);
 }

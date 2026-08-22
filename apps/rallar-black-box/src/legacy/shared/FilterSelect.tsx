@@ -4,7 +4,7 @@ export function FilterSelect({
     label,
     value,
     values,
-    onChange,
+    onChange
 }: {
     label: string;
     value: string;

@@ -1,36 +1,24 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import {
-    createActiveGroupMemberFixture,
-    createActiveGroupPresenceSessionFixture,
-    createGroupSnapshotFixture,
-} from './authoritative-group-fixtures.ts';
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
-import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
-import {
-    DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
-    type QRtcPeerDto,
-    type WebRtcPeerConnectionLeft,
-} from '@shared/services/WebRtcConnectionService.ts';
+import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID, type QRtcPeerDto, type WebRtcPeerConnectionLeft } from '@shared/services/WebRtcConnectionService.ts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createActiveGroupMemberFixture, createActiveGroupPresenceSessionFixture, createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 
 type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.ts');
 type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
 type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
-type BrowserALRuntimeStoresModule =
-    typeof import('@shared-web/browser/browser-al-runtime-stores.ts');
-type ClientStateSnapshotsRepositoryModule =
-    typeof import('@shared/repository/client-state-snapshots-repository.ts');
+type BrowserALRuntimeStoresModule = typeof import('@shared-web/browser/browser-al-runtime-stores.ts');
+type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
-type GroupStateSnapshotsRepositoryModule =
-    typeof import('@shared/repository/group-state-snapshots-repository.ts');
-type RoomGroupStateWorkflowsModule =
-    typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
+type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
+type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
 
 const mocks = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
@@ -55,59 +43,43 @@ const mocks = await vi.hoisted(async () => {
         writeSession: vi.fn<AuthModule['writeSession']>(),
         hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() => Promise.resolve()),
         onStateCacheChange: vi.fn<DataCachesModule['onStateCacheChange']>(() => vi.fn()),
-        deleteBrowserALRuntimeEntriesForSession: vi.fn<
-            BrowserALRuntimeStoresModule['deleteBrowserALRuntimeEntriesForSession']
-        >(() =>
+        deleteBrowserALRuntimeEntriesForSession: vi.fn<BrowserALRuntimeStoresModule['deleteBrowserALRuntimeEntriesForSession']>(() =>
             Promise.resolve({
                 dbName: '',
                 storeName: '',
                 keyPrefixes: [],
                 scanned: 0,
-                deleted: 0,
+                deleted: 0
             })
         ),
         createAndJoinStateGroup: vi.fn<ApiWorkflowsModule['createAndJoinStateGroup']>(
-            () => Promise.reject(new Error('create not mocked')),
+            () => Promise.reject(new Error('create not mocked'))
         ),
-        joinStateGroup: vi.fn<ApiWorkflowsModule['joinStateGroup']>(() =>
-            Promise.reject(new Error('join not mocked'))
-        ),
-        leaveStateGroup: vi.fn<ApiWorkflowsModule['leaveStateGroup']>(() =>
-            Promise.reject(new Error('leave not mocked'))
-        ),
+        joinStateGroup: vi.fn<ApiWorkflowsModule['joinStateGroup']>(() => Promise.reject(new Error('join not mocked'))),
+        leaveStateGroup: vi.fn<ApiWorkflowsModule['leaveStateGroup']>(() => Promise.reject(new Error('leave not mocked'))),
         updateStateGroupMetadata: vi.fn<ApiWorkflowsModule['updateStateGroupMetadata']>(
-            () => Promise.reject(new Error('metadata update not mocked')),
+            () => Promise.reject(new Error('metadata update not mocked'))
         ),
-        refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(() =>
-            Promise.resolve({ clients: [], groups: [] })
-        ),
+        refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(() => Promise.resolve({ clients: [], groups: [] })),
         loginToApi: vi.fn<AuthApiModule['loginToApi']>(() => Promise.resolve(session)),
-        logoutFromApi: vi.fn<AuthApiModule['logoutFromApi']>(() =>
-            Promise.resolve({ loggedOut: true })
-        ),
+        logoutFromApi: vi.fn<AuthApiModule['logoutFromApi']>(() => Promise.resolve({ loggedOut: true })),
         registerWithApi: vi.fn<AuthApiModule['registerWithApi']>(() =>
             Promise.resolve({
                 clientId: 'client-new',
                 username: 'new-user',
                 displayName: null,
-                registeredAtEpochMs: 1_000,
+                registeredAtEpochMs: 1_000
             })
         ),
-        listStateClientEvents: vi.fn<ApiIntegrationModule['listStateClientEvents']>(() =>
-            Promise.reject(new Error('client events not mocked'))
-        ),
-        listStateClientEventPage: vi.fn<
-            ApiIntegrationModule['listStateClientEventPage']
-        >(() => Promise.reject(new Error('client event page not mocked'))),
-        listStateGroupEvents: vi.fn<ApiIntegrationModule['listStateGroupEvents']>(() =>
-            Promise.reject(new Error('group events not mocked'))
-        ),
+        listStateClientEvents: vi.fn<ApiIntegrationModule['listStateClientEvents']>(() => Promise.reject(new Error('client events not mocked'))),
+        listStateClientEventPage: vi.fn<ApiIntegrationModule['listStateClientEventPage']>(() => Promise.reject(new Error('client event page not mocked'))),
+        listStateGroupEvents: vi.fn<ApiIntegrationModule['listStateGroupEvents']>(() => Promise.reject(new Error('group events not mocked'))),
         listStateGroupEventPage: vi.fn<ApiIntegrationModule['listStateGroupEventPage']>(
-            () => Promise.reject(new Error('group event page not mocked')),
+            () => Promise.reject(new Error('group event page not mocked'))
         ),
         clientRepositoryMissing: vi.fn((): never => {
             throw new Error(
-                'Repository not found: shared.repository.client-state-snapshots',
+                'Repository not found: shared.repository.client-state-snapshots'
             );
         }),
         findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<
@@ -115,12 +87,8 @@ const mocks = await vi.hoisted(async () => {
                 'findFirstGroupStateSnapshotRefSessionIdIsIn'
             ]
         >(),
-        findGroupStateSnapshotByRef: vi.fn<
-            GroupStateSnapshotsRepositoryModule['findGroupStateSnapshotByRef']
-        >(),
-        getAllGroupStateSnapshots: vi.fn<
-            GroupStateSnapshotsRepositoryModule['getAllGroupStateSnapshots']
-        >(),
+        findGroupStateSnapshotByRef: vi.fn<GroupStateSnapshotsRepositoryModule['findGroupStateSnapshotByRef']>(),
+        getAllGroupStateSnapshots: vi.fn<GroupStateSnapshotsRepositoryModule['getAllGroupStateSnapshots']>()
     };
 });
 
@@ -130,8 +98,8 @@ vi.mock(
         clearMiddleware: mocks.clearMiddleware,
         getMiddleware: vi.fn(() => mocks.ctx),
         initMiddleware: mocks.initMiddleware,
-        isMiddlewareReady: mocks.isMiddlewareReady,
-    }),
+        isMiddlewareReady: mocks.isMiddlewareReady
+    })
 );
 
 vi.mock(
@@ -140,14 +108,14 @@ vi.mock(
         listStateClientEventPage: mocks.listStateClientEventPage,
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
-        listStateGroupEvents: mocks.listStateGroupEvents,
-    }),
+        listStateGroupEvents: mocks.listStateGroupEvents
+    })
 );
 
 vi.mock(import('@shared-web/browser/auth/session-http-api.ts'), (): Partial<AuthApiModule> => ({
     loginToApi: mocks.loginToApi,
     logoutFromApi: mocks.logoutFromApi,
-    registerWithApi: mocks.registerWithApi,
+    registerWithApi: mocks.registerWithApi
 }));
 
 vi.mock(
@@ -157,31 +125,31 @@ vi.mock(
         joinStateGroup: mocks.joinStateGroup,
         leaveStateGroup: mocks.leaveStateGroup,
         refreshStateSnapshots: mocks.refreshStateSnapshots,
-        updateStateGroupMetadata: mocks.updateStateGroupMetadata,
-    }),
+        updateStateGroupMetadata: mocks.updateStateGroupMetadata
+    })
 );
 
 vi.mock(
     import('@shared-web/browser/rooms/room-group-state-workflows.ts'),
     (): Partial<RoomGroupStateWorkflowsModule> => ({
         joinStateGroup: mocks.joinStateGroup,
-        leaveStateGroup: mocks.leaveStateGroup,
-    }),
+        leaveStateGroup: mocks.leaveStateGroup
+    })
 );
 
 vi.mock(
     import('@shared-web/browser/browser-al-runtime-stores.ts'),
     (): Partial<BrowserALRuntimeStoresModule> => ({
-        deleteBrowserALRuntimeEntriesForSession: mocks.deleteBrowserALRuntimeEntriesForSession,
-    }),
+        deleteBrowserALRuntimeEntriesForSession: mocks.deleteBrowserALRuntimeEntriesForSession
+    })
 );
 
 vi.mock(
     import('@shared-web/browser/data-caches.ts'),
     (): Partial<DataCachesModule> => ({
         hydrateStateCaches: mocks.hydrateStateCaches,
-        onStateCacheChange: mocks.onStateCacheChange,
-    }),
+        onStateCacheChange: mocks.onStateCacheChange
+    })
 );
 
 vi.mock(
@@ -190,26 +158,25 @@ vi.mock(
         clearSession: mocks.clearSession,
         isLoggedIn: vi.fn(() => true),
         readSession: mocks.readSession,
-        writeSession: mocks.writeSession,
-    }),
+        writeSession: mocks.writeSession
+    })
 );
 
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
     (): Partial<ClientStateSnapshotsRepositoryModule> => ({
         findClientStateSnapshotByPrincipalId: mocks.clientRepositoryMissing,
-        getAllClientStateSnapshots: mocks.clientRepositoryMissing,
-    }),
+        getAllClientStateSnapshots: mocks.clientRepositoryMissing
+    })
 );
 
 vi.mock(
     import('@shared/repository/group-state-snapshots-repository.ts'),
     (): Partial<GroupStateSnapshotsRepositoryModule> => ({
-        findFirstGroupStateSnapshotRefSessionIdIsIn:
-            mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
+        findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
         findGroupStateSnapshotByRef: mocks.findGroupStateSnapshotByRef,
-        getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots,
-    }),
+        getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
+    })
 );
 
 describe('Rallar auth session compatibility', () => {
@@ -218,7 +185,7 @@ describe('Rallar auth session compatibility', () => {
         vi.useRealTimers();
         mocks.clientRepositoryMissing.mockImplementation(() => {
             throw new Error(
-                'Repository not found: shared.repository.client-state-snapshots',
+                'Repository not found: shared.repository.client-state-snapshots'
             );
         });
         mockGroupRepositoryMissing();
@@ -233,13 +200,13 @@ describe('Rallar auth session compatibility', () => {
             storeName: 'entries',
             keyPrefixes: [],
             scanned: 0,
-            deleted: 0,
+            deleted: 0
         });
         mocks.createAndJoinStateGroup.mockRejectedValue(new Error('create not mocked'));
         mocks.joinStateGroup.mockRejectedValue(new Error('join not mocked'));
         mocks.leaveStateGroup.mockRejectedValue(new Error('leave not mocked'));
         mocks.updateStateGroupMetadata.mockRejectedValue(
-            new Error('metadata update not mocked'),
+            new Error('metadata update not mocked')
         );
         mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes
             .mockReturnValue([]);
@@ -251,42 +218,40 @@ describe('Rallar auth session compatibility', () => {
                 Either.ofLeft<WebRtcPeerConnectionLeft, QRtcPeerDto>({
                     kind: 'connect-failed',
                     peerId,
-                    error: new Error('connect not mocked'),
-                }),
+                    error: new Error('connect not mocked')
+                })
         );
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
             async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) => ({
                 status: 'connect-failed',
                 peerId,
                 laneId,
-                error: new Error('connect not mocked'),
-            }),
+                error: new Error('connect not mocked')
+            })
         );
-        mocks.webRtcConnectionService.onRtcPeerLifecycleDo.mockImplementation(() =>
-            mocks.ctx.middleware.webRtcConnectionService
-        );
+        mocks.webRtcConnectionService.onRtcPeerLifecycleDo.mockImplementation(() => mocks.ctx.middleware.webRtcConnectionService);
         mocks.webRtcConnectionService.readPeer.mockReturnValue(undefined);
         mocks.webRtcConnectionService.removeRtcPeerLifecycleById.mockReturnValue(true);
         mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => ({
                 status: 'enqueued',
                 message,
-                entries: [],
-            }),
+                entries: []
+            })
         );
         mocks.rtcRxStreamer.onInboxMessageDo.mockReturnValue(
-            mocks.ctx.middleware.rtcRxStreamer,
+            mocks.ctx.middleware.rtcRxStreamer
         );
         mocks.rtcRxStreamer.removeInboxMessageCallback.mockReturnValue(true);
         mocks.webSocketQueueBox.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => ({
                 status: 'enqueued',
                 message,
-                entries: [],
-            }),
+                entries: []
+            })
         );
         mocks.webSocketQueueBox.onAnyInboxMessageDo.mockReturnValue(
-            mocks.ctx.middleware.webSocketQueueBox,
+            mocks.ctx.middleware.webSocketQueueBox
         );
         mocks.webSocketQueueBox.removeAnyInboxMessageCallback.mockReturnValue(true);
         mocks.webSocketQueueBox.readHealth.mockReturnValue({
@@ -298,32 +263,32 @@ describe('Rallar auth session compatibility', () => {
             reconnectEnabled: false,
             reconnectAttempts: 0,
             maxReconnectAttempts: 12,
-            reconnectExhausted: false,
+            reconnectExhausted: false
         });
         mocks.webSocketQueueBox.close.mockImplementation((code, reason) => {
             mocks.webSocket.close(code, reason);
         });
         mocks.webSocket.onWebsocketCallbacksDo.mockReturnValue(
-            mocks.ctx.middleware.webSocketQueueBox.socket,
+            mocks.ctx.middleware.webSocketQueueBox.socket
         );
         mocks.webSocket.removeWebsocketCallbackById.mockReturnValue(true);
         mocks.registerWithApi.mockResolvedValue({
             clientId: 'client-new',
             username: 'new-user',
             displayName: null,
-            registeredAtEpochMs: 1_000,
+            registeredAtEpochMs: 1_000
         });
         mocks.listStateClientEvents.mockRejectedValue(
-            new Error('client events not mocked'),
+            new Error('client events not mocked')
         );
         mocks.listStateClientEventPage.mockRejectedValue(
-            new Error('client event page not mocked'),
+            new Error('client event page not mocked')
         );
         mocks.listStateGroupEvents.mockRejectedValue(
-            new Error('group events not mocked'),
+            new Error('group events not mocked')
         );
         mocks.listStateGroupEventPage.mockRejectedValue(
-            new Error('group event page not mocked'),
+            new Error('group event page not mocked')
         );
     });
 
@@ -336,20 +301,20 @@ describe('Rallar auth session compatibility', () => {
         await createRallarFacade().auth.login(
             {
                 username: 'principal-1',
-                password: 'password-1',
+                password: 'password-1'
             },
             {
                 signal,
-                timeoutMs: 123,
-            },
+                timeoutMs: 123
+            }
         );
 
         expect(mocks.loginToApi.mock.calls[0]?.[0]).toEqual({
             username: 'principal-1',
-            password: 'password-1',
+            password: 'password-1'
         });
         const loginOptions = mocks.loginToApi.mock.calls[0]?.[1] as
-            | { signal?: AbortSignal }
+            | { signal?: AbortSignal; }
             | undefined;
         expect(loginOptions?.signal).toBeInstanceOf(AbortSignal);
     });
@@ -364,12 +329,10 @@ describe('Rallar auth session compatibility', () => {
 
         await createRallarFacade().auth.login(
             { username: 'principal-1', password: 'password-1' },
-            { maxAttempts: 2 },
+            { maxAttempts: 2 }
         );
 
-        const requestIds = mocks.loginToApi.mock.calls.map((call) =>
-            (call[1] as { requestId?: string } | undefined)?.requestId
-        );
+        const requestIds = mocks.loginToApi.mock.calls.map((call) => (call[1] as { requestId?: string; } | undefined)?.requestId);
         expect(requestIds).toHaveLength(2);
         expect(requestIds[0]).toBeTruthy();
         expect(new Set(requestIds).size).toBe(1);
@@ -386,7 +349,7 @@ describe('Rallar auth session compatibility', () => {
         expect(listener).toHaveBeenCalledWith({
             authenticated: true,
             reason: 'current',
-            session: mocks.ctx.session,
+            session: mocks.ctx.session
         });
 
         unsubscribe();
@@ -400,15 +363,13 @@ describe('Rallar auth session compatibility', () => {
         vi.setSystemTime(1_000);
         const expiringSession = {
             ...mocks.ctx.session,
-            expiresAtEpochMs: 1_500,
+            expiresAtEpochMs: 1_500
         };
         mocks.initMiddleware.mockResolvedValue({
             ...mocks.ctx,
-            session: expiringSession,
+            session: expiringSession
         });
-        mocks.readSession.mockImplementation(() =>
-            Date.now() >= expiringSession.expiresAtEpochMs ? undefined : expiringSession
-        );
+        mocks.readSession.mockImplementation(() => Date.now() >= expiringSession.expiresAtEpochMs ? undefined : expiringSession);
         const facade = createRallarFacade();
         const authListener = vi.fn();
         facade.auth.onChange(authListener, { emitCurrent: false });
@@ -428,7 +389,7 @@ describe('Rallar auth session compatibility', () => {
         expect(authListener).toHaveBeenCalledWith({
             authenticated: false,
             reason: 'expired',
-            session: undefined,
+            session: undefined
         });
         expect(facade.isConnected()).toBe(false);
     });
@@ -441,18 +402,18 @@ describe('Rallar auth session compatibility', () => {
         vi.setSystemTime(1_000);
         const oldSession = {
             ...mocks.ctx.session,
-            expiresAtEpochMs: 1_500,
+            expiresAtEpochMs: 1_500
         };
         const nextSession = {
             ...mocks.ctx.session,
             sessionId: 'session-2',
             accessToken: 'token-2',
-            expiresAtEpochMs: 10_000,
+            expiresAtEpochMs: 10_000
         };
         let currentSession = oldSession;
         mocks.initMiddleware.mockResolvedValue({
             ...mocks.ctx,
-            session: oldSession,
+            session: oldSession
         });
         mocks.readSession.mockImplementation(() => currentSession);
         const facade = createRallarFacade();
@@ -486,7 +447,7 @@ describe('Rallar auth session compatibility', () => {
         expect(authListener).toHaveBeenCalledWith({
             authenticated: false,
             reason: 'unauthorized',
-            session: undefined,
+            session: undefined
         });
     });
 
@@ -501,7 +462,7 @@ describe('Rallar auth session compatibility', () => {
 
         facade.setDefaults({
             applicationId: 'app-1',
-            workspaceId: 'workspace-1',
+            workspaceId: 'workspace-1'
         });
         mocks.joinStateGroup.mockResolvedValueOnce(oldRoom);
         await facade.rooms.join('old-room');
@@ -517,7 +478,7 @@ describe('Rallar auth session compatibility', () => {
         expect(authListener).toHaveBeenCalledWith({
             authenticated: false,
             reason: 'unauthorized',
-            session: undefined,
+            session: undefined
         });
         expect(mocks.clearSession).toHaveBeenCalledOnce();
     });
@@ -547,29 +508,29 @@ describe('Rallar auth session compatibility', () => {
             ...mocks.ctx.session,
             clientId: 'admin',
             accessToken: 'admin-token',
-            username: 'admin',
+            username: 'admin'
         };
 
         await createRallarFacade().auth.register(
             {
                 username: 'new-user',
                 password: 'password-1',
-                displayName: 'New User',
+                displayName: 'New User'
             },
             {
                 adminSession,
                 signal,
-                timeoutMs: 123,
-            },
+                timeoutMs: 123
+            }
         );
 
         expect(mocks.registerWithApi.mock.calls[0]?.[0]).toEqual({
             username: 'new-user',
             password: 'password-1',
-            displayName: 'New User',
+            displayName: 'New User'
         });
         const registerOptions = mocks.registerWithApi.mock.calls[0]?.[1] as
-            | { signal?: AbortSignal; authSession?: unknown }
+            | { signal?: AbortSignal; authSession?: unknown; }
             | undefined;
         expect(registerOptions?.signal).toBeInstanceOf(AbortSignal);
         expect(registerOptions?.authSession).toBe(adminSession);
@@ -585,17 +546,15 @@ describe('Rallar auth session compatibility', () => {
                 clientId: 'client-new',
                 username: 'new-user',
                 displayName: null,
-                registeredAtEpochMs: 1_000,
+                registeredAtEpochMs: 1_000
             });
 
         await createRallarFacade().auth.register(
             { username: 'new-user', password: 'password-1' },
-            { maxAttempts: 2 },
+            { maxAttempts: 2 }
         );
 
-        const requestIds = mocks.registerWithApi.mock.calls.map((call) =>
-            (call[1] as { requestId?: string } | undefined)?.requestId
-        );
+        const requestIds = mocks.registerWithApi.mock.calls.map((call) => (call[1] as { requestId?: string; } | undefined)?.requestId);
         expect(requestIds).toHaveLength(2);
         expect(requestIds[0]).toBeTruthy();
         expect(new Set(requestIds).size).toBe(1);
@@ -608,16 +567,16 @@ describe('Rallar auth session compatibility', () => {
 
         await createRallarFacade().auth.registerAndLogin({
             username: 'new-user',
-            password: 'password-1',
+            password: 'password-1'
         });
 
         expect(mocks.registerWithApi).toHaveBeenCalledOnce();
         expect(mocks.loginToApi).toHaveBeenCalledWith(
             {
                 username: 'new-user',
-                password: 'password-1',
+                password: 'password-1'
             },
-            expect.any(Object),
+            expect.any(Object)
         );
         expect(mocks.writeSession).toHaveBeenCalledWith(mocks.ctx.session);
     });
@@ -632,7 +591,7 @@ describe('Rallar auth session compatibility', () => {
 
         expect(mocks.logoutFromApi).toHaveBeenCalledOnce();
         const logoutOptions = mocks.logoutFromApi.mock.calls[0]?.[0] as
-            | { signal?: AbortSignal }
+            | { signal?: AbortSignal; }
             | undefined;
         expect(logoutOptions?.signal).toBeInstanceOf(AbortSignal);
         expect(mocks.clearSession).toHaveBeenCalledOnce();
@@ -648,9 +607,7 @@ describe('Rallar auth session compatibility', () => {
 
         await createRallarFacade().auth.logout({ maxAttempts: 2 });
 
-        const requestIds = mocks.logoutFromApi.mock.calls.map((call) =>
-            (call[0] as { requestId?: string } | undefined)?.requestId
-        );
+        const requestIds = mocks.logoutFromApi.mock.calls.map((call) => (call[0] as { requestId?: string; } | undefined)?.requestId);
         expect(requestIds).toHaveLength(2);
         expect(requestIds[0]).toBeTruthy();
         expect(new Set(requestIds).size).toBe(1);
@@ -668,7 +625,7 @@ describe('Rallar auth session compatibility', () => {
         expect(mocks.clearSession.mock.invocationCallOrder[0])
             .toBeLessThan(mocks.logoutFromApi.mock.invocationCallOrder[0]);
         expect(mocks.logoutFromApi.mock.calls[0]?.[0]).toMatchObject({
-            authSession: mocks.ctx.session,
+            authSession: mocks.ctx.session
         });
     });
 
@@ -679,7 +636,7 @@ describe('Rallar auth session compatibility', () => {
         mocks.logoutFromApi.mockRejectedValueOnce(new Error('revoke failed'));
 
         await expect(createRallarFacade().auth.logout()).rejects.toThrow(
-            'revoke failed',
+            'revoke failed'
         );
 
         expect(mocks.deleteBrowserALRuntimeEntriesForSession)
@@ -700,7 +657,7 @@ describe('Rallar auth session compatibility', () => {
             () =>
                 new Promise((resolve) => {
                     releaseLogout = () => resolve({ loggedOut: true });
-                }),
+                })
         );
         const facade = createRallarFacade();
 
@@ -719,7 +676,7 @@ describe('Rallar auth session compatibility', () => {
 
         expect(startResult).toEqual({
             session: undefined,
-            connected: false,
+            connected: false
         });
     });
 
@@ -736,7 +693,7 @@ describe('Rallar auth session compatibility', () => {
 
         await facade.auth.logout();
         const expectation = expect(connectPromise).rejects.toThrow(
-            'Rallar connection was cancelled because auth ended.',
+            'Rallar connection was cancelled because auth ended.'
         );
 
         deferred.resolve(mocks.ctx);
@@ -779,11 +736,11 @@ describe('Rallar auth session compatibility', () => {
         );
         mocks.webRtcConnectionService.knownPeerIds.mockReturnValue([
             'peer-ready',
-            'peer-stale',
+            'peer-stale'
         ]);
         mocks.webRtcConnectionService.activePeerIds.mockReturnValue([
             'peer-ready',
-            'peer-stale',
+            'peer-stale'
         ]);
         mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes
             .mockReturnValue(['peer-ready']);
@@ -796,8 +753,8 @@ describe('Rallar auth session compatibility', () => {
                 wsLifecycle.push(event);
             },
             {
-                emitCurrent: false,
-            },
+                emitCurrent: false
+            }
         );
 
         await facade.connect();
@@ -822,8 +779,8 @@ describe('Rallar auth session compatibility', () => {
             status: {
                 connectState: 'idle',
                 readyState: 'missing',
-                reconnectEnabled: false,
-            },
+                reconnectEnabled: false
+            }
         });
     });
 });
@@ -840,7 +797,7 @@ function createChannelHealth(
         label: string;
         state: string;
         readyState: RTCDataChannelState;
-    }>,
+    }>
 ) {
     return {
         peerId: input.peerId,
@@ -859,7 +816,7 @@ function createChannelHealth(
             highWatermarkBytes: 64 * 1024,
             lowWatermarkBytes: 16 * 1024,
             overflow: 'drop-new' as const,
-            maxQueueItems: 32,
+            maxQueueItems: 32
         },
         counters: {
             sent: 0,
@@ -872,8 +829,8 @@ function createChannelHealth(
             droppedStale: 0,
             receivedRaw: 0,
             receivedString: 0,
-            receivedBinary: 0,
-        },
+            receivedBinary: 0
+        }
     };
 }
 
@@ -898,26 +855,26 @@ function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
 function mockGroupRepositoryMissing(): void {
     const throwGroupRepositoryMissing = (): never => {
         throw new Error(
-            'Repository not found: shared.repository.group-state-snapshots',
+            'Repository not found: shared.repository.group-state-snapshots'
         );
     };
     mocks.getAllGroupStateSnapshots.mockImplementation(throwGroupRepositoryMissing);
     mocks.findGroupStateSnapshotByRef.mockImplementation(throwGroupRepositoryMissing);
     mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation(
-        throwGroupRepositoryMissing,
+        throwGroupRepositoryMissing
     );
 }
 
 function withSnapshotVersion(
     snapshot: GroupSnapshot,
-    snapshotVersion: number,
+    snapshotVersion: number
 ): GroupSnapshot {
     return {
         ...snapshot,
         group: {
             ...snapshot.group,
-            snapshotVersion,
-        },
+            snapshotVersion
+        }
     };
 }
 
@@ -927,7 +884,7 @@ function createGroupSnapshot(
     scope: Readonly<{
         applicationId?: string;
         workspaceId?: string;
-    }> = {},
+    }> = {}
 ): GroupSnapshot {
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';
@@ -935,7 +892,7 @@ function createGroupSnapshot(
         applicationId,
         workspaceId,
         groupId,
-        sessionIds,
+        sessionIds
     });
 }
 
@@ -946,18 +903,18 @@ function createDirectorGroupSnapshot(
         epoch: number;
         appointedAtEpochMs: number;
         heartbeatTtlMs: number;
-    }>,
+    }>
 ): GroupSnapshot {
     const snapshot = createGroupSnapshot('room-1', ['session-1']);
     const activeSessions: GroupSnapshot['activeSessions'][number][] = [{
         ...snapshot.activeSessions[0],
         principalId: 'principal-1',
-        sessionId: 'session-1',
+        sessionId: 'session-1'
     }];
     const members: GroupSnapshot['members'][number][] = [{
         ...snapshot.members[0],
         principalId: 'principal-1',
-        role: 'owner',
+        role: 'owner'
     }];
 
     if (appointment) {
@@ -966,7 +923,7 @@ function createDirectorGroupSnapshot(
             workspaceId: 'workspace-1',
             groupId: 'room-1',
             principalId: appointment.principalId,
-            sessionId: appointment.sessionId,
+            sessionId: appointment.sessionId
         }));
         members.push(createActiveGroupMemberFixture({
             applicationId: 'app-1',
@@ -974,7 +931,7 @@ function createDirectorGroupSnapshot(
             groupId: 'room-1',
             principalId: appointment.principalId,
             role: 'member',
-            actorPrincipalId: 'principal-1',
+            actorPrincipalId: 'principal-1'
         }));
     }
 
@@ -984,22 +941,22 @@ function createDirectorGroupSnapshot(
             ...snapshot.group,
             created: {
                 ...snapshot.group.created,
-                actor: { kind: 'principal', principalId: 'principal-1' },
+                actor: { kind: 'principal', principalId: 'principal-1' }
             },
             metadata: appointment
                 ? {
                     rallarDirector: {
                         version: 1,
                         mode: 'appointed-spa',
-                        ...appointment,
-                    },
+                        ...appointment
+                    }
                 }
-                : {},
+                : {}
         },
         members,
         activeSessions,
         memberCount: members.length,
-        onlineMemberCount: activeSessions.length,
+        onlineMemberCount: activeSessions.length
     };
 }
 
@@ -1020,10 +977,10 @@ function apiHttpError(status: number, message: string): ApiHttpError {
                 ? {
                     retryable: true,
                     retryAfterMs: null,
-                    reason: 'test-retry',
+                    reason: 'test-retry'
                 }
-                : null,
-        }),
+                : null
+        })
     );
 }
 
@@ -1044,7 +1001,7 @@ function createDeferred<T>(): {
 
 function createMediaTrack(
     id: string,
-    kind: 'audio' | 'video',
+    kind: 'audio' | 'video'
 ): MediaStreamTrack {
     const listeners = new Set<EventListenerOrEventListenerObject>();
     const track = {
@@ -1054,7 +1011,7 @@ function createMediaTrack(
         readyState: 'live',
         addEventListener: vi.fn((
             type: string,
-            listener: EventListenerOrEventListenerObject,
+            listener: EventListenerOrEventListenerObject
         ) => {
             if (type === 'ended') {
                 listeners.add(listener);
@@ -1062,7 +1019,7 @@ function createMediaTrack(
         }),
         removeEventListener: vi.fn((
             type: string,
-            listener: EventListenerOrEventListenerObject,
+            listener: EventListenerOrEventListenerObject
         ) => {
             if (type === 'ended') {
                 listeners.delete(listener);
@@ -1074,11 +1031,12 @@ function createMediaTrack(
             for (const listener of listeners) {
                 if (typeof listener === 'function') {
                     listener(event);
-                } else {
+                }
+                else {
                     listener.handleEvent(event);
                 }
             }
-        }),
+        })
     };
 
     return track as unknown as MediaStreamTrack;
@@ -1086,13 +1044,13 @@ function createMediaTrack(
 
 function createMediaStream(
     id: string,
-    tracks: readonly MediaStreamTrack[],
+    tracks: readonly MediaStreamTrack[]
 ): MediaStream {
     return {
         id,
         active: tracks.some((track) => track.readyState !== 'ended'),
         getTracks: vi.fn(() => [...tracks]),
         getAudioTracks: vi.fn(() => tracks.filter((track) => track.kind === 'audio')),
-        getVideoTracks: vi.fn(() => tracks.filter((track) => track.kind === 'video')),
+        getVideoTracks: vi.fn(() => tracks.filter((track) => track.kind === 'video'))
     } as unknown as MediaStream;
 }

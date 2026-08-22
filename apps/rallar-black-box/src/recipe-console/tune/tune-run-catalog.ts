@@ -1,39 +1,26 @@
 import type {
     ControlDistributedRunSnapshot,
-    ControlRunSnapshot,
+    ControlRunSnapshot
 } from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import type {
     DistributedRunAnalysis,
-    DistributedRunPerformanceAnalysis,
+    DistributedRunPerformanceAnalysis
 } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import type { AnalyzeTuneArtifactFacade } from
-    '../analyze/analyze-worker-contract.ts';
-import { deriveDistributedRunSnapshotPerformance } from
-    '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import {
-    projectTuneIdentitySurfaces,
-    type TuneIdentitySurfaces,
-} from './tune-identity.ts';
+import { deriveDistributedRunSnapshotPerformance } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-contract.ts';
 import { projectTuneFacadeCatalog } from './tune-facade-catalog.ts';
 import {
     projectTuneFacadeManifestValidation,
-    type TuneFacadeManifestValidation,
+    type TuneFacadeManifestValidation
 } from './tune-facade-manifest-validation.ts';
-import { projectTuneRetainedArtifactCatalog } from
-    './tune-retained-artifact-catalog.ts';
-import {
-    boundedTunePerformanceRunIds,
-    indexTuneRows,
-} from './tune-run-catalog-index.ts';
+import { projectTuneIdentitySurfaces, type TuneIdentitySurfaces } from './tune-identity.ts';
+import { projectTuneRetainedArtifactCatalog } from './tune-retained-artifact-catalog.ts';
+import { boundedTunePerformanceRunIds, indexTuneRows } from './tune-run-catalog-index.ts';
 import {
     distributedRunManifestContractIssues,
-    distributedRunManifestIdentityIssues,
-} from
-    './tune-run-catalog-safety.ts';
-import {
-    createTuneRunCatalogWork,
-    type TuneRunCatalogWork,
-} from './tune-run-catalog-work.ts';
+    distributedRunManifestIdentityIssues
+} from './tune-run-catalog-safety.ts';
+import { createTuneRunCatalogWork, type TuneRunCatalogWork } from './tune-run-catalog-work.ts';
 
 export type TuneRunOption = Readonly<{
     key: string;
@@ -50,7 +37,7 @@ export type TuneRunOption = Readonly<{
     manifestAuthority?: 'authoritative' | 'summary-projection';
     recipeIdentityComplete?: boolean;
     controlEvidence?: TuneRunEvidence;
-    artifactEvidence?: TuneRunEvidence & Readonly<{ analysis: DistributedRunAnalysis }>;
+    artifactEvidence?: TuneRunEvidence & Readonly<{ analysis: DistributedRunAnalysis; }>;
 }>;
 
 export type TuneRunEvidence = Readonly<{
@@ -60,8 +47,7 @@ export type TuneRunEvidence = Readonly<{
     pairStatus: 'paired' | 'missing' | 'ambiguous';
 }>;
 
-export type TuneQuarantineCode =
-    | 'ambiguous-run' | 'unsafe-identity' | 'invalid-manifest' | 'identity-conflict';
+export type TuneQuarantineCode = 'ambiguous-run' | 'unsafe-identity' | 'invalid-manifest' | 'identity-conflict';
 
 export type TuneQuarantinedRun = Readonly<{
     key: string;
@@ -80,32 +66,38 @@ export type TuneRunCatalog = Readonly<{
     work: TuneRunCatalogWork;
 }>;
 
-export function buildTuneRunCatalog(_input: Readonly<{
-    distributedRuns: readonly ControlDistributedRunSnapshot[];
-    controlRuns: readonly ControlRunSnapshot[];
-    includePerformanceEvidence?: boolean;
-    retainedArtifact?: import('../analyze/analyze-artifact-model.ts').AnalyzeArtifactModel;
-    retainedArtifactStatus?: 'idle' | 'pending' | 'ready' | 'error';
-    retainedArtifactFocusRunId?: string;
-    retainedFacade?: AnalyzeTuneArtifactFacade;
-    performanceRunIds?: readonly string[];
-}>): TuneRunCatalog {
+export function buildTuneRunCatalog(
+    _input: Readonly<{
+        distributedRuns: readonly ControlDistributedRunSnapshot[];
+        controlRuns: readonly ControlRunSnapshot[];
+        includePerformanceEvidence?: boolean;
+        retainedArtifact?: import('../analyze/analyze-artifact-model.ts').AnalyzeArtifactModel;
+        retainedArtifactStatus?: 'idle' | 'pending' | 'ready' | 'error';
+        retainedArtifactFocusRunId?: string;
+        retainedFacade?: AnalyzeTuneArtifactFacade;
+        performanceRunIds?: readonly string[];
+    }>
+): TuneRunCatalog {
     const input = _input;
     const work = createTuneRunCatalogWork();
     const includePerformanceEvidence = input.includePerformanceEvidence !== false;
     const performanceRunIds = boundedTunePerformanceRunIds(input.performanceRunIds);
     const controlGroups = indexTuneRows(
         input.controlRuns,
-        run => run.runId,
-        () => { work.controlRowsIndexed += 1; },
+        (run) => run.runId,
+        () => {
+            work.controlRowsIndexed += 1;
+        }
     );
     const distributedGroups = indexTuneRows(
         input.distributedRuns,
-        run => run.distributedRunId,
-        () => { work.distributedRowsIndexed += 1; },
+        (run) => run.distributedRunId,
+        () => {
+            work.distributedRowsIndexed += 1;
+        }
     );
     const ambiguousDistributedIds = new Set(
-        [...distributedGroups].filter(([, rows]) => rows.length !== 1).map(([id]) => id),
+        [...distributedGroups].filter(([, rows]) => rows.length !== 1).map(([id]) => id)
     );
     const options = new Map<string, TuneRunOption>();
     const quarantined = new Map<string, Omit<TuneQuarantinedRun, 'key'>>();
@@ -114,7 +106,7 @@ export function buildTuneRunCatalog(_input: Readonly<{
         distributedRunId: string,
         controlRunId: string | undefined,
         codes: readonly TuneQuarantineCode[],
-        issues: readonly string[],
+        issues: readonly string[]
     ): void => {
         const identityKey = JSON.stringify([distributedRunId, controlRunId ?? null]);
         quarantined.set(identityKey, { distributedRunId, controlRunId, codes, issues });
@@ -123,8 +115,9 @@ export function buildTuneRunCatalog(_input: Readonly<{
     for (const [distributedRunId, rows] of distributedGroups) {
         work.distributedIdentitiesVisited += 1;
         if (rows.length !== 1) {
-            quarantine(distributedRunId, undefined, ['ambiguous-run'],
-                ['Duplicate distributed run identity is ambiguous.']);
+            quarantine(distributedRunId, undefined, ['ambiguous-run'], [
+                'Duplicate distributed run identity is ambiguous.'
+            ]);
             continue;
         }
         const distributedRun = rows[0];
@@ -134,12 +127,14 @@ export function buildTuneRunCatalog(_input: Readonly<{
         const identityIssues = distributedRunManifestIdentityIssues(distributedRun);
         const validatesManifest = performanceRunIds === undefined ||
             performanceRunIds.has(distributedRunId);
-        if (validatesManifest) work.manifestValidations += 1;
+        if (validatesManifest) {
+            work.manifestValidations += 1;
+        }
         const manifestIssues = [
             ...identityIssues,
             ...(validatesManifest
                 ? distributedRunManifestContractIssues(distributedRun)
-                : []),
+                : [])
         ];
         if (
             identity.quarantined || !identity.controlRunId || !identity.reactKey ||
@@ -153,7 +148,7 @@ export function buildTuneRunCatalog(_input: Readonly<{
                     : ['unsafe-identity'],
                 identity.quarantined
                     ? identity.issues
-                    : manifestIssues,
+                    : manifestIssues
             );
             continue;
         }
@@ -161,18 +156,25 @@ export function buildTuneRunCatalog(_input: Readonly<{
         const controlRows = controlGroups.get(distributedRun.controlRunId) ?? [];
         const pairStatus = controlRows.length === 1
             ? 'paired' as const
-            : controlRows.length === 0 ? 'missing' as const : 'ambiguous' as const;
+            : controlRows.length === 0
+            ? 'missing' as const
+            : 'ambiguous' as const;
         const controlRun = pairStatus === 'paired' ? controlRows[0] : undefined;
         const derivesPerformance = Boolean(
             controlRun && includePerformanceEvidence &&
-            (performanceRunIds === undefined || performanceRunIds.has(distributedRunId)),
+                (performanceRunIds === undefined || performanceRunIds.has(distributedRunId))
         );
-        if (derivesPerformance) work.performanceDerivations += 1;
+        if (derivesPerformance) {
+            work.performanceDerivations += 1;
+        }
         const performance = controlRun && derivesPerformance
             ? deriveDistributedRunSnapshotPerformance({ distributedRun, controlRun })
             : undefined;
         const controlEvidence: TuneRunEvidence = {
-            distributedRun, controlRun, performance, pairStatus,
+            distributedRun,
+            controlRun,
+            performance,
+            pairStatus
         };
         options.set(distributedRun.distributedRunId, {
             key: identity.reactKey,
@@ -187,7 +189,7 @@ export function buildTuneRunCatalog(_input: Readonly<{
             manifestValidation: validatesManifest
                 ? 'validated'
                 : 'selection-required',
-            controlEvidence,
+            controlEvidence
         });
     }
 
@@ -202,17 +204,18 @@ export function buildTuneRunCatalog(_input: Readonly<{
             artifactFocusRunId: input.retainedArtifactFocusRunId,
             current: options.get(artifact.snapshots.distributedRun.distributedRunId),
             distributedIdentityIsAmbiguous: ambiguousDistributedIds.has(
-                artifact.snapshots.distributedRun.distributedRunId,
-            ),
+                artifact.snapshots.distributedRun.distributedRunId
+            )
         });
         if (projection.kind === 'quarantine') {
             quarantine(
                 projection.distributedRunId,
                 projection.controlRunId,
                 projection.codes,
-                projection.issues,
+                projection.issues
             );
-        } else {
+        }
+        else {
             options.set(projection.option.distributedRunId, projection.option);
         }
     }
@@ -220,25 +223,23 @@ export function buildTuneRunCatalog(_input: Readonly<{
     if (input.retainedFacade) {
         work.retainedFacadeProjections += 1;
         const facade = input.retainedFacade;
-        retainedFacadeManifestValidation =
-            projectTuneFacadeManifestValidation(facade);
-        work.retainedFacadeManifestValidations +=
-            retainedFacadeManifestValidation.validationCount;
+        retainedFacadeManifestValidation = projectTuneFacadeManifestValidation(facade);
+        work.retainedFacadeManifestValidations += retainedFacadeManifestValidation.validationCount;
         const projection = projectTuneFacadeCatalog({
             facade,
             current: options.get(facade.identity.distributedRunId),
-            distributedIdentityIsAmbiguous:
-                ambiguousDistributedIds.has(facade.identity.distributedRunId),
-            manifestValidation: retainedFacadeManifestValidation,
+            distributedIdentityIsAmbiguous: ambiguousDistributedIds.has(facade.identity.distributedRunId),
+            manifestValidation: retainedFacadeManifestValidation
         });
         if (projection.kind === 'quarantine') {
             quarantine(
                 projection.distributedRunId,
                 projection.controlRunId,
                 projection.codes,
-                projection.issues,
+                projection.issues
             );
-        } else {
+        }
+        else {
             options.set(projection.option.distributedRunId, projection.option);
         }
     }
@@ -259,6 +260,6 @@ export function buildTuneRunCatalog(_input: Readonly<{
         ...(retainedFacadeManifestValidation === undefined
             ? {}
             : { retainedFacadeManifestValidation }),
-        work,
+        work
     };
 }

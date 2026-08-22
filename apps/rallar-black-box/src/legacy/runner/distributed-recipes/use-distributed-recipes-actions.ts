@@ -1,15 +1,18 @@
 import { useEffect } from 'react';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import {
-    cancelDistributedRun, createDistributedRun,
+    cancelDistributedRun,
+    createDistributedRun,
     fetchDistributedRunArtifactBundle,
-    resolveDistributedTargets, stageDistributedRun, startDistributedRun,
-    type ControlDistributedRunSnapshot,
+    resolveDistributedTargets,
+    stageDistributedRun,
+    startDistributedRun,
+    type ControlDistributedRunSnapshot
 } from '../../../control-run-manager.ts';
 import {
     defaultDistributedRecipeTargetIds,
     reconcileDistributedRecipeTargetIds,
-    type DistributedRecipeRolePattern,
+    type DistributedRecipeRolePattern
 } from '../../../distributed-recipes.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { json } from '../../shared/json-presentation.ts';
@@ -17,8 +20,7 @@ import { safeIdSegment } from '../../shared/safe-id-segment.ts';
 import { sameStringArray } from '../../shared/same-string-array.ts';
 import type { DistributedRecipeBuilderModel } from './use-distributed-recipe-builder.ts';
 import type { DistributedRecipesRemoteStateModel } from './use-distributed-recipes-remote-state.ts';
-import { useDistributedRecipesSelectionActions } from
-    './use-distributed-recipes-selection-actions.ts';
+import { useDistributedRecipesSelectionActions } from './use-distributed-recipes-selection-actions.ts';
 
 type UseDistributedRecipesActionsInput = Readonly<{
     bootstrap: RallarBlackBoxBootstrapConfig;
@@ -29,23 +31,49 @@ type UseDistributedRecipesActionsInput = Readonly<{
 }>;
 
 export function useDistributedRecipesActions({
-    bootstrap, control, roomId, remote, builder,
+    bootstrap,
+    control,
+    roomId,
+    remote,
+    builder
 }: UseDistributedRecipesActionsInput) {
     const {
-        baseUrl, token, selectedRunId,
-        distributedRuns, setDistributedRuns, selectedDistributedRun,
-        setSelectedDistributedRun, setTargetResolutionPreview, artifactBundle,
-        setArtifactBundle, setBusyAction, setError, setLastAction,
+        baseUrl,
+        token,
+        selectedRunId,
+        distributedRuns,
+        setDistributedRuns,
+        selectedDistributedRun,
+        setSelectedDistributedRun,
+        setTargetResolutionPreview,
+        artifactBundle,
+        setArtifactBundle,
+        setBusyAction,
+        setError,
+        setLastAction
     } = remote;
     const {
-        distributedRunId, setDistributedRunId, expectedParticipantCount,
-        groupRef, rolePattern, setRolePattern, targetPolicyMode,
-        setTargetPolicyMode, targetRows, setSelectedAgentIds,
-        usesWorldFleetTargets, manifest, manifestValidation,
-        worldFleetBlockReason, setSelectedRecipeIds,
+        distributedRunId,
+        setDistributedRunId,
+        expectedParticipantCount,
+        groupRef,
+        rolePattern,
+        setRolePattern,
+        targetPolicyMode,
+        setTargetPolicyMode,
+        targetRows,
+        setSelectedAgentIds,
+        usesWorldFleetTargets,
+        manifest,
+        manifestValidation,
+        worldFleetBlockReason,
+        setSelectedRecipeIds
     } = builder;
     const selectionActions = useDistributedRecipesSelectionActions({
-        bootstrap, control, remote, builder,
+        bootstrap,
+        control,
+        remote,
+        builder
     });
     const refresh = selectionActions.refresh;
     const loadRun = selectionActions.loadRun;
@@ -67,7 +95,7 @@ export function useDistributedRecipesActions({
         groupRef.workspaceId,
         rolePattern,
         selectedRunId,
-        targetPolicyMode,
+        targetPolicyMode
     ]);
 
     useEffect(() => {
@@ -86,12 +114,14 @@ export function useDistributedRecipesActions({
                 const resolution = await resolveDistributedTargets({
                     baseUrl,
                     token,
-                    manifest,
+                    manifest
                 });
                 setTargetResolutionPreview(resolution);
                 setSelectedAgentIds(resolution.targetAgentIds);
                 setLastAction(
-                    `Server resolved ${resolution.summary.selected}/${resolution.summary.expectedParticipantCount ?? expectedParticipantCount} world-fleet target(s).`,
+                    `Server resolved ${resolution.summary.selected}/${
+                        resolution.summary.expectedParticipantCount ?? expectedParticipantCount
+                    } world-fleet target(s).`
                 );
                 return;
             }
@@ -99,44 +129,44 @@ export function useDistributedRecipesActions({
             setTargetResolutionPreview(undefined);
             setSelectedAgentIds(defaults);
             setLastAction(`Resolved ${defaults.length} target agent(s).`);
-        } catch (caught) {
+        }
+        catch (caught) {
             setError(caught instanceof Error ? caught.message : String(caught));
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
 
-    const ensureCreatedDistributedRun =
-        async (): Promise<ControlDistributedRunSnapshot> => {
-            if (!manifest) {
-                throw new Error(
-                    'Build a valid distributed run manifest before creating the run.',
-                );
-            }
-            if (manifestValidation) {
-                throw new Error(manifestValidation);
-            }
-            const existing =
-                selectedDistributedRun?.distributedRunId ===
+    const ensureCreatedDistributedRun = async (): Promise<ControlDistributedRunSnapshot> => {
+        if (!manifest) {
+            throw new Error(
+                'Build a valid distributed run manifest before creating the run.'
+            );
+        }
+        if (manifestValidation) {
+            throw new Error(manifestValidation);
+        }
+        const existing = selectedDistributedRun?.distributedRunId ===
                 manifest.distributedRunId
-                    ? selectedDistributedRun
-                    : distributedRuns.find(
-                          (item) =>
-                              item.distributedRunId ===
-                              manifest.distributedRunId,
-                      );
-            if (existing) {
-                return existing;
-            }
-            const created = await createDistributedRun({
-                baseUrl,
-                token,
-                manifest,
-            });
-            setSelectedDistributedRun(created);
-            setDistributedRuns((current) => [created, ...current]);
-            return created;
-        };
+            ? selectedDistributedRun
+            : distributedRuns.find(
+                (item) =>
+                    item.distributedRunId ===
+                        manifest.distributedRunId
+            );
+        if (existing) {
+            return existing;
+        }
+        const created = await createDistributedRun({
+            baseUrl,
+            token,
+            manifest
+        });
+        setSelectedDistributedRun(created);
+        setDistributedRuns((current) => [created, ...current]);
+        return created;
+    };
 
     const createRun = async (): Promise<void> => {
         setBusyAction('create');
@@ -145,9 +175,11 @@ export function useDistributedRecipesActions({
             const created = await ensureCreatedDistributedRun();
             setLastAction(`Created ${created.distributedRunId}.`);
             await refresh(created.controlRunId, created.distributedRunId);
-        } catch (caught) {
+        }
+        catch (caught) {
             setError(caught instanceof Error ? caught.message : String(caught));
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -163,14 +195,16 @@ export function useDistributedRecipesActions({
             const staged = await stageDistributedRun({
                 baseUrl,
                 token,
-                distributedRunId: created.distributedRunId,
+                distributedRunId: created.distributedRunId
             });
             setSelectedDistributedRun(staged);
             setLastAction(`Staged ${staged.distributedRunId}.`);
             await refresh(staged.controlRunId, staged.distributedRunId);
-        } catch (caught) {
+        }
+        catch (caught) {
             setError(caught instanceof Error ? caught.message : String(caught));
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -180,10 +214,9 @@ export function useDistributedRecipesActions({
             setError(worldFleetBlockReason);
             return;
         }
-        const target =
-            selectedDistributedRun ??
+        const target = selectedDistributedRun ??
             distributedRuns.find(
-                (item) => item.distributedRunId === distributedRunId,
+                (item) => item.distributedRunId === distributedRunId
             );
         if (!target) {
             setError('Create or stage a distributed run before starting it.');
@@ -195,23 +228,24 @@ export function useDistributedRecipesActions({
             const started = await startDistributedRun({
                 baseUrl,
                 token,
-                distributedRunId: target.distributedRunId,
+                distributedRunId: target.distributedRunId
             });
             setSelectedDistributedRun(started);
             setLastAction(`Started ${started.distributedRunId}.`);
             await refresh(started.controlRunId, started.distributedRunId);
-        } catch (caught) {
+        }
+        catch (caught) {
             setError(caught instanceof Error ? caught.message : String(caught));
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
 
     const cancelRun = async (): Promise<void> => {
-        const target =
-            selectedDistributedRun ??
+        const target = selectedDistributedRun ??
             distributedRuns.find(
-                (item) => item.distributedRunId === distributedRunId,
+                (item) => item.distributedRunId === distributedRunId
             );
         if (!target) {
             setError('Select a distributed run before cancelling it.');
@@ -224,23 +258,24 @@ export function useDistributedRecipesActions({
                 baseUrl,
                 token,
                 distributedRunId: target.distributedRunId,
-                reason: 'Cancelled from Rallar Kit Distributed Recipes UI.',
+                reason: 'Cancelled from Rallar Kit Distributed Recipes UI.'
             });
             setSelectedDistributedRun(cancelled);
             setLastAction(`Cancelled ${cancelled.distributedRunId}.`);
             await refresh(cancelled.controlRunId, cancelled.distributedRunId);
-        } catch (caught) {
+        }
+        catch (caught) {
             setError(caught instanceof Error ? caught.message : String(caught));
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
 
     const loadArtifact = async (): Promise<void> => {
-        const target =
-            selectedDistributedRun ??
+        const target = selectedDistributedRun ??
             distributedRuns.find(
-                (item) => item.distributedRunId === distributedRunId,
+                (item) => item.distributedRunId === distributedRunId
             );
         if (!target) {
             setError('Select a distributed run before exporting artifacts.');
@@ -252,15 +287,17 @@ export function useDistributedRecipesActions({
             const bundle = await fetchDistributedRunArtifactBundle({
                 baseUrl,
                 token,
-                distributedRunId: target.distributedRunId,
+                distributedRunId: target.distributedRunId
             });
             setArtifactBundle(bundle);
             setLastAction(
-                `Loaded distributed artifact for ${target.distributedRunId}.`,
+                `Loaded distributed artifact for ${target.distributedRunId}.`
             );
-        } catch (caught) {
+        }
+        catch (caught) {
             setError(caught instanceof Error ? caught.message : String(caught));
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -278,7 +315,7 @@ export function useDistributedRecipesActions({
         setSelectedRecipeIds((previous) =>
             previous.includes(itemId)
                 ? previous.filter((value) => value !== itemId)
-                : [...previous, itemId],
+                : [...previous, itemId]
         );
     };
 
@@ -286,7 +323,7 @@ export function useDistributedRecipesActions({
         setSelectedAgentIds((previous) =>
             previous.includes(agentId)
                 ? previous.filter((value) => value !== agentId)
-                : [...previous, agentId],
+                : [...previous, agentId]
         );
     };
 
@@ -297,14 +334,15 @@ export function useDistributedRecipesActions({
             targetPolicyMode !== 'all-online-group-members'
         ) {
             setTargetPolicyMode('role-map');
-        } else if (targetPolicyMode === 'role-map') {
+        }
+        else if (targetPolicyMode === 'role-map') {
             setTargetPolicyMode('selected-agents');
         }
     };
 
     const generateNewRunId = (): void => {
         setDistributedRunId(
-            `dist-${safeIdSegment(roomId || 'group')}-${Date.now()}`,
+            `dist-${safeIdSegment(roomId || 'group')}-${Date.now()}`
         );
         setSelectedDistributedRun(undefined);
         setArtifactBundle(undefined);
@@ -317,8 +355,20 @@ export function useDistributedRecipesActions({
     };
 
     return {
-        refresh, loadRun, resolveTargets, createRun, stageRun, startRun,
-        cancelRun, loadArtifact, copyArtifact, loadDistributedRun, toggleRecipe,
-        toggleAgent, selectRolePattern, generateNewRunId, changeDistributedRunId,
+        refresh,
+        loadRun,
+        resolveTargets,
+        createRun,
+        stageRun,
+        startRun,
+        cancelRun,
+        loadArtifact,
+        copyArtifact,
+        loadDistributedRun,
+        toggleRecipe,
+        toggleAgent,
+        selectRolePattern,
+        generateNewRunId,
+        changeDistributedRunId
     };
 }

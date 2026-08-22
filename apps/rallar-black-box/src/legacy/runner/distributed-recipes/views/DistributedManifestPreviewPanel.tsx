@@ -1,11 +1,11 @@
-import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
     DistributedRecipeCatalogItem,
-    DistributedRecipePreflightSummary,
+    DistributedRecipePreflightSummary
 } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type { SchemaAuthoringValidation } from '../../../../schema-authoring.ts';
-import { Metric } from '../../../shared/Metric.tsx';
 import { json } from '../../../shared/json-presentation.ts';
+import { Metric } from '../../../shared/Metric.tsx';
 import { SchemaAuthoringPanel } from '../../../shared/schema/SchemaAuthoringPanel.tsx';
 import { DistributedRecipePreflightPanel } from '../DistributedRecipePreflightPanel.tsx';
 
@@ -47,27 +47,23 @@ export function DistributedManifestPreviewPanel(props: DistributedManifestPrevie
                         <Metric
                             label="Effective ops"
                             value={String(
-                                props.selectedPreflightEffectiveOperations,
+                                props.selectedPreflightEffectiveOperations
                             )}
                             tone="active"
                         />
                         <Metric
                             label="Warnings"
                             value={String(props.selectedPreflightWarnings)}
-                            tone={
-                                props.selectedPreflightWarnings > 0
-                                    ? 'warn'
-                                    : 'good'
-                            }
+                            tone={props.selectedPreflightWarnings > 0
+                                ? 'warn'
+                                : 'good'}
                         />
                         <Metric
                             label="Errors"
                             value={String(props.selectedPreflightErrors)}
-                            tone={
-                                props.selectedPreflightErrors > 0
-                                    ? 'bad'
-                                    : 'good'
-                            }
+                            tone={props.selectedPreflightErrors > 0
+                                ? 'bad'
+                                : 'good'}
                         />
                     </div>
                     {props.selectedRecipePreflights.map((entry) => (

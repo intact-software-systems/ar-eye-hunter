@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+    analyzeDistributedRunArtifactFiles,
+    distributedArtifactSnapshotsFromFiles,
+    type DistributedRunArtifactFiles
+} from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import type { RallarBlackBoxDistributedRunManifest } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
+import {
     createDistributedArtifactWorkspace,
     deriveDistributedRunSnapshotPerformance,
     distributedRecipePreflight,
@@ -7,16 +13,8 @@ import {
     inventoryDistributedRunTuningKnobs,
     validateDistributedRunManifest,
     validateRallarBlackBoxRecipeCompatibility,
-    validateRallarBlackBoxTestCommand,
+    validateRallarBlackBoxTestCommand
 } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
-import {
-    analyzeDistributedRunArtifactFiles,
-    distributedArtifactSnapshotsFromFiles,
-    type DistributedRunArtifactFiles,
-} from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import type {
-    RallarBlackBoxDistributedRunManifest,
-} from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 
 function artifactFiles(manifest: RallarBlackBoxDistributedRunManifest): DistributedRunArtifactFiles {
     return {
@@ -30,9 +28,11 @@ function artifactFiles(manifest: RallarBlackBoxDistributedRunManifest): Distribu
             commandLinks: [],
             manifest,
             rollup: {
-                state: 'passed', ok: true, failures: [],
-                summary: { participants: 1, failedParticipants: 0, blockingFailures: 0 },
-            },
+                state: 'passed',
+                ok: true,
+                failures: [],
+                summary: { participants: 1, failedParticipants: 0, blockingFailures: 0 }
+            }
         }),
         'manifest.json': JSON.stringify(manifest),
         'control-run.json': JSON.stringify({
@@ -40,21 +40,28 @@ function artifactFiles(manifest: RallarBlackBoxDistributedRunManifest): Distribu
             createdAtEpochMs: 1_000,
             updatedAtEpochMs: 4_000,
             agents: [{
-                agentId: 'agent-a', connected: true, reconnectCount: 0,
-                receivedEventCount: 0,
+                agentId: 'agent-a',
+                connected: true,
+                reconnectCount: 0,
+                receivedEventCount: 0
             }],
             commands: [{
                 envelope: {
-                    agentId: 'agent-a', commandId: 'start-a',
-                    command: { kind: 'recipe.run' },
+                    agentId: 'agent-a',
+                    commandId: 'start-a',
+                    command: { kind: 'recipe.run' }
                 },
                 dispatchedAtEpochMs: 1_200,
-                completedAtEpochMs: 3_200,
+                completedAtEpochMs: 3_200
             }],
-            results: [], events: [], stats: [], reports: [], heartbeats: [],
+            results: [],
+            events: [],
+            stats: [],
+            reports: [],
+            heartbeats: []
         }),
         'events.jsonl': '',
-        'results.jsonl': '',
+        'results.jsonl': ''
     };
 }
 
@@ -65,14 +72,18 @@ function tuningManifest(): RallarBlackBoxDistributedRunManifest {
         controlRunId: 'control-tune',
         description: 'Preserve recognized manifest fields.',
         group: {
-            applicationId: 'rallar-server', workspaceId: 'default', groupId: 'tune-group',
+            applicationId: 'rallar-server',
+            workspaceId: 'default',
+            groupId: 'tune-group'
         },
         targetPolicy: { mode: 'selected-agents', agentIds: ['agent-a'] },
         ackTimeoutMs: 12_000,
         barrier: { enabled: true, timeoutMs: 18_000 },
         variables: { payloadSize: 128 },
         roleAssignmentPolicy: {
-            mode: 'ordered-targets', pattern: 'sender-receiver', orderBy: 'agent-id',
+            mode: 'ordered-targets',
+            pattern: 'sender-receiver',
+            orderBy: 'agent-id'
         },
         recipes: [{
             recipeId: 'recipe~/inline',
@@ -80,33 +91,48 @@ function tuningManifest(): RallarBlackBoxDistributedRunManifest {
                 schemaVersion: 1,
                 recipeId: 'recipe~/inline',
                 commands: [{
-                    kind: 'loop', commandId: 'duplicate~/command', count: 2,
-                    durationMs: 2_000, intervalMs: 25,
+                    kind: 'loop',
+                    commandId: 'duplicate~/command',
+                    count: 2,
+                    durationMs: 2_000,
+                    intervalMs: 25,
                     commands: [{
-                        kind: 'rtc.stream', commandId: 'duplicate~/command', send: {},
-                        count: 10, durationMs: 1_000, intervalMs: 50, rateHz: 20,
+                        kind: 'rtc.stream',
+                        commandId: 'duplicate~/command',
+                        send: {},
+                        count: 10,
+                        durationMs: 1_000,
+                        intervalMs: 50,
+                        rateHz: 20,
                         maxInFlight: 8,
-                        thresholds: { minSendSuccessRatio: 0.95, maxDroppedFrames: 1 },
+                        thresholds: { minSendSuccessRatio: 0.95, maxDroppedFrames: 1 }
                     }, {
-                        kind: 'parallel', commandId: 'parallel', groups: [{
+                        kind: 'parallel',
+                        commandId: 'parallel',
+                        groups: [{
                             groupId: 'group~/one',
                             commands: [{
-                                kind: 'recipe.run', commandId: 'embedded', recipe: {
+                                kind: 'recipe.run',
+                                commandId: 'embedded',
+                                recipe: {
                                     recipeId: 'embedded~/recipe',
                                     commands: [{
-                                        kind: 'rtc.stream', commandId: 'duplicate~/command',
-                                        send: {}, durationMs: 500, rateHz: 5,
-                                    }],
-                                },
-                            }],
-                        }],
-                    }],
-                }],
-            },
+                                        kind: 'rtc.stream',
+                                        commandId: 'duplicate~/command',
+                                        send: {},
+                                        durationMs: 500,
+                                        rateHz: 5
+                                    }]
+                                }
+                            }]
+                        }]
+                    }]
+                }]
+            }
         }, {
             recipeId: 'reference-only~/recipe',
-            profile: 'remote-catalog',
-        }],
+            profile: 'remote-catalog'
+        }]
     };
 }
 
@@ -118,13 +144,13 @@ describe('distributed recipe tuning Task 2 contracts', () => {
 
         const performance = deriveDistributedRunSnapshotPerformance({
             distributedRun: snapshots.distributedRun,
-            controlRun: snapshots.controlRun,
+            controlRun: snapshots.controlRun
         });
 
         expect(performance).toEqual(expected);
         expect(performance).toMatchObject({
             runDurationMs: 3_000,
-            commandTiming: { count: 1, p95Ms: 2_000, p99Ms: 2_000 },
+            commandTiming: { count: 1, p95Ms: 2_000, p99Ms: 2_000 }
         });
         expect(performance?.streamTiming).toBeUndefined();
     });
@@ -139,9 +165,9 @@ describe('distributed recipe tuning Task 2 contracts', () => {
                     artifactSchemaVersion: 1,
                     distributedRunId: manifest.distributedRunId,
                     generatedAtEpochMs: 4_242,
-                    files,
-                }),
-            },
+                    files
+                })
+            }
         });
 
         for (const workspace of [loose, envelope]) {
@@ -155,9 +181,11 @@ describe('distributed recipe tuning Task 2 contracts', () => {
                     barrier: { enabled: true, timeoutMs: 18_000 },
                     variables: { payloadSize: 128 },
                     roleAssignmentPolicy: {
-                        mode: 'ordered-targets', pattern: 'sender-receiver', orderBy: 'agent-id',
-                    },
-                },
+                        mode: 'ordered-targets',
+                        pattern: 'sender-receiver',
+                        orderBy: 'agent-id'
+                    }
+                }
             });
         }
     });
@@ -171,7 +199,7 @@ describe('distributed recipe tuning Task 2 contracts', () => {
 
         const snapshots = distributedArtifactSnapshotsFromFiles({
             ...files,
-            'distributed-run.json': JSON.stringify(distributedRun),
+            'distributed-run.json': JSON.stringify(distributedRun)
         });
 
         expect(snapshots.distributedRun.manifest).toMatchObject({
@@ -180,19 +208,19 @@ describe('distributed recipe tuning Task 2 contracts', () => {
             group: manifest.group,
             recipes: manifest.recipes,
             targetPolicy: manifest.targetPolicy,
-            ackTimeoutMs: 12_000,
+            ackTimeoutMs: 12_000
         });
     });
 
     it('escapes dynamic RFC 6901 pointer tokens for later candidate composition', () => {
         expect(distributedRunTuningJsonPointer(['recipes', 0, 'recipe~/id'])).toBe(
-            '/recipes/0/recipe~0~1id',
+            '/recipes/0/recipe~0~1id'
         );
     });
 
     it('inventories recursive tuning knobs by structural JSON Pointer in stable order', () => {
         const inventory = inventoryDistributedRunTuningKnobs(tuningManifest());
-        const pointers = inventory.knobs.map(knob => knob.pointer);
+        const pointers = inventory.knobs.map((knob) => knob.pointer);
 
         expect(pointers.slice(0, 8)).toEqual([
             '/ackTimeoutMs',
@@ -202,47 +230,47 @@ describe('distributed recipe tuning Task 2 contracts', () => {
             '/recipes/0/recipe/commands/0/commands/0/durationMs',
             '/recipes/0/recipe/commands/0/commands/0/intervalMs',
             '/recipes/0/recipe/commands/0/commands/0/rateHz',
-            '/recipes/0/recipe/commands/0/commands/0/maxInFlight',
+            '/recipes/0/recipe/commands/0/commands/0/maxInFlight'
         ]);
         expect(pointers).toContain(
-            '/recipes/0/recipe/commands/0/commands/1/groups/0/commands/0/recipe/commands/0/rateHz',
+            '/recipes/0/recipe/commands/0/commands/1/groups/0/commands/0/recipe/commands/0/rateHz'
         );
-        expect(pointers.some(pointer => pointer.includes('recipe~/inline'))).toBe(false);
+        expect(pointers.some((pointer) => pointer.includes('recipe~/inline'))).toBe(false);
 
-        const duplicateRows = inventory.knobs.filter(knob =>
-            knob.commandId === 'duplicate~/command' && knob.name === 'durationMs'
-        );
-        expect(duplicateRows.map(row => row.pointer)).toEqual([
+        const duplicateRows = inventory.knobs.filter((knob) => knob.commandId === 'duplicate~/command' && knob.name === 'durationMs');
+        expect(duplicateRows.map((row) => row.pointer)).toEqual([
             '/recipes/0/recipe/commands/0/durationMs',
             '/recipes/0/recipe/commands/0/commands/0/durationMs',
-            '/recipes/0/recipe/commands/0/commands/1/groups/0/commands/0/recipe/commands/0/durationMs',
+            '/recipes/0/recipe/commands/0/commands/1/groups/0/commands/0/recipe/commands/0/durationMs'
         ]);
     });
 
     it('marks unset, shadowed, constrained, and reference-only inventory truth explicitly', () => {
         const inventory = inventoryDistributedRunTuningKnobs(tuningManifest());
         const nestedStream = '/recipes/0/recipe/commands/0/commands/0';
-        const knob = (pointer: string) => inventory.knobs.find(row => row.pointer === pointer);
+        const knob = (pointer: string) => inventory.knobs.find((row) => row.pointer === pointer);
 
         expect(knob(`${nestedStream}/rateHz`)).toMatchObject({
             currentValue: 20,
             availability: 'blocked',
             effective: false,
             reason: expect.stringContaining('intervalMs'),
-            constraint: { type: 'number', exclusiveMinimum: 0 },
+            constraint: { type: 'number', exclusiveMinimum: 0 }
         });
         expect(knob(`${nestedStream}/thresholds/maxP99SendDurationMs`)).toMatchObject({
-            availability: 'unset', effective: true,
-            constraint: { type: 'number', minimum: 0 },
+            availability: 'unset',
+            effective: true,
+            constraint: { type: 'number', minimum: 0 }
         });
         expect(knob(`${nestedStream}/maxInFlight`)).toMatchObject({
             currentValue: 8,
-            availability: 'configured', effective: true,
-            constraint: { type: 'integer', minimum: 1 },
+            availability: 'configured',
+            effective: true,
+            constraint: { type: 'integer', minimum: 1 }
         });
         expect(inventory.limitations).toContainEqual(expect.objectContaining({
             code: 'reference-only-recipe',
-            recipeId: 'reference-only~/recipe',
+            recipeId: 'reference-only~/recipe'
         }));
     });
 
@@ -250,21 +278,21 @@ describe('distributed recipe tuning Task 2 contracts', () => {
         const manifest = tuningManifest();
         const commands = Array.from({ length: 2_001 }, (_, index) => ({
             kind: 'health' as const,
-            commandId: `health-${index}`,
+            commandId: `health-${index}`
         }));
         const bounded: RallarBlackBoxDistributedRunManifest = {
             ...manifest,
             recipes: [{
                 recipeId: 'bounded',
-                recipe: { recipeId: 'bounded', commands },
-            }],
+                recipe: { recipeId: 'bounded', commands }
+            }]
         };
 
         const inventory = inventoryDistributedRunTuningKnobs(bounded);
 
         expect(inventory.limitations).toContainEqual(expect.objectContaining({
             code: 'command-limit-exceeded',
-            message: expect.stringContaining('2000'),
+            message: expect.stringContaining('2000')
         }));
     });
 
@@ -272,7 +300,9 @@ describe('distributed recipe tuning Task 2 contracts', () => {
         const candidate = { ...tuningManifest(), ackTimeoutMs: 13_000 };
         const recipe = candidate.recipes[0]?.recipe;
         expect(recipe).toBeDefined();
-        if (!recipe) return;
+        if (!recipe) {
+            return;
+        }
 
         expect(validateDistributedRunManifest(candidate).errors).toEqual([]);
         expect(validateRallarBlackBoxRecipeCompatibility(recipe).errors).toEqual([]);

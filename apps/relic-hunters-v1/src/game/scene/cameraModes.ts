@@ -1,16 +1,12 @@
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import type { RelicPublicSnapshot, RelicRoom } from '@relic-hunters/mod.ts';
 import { WORLD_SCALE } from './constants.ts';
-import {
-    AVATAR_CAMERA_FOLLOW_HOLD_MS,
-    AVATAR_CAMERA_ZOOM_OUT_MS,
-    ROOM_FLYOVER_DURATION_MS,
-} from './motionTuning.ts';
+import { AVATAR_CAMERA_FOLLOW_HOLD_MS, AVATAR_CAMERA_ZOOM_OUT_MS, ROOM_FLYOVER_DURATION_MS } from './motionTuning.ts';
 
 export {
     AVATAR_CAMERA_FOLLOW_HOLD_MS,
     AVATAR_CAMERA_ZOOM_OUT_MS,
-    ROOM_FLYOVER_DURATION_MS,
+    ROOM_FLYOVER_DURATION_MS
 };
 
 export type RelicCameraMode = 'lobby' | 'tactical' | 'roam' | 'inspection' | 'event-focus' | 'flyover';
@@ -36,7 +32,7 @@ export function deriveRelicCameraMode({
     localPlayerId,
     isRoaming,
     isInspecting,
-    focusRoomId,
+    focusRoomId
 }: Readonly<{
     snapshot?: RelicPublicSnapshot;
     localPlayerId?: string;
@@ -67,7 +63,7 @@ export function deriveRelicCameraMode({
 export function avatarCameraReturnState({
     snapshotPhase,
     lastRoamInputMs,
-    nowMs,
+    nowMs
 }: Readonly<{
     snapshotPhase?: RelicPublicSnapshot['phase'];
     lastRoamInputMs?: number;
@@ -86,7 +82,7 @@ export function avatarCameraReturnState({
     if (zoomElapsedMs <= AVATAR_CAMERA_ZOOM_OUT_MS) {
         return {
             phase: 'zoom-out',
-            progress: smoothstep(zoomElapsedMs / AVATAR_CAMERA_ZOOM_OUT_MS),
+            progress: smoothstep(zoomElapsedMs / AVATAR_CAMERA_ZOOM_OUT_MS)
         };
     }
 
@@ -96,20 +92,20 @@ export function avatarCameraReturnState({
 export function blendRelicCameraPose(
     avatarPose: RelicCameraPose,
     tacticalPose: RelicCameraPose,
-    progress: number,
+    progress: number
 ): RelicCameraPose {
     const t = clamp(progress, 0, 1);
     return {
         position: Vector3.Lerp(avatarPose.position, tacticalPose.position, t),
         target: Vector3.Lerp(avatarPose.target, tacticalPose.target, t),
-        fov: avatarPose.fov + (tacticalPose.fov - avatarPose.fov) * t,
+        fov: avatarPose.fov + (tacticalPose.fov - avatarPose.fov) * t
     };
 }
 
 export function planRoomFlyoverCameraPose({
     rooms,
     progress,
-    returnPose,
+    returnPose
 }: Readonly<{
     rooms: readonly RelicRoom[];
     progress: number;
@@ -122,7 +118,7 @@ export function planRoomFlyoverCameraPose({
     }
 
     const returnProgress = smoothstep(
-        (progress - ROOM_FLYOVER_RETURN_START) / (1 - ROOM_FLYOVER_RETURN_START),
+        (progress - ROOM_FLYOVER_RETURN_START) / (1 - ROOM_FLYOVER_RETURN_START)
     );
     return blendRelicCameraPose(flyoverPose, returnPose, returnProgress);
 }
@@ -132,7 +128,7 @@ export function planTacticalCameraPose({
     currentRoom,
     selectedRoomId,
     objectiveTargetRoomId,
-    aspectRatio,
+    aspectRatio
 }: Readonly<{
     snapshot: RelicPublicSnapshot;
     currentRoom: RelicRoom;
@@ -144,7 +140,7 @@ export function planTacticalCameraPose({
         snapshot,
         currentRoom,
         selectedRoomId,
-        objectiveTargetRoomId,
+        objectiveTargetRoomId
     });
     const positions = rooms.map(roomWorldPositionForCamera);
     const minX = Math.min(...positions.map((position) => position.x));
@@ -163,10 +159,10 @@ export function planTacticalCameraPose({
         position: new Vector3(
             center.x - distance * 0.58,
             height,
-            center.z - distance * 0.82,
+            center.z - distance * 0.82
         ),
         target: center,
-        fov: 0.72,
+        fov: 0.72
     };
 }
 
@@ -174,7 +170,7 @@ export function tacticalFocusRooms({
     snapshot,
     currentRoom,
     selectedRoomId,
-    objectiveTargetRoomId,
+    objectiveTargetRoomId
 }: Readonly<{
     snapshot: RelicPublicSnapshot;
     currentRoom: RelicRoom;
@@ -212,19 +208,19 @@ function roomWorldPositionForCamera(room: RelicRoom): Vector3 {
 
 function planRoomFlyoverRoutePose(
     rooms: readonly RelicRoom[],
-    progress: number,
+    progress: number
 ): RelicCameraPose {
-    const sortedRooms = [...rooms].sort((left, right) =>
-        left.z === right.z ? left.x - right.x : left.z - right.z
-    );
-    const positions = (sortedRooms.length > 0 ? sortedRooms : [{
-        id: 'origin',
-        name: 'Origin',
-        kind: 'hallway',
-        x: 0,
-        z: 0,
-        neighbors: [],
-    } satisfies RelicRoom]).map(roomWorldPositionForCamera);
+    const sortedRooms = [...rooms].sort((left, right) => left.z === right.z ? left.x - right.x : left.z - right.z);
+    const positions = (sortedRooms.length > 0 ? sortedRooms : [
+        {
+            id: 'origin',
+            name: 'Origin',
+            kind: 'hallway',
+            x: 0,
+            z: 0,
+            neighbors: []
+        } satisfies RelicRoom
+    ]).map(roomWorldPositionForCamera);
     const scaled = clamp(progress, 0, 1) * Math.max(1, positions.length - 1);
     const index = Math.min(positions.length - 1, Math.floor(scaled));
     const nextIndex = Math.min(positions.length - 1, index + 1);
@@ -234,7 +230,7 @@ function planRoomFlyoverRoutePose(
     return {
         position: new Vector3(center.x - 7.4, 9.8, center.z - 8.8),
         target: new Vector3(center.x, 0.78, center.z),
-        fov: 0.78,
+        fov: 0.78
     };
 }
 

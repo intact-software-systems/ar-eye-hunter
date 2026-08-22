@@ -3,16 +3,13 @@ import { Metric } from '../../../shared/Metric.tsx';
 import { formatDuration } from '../../../shared/time-format.ts';
 import { RtcAgentMatrix } from './RtcAgentMatrix.tsx';
 import { RtcDiagnosticsTimeseriesPanel } from './RtcDiagnosticsTimeseriesPanel.tsx';
-import {
-    RtcLatencyHistogram,
-    RtcLatencyScatterChart,
-} from './RtcLatencyCharts.tsx';
+import { RtcLatencyHistogram, RtcLatencyScatterChart } from './RtcLatencyCharts.tsx';
 import { RtcPhaseWaterfall } from './RtcPhaseWaterfall.tsx';
 
 export function RtcPerformancePanel({
     view,
     compact = false,
-    showTimeseries = !compact,
+    showTimeseries = !compact
 }: {
     view: RtcPerformanceView;
     compact?: boolean;
@@ -25,10 +22,18 @@ export function RtcPerformancePanel({
                 <span>{view.summary.commandCount} commands</span>
             </div>
             <div className="rtc-performance-legend" aria-label="RTC performance legend">
-                <span><i className="good" /> RTC ok</span>
-                <span><i className="active" /> WS ok</span>
-                <span><i className="bad" /> Failed</span>
-                <span><i className="distributed" /> Agent aggregate</span>
+                <span>
+                    <i className="good" /> RTC ok
+                </span>
+                <span>
+                    <i className="active" /> WS ok
+                </span>
+                <span>
+                    <i className="bad" /> Failed
+                </span>
+                <span>
+                    <i className="distributed" /> Agent aggregate
+                </span>
                 <span>Waterfall bars show measured duration when available, otherwise observed delta.</span>
             </div>
             <div className="rtc-performance-summary">
@@ -68,48 +73,44 @@ export function RtcPerformancePanel({
                     {view.emptyReasons.join(' - ')}
                 </div>
             )}
-            {showTimeseries && (
-                <RtcDiagnosticsTimeseriesPanel series={view.timeseries} />
-            )}
+            {showTimeseries && <RtcDiagnosticsTimeseriesPanel series={view.timeseries} />}
             <div className="rtc-performance-grid">
                 <article className="rtc-chart-card">
                     <div>
                         <strong>Latency Scatter</strong>
                         <small>duration by command sequence</small>
                     </div>
-                    {view.scatter.length > 0 ? (
-                        <RtcLatencyScatterChart
-                            points={view.scatter}
-                            percentiles={view.summary}
-                        />
-                    ) : (
-                        <div className="empty-state">No command latency yet</div>
-                    )}
+                    {view.scatter.length > 0
+                        ? (
+                            <RtcLatencyScatterChart
+                                points={view.scatter}
+                                percentiles={view.summary}
+                            />
+                        )
+                        : <div className="empty-state">No command latency yet</div>}
                 </article>
                 <article className="rtc-chart-card">
                     <div>
                         <strong>Latency Distribution</strong>
                         <small>bucketed command durations</small>
                     </div>
-                    {view.histogram.length > 0 ? (
-                        <RtcLatencyHistogram
-                            buckets={view.histogram}
-                            percentiles={view.summary}
-                        />
-                    ) : (
-                        <div className="empty-state">No duration buckets yet</div>
-                    )}
+                    {view.histogram.length > 0
+                        ? (
+                            <RtcLatencyHistogram
+                                buckets={view.histogram}
+                                percentiles={view.summary}
+                            />
+                        )
+                        : <div className="empty-state">No duration buckets yet</div>}
                 </article>
                 <article className="rtc-chart-card">
                     <div>
                         <strong>Observed Stage Timing</strong>
                         <small>duration payloads or observed deltas</small>
                     </div>
-                    {view.phaseSpans.length > 0 ? (
-                        <RtcPhaseWaterfall spans={view.phaseSpans} />
-                    ) : (
-                        <div className="empty-state">No phase timing yet</div>
-                    )}
+                    {view.phaseSpans.length > 0
+                        ? <RtcPhaseWaterfall spans={view.phaseSpans} />
+                        : <div className="empty-state">No phase timing yet</div>}
                 </article>
                 {!compact && (
                     <article className="rtc-chart-card wide">

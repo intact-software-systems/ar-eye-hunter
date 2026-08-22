@@ -1,30 +1,22 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-    createDistributedArtifactWorkspace,
-    deriveDistributedArtifactWorkspace,
-} from '../../../packages/shared-test/rallar-bb-test/mod.ts';
-import {
     analyzeDistributedRunArtifactFiles,
     analyzeDistributedRunArtifactPipeline,
     distributedArtifactBundleFromFiles,
     distributedArtifactSnapshotsFromFiles,
-    parseDistributedRunArtifactPipeline,
+    parseDistributedRunArtifactPipeline
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import {
     declaredDistributedArtifactSchemaVersion,
     distributedArtifactGeneratedAt,
-    identifyDistributedArtifactFamily,
+    identifyDistributedArtifactFamily
 } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-compatibility.ts';
-import { projectDistributedArtifactEnvelope } from
-    '../../../packages/shared-test/rallar-bb-test/distributed-artifact-envelope.ts';
-import { distributedArtifactIdentityIssues } from
-    '../../../packages/shared-test/rallar-bb-test/distributed-artifact-identity.ts';
-import { parseDistributedArtifactPipeline } from
-    '../../../packages/shared-test/rallar-bb-test/distributed-artifact-pipeline.ts';
-import * as monitorModule from
-    '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
-import { createRecipeConsoleScaleFixture } from
-    '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
+import { projectDistributedArtifactEnvelope } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-envelope.ts';
+import { distributedArtifactIdentityIssues } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-identity.ts';
+import { parseDistributedArtifactPipeline } from '../../../packages/shared-test/rallar-bb-test/distributed-artifact-pipeline.ts';
+import * as monitorModule from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import { createDistributedArtifactWorkspace, deriveDistributedArtifactWorkspace } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
+import { createRecipeConsoleScaleFixture } from '../../../packages/shared-test/rallar-bb-test/scale-fixture.ts';
 
 describe('distributed artifact workspace parsed integration', () => {
     it('derives one workspace from one source pass and one parse per document or JSONL row', () => {
@@ -32,13 +24,13 @@ describe('distributed artifact workspace parsed integration', () => {
         const derived = deriveDistributedArtifactWorkspace({
             files: fixture.files,
             generatedAtEpochMs: fixture.generatedAtEpochMs,
-            artifactSchemaVersion: fixture.artifactSchemaVersion,
+            artifactSchemaVersion: fixture.artifactSchemaVersion
         });
 
         expect(derived.workspace).toEqual(createDistributedArtifactWorkspace({
             files: fixture.files,
             generatedAtEpochMs: fixture.generatedAtEpochMs,
-            artifactSchemaVersion: fixture.artifactSchemaVersion,
+            artifactSchemaVersion: fixture.artifactSchemaVersion
         }));
         expect(derived.parsed.telemetry).toMatchObject({
             pipelinePassCount: 1,
@@ -46,27 +38,33 @@ describe('distributed artifact workspace parsed integration', () => {
             sourceFileVisitCount: Object.keys(fixture.files).length,
             jsonDocumentParseCount: 6,
             jsonlFilePassCount: 2,
-            jsonlRowParseCount: fixture.counts.sourceRows,
+            jsonlRowParseCount: fixture.counts.sourceRows
         });
         expect(Object.values(derived.parsed.telemetry.jsonDocumentParseCountByFile))
             .toEqual(expect.arrayContaining([1]));
-        expect(Object.values(derived.parsed.telemetry.jsonDocumentParseCountByFile)
-            .every(count => count <= 1)).toBe(true);
-        expect(Object.values(derived.parsed.telemetry.jsonlFilePassCountByFile)
-            .every(count => count <= 1)).toBe(true);
+        expect(
+            Object.values(derived.parsed.telemetry.jsonDocumentParseCountByFile)
+                .every((count) => count <= 1)
+        ).toBe(true);
+        expect(
+            Object.values(derived.parsed.telemetry.jsonlFilePassCountByFile)
+                .every((count) => count <= 1)
+        ).toBe(true);
         expect(derived.telemetry).toEqual({
             parsedArtifactPassCount: 1,
             normalizedSnapshotCount: 1,
             bundleDerivationCount: 1,
             monitorDerivationCount: 1,
-            reportDerivationCount: 1,
+            reportDerivationCount: 1
         });
         expect(derived.monitor).toBeDefined();
         expect(derived.report).toBeDefined();
         expect(derived.workspace.analysis?.spa?.report).toBe(derived.report);
         expect(derived.workspace.analysis?.spa?.report.distributedRunId)
-            .toBe(fixture.files['distributed-run.json'] &&
-                JSON.parse(fixture.files['distributed-run.json']).distributedRunId);
+            .toBe(
+                fixture.files['distributed-run.json'] &&
+                    JSON.parse(fixture.files['distributed-run.json']).distributedRunId
+            );
     });
 
     it('preserves loose and envelope workspace output exactly', () => {
@@ -74,7 +72,7 @@ describe('distributed artifact workspace parsed integration', () => {
         const input = {
             files: fixture.files,
             generatedAtEpochMs: fixture.generatedAtEpochMs,
-            artifactSchemaVersion: fixture.artifactSchemaVersion,
+            artifactSchemaVersion: fixture.artifactSchemaVersion
         };
         const loose = deriveDistributedArtifactWorkspace(input);
         const envelope = deriveDistributedArtifactWorkspace({
@@ -83,14 +81,14 @@ describe('distributed artifact workspace parsed integration', () => {
                     artifactSchemaVersion: fixture.artifactSchemaVersion,
                     distributedRunId: loose.workspace.distributedRunId,
                     generatedAtEpochMs: fixture.generatedAtEpochMs,
-                    files: fixture.files,
-                }),
-            },
+                    files: fixture.files
+                })
+            }
         });
 
         expect(envelope.workspace).toMatchObject({
             source: 'bundle-envelope',
-            support: 'supported',
+            support: 'supported'
         });
         expect(envelope.workspace.analysis).toEqual(loose.workspace.analysis);
         expect(envelope.workspace.snapshots).toEqual(loose.workspace.snapshots);
@@ -106,24 +104,24 @@ describe('distributed artifact workspace parsed integration', () => {
             files: {
                 ...fixture.files,
                 'failures.json': invalidJson,
-                'events.jsonl': `${fixture.files['events.jsonl']}\n${invalidRow}`,
+                'events.jsonl': `${fixture.files['events.jsonl']}\n${invalidRow}`
             },
             generatedAtEpochMs: fixture.generatedAtEpochMs,
-            artifactSchemaVersion: fixture.artifactSchemaVersion,
+            artifactSchemaVersion: fixture.artifactSchemaVersion
         });
 
         expect(derived.workspace.analysis?.parseWarnings).toEqual(
             expect.arrayContaining([
                 {
                     fileName: 'failures.json',
-                    message: `failures.json is not valid JSON: ${jsonError(invalidJson)}`,
+                    message: `failures.json is not valid JSON: ${jsonError(invalidJson)}`
                 },
                 {
                     fileName: 'events.jsonl',
                     lineNumber: 7,
-                    message: `events.jsonl:7 is not valid JSON: ${jsonError(invalidRow)}`,
-                },
-            ]),
+                    message: `events.jsonl:7 is not valid JSON: ${jsonError(invalidRow)}`
+                }
+            ])
         );
         expect(derived.parsed.telemetry.jsonDocumentParseCountByFile['failures.json'])
             .toBe(1);
@@ -138,13 +136,13 @@ describe('distributed artifact workspace parsed integration', () => {
                 phase: 'create',
                 path: '/distributed-runs',
                 httpStatus: '400',
-                responseFile,
+                responseFile
             }),
-            [responseFile]: JSON.stringify({ message: 'dynamic response rejected' }),
+            [responseFile]: JSON.stringify({ message: 'dynamic response rejected' })
         });
         const derived = deriveDistributedArtifactWorkspace({
             files,
-            generatedAtEpochMs: 123,
+            generatedAtEpochMs: 123
         });
 
         expect(derived.workspace.analysis).toMatchObject({
@@ -153,17 +151,17 @@ describe('distributed artifact workspace parsed integration', () => {
             failure: {
                 category: 'control-api',
                 likelyCause: 'dynamic response rejected',
-                evidenceFile: responseFile,
-            },
+                evidenceFile: responseFile
+            }
         });
         expect(derived.workspace.analysis?.parseWarnings).toContainEqual({
             fileName: 'distributed-run.json',
-            message: 'distributed-run.json is missing or empty; using runner-summary.json and manifest.json fallback.',
+            message: 'distributed-run.json is missing or empty; using runner-summary.json and manifest.json fallback.'
         });
         expect(derived.parsed.files[responseFile]).toMatchObject({
             format: 'json',
             status: 'parsed',
-            value: { message: 'dynamic response rejected' },
+            value: { message: 'dynamic response rejected' }
         });
         expect(derived.parsed.telemetry.jsonDocumentParseCountByFile[responseFile])
             .toBe(1);
@@ -179,14 +177,14 @@ describe('distributed artifact workspace parsed integration', () => {
                 'manifest.json': undefined,
                 'report.json': undefined,
                 'failures.json': undefined,
-                'metadata.json': undefined,
+                'metadata.json': undefined
             },
-            generatedAtEpochMs: fixture.generatedAtEpochMs,
+            generatedAtEpochMs: fixture.generatedAtEpochMs
         });
 
         expect(derived.workspace).toMatchObject({
             support: 'incomplete',
-            bundle: { artifactSchemaVersion: 1 },
+            bundle: { artifactSchemaVersion: 1 }
         });
         expect(derived.monitor?.artifact).toMatchObject({ status: 'valid' });
         expect(derived.report?.summary.artifactStatus).toBe('valid');
@@ -202,33 +200,34 @@ describe('distributed artifact workspace parsed integration', () => {
             const derived = deriveDistributedArtifactWorkspace({
                 files: fixture.files,
                 generatedAtEpochMs: fixture.generatedAtEpochMs,
-                artifactSchemaVersion: fixture.artifactSchemaVersion,
+                artifactSchemaVersion: fixture.artifactSchemaVersion
             });
 
             expect(derived.workspace).toMatchObject({
                 support: 'supported',
                 analysis: {
                     distributedRunId: 'recipe-console-scale-distributed-run',
-                    spa: undefined,
+                    spa: undefined
                 },
                 snapshots: {
                     distributedRun: {
-                        distributedRunId: 'recipe-console-scale-distributed-run',
-                    },
+                        distributedRunId: 'recipe-console-scale-distributed-run'
+                    }
                 },
-                bundle: { artifactSchemaVersion: 2 },
+                bundle: { artifactSchemaVersion: 2 }
             });
             expect(derived.workspace.analysis?.parseWarnings).toContainEqual({
                 fileName: 'spa-analysis',
-                message: 'Unable to derive SPA report: synthetic monitor derivation failure',
+                message: 'Unable to derive SPA report: synthetic monitor derivation failure'
             });
             expect(derived.monitor).toBeUndefined();
             expect(derived.report).toBeUndefined();
             expect(derived.telemetry).toMatchObject({
                 monitorDerivationCount: 1,
-                reportDerivationCount: 0,
+                reportDerivationCount: 0
             });
-        } finally {
+        }
+        finally {
             monitorSpy.mockRestore();
         }
     });
@@ -240,8 +239,8 @@ describe('distributed artifact workspace parsed integration', () => {
                 artifactSchemaVersion: fixture.artifactSchemaVersion,
                 distributedRunId: 'recipe-console-scale-distributed-run',
                 generatedAtEpochMs: fixture.generatedAtEpochMs,
-                files: fixture.files,
-            }),
+                files: fixture.files
+            })
         };
 
         expect(() => analyzeDistributedRunArtifactFiles({ files: envelopeFiles }))
@@ -255,7 +254,7 @@ describe('distributed artifact workspace parsed integration', () => {
         expect(distributedArtifactIdentityIssues(envelopeFiles)).toEqual([]);
         expect(projectDistributedArtifactEnvelope(envelopeFiles)).toMatchObject({
             source: 'bundle-envelope',
-            distributedRunId: 'recipe-console-scale-distributed-run',
+            distributedRunId: 'recipe-console-scale-distributed-run'
         });
         expect(deriveDistributedArtifactWorkspace({ files: envelopeFiles }).workspace)
             .toMatchObject({ source: 'bundle-envelope', support: 'supported' });
@@ -266,27 +265,26 @@ describe('distributed artifact workspace parsed integration', () => {
         const invalidJson = '{not-json';
         const parsed = parseDistributedArtifactPipeline({
             ...fixture.files,
-            'failures.json': invalidJson,
+            'failures.json': invalidJson
         });
         const parsedFiles = parseDistributedRunArtifactPipeline(parsed);
         const first = analyzeDistributedRunArtifactPipeline({
             parsed,
             parsedFiles,
-            generatedAtEpochMs: fixture.generatedAtEpochMs,
+            generatedAtEpochMs: fixture.generatedAtEpochMs
         });
         const callerWarning = {
             fileName: 'caller',
-            message: 'caller mutation must not leak',
+            message: 'caller mutation must not leak'
         };
         (first.parseWarnings as Array<typeof callerWarning>).push(callerWarning);
         const originalMessage = parsedFiles.parseWarnings[0]?.message;
-        (first.parseWarnings[0] as { message: string }).message =
-            'caller object mutation must not leak';
+        (first.parseWarnings[0] as { message: string; }).message = 'caller object mutation must not leak';
 
         const second = analyzeDistributedRunArtifactPipeline({
             parsed,
             parsedFiles,
-            generatedAtEpochMs: fixture.generatedAtEpochMs,
+            generatedAtEpochMs: fixture.generatedAtEpochMs
         });
 
         expect(second.parseWarnings).not.toContainEqual(callerWarning);
@@ -298,7 +296,7 @@ describe('distributed artifact workspace parsed integration', () => {
 });
 
 function fallbackFiles(
-    overrides: Readonly<Record<string, string>> = {},
+    overrides: Readonly<Record<string, string>> = {}
 ): Readonly<Record<string, string>> {
     return {
         'distributed-run.json': '',
@@ -306,14 +304,14 @@ function fallbackFiles(
             distributedRunId: 'dist-fallback',
             controlRunId: 'run-fallback',
             state: 'failed',
-            ok: false,
+            ok: false
         }),
         'manifest.json': JSON.stringify({
             schemaVersion: 1,
             distributedRunId: 'dist-fallback',
             controlRunId: 'run-fallback',
             group: { groupId: 'pipeline-room' },
-            recipes: [],
+            recipes: []
         }),
         'control-run.json': JSON.stringify({
             runId: 'run-fallback',
@@ -323,16 +321,17 @@ function fallbackFiles(
             events: [],
             stats: [],
             reports: [],
-            heartbeats: [],
+            heartbeats: []
         }),
-        ...overrides,
+        ...overrides
     };
 }
 
 function jsonError(text: string): string {
     try {
         JSON.parse(text);
-    } catch (error) {
+    }
+    catch (error) {
         return error instanceof Error ? error.message : String(error);
     }
     throw new Error('Expected malformed JSON.');

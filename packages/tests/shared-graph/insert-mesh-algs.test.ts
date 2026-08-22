@@ -1,14 +1,14 @@
-import { describe, expect, it } from 'vitest';
-import { DynamicMeshAlgo } from '@shared-graph/mesh/group-dynamics-mesh-types.ts';
-import { insertMeshAlgorithm, insertToMesh, } from '@shared-graph/mesh/insert-mesh-algs.ts';
 import { VertexState } from '@shared-graph/graph/graph-props.ts';
+import { DynamicMeshAlgo } from '@shared-graph/mesh/group-dynamics-mesh-types.ts';
+import { insertMeshAlgorithm, insertToMesh } from '@shared-graph/mesh/insert-mesh-algs.ts';
+import { describe, expect, it } from 'vitest';
 import { createGraph } from './helpers.ts';
 
 describe('shared-graph insert mesh algorithms', () => {
     it('handles first insertions into an empty group graph', () => {
         const globalGraph = createGraph(
             [['member-a', VertexState.MEMBER, 2]],
-            [],
+            []
         );
         const emptyGroupGraph = createGraph([], []);
 
@@ -18,7 +18,7 @@ describe('shared-graph insert mesh algorithms', () => {
             actionVertexId: 'member-a',
             numberOfMembers: 1,
             k: 1,
-            algo: DynamicMeshAlgo.K_INSERT_MC,
+            algo: DynamicMeshAlgo.K_INSERT_MC
         });
 
         expect(result.validMesh).toBe(true);
@@ -30,12 +30,12 @@ describe('shared-graph insert mesh algorithms', () => {
                 globalGraph,
                 groupGraph: createGraph(
                     [['member-a', VertexState.MEMBER, 2]],
-                    [],
+                    []
                 ),
                 actionVertexId: 'member-a',
                 numberOfMembers: 1,
                 k: 1,
-                algo: DynamicMeshAlgo.K_INSERT_MC,
+                algo: DynamicMeshAlgo.K_INSERT_MC
             })
         ).toThrow('Expected empty group graph on first insert');
     });
@@ -43,11 +43,11 @@ describe('shared-graph insert mesh algorithms', () => {
     it('promotes existing steiner vertices to members', () => {
         const globalGraph = createGraph(
             [['member-a', VertexState.MEMBER, 3]],
-            [],
+            []
         );
         const groupGraph = createGraph(
             [['member-a', VertexState.STEINER, 8]],
-            [],
+            []
         );
 
         const result = insertMeshAlgorithm({
@@ -56,12 +56,12 @@ describe('shared-graph insert mesh algorithms', () => {
             actionVertexId: 'member-a',
             numberOfMembers: 2,
             k: 1,
-            algo: DynamicMeshAlgo.K_INSERT_MC,
+            algo: DynamicMeshAlgo.K_INSERT_MC
         });
 
         expect(result.getNodeAttribute('member-a', 'state')).toBe(VertexState.MEMBER);
         expect(result.getNodeAttribute('member-a', 'degreeLimit')).toBe(
-            result.getAttributes().degreeLimitMember,
+            result.getAttributes().degreeLimitMember
         );
     });
 
@@ -71,35 +71,35 @@ describe('shared-graph insert mesh algorithms', () => {
                 ['member-a', VertexState.MEMBER, 2],
                 ['member-b', VertexState.MEMBER, 1],
                 ['member-c', VertexState.MEMBER, 2],
-                ['member-d', VertexState.MEMBER, 2],
+                ['member-d', VertexState.MEMBER, 2]
             ],
             [
                 ['member-a', 'member-b', 1],
                 ['member-a', 'member-c', 3],
                 ['member-a', 'member-d', 4],
                 ['member-b', 'member-c', 1],
-                ['member-c', 'member-d', 10],
-            ],
+                ['member-c', 'member-d', 10]
+            ]
         );
         const groupGraphForMc = createGraph(
             [
                 ['member-b', VertexState.MEMBER, 1],
                 ['member-c', VertexState.MEMBER, 2],
-                ['member-d', VertexState.MEMBER, 2],
+                ['member-d', VertexState.MEMBER, 2]
             ],
             [
-                ['member-b', 'member-c', 1],
-            ],
+                ['member-b', 'member-c', 1]
+            ]
         );
         const groupGraphForMddl = createGraph(
             [
                 ['member-b', VertexState.MEMBER, 2],
                 ['member-c', VertexState.MEMBER, 2],
-                ['member-d', VertexState.MEMBER, 2],
+                ['member-d', VertexState.MEMBER, 2]
             ],
             [
-                ['member-b', 'member-c', 10],
-            ],
+                ['member-b', 'member-c', 10]
+            ]
         );
 
         const minimumCost = insertMeshAlgorithm({
@@ -108,7 +108,7 @@ describe('shared-graph insert mesh algorithms', () => {
             actionVertexId: 'member-a',
             numberOfMembers: 4,
             k: 2,
-            algo: DynamicMeshAlgo.K_INSERT_MC,
+            algo: DynamicMeshAlgo.K_INSERT_MC
         });
 
         expect(minimumCost.hasEdge('member-a', 'member-b')).toBe(false);
@@ -121,7 +121,7 @@ describe('shared-graph insert mesh algorithms', () => {
             actionVertexId: 'member-a',
             numberOfMembers: 4,
             k: 1,
-            algo: DynamicMeshAlgo.K_INSERT_MDDL,
+            algo: DynamicMeshAlgo.K_INSERT_MDDL
         });
 
         expect(diameterLimited.hasEdge('member-a', 'member-d')).toBe(true);

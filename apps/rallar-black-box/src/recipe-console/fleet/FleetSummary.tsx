@@ -1,5 +1,4 @@
-import type { FleetReportAnalysis } from
-    '@shared-test/rallar-bb-test/fleet-report-analysis.ts';
+import type { FleetReportAnalysis } from '@shared-test/rallar-bb-test/fleet-report-analysis.ts';
 import styles from './FleetSummary.module.css';
 
 type FleetLiveSummary = Readonly<{
@@ -12,7 +11,7 @@ type FleetLiveSummary = Readonly<{
 export function FleetSummary({
     analysis,
     collection = 'present',
-    live,
+    live
 }: Readonly<{
     analysis?: FleetReportAnalysis;
     collection?: 'absent' | 'present';
@@ -28,32 +27,54 @@ export function FleetSummary({
                     <span className={styles.eyebrow}>Operator ledger</span>
                     <h2 id="fleet-status-heading">Fleet status</h2>
                 </div>
-                <p>{live.connected.toLocaleString('en-US')} of{' '}
-                    {live.total.toLocaleString('en-US')} live agents connected</p>
+                <p>
+                    {live.connected.toLocaleString('en-US')} of {live.total.toLocaleString('en-US')}{' '}
+                    live agents connected
+                </p>
             </div>
-            {unavailable ? (
-                <p className={styles.unavailable}>Report evidence unavailable</p>
-            ) : null}
+            {unavailable ? <p className={styles.unavailable}>Report evidence unavailable</p> : null}
             <dl className={styles.metrics}>
-                <Metric label="Runs" value={unavailable
-                    ? 'Unavailable' : count(summary?.runs, 'runs')} />
-                <Metric label="Agents" value={unavailable
-                    ? 'Unavailable' : count(summary?.agents, 'agents')} />
-                <Metric label="Regions" value={unavailable
-                    ? 'Unavailable' : count(summary?.regions, 'regions')} />
+                <Metric
+                    label="Runs"
+                    value={unavailable
+                        ? 'Unavailable'
+                        : count(summary?.runs, 'runs')}
+                />
+                <Metric
+                    label="Agents"
+                    value={unavailable
+                        ? 'Unavailable'
+                        : count(summary?.agents, 'agents')}
+                />
+                <Metric
+                    label="Regions"
+                    value={unavailable
+                        ? 'Unavailable'
+                        : count(summary?.regions, 'regions')}
+                />
                 <Metric
                     label="Pass rate"
-                    value={unavailable ? 'Unavailable'
-                        : summary ? `${percent(summary.passRate)} pass rate` : 'No evidence'}
-                    tone={!hasHistoricalEvidence ? undefined
-                        : summary && summary.passRate < 1 ? 'warning' : 'passed'}
+                    value={unavailable
+                        ? 'Unavailable'
+                        : summary
+                        ? `${percent(summary.passRate)} pass rate`
+                        : 'No evidence'}
+                    tone={!hasHistoricalEvidence
+                        ? undefined
+                        : summary && summary.passRate < 1
+                        ? 'warning'
+                        : 'passed'}
                 />
                 <Metric
                     label="Repeated failures"
                     value={unavailable
-                        ? 'Unavailable' : count(summary?.failureGroups, 'groups')}
-                    tone={!hasHistoricalEvidence ? undefined
-                        : summary?.failureGroups ? 'failed' : 'passed'}
+                        ? 'Unavailable'
+                        : count(summary?.failureGroups, 'groups')}
+                    tone={!hasHistoricalEvidence
+                        ? undefined
+                        : summary?.failureGroups
+                        ? 'failed'
+                        : 'passed'}
                 />
                 <Metric
                     label="Run p95"
@@ -69,7 +90,7 @@ export function FleetSummary({
 function Metric({
     label,
     tone,
-    value,
+    value
 }: Readonly<{
     label: string;
     tone?: 'passed' | 'warning' | 'failed';
@@ -92,7 +113,9 @@ function number(value: number): string {
 }
 
 function percent(value: number): string {
-    return `${(value * 100).toLocaleString('en-US', {
-        maximumFractionDigits: 1,
-    })}%`;
+    return `${
+        (value * 100).toLocaleString('en-US', {
+            maximumFractionDigits: 1
+        })
+    }%`;
 }

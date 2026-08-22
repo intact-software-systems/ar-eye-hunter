@@ -5,19 +5,21 @@ export const EXECUTE_WINDOW_BUDGETS = {
     preflightIssues: 100,
     manifestErrors: 100,
     inspectorCommands: 100,
-    inspectorPrerequisites: 100,
+    inspectorPrerequisites: 100
 } as const;
 
 export type ExecuteWindowSection = keyof typeof EXECUTE_WINDOW_BUDGETS;
 
-export function createExecuteWindowFingerprint(input: Readonly<{
-    contextKey: string;
-    section: ExecuteWindowSection;
-}>): string {
+export function createExecuteWindowFingerprint(
+    input: Readonly<{
+        contextKey: string;
+        section: ExecuteWindowSection;
+    }>
+): string {
     return JSON.stringify([
         'execute-window-v1',
         input.contextKey,
-        input.section,
+        input.section
     ]);
 }
 

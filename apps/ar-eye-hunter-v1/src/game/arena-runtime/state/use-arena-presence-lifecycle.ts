@@ -1,21 +1,18 @@
+import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { useCallback, useEffect, useMemo } from 'react';
 import type { Dispatch, RefObject, SetStateAction } from 'react';
-import type { AuthSession } from '@shared/api/api-config.ts';
-import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 
-import type { RemotePlayer, RtcLaneStatus } from '../../types.ts';
 import {
-    type ArenaLinkState,
-    type ArenaPresenceNotice,
-    type ArenaPresencePlayerSummary,
     deriveArenaLinkState,
     deriveArenaPresenceNotices,
     toPresencePlayerSummaries,
+    type ArenaLinkState,
+    type ArenaPresenceNotice,
+    type ArenaPresencePlayerSummary
 } from '../../squadLink.ts';
-import type {
-    ArenaConnectionState,
-    ArenaTransportDiagnostics,
-} from '../arena-connection-contracts.ts';
+import type { RemotePlayer, RtcLaneStatus } from '../../types.ts';
+import type { ArenaConnectionState, ArenaTransportDiagnostics } from '../arena-connection-contracts.ts';
 
 interface ArenaPresenceLifecycleInput {
     readonly connectionState: ArenaConnectionState;
@@ -49,7 +46,7 @@ export function useArenaPresenceLifecycle(input: ArenaPresenceLifecycleInput) {
         rtcLanes,
         session,
         setPresenceNotices,
-        transportDiagnostics,
+        transportDiagnostics
     } = input;
     const linkPlayerCount = (session && roomId ? 1 : 0) + remotePlayers.size;
     const linkState = useMemo(() =>
@@ -59,22 +56,22 @@ export function useArenaPresenceLifecycle(input: ArenaPresenceLifecycleInput) {
             roomSelected: Boolean(roomId),
             playerCount: linkPlayerCount,
             rtcLanes,
-            wsTicketBackoffStatus: transportDiagnostics.wsTicketBackoff?.status,
+            wsTicketBackoffStatus: transportDiagnostics.wsTicketBackoff?.status
         }), [
         connectionState,
         isNetworkEnabled,
         linkPlayerCount,
         roomId,
         rtcLanes,
-        transportDiagnostics.wsTicketBackoff?.status,
+        transportDiagnostics.wsTicketBackoff?.status
     ]);
     const presencePlayers = useMemo(
         () =>
             toPresencePlayerSummaries(
                 remotePlayers,
-                (player) => (player as RemotePlayer).pose.username,
+                (player) => (player as RemotePlayer).pose.username
             ),
-        [remotePlayers],
+        [remotePlayers]
     );
     const directorNoticeLabel = directorStatus.isDirector
         ? 'you'
@@ -98,7 +95,7 @@ export function useArenaPresenceLifecycle(input: ArenaPresenceLifecycleInput) {
             nextLink: linkState,
             previousDirectorLabel: presenceDirectorLabelRef.current,
             nextDirectorLabel: directorNoticeLabel,
-            nowEpochMs: Date.now(),
+            nowEpochMs: Date.now()
         });
         presencePlayersRef.current = presencePlayers;
         presenceLinkRef.current = linkState;
@@ -114,16 +111,16 @@ export function useArenaPresenceLifecycle(input: ArenaPresenceLifecycleInput) {
         presenceLinkRef,
         presencePlayers,
         presencePlayersRef,
-        setPresenceNotices,
+        setPresenceNotices
     ]);
 
     useEffect(() => {
-        if (presenceNotices.length === 0) return;
+        if (presenceNotices.length === 0) {
+            return;
+        }
         const interval = window.setInterval(() => {
             const now = Date.now();
-            setPresenceNotices((previous) =>
-                previous.filter((notice) => now - notice.createdAtEpochMs < 6_500)
-            );
+            setPresenceNotices((previous) => previous.filter((notice) => now - notice.createdAtEpochMs < 6_500));
         }, 1_000);
         return () => window.clearInterval(interval);
     }, [presenceNotices.length, setPresenceNotices]);

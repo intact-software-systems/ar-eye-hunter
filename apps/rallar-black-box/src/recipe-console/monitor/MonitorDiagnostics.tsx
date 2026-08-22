@@ -2,15 +2,15 @@ import type { DistributedRunRuntimeDiagnosticRow } from '@shared-test/rallar-bb-
 import type {
     RecipeConsoleDiagnosticSeverity,
     RecipeConsoleTransport,
-    RecipeConsoleUrlState,
+    RecipeConsoleUrlState
 } from '../routing/url-state-contract.ts';
-import type { MonitorWorkspaceModel } from './monitor-workspace-model.ts';
-import type { MonitorEvidenceSelection } from './monitor-selection.ts';
 import { ExactIdentifier } from '../ui/ExactIdentifier.tsx';
 import { ExplicitWindowControls } from '../ui/ExplicitWindowControls.tsx';
+import type { MonitorEvidenceSelection } from './monitor-selection.ts';
+import type { MonitorWorkspaceModel } from './monitor-workspace-model.ts';
+import styles from './MonitorEvidence.module.css';
 import { MonitorWindowTruth } from './MonitorWindowTruth.tsx';
 import { useMonitorWindow } from './use-monitor-window.ts';
-import styles from './MonitorEvidence.module.css';
 
 const CONTENT_ID = 'monitor-diagnostics-window';
 
@@ -20,7 +20,7 @@ export function MonitorDiagnostics({
     transport,
     selected,
     onFilter,
-    onInspect,
+    onInspect
 }: Readonly<{
     model: MonitorWorkspaceModel;
     severity?: RecipeConsoleDiagnosticSeverity;
@@ -30,60 +30,100 @@ export function MonitorDiagnostics({
     onInspect(
         selection: MonitorEvidenceSelection,
         patch: Partial<RecipeConsoleUrlState>,
-        trigger: HTMLButtonElement,
+        trigger: HTMLButtonElement
     ): void;
 }>) {
-    const filtered: Array<Readonly<{
-        row: DistributedRunRuntimeDiagnosticRow;
-        sourceOrdinal: number;
-    }>> = [];
+    const filtered: Array<
+        Readonly<{
+            row: DistributedRunRuntimeDiagnosticRow;
+            sourceOrdinal: number;
+        }>
+    > = [];
     model.monitor.runtimeDiagnostics.forEach((row, sourceOrdinal) => {
         if (
             (!severity || row.severity === severity) &&
             matchesTransport(row, transport)
-        ) filtered.push({ row, sourceOrdinal });
+        ) {
+            filtered.push({ row, sourceOrdinal });
+        }
     });
     const window = useMonitorWindow({
         contextKey: model.source.contextKey,
         section: 'diagnostics',
         total: filtered.length,
         diagnosticSeverity: severity,
-        transport,
+        transport
     });
     const visible = filtered.slice(
         window.model.startIndex,
-        window.model.endIndexExclusive,
+        window.model.endIndexExclusive
     );
     const counts = model.monitor.diagnosticCounts;
     return (
         <section className={styles.diagnostics} data-monitor-diagnostics>
             <header>
-                <div><p className={styles.eyebrow}>Runtime signals</p><h2>Diagnostics ({counts.total})</h2></div>
+                <div>
+                    <p className={styles.eyebrow}>Runtime signals</p>
+                    <h2>Diagnostics ({counts.total})</h2>
+                </div>
                 <div className={styles.counts} aria-label="Diagnostic counts">
-                    <span>{counts.error} error</span><span>{counts.warning} warning</span>
-                    <span>{counts.rtc} RTC</span><span>{counts.ws} WS</span>
+                    <span>{counts.error} error</span>
+                    <span>{counts.warning} warning</span>
+                    <span>{counts.rtc} RTC</span>
+                    <span>{counts.ws} WS</span>
                 </div>
             </header>
             <div className={styles.filters}>
-                <label><span>Severity</span><select value={severity ?? ''} onChange={event => onFilter({ diagnosticSeverity: valueOrUndefined(event.target.value) as RecipeConsoleDiagnosticSeverity | undefined })}>
-                    <option value="">All severities</option><option value="debug">Debug</option><option value="info">Info</option><option value="warning">Warning</option><option value="error">Error</option>
-                </select></label>
-                <label><span>Transport</span><select value={transport ?? ''} onChange={event => onFilter({ transport: valueOrUndefined(event.target.value) as RecipeConsoleTransport | undefined })}>
-                    <option value="">All transports</option><option value="realtime">Realtime</option><option value="messages.rtc">Messages RTC</option><option value="ws">WS</option><option value="http">HTTP</option><option value="runtime">Runtime</option>
-                </select></label>
+                <label>
+                    <span>Severity</span>
+                    <select
+                        value={severity ?? ''}
+                        onChange={(event) =>
+                            onFilter({
+                                diagnosticSeverity: valueOrUndefined(event.target.value) as
+                                    | RecipeConsoleDiagnosticSeverity
+                                    | undefined
+                            })}
+                    >
+                        <option value="">All severities</option>
+                        <option value="debug">Debug</option>
+                        <option value="info">Info</option>
+                        <option value="warning">Warning</option>
+                        <option value="error">Error</option>
+                    </select>
+                </label>
+                <label>
+                    <span>Transport</span>
+                    <select
+                        value={transport ?? ''}
+                        onChange={(event) =>
+                            onFilter({
+                                transport: valueOrUndefined(event.target.value) as RecipeConsoleTransport | undefined
+                            })}
+                    >
+                        <option value="">All transports</option>
+                        <option value="realtime">Realtime</option>
+                        <option value="messages.rtc">Messages RTC</option>
+                        <option value="ws">WS</option>
+                        <option value="http">HTTP</option>
+                        <option value="runtime">Runtime</option>
+                    </select>
+                </label>
             </div>
-            {window.model.total > window.model.windowSize ? (
-                <div data-monitor-window-controls {...window.controlsFocusProps}>
-                    <ExplicitWindowControls
-                        contentId={CONTENT_ID}
-                        itemLabel="diagnostics"
-                        label="Diagnostics"
-                        model={window.model}
-                        onNext={window.next}
-                        onPrevious={window.previous}
-                    />
-                </div>
-            ) : null}
+            {window.model.total > window.model.windowSize
+                ? (
+                    <div data-monitor-window-controls {...window.controlsFocusProps}>
+                        <ExplicitWindowControls
+                            contentId={CONTENT_ID}
+                            itemLabel="diagnostics"
+                            label="Diagnostics"
+                            model={window.model}
+                            onNext={window.next}
+                            onPrevious={window.previous}
+                        />
+                    </div>
+                )
+                : null}
             <MonitorWindowTruth
                 itemLabel="diagnostics"
                 label="Diagnostics"
@@ -117,7 +157,7 @@ function DiagnosticRow({ row, active, onInspect, sourceOrdinal }: Readonly<{
     onInspect(
         selection: MonitorEvidenceSelection,
         patch: Partial<RecipeConsoleUrlState>,
-        trigger: HTMLButtonElement,
+        trigger: HTMLButtonElement
     ): void;
 }>) {
     return (
@@ -128,19 +168,24 @@ function DiagnosticRow({ row, active, onInspect, sourceOrdinal }: Readonly<{
         >
             <button
                 aria-pressed={active}
-                onClick={event => onInspect(
-                    { kind: 'diagnostic', id: row.eventId },
-                    {
-                        agentId: row.agentId,
-                        recipeId: undefined,
-                        commandId: row.commandId,
-                    },
-                    event.currentTarget,
-                )}
+                onClick={(event) =>
+                    onInspect(
+                        { kind: 'diagnostic', id: row.eventId },
+                        {
+                            agentId: row.agentId,
+                            recipeId: undefined,
+                            commandId: row.commandId
+                        },
+                        event.currentTarget
+                    )}
                 type="button"
             >
-                <span><strong>{row.diagnosticTypeId}</strong><small>{row.transport ?? 'runtime'} · {row.severity}</small></span>
-                <span>{row.summary || row.message}</span><ExactIdentifier value={row.agentId} />
+                <span>
+                    <strong>{row.diagnosticTypeId}</strong>
+                    <small>{row.transport ?? 'runtime'} · {row.severity}</small>
+                </span>
+                <span>{row.summary || row.message}</span>
+                <ExactIdentifier value={row.agentId} />
             </button>
         </li>
     );
@@ -152,9 +197,11 @@ function valueOrUndefined(value: string): string | undefined {
 
 function matchesTransport(
     row: DistributedRunRuntimeDiagnosticRow,
-    transport: RecipeConsoleTransport | undefined,
+    transport: RecipeConsoleTransport | undefined
 ): boolean {
-    if (!transport) return true;
+    if (!transport) {
+        return true;
+    }
     return transport === 'runtime'
         ? row.transport === undefined
         : row.transport === transport;

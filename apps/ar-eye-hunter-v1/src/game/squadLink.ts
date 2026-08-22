@@ -58,7 +58,7 @@ export function deriveArenaLinkState(input: ArenaLinkStateInput): ArenaLinkState
             label: 'Offline preview',
             detail: 'Log in to join squad chaos.',
             playerCount,
-            actionNeeded: true,
+            actionNeeded: true
         };
     }
 
@@ -68,7 +68,7 @@ export function deriveArenaLinkState(input: ArenaLinkStateInput): ArenaLinkState
             label: 'Arena link shaky',
             detail: 'Connection needs attention.',
             playerCount,
-            actionNeeded: true,
+            actionNeeded: true
         };
     }
 
@@ -82,7 +82,7 @@ export function deriveArenaLinkState(input: ArenaLinkStateInput): ArenaLinkState
             label: 'Rejoining arena...',
             detail: 'Connection is cooling down before retry.',
             playerCount,
-            actionNeeded: false,
+            actionNeeded: false
         };
     }
 
@@ -92,7 +92,7 @@ export function deriveArenaLinkState(input: ArenaLinkStateInput): ArenaLinkState
             label: 'Opening arena...',
             detail: input.roomSelected ? 'Syncing squad systems.' : 'Choose or create an arena.',
             playerCount,
-            actionNeeded: !input.roomSelected,
+            actionNeeded: !input.roomSelected
         };
     }
 
@@ -102,15 +102,13 @@ export function deriveArenaLinkState(input: ArenaLinkStateInput): ArenaLinkState
             label: 'Solo arena',
             detail: 'No squadmates linked yet.',
             playerCount,
-            actionNeeded: false,
+            actionNeeded: false
         };
     }
 
     const readyPeers = input.rtcLanes.reduce((sum, lane) => sum + lane.readyPeers, 0);
     const notReadyPeers = input.rtcLanes.reduce((sum, lane) => sum + lane.notReadyPeers, 0);
-    const hasClosedLane = input.rtcLanes.some((lane) =>
-        lane.status === 'closed' || lane.status === 'unavailable'
-    );
+    const hasClosedLane = input.rtcLanes.some((lane) => lane.status === 'closed' || lane.status === 'unavailable');
     const hasPartialLane = input.rtcLanes.some((lane) => lane.status === 'partial');
 
     if (hasClosedLane && readyPeers === 0 && notReadyPeers > 0) {
@@ -119,7 +117,7 @@ export function deriveArenaLinkState(input: ArenaLinkStateInput): ArenaLinkState
             label: 'Squad link shaky',
             detail: 'Some hunters may look delayed.',
             playerCount,
-            actionNeeded: false,
+            actionNeeded: false
         };
     }
 
@@ -129,7 +127,7 @@ export function deriveArenaLinkState(input: ArenaLinkStateInput): ArenaLinkState
             label: 'Squad link forming',
             detail: 'Syncing squad movement.',
             playerCount,
-            actionNeeded: false,
+            actionNeeded: false
         };
     }
 
@@ -138,21 +136,21 @@ export function deriveArenaLinkState(input: ArenaLinkStateInput): ArenaLinkState
         label: `${playerCount} hunters linked`,
         detail: 'Movement is live.',
         playerCount,
-        actionNeeded: false,
+        actionNeeded: false
     };
 }
 
 export function deriveArenaPresenceNotices(
-    input: ArenaPresenceNoticeInput,
+    input: ArenaPresenceNoticeInput
 ): readonly ArenaPresenceNotice[] {
     const notices: ArenaPresenceNotice[] = [];
     const previousPlayers = new Map(input.previousPlayers.map((player) => [
         player.sessionId,
-        player,
+        player
     ]));
     const nextPlayers = new Map(input.nextPlayers.map((player) => [
         player.sessionId,
-        player,
+        player
     ]));
 
     for (const [sessionId, player] of nextPlayers) {
@@ -162,7 +160,7 @@ export function deriveArenaPresenceNotices(
                 input.nowEpochMs,
                 `${player.username} entered the arena`,
                 sessionId,
-                player.username,
+                player.username
             ));
         }
     }
@@ -174,7 +172,7 @@ export function deriveArenaPresenceNotices(
                 input.nowEpochMs,
                 `${player.username} lost signal`,
                 sessionId,
-                player.username,
+                player.username
             ));
         }
     }
@@ -184,22 +182,24 @@ export function deriveArenaPresenceNotices(
             notices.push(createNotice(
                 'link-live',
                 input.nowEpochMs,
-                'Squad linked',
+                'Squad linked'
             ));
-        } else if (input.nextLink.tone === 'forming') {
+        }
+        else if (input.nextLink.tone === 'forming') {
             notices.push(createNotice(
                 'link-forming',
                 input.nowEpochMs,
-                'Squad link forming',
+                'Squad link forming'
             ));
-        } else if (
+        }
+        else if (
             input.nextLink.tone === 'degraded' ||
             input.nextLink.tone === 'rejoining'
         ) {
             notices.push(createNotice(
                 'link-degraded',
                 input.nowEpochMs,
-                input.nextLink.label,
+                input.nextLink.label
             ));
         }
     }
@@ -212,7 +212,7 @@ export function deriveArenaPresenceNotices(
         notices.push(createNotice(
             'host-change',
             input.nowEpochMs,
-            input.nextDirectorLabel === 'you' ? 'You run this arena' : 'Arena host is changing',
+            input.nextDirectorLabel === 'you' ? 'You run this arena' : 'Arena host is changing'
         ));
     }
 
@@ -221,11 +221,11 @@ export function deriveArenaPresenceNotices(
 
 export function toPresencePlayerSummaries(
     players: ReadonlyMap<string, unknown>,
-    readUsername: (player: unknown) => string,
+    readUsername: (player: unknown) => string
 ): readonly ArenaPresencePlayerSummary[] {
     return [...players].map(([sessionId, player]) => ({
         sessionId,
-        username: readUsername(player),
+        username: readUsername(player)
     }));
 }
 
@@ -234,13 +234,13 @@ function createNotice(
     nowEpochMs: number,
     message: string,
     entityId: string = kind,
-    playerName?: string,
+    playerName?: string
 ): ArenaPresenceNotice {
     return {
         id: `${kind}:${entityId}:${nowEpochMs}`,
         kind,
         playerName,
         message,
-        createdAtEpochMs: nowEpochMs,
+        createdAtEpochMs: nowEpochMs
     };
 }

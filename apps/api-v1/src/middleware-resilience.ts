@@ -6,17 +6,17 @@ const duration = Temporal.Duration.from({ seconds: 10 });
 const MAX_FAIRNESS_SELECTIONS_PER_WINDOW = 10;
 
 export function toResilienceDto() {
-  return ResilienceDto.toResilienceDto(
-    new CircuitBreakerPolicy(
-      10,
-      duration,
-      duration,
-      duration,
-    ),
-    1,
-    10,
-    1,
-    1,
-    MAX_FAIRNESS_SELECTIONS_PER_WINDOW,
-  );
+    return ResilienceDto.toResilienceDto(
+        new CircuitBreakerPolicy(
+            10,
+            duration,
+            duration,
+            duration
+        ),
+        1,
+        10,
+        1,
+        1,
+        MAX_FAIRNESS_SELECTIONS_PER_WINDOW
+    );
 }

@@ -27,7 +27,7 @@ describe('Playwright config ownership', () => {
         expect(relicConfig.testDir).toBe('../../tests/playwright/relic-hunters');
         expect(relicConfig.use?.baseURL).toBe('http://127.0.0.1:5175');
         expect(relicConfig.webServer).toMatchObject({
-            command: expect.stringContaining('npm --workspace relic-hunters-v1 run dev'),
+            command: expect.stringContaining('npm --workspace relic-hunters-v1 run dev')
         });
 
         expect(rallarConfig.testDir).toBe('../../tests/playwright/rallar-black-box');
@@ -42,13 +42,13 @@ describe('Playwright config ownership', () => {
 
         expect(scripts['test:rallar']).toContain('--config apps/rallar-black-box/playwright.config.ts');
         expect(scripts['test:playwright:relic']).toContain(
-            '--config apps/relic-hunters-v1/playwright.config.ts',
+            '--config apps/relic-hunters-v1/playwright.config.ts'
         );
         expect(scripts['test:playwright:relic']).not.toMatch(
-            /\bplaywright test tests\/playwright\/relic-hunters\b/,
+            /\bplaywright test tests\/playwright\/relic-hunters\b/
         );
         expect(scripts['test:playwright:relic:full-stack']).toContain(
-            '--config apps/relic-hunters-v1/playwright.full-stack.config.ts',
+            '--config apps/relic-hunters-v1/playwright.full-stack.config.ts'
         );
     });
 

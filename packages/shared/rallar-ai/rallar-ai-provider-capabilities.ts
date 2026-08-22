@@ -1,26 +1,26 @@
 import type {
     RallarAiProviderCapabilities,
     RallarAiProviderTarget,
-    RallarAiValidationIssue,
+    RallarAiValidationIssue
 } from './rallar-ai-types.ts';
 import { failRallarAiValidation, okRallarAiValidation } from './rallar-ai-validation.ts';
 
 export function defineRallarAiProviderCapabilities(
-    input: RallarAiProviderCapabilities,
+    input: RallarAiProviderCapabilities
 ): RallarAiProviderCapabilities {
     return { ...input };
 }
 
 export function validateRallarAiProviderCapabilities(
-    value: unknown,
+    value: unknown
 ) {
     if (!isRecord(value)) {
         return failRallarAiValidation([
             {
                 path: '$',
                 code: 'invalid-provider-capabilities',
-                message: 'Provider capabilities must be an object.',
-            },
+                message: 'Provider capabilities must be an object.'
+            }
         ]);
     }
 
@@ -32,7 +32,7 @@ export function validateRallarAiProviderCapabilities(
         issues.push({
             path: '$.target',
             code: 'invalid-provider-target',
-            message: 'Provider target must be browser, server, or shared.',
+            message: 'Provider target must be browser, server, or shared.'
         });
     }
 
@@ -41,7 +41,7 @@ export function validateRallarAiProviderCapabilities(
 
 export function providerCanRunOnTarget(
     capabilities: RallarAiProviderCapabilities,
-    target: Exclude<RallarAiProviderTarget, 'shared'>,
+    target: Exclude<RallarAiProviderTarget, 'shared'>
 ): boolean {
     return capabilities.target === target || capabilities.target === 'shared';
 }
@@ -49,13 +49,13 @@ export function providerCanRunOnTarget(
 function requireBoolean(
     value: unknown,
     path: string,
-    issues: RallarAiValidationIssue[],
+    issues: RallarAiValidationIssue[]
 ): void {
     if (typeof value !== 'boolean') {
         issues.push({
             path,
             code: 'invalid-boolean',
-            message: 'Expected boolean.',
+            message: 'Expected boolean.'
         });
     }
 }

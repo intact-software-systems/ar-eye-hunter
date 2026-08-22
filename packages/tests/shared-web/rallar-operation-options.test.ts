@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
 import { toRallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('Rallar operation options compatibility', () => {
     it('normalizes operation options without adding empty fields', () => {
@@ -17,8 +17,8 @@ describe('Rallar operation options compatibility', () => {
                 shouldRetry,
                 dataChannelLanes: lanes,
                 maxPeerConnections: 12,
-                rttReportingDegreeLimit: 3,
-            }),
+                rttReportingDegreeLimit: 3
+            })
         ).toEqual({
             signal,
             timeoutMs: 250,
@@ -26,14 +26,14 @@ describe('Rallar operation options compatibility', () => {
             shouldRetry,
             dataChannelLanes: lanes,
             maxPeerConnections: 12,
-            rttReportingDegreeLimit: 3,
+            rttReportingDegreeLimit: 3
         });
         expect(
             toRallarOperationOptions({
-                rttReportingDegreeLimit: 3,
-            }),
+                rttReportingDegreeLimit: 3
+            })
         ).toEqual({
-            rttReportingDegreeLimit: 3,
+            rttReportingDegreeLimit: 3
         });
     });
 });

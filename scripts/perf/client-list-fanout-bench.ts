@@ -1,31 +1,31 @@
-import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
+import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import type {
     RuntimeStateEntry,
-    RuntimeStateTransactionalRepositoryLike,
+    RuntimeStateTransactionalRepositoryLike
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
 const CLIENTS = Number(
     Deno.args.find((arg) => arg.startsWith('--clients='))?.slice('--clients='.length) ??
-        '1000',
+        '1000'
 );
 const RUNS = Number(
     Deno.args.find((arg) => arg.startsWith('--runs='))?.slice('--runs='.length) ??
-        '3',
+        '3'
 );
 const OUT = Deno.args.find((arg) => arg.startsWith('--out='))?.slice('--out='.length) ??
     'tmp/perf/results/client-list-fanout.json';
 
 const scope = {
     applicationId: 'perf-app',
-    workspaceId: 'perf-workspace',
+    workspaceId: 'perf-workspace'
 };
 
 const noOpPublisher: StateSyncPublisher = {
     publishClientSnapshot: async () => {},
     publishClientEvent: async () => {},
     publishGroupSnapshot: async () => {},
-    publishGroupEvent: async () => {},
+    publishGroupEvent: async () => {}
 };
 
 type RunResult = Readonly<{
@@ -45,7 +45,7 @@ async function main(): Promise<void> {
         formationDamping: 'damped',
         syncPublisher: noOpPublisher,
         now: () => 1_700_000_000_000,
-        serviceId: 'client-list-fanout-bench',
+        serviceId: 'client-list-fanout-bench'
     });
 
     for (let index = 0; index < CLIENTS; index += 1) {
@@ -55,18 +55,18 @@ async function main(): Promise<void> {
 
         await service.upsertPrincipal(scope, principalId, {
             username: principalId,
-            actorPrincipalId: principalId,
+            actorPrincipalId: principalId
         });
         await service.upsertInstance(scope, principalId, clientInstanceId, {
             platform: 'web',
-            actorPrincipalId: principalId,
+            actorPrincipalId: principalId
         });
         await service.connectSession(scope, principalId, clientInstanceId, sessionId, {
             presenceState: 'online',
             actorPrincipalId: principalId,
             actorSessionId: sessionId,
             lastHeartbeatAtEpochMs: 1_700_000_000_000,
-            expiresAtEpochMs: 4_102_444_821_000,
+            expiresAtEpochMs: 4_102_444_821_000
         });
     }
 
@@ -81,7 +81,7 @@ async function main(): Promise<void> {
         }
         if (repository.findEntriesByPrefixCalls !== 4 || repository.findEntryCalls !== 0) {
             throw new Error(
-                `Expected four prefix reads and zero point reads, got ${repository.findEntriesByPrefixCalls} and ${repository.findEntryCalls}`,
+                `Expected four prefix reads and zero point reads, got ${repository.findEntriesByPrefixCalls} and ${repository.findEntryCalls}`
             );
         }
         results.push({
@@ -91,19 +91,25 @@ async function main(): Promise<void> {
             findEntryCalls: repository.findEntryCalls,
             findAllEntriesCalls: repository.findAllEntriesCalls,
             findEntriesByPrefixCalls: repository.findEntriesByPrefixCalls,
-            maxRowsReturnedPerPrefixCall: repository.maxRowsReturnedPerPrefixCall,
+            maxRowsReturnedPerPrefixCall: repository.maxRowsReturnedPerPrefixCall
         });
     }
 
     await Deno.mkdir(OUT.slice(0, OUT.lastIndexOf('/')), { recursive: true });
     await Deno.writeTextFile(
         OUT,
-        `${JSON.stringify({
-            benchmark: 'client-list-snapshots-fanout',
-            clients: CLIENTS,
-            runs: RUNS,
-            results,
-        }, null, 2)}\n`,
+        `${
+            JSON.stringify(
+                {
+                    benchmark: 'client-list-snapshots-fanout',
+                    clients: CLIENTS,
+                    runs: RUNS,
+                    results
+                },
+                null,
+                2
+            )
+        }\n`
     );
 }
 
@@ -115,14 +121,14 @@ class CountingRuntimeStateRepository implements RuntimeStateTransactionalReposit
     maxRowsReturnedPerPrefixCall = 0;
 
     async begin<T>(
-        fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>,
+        fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>
     ): Promise<T> {
         return await fn(this);
     }
 
     async findEntry(
         namespace: string,
-        key: string,
+        key: string
     ): Promise<RuntimeStateEntry | undefined> {
         this.findEntryCalls += 1;
         const entry = this.data.get(this.toKey(namespace, key));
@@ -139,27 +145,27 @@ class CountingRuntimeStateRepository implements RuntimeStateTransactionalReposit
 
     async findEntriesByPrefix(
         namespace: string,
-        keyPrefix: string,
+        keyPrefix: string
     ): Promise<readonly RuntimeStateEntry[]> {
         this.findEntriesByPrefixCalls += 1;
         const rows = [...this.data.entries()]
             .filter(
                 ([compositeKey]) =>
                     this.toNamespace(compositeKey) === namespace &&
-                    this.toStoreKey(compositeKey).startsWith(keyPrefix),
+                    this.toStoreKey(compositeKey).startsWith(keyPrefix)
             )
             .map(([, entry]) => ({ ...entry }))
             .sort((left, right) => left.key.localeCompare(right.key));
         this.maxRowsReturnedPerPrefixCall = Math.max(
             this.maxRowsReturnedPerPrefixCall,
-            rows.length,
+            rows.length
         );
         return rows;
     }
 
     async findEntriesByKeys(
         namespace: string,
-        keys: readonly string[],
+        keys: readonly string[]
     ): Promise<readonly RuntimeStateEntry[]> {
         const keySet = new Set(keys);
         return [...this.data.entries()]
@@ -175,7 +181,7 @@ class CountingRuntimeStateRepository implements RuntimeStateTransactionalReposit
         namespace: string,
         key: string,
         value: string,
-        expireAtTimestamp: number,
+        expireAtTimestamp: number
     ): Promise<void> {
         const compositeKey = this.toKey(namespace, key);
         const current = this.data.get(compositeKey);
@@ -184,7 +190,7 @@ class CountingRuntimeStateRepository implements RuntimeStateTransactionalReposit
             value,
             expireAtTimestamp,
             updatedTimestamp: new Date().toISOString(),
-            revision: current ? current.revision + 1 : 0,
+            revision: current ? current.revision + 1 : 0
         });
     }
 

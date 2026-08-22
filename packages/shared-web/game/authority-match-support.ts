@@ -1,124 +1,46 @@
-import type {
-    RallarMatchStandingComparator,
-    RallarMatchStandingRow,
-} from '@shared/rallar-match/mod.ts';
-import { deriveRallarMatchStandings } from '@shared/rallar-match/mod.ts';
 import type { RallarGameAuthorityRef } from '@shared/rallar-game/mod.ts';
+import type { RallarMatchStandingComparator, RallarMatchStandingRow } from '@shared/rallar-match/mod.ts';
+import { deriveRallarMatchStandings } from '@shared/rallar-match/mod.ts';
 import {
     createRallarGameAuthorityClient,
     type RallarGameAuthorityClientConfig,
-    type RallarGameAuthorityClientHandle,
+    type RallarGameAuthorityClientHandle
 } from './authority-client.ts';
 
-export type RallarAuthorityBrowserMatchConfig<
-    TCommand,
-    TSnapshot,
-    TEvent,
-    TPresence = unknown,
-> =
-    Omit<
-        RallarGameAuthorityClientConfig<TCommand, TSnapshot, TEvent, TPresence>,
-        'authority'
-    > &
-    Readonly<{
-        authority: RallarGameAuthorityRef & Readonly<{ kind: 'server' }>;
+export type RallarAuthorityBrowserMatchConfig<TCommand, TSnapshot, TEvent, TPresence = unknown> =
+    & Omit<RallarGameAuthorityClientConfig<TCommand, TSnapshot, TEvent, TPresence>, 'authority'>
+    & Readonly<{
+        authority: RallarGameAuthorityRef & Readonly<{ kind: 'server'; }>;
         readStandingRows?: () => readonly RallarMatchStandingRow[];
         compareStandings?: RallarMatchStandingComparator;
     }>;
 
-export type RallarAuthorityBrowserMatchDependencies<
-    TCommand,
-    TSnapshot,
-    TEvent,
-    TPresence = unknown,
-> = Readonly<{
+export type RallarAuthorityBrowserMatchDependencies<TCommand, TSnapshot, TEvent, TPresence = unknown> = Readonly<{
     createAuthorityClient?: (
-        config: RallarGameAuthorityClientConfig<
-            TCommand,
-            TSnapshot,
-            TEvent,
-            TPresence
-        >,
-    ) => RallarGameAuthorityClientHandle<
-        TCommand,
-        TSnapshot,
-        TEvent,
-        TPresence
-    >;
+        config: RallarGameAuthorityClientConfig<TCommand, TSnapshot, TEvent, TPresence>
+    ) => RallarGameAuthorityClientHandle<TCommand, TSnapshot, TEvent, TPresence>;
 }>;
 
-export type RallarAuthorityBrowserMatchHandle<
-    TCommand,
-    TSnapshot,
-    TEvent,
-    TPresence = unknown,
-> = Readonly<{
-    client: RallarGameAuthorityClientHandle<
-        TCommand,
-        TSnapshot,
-        TEvent,
-        TPresence
-    >;
-    start: RallarGameAuthorityClientHandle<
-        TCommand,
-        TSnapshot,
-        TEvent,
-        TPresence
-    >['start'];
-    stop: RallarGameAuthorityClientHandle<
-        TCommand,
-        TSnapshot,
-        TEvent,
-        TPresence
-    >['stop'];
-    status: RallarGameAuthorityClientHandle<
-        TCommand,
-        TSnapshot,
-        TEvent,
-        TPresence
-    >['status'];
-    diagnostics: RallarGameAuthorityClientHandle<
-        TCommand,
-        TSnapshot,
-        TEvent,
-        TPresence
-    >['diagnostics'];
+export type RallarAuthorityBrowserMatchHandle<TCommand, TSnapshot, TEvent, TPresence = unknown> = Readonly<{
+    client: RallarGameAuthorityClientHandle<TCommand, TSnapshot, TEvent, TPresence>;
+    start: RallarGameAuthorityClientHandle<TCommand, TSnapshot, TEvent, TPresence>['start'];
+    stop: RallarGameAuthorityClientHandle<TCommand, TSnapshot, TEvent, TPresence>['stop'];
+    status: RallarGameAuthorityClientHandle<TCommand, TSnapshot, TEvent, TPresence>['status'];
+    diagnostics: RallarGameAuthorityClientHandle<TCommand, TSnapshot, TEvent, TPresence>['diagnostics'];
     submitCommand(
         command: TCommand,
-        options?: { key?: string },
-    ): ReturnType<
-        RallarGameAuthorityClientHandle<
-            TCommand,
-            TSnapshot,
-            TEvent,
-            TPresence
-        >['sendCommand']
-    >;
+        options?: { key?: string; }
+    ): ReturnType<RallarGameAuthorityClientHandle<TCommand, TSnapshot, TEvent, TPresence>['sendCommand']>;
     standings(): ReturnType<typeof deriveRallarMatchStandings>;
 }>;
 
-export function createRallarAuthorityBrowserMatch<
-    TCommand,
-    TSnapshot,
-    TEvent,
-    TPresence = unknown,
->(
-    config: RallarAuthorityBrowserMatchConfig<
-        TCommand,
-        TSnapshot,
-        TEvent,
-        TPresence
-    >,
-    dependencies: RallarAuthorityBrowserMatchDependencies<
-        TCommand,
-        TSnapshot,
-        TEvent,
-        TPresence
-    > = {},
+export function createRallarAuthorityBrowserMatch<TCommand, TSnapshot, TEvent, TPresence = unknown>(
+    config: RallarAuthorityBrowserMatchConfig<TCommand, TSnapshot, TEvent, TPresence>,
+    dependencies: RallarAuthorityBrowserMatchDependencies<TCommand, TSnapshot, TEvent, TPresence> = {}
 ): RallarAuthorityBrowserMatchHandle<TCommand, TSnapshot, TEvent, TPresence> {
     if (config.authority.kind !== 'server') {
         throw new Error(
-            'Rallar authority browser matches require server authority.',
+            'Rallar authority browser matches require server authority.'
         );
     }
 
@@ -128,7 +50,7 @@ export function createRallarAuthorityBrowserMatch<
     const deriveStandings = () =>
         deriveRallarMatchStandings({
             rows: config.readStandingRows?.() ?? [],
-            compare: config.compareStandings,
+            compare: config.compareStandings
         });
 
     return {
@@ -138,6 +60,6 @@ export function createRallarAuthorityBrowserMatch<
         status: client.status,
         diagnostics: client.diagnostics,
         submitCommand: (command, options) => client.sendCommand(command, options),
-        standings: deriveStandings,
+        standings: deriveStandings
     };
 }

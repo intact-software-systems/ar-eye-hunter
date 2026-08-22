@@ -1,11 +1,11 @@
 import { RttMeasurementInfo } from '@shared/api/api-config.ts';
+import { GraphProp } from './graph/graph-props.ts';
 import {
     createDegreeCappedPredictedGraph,
     createPredictedGraph,
     VivaldiConfig,
-    VivaldiNodeData,
+    VivaldiNodeData
 } from './graph/vivaldi.ts';
-import { GraphProp } from './graph/graph-props.ts';
 import * as vivaldiRepository from './repository/vivaldi-repository.ts';
 
 const DEFAULT_DIMENSIONS = 4;
@@ -14,7 +14,7 @@ const DEFAULT_INITIAL_ERROR = 1.0;
 export function observeRtt(
     rtt: RttMeasurementInfo,
     dimensions = DEFAULT_DIMENSIONS,
-    initialError = DEFAULT_INITIAL_ERROR,
+    initialError = DEFAULT_INITIAL_ERROR
 ): boolean {
     if (!Number.isFinite(rtt.rttMs) || rtt.rttMs <= 0) {
         return false;
@@ -23,12 +23,12 @@ export function observeRtt(
     const fromNode = vivaldiRepository.getOrCreateNode(
         rtt.sessionIdFrom,
         dimensions,
-        initialError,
+        initialError
     );
     const toNode = vivaldiRepository.getOrCreateNode(
         rtt.sessionIdTo,
         dimensions,
-        initialError,
+        initialError
     );
 
     fromNode.update(toNode.toNodeData(rtt.sessionIdTo, rtt.rttMs));
@@ -43,7 +43,7 @@ export function readablePredictedNodeData(): ReadonlyMap<string, VivaldiNodeData
 
 export function toPredictedGraphSnapshot(
     graphProp: GraphProp,
-    cfg?: Partial<VivaldiConfig>,
+    cfg?: Partial<VivaldiConfig>
 ) {
     return createPredictedGraph(
         vivaldiRepository.getAllNodeData(),
@@ -55,7 +55,7 @@ export function toPredictedGraphSnapshot(
 export function toPredictedGraphFromIds(
     ids: readonly string[],
     graphProp: GraphProp,
-    cfg?: Partial<VivaldiConfig>,
+    cfg?: Partial<VivaldiConfig>
 ) {
     return createPredictedGraph(
         vivaldiRepository.getNodeDataById(ids),
@@ -67,11 +67,11 @@ export function toPredictedGraphFromIds(
 export function toDegreeCappedPredictedGraphFromIds(
     ids: readonly string[],
     graphProp: GraphProp,
-    options: Readonly<{ degreeLimit: number }> & Partial<VivaldiConfig>,
+    options: Readonly<{ degreeLimit: number; }> & Partial<VivaldiConfig>
 ) {
     return createDegreeCappedPredictedGraph(
         vivaldiRepository.getNodeDataById(ids),
         graphProp,
-        options,
+        options
     );
 }

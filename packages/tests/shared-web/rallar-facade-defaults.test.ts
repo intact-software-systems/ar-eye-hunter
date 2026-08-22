@@ -1,21 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
+import type { QRtcDataChannel, RtcDataChannelSendResult } from '@shared/webrtc/QRtcDataChannel.ts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
-import type {
-    QRtcDataChannel,
-    RtcDataChannelSendResult,
-} from '@shared/webrtc/QRtcDataChannel.ts';
 
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
 type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
-type ClientStateSnapshotsRepositoryModule = typeof import(
-    '@shared/repository/client-state-snapshots-repository.ts'
-);
-type GroupStateSnapshotsRepositoryModule = typeof import(
-    '@shared/repository/group-state-snapshots-repository.ts'
-);
+type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
+type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
 
 const mocks = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
@@ -24,12 +17,12 @@ const mocks = await vi.hoisted(async () => {
     const ctx = createApiMiddlewareTestDouble();
     const throwClientRepositoryMissing = () => {
         throw new Error(
-            'Repository not found: shared.repository.client-state-snapshots',
+            'Repository not found: shared.repository.client-state-snapshots'
         );
     };
     const throwGroupRepositoryMissing = () => {
         throw new Error(
-            'Repository not found: shared.repository.group-state-snapshots',
+            'Repository not found: shared.repository.group-state-snapshots'
         );
     };
 
@@ -38,30 +31,20 @@ const mocks = await vi.hoisted(async () => {
         webRtcConnectionService: ctx.middleware.webRtcConnectionService,
         throwClientRepositoryMissing,
         throwGroupRepositoryMissing,
-        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() =>
-            Promise.resolve()
-        ),
-        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() =>
-            Promise.resolve(ctx)
-        ),
+        hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() => Promise.resolve()),
+        initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn<AppContextModule['isMiddlewareReady']>(() => false),
         onStateCacheChange: vi.fn<DataCachesModule['onStateCacheChange']>(() => vi.fn()),
         readSession: vi.fn<AuthModule['readSession']>(() => ctx.session),
-        refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(() =>
-            Promise.resolve({ clients: [], groups: [] })
-        ),
+        refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(() => Promise.resolve({ clients: [], groups: [] })),
         clientRepositoryMissing: vi.fn(throwClientRepositoryMissing),
         findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<
             GroupStateSnapshotsRepositoryModule[
                 'findFirstGroupStateSnapshotRefSessionIdIsIn'
             ]
         >(throwGroupRepositoryMissing),
-        findGroupStateSnapshotByRef: vi.fn<
-            GroupStateSnapshotsRepositoryModule['findGroupStateSnapshotByRef']
-        >(throwGroupRepositoryMissing),
-        getAllGroupStateSnapshots: vi.fn<
-            GroupStateSnapshotsRepositoryModule['getAllGroupStateSnapshots']
-        >(throwGroupRepositoryMissing),
+        findGroupStateSnapshotByRef: vi.fn<GroupStateSnapshotsRepositoryModule['findGroupStateSnapshotByRef']>(throwGroupRepositoryMissing),
+        getAllGroupStateSnapshots: vi.fn<GroupStateSnapshotsRepositoryModule['getAllGroupStateSnapshots']>(throwGroupRepositoryMissing)
     };
 });
 
@@ -71,55 +54,54 @@ vi.mock(
         clearMiddleware: vi.fn(),
         getMiddleware: vi.fn(() => mocks.ctx),
         initMiddleware: mocks.initMiddleware,
-        isMiddlewareReady: mocks.isMiddlewareReady,
-    }),
+        isMiddlewareReady: mocks.isMiddlewareReady
+    })
 );
 
 vi.mock(
     import('@shared-web/browser/api-workflows.ts'),
     (): Partial<ApiWorkflowsModule> => ({
-        refreshStateSnapshots: mocks.refreshStateSnapshots,
-    }),
+        refreshStateSnapshots: mocks.refreshStateSnapshots
+    })
 );
 
 vi.mock(
     import('@shared-web/browser/data-caches.ts'),
     (): Partial<DataCachesModule> => ({
         hydrateStateCaches: mocks.hydrateStateCaches,
-        onStateCacheChange: mocks.onStateCacheChange,
-    }),
+        onStateCacheChange: mocks.onStateCacheChange
+    })
 );
 
 vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
     clearSession: vi.fn(),
     isLoggedIn: vi.fn(() => true),
     readSession: mocks.readSession,
-    writeSession: vi.fn(),
+    writeSession: vi.fn()
 }));
 
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
     (): Partial<ClientStateSnapshotsRepositoryModule> => ({
         findClientStateSnapshotByPrincipalId: mocks.clientRepositoryMissing,
-        getAllClientStateSnapshots: mocks.clientRepositoryMissing,
-    }),
+        getAllClientStateSnapshots: mocks.clientRepositoryMissing
+    })
 );
 
 vi.mock(
     import('@shared/repository/group-state-snapshots-repository.ts'),
     (): Partial<GroupStateSnapshotsRepositoryModule> => ({
-        findFirstGroupStateSnapshotRefSessionIdIsIn:
-            mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
+        findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
         findGroupStateSnapshotByRef: mocks.findGroupStateSnapshotByRef,
-        getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots,
-    }),
+        getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
+    })
 );
 
 describe('Rallar facade defaults compatibility', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.clientRepositoryMissing.mockImplementation(
-            mocks.throwClientRepositoryMissing,
+            mocks.throwClientRepositoryMissing
         );
         mockGroupRepositoryMissing();
         mocks.hydrateStateCaches.mockResolvedValue(undefined);
@@ -136,20 +118,20 @@ describe('Rallar facade defaults compatibility', () => {
         const facade = createRallarFacade();
 
         facade.setDefaults({
-            applicationId: 'default-app',
+            applicationId: 'default-app'
         });
 
         await facade.people.refresh();
 
         expect(facade.defaults()).toEqual({
-            applicationId: 'default-app',
+            applicationId: 'default-app'
         });
         expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(
             {
                 applicationId: 'default-app',
-                workspaceId: 'default',
+                workspaceId: 'default'
             },
-            {},
+            {}
         );
     });
 
@@ -160,7 +142,7 @@ describe('Rallar facade defaults compatibility', () => {
         const facade = createRallarFacade();
         facade.setDefaults({
             applicationId: 'game-app',
-            workspaceId: 'arena-1',
+            workspaceId: 'arena-1'
         });
 
         const result = await facade.messages.rtc.send({
@@ -168,8 +150,8 @@ describe('Rallar facade defaults compatibility', () => {
             typeId: 'game.input.v1',
             resourceId: 'input-1',
             payload: {
-                x: 1,
-            },
+                x: 1
+            }
         });
 
         expect(result.message.targets).toMatchObject({
@@ -177,8 +159,8 @@ describe('Rallar facade defaults compatibility', () => {
             groupRef: {
                 applicationId: 'game-app',
                 workspaceId: 'arena-1',
-                groupId: 'match-1',
-            },
+                groupId: 'match-1'
+            }
         });
         expect(result.message.targets).not.toHaveProperty('groupId');
     });
@@ -192,46 +174,46 @@ describe('Rallar facade defaults compatibility', () => {
             applicationId: 'game-app',
             workspaceId: 'arena-1',
             room: {
-                roomId: 'match-1',
-            },
+                roomId: 'match-1'
+            }
         });
 
         const rtcResult = await facade.messages.rtc.send({
             typeId: 'game.input.v1',
             resourceId: 'rtc-input-1',
             payload: {
-                x: 1,
-            },
+                x: 1
+            }
         });
         const wsResult = await facade.messages.ws.send({
             topicId: 'room.game',
             typeId: 'game.event.v1',
             resourceId: 'ws-event-1',
             payload: {
-                text: 'joined',
-            },
+                text: 'joined'
+            }
         });
 
         expect(rtcResult.message.route).toMatchObject({
             contextId: 'match-1',
-            resourceId: 'rtc-input-1',
+            resourceId: 'rtc-input-1'
         });
         expect(rtcResult.message.targets).toMatchObject({
             mode: 'multicast',
             groupRef: {
                 applicationId: 'game-app',
                 workspaceId: 'arena-1',
-                groupId: 'match-1',
-            },
+                groupId: 'match-1'
+            }
         });
         expect(wsResult.message.route).toMatchObject({
             topicId: 'room.game',
             contextId: 'match-1',
-            resourceId: 'ws-event-1',
+            resourceId: 'ws-event-1'
         });
         expect(wsResult.message.targets).toMatchObject({
             mode: 'broadcast',
-            scope: 'room',
+            scope: 'room'
         });
     });
 
@@ -245,9 +227,9 @@ describe('Rallar facade defaults compatibility', () => {
                 label: 'gameplay-data',
                 init: {
                     ordered: false,
-                    maxRetransmits: 0,
-                },
-            },
+                    maxRetransmits: 0
+                }
+            }
         ];
         const facade = createRallarFacade();
         facade.setDefaults({
@@ -255,14 +237,14 @@ describe('Rallar facade defaults compatibility', () => {
             rtc: {
                 dataChannelLanes: lanes,
                 maxPeerConnections: 12,
-                rttReportingDegreeLimit: 3,
+                rttReportingDegreeLimit: 3
             },
             messages: {
-                maxPayloadBytes: 2048,
+                maxPayloadBytes: 2048
             },
             operations: {
-                timeoutMs: 321,
-            },
+                timeoutMs: 321
+            }
         });
 
         await facade.people.refresh();
@@ -271,23 +253,23 @@ describe('Rallar facade defaults compatibility', () => {
             onAuthInvalid: expect.any(Function),
             scope: {
                 applicationId: 'default-app',
-                workspaceId: 'default',
+                workspaceId: 'default'
             },
             timeoutMs: 321,
             dataChannelLanes: lanes,
             maxPeerConnections: 12,
-            rttReportingDegreeLimit: 3,
+            rttReportingDegreeLimit: 3
         });
         expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(
             {
                 applicationId: 'default-app',
-                workspaceId: 'default',
+                workspaceId: 'default'
             },
             {
                 command: {
-                    timeoutMs: 321,
-                },
-            },
+                    timeoutMs: 321
+                }
+            }
         );
     });
 
@@ -297,11 +279,11 @@ describe('Rallar facade defaults compatibility', () => {
         );
         const sendResult: RtcDataChannelSendResult = {
             status: 'sent',
-            bufferedAmount: 0,
+            bufferedAmount: 0
         };
         const sendJson = vi.fn(() => sendResult);
         const gameplayChannel = toWebRtcTestDouble<QRtcDataChannel>({
-            sendJson,
+            sendJson
         });
         mockGroupSnapshot(createGroupSnapshot('match-1', ['session-1', 'peer-1']));
         vi.mocked(mocks.webRtcConnectionService.ensurePeerLaneOpen)
@@ -309,25 +291,25 @@ describe('Rallar facade defaults compatibility', () => {
                 status: 'open',
                 peerId: 'peer-1',
                 laneId: 'gameplay',
-                channel: gameplayChannel,
+                channel: gameplayChannel
             });
         const facade = createRallarFacade();
         facade.setDefaults({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             room: {
-                roomId: 'match-1',
+                roomId: 'match-1'
             },
             realtime: {
                 laneId: 'gameplay',
-                openTimeoutMs: 750,
-            },
+                openTimeoutMs: 750
+            }
         });
 
         const result = await facade.realtime.sendJson({
             data: {
-                x: 1,
-            },
+                x: 1
+            }
         });
 
         expect(mocks.webRtcConnectionService.ensurePeerLaneOpen)
@@ -335,21 +317,21 @@ describe('Rallar facade defaults compatibility', () => {
                 'peer-1',
                 'gameplay',
                 expect.objectContaining({
-                    timeoutMs: 750,
-                }),
+                    timeoutMs: 750
+                })
             );
         expect(sendJson).toHaveBeenCalledWith(
             {
-                x: 1,
+                x: 1
             },
-            expect.any(Object),
+            expect.any(Object)
         );
         expect(result).toEqual([
             {
                 peerId: 'peer-1',
                 laneId: 'gameplay',
-                result: sendResult,
-            },
+                result: sendResult
+            }
         ]);
     });
 
@@ -361,15 +343,15 @@ describe('Rallar facade defaults compatibility', () => {
             .mockResolvedValueOnce({
                 status: 'open',
                 peerId: 'peer-1',
-                laneId: 'reliable',
+                laneId: 'reliable'
             });
         const facade = createRallarFacade();
         facade.setDefaults({
             applicationId: 'app-1',
             rtc: {
                 connectOnWait: true,
-                waitTimeoutMs: 333,
-            },
+                waitTimeoutMs: 333
+            }
         });
 
         await facade.connect();
@@ -380,26 +362,26 @@ describe('Rallar facade defaults compatibility', () => {
                 'peer-1',
                 'reliable',
                 expect.objectContaining({
-                    timeoutMs: 333,
-                }),
+                    timeoutMs: 333
+                })
             );
         expect(result).toMatchObject({
             status: 'open',
             peerId: 'peer-1',
-            laneId: 'reliable',
+            laneId: 'reliable'
         });
     });
 });
 
 function mockGroupRepositoryMissing(): void {
     mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation(
-        mocks.throwGroupRepositoryMissing,
+        mocks.throwGroupRepositoryMissing
     );
     mocks.findGroupStateSnapshotByRef.mockImplementation(
-        mocks.throwGroupRepositoryMissing,
+        mocks.throwGroupRepositoryMissing
     );
     mocks.getAllGroupStateSnapshots.mockImplementation(
-        mocks.throwGroupRepositoryMissing,
+        mocks.throwGroupRepositoryMissing
     );
 }
 
@@ -427,7 +409,7 @@ function createGroupSnapshot(
     scope: Readonly<{
         applicationId?: string;
         workspaceId?: string;
-    }> = {},
+    }> = {}
 ): GroupSnapshot {
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';
@@ -435,7 +417,7 @@ function createGroupSnapshot(
         applicationId,
         workspaceId,
         groupId,
-        sessionIds,
+        sessionIds
     });
 }
 

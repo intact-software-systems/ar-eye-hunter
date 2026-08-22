@@ -1,15 +1,12 @@
-import { describe, expect, it } from 'vitest';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toOverlayInfoForSession } from '@shared/api/overlay-topology.ts';
-import {
-    resetOverlayAdoptionDiagnostics,
-    setOverlayById,
-} from '@shared/repository/overlays-repository.ts';
+import { resetOverlayAdoptionDiagnostics, setOverlayById } from '@shared/repository/overlays-repository.ts';
+import { describe, expect, it } from 'vitest';
 import {
     createRingTopologySnapshot,
     createSimulatedClient,
     createSimulationGroupSnapshot,
-    type SimulatedClient,
+    type SimulatedClient
 } from './group-formation-simulation-clients.ts';
 
 const MAX_PEER_CONNECTIONS = 10;
@@ -32,13 +29,13 @@ describe('group formation churn simulation', () => {
             sourceGroupStateCausalRevision: { groupRevision: 2, presenceRevision: 2 },
             version: 2,
             degreeLimit: DEGREE_LIMIT,
-            ringShift: 1,
+            ringShift: 1
         });
         for (const client of formed.clients) {
             setOverlayById(
                 formed.overlayId,
                 toOverlayInfoForSession(republished, client.sessionId),
-                client.repositoryManager,
+                client.repositoryManager
             );
             await client.manager.notifyOverlayTopologyChanged();
         }
@@ -57,13 +54,13 @@ describe('group formation churn simulation', () => {
             sourceGroupStateCausalRevision: { groupRevision: 2, presenceRevision: 2 },
             version: 2,
             degreeLimit: DEGREE_LIMIT,
-            ringShift: 7,
+            ringShift: 7
         });
         for (const client of formed.clients) {
             setOverlayById(
                 formed.overlayId,
                 toOverlayInfoForSession(reshuffled, client.sessionId),
-                client.repositoryManager,
+                client.repositoryManager
             );
             await client.manager.notifyOverlayTopologyChanged();
         }
@@ -89,20 +86,20 @@ describe('group formation churn simulation', () => {
             sourceGroupStateCausalRevision: { groupRevision: 2, presenceRevision: 2 },
             version: 2,
             degreeLimit: DEGREE_LIMIT,
-            ringShift: 7,
+            ringShift: 7
         });
         const revertedToFormedEdges = createRingTopologySnapshot(formed.group, formed.sessionIds, {
             sourceGroupStateCausalRevision: { groupRevision: 3, presenceRevision: 3 },
             version: 3,
             degreeLimit: DEGREE_LIMIT,
-            ringShift: 1,
+            ringShift: 1
         });
         for (const client of formed.clients) {
             for (const epoch of [reshuffled, revertedToFormedEdges]) {
                 setOverlayById(
                     formed.overlayId,
                     toOverlayInfoForSession(epoch, client.sessionId),
-                    client.repositoryManager,
+                    client.repositoryManager
                 );
                 await client.manager.notifyOverlayTopologyChanged();
             }
@@ -124,20 +121,20 @@ describe('group formation churn simulation', () => {
         let nowEpochMs = 1_000;
         const formed = await createFormedClients({
             overlayTransitionGraceMs: 5_000,
-            now: () => nowEpochMs,
+            now: () => nowEpochMs
         });
 
         const reshuffled = createRingTopologySnapshot(formed.group, formed.sessionIds, {
             sourceGroupStateCausalRevision: { groupRevision: 2, presenceRevision: 2 },
             version: 2,
             degreeLimit: DEGREE_LIMIT,
-            ringShift: 7,
+            ringShift: 7
         });
         for (const client of formed.clients) {
             setOverlayById(
                 formed.overlayId,
                 toOverlayInfoForSession(reshuffled, client.sessionId),
-                client.repositoryManager,
+                client.repositoryManager
             );
             await client.manager.notifyOverlayTopologyChanged();
         }
@@ -174,7 +171,7 @@ async function createFormedClients(options: FormedClientOptions = {}): Promise<F
     resetOverlayAdoptionDiagnostics();
     const sessionIds = Array.from(
         { length: MEMBER_COUNT },
-        (_, index) => `session-${String(index).padStart(2, '0')}`,
+        (_, index) => `session-${String(index).padStart(2, '0')}`
     );
     const group = createSimulationGroupSnapshot('churn-group', 1, sessionIds);
     const overlayId = toScopedOverlayId(group.group);
@@ -182,20 +179,20 @@ async function createFormedClients(options: FormedClientOptions = {}): Promise<F
         sourceGroupStateCausalRevision: { groupRevision: 1, presenceRevision: 1 },
         version: 1,
         degreeLimit: DEGREE_LIMIT,
-        ringShift: 1,
+        ringShift: 1
     });
 
     const clients = sessionIds.map((sessionId) =>
         createSimulatedClient(sessionId, sessionIds, {
             maxPeerConnections: MAX_PEER_CONNECTIONS,
-            ...options,
+            ...options
         })
     );
     for (const client of clients) {
         setOverlayById(
             overlayId,
             toOverlayInfoForSession(formedTopology, client.sessionId),
-            client.repositoryManager,
+            client.repositoryManager
         );
         await client.manager.acceptGroupUpdate(group);
     }

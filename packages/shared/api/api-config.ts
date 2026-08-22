@@ -1,7 +1,4 @@
-import type {
-    GroupRef,
-    GroupStateCausalRevision,
-} from '@shared/api/group-types.ts';
+import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 
 export type ApiConfig = {
     readonly apiBaseUrl: string;
@@ -25,7 +22,7 @@ export const EnqueuedType = {
     RTC_INBOX: 'RTC_INBOX',
     RTC_OUTBOX: 'RTC_OUTBOX',
     APP_INBOX: 'APP_INBOX',
-    APP_OUTBOX: 'APP_OUTBOX',
+    APP_OUTBOX: 'APP_OUTBOX'
 } as const;
 
 export type EnqueuedType = (typeof EnqueuedType)[keyof typeof EnqueuedType];
@@ -40,7 +37,7 @@ export const AppTopics = {
     groupDirectorySnapshot: 'group-directory.snapshot',
     graphs: 'graphs',
     overlayTopology: 'overlay.topology',
-    rtt: 'rtt',
+    rtt: 'rtt'
 } as const;
 
 export type AppTopics = (typeof AppTopics)[keyof typeof AppTopics];

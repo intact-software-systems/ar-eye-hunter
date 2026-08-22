@@ -1,6 +1,6 @@
-import type { ALQosPolicyRequest } from './al-policy.ts';
 import type { ClientPrincipalRef } from '../api/client-types.ts';
 import type { GroupRef } from '../api/group-types.ts';
+import type { ALQosPolicyRequest } from './al-policy.ts';
 
 // -------------------------------------------------------
 // 1) Message identity
@@ -8,11 +8,11 @@ import type { GroupRef } from '../api/group-types.ts';
 
 export type ALMessageId = Readonly<{
     v: 2;
-    msgId: string;       // UUID for dedup/idempotency
-    ts: number;          // sender timestamp (epoch ms)
-    senderId: string;    // stable sender identity (clientId / principalId / nodeId)
-    sessionId?: string;  // reconnect/session tracing
-    traceId?: string;    // end-to-end tracing
+    msgId: string; // UUID for dedup/idempotency
+    ts: number; // sender timestamp (epoch ms)
+    senderId: string; // stable sender identity (clientId / principalId / nodeId)
+    sessionId?: string; // reconnect/session tracing
+    traceId?: string; // end-to-end tracing
 }>;
 
 // -------------------------------------------------------
@@ -20,9 +20,9 @@ export type ALMessageId = Readonly<{
 // -------------------------------------------------------
 
 export type ALRoute = Readonly<{
-    topicId: string;     // subscription/routing domain
-    resourceId: string;   // optional domain entity id
-    contextId: string;   // room/client/world/application scope
+    topicId: string; // subscription/routing domain
+    resourceId: string; // optional domain entity id
+    contextId: string; // room/client/world/application scope
 }>;
 
 // -------------------------------------------------------
@@ -31,25 +31,25 @@ export type ALRoute = Readonly<{
 
 export type ALTargets =
     | Readonly<{
-    mode: 'unicast';
-    toPeerId: string;
-}>
+        mode: 'unicast';
+        toPeerId: string;
+    }>
     | Readonly<{
-    mode: 'multicast';
-    groupRef: GroupRef;
-    membershipEpoch?: number;
-    minSnapshotVersion?: number;
-}>
+        mode: 'multicast';
+        groupRef: GroupRef;
+        membershipEpoch?: number;
+        minSnapshotVersion?: number;
+    }>
     | Readonly<{
-    mode: 'broadcast';
-    scope: 'room' | 'world' | 'all' | 'principal';
-    groupRef?: GroupRef;
-    principalRef?: ClientPrincipalRef; // scope 'principal': own + co-group live sessions only
-    exceptPeerIds?: readonly string[];
-    minSnapshotVersion?: number;
-    /** Immutable logical audience captured by authoritative server work. */
-    recipientPeerIds?: readonly string[];
-}>;
+        mode: 'broadcast';
+        scope: 'room' | 'world' | 'all' | 'principal';
+        groupRef?: GroupRef;
+        principalRef?: ClientPrincipalRef; // scope 'principal': own + co-group live sessions only
+        exceptPeerIds?: readonly string[];
+        minSnapshotVersion?: number;
+        /** Immutable logical audience captured by authoritative server work. */
+        recipientPeerIds?: readonly string[];
+    }>;
 
 // -------------------------------------------------------
 // 4) Forwarding hints for overlay routing
@@ -57,8 +57,8 @@ export type ALTargets =
 
 export type ALForwarding = Readonly<{
     nextHopPeerIds?: readonly string[]; // immediate next hops, not final logical recipients
-    overlayId?: string;                 // optional overlay/topology identifier
-    fanoutLimit?: number;               // optional forwarding fanout hint
+    overlayId?: string; // optional overlay/topology identifier
+    fanoutLimit?: number; // optional forwarding fanout hint
 }>;
 
 // -------------------------------------------------------
@@ -66,7 +66,7 @@ export type ALForwarding = Readonly<{
 // -------------------------------------------------------
 
 export type ALConstraints = Readonly<{
-    ttlHops?: number;     // remaining hops; decremented by forwarders
+    ttlHops?: number; // remaining hops; decremented by forwarders
     expiresAtMs?: number; // wall-clock expiry; drop if now > expiresAtMs
 }>;
 
@@ -76,8 +76,8 @@ export type ALConstraints = Readonly<{
 
 export type ALOrdering = Readonly<{
     orderingKey?: string; // e.g. groupId or senderId or roomId
-    epoch?: number;       // membership/view/order epoch
-    seq?: number;         // monotonic within orderingKey + sender or server ordering
+    epoch?: number; // membership/view/order epoch
+    seq?: number; // monotonic within orderingKey + sender or server ordering
 }>;
 
 // -------------------------------------------------------
@@ -87,8 +87,8 @@ export type ALOrdering = Readonly<{
 export type ALAckMode = 'none' | 'receiver' | 'all-logical-recipients' | 'group-leader';
 
 export type ALDelivery = Readonly<{
-    ownership?: 'shared' | 'exclusive';             // pubsub vs queue-like semantics
-    reliability: 'best-effort' | 'at-least-once';   // avoid vague "reliable"
+    ownership?: 'shared' | 'exclusive'; // pubsub vs queue-like semantics
+    reliability: 'best-effort' | 'at-least-once'; // avoid vague "reliable"
     ack: ALAckMode;
 }>;
 
@@ -97,7 +97,7 @@ export type ALDelivery = Readonly<{
 // -------------------------------------------------------
 
 export type ALActions = Readonly<{
-    corrId?: string;      // correlation id for request/reply
+    corrId?: string; // correlation id for request/reply
     replyToMsgId?: string; // message id this replies to
 }>;
 
@@ -106,9 +106,9 @@ export type ALActions = Readonly<{
 // -------------------------------------------------------
 
 export type ALPayload = Readonly<{
-    typeId: string;                  // schema/message type used for TS mapping/decoding
+    typeId: string; // schema/message type used for TS mapping/decoding
     contentType?: 'application/json';
-    resource: string;                // JSON string; keeps wire format explicit
+    resource: string; // JSON string; keeps wire format explicit
 }>;
 
 // -------------------------------------------------------
@@ -163,19 +163,19 @@ type ALMessageBuilderOptions = Readonly<{
 export function newALRoute(
     topicId: string,
     contextId: string,
-    resourceId: string,
+    resourceId: string
 ): ALRoute {
     return {
         topicId,
         resourceId,
-        contextId,
+        contextId
     };
 }
 
 export function newALEventRoute(
     topicId: string,
     contextId: string,
-    resourceId: string = crypto.randomUUID(),
+    resourceId: string = crypto.randomUUID()
 ): ALRoute {
     return newALRoute(topicId, contextId, resourceId);
 }
@@ -186,7 +186,7 @@ function buildALMessage<T>(
     typeId: string,
     resource: T,
     options?: ALMessageBuilderOptions,
-    msgId: string = crypto.randomUUID(),
+    msgId: string = crypto.randomUUID()
 ): ALMessage {
     const now = Date.now();
     const expiresAtMs = options?.ttlMs !== undefined
@@ -198,7 +198,7 @@ function buildALMessage<T>(
             v: 2,
             msgId,
             ts: now,
-            senderId: senderId,
+            senderId: senderId
         },
         route,
         constraints: expiresAtMs !== undefined
@@ -208,12 +208,12 @@ function buildALMessage<T>(
         payload: {
             typeId: typeId,
             contentType: 'application/json',
-            resource: JSON.stringify(resource),
+            resource: JSON.stringify(resource)
         },
         audit: {
             createdBy: senderId,
-            createdTs: now,
-        },
+            createdTs: now
+        }
     };
 }
 
@@ -222,7 +222,7 @@ export function newALUntargetedMessage<T>(
     route: ALRoute,
     typeId: string,
     resource: T,
-    options?: ALMessageBuilderOptions,
+    options?: ALMessageBuilderOptions
 ): ALMessage {
     return buildALMessage(senderId, route, typeId, resource, options);
 }
@@ -233,14 +233,14 @@ export function newALUnicastMessage<T>(
     toPeerId: string,
     typeId: string,
     resource: T,
-    options?: ALMessageBuilderOptions,
+    options?: ALMessageBuilderOptions
 ): ALMessage {
     return {
         ...newALUntargetedMessage(senderId, route, typeId, resource, options),
         targets: {
             mode: 'unicast',
-            toPeerId,
-        },
+            toPeerId
+        }
     };
 }
 
@@ -264,7 +264,7 @@ export function newALMulticastMessage<T>(
         overlayId?: string;
         fanoutLimit?: number;
         qos?: ALQosPolicyRequest;
-    }>,
+    }>
 ): ALMessage {
     const expiresAtMs = options?.ttlMs !== undefined
         ? Date.now() + options.ttlMs
@@ -277,39 +277,39 @@ export function newALMulticastMessage<T>(
             mode: 'multicast',
             groupRef: targetGroupRef,
             membershipEpoch: options?.membershipEpoch,
-            minSnapshotVersion: options?.minSnapshotVersion,
+            minSnapshotVersion: options?.minSnapshotVersion
         },
-        forwarding: options?.nextHopPeerIds !== undefined
-        || options?.overlayId !== undefined
-        || options?.fanoutLimit !== undefined
+        forwarding: options?.nextHopPeerIds !== undefined ||
+                options?.overlayId !== undefined ||
+                options?.fanoutLimit !== undefined
             ? {
                 nextHopPeerIds: options?.nextHopPeerIds,
                 overlayId: options?.overlayId,
-                fanoutLimit: options?.fanoutLimit,
+                fanoutLimit: options?.fanoutLimit
             }
             : undefined,
         constraints: options?.ttlHops !== undefined || expiresAtMs !== undefined
             ? {
                 ttlHops: options?.ttlHops,
-                expiresAtMs,
+                expiresAtMs
             }
             : undefined,
-        ordering: options?.seq !== undefined
-        || options?.orderingKey !== undefined
-        || options?.membershipEpoch !== undefined
+        ordering: options?.seq !== undefined ||
+                options?.orderingKey !== undefined ||
+                options?.membershipEpoch !== undefined
             ? {
                 orderingKey: options?.orderingKey ?? toALGroupTargetKey(
-                    targetGroupRef,
+                    targetGroupRef
                 ),
                 epoch: options?.membershipEpoch,
-                seq: options?.seq,
+                seq: options?.seq
             }
             : undefined,
         delivery: {
             ownership: options?.ownership,
             reliability: options?.reliability ?? 'best-effort',
-            ack: options?.ack ?? 'none',
-        },
+            ack: options?.ack ?? 'none'
+        }
     };
 }
 
@@ -317,7 +317,7 @@ export function toALGroupRef(ref: GroupRef): GroupRef {
     return {
         applicationId: ref.applicationId,
         workspaceId: ref.workspaceId,
-        groupId: ref.groupId,
+        groupId: ref.groupId
     };
 }
 
@@ -329,7 +329,7 @@ export function toALGroupTargetKey(group: string | GroupRef): string {
     return JSON.stringify([
         group.applicationId,
         group.workspaceId ?? '',
-        group.groupId,
+        group.groupId
     ]);
 }
 
@@ -388,7 +388,7 @@ export function newALBroadcastMessage<T>(
         ack?: ALAckMode;
         ownership?: 'shared' | 'exclusive';
         qos?: ALQosPolicyRequest;
-    }>,
+    }>
 ): ALMessage {
     const expiresAtMs = options?.ttlMs !== undefined
         ? Date.now() + options.ttlMs
@@ -404,18 +404,18 @@ export function newALBroadcastMessage<T>(
             scope,
             groupRef,
             exceptPeerIds: options?.exceptPeerIds,
-            minSnapshotVersion: options?.minSnapshotVersion,
+            minSnapshotVersion: options?.minSnapshotVersion
         },
         constraints: options?.ttlHops !== undefined || expiresAtMs !== undefined
             ? {
                 ttlHops: options?.ttlHops,
-                expiresAtMs,
+                expiresAtMs
             }
             : undefined,
         delivery: {
             ownership: options?.ownership,
             reliability: options?.reliability ?? 'best-effort',
-            ack: options?.ack ?? 'none',
-        },
+            ack: options?.ack ?? 'none'
+        }
     };
 }

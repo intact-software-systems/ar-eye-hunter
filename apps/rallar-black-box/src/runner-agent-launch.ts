@@ -1,5 +1,5 @@
-import type { AuthSessionStorageKind } from '@shared/api/auth.ts';
 import type { RallarBlackBoxBootstrapConfig } from '@shared-test/rallar-bb-test/browser-control-agent-config.ts';
+import type { AuthSessionStorageKind } from '@shared/api/auth.ts';
 
 export type RunnerAgentLaunchInput = Readonly<{
     origin: string;
@@ -28,14 +28,16 @@ export function controlWebSocketUrlFromHttpBaseUrl(value: string): string {
         const url = new URL(value);
         if (url.protocol === 'http:') {
             url.protocol = 'ws:';
-        } else if (url.protocol === 'https:') {
+        }
+        else if (url.protocol === 'https:') {
             url.protocol = 'wss:';
         }
         url.pathname = '/control';
         url.search = '';
         url.hash = '';
         return url.toString();
-    } catch {
+    }
+    catch {
         return 'ws://localhost:5180/control';
     }
 }
@@ -44,7 +46,7 @@ export function runnerAgentId(
     prefix: string,
     index: number,
     count: number,
-    suffix: string,
+    suffix: string
 ): string {
     const safePrefix = safeIdSegment(prefix || 'agent');
     const safeSuffix = safeIdSegment(suffix || runnerNewAgentLaunchSuffix());
@@ -96,7 +98,7 @@ export function createRunnerAgentLaunchUrl(input: RunnerAgentLaunchInput): strin
 }
 
 export function readRunnerAgentSessionTicketFromHash(
-    hash: string,
+    hash: string
 ): string | undefined {
     return new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash)
         .get('agentSessionTicket')
@@ -104,7 +106,7 @@ export function readRunnerAgentSessionTicketFromHash(
 }
 
 export function readRunnerControlTokenFromHash(
-    hash: string,
+    hash: string
 ): string | undefined {
     return new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash)
         .get('controlToken')

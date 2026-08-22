@@ -1,25 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
-    formatDistributedRunManifestValidationErrors,
-    validateDistributedRunManifest,
-} from '../../shared-test/rallar-bb-test/mod.ts';
-import {
-    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
-    formatJsonSchemaValidationErrors,
-    validateJsonSchema,
-} from '../../shared-test/rallar-bb-test/schema.ts';
-import {
+    isDistributedRunTerminalState,
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES,
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_TERMINAL_STATES,
-    isDistributedRunTerminalState,
-    resolveDistributedTargetAgentIds,
     resolveDistributedRunTargets,
+    resolveDistributedTargetAgentIds,
     resolveGroupMemberControlAgentMatches,
     rollupDistributedRunResult,
     validateDistributedRunManifestContract,
     type RallarBlackBoxControlAgentCandidate,
-    type RallarBlackBoxDistributedRunManifest,
+    type RallarBlackBoxDistributedRunManifest
 } from '../../shared-test/rallar-bb-test/distributed-run.ts';
+import { formatDistributedRunManifestValidationErrors, validateDistributedRunManifest } from '../../shared-test/rallar-bb-test/mod.ts';
+import {
+    formatJsonSchemaValidationErrors,
+    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
+    validateJsonSchema
+} from '../../shared-test/rallar-bb-test/schema.ts';
 
 function validManifest(overrides: Partial<RallarBlackBoxDistributedRunManifest> = {}): RallarBlackBoxDistributedRunManifest {
     return {
@@ -30,7 +27,7 @@ function validManifest(overrides: Partial<RallarBlackBoxDistributedRunManifest> 
         group: {
             applicationId: 'rallar-server',
             workspaceId: 'default',
-            groupId: 'bb-group',
+            groupId: 'bb-group'
         },
         recipes: [
             {
@@ -39,18 +36,18 @@ function validManifest(overrides: Partial<RallarBlackBoxDistributedRunManifest> 
                 required: true,
                 variables: {
                     payload: {
-                        text: 'hello',
-                    },
-                },
-            },
+                        text: 'hello'
+                    }
+                }
+            }
         ],
         targetPolicy: {
             mode: 'selected-agents',
             expectedParticipantCount: 2,
-            agentIds: ['alice-agent', 'bob-agent'],
+            agentIds: ['alice-agent', 'bob-agent']
         },
         variables: {
-            apiBaseUrl: 'http://localhost:8080',
+            apiBaseUrl: 'http://localhost:8080'
         },
         secretRefs: ['accessToken'],
         roleAssignments: [
@@ -58,14 +55,14 @@ function validManifest(overrides: Partial<RallarBlackBoxDistributedRunManifest> 
                 role: 'sender',
                 agentId: 'alice-agent',
                 recipeIds: ['health-only'],
-                required: true,
+                required: true
             },
             {
                 role: 'receiver',
                 agentId: 'bob-agent',
                 recipeIds: ['health-only'],
-                required: true,
-            },
+                required: true
+            }
         ],
         ackTimeoutMs: 5_000,
         startMode: 'manual',
@@ -75,9 +72,9 @@ function validManifest(overrides: Partial<RallarBlackBoxDistributedRunManifest> 
             includeResultJsonl: true,
             includeFailureBundle: true,
             includeDistributedMetadata: true,
-            retentionDays: 7,
+            retentionDays: 7
         },
-        ...overrides,
+        ...overrides
     };
 }
 
@@ -89,7 +86,7 @@ function targetAgent(
         lastHeartbeatAtEpochMs?: number;
         region?: string;
         provider?: string;
-    }> = {},
+    }> = {}
 ): RallarBlackBoxControlAgentCandidate {
     return {
         agentId,
@@ -104,8 +101,8 @@ function targetAgent(
             workspaceId: 'default',
             groupId: options.groupId ?? 'bb-group',
             region: options.region,
-            provider: options.provider,
-        },
+            provider: options.provider
+        }
     };
 }
 
@@ -122,13 +119,13 @@ describe('rallar-bb-test distributed run contract', () => {
             'passed',
             'failed',
             'cancelled',
-            'timed-out',
+            'timed-out'
         ]);
         expect(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_TERMINAL_STATES).toEqual([
             'passed',
             'failed',
             'cancelled',
-            'timed-out',
+            'timed-out'
         ]);
         expect(isDistributedRunTerminalState('passed')).toBe(true);
         expect(isDistributedRunTerminalState('running')).toBe(false);
@@ -139,12 +136,12 @@ describe('rallar-bb-test distributed run contract', () => {
         const schemaResult = validateJsonSchema(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, manifest);
         expect(
             schemaResult.ok,
-            schemaResult.ok ? undefined : formatJsonSchemaValidationErrors(schemaResult.errors),
+            schemaResult.ok ? undefined : formatJsonSchemaValidationErrors(schemaResult.errors)
         ).toBe(true);
 
         expect(validateDistributedRunManifestContract(manifest)).toEqual({
             ok: true,
-            errors: [],
+            errors: []
         });
     });
 
@@ -152,25 +149,25 @@ describe('rallar-bb-test distributed run contract', () => {
         const valid = validateDistributedRunManifest(validManifest());
         const schemaInvalid = validateDistributedRunManifest({
             ...validManifest(),
-            schemaVersion: 2,
+            schemaVersion: 2
         });
         const contractInvalid = validateDistributedRunManifest(validManifest({
-            distributedRunId: '   ',
+            distributedRunId: '   '
         }));
 
         expect(valid).toMatchObject({
             ok: true,
             schemaValidation: { ok: true },
             contractValidation: { ok: true },
-            errors: [],
+            errors: []
         });
         expect(schemaInvalid).toMatchObject({
             ok: false,
             schemaValidation: { ok: false },
             errors: [expect.objectContaining({
                 source: 'schema',
-                path: '$.schemaVersion',
-            })],
+                path: '$.schemaVersion'
+            })]
         });
         expect(schemaInvalid.contractValidation).toBeUndefined();
         expect(contractInvalid).toMatchObject({
@@ -180,11 +177,11 @@ describe('rallar-bb-test distributed run contract', () => {
             errors: [{
                 source: 'contract',
                 path: '$.distributedRunId',
-                message: 'A non-empty string is required.',
-            }],
+                message: 'A non-empty string is required.'
+            }]
         });
         expect(formatDistributedRunManifestValidationErrors(contractInvalid.errors)).toBe(
-            '$.distributedRunId: A non-empty string is required.',
+            '$.distributedRunId: A non-empty string is required.'
         );
     });
 
@@ -192,25 +189,25 @@ describe('rallar-bb-test distributed run contract', () => {
         const manifest = validManifest({
             targetPolicy: {
                 mode: 'all-online-group-members',
-                expectedParticipantCount: 50,
+                expectedParticipantCount: 50
             },
             roleAssignments: undefined,
             roleAssignmentPolicy: {
                 mode: 'ordered-targets',
                 pattern: 'one-sender-many-receivers',
-                orderBy: 'agent-id',
-            },
+                orderBy: 'agent-id'
+            }
         });
 
         const schemaResult = validateJsonSchema(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, manifest);
         expect(
             schemaResult.ok,
-            schemaResult.ok ? undefined : formatJsonSchemaValidationErrors(schemaResult.errors),
+            schemaResult.ok ? undefined : formatJsonSchemaValidationErrors(schemaResult.errors)
         ).toBe(true);
 
         expect(validateDistributedRunManifestContract(manifest)).toEqual({
             ok: true,
-            errors: [],
+            errors: []
         });
     });
 
@@ -221,25 +218,25 @@ describe('rallar-bb-test distributed run contract', () => {
             targetPolicy: {
                 mode: 'selected-agents',
                 expectedParticipantCount: 0,
-                agentIds: [],
+                agentIds: []
             },
             ackTimeoutMs: 0,
             barrier: {
                 enabled: true,
-                timeoutMs: 0,
-            },
+                timeoutMs: 0
+            }
         });
 
         const result = validateDistributedRunManifestContract(manifest);
         expect(result.ok).toBe(false);
         if (!result.ok) {
-            expect(result.errors.map(error => error.path)).toEqual(expect.arrayContaining([
+            expect(result.errors.map((error) => error.path)).toEqual(expect.arrayContaining([
                 '$.distributedRunId',
                 '$.recipes[0]',
                 '$.targetPolicy.expectedParticipantCount',
                 '$.targetPolicy.agentIds',
                 '$.ackTimeoutMs',
-                '$.barrier.timeoutMs',
+                '$.barrier.timeoutMs'
             ]));
         }
     });
@@ -248,18 +245,18 @@ describe('rallar-bb-test distributed run contract', () => {
         const result = validateDistributedRunManifestContract(validManifest({
             targetPolicy: {
                 mode: 'role-map',
-                expectedParticipantCount: 2,
+                expectedParticipantCount: 2
             },
             roleAssignments: [],
             startMode: 'scheduled',
-            startDeadlineEpochMs: undefined,
+            startDeadlineEpochMs: undefined
         }));
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
-            expect(result.errors.map(error => error.path)).toEqual(expect.arrayContaining([
+            expect(result.errors.map((error) => error.path)).toEqual(expect.arrayContaining([
                 '$.targetPolicy.roles',
-                '$.startDeadlineEpochMs',
+                '$.startDeadlineEpochMs'
             ]));
         }
     });
@@ -268,19 +265,19 @@ describe('rallar-bb-test distributed run contract', () => {
         const result = validateDistributedRunManifestContract(validManifest({
             targetPolicy: {
                 mode: 'role-map',
-                expectedParticipantCount: 2,
+                expectedParticipantCount: 2
             },
             roleAssignments: [],
             roleAssignmentPolicy: {
                 mode: 'ordered-targets',
                 pattern: 'one-sender-many-receivers',
-                orderBy: 'agent-id',
-            },
+                orderBy: 'agent-id'
+            }
         }));
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
-            expect(result.errors.map(error => error.path)).toContain('$.targetPolicy.roles');
+            expect(result.errors.map((error) => error.path)).toContain('$.targetPolicy.roles');
         }
     });
 
@@ -291,13 +288,13 @@ describe('rallar-bb-test distributed run contract', () => {
             group: {
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
-                groupId: 'bb-group',
+                groupId: 'bb-group'
             },
             members: [
                 { principalId: 'alice', sessionIds: ['alice-session'], online: true },
                 { principalId: 'bob', sessionIds: ['bob-session'], online: true },
                 { principalId: 'charlie', sessionIds: ['charlie-session'], online: true },
-                { principalId: 'dana', sessionIds: ['dana-session'], online: true },
+                { principalId: 'dana', sessionIds: ['dana-session'], online: true }
             ],
             agents: [
                 {
@@ -310,8 +307,8 @@ describe('rallar-bb-test distributed run contract', () => {
                         sessionId: 'alice-session',
                         applicationId: 'rallar-server',
                         workspaceId: 'default',
-                        groupId: 'bb-group',
-                    },
+                        groupId: 'bb-group'
+                    }
                 },
                 {
                     agentId: 'bob-agent-old',
@@ -322,8 +319,8 @@ describe('rallar-bb-test distributed run contract', () => {
                         sessionId: 'bob-session',
                         applicationId: 'rallar-server',
                         workspaceId: 'default',
-                        groupId: 'bb-group',
-                    },
+                        groupId: 'bb-group'
+                    }
                 },
                 {
                     agentId: 'charlie-agent',
@@ -333,8 +330,8 @@ describe('rallar-bb-test distributed run contract', () => {
                         sessionId: 'charlie-session',
                         applicationId: 'rallar-server',
                         workspaceId: 'default',
-                        groupId: 'bb-group',
-                    },
+                        groupId: 'bb-group'
+                    }
                 },
                 {
                     agentId: 'dana-agent-1',
@@ -345,8 +342,8 @@ describe('rallar-bb-test distributed run contract', () => {
                         sessionId: 'dana-session',
                         applicationId: 'rallar-server',
                         workspaceId: 'default',
-                        groupId: 'bb-group',
-                    },
+                        groupId: 'bb-group'
+                    }
                 },
                 {
                     agentId: 'dana-agent-2',
@@ -357,8 +354,8 @@ describe('rallar-bb-test distributed run contract', () => {
                         sessionId: 'dana-session',
                         applicationId: 'rallar-server',
                         workspaceId: 'default',
-                        groupId: 'bb-group',
-                    },
+                        groupId: 'bb-group'
+                    }
                 },
                 {
                     agentId: 'unknown-agent',
@@ -369,15 +366,15 @@ describe('rallar-bb-test distributed run contract', () => {
                         sessionId: 'eve-session',
                         applicationId: 'rallar-server',
                         workspaceId: 'default',
-                        groupId: 'bb-group',
-                    },
+                        groupId: 'bb-group'
+                    }
                 },
                 {
                     agentId: 'no-identity-agent',
                     connected: true,
-                    lastHeartbeatAtEpochMs: 9_900,
-                },
-            ],
+                    lastHeartbeatAtEpochMs: 9_900
+                }
+            ]
         });
 
         expect(matchResult.targetableAgentIds).toEqual(['alice-agent']);
@@ -389,15 +386,15 @@ describe('rallar-bb-test distributed run contract', () => {
             offlineAgents: 1,
             duplicateSessions: 1,
             agentsWithoutMembers: 1,
-            agentsWithoutIdentity: 1,
+            agentsWithoutIdentity: 1
         });
-        expect(matchResult.matches.map(match => match.status)).toEqual([
+        expect(matchResult.matches.map((match) => match.status)).toEqual([
             'matched',
             'stale-agent',
             'offline-agent',
             'duplicate-session',
             'agent-without-group-member',
-            'agent-without-identity',
+            'agent-without-identity'
         ]);
     });
 
@@ -407,11 +404,11 @@ describe('rallar-bb-test distributed run contract', () => {
             group: {
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
-                groupId: 'bb-group',
+                groupId: 'bb-group'
             },
             members: [
                 { principalId: 'alice', sessionIds: ['alice-session'] },
-                { principalId: 'bob', sessionIds: ['bob-session'] },
+                { principalId: 'bob', sessionIds: ['bob-session'] }
             ],
             agents: [
                 {
@@ -423,8 +420,8 @@ describe('rallar-bb-test distributed run contract', () => {
                         sessionId: 'alice-session',
                         applicationId: 'rallar-server',
                         workspaceId: 'default',
-                        groupId: 'bb-group',
-                    },
+                        groupId: 'bb-group'
+                    }
                 },
                 {
                     agentId: 'bob-agent',
@@ -435,8 +432,8 @@ describe('rallar-bb-test distributed run contract', () => {
                         sessionId: 'bob-session',
                         applicationId: 'rallar-server',
                         workspaceId: 'default',
-                        groupId: 'bb-group',
-                    },
+                        groupId: 'bb-group'
+                    }
                 },
                 {
                     agentId: 'offline-agent',
@@ -446,22 +443,22 @@ describe('rallar-bb-test distributed run contract', () => {
                         sessionId: 'charlie-session',
                         applicationId: 'rallar-server',
                         workspaceId: 'default',
-                        groupId: 'bb-group',
-                    },
-                },
-            ],
+                        groupId: 'bb-group'
+                    }
+                }
+            ]
         });
 
         expect(resolveDistributedTargetAgentIds({
             matchResult,
-            targetPolicy: { mode: 'all-online-group-members' },
+            targetPolicy: { mode: 'all-online-group-members' }
         })).toEqual(['alice-agent', 'bob-agent']);
         expect(resolveDistributedTargetAgentIds({
             matchResult,
             targetPolicy: {
                 mode: 'selected-agents',
-                agentIds: ['bob-agent', 'offline-agent'],
-            },
+                agentIds: ['bob-agent', 'offline-agent']
+            }
         })).toEqual(['bob-agent']);
         expect(resolveDistributedTargetAgentIds({
             matchResult,
@@ -469,9 +466,9 @@ describe('rallar-bb-test distributed run contract', () => {
                 mode: 'role-map',
                 roles: {
                     sender: ['alice-agent'],
-                    receiver: ['bob-agent', 'offline-agent'],
-                },
-            },
+                    receiver: ['bob-agent', 'offline-agent']
+                }
+            }
         })).toEqual(['alice-agent', 'bob-agent']);
     });
 
@@ -486,33 +483,33 @@ describe('rallar-bb-test distributed run contract', () => {
             {
                 agentId: 'missing-identity',
                 connected: true,
-                lastHeartbeatAtEpochMs: 9_900,
-            },
+                lastHeartbeatAtEpochMs: 9_900
+            }
         ];
 
         const resolution = resolveDistributedRunTargets({
             manifest: validManifest({
                 targetPolicy: {
                     mode: 'all-online-group-members',
-                    expectedParticipantCount: 3,
+                    expectedParticipantCount: 3
                 },
                 roleAssignments: undefined,
                 roleAssignmentPolicy: {
                     mode: 'ordered-targets',
                     pattern: 'one-sender-many-receivers',
-                    orderBy: 'agent-id',
-                },
+                    orderBy: 'agent-id'
+                }
             }),
             agents,
             nowEpochMs: 10_000,
-            staleAfterMs: 1_000,
+            staleAfterMs: 1_000
         });
 
         expect(resolution.targetAgentIds).toEqual(['agent-01', 'agent-02', 'agent-03']);
         expect(resolution.roleAssignments).toEqual([
             { role: 'sender', agentId: 'agent-01', required: true },
             { role: 'receiver', agentId: 'agent-02', required: true },
-            { role: 'receiver', agentId: 'agent-03', required: true },
+            { role: 'receiver', agentId: 'agent-03', required: true }
         ]);
         expect(resolution.summary).toMatchObject({
             agents: 7,
@@ -526,22 +523,22 @@ describe('rallar-bb-test distributed run contract', () => {
             agentsWithoutIdentity: 1,
             roleCounts: {
                 sender: 1,
-                receiver: 2,
+                receiver: 2
             },
             regions: {
                 'eu-north': 1,
-                'us-east': 1,
+                'us-east': 1
             },
             providers: {
                 fly: 1,
-                hetzner: 1,
-            },
+                hetzner: 1
+            }
         });
-        expect(resolution.blockers.map(blocker => [blocker.agentId, blocker.status])).toEqual([
+        expect(resolution.blockers.map((blocker) => [blocker.agentId, blocker.status])).toEqual([
             ['stale-agent', 'stale-agent'],
             ['offline-agent', 'offline-agent'],
             ['wrong-group', 'different-group'],
-            ['missing-identity', 'agent-without-identity'],
+            ['missing-identity', 'agent-without-identity']
         ]);
     });
 
@@ -549,43 +546,45 @@ describe('rallar-bb-test distributed run contract', () => {
         expect(rollupDistributedRunResult({
             participants: [
                 { agentId: 'alice-agent', state: 'ready', required: true },
-                { agentId: 'bob-agent', state: 'ready', required: true },
-            ],
+                { agentId: 'bob-agent', state: 'ready', required: true }
+            ]
         })).toMatchObject({
             state: 'ready',
             ok: false,
             summary: {
                 readyParticipants: 2,
-                blockingFailures: 0,
-            },
+                blockingFailures: 0
+            }
         });
 
-        expect(rollupDistributedRunResult({
-            participants: [
-                { agentId: 'alice-agent', state: 'running', required: true },
-                { agentId: 'bob-agent', state: 'ready', required: true },
-            ],
-            recipes: [
-                { recipeKey: 'alice:health', agentId: 'alice-agent', recipeId: 'health-only', state: 'running' },
-            ],
-        }).state).toBe('running');
+        expect(
+            rollupDistributedRunResult({
+                participants: [
+                    { agentId: 'alice-agent', state: 'running', required: true },
+                    { agentId: 'bob-agent', state: 'ready', required: true }
+                ],
+                recipes: [
+                    { recipeKey: 'alice:health', agentId: 'alice-agent', recipeId: 'health-only', state: 'running' }
+                ]
+            }).state
+        ).toBe('running');
 
         expect(rollupDistributedRunResult({
             participants: [
                 { agentId: 'alice-agent', state: 'passed', required: true },
-                { agentId: 'bob-agent', state: 'passed', required: true },
+                { agentId: 'bob-agent', state: 'passed', required: true }
             ],
             recipes: [
                 { recipeKey: 'alice:health', agentId: 'alice-agent', recipeId: 'health-only', state: 'passed' },
-                { recipeKey: 'bob:health', agentId: 'bob-agent', recipeId: 'health-only', state: 'passed' },
-            ],
+                { recipeKey: 'bob:health', agentId: 'bob-agent', recipeId: 'health-only', state: 'passed' }
+            ]
         })).toMatchObject({
             state: 'passed',
             ok: true,
             summary: {
                 passedRecipes: 2,
-                blockingFailures: 0,
-            },
+                blockingFailures: 0
+            }
         });
     });
 
@@ -593,11 +592,11 @@ describe('rallar-bb-test distributed run contract', () => {
         const optionalFailure = rollupDistributedRunResult({
             participants: [
                 { agentId: 'alice-agent', state: 'passed', required: true },
-                { agentId: 'observer-agent', state: 'failed', required: false },
+                { agentId: 'observer-agent', state: 'failed', required: false }
             ],
             recipes: [
-                { recipeKey: 'alice:health', agentId: 'alice-agent', recipeId: 'health-only', state: 'passed' },
-            ],
+                { recipeKey: 'alice:health', agentId: 'alice-agent', recipeId: 'health-only', state: 'passed' }
+            ]
         });
         expect(optionalFailure.state).toBe('passed');
         expect(optionalFailure.summary.blockingFailures).toBe(0);
@@ -611,10 +610,10 @@ describe('rallar-bb-test distributed run contract', () => {
                     state: 'failed',
                     error: {
                         code: 'recipe-failed',
-                        message: 'Health recipe failed.',
-                    },
-                },
-            ],
+                        message: 'Health recipe failed.'
+                    }
+                }
+            ]
         });
         expect(requiredFailure.state).toBe('failed');
         expect(requiredFailure.failures[0]).toMatchObject({
@@ -622,26 +621,32 @@ describe('rallar-bb-test distributed run contract', () => {
             key: 'bob:health',
             required: true,
             error: {
-                code: 'recipe-failed',
-            },
+                code: 'recipe-failed'
+            }
         });
 
-        expect(rollupDistributedRunResult({
-            participants: [{ agentId: 'alice-agent', state: 'timed-out' }],
-        }).state).toBe('timed-out');
+        expect(
+            rollupDistributedRunResult({
+                participants: [{ agentId: 'alice-agent', state: 'timed-out' }]
+            }).state
+        ).toBe('timed-out');
 
-        expect(rollupDistributedRunResult({
-            stateHint: 'waiting-for-barrier',
-            participants: [
-                { agentId: 'alice-agent', state: 'acknowledged' },
-                { agentId: 'bob-agent', state: 'acknowledged' },
-            ],
-        }).state).toBe('waiting-for-barrier');
+        expect(
+            rollupDistributedRunResult({
+                stateHint: 'waiting-for-barrier',
+                participants: [
+                    { agentId: 'alice-agent', state: 'acknowledged' },
+                    { agentId: 'bob-agent', state: 'acknowledged' }
+                ]
+            }).state
+        ).toBe('waiting-for-barrier');
 
-        expect(rollupDistributedRunResult({
-            stateHint: 'cancelled',
-            participants: [{ agentId: 'alice-agent', state: 'running' }],
-        }).state).toBe('cancelled');
+        expect(
+            rollupDistributedRunResult({
+                stateHint: 'cancelled',
+                participants: [{ agentId: 'alice-agent', state: 'running' }]
+            }).state
+        ).toBe('cancelled');
     });
 
     it('validates groupAssertions against recipe keys, roles, and aggregate bounds', () => {
@@ -652,16 +657,16 @@ describe('rallar-bb-test distributed run contract', () => {
                     aggregate: 'allEqual',
                     source: { recipeId: 'health-only', commandId: 'health-1', path: 'value.ok' },
                     scope: { role: 'receiver' },
-                    minParticipants: 1,
+                    minParticipants: 1
                 },
                 {
                     groupAssertionId: 'delivery-quorum',
                     aggregate: 'countMatching',
                     source: { recipeId: 'health-only', commandId: 'health-1', path: 'value.ok' },
                     predicate: { operator: 'equals', expected: true },
-                    count: { gte: 1 },
-                },
-            ],
+                    count: { gte: 1 }
+                }
+            ]
         });
         expect(validateDistributedRunManifestContract(groupAssertionManifest))
             .toEqual({ ok: true, errors: [] });
@@ -672,21 +677,21 @@ describe('rallar-bb-test distributed run contract', () => {
                     recipeId: 'inline-probe',
                     recipe: {
                         recipeId: 'inline-probe',
-                        commands: [{ kind: 'health', commandId: 'probe-health' }],
-                    },
-                },
+                        commands: [{ kind: 'health', commandId: 'probe-health' }]
+                    }
+                }
             ],
             groupAssertions: [
                 {
                     groupAssertionId: 'dup',
                     aggregate: 'allEqual',
-                    source: { recipeId: 'unknown-recipe', commandId: 'x', path: 'value' },
+                    source: { recipeId: 'unknown-recipe', commandId: 'x', path: 'value' }
                 },
                 {
                     groupAssertionId: 'dup',
                     aggregate: 'allEqual',
                     source: { recipeId: 'inline-probe', commandId: 'not-authored', path: 'value' },
-                    scope: { role: 'ghost-role' },
+                    scope: { role: 'ghost-role' }
                 },
                 {
                     groupAssertionId: 'bad-bounds',
@@ -694,26 +699,26 @@ describe('rallar-bb-test distributed run contract', () => {
                     source: { recipeId: 'inline-probe', commandId: 'probe-health', path: 'value' },
                     predicate: { operator: 'exists' },
                     count: {},
-                    minParticipants: 0,
+                    minParticipants: 0
                 },
                 {
                     groupAssertionId: 'bad-tolerance',
                     aggregate: 'allEqualWithin',
                     source: { recipeId: 'inline-probe', commandId: 'probe-health', path: 'value' },
-                    tolerance: -1,
-                },
-            ],
+                    tolerance: -1
+                }
+            ]
         }));
         expect(invalid.ok).toBe(false);
         if (!invalid.ok) {
-            expect(invalid.errors.map(error => error.path)).toEqual(expect.arrayContaining([
+            expect(invalid.errors.map((error) => error.path)).toEqual(expect.arrayContaining([
                 '$.groupAssertions[0].source.recipeId',
                 '$.groupAssertions[1].groupAssertionId',
                 '$.groupAssertions[1].source.commandId',
                 '$.groupAssertions[1].scope.role',
                 '$.groupAssertions[2].count',
                 '$.groupAssertions[2].minParticipants',
-                '$.groupAssertions[3].tolerance',
+                '$.groupAssertions[3].tolerance'
             ]));
         }
     });
@@ -722,11 +727,11 @@ describe('rallar-bb-test distributed run contract', () => {
         const rollup = rollupDistributedRunResult({
             participants: [
                 { agentId: 'alice-agent', state: 'passed', required: true },
-                { agentId: 'bob-agent', state: 'passed', required: true },
+                { agentId: 'bob-agent', state: 'passed', required: true }
             ],
             recipes: [
                 { recipeKey: 'alice:health', agentId: 'alice-agent', state: 'passed' },
-                { recipeKey: 'bob:health', agentId: 'bob-agent', state: 'passed' },
+                { recipeKey: 'bob:health', agentId: 'bob-agent', state: 'passed' }
             ],
             groupAssertions: [
                 {
@@ -739,8 +744,8 @@ describe('rallar-bb-test distributed run contract', () => {
                     perAgent: [],
                     error: {
                         code: 'RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_FAILED',
-                        message: 'Group assertion members-agree failed.',
-                    },
+                        message: 'Group assertion members-agree failed.'
+                    }
                 },
                 {
                     groupAssertionId: 'no-leaks',
@@ -749,9 +754,9 @@ describe('rallar-bb-test distributed run contract', () => {
                     participants: { expected: 2, required: 2, withEvidence: 2 },
                     missingAgentIds: [],
                     violatingAgentIds: [],
-                    perAgent: [],
-                },
-            ],
+                    perAgent: []
+                }
+            ]
         });
 
         expect(rollup.state).toBe('failed');
@@ -767,9 +772,9 @@ describe('rallar-bb-test distributed run contract', () => {
                 required: true,
                 error: {
                     code: 'RALLAR_BB_DISTRIBUTED_GROUP_ASSERTION_FAILED',
-                    message: 'Group assertion members-agree failed.',
-                },
-            },
+                    message: 'Group assertion members-agree failed.'
+                }
+            }
         ]);
 
         const passing = rollupDistributedRunResult({
@@ -781,8 +786,8 @@ describe('rallar-bb-test distributed run contract', () => {
                 participants: { expected: 1, required: 1, withEvidence: 1 },
                 missingAgentIds: [],
                 violatingAgentIds: [],
-                perAgent: [],
-            }],
+                perAgent: []
+            }]
         });
         expect(passing.state).toBe('passed');
         expect(passing.summary.failedGroupAssertions).toBe(0);

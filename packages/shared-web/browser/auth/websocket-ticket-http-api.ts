@@ -7,10 +7,7 @@ import { RateLimiter } from '@shared/resilience/Resilience.ts';
 
 import { readApiBaseUrl } from '../api-client-config.ts';
 import { ApiHttpError } from '../api/http-error.ts';
-import {
-    type ApiMutationRequestOptions,
-    executeHttpRequest,
-} from '../api/http-request.ts';
+import { executeHttpRequest, type ApiMutationRequestOptions } from '../api/http-request.ts';
 
 export type WebSocketTicketBackoffState = Readonly<
     | {
@@ -54,31 +51,29 @@ export type WebSocketTicketCircuitBreakerConfig = Readonly<{
 const DEFAULT_WS_TICKET_429_BACKOFF_MS = 5_000;
 const DEFAULT_WS_TICKET_LOCAL_RATE_LIMIT: WebSocketTicketLocalRateLimitConfig = {
     windowMs: 60_000,
-    maxRequests: 30,
+    maxRequests: 30
 };
 const DEFAULT_WS_TICKET_CIRCUIT_BREAKER: WebSocketTicketCircuitBreakerConfig = {
     maxConsecutiveFailures: 2,
     resetTimeoutMs: 10_000,
     halfOpenTimeoutMs: 10_000,
-    slidingWindowMs: 10_000,
+    slidingWindowMs: 10_000
 };
-const WS_TICKET_LOCAL_RATE_LIMIT_REASON =
-    'WebSocket ticket request suppressed by local client rate limiter.';
-const WS_TICKET_CIRCUIT_OPEN_REASON =
-    'WebSocket ticket request suppressed by local circuit breaker.';
+const WS_TICKET_LOCAL_RATE_LIMIT_REASON = 'WebSocket ticket request suppressed by local client rate limiter.';
+const WS_TICKET_CIRCUIT_OPEN_REASON = 'WebSocket ticket request suppressed by local circuit breaker.';
 
 let webSocketTicketBackoffState: WebSocketTicketBackoffState = { status: 'idle' };
 let webSocketTicketLocalRateLimitConfig = DEFAULT_WS_TICKET_LOCAL_RATE_LIMIT;
 const webSocketTicketLocalLimiters = new Map<string, RateLimiter>();
 let webSocketTicketCircuitBreakerConfig = DEFAULT_WS_TICKET_CIRCUIT_BREAKER;
 let webSocketTicketCircuitBreaker = createWebSocketTicketCircuitBreaker(
-    webSocketTicketCircuitBreakerConfig,
+    webSocketTicketCircuitBreakerConfig
 );
 
 type WebSocketTicketAttempt = Readonly<
-    | { kind: 'ok'; ticket: WebSocketTicketResponse }
-    | { kind: 'http-error'; error: ApiHttpError }
-    | { kind: 'error'; error: Error }
+    | { kind: 'ok'; ticket: WebSocketTicketResponse; }
+    | { kind: 'http-error'; error: ApiHttpError; }
+    | { kind: 'error'; error: Error; }
 >;
 
 export function readWebSocketTicketBackoffState(): WebSocketTicketBackoffState {
@@ -89,26 +84,26 @@ export function resetWebSocketTicketBackoff(): void {
     webSocketTicketBackoffState = { status: 'idle' };
     webSocketTicketLocalLimiters.clear();
     webSocketTicketCircuitBreaker = createWebSocketTicketCircuitBreaker(
-        webSocketTicketCircuitBreakerConfig,
+        webSocketTicketCircuitBreakerConfig
     );
 }
 
 export function configureWebSocketTicketLocalRateLimit(
-    config: WebSocketTicketLocalRateLimitConfig,
+    config: WebSocketTicketLocalRateLimitConfig
 ): void {
     webSocketTicketLocalRateLimitConfig = config;
     webSocketTicketLocalLimiters.clear();
 }
 
 export function configureWebSocketTicketCircuitBreaker(
-    config: WebSocketTicketCircuitBreakerConfig,
+    config: WebSocketTicketCircuitBreakerConfig
 ): void {
     webSocketTicketCircuitBreakerConfig = config;
     webSocketTicketCircuitBreaker = createWebSocketTicketCircuitBreaker(config);
 }
 
 export async function createWebSocketTicket(
-    options: ApiMutationRequestOptions,
+    options: ApiMutationRequestOptions
 ): Promise<WebSocketTicketResponse> {
     const now = Date.now();
     if (
@@ -119,7 +114,7 @@ export async function createWebSocketTicket(
             'POST',
             '/api/auth/ws-ticket',
             429,
-            'WebSocket ticket request suppressed until cooldown expires.',
+            'WebSocket ticket request suppressed until cooldown expires.'
         );
     }
     if (!webSocketTicketCircuitBreaker.isAllowedThrough()) {
@@ -133,11 +128,12 @@ export async function createWebSocketTicket(
         const ticket = await RateLimiter.tryToExecuteOrElse<WebSocketTicketResponse>(
             readWebSocketTicketLocalLimiter(limiterKey),
             () => createWebSocketTicketThroughCircuitBreaker(options),
-            rejectWebSocketTicketLocalRateLimit,
+            rejectWebSocketTicketLocalRateLimit
         );
         webSocketTicketBackoffState = { status: 'idle' };
         return ticket;
-    } catch (error) {
+    }
+    catch (error) {
         if (
             error instanceof ApiHttpError &&
             error.status === 429 &&
@@ -149,7 +145,7 @@ export async function createWebSocketTicket(
                 retryAtEpochMs: failedAt + readRetryAfterMs(error.headers, failedAt),
                 lastStatus: 429,
                 lastFailureAtEpochMs: failedAt,
-                reason: error.bodyText,
+                reason: error.bodyText
             };
         }
         throw error;
@@ -157,24 +153,26 @@ export async function createWebSocketTicket(
 }
 
 function createWebSocketTicketCircuitBreaker(
-    config: WebSocketTicketCircuitBreakerConfig,
+    config: WebSocketTicketCircuitBreakerConfig
 ): CircuitBreaker {
     return CircuitBreaker.create(
         new CircuitBreakerPolicy(
             config.maxConsecutiveFailures,
             Temporal.Duration.from({ milliseconds: config.resetTimeoutMs }),
             Temporal.Duration.from({ milliseconds: config.halfOpenTimeoutMs }),
-            Temporal.Duration.from({ milliseconds: config.slidingWindowMs }),
-        ),
+            Temporal.Duration.from({ milliseconds: config.slidingWindowMs })
+        )
     );
 }
 
 function readWebSocketTicketLocalLimiter(sessionId: string): RateLimiter {
     const existing = webSocketTicketLocalLimiters.get(sessionId);
-    if (existing) return existing;
+    if (existing) {
+        return existing;
+    }
     const limiter = RateLimiter.init(
         webSocketTicketLocalRateLimitConfig.windowMs,
-        webSocketTicketLocalRateLimitConfig.maxRequests,
+        webSocketTicketLocalRateLimitConfig.maxRequests
     );
     webSocketTicketLocalLimiters.set(sessionId, limiter);
     return limiter;
@@ -182,7 +180,9 @@ function readWebSocketTicketLocalLimiter(sessionId: string): RateLimiter {
 
 function readRetryAfterMs(headers: Headers | undefined, nowMs: number): number {
     const raw = headers?.get('retry-after');
-    if (!raw) return DEFAULT_WS_TICKET_429_BACKOFF_MS;
+    if (!raw) {
+        return DEFAULT_WS_TICKET_429_BACKOFF_MS;
+    }
     const seconds = Number(raw);
     if (Number.isFinite(seconds) && seconds >= 0) {
         return Math.max(0, seconds * 1_000);
@@ -194,7 +194,7 @@ function readRetryAfterMs(headers: Headers | undefined, nowMs: number): number {
 }
 
 async function executeWebSocketTicketAttempt(
-    options: ApiMutationRequestOptions,
+    options: ApiMutationRequestOptions
 ): Promise<WebSocketTicketAttempt> {
     try {
         return {
@@ -204,21 +204,28 @@ async function executeWebSocketTicketAttempt(
                 toApiMutationRequestPath('/api/auth/ws-ticket', options.requestId),
                 'POST',
                 {},
-                options,
-            ),
+                options
+            )
         };
-    } catch (error) {
-        if (error instanceof ApiHttpError) return { kind: 'http-error', error };
+    }
+    catch (error) {
+        if (error instanceof ApiHttpError) {
+            return { kind: 'http-error', error };
+        }
         return {
             kind: 'error',
-            error: error instanceof Error ? error : new Error(String(error)),
+            error: error instanceof Error ? error : new Error(String(error))
         };
     }
 }
 
 function isSuccessfulWebSocketTicketAttempt(attempt: WebSocketTicketAttempt): boolean {
-    if (attempt.kind === 'ok') return true;
-    if (attempt.kind === 'http-error') return attempt.error.status < 500;
+    if (attempt.kind === 'ok') {
+        return true;
+    }
+    if (attempt.kind === 'http-error') {
+        return attempt.error.status < 500;
+    }
     return attempt.error.name === 'AbortError';
 }
 
@@ -238,7 +245,7 @@ function markWebSocketTicketCircuitOpen(lastStatus: number = 503): void {
         status: 'circuit-open',
         lastStatus,
         lastFailureAtEpochMs: Date.now(),
-        reason: WS_TICKET_CIRCUIT_OPEN_REASON,
+        reason: WS_TICKET_CIRCUIT_OPEN_REASON
     };
 }
 
@@ -247,18 +254,18 @@ async function rejectWebSocketTicketLocalRateLimit(): Promise<WebSocketTicketRes
         status: 'local-rate-limited',
         lastStatus: 429,
         lastFailureAtEpochMs: Date.now(),
-        reason: WS_TICKET_LOCAL_RATE_LIMIT_REASON,
+        reason: WS_TICKET_LOCAL_RATE_LIMIT_REASON
     };
     throw new ApiHttpError('POST', '/api/auth/ws-ticket', 429, WS_TICKET_LOCAL_RATE_LIMIT_REASON);
 }
 
 async function createWebSocketTicketThroughCircuitBreaker(
-    options: ApiMutationRequestOptions,
+    options: ApiMutationRequestOptions
 ): Promise<WebSocketTicketResponse> {
     const result = await CircuitBreaker.tryToExecute<WebSocketTicketAttempt>(
         webSocketTicketCircuitBreaker,
         () => executeWebSocketTicketAttempt(options),
-        isSuccessfulWebSocketTicketAttempt,
+        isSuccessfulWebSocketTicketAttempt
     );
     return result.fold(
         () => {
@@ -267,11 +274,13 @@ async function createWebSocketTicketThroughCircuitBreaker(
                 'POST',
                 '/api/auth/ws-ticket',
                 503,
-                WS_TICKET_CIRCUIT_OPEN_REASON,
+                WS_TICKET_CIRCUIT_OPEN_REASON
             );
         },
         (attempt) => {
-            if (attempt.kind === 'ok') return attempt.ticket;
+            if (attempt.kind === 'ok') {
+                return attempt.ticket;
+            }
             if (
                 !isSuccessfulWebSocketTicketAttempt(attempt) &&
                 webSocketTicketCircuitBreaker.isOpen()
@@ -279,6 +288,6 @@ async function createWebSocketTicketThroughCircuitBreaker(
                 markWebSocketTicketCircuitOpen(readWebSocketTicketAttemptStatus(attempt));
             }
             throwWebSocketTicketAttempt(attempt);
-        },
+        }
     );
 }

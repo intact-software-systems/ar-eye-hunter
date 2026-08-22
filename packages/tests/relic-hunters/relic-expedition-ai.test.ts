@@ -1,23 +1,15 @@
+import { createProceduralRelicExpeditionBlueprint, type RelicExpeditionBlueprint } from '@relic-hunters/mod.ts';
+import type { RallarServerAiRallar } from '@shared-server/rallar-ai/mod.ts';
+import { isRallarAiProviderAllowedInProduction, type RallarAiJsonProvider, type RallarAiJsonRequest, type RallarAiJsonResult } from '@shared/rallar-ai/mod.ts';
 import { describe, expect, it, vi } from 'vitest';
 import {
-    createProceduralRelicExpeditionBlueprint,
-    type RelicExpeditionBlueprint,
-} from '@relic-hunters/mod.ts';
-import {
-    isRallarAiProviderAllowedInProduction,
-    type RallarAiJsonProvider,
-    type RallarAiJsonRequest,
-    type RallarAiJsonResult,
-} from '@shared/rallar-ai/mod.ts';
-import type { RallarServerAiRallar } from '@shared-server/rallar-ai/mod.ts';
-import {
+    createRelicExpeditionAiEvaluationCases,
+    createRelicExpeditionInitialStateFactory,
+    readRelicAiExpeditionEnv,
     RELIC_EXPEDITION_LIVE_OLLAMA_EVALUATION_GATE,
     RELIC_EXPEDITION_OLLAMA_PROVIDER_GOVERNANCE,
-    createRelicExpeditionInitialStateFactory,
-    createRelicExpeditionAiEvaluationCases,
-    readRelicAiExpeditionEnv,
     runRelicExpeditionDeterministicAiEvaluation,
-    runRelicExpeditionOllamaLiveEvaluationIfEnabled,
+    runRelicExpeditionOllamaLiveEvaluationIfEnabled
 } from '../../../apps/relic-hunter-server-v1/src/relic-expedition-ai.ts';
 
 describe('Relic expedition AI factory', () => {
@@ -31,28 +23,28 @@ describe('Relic expedition AI factory', () => {
             productionAllowed: false,
             knownLimits: {
                 maxOutputTokens: 1_600,
-                recommendedTimeoutMs: 15_000,
-            },
+                recommendedTimeoutMs: 15_000
+            }
         });
         expect(
             isRallarAiProviderAllowedInProduction(
                 RELIC_EXPEDITION_OLLAMA_PROVIDER_GOVERNANCE,
-                'server',
-            ),
+                'server'
+            )
         ).toBe(false);
     });
 
     it('keeps the current static game when disabled', async () => {
         const factory = createRelicExpeditionInitialStateFactory({
             mode: 'off',
-            now: () => 1,
+            now: () => 1
         });
 
         const state = await factory('room-1', 'ensure');
 
         expect(state.setup).toMatchObject({
             source: 'default',
-            blueprintId: 'relic-static-v1',
+            blueprintId: 'relic-static-v1'
         });
         expect(state.map.map((room) => room.id)).toEqual([
             'entrance',
@@ -62,7 +54,7 @@ describe('Relic expedition AI factory', () => {
             'trap',
             'treasure',
             'monster',
-            'exit',
+            'exit'
         ]);
     });
 
@@ -70,14 +62,14 @@ describe('Relic expedition AI factory', () => {
         const factory = createRelicExpeditionInitialStateFactory({
             rallar: fakeRallar(),
             mode: 'mock',
-            now: () => 2,
+            now: () => 2
         });
 
         const state = await factory('room-1', 'reset');
 
         expect(state.setup).toMatchObject({
             source: 'mock',
-            seed: 'room-1:reset:2',
+            seed: 'room-1:reset:2'
         });
         expect(state.map.length).toBeGreaterThanOrEqual(8);
         expect(state.relics.length).toBeGreaterThanOrEqual(4);
@@ -90,19 +82,19 @@ describe('Relic expedition AI factory', () => {
             mode: 'mock',
             now: () => 3,
             mockBlueprint: { schemaVersion: 1 } as unknown as RelicExpeditionBlueprint,
-            onFallback: fallback,
+            onFallback: fallback
         });
 
         const state = await factory('room-1', 'ensure');
 
         expect(state.setup).toMatchObject({
             source: 'procedural',
-            seed: 'room-1:ensure:3',
+            seed: 'room-1:ensure:3'
         });
         expect(fallback).toHaveBeenCalledWith(expect.objectContaining({
             gameId: 'room-1',
             mode: 'mock',
-            reason: 'ensure',
+            reason: 'ensure'
         }));
     });
 
@@ -115,21 +107,21 @@ describe('Relic expedition AI factory', () => {
             mockBlueprint: createProceduralRelicExpeditionBlueprint({
                 seed: 'visually-bad',
                 theme: 'Moonlit Keep',
-                source: 'mock',
+                source: 'mock'
             }),
-            onFallback: fallback,
+            onFallback: fallback
         });
 
         const state = await factory('room-1', 'reset');
 
         expect(state.setup).toMatchObject({
             source: 'procedural',
-            seed: 'room-1:reset:6',
+            seed: 'room-1:reset:6'
         });
         expect(fallback).toHaveBeenCalledWith(expect.objectContaining({
             gameId: 'room-1',
             mode: 'mock',
-            reason: 'reset',
+            reason: 'reset'
         }));
     });
 
@@ -140,14 +132,14 @@ describe('Relic expedition AI factory', () => {
             mode: 'mock',
             provider,
             timeoutMs: 1,
-            now: () => 4,
+            now: () => 4
         });
 
         const state = await factory('room-1', 'command');
 
         expect(state.setup).toMatchObject({
             source: 'procedural',
-            seed: 'room-1:command:4',
+            seed: 'room-1:command:4'
         });
     });
 
@@ -156,18 +148,18 @@ describe('Relic expedition AI factory', () => {
             mode: 'off',
             timeoutMs: 15_000,
             ollamaBaseUrl: 'http://127.0.0.1:11434',
-            ollamaModel: 'llama-test',
+            ollamaModel: 'llama-test'
         });
         expect(readRelicAiExpeditionEnv(env({
             RELIC_AI_EXPEDITION_MODE: 'ollama',
             RELIC_AI_EXPEDITION_TIMEOUT_MS: '250',
             RELIC_AI_EXPEDITION_OLLAMA_BASE_URL: 'http://localhost:11434',
-            RELIC_AI_EXPEDITION_OLLAMA_MODEL: 'llama3.2',
+            RELIC_AI_EXPEDITION_OLLAMA_MODEL: 'llama3.2'
         }))).toEqual({
             mode: 'ollama',
             timeoutMs: 250,
             ollamaBaseUrl: 'http://localhost:11434',
-            ollamaModel: 'llama3.2',
+            ollamaModel: 'llama3.2'
         });
     });
 
@@ -178,21 +170,21 @@ describe('Relic expedition AI factory', () => {
             seed: 'room-1:ensure:ci',
             mockBlueprint: createProceduralRelicExpeditionBlueprint({
                 seed: 'room-1:ensure:ci',
-                source: 'mock',
-            }),
+                source: 'mock'
+            })
         });
 
         expect(report).toMatchObject({
             suiteId: 'relic-expedition-ollama-ci',
             providerId: 'relic-expedition-mock',
             passed: 1,
-            failed: 0,
+            failed: 0
         });
         expect(report.results[0]).toEqual(
             expect.objectContaining({
                 caseId: 'expedition-blueprint',
-                validationOk: true,
-            }),
+                validationOk: true
+            })
         );
     });
 
@@ -201,30 +193,30 @@ describe('Relic expedition AI factory', () => {
             gameId: 'room-1',
             reason: 'ensure',
             seed: 'room-1:ensure:live-test',
-            timeoutMs: 250,
+            timeoutMs: 250
         });
         const liveProvider = createStaticBlueprintProvider(
             createProceduralRelicExpeditionBlueprint({
                 seed: 'room-1:ensure:live-test',
-                source: 'mock',
-            }),
+                source: 'mock'
+            })
         );
 
         const skipped = await runRelicExpeditionOllamaLiveEvaluationIfEnabled({
             env: {},
             cases,
-            provider: liveProvider,
+            provider: liveProvider
         });
 
         expect(skipped).toEqual(expect.objectContaining({
             status: 'skipped',
-            gate: RELIC_EXPEDITION_LIVE_OLLAMA_EVALUATION_GATE,
+            gate: RELIC_EXPEDITION_LIVE_OLLAMA_EVALUATION_GATE
         }));
 
         const ran = await runRelicExpeditionOllamaLiveEvaluationIfEnabled({
             env: { [RELIC_EXPEDITION_LIVE_OLLAMA_EVALUATION_GATE]: '1' },
             cases,
-            provider: liveProvider,
+            provider: liveProvider
         });
 
         expect(ran).toEqual(expect.objectContaining({
@@ -233,8 +225,8 @@ describe('Relic expedition AI factory', () => {
                 suiteId: 'relic-expedition-ollama-live',
                 providerId: 'relic-expedition-ollama',
                 passed: 1,
-                failed: 0,
-            }),
+                failed: 0
+            })
         }));
     });
 });
@@ -244,14 +236,14 @@ function fakeRallar(): RallarServerAiRallar {
         ws: {
             defineTopic: vi.fn(),
             on: vi.fn(),
-            publish: vi.fn(),
-        },
+            publish: vi.fn()
+        }
     } as unknown as RallarServerAiRallar;
 }
 
 function env(values: Readonly<Record<string, string | undefined>>) {
     return {
-        get: (name: string) => values[name],
+        get: (name: string) => values[name]
     };
 }
 
@@ -264,10 +256,10 @@ function createAbortAwareProvider(): RallarAiJsonProvider {
             supportsJsonSchema: true,
             supportsStreaming: false,
             supportsCancellation: true,
-            target: 'shared',
+            target: 'shared'
         },
         generateJson<TValue = unknown, TContext = unknown>(
-            request: RallarAiJsonRequest<TContext>,
+            request: RallarAiJsonRequest<TContext>
         ): Promise<RallarAiJsonResult<TValue>> {
             return new Promise((resolve, reject) => {
                 const abort = () => reject(request.signal?.reason ?? new Error('aborted'));
@@ -286,18 +278,18 @@ function createAbortAwareProvider(): RallarAiJsonProvider {
                         promptHash: 'test',
                         createdAtEpochMs: 1,
                         value: createProceduralRelicExpeditionBlueprint({
-                            seed: 'late',
+                            seed: 'late'
                         }) as TValue,
-                        validation: { ok: true, errors: [], issues: [] },
+                        validation: { ok: true, errors: [], issues: [] }
                     });
                 }, 50);
             });
-        },
+        }
     };
 }
 
 function createStaticBlueprintProvider(
-    blueprint: RelicExpeditionBlueprint,
+    blueprint: RelicExpeditionBlueprint
 ): RallarAiJsonProvider {
     return {
         providerId: 'relic-expedition-ollama',
@@ -307,10 +299,10 @@ function createStaticBlueprintProvider(
             supportsJsonSchema: true,
             supportsStreaming: false,
             supportsCancellation: true,
-            target: 'server',
+            target: 'server'
         },
         async generateJson<TValue = unknown, TContext = unknown>(
-            request: RallarAiJsonRequest<TContext>,
+            request: RallarAiJsonRequest<TContext>
         ): Promise<RallarAiJsonResult<TValue>> {
             return {
                 protocolVersion: 1,
@@ -327,8 +319,8 @@ function createStaticBlueprintProvider(
                 baseStateRevision: request.baseStateRevision,
                 createdAtEpochMs: 1,
                 value: blueprint as TValue,
-                validation: { ok: true, errors: [], issues: [] },
+                validation: { ok: true, errors: [], issues: [] }
             };
-        },
+        }
     };
 }

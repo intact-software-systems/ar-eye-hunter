@@ -1,12 +1,12 @@
-import { describe, expect, it } from 'vitest';
 import type { RelicPublicSnapshot, RelicRoom } from '@relic-hunters/mod.ts';
+import { describe, expect, it } from 'vitest';
 import { sceneMoveActionForPickedRoom } from '../src/game/scene/movement.ts';
 
 const rooms: readonly RelicRoom[] = [
     { id: 'entrance', name: 'Entrance', kind: 'entrance', x: 0, z: 0, neighbors: ['hallway', 'storage'] },
     { id: 'hallway', name: 'Hallway', kind: 'hallway', x: 0, z: 1, neighbors: ['entrance'] },
     { id: 'storage', name: 'Storage', kind: 'storage', x: -1, z: 1, neighbors: ['entrance'], collapsed: true },
-    { id: 'shrine', name: 'Shrine', kind: 'shrine', x: 1, z: 1, neighbors: [] },
+    { id: 'shrine', name: 'Shrine', kind: 'shrine', x: 1, z: 1, neighbors: [] }
 ];
 
 describe('scene movement', () => {
@@ -14,10 +14,10 @@ describe('scene movement', () => {
         expect(sceneMoveActionForPickedRoom({
             snapshot: snapshot(),
             localPlayerId: 'alice-session',
-            roomId: 'hallway',
+            roomId: 'hallway'
         })).toEqual({
             kind: 'move',
-            targetRoomId: 'hallway',
+            targetRoomId: 'hallway'
         });
     });
 
@@ -27,17 +27,17 @@ describe('scene movement', () => {
         expect(sceneMoveActionForPickedRoom({
             snapshot: shot,
             localPlayerId: 'alice-session',
-            roomId: 'entrance',
+            roomId: 'entrance'
         })).toBeUndefined();
         expect(sceneMoveActionForPickedRoom({
             snapshot: shot,
             localPlayerId: 'alice-session',
-            roomId: 'storage',
+            roomId: 'storage'
         })).toBeUndefined();
         expect(sceneMoveActionForPickedRoom({
             snapshot: shot,
             localPlayerId: 'alice-session',
-            roomId: 'shrine',
+            roomId: 'shrine'
         })).toBeUndefined();
     });
 
@@ -45,13 +45,13 @@ describe('scene movement', () => {
         expect(sceneMoveActionForPickedRoom({
             snapshot: snapshot({ submittedPlayerIds: ['alice-session'] }),
             localPlayerId: 'alice-session',
-            roomId: 'hallway',
+            roomId: 'hallway'
         })).toBeUndefined();
     });
 });
 
 function snapshot(
-    options: Readonly<{ submittedPlayerIds?: readonly string[] }> = {},
+    options: Readonly<{ submittedPlayerIds?: readonly string[]; }> = {}
 ): RelicPublicSnapshot {
     return {
         protocolVersion: 1,
@@ -75,11 +75,11 @@ function snapshot(
                 escaped: false,
                 defeated: false,
                 score: 0,
-                relicIds: [],
-            },
+                relicIds: []
+            }
         ],
         submittedPlayerIds: options.submittedPlayerIds ?? [],
         events: [],
-        winnerIds: [],
+        winnerIds: []
     };
 }

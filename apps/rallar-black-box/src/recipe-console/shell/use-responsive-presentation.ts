@@ -14,7 +14,7 @@ export type ViewportSubscriptionPort = Readonly<{
 
 export function createViewportSubscriptionStore(port: ViewportSubscriptionPort) {
     const subscribers = new Set<ViewportListener>();
-    const notify = () => subscribers.forEach(subscriber => subscriber());
+    const notify = () => subscribers.forEach((subscriber) => subscriber());
     return {
         snapshot: () => `${port.width()}:${port.height()}`,
         subscribe(subscriber: ViewportListener): () => void {
@@ -30,22 +30,24 @@ export function createViewportSubscriptionStore(port: ViewportSubscriptionPort) 
                     port.removeOrientationListener(notify);
                 }
             };
-        },
+        }
     } as const;
 }
 
 let browserStore: ReturnType<typeof createViewportSubscriptionStore> | undefined;
 
 function getBrowserStore() {
-    if (browserStore) return browserStore;
+    if (browserStore) {
+        return browserStore;
+    }
     const orientation = window.matchMedia('(orientation: landscape)');
     browserStore = createViewportSubscriptionStore({
         width: () => window.innerWidth,
         height: () => window.innerHeight,
-        addResizeListener: listener => window.addEventListener('resize', listener),
-        removeResizeListener: listener => window.removeEventListener('resize', listener),
-        addOrientationListener: listener => orientation.addEventListener('change', listener),
-        removeOrientationListener: listener => orientation.removeEventListener('change', listener),
+        addResizeListener: (listener) => window.addEventListener('resize', listener),
+        removeResizeListener: (listener) => window.removeEventListener('resize', listener),
+        addOrientationListener: (listener) => orientation.addEventListener('change', listener),
+        removeOrientationListener: (listener) => orientation.removeEventListener('change', listener)
     });
     return browserStore;
 }

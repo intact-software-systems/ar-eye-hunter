@@ -1,15 +1,11 @@
-import type {
-    RallarAiJsonProvider,
-    RallarAiJsonRequest,
-    RallarAiJsonResult,
-} from './rallar-ai-types.ts';
-import { RallarAiError } from './rallar-ai-types.ts';
 import { createRallarAiJsonResult } from './rallar-ai-envelope.ts';
+import type { RallarAiJsonProvider, RallarAiJsonRequest, RallarAiJsonResult } from './rallar-ai-types.ts';
+import { RallarAiError } from './rallar-ai-types.ts';
 import { parseRallarAiJson } from './rallar-ai-validation.ts';
 
 export type RallarAiSidecarFetch = (
     input: RequestInfo | URL,
-    init?: RequestInit,
+    init?: RequestInit
 ) => Promise<Response>;
 
 export type CreateRallarAiFakeSidecarProviderOptions = Readonly<{
@@ -20,13 +16,13 @@ export type CreateRallarAiFakeSidecarProviderOptions = Readonly<{
 }>;
 
 export function createRallarAiFakeSidecarProvider(
-    options: CreateRallarAiFakeSidecarProviderOptions,
+    options: CreateRallarAiFakeSidecarProviderOptions
 ): RallarAiJsonProvider {
     const fetchImpl = options.fetch ?? globalThis.fetch?.bind(globalThis);
     if (!fetchImpl) {
         throw new RallarAiError(
             'invalid-configuration',
-            'A fetch implementation is required for the fake sidecar provider.',
+            'A fetch implementation is required for the fake sidecar provider.'
         );
     }
 
@@ -38,31 +34,31 @@ export function createRallarAiFakeSidecarProvider(
             supportsJsonSchema: true,
             supportsStreaming: false,
             supportsCancellation: true,
-            target: 'server',
+            target: 'server'
         },
         async generateJson<TValue = unknown, TContext = unknown>(
-            request: RallarAiJsonRequest<TContext>,
+            request: RallarAiJsonRequest<TContext>
         ): Promise<RallarAiJsonResult<TValue>> {
             const startedAtEpochMs = Date.now();
             const response = await fetchImpl(new URL('/generate-json', options.baseUrl), {
                 method: 'POST',
                 headers: {
-                    'content-type': 'application/json',
+                    'content-type': 'application/json'
                 },
                 body: JSON.stringify({
                     schema: request.schema,
                     schemaId: request.schemaId,
                     schemaVersion: request.schemaVersion,
                     prompt: request.prompt,
-                    context: request.context,
+                    context: request.context
                 }),
-                signal: request.signal,
+                signal: request.signal
             });
 
             if (!response.ok) {
                 throw new RallarAiError(
                     'provider-failed',
-                    `Fake sidecar failed with HTTP ${response.status}.`,
+                    `Fake sidecar failed with HTTP ${response.status}.`
                 );
             }
 
@@ -72,7 +68,7 @@ export function createRallarAiFakeSidecarProvider(
                 throw new RallarAiError(
                     'invalid-json',
                     'Fake sidecar returned invalid JSON.',
-                    parsed.validation,
+                    parsed.validation
                 );
             }
 
@@ -82,8 +78,8 @@ export function createRallarAiFakeSidecarProvider(
                 value: parsed.value as TValue,
                 rawText,
                 startedAtEpochMs,
-                completedAtEpochMs: Date.now(),
+                completedAtEpochMs: Date.now()
             });
-        },
+        }
     };
 }

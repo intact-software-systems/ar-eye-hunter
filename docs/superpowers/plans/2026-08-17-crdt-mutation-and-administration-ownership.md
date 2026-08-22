@@ -165,96 +165,96 @@ These names and shapes are shared between tasks. Do not invent neighboring alias
 
 ```ts
 export interface CrdtMutationAttemptFacts {
-  readonly command: CrdtMutationCommand;
-  readonly read: CrdtMutationRead;
+    readonly command: CrdtMutationCommand;
+    readonly read: CrdtMutationRead;
 }
 
 export interface ValidateCrdtMutationInput {
-  readonly command: CrdtMutationCommand;
-  readonly read: CrdtMutationRead;
-  readonly computed: CrdtMutationComputed;
+    readonly command: CrdtMutationCommand;
+    readonly read: CrdtMutationRead;
+    readonly computed: CrdtMutationComputed;
 }
 
 export interface CrdtMutationValidationIssue {
-  readonly code: string;
-  readonly message: string;
+    readonly code: string;
+    readonly message: string;
 }
 
 export interface CreateAndEnqueueCrdtAppendInput {
-  readonly update: RallarCrdtUpdateEnvelope;
-  readonly deliveryId: string;
-  readonly actor: CrdtMutationActor;
-  readonly responseAudience: CrdtMutationResponseAudience;
-  readonly capturedAtEpochMs: number;
-  readonly expireAtEpochMs: number;
+    readonly update: RallarCrdtUpdateEnvelope;
+    readonly deliveryId: string;
+    readonly actor: CrdtMutationActor;
+    readonly responseAudience: CrdtMutationResponseAudience;
+    readonly capturedAtEpochMs: number;
+    readonly expireAtEpochMs: number;
 }
 
 export interface CurrentCrdtMutationSession {
-  readonly clientId: string;
-  readonly username: string;
-  readonly sessionId: string;
+    readonly clientId: string;
+    readonly username: string;
+    readonly sessionId: string;
 }
 
 export type ReadCurrentCrdtMutationSession = (
-  input: Readonly<{ sessionId: string; atEpochMs: number }>,
+    input: Readonly<{ sessionId: string; atEpochMs: number; }>
 ) => Promise<CurrentCrdtMutationSession>;
 
 export interface CrdtMutationService {
-  read(command: CrdtMutationCommand): Promise<CrdtMutationRead>;
-  compute(facts: CrdtMutationAttemptFacts): CrdtMutationComputed;
-  validate(input: ValidateCrdtMutationInput): readonly CrdtMutationValidationIssue[];
-  write(
-    transaction: PSqlTransactionSql,
-    computed: CrdtMutationComputed,
-  ): Promise<CrdtMutationResult>;
+    read(command: CrdtMutationCommand): Promise<CrdtMutationRead>;
+    compute(facts: CrdtMutationAttemptFacts): CrdtMutationComputed;
+    validate(input: ValidateCrdtMutationInput): readonly CrdtMutationValidationIssue[];
+    write(
+        transaction: PSqlTransactionSql,
+        computed: CrdtMutationComputed
+    ): Promise<CrdtMutationResult>;
 }
 
 export namespace AppCrdtInboxService {
-  export interface Dependencies {
-    readonly inboxQueueReader: InboxQueueReader;
-    readonly outboxQueueReader: OutboxQueueReader;
-    readonly resourceInboxRepository: ResourceInboxRepository;
-    readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
-    readonly database: PSqlSql;
-    readonly mutationService: CrdtMutationService;
-    readonly readCurrentSession: ReadCurrentCrdtMutationSession;
-    readonly wakeQueueEngine: () => void;
-    readonly auditDelivery?: Readonly<{
-      outboxQueueReader: OutboxQueueReader;
-      auditSink: RallarCrdtAuditSink;
-    }>;
-  }
+    export interface Dependencies {
+        readonly inboxQueueReader: InboxQueueReader;
+        readonly outboxQueueReader: OutboxQueueReader;
+        readonly resourceInboxRepository: ResourceInboxRepository;
+        readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
+        readonly database: PSqlSql;
+        readonly mutationService: CrdtMutationService;
+        readonly readCurrentSession: ReadCurrentCrdtMutationSession;
+        readonly wakeQueueEngine: () => void;
+        readonly auditDelivery?: Readonly<{
+            outboxQueueReader: OutboxQueueReader;
+            auditSink: RallarCrdtAuditSink;
+        }>;
+    }
 
-  export interface Config {
-    readonly serviceId: string;
-    readonly timing: RallarTimingSink | undefined;
-    readonly appInbox: AppInboxServiceOptions;
-  }
+    export interface Config {
+        readonly serviceId: string;
+        readonly timing: RallarTimingSink | undefined;
+        readonly appInbox: AppInboxServiceOptions;
+    }
 }
 
 export class AppCrdtInboxService extends AppInboxService {
-  constructor(dependencies: AppCrdtInboxService.Dependencies, config: AppCrdtInboxService.Config);
+    constructor(dependencies: AppCrdtInboxService.Dependencies, config: AppCrdtInboxService.Config);
 
-  createAndEnqueueAppend(input: CreateAndEnqueueCrdtAppendInput): Promise<CrdtAppendCommand>;
-  createAndEnqueueAuthenticatedAppend(
-    input: AuthenticatedCrdtAppendInput,
-  ): Promise<CrdtAppendCommand>;
-  writeCrdtCommandUntilCompletion(
-    command: CrdtMutationCommand,
-  ): Promise<Either<AppInboxFailure, CrdtMutationResult>>;
-  writeCrdtCommandNoWaiting(command: CrdtMutationCommand): void;
+    createAndEnqueueAppend(input: CreateAndEnqueueCrdtAppendInput): Promise<CrdtAppendCommand>;
+    createAndEnqueueAuthenticatedAppend(
+        input: AuthenticatedCrdtAppendInput
+    ): Promise<CrdtAppendCommand>;
+    writeCrdtCommandUntilCompletion(
+        command: CrdtMutationCommand
+    ): Promise<Either<AppInboxFailure, CrdtMutationResult>>;
+    writeCrdtCommandNoWaiting(command: CrdtMutationCommand): void;
 }
 
 export type CrdtAdminMutationOperation = 'rebuild-projection' | 'compact' | 'lifecycle' | 'erase';
 
 export interface CrdtAdminMutationInput {
-  readonly operation: CrdtAdminMutationOperation;
-  readonly adminSession: AuthSession;
-  readonly request: unknown;
+    readonly operation: CrdtAdminMutationOperation;
+    readonly adminSession: AuthSession;
+    readonly request: unknown;
 }
 
 export interface CrdtAdminMutations {
-  writeCrdtAdminMutation(input: CrdtAdminMutationInput): Promise<unknown>;
+    writeCrdtAdminMutation(input: CrdtAdminMutationInput): Promise<unknown>;
 }
 ```
 
@@ -560,23 +560,23 @@ direct:
 
 ```ts
 export function createCrdtMutationService(
-  dependencies: CrdtMutationServiceDependencies,
+    dependencies: CrdtMutationServiceDependencies
 ): CrdtMutationService {
-  return {
-    read: async (command) =>
-      await dependencies.repository.readMutation(decodeCrdtMutationCommand(command)),
-    compute: ({ command, read }) =>
-      computeCrdtMutation({ command, read, serviceId: dependencies.serviceId }),
-    validate: validateCrdtMutation,
-    write: async (transaction, computed) => {
-      const writer = dependencies.createWriter(transaction);
-      if (computed.outcome === 'write') {
-        await writer.writeMutation(computed);
-      }
-      await writer.writeOutbox(computed.outboxEntries);
-      return computed.result;
-    },
-  };
+    return {
+        read: async (command) =>
+            await dependencies.repository.readMutation(decodeCrdtMutationCommand(command)),
+        compute: ({ command, read }) =>
+            computeCrdtMutation({ command, read, serviceId: dependencies.serviceId }),
+        validate: validateCrdtMutation,
+        write: async (transaction, computed) => {
+            const writer = dependencies.createWriter(transaction);
+            if (computed.outcome === 'write') {
+                await writer.writeMutation(computed);
+            }
+            await writer.writeOutbox(computed.outboxEntries);
+            return computed.result;
+        }
+    };
 }
 ```
 
@@ -601,22 +601,22 @@ an operation class, visitor, manager, callback registry, or parallel outcome con
 
 ```ts
 export interface ComputeCrdtMutationInput extends CrdtMutationAttemptFacts {
-  readonly serviceId: string;
+    readonly serviceId: string;
 }
 
 export function computeCrdtMutation(input: ComputeCrdtMutationInput): CrdtMutationComputed {
-  switch (input.command.operation) {
-    case 'append':
-      return computeCrdtAppend(input);
-    case 'rebuild-projection':
-      return computeCrdtProjectionRebuild(input);
-    case 'compact':
-      return computeCrdtSnapshotCompact(input);
-    case 'lifecycle':
-      return computeCrdtLifecycleUpdate(input);
-    case 'erase':
-      return computeCrdtErase(input);
-  }
+    switch (input.command.operation) {
+        case 'append':
+            return computeCrdtAppend(input);
+        case 'rebuild-projection':
+            return computeCrdtProjectionRebuild(input);
+        case 'compact':
+            return computeCrdtSnapshotCompact(input);
+        case 'lifecycle':
+            return computeCrdtLifecycleUpdate(input);
+        case 'erase':
+            return computeCrdtErase(input);
+    }
 }
 ```
 
@@ -692,7 +692,7 @@ import * as sharedServer from '@shared-server/mod.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 
 it('keeps the package CRDT log repository on its canonical owner', () => {
-  expect(sharedServer.PSqlCrdtLogRepository).toBe(PSqlCrdtLogRepository);
+    expect(sharedServer.PSqlCrdtLogRepository).toBe(PSqlCrdtLogRepository);
 });
 ```
 
@@ -748,25 +748,25 @@ Use a type-only namespace immediately before the class:
 
 ```ts
 export namespace PSqlCrdtMutationRepository {
-  export interface Dependencies {
-    readonly sql: PSqlSql;
-    readonly authorize: ReadCrdtMutationAuthority;
-  }
+    export interface Dependencies {
+        readonly sql: PSqlSql;
+        readonly authorize: ReadCrdtMutationAuthority;
+    }
 
-  export interface Config {
-    readonly policies: readonly RallarCrdtDocumentTypePolicy[];
-  }
+    export interface Config {
+        readonly policies: readonly RallarCrdtDocumentTypePolicy[];
+    }
 }
 
 export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
-  constructor(
-    dependencies: PSqlCrdtMutationRepository.Dependencies,
-    config: PSqlCrdtMutationRepository.Config,
-  ) {
-    this.sql = dependencies.sql;
-    this.authorize = dependencies.authorize;
-    this.policies = config.policies;
-  }
+    constructor(
+        dependencies: PSqlCrdtMutationRepository.Dependencies,
+        config: PSqlCrdtMutationRepository.Config
+    ) {
+        this.sql = dependencies.sql;
+        this.authorize = dependencies.authorize;
+        this.policies = config.policies;
+    }
 }
 ```
 
@@ -780,34 +780,33 @@ that production dependency.
 Keep the first write as the current conditional document insert/update. Preserve the order:
 
 ```ts
-const guarded =
-  computed.expectedDocumentRevision === 'absent'
+const guarded = computed.expectedDocumentRevision === 'absent'
     ? await insertDocument({ sql: this.sql, metadata: computed.document })
     : await updateDocument({
         sql: this.sql,
         metadata: computed.document,
         expectedRevision: computed.expectedDocumentRevision,
         expectedLifecycle: computed.expectedDocumentLifecycle,
-        expectedAppendSequence: computed.expectedAppendSequence,
-      });
+        expectedAppendSequence: computed.expectedAppendSequence
+    });
 if (!guarded) {
-  throw new CrdtMutationConflictError(computed.documentKey);
+    throw new CrdtMutationConflictError(computed.documentKey);
 }
 if (computed.update && computed.append) {
-  await insertUpdate({
-    sql: this.sql,
-    documentKey: computed.documentKey,
-    update: computed.update,
-    append: computed.append,
-  });
+    await insertUpdate({
+        sql: this.sql,
+        documentKey: computed.documentKey,
+        update: computed.update,
+        append: computed.append
+    });
 }
 if (computed.snapshot) {
-  await insertSnapshot({
-    sql: this.sql,
-    documentKey: computed.documentKey,
-    snapshot: computed.snapshot,
-    appendSequence: computed.document.lastAppendSequence,
-  });
+    await insertSnapshot({
+        sql: this.sql,
+        documentKey: computed.documentKey,
+        snapshot: computed.snapshot,
+        appendSequence: computed.document.lastAppendSequence
+    });
 }
 ```
 
@@ -1028,14 +1027,14 @@ const read = await this.mutationService.read(command);
 const computed = this.mutationService.compute({ command, read });
 const issues = this.mutationService.validate({ command, read, computed });
 if (issues[0]) {
-  throw new TypeError(issues[0].message);
+    throw new TypeError(issues[0].message);
 }
 const result = await this.writeMutation(
-  appInboxContext,
-  async (transaction) => await this.mutationService.write(transaction, computed),
+    appInboxContext,
+    async (transaction) => await this.mutationService.write(transaction, computed)
 );
 if (result.operation === 'erase' && result.status === 'accepted') {
-  this.wakeQueueEngine();
+    this.wakeQueueEngine();
 }
 return result;
 ```
@@ -1048,19 +1047,21 @@ Do not change when the queue wake occurs.
 
 ```ts
 export interface RegisterCrdtAuditDeliveryInput {
-  readonly outboxQueueReader: OutboxQueueReader;
-  readonly auditSink: RallarCrdtAuditSink;
+    readonly outboxQueueReader: OutboxQueueReader;
+    readonly auditSink: RallarCrdtAuditSink;
 }
 
 export function registerCrdtAuditDelivery(input: RegisterCrdtAuditDeliveryInput): void {
-  input.outboxQueueReader.onOutboxMessageDo(CRDT_AUDIT_APP_OUTBOX_TYPE, {
-    onMessage: async (message) => {
-      if (message.payload.contentType !== 'application/json') {
-        throw new TypeError('CRDT audit outbox content type is invalid');
-      }
-      await input.auditSink.record(decodeCrdtAuditEvent(JSON.parse(message.payload.resource)));
-    },
-  });
+    input.outboxQueueReader.onOutboxMessageDo(CRDT_AUDIT_APP_OUTBOX_TYPE, {
+        onMessage: async (message) => {
+            if (message.payload.contentType !== 'application/json') {
+                throw new TypeError('CRDT audit outbox content type is invalid');
+            }
+            await input.auditSink.record(
+                decodeCrdtAuditEvent(JSON.parse(message.payload.resource))
+            );
+        }
+    });
 }
 ```
 
@@ -1078,9 +1079,9 @@ mapping into it. Both `crdt-admin-routes.ts` and `create-api-admin-mutation-gate
 
 ```ts
 await crdtAdminMutations.writeCrdtAdminMutation({
-  operation: 'compact',
-  adminSession,
-  request,
+    operation: 'compact',
+    adminSession,
+    request
 });
 ```
 
@@ -1325,33 +1326,33 @@ It contains no duplicate policy, quota, hash, lifecycle, audit, or projection de
 
 ```ts
 export class InMemoryRallarCrdtLogRepository<
-  TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
-  TValue = unknown,
+    TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
+    TValue = unknown,
 > implements RallarCrdtAdminLogRepository<TPayload, TValue> {
-  private readonly documents: InMemoryCrdtDocumentStore<TPayload, TValue>;
-  private readonly append: InMemoryCrdtAppend<TPayload, TValue>;
-  private readonly administration: InMemoryCrdtAdministration<TPayload, TValue>;
+    private readonly documents: InMemoryCrdtDocumentStore<TPayload, TValue>;
+    private readonly append: InMemoryCrdtAppend<TPayload, TValue>;
+    private readonly administration: InMemoryCrdtAdministration<TPayload, TValue>;
 
-  constructor(options: InMemoryRallarCrdtLogRepositoryOptions<TPayload> = {}) {
-    this.documents = createInMemoryCrdtDocumentStore();
-    const config = {
-      now: options.now ?? Date.now,
-      serverId: options.serverId,
-      validation: options.validation,
-      hooks: options.hooks,
-      policies: options.policies ?? [],
-      metrics: options.metrics,
-      audit: options.audit,
-    };
-    this.append = createInMemoryCrdtAppend({
-      documents: this.documents,
-      config,
-    });
-    this.administration = createInMemoryCrdtAdministration({
-      documents: this.documents,
-      config,
-    });
-  }
+    constructor(options: InMemoryRallarCrdtLogRepositoryOptions<TPayload> = {}) {
+        this.documents = createInMemoryCrdtDocumentStore();
+        const config = {
+            now: options.now ?? Date.now,
+            serverId: options.serverId,
+            validation: options.validation,
+            hooks: options.hooks,
+            policies: options.policies ?? [],
+            metrics: options.metrics,
+            audit: options.audit
+        };
+        this.append = createInMemoryCrdtAppend({
+            documents: this.documents,
+            config
+        });
+        this.administration = createInMemoryCrdtAdministration({
+            documents: this.documents,
+            config
+        });
+    }
 }
 ```
 
@@ -1364,10 +1365,10 @@ repeated below it.
 Replace the old root exports with direct canonical exports:
 
 ```ts
-export * from './rallar-system/crdt/realtime/rallar-crdt-server-contracts.ts';
-export * from './rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
-export * from './rallar-system/crdt/realtime/validate-rallar-crdt-server-live-envelope.ts';
 export * from './rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
+export * from './rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
+export * from './rallar-system/crdt/realtime/rallar-crdt-server-contracts.ts';
+export * from './rallar-system/crdt/realtime/validate-rallar-crdt-server-live-envelope.ts';
 ```
 
 Extend `crdt-public-compatibility.test.ts` to assert runtime identity for the in-memory class and
@@ -1659,10 +1660,10 @@ Convert `authorizeCurrentClientDocument` to one named input interface:
 
 ```ts
 interface AuthorizeCurrentClientDocumentInput {
-  readonly applicationId: string;
-  readonly workspaceId: string | undefined;
-  readonly principalId: string;
-  readonly sessionId: string;
+    readonly applicationId: string;
+    readonly workspaceId: string | undefined;
+    readonly principalId: string;
+    readonly sessionId: string;
 }
 ```
 

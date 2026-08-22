@@ -1,5 +1,5 @@
+import { NEVER_EXPIRE_AT_TIMESTAMP, type PersistenceProvider } from '../persistence/PersistenceProvider.ts';
 import { ALMessage, ALRoute, newALUnicastMessage } from './al-contract.ts';
-import { NEVER_EXPIRE_AT_TIMESTAMP, type PersistenceProvider, } from '../persistence/PersistenceProvider.ts';
 import type { ALOrderingObservation, ALReadyable } from './al-runtime.ts';
 
 export const AL_CONTROL_ACK_TYPE_ID = 'al.control.ack.v1';
@@ -53,17 +53,17 @@ export type ALControlPayload = ALAckPayload | ALNackPayload | ALRepairPayload;
 
 export type ALParsedControlMessage =
     | Readonly<{
-    type: 'ack';
-    payload: ALAckPayload;
-}>
+        type: 'ack';
+        payload: ALAckPayload;
+    }>
     | Readonly<{
-    type: 'nack';
-    payload: ALNackPayload;
-}>
+        type: 'nack';
+        payload: ALNackPayload;
+    }>
     | Readonly<{
-    type: 'repair';
-    payload: ALRepairPayload;
-}>;
+        type: 'repair';
+        payload: ALRepairPayload;
+    }>;
 
 export type ALControlEvent = Readonly<{
     acks: readonly ALAckPayload[];
@@ -103,7 +103,7 @@ export interface ALControlTracker extends ALControlTrackerLike, ALReadyable {
         toPeerId: string,
         status: ALAckStatus,
         expectedFromPeerIds?: readonly string[],
-        localReady?: boolean,
+        localReady?: boolean
     ): Promise<ALCompletedPendingAck | undefined>;
 
     markPendingAckLocalReady(msgId: string): Promise<ALCompletedPendingAck | undefined>;
@@ -112,29 +112,29 @@ export interface ALControlTracker extends ALControlTrackerLike, ALReadyable {
 }
 
 export function isALControlTypeId(typeId: string): boolean {
-    return typeId === AL_CONTROL_ACK_TYPE_ID
-        || typeId === AL_CONTROL_NACK_TYPE_ID
-        || typeId === AL_CONTROL_REPAIR_TYPE_ID;
+    return typeId === AL_CONTROL_ACK_TYPE_ID ||
+        typeId === AL_CONTROL_NACK_TYPE_ID ||
+        typeId === AL_CONTROL_REPAIR_TYPE_ID;
 }
 
 export function parseALControlMessage(
-    msg: ALMessage,
+    msg: ALMessage
 ): ALParsedControlMessage | undefined {
     switch (msg.payload.typeId) {
         case AL_CONTROL_ACK_TYPE_ID:
             return {
                 type: 'ack',
-                payload: JSON.parse(msg.payload.resource) as ALAckPayload,
+                payload: JSON.parse(msg.payload.resource) as ALAckPayload
             };
         case AL_CONTROL_NACK_TYPE_ID:
             return {
                 type: 'nack',
-                payload: JSON.parse(msg.payload.resource) as ALNackPayload,
+                payload: JSON.parse(msg.payload.resource) as ALNackPayload
             };
         case AL_CONTROL_REPAIR_TYPE_ID:
             return {
                 type: 'repair',
-                payload: JSON.parse(msg.payload.resource) as ALRepairPayload,
+                payload: JSON.parse(msg.payload.resource) as ALRepairPayload
             };
         default:
             return undefined;
@@ -145,14 +145,14 @@ export function newALAckControlMessage(
     senderId: string,
     toPeerId: string,
     ackedMsgId: string,
-    status: ALAckStatus = 'accepted',
+    status: ALAckStatus = 'accepted'
 ): ALMessage {
     const payload: ALAckPayload = {
         ackedMsgId,
         fromPeerId: senderId,
         toPeerId,
         status,
-        observedAtEpochMs: Date.now(),
+        observedAtEpochMs: Date.now()
     };
 
     return newALUnicastMessage(
@@ -164,19 +164,19 @@ export function newALAckControlMessage(
         {
             qos: {
                 delivery: {
-                    algo: 'best-effort',
+                    algo: 'best-effort'
                 },
                 durability: {
-                    algo: 'volatile',
+                    algo: 'volatile'
                 },
                 ack: {
                     algo: 'none',
                     opts: {
-                        timeoutMs: 250,
-                    },
-                },
-            },
-        },
+                        timeoutMs: 250
+                    }
+                }
+            }
+        }
     );
 }
 
@@ -188,7 +188,7 @@ export function newALNackControlMessage(
     ordering?: ALOrderingObservation,
     options: Readonly<{
         serverSnapshotVersion?: number;
-    }> = {},
+    }> = {}
 ): ALMessage {
     const payload: ALNackPayload = {
         msgId,
@@ -199,7 +199,7 @@ export function newALNackControlMessage(
         orderingKey: ordering?.trackKey,
         expectedSeq: ordering?.expectedSeq,
         missingSeqs: ordering?.missingSeqs,
-        serverSnapshotVersion: options.serverSnapshotVersion,
+        serverSnapshotVersion: options.serverSnapshotVersion
     };
 
     return newALUnicastMessage(
@@ -211,25 +211,25 @@ export function newALNackControlMessage(
         {
             qos: {
                 delivery: {
-                    algo: 'at-least-once',
+                    algo: 'at-least-once'
                 },
                 durability: {
-                    algo: 'local-outbox',
+                    algo: 'local-outbox'
                 },
                 retry: {
                     algo: 'exp-backoff',
                     opts: {
-                        maxAttempts: 3,
-                    },
+                        maxAttempts: 3
+                    }
                 },
                 ack: {
                     algo: 'none',
                     opts: {
-                        timeoutMs: 250,
-                    },
-                },
-            },
-        },
+                        timeoutMs: 250
+                    }
+                }
+            }
+        }
     );
 }
 
@@ -238,7 +238,7 @@ export function newALRepairControlMessage(
     toPeerId: string,
     msgId: string,
     reason: ALRepairReason,
-    ordering?: ALOrderingObservation,
+    ordering?: ALOrderingObservation
 ): ALMessage {
     const payload: ALRepairPayload = {
         msgId,
@@ -248,7 +248,7 @@ export function newALRepairControlMessage(
         observedAtEpochMs: Date.now(),
         orderingKey: ordering?.trackKey,
         expectedSeq: ordering?.expectedSeq,
-        missingSeqs: ordering?.missingSeqs,
+        missingSeqs: ordering?.missingSeqs
     };
 
     return newALUnicastMessage(
@@ -260,25 +260,25 @@ export function newALRepairControlMessage(
         {
             qos: {
                 delivery: {
-                    algo: 'at-least-once',
+                    algo: 'at-least-once'
                 },
                 durability: {
-                    algo: 'local-outbox',
+                    algo: 'local-outbox'
                 },
                 retry: {
                     algo: 'exp-backoff',
                     opts: {
-                        maxAttempts: 3,
-                    },
+                        maxAttempts: 3
+                    }
                 },
                 ack: {
                     algo: 'none',
                     opts: {
-                        timeoutMs: 250,
-                    },
-                },
-            },
-        },
+                        timeoutMs: 250
+                    }
+                }
+            }
+        }
     );
 }
 
@@ -303,21 +303,21 @@ export type ALPendingAckSnapshot = PersistedALPendingAckState;
 
 type PersistedALControlValue =
     | Readonly<{
-    kind: 'acks';
-    values: readonly ALAckPayload[];
-}>
+        kind: 'acks';
+        values: readonly ALAckPayload[];
+    }>
     | Readonly<{
-    kind: 'nacks';
-    values: readonly ALNackPayload[];
-}>
+        kind: 'nacks';
+        values: readonly ALNackPayload[];
+    }>
     | Readonly<{
-    kind: 'repairs';
-    values: readonly ALRepairPayload[];
-}>
+        kind: 'repairs';
+        values: readonly ALRepairPayload[];
+    }>
     | Readonly<{
-    kind: 'pending';
-    value: PersistedALPendingAckState;
-}>;
+        kind: 'pending';
+        value: PersistedALPendingAckState;
+    }>;
 
 export type ALControlPersistenceValue = PersistedALControlValue;
 
@@ -338,18 +338,18 @@ export class InMemoryALControlTracker implements ALControlTracker {
                 this.recordNack(JSON.parse(msg.payload.resource) as ALNackPayload);
                 return {
                     handled: true,
-                    completedPendingAcks: [],
+                    completedPendingAcks: []
                 };
             case AL_CONTROL_REPAIR_TYPE_ID:
                 this.recordRepair(JSON.parse(msg.payload.resource) as ALRepairPayload);
                 return {
                     handled: true,
-                    completedPendingAcks: [],
+                    completedPendingAcks: []
                 };
             default:
                 return {
                     handled: false,
-                    completedPendingAcks: [],
+                    completedPendingAcks: []
                 };
         }
     }
@@ -358,7 +358,7 @@ export class InMemoryALControlTracker implements ALControlTracker {
         return {
             acks: this.acksByMsgId.get(msgId) ?? [],
             nacks: this.nacksByMsgId.get(msgId) ?? [],
-            repairs: this.repairsByMsgId.get(msgId) ?? [],
+            repairs: this.repairsByMsgId.get(msgId) ?? []
         };
     }
 
@@ -367,7 +367,7 @@ export class InMemoryALControlTracker implements ALControlTracker {
         toPeerId: string,
         status: ALAckStatus,
         expectedFromPeerIds: readonly string[] = [],
-        localReady: boolean = false,
+        localReady: boolean = false
     ): Promise<ALCompletedPendingAck | undefined> {
         const current = this.pendingAckByMsgId.get(msgId);
         const next = current
@@ -375,14 +375,14 @@ export class InMemoryALControlTracker implements ALControlTracker {
                 ...current,
                 toPeerId,
                 status,
-                localReady: current.localReady || localReady,
+                localReady: current.localReady || localReady
             }
             : {
                 toPeerId,
                 status,
                 localReady,
                 expectedFromPeerIds: new Set<string>(expectedFromPeerIds),
-                ackedFromPeerIds: new Set<string>(),
+                ackedFromPeerIds: new Set<string>()
             };
 
         for (const peerId of expectedFromPeerIds) {
@@ -410,7 +410,7 @@ export class InMemoryALControlTracker implements ALControlTracker {
             status: pending.status,
             localReady: pending.localReady,
             expectedFromPeerIds: [...pending.expectedFromPeerIds],
-            ackedFromPeerIds: [...pending.ackedFromPeerIds],
+            ackedFromPeerIds: [...pending.ackedFromPeerIds]
         };
     }
 
@@ -435,13 +435,13 @@ export class InMemoryALControlTracker implements ALControlTracker {
         if (!pending) {
             return {
                 handled: true,
-                completedPendingAcks: [],
+                completedPendingAcks: []
             };
         }
 
         if (
-            pending.expectedFromPeerIds.size === 0
-            || pending.expectedFromPeerIds.has(payload.fromPeerId)
+            pending.expectedFromPeerIds.size === 0 ||
+            pending.expectedFromPeerIds.has(payload.fromPeerId)
         ) {
             pending.ackedFromPeerIds.add(payload.fromPeerId);
         }
@@ -449,7 +449,7 @@ export class InMemoryALControlTracker implements ALControlTracker {
         const completed = this.tryCompletePendingAck(payload.ackedMsgId);
         return {
             handled: true,
-            completedPendingAcks: completed ? [completed] : [],
+            completedPendingAcks: completed ? [completed] : []
         };
     }
 
@@ -459,8 +459,8 @@ export class InMemoryALControlTracker implements ALControlTracker {
             return undefined;
         }
 
-        const isComplete = pending.expectedFromPeerIds.size === 0
-            || [...pending.expectedFromPeerIds].every(peerId => pending.ackedFromPeerIds.has(peerId));
+        const isComplete = pending.expectedFromPeerIds.size === 0 ||
+            [...pending.expectedFromPeerIds].every((peerId) => pending.ackedFromPeerIds.has(peerId));
 
         if (!isComplete) {
             return undefined;
@@ -470,7 +470,7 @@ export class InMemoryALControlTracker implements ALControlTracker {
         return {
             msgId,
             toPeerId: pending.toPeerId,
-            status: pending.status,
+            status: pending.status
         };
     }
 
@@ -485,7 +485,7 @@ export class InMemoryALControlTracker implements ALControlTracker {
     private push<T>(
         target: Map<string, T[]>,
         key: string,
-        payload: T,
+        payload: T
     ): void {
         const values = target.get(key) ?? [];
         values.push(payload);
@@ -504,7 +504,7 @@ export class PersistentALControlTracker implements ALControlTracker {
     private readonly persistence: PersistenceProvider<string, PersistedALControlValue>;
 
     constructor(
-        persistence: PersistenceProvider<string, PersistedALControlValue>,
+        persistence: PersistenceProvider<string, PersistedALControlValue>
     ) {
         this.persistence = persistence;
         this.readyPromise = this.hydrate();
@@ -524,18 +524,18 @@ export class PersistentALControlTracker implements ALControlTracker {
                 await this.recordNack(JSON.parse(msg.payload.resource) as ALNackPayload);
                 return {
                     handled: true,
-                    completedPendingAcks: [],
+                    completedPendingAcks: []
                 };
             case AL_CONTROL_REPAIR_TYPE_ID:
                 await this.recordRepair(JSON.parse(msg.payload.resource) as ALRepairPayload);
                 return {
                     handled: true,
-                    completedPendingAcks: [],
+                    completedPendingAcks: []
                 };
             default:
                 return {
                     handled: false,
-                    completedPendingAcks: [],
+                    completedPendingAcks: []
                 };
         }
     }
@@ -546,7 +546,7 @@ export class PersistentALControlTracker implements ALControlTracker {
         return {
             acks: this.acksByMsgId.get(msgId) ?? [],
             nacks: this.nacksByMsgId.get(msgId) ?? [],
-            repairs: this.repairsByMsgId.get(msgId) ?? [],
+            repairs: this.repairsByMsgId.get(msgId) ?? []
         };
     }
 
@@ -555,7 +555,7 @@ export class PersistentALControlTracker implements ALControlTracker {
         toPeerId: string,
         status: ALAckStatus,
         expectedFromPeerIds: readonly string[] = [],
-        localReady: boolean = false,
+        localReady: boolean = false
     ): Promise<ALCompletedPendingAck | undefined> {
         await this.ready();
 
@@ -565,14 +565,14 @@ export class PersistentALControlTracker implements ALControlTracker {
                 ...current,
                 toPeerId,
                 status,
-                localReady: current.localReady || localReady,
+                localReady: current.localReady || localReady
             }
             : {
                 toPeerId,
                 status,
                 localReady,
                 expectedFromPeerIds: new Set<string>(expectedFromPeerIds),
-                ackedFromPeerIds: new Set<string>(),
+                ackedFromPeerIds: new Set<string>()
             };
 
         for (const peerId of expectedFromPeerIds) {
@@ -608,7 +608,7 @@ export class PersistentALControlTracker implements ALControlTracker {
             status: pending.status,
             localReady: pending.localReady,
             expectedFromPeerIds: [...pending.expectedFromPeerIds],
-            ackedFromPeerIds: [...pending.ackedFromPeerIds],
+            ackedFromPeerIds: [...pending.ackedFromPeerIds]
         };
     }
 
@@ -663,7 +663,7 @@ export class PersistentALControlTracker implements ALControlTracker {
             if (key.startsWith('pending:') && stored.kind === 'pending') {
                 this.pendingAckByMsgId.set(
                     key.slice('pending:'.length),
-                    deserializePendingAckState(stored.value),
+                    deserializePendingAckState(stored.value)
                 );
             }
         }
@@ -683,24 +683,24 @@ export class PersistentALControlTracker implements ALControlTracker {
             this.toAcksKey(payload.ackedMsgId),
             {
                 kind: 'acks',
-                values: this.acksByMsgId.get(payload.ackedMsgId) ?? [],
+                values: this.acksByMsgId.get(payload.ackedMsgId) ?? []
             },
             {
-                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
-            },
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
 
         const pending = this.pendingAckByMsgId.get(payload.ackedMsgId);
         if (!pending) {
             return {
                 handled: true,
-                completedPendingAcks: [],
+                completedPendingAcks: []
             };
         }
 
         if (
-            pending.expectedFromPeerIds.size === 0
-            || pending.expectedFromPeerIds.has(payload.fromPeerId)
+            pending.expectedFromPeerIds.size === 0 ||
+            pending.expectedFromPeerIds.has(payload.fromPeerId)
         ) {
             pending.ackedFromPeerIds.add(payload.fromPeerId);
         }
@@ -712,7 +712,7 @@ export class PersistentALControlTracker implements ALControlTracker {
 
         return {
             handled: true,
-            completedPendingAcks: completed ? [completed] : [],
+            completedPendingAcks: completed ? [completed] : []
         };
     }
 
@@ -722,8 +722,8 @@ export class PersistentALControlTracker implements ALControlTracker {
             return undefined;
         }
 
-        const isComplete = pending.expectedFromPeerIds.size === 0
-            || [...pending.expectedFromPeerIds].every(peerId => pending.ackedFromPeerIds.has(peerId));
+        const isComplete = pending.expectedFromPeerIds.size === 0 ||
+            [...pending.expectedFromPeerIds].every((peerId) => pending.ackedFromPeerIds.has(peerId));
 
         if (!isComplete) {
             return undefined;
@@ -735,7 +735,7 @@ export class PersistentALControlTracker implements ALControlTracker {
         return {
             msgId,
             toPeerId: pending.toPeerId,
-            status: pending.status,
+            status: pending.status
         };
     }
 
@@ -745,11 +745,11 @@ export class PersistentALControlTracker implements ALControlTracker {
             this.toNacksKey(payload.msgId),
             {
                 kind: 'nacks',
-                values: this.nacksByMsgId.get(payload.msgId) ?? [],
+                values: this.nacksByMsgId.get(payload.msgId) ?? []
             },
             {
-                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
-            },
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
     }
 
@@ -759,34 +759,34 @@ export class PersistentALControlTracker implements ALControlTracker {
             this.toRepairsKey(payload.msgId),
             {
                 kind: 'repairs',
-                values: this.repairsByMsgId.get(payload.msgId) ?? [],
+                values: this.repairsByMsgId.get(payload.msgId) ?? []
             },
             {
-                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
-            },
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
     }
 
     private async persistPendingAck(
         msgId: string,
-        pending: ALPendingAckState,
+        pending: ALPendingAckState
     ): Promise<void> {
         await this.persistence.setItem(
             this.toPendingKey(msgId),
             {
                 kind: 'pending',
-                value: serializePendingAckState(pending),
+                value: serializePendingAckState(pending)
             },
             {
-                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
-            },
+                expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+            }
         );
     }
 
     private push<T>(
         target: Map<string, T[]>,
         key: string,
-        payload: T,
+        payload: T
     ): void {
         const values = target.get(key) ?? [];
         values.push(payload);
@@ -811,26 +811,26 @@ export class PersistentALControlTracker implements ALControlTracker {
 }
 
 function serializePendingAckState(
-    pending: ALPendingAckState,
+    pending: ALPendingAckState
 ): PersistedALPendingAckState {
     return {
         toPeerId: pending.toPeerId,
         status: pending.status,
         localReady: pending.localReady,
         expectedFromPeerIds: [...pending.expectedFromPeerIds],
-        ackedFromPeerIds: [...pending.ackedFromPeerIds],
+        ackedFromPeerIds: [...pending.ackedFromPeerIds]
     };
 }
 
 function deserializePendingAckState(
-    pending: PersistedALPendingAckState,
+    pending: PersistedALPendingAckState
 ): ALPendingAckState {
     return {
         toPeerId: pending.toPeerId,
         status: pending.status,
         localReady: pending.localReady,
         expectedFromPeerIds: new Set<string>(pending.expectedFromPeerIds),
-        ackedFromPeerIds: new Set<string>(pending.ackedFromPeerIds),
+        ackedFromPeerIds: new Set<string>(pending.ackedFromPeerIds)
     };
 }
 
@@ -838,11 +838,11 @@ function toControlRoute(
     senderId: string,
     toPeerId: string,
     msgId: string,
-    controlTypeId: string,
+    controlTypeId: string
 ): ALRoute {
     return {
         topicId: 'al-control',
         resourceId: `${msgId}:${controlTypeId}`,
-        contextId: `${senderId}:${toPeerId}`,
+        contextId: `${senderId}:${toPeerId}`
     };
 }

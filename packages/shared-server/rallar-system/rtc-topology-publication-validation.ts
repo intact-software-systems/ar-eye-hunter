@@ -1,23 +1,17 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
-import type {
-    GroupRef,
-    GroupStateCausalRevision,
-} from '@shared/api/group-types.ts';
+import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import {
-    toRtcTopologyPublicationId,
-    toRtcTopologyPublicationMessageId,
-} from './rtc-topology-identifiers.ts';
+import { toRtcTopologyPublicationId, toRtcTopologyPublicationMessageId } from './rtc-topology-identifiers.ts';
 import type { RtcTopologyPublication } from './rtc-topology-publication-contract.ts';
-import { validateTopologySnapshot } from './rtc-topology-snapshot-contract.ts';
 import { rtcTopologySemanticEqual } from './rtc-topology-semantic-equality.ts';
+import { validateTopologySnapshot } from './rtc-topology-snapshot-contract.ts';
 import { validatePersistedALMessage } from './services/al-message-persistence-validation.ts';
 
 /** Strict synchronous validation for an authoritative persisted publication. */
 export function validateRtcTopologyPublication(
     value: unknown,
-    expectedRef: GroupRef,
+    expectedRef: GroupRef
 ): asserts value is RtcTopologyPublication {
     const publication = record(value, 'RTC topology publication');
     exactKeys(publication, [
@@ -29,7 +23,7 @@ export function validateRtcTopologyPublication(
         'targetGroupSnapshotVersion',
         'recipientSessionIds',
         'message',
-        'createdAtEpochMs',
+        'createdAtEpochMs'
     ]);
     validateExactGroupRef(publication.groupRef, expectedRef);
     nonEmptyString(publication.publicationId, 'publication id');
@@ -44,18 +38,15 @@ export function validateRtcTopologyPublication(
     if (
         publication.publicationId !== toRtcTopologyPublicationId({
             workId: publication.workId,
-            sourceGroupStateCausalRevision:
-                publication.sourceGroupStateCausalRevision,
-            overlayVersion,
+            sourceGroupStateCausalRevision: publication.sourceGroupStateCausalRevision,
+            overlayVersion
         })
     ) {
         throw new TypeError('RTC topology publication id is not deterministic');
     }
     if (
         !Array.isArray(publication.recipientSessionIds) ||
-        publication.recipientSessionIds.some((sessionId) =>
-            typeof sessionId !== 'string' || sessionId.length === 0
-        )
+        publication.recipientSessionIds.some((sessionId) => typeof sessionId !== 'string' || sessionId.length === 0)
     ) {
         throw new TypeError('RTC topology publication recipients are invalid');
     }
@@ -64,7 +55,8 @@ export function validateRtcTopologyPublication(
     let snapshot: unknown;
     try {
         snapshot = JSON.parse(message.payload.resource);
-    } catch {
+    }
+    catch {
         throw new TypeError('RTC topology publication message snapshot is invalid');
     }
     validateTopologySnapshot(snapshot, expectedRef);
@@ -73,7 +65,7 @@ export function validateRtcTopologyPublication(
         expectedRef,
         snapshot,
         targetGroupSnapshotVersion,
-        createdAtEpochMs,
+        createdAtEpochMs
     );
     if (
         message.id.msgId !==
@@ -84,16 +76,16 @@ export function validateRtcTopologyPublication(
     if (
         !rtcTopologySemanticEqual(
             snapshot.sourceGroupStateCausalRevision,
-            publication.sourceGroupStateCausalRevision,
+            publication.sourceGroupStateCausalRevision
         ) ||
         snapshot.version !== publication.overlayVersion ||
         !rtcTopologySemanticEqual(
             snapshot.activeSessionIds,
-            publication.recipientSessionIds,
+            publication.recipientSessionIds
         )
     ) {
         throw new TypeError(
-            'RTC topology publication winner is internally inconsistent',
+            'RTC topology publication winner is internally inconsistent'
         );
     }
 }
@@ -103,22 +95,21 @@ function validateEnvelope(
     expectedRef: GroupRef,
     snapshot: RallarOverlayTopologySnapshot,
     targetGroupSnapshotVersion: number,
-    createdAtEpochMs: number,
+    createdAtEpochMs: number
 ): void {
     if (!message.targets || !message.delivery || !message.audit) {
         throw new TypeError(
-            'RTC topology publication is missing mandatory envelope sections',
+            'RTC topology publication is missing mandatory envelope sections'
         );
     }
-    const expectedResourceId =
-        `${snapshot.overlayId}:${snapshot.sourceGroupStateCausalRevision.groupRevision}:` +
+    const expectedResourceId = `${snapshot.overlayId}:${snapshot.sourceGroupStateCausalRevision.groupRevision}:` +
         `${snapshot.sourceGroupStateCausalRevision.presenceRevision}:${snapshot.version}`;
     if (
         message.targets.mode !== 'broadcast' ||
         message.targets.minSnapshotVersion !== targetGroupSnapshotVersion
     ) {
         throw new TypeError(
-            'RTC topology publication target snapshot version is invalid',
+            'RTC topology publication target snapshot version is invalid'
         );
     }
     if (
@@ -139,7 +130,7 @@ function validateEnvelope(
         message.id.ts !== createdAtEpochMs
     ) {
         throw new TypeError(
-            'RTC topology publication envelope identity or timestamp is invalid',
+            'RTC topology publication envelope identity or timestamp is invalid'
         );
     }
 }
@@ -150,7 +141,7 @@ function validateExactGroupRef(value: unknown, expected: GroupRef): void {
         ref,
         expected.workspaceId === undefined
             ? ['applicationId', 'groupId']
-            : ['applicationId', 'workspaceId', 'groupId'],
+            : ['applicationId', 'workspaceId', 'groupId']
     );
     if (!sameGroupRef(ref as GroupRef, expected)) {
         throw new TypeError('RTC topology publication group ref differs');
@@ -172,7 +163,7 @@ function record(value: unknown, label: string): Record<string, unknown> {
 
 function exactKeys(
     value: Record<string, unknown>,
-    expected: readonly string[],
+    expected: readonly string[]
 ): void {
     const keys = Object.keys(value).sort();
     const canonical = [...expected].sort();
@@ -190,7 +181,7 @@ function nonEmptyString(value: unknown, label: string): asserts value is string 
 function safeInteger(
     value: unknown,
     minimum: number,
-    label: string,
+    label: string
 ): asserts value is number {
     if (!Number.isSafeInteger(value) || (value as number) < minimum) {
         throw new TypeError(`RTC topology ${label} is invalid`);
@@ -198,7 +189,7 @@ function safeInteger(
 }
 
 function causalRevision(
-    value: unknown,
+    value: unknown
 ): asserts value is GroupStateCausalRevision {
     const revision = record(value, 'RTC topology source causal revision');
     exactKeys(revision, ['groupRevision', 'presenceRevision']);

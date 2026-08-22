@@ -25,16 +25,18 @@ export class InMemoryPersistenceProvider<K, V> implements PersistenceProvider<K,
     private readonly data: Map<K, InMemoryStoredValue<V>>;
 
     constructor(
-        entries: Iterable<readonly [K, V]> = [],
+        entries: Iterable<readonly [K, V]> = []
     ) {
         this.data = new Map(
-            [...entries].map(([key, value]) => [
-                key,
-                {
-                    value,
-                    expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP,
-                },
-            ] satisfies readonly [K, InMemoryStoredValue<V>]),
+            [...entries].map(([key, value]) =>
+                [
+                    key,
+                    {
+                        value,
+                        expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
+                    }
+                ] satisfies readonly [K, InMemoryStoredValue<V>]
+            )
         );
     }
 
@@ -55,7 +57,7 @@ export class InMemoryPersistenceProvider<K, V> implements PersistenceProvider<K,
     async setItem(key: K, value: V, options: PersistenceSetItemOptions): Promise<void> {
         this.data.set(key, {
             value,
-            expireAtTimestamp: toExpireAtTimestamp(options.expireAtTimestamp),
+            expireAtTimestamp: toExpireAtTimestamp(options.expireAtTimestamp)
         });
     }
 

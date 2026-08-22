@@ -1,50 +1,47 @@
-import type {
-  RallarCrdtAppendRejectionCode,
-  RallarCrdtRetryableAppendRejectionCode,
-} from '@shared/crdt/mod.ts';
+import type { RallarCrdtAppendRejectionCode, RallarCrdtRetryableAppendRejectionCode } from '@shared/crdt/mod.ts';
 
 export function toAppendRejectionCode(code: string): RallarCrdtAppendRejectionCode {
-  const supported: readonly RallarCrdtAppendRejectionCode[] = [
-    'authorization-denied',
-    'document-archived',
-    'document-destroyed',
-    'document-quarantined',
-    'duplicate-hash-mismatch',
-    'feature-disabled',
-    'invalid-update',
-    'quota-exceeded',
-    'rate-limited',
-    'schema-version-not-allowed',
-    'update-too-large',
-    'storage-failed',
-  ];
-  if (code.startsWith('authentication-') || code.startsWith('authorization-')) {
-    return 'authorization-denied';
-  }
-  return supported.includes(code as RallarCrdtAppendRejectionCode)
-    ? (code as RallarCrdtAppendRejectionCode)
-    : 'storage-failed';
+    const supported: readonly RallarCrdtAppendRejectionCode[] = [
+        'authorization-denied',
+        'document-archived',
+        'document-destroyed',
+        'document-quarantined',
+        'duplicate-hash-mismatch',
+        'feature-disabled',
+        'invalid-update',
+        'quota-exceeded',
+        'rate-limited',
+        'schema-version-not-allowed',
+        'update-too-large',
+        'storage-failed'
+    ];
+    if (code.startsWith('authentication-') || code.startsWith('authorization-')) {
+        return 'authorization-denied';
+    }
+    return supported.includes(code as RallarCrdtAppendRejectionCode)
+        ? (code as RallarCrdtAppendRejectionCode)
+        : 'storage-failed';
 }
 
 export function isAppendRejectionRetryable(
-  code: RallarCrdtAppendRejectionCode,
+    code: RallarCrdtAppendRejectionCode
 ): code is RallarCrdtRetryableAppendRejectionCode {
-  return code === 'storage-failed' || code === 'rate-limited';
+    return code === 'storage-failed' || code === 'rate-limited';
 }
 
 export function appendRejectionReason(code: RallarCrdtAppendRejectionCode): string {
-  return {
-    'authorization-denied': 'Current authority does not permit this CRDT append.',
-    'document-archived': 'The CRDT document is archived.',
-    'document-destroyed': 'The CRDT document is destroyed.',
-    'document-quarantined': 'The CRDT document is quarantined.',
-    'duplicate-hash-mismatch': 'The update ID is already bound to different content.',
-    'feature-disabled': 'CRDT durable append is disabled by current policy.',
-    'invalid-update': 'The CRDT update envelope is invalid.',
-    'quota-exceeded': 'The CRDT document quota would be exceeded.',
-    'rate-limited': 'The actor update rate limit was reached.',
-    'schema-version-not-allowed': 'The CRDT schema version is not allowed.',
-    'update-too-large': 'The CRDT update exceeds the configured size limit.',
-    'storage-failed': 'The CRDT append could not be completed.',
-  }[code];
+    return {
+        'authorization-denied': 'Current authority does not permit this CRDT append.',
+        'document-archived': 'The CRDT document is archived.',
+        'document-destroyed': 'The CRDT document is destroyed.',
+        'document-quarantined': 'The CRDT document is quarantined.',
+        'duplicate-hash-mismatch': 'The update ID is already bound to different content.',
+        'feature-disabled': 'CRDT durable append is disabled by current policy.',
+        'invalid-update': 'The CRDT update envelope is invalid.',
+        'quota-exceeded': 'The CRDT document quota would be exceeded.',
+        'rate-limited': 'The actor update rate limit was reached.',
+        'schema-version-not-allowed': 'The CRDT schema version is not allowed.',
+        'update-too-large': 'The CRDT update exceeds the configured size limit.',
+        'storage-failed': 'The CRDT append could not be completed.'
+    }[code];
 }

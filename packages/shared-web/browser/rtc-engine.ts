@@ -1,3 +1,9 @@
+import {
+    resolveBrowserRtcOverlayALOutboundRuntimeStores,
+    resolveBrowserRtcRxALInboundRuntimeStores
+} from '@shared-web/browser/browser-al-runtime-stores.ts';
+import { createBrowserQueueBox } from '@shared-web/browser/browser-queuebox.ts';
+import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import { ClientInfo, IceConfig, OverlayId } from '@shared/api/api-config.ts';
 import { WebRtcOverlayMulticaster } from '@shared/multicast/OverlayMulticastContracts.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMulticastManager.ts';
@@ -9,18 +15,12 @@ import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import {
     DEFAULT_WEB_RTC_PEER_CONNECTION_ATTEMPT_BUDGET_POLICY,
     DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY,
-    type RtcDataChannelLaneConfig,
     WebRtcConnectionService,
+    type RtcDataChannelLaneConfig
 } from '@shared/services/WebRtcConnectionService.ts';
 import { WebRtcRxStreamerService } from '@shared/services/WebRtcRxStreamerService.ts';
 import { WsQueueBoxClientService } from '@shared/services/WsQueueBoxClientService.ts';
 import { WsRtcSignalingTransportUsingWsQBox } from '@shared/webrtc/WsRtcSignalingTransportUsingWsQBox.ts';
-import { createBrowserQueueBox } from '@shared-web/browser/browser-queuebox.ts';
-import {
-    resolveBrowserRtcOverlayALOutboundRuntimeStores,
-    resolveBrowserRtcRxALInboundRuntimeStores,
-} from '@shared-web/browser/browser-al-runtime-stores.ts';
-import type { ALOutboundRuntimeDiagnosticsSink } from '@shared/alm/ALOutboundMessageRuntime.ts';
 
 export function initialiseRtcOverlayMulticastManager(
     webRtcConnectionService: WebRtcConnectionService,
@@ -28,23 +28,22 @@ export function initialiseRtcOverlayMulticastManager(
     resilience: ResilienceDto,
     options: Readonly<{
         outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
-    }> = {},
+    }> = {}
 ) {
-    const webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager =
-        new WebRtcOverlayMulticastManager(
-            createBrowserQueueBox(`rtc-overlay-outbox-${webRtcConnectionService.input.sessionId}`),
-            webRtcConnectionService,
-            groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
-            overlaysRepository.readableOverlayCache(),
-            (overlayId: OverlayId): WebRtcOverlayMulticaster =>
-                new WebRtcOverlayMulticastService(overlayId, webRtcConnectionService),
-            {
-                outboundStores: resolveBrowserRtcOverlayALOutboundRuntimeStores(
-                    webRtcConnectionService.input.sessionId,
-                ),
-                outboundDiagnostics: options.outboundDiagnostics,
-            },
-        );
+    const webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager = new WebRtcOverlayMulticastManager(
+        createBrowserQueueBox(`rtc-overlay-outbox-${webRtcConnectionService.input.sessionId}`),
+        webRtcConnectionService,
+        groupStateSnapshotsRepository.readableGroupStateSnapshotCache(),
+        overlaysRepository.readableOverlayCache(),
+        (overlayId: OverlayId): WebRtcOverlayMulticaster =>
+            new WebRtcOverlayMulticastService(overlayId, webRtcConnectionService),
+        {
+            outboundStores: resolveBrowserRtcOverlayALOutboundRuntimeStores(
+                webRtcConnectionService.input.sessionId
+            ),
+            outboundDiagnostics: options.outboundDiagnostics
+        }
+    );
 
     qboxEngine.includeTask(
         WebRtcOverlayMulticastManager.ENQUEUE_TYPE,
@@ -56,15 +55,15 @@ export function initialiseRtcOverlayMulticastManager(
                     .outbox
                     .isAnyEntryToLock(
                         WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
-                        resilience.toWorkAdvertisementOptions(),
+                        resilience.toWorkAdvertisementOptions()
                     ),
             runnable: () =>
                 webRtcOverlayMulticastManager.dequeue(
                     WebRtcOverlayMulticastManager.OUTBOX_DEQUEUE_TYPES,
-                    resilience,
+                    resilience
                 ),
-            ongoingTasks: [],
-        },
+            ongoingTasks: []
+        }
     );
 
     return webRtcOverlayMulticastManager;
@@ -74,17 +73,17 @@ export function initialiseRtcRxStreamer(
     webRtcOverlayMulticastManager: WebRtcOverlayMulticastManager,
     qboxEngine: InboxOutboxEngine,
     clientData: ClientInfo,
-    resilience: ResilienceDto,
+    resilience: ResilienceDto
 ): WebRtcRxStreamerService {
     const rtcRxStreamer: WebRtcRxStreamerService = new WebRtcRxStreamerService(
         createBrowserQueueBox(`rtc-inbox-${clientData.sessionId}`),
         webRtcOverlayMulticastManager,
         {
-            sessionId: clientData.sessionId,
+            sessionId: clientData.sessionId
         },
         {
-            inboundStores: resolveBrowserRtcRxALInboundRuntimeStores(clientData.sessionId),
-        },
+            inboundStores: resolveBrowserRtcRxALInboundRuntimeStores(clientData.sessionId)
+        }
     )
         .enableDefaultCallbacks();
 
@@ -98,12 +97,11 @@ export function initialiseRtcRxStreamer(
                     .inbox
                     .isAnyEntryToLock(
                         WebRtcRxStreamerService.INBOX_DEQUEUE_TYPES,
-                        resilience.toWorkAdvertisementOptions(),
+                        resilience.toWorkAdvertisementOptions()
                     ),
-            runnable: () =>
-                rtcRxStreamer.dequeueInbox(WebRtcRxStreamerService.INBOX_DEQUEUE_TYPES, resilience),
-            ongoingTasks: [],
-        },
+            runnable: () => rtcRxStreamer.dequeueInbox(WebRtcRxStreamerService.INBOX_DEQUEUE_TYPES, resilience),
+            ongoingTasks: []
+        }
     );
 
     return rtcRxStreamer;
@@ -119,13 +117,13 @@ export async function initialiseRtcConnectionService(
     options: Readonly<{
         dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
         maxPeerConnections?: number;
-    }> = {},
+    }> = {}
 ): Promise<WebRtcConnectionService> {
     const rtcQBox = new WebRtcConnectionService(
         new WsRtcSignalingTransportUsingWsQBox(
             webSocketQueueBox,
             rtcSignalingTopicId,
-            () => qboxEngine.wake(),
+            () => qboxEngine.wake()
         ),
         {
             sessionId: clientData.sessionId,
@@ -136,14 +134,14 @@ export async function initialiseRtcConnectionService(
             rtcSignalingTopicId: rtcSignalingTopicId,
             peerEstablishmentTimeout: {
                 ...DEFAULT_WEB_RTC_PEER_ESTABLISHMENT_TIMEOUT_POLICY,
-                enabled: true,
+                enabled: true
             },
             peerConnectionAttemptBudget: {
                 ...DEFAULT_WEB_RTC_PEER_CONNECTION_ATTEMPT_BUDGET_POLICY,
-                enabled: true,
+                enabled: true
             },
-            maxPeerConnections: options.maxPeerConnections,
-        },
+            maxPeerConnections: options.maxPeerConnections
+        }
     );
 
     await rtcQBox.connectSignaler();

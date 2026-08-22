@@ -2,91 +2,88 @@
 import type {
     RallarRtcClientArgs,
     RallarRtcClientEventDispatcher,
-    RallarRtcRuntimeSession,
+    RallarRtcRuntimeSession
 } from './rallar-rtc-provider.ts';
-import {
-    createRallarRtcClientEventDispatcher,
-    toRallarRtcClientArgs,
-} from './rallar-rtc-provider.ts';
+import { createRallarRtcClientEventDispatcher, toRallarRtcClientArgs } from './rallar-rtc-provider.ts';
 import {
     createRtcProviderFromClientFactory,
     toRtcConnectionName,
     toRtcExpectedConnectionName,
     type RtcClient,
-    type RtcProvider,
+    type RtcProvider
 } from './rtc-provider.ts';
 
 type BlackBoxRallarConnectionConfig = {
-    connection: string
-    actor?: string
-    peerId?: string
-    remotePeerId?: string
-    roomId?: string
-    roomRef?: any
-    rallar: any
-}
+    connection: string;
+    actor?: string;
+    peerId?: string;
+    remotePeerId?: string;
+    roomId?: string;
+    roomRef?: any;
+    rallar: any;
+};
 
 type BlackBoxRallarEvent = {
-    kind?: 'diagnostic' | 'message' | 'close'
-    topic?: string
-    atEpochMs?: number
-    connection?: string
-    actor?: string
-    peerId?: string
-    roomId?: string
-    [key: string]: any
-}
+    kind?: 'diagnostic' | 'message' | 'close';
+    topic?: string;
+    atEpochMs?: number;
+    connection?: string;
+    actor?: string;
+    peerId?: string;
+    roomId?: string;
+    [key: string]: any;
+};
 
 export type RallarBrowserRtcProviderOptions = {
-    harnessUrl?: string
-    harness?: any
-    browser?: any
-    dependencies?: RallarBrowserDependencies
+    harnessUrl?: string;
+    harness?: any;
+    browser?: any;
+    dependencies?:
+        | RallarBrowserDependencies
         | Promise<RallarBrowserDependencies>
-        | (() => RallarBrowserDependencies | Promise<RallarBrowserDependencies>)
-}
+        | (() => RallarBrowserDependencies | Promise<RallarBrowserDependencies>);
+};
 
 type RallarBrowserRuntimeSession = {
-    connection: string
-    context: any
-    page: any
-    closed: boolean
-    connectDiagnostics?: any
-}
+    connection: string;
+    context: any;
+    page: any;
+    closed: boolean;
+    connectDiagnostics?: any;
+};
 
 type RallarBrowserProviderState = {
-    dependencies?: Promise<RallarBrowserDependencies>
-    viteServer?: any
-    harnessUrl?: string
-    browser?: any
-    sessions: Map<string, RallarBrowserRuntimeSession>
-}
+    dependencies?: Promise<RallarBrowserDependencies>;
+    viteServer?: any;
+    harnessUrl?: string;
+    browser?: any;
+    sessions: Map<string, RallarBrowserRuntimeSession>;
+};
 
-type RallarBrowserDiagnosticEmitter = (topic: string, data?: any) => void
+type RallarBrowserDiagnosticEmitter = (topic: string, data?: any) => void;
 
 type RallarBrowserCleanupOptions = {
-    reason?: string
-    closeContext?: boolean
-    diagnostic?: RallarBrowserDiagnosticEmitter
-}
+    reason?: string;
+    closeContext?: boolean;
+    diagnostic?: RallarBrowserDiagnosticEmitter;
+};
 
 type RallarBrowserSessionOptions = {
-    connectRuntime?: boolean
-}
+    connectRuntime?: boolean;
+};
 
 export type RallarBrowserDependencies = {
-    chromium: any
-    createServer?: any
-    path?: any
-    fileURLToPath?: (url: string) => string
-}
+    chromium: any;
+    createServer?: any;
+    path?: any;
+    fileURLToPath?: (url: string) => string;
+};
 
 const RALLAR_BROWSER_STATE_KEY = Symbol.for(
-    'ar-eye-hunter.black-box-runner.rallar-browser-provider-state',
+    'ar-eye-hunter.black-box-runner.rallar-browser-provider-state'
 );
 
-const RALLAR_BROWSER_HARNESS_PATH =
-    '/packages/shared-test/black-box-runner/browser/rallar-browser-harness.html';
+const RALLAR_BROWSER_HARNESS_PATH = '/packages/shared-test/black-box-runner/browser/rallar-browser-harness.html';
 
 function isDenoRuntime(): boolean {
     return typeof (globalThis as any).Deno !== 'undefined';
@@ -99,7 +96,7 @@ async function importRuntimeModule(specifier: string): Promise<any> {
 async function loadDependencies(): Promise<RallarBrowserDependencies> {
     try {
         const playwright = await importRuntimeModule(
-            isDenoRuntime() ? 'npm:@playwright/test' : '@playwright/test',
+            isDenoRuntime() ? 'npm:@playwright/test' : '@playwright/test'
         );
         const vite = await importRuntimeModule(isDenoRuntime() ? 'npm:vite' : 'vite');
         const path = await importRuntimeModule('node:path');
@@ -109,19 +106,20 @@ async function loadDependencies(): Promise<RallarBrowserDependencies> {
             chromium: playwright.chromium,
             createServer: vite.createServer,
             path,
-            fileURLToPath: url.fileURLToPath,
+            fileURLToPath: url.fileURLToPath
         };
-    } catch (e) {
+    }
+    catch (e) {
         throw new Error(
             'The rallar-browser RTC provider requires Playwright and Vite. ' +
-            'Run it in the npm workspace, or use a Deno runtime that can resolve npm:@playwright/test and npm:vite. ' +
-            'Cause: ' + (e instanceof Error ? e.message : String(e)),
+                'Run it in the npm workspace, or use a Deno runtime that can resolve npm:@playwright/test and npm:vite. ' +
+                'Cause: ' + (e instanceof Error ? e.message : String(e))
         );
     }
 }
 
 async function toDependencies(
-    options: RallarBrowserRtcProviderOptions,
+    options: RallarBrowserRtcProviderOptions
 ): Promise<RallarBrowserDependencies> {
     if (!options.dependencies) {
         return await loadDependencies();
@@ -137,7 +135,7 @@ async function toDependencies(
 function toProviderState(context: any): RallarBrowserProviderState {
     if (!context[RALLAR_BROWSER_STATE_KEY]) {
         context[RALLAR_BROWSER_STATE_KEY] = {
-            sessions: new Map<string, RallarBrowserRuntimeSession>(),
+            sessions: new Map<string, RallarBrowserRuntimeSession>()
         };
     }
 
@@ -145,7 +143,7 @@ function toProviderState(context: any): RallarBrowserProviderState {
 }
 
 function firstDefined(...values: any[]): any {
-    return values.find(value => value !== undefined);
+    return values.find((value) => value !== undefined);
 }
 
 function asObject(value: any): any {
@@ -157,14 +155,14 @@ function asObject(value: any): any {
 function toContextProviderOptions(context: any): any {
     return {
         ...asObject(context?.options?.rallarBrowser),
-        ...asObject(context?.options?.rtc?.rallarBrowser),
+        ...asObject(context?.options?.rtc?.rallarBrowser)
     };
 }
 
 function toEffectiveProviderOptions(
     args: RallarRtcClientArgs,
     context: any,
-    options: RallarBrowserRtcProviderOptions,
+    options: RallarBrowserRtcProviderOptions
 ): RallarBrowserRtcProviderOptions {
     const request = args.request || {};
     const contextOptions = toContextProviderOptions(context);
@@ -175,12 +173,12 @@ function toEffectiveProviderOptions(
         browser: {
             ...asObject(options.browser),
             ...asObject(contextOptions.browser),
-            ...asObject(request.browser),
+            ...asObject(request.browser)
         },
         harness: {
             ...asObject(options.harness),
             ...asObject(contextOptions.harness),
-            ...asObject(request.harness),
+            ...asObject(request.harness)
         },
         harnessUrl: firstDefined(
             request.harnessUrl,
@@ -188,8 +186,8 @@ function toEffectiveProviderOptions(
             contextOptions.harnessUrl,
             contextOptions.harness?.url,
             options.harnessUrl,
-            options.harness?.url,
-        ),
+            options.harness?.url
+        )
     };
 }
 
@@ -201,7 +199,7 @@ function toRallarScope(request: any): any {
         request.applicationId,
         rallar.applicationId,
         scope.applicationId,
-        roomRef.applicationId,
+        roomRef.applicationId
     );
     if (applicationId === undefined) {
         return undefined;
@@ -211,12 +209,12 @@ function toRallarScope(request: any): any {
         request.workspaceId,
         rallar.workspaceId,
         scope.workspaceId,
-        roomRef.workspaceId,
+        roomRef.workspaceId
     );
 
     return {
         applicationId: String(applicationId),
-        ...(workspaceId !== undefined ? { workspaceId: String(workspaceId) } : {}),
+        ...(workspaceId !== undefined ? { workspaceId: String(workspaceId) } : {})
     };
 }
 
@@ -229,7 +227,7 @@ function toRallarRoomRef(request: any, fallbackRoomId?: string): any {
             ...(explicitRoomRef.workspaceId !== undefined
                 ? { workspaceId: String(explicitRoomRef.workspaceId) }
                 : {}),
-            groupId: String(explicitRoomRef.groupId),
+            groupId: String(explicitRoomRef.groupId)
         };
     }
 
@@ -242,7 +240,7 @@ function toRallarRoomRef(request: any, fallbackRoomId?: string): any {
     return {
         applicationId: scope.applicationId,
         ...(scope.workspaceId !== undefined ? { workspaceId: scope.workspaceId } : {}),
-        groupId: String(roomId),
+        groupId: String(roomId)
     };
 }
 
@@ -254,7 +252,7 @@ function toRallarScopeDiagnostics(request: any, fallbackRoomId?: string): any {
         ...(scope?.applicationId ? { applicationId: scope.applicationId } : {}),
         ...(scope?.workspaceId !== undefined ? { workspaceId: scope.workspaceId } : {}),
         ...(scope ? { scope } : {}),
-        ...(roomRef ? { roomRef } : {}),
+        ...(roomRef ? { roomRef } : {})
     };
 }
 
@@ -264,7 +262,7 @@ function scopedRequestField(request: any, key: string): any {
 }
 
 function toBrowserRuntimeConfig(
-    args: RallarRtcClientArgs,
+    args: RallarRtcClientArgs
 ): BlackBoxRallarConnectionConfig {
     const request = args.request || {};
     const rallar = asObject(request.rallar);
@@ -282,7 +280,7 @@ function toBrowserRuntimeConfig(
             apiBaseUrl: firstDefined(
                 rallar.apiBaseUrl,
                 request.apiBaseUrl,
-                request.rallarApiBaseUrl,
+                request.rallarApiBaseUrl
             ),
             username: firstDefined(rallar.username, request.username),
             password: firstDefined(rallar.password, request.password),
@@ -300,21 +298,21 @@ function toBrowserRuntimeConfig(
             roomRef: scopeDiagnostics.roomRef,
             minSnapshotVersion: firstDefined(
                 rallar.minSnapshotVersion,
-                request.minSnapshotVersion,
+                request.minSnapshotVersion
             ),
             openTimeoutMs: firstDefined(rallar.openTimeoutMs, request.openTimeoutMs),
             timeoutMs: firstDefined(
                 rallar.timeoutMs,
                 request.timeoutMs,
-                request.connectTimeoutMs,
+                request.connectTimeoutMs
             ),
             peerIds: firstDefined(
                 rallar.peerIds,
                 request.peerIds,
-                request.remotePeerId ? [String(request.remotePeerId)] : undefined,
+                request.remotePeerId ? [String(request.remotePeerId)] : undefined
             ),
-            nextHopPeerIds: firstDefined(rallar.nextHopPeerIds, request.nextHopPeerIds),
-        },
+            nextHopPeerIds: firstDefined(rallar.nextHopPeerIds, request.nextHopPeerIds)
+        }
     };
 }
 
@@ -324,20 +322,20 @@ function toBrowserLaunchOptions(effectiveOptions: RallarBrowserRtcProviderOption
     return {
         headless: browser.headless !== false,
         slowMo: browser.slowMo,
-        args: Array.isArray(browser.launchArgs) ? browser.launchArgs : [],
+        args: Array.isArray(browser.launchArgs) ? browser.launchArgs : []
     };
 }
 
 function toBrowserTimeoutMs(
     args: RallarRtcClientArgs,
-    effectiveOptions: RallarBrowserRtcProviderOptions,
+    effectiveOptions: RallarBrowserRtcProviderOptions
 ): number {
     const browser = asObject(effectiveOptions.browser);
     return Number(firstDefined(
         browser.timeoutMs,
         args.connectTimeoutMs,
         args.timeoutMs,
-        10_000,
+        10_000
     ));
 }
 
@@ -348,7 +346,7 @@ function toHarnessServerOptions(effectiveOptions: RallarBrowserRtcProviderOption
 function toRepoRoot(dependencies: RallarBrowserDependencies): string {
     if (!dependencies.path || !dependencies.fileURLToPath) {
         throw new Error(
-            'rallar-browser provider needs node:path and node:url dependencies when harnessUrl is not supplied.',
+            'rallar-browser provider needs node:path and node:url dependencies when harnessUrl is not supplied.'
         );
     }
 
@@ -360,14 +358,14 @@ function toRepoRoot(dependencies: RallarBrowserDependencies): string {
 async function ensureHarnessUrl(
     state: RallarBrowserProviderState,
     dependencies: RallarBrowserDependencies,
-    effectiveOptions: RallarBrowserRtcProviderOptions,
+    effectiveOptions: RallarBrowserRtcProviderOptions
 ): Promise<string> {
     const explicitHarnessUrl = effectiveOptions.harnessUrl;
     if (explicitHarnessUrl) {
         if (state.harnessUrl && state.harnessUrl !== explicitHarnessUrl) {
             throw new Error(
                 'rallar-browser provider cannot mix harness URLs in one scenario. Existing=' +
-                state.harnessUrl + ', requested=' + explicitHarnessUrl,
+                    state.harnessUrl + ', requested=' + explicitHarnessUrl
             );
         }
 
@@ -381,7 +379,7 @@ async function ensureHarnessUrl(
 
     if (!dependencies.createServer || !dependencies.path) {
         throw new Error(
-            'rallar-browser provider needs Vite dependencies when harnessUrl is not supplied.',
+            'rallar-browser provider needs Vite dependencies when harnessUrl is not supplied.'
         );
     }
 
@@ -398,17 +396,17 @@ async function ensureHarnessUrl(
                 '@shared-web': dependencies.path.resolve(repoRoot, 'packages/shared-web'),
                 '@shared-graph': dependencies.path.resolve(repoRoot, 'packages/shared-graph'),
                 '@shared': dependencies.path.resolve(repoRoot, 'packages/shared'),
-                '@relic-hunters': dependencies.path.resolve(repoRoot, 'packages/relic-hunters'),
-            },
+                '@relic-hunters': dependencies.path.resolve(repoRoot, 'packages/relic-hunters')
+            }
         },
         server: {
             host: harness.host || '127.0.0.1',
             port: harness.port || 5199,
             strictPort: harness.strictPort === true,
             fs: {
-                allow: [repoRoot],
-            },
-        },
+                allow: [repoRoot]
+            }
+        }
     });
 
     await server.listen();
@@ -422,14 +420,14 @@ async function ensureHarnessUrl(
 async function ensureBrowser(
     state: RallarBrowserProviderState,
     dependencies: RallarBrowserDependencies,
-    effectiveOptions: RallarBrowserRtcProviderOptions,
+    effectiveOptions: RallarBrowserRtcProviderOptions
 ): Promise<any> {
     if (state.browser) {
         return state.browser;
     }
 
     state.browser = await dependencies.chromium.launch(
-        toBrowserLaunchOptions(effectiveOptions),
+        toBrowserLaunchOptions(effectiveOptions)
     );
     return state.browser;
 }
@@ -437,7 +435,7 @@ async function ensureBrowser(
 function dispatchBrowserEvent(
     event: BlackBoxRallarEvent,
     args: RallarRtcClientArgs,
-    dispatcher: RallarRtcClientEventDispatcher,
+    dispatcher: RallarRtcClientEventDispatcher
 ): void {
     const normalized = {
         ...event,
@@ -448,7 +446,7 @@ function dispatchBrowserEvent(
         roomId: event.roomId || args.roomId,
         groupId: args.groupId,
         overlayId: args.overlayId,
-        ...toRallarScopeDiagnostics(args.request, event.roomId || args.roomId),
+        ...toRallarScopeDiagnostics(args.request, event.roomId || args.roomId)
     };
 
     if (event.kind === 'close') {
@@ -463,7 +461,7 @@ function dispatchProviderDiagnostic(
     topic: string,
     args: RallarRtcClientArgs,
     dispatcher: RallarRtcClientEventDispatcher,
-    data: any = {},
+    data: any = {}
 ): void {
     dispatcher.emitMessage({
         kind: 'diagnostic',
@@ -478,14 +476,14 @@ function dispatchProviderDiagnostic(
         groupId: args.groupId,
         overlayId: args.overlayId,
         ...toRallarScopeDiagnostics(args.request, args.roomId),
-        data,
+        data
     });
 }
 
 function dispatchProviderClose(
     args: RallarRtcClientArgs,
     dispatcher: RallarRtcClientEventDispatcher,
-    data: any = {},
+    data: any = {}
 ): void {
     dispatcher.emitClose({
         phase: 'close',
@@ -501,7 +499,7 @@ function dispatchProviderClose(
         overlayId: args.overlayId,
         ...toRallarScopeDiagnostics(args.request, args.roomId),
         closedAtEpochMs: Date.now(),
-        ...data,
+        ...data
     });
 }
 
@@ -510,7 +508,7 @@ function serializeError(error: any): any {
         return {
             name: error.name,
             message: error.message,
-            stack: error.stack,
+            stack: error.stack
         };
     }
 
@@ -521,7 +519,7 @@ function toRallarApiBaseUrl(args: RallarRtcClientArgs): string | undefined {
     return firstDefined(
         args.request?.rallar?.apiBaseUrl,
         args.request?.apiBaseUrl,
-        args.request?.rallarApiBaseUrl,
+        args.request?.rallarApiBaseUrl
     );
 }
 
@@ -538,7 +536,8 @@ function isRallarRequestUrl(args: RallarRtcClientArgs, url: string | undefined):
 
         return requestUrl.origin === apiUrl.origin &&
             requestUrl.pathname.startsWith(apiPath);
-    } catch (_error) {
+    }
+    catch (_error) {
         return String(url).startsWith(String(apiBaseUrl));
     }
 }
@@ -547,7 +546,7 @@ function toConsoleMessageDiagnostic(message: any): any {
     return {
         type: typeof message.type === 'function' ? message.type() : undefined,
         text: typeof message.text === 'function' ? message.text() : undefined,
-        location: typeof message.location === 'function' ? message.location() : undefined,
+        location: typeof message.location === 'function' ? message.location() : undefined
     };
 }
 
@@ -567,7 +566,7 @@ function toRequestFailedDiagnostic(request: any): any {
     return {
         url: typeof request.url === 'function' ? request.url() : undefined,
         method: typeof request.method === 'function' ? request.method() : undefined,
-        failure: typeof request.failure === 'function' ? request.failure() : undefined,
+        failure: typeof request.failure === 'function' ? request.failure() : undefined
     };
 }
 
@@ -589,17 +588,17 @@ function assertBrowserSendSucceeded(response: any): void {
             .join(', ');
         throw new Error(
             'Rallar browser RTC send failed for ' + failed.length +
-            ' peer(s). status=' + statuses,
+                ' peer(s). status=' + statuses
         );
     }
 }
 
 function isLocalOnlyCrdtOpen(action: string, request: any): boolean {
     return action === 'open' && String(firstDefined(
-        request?.transport,
-        request?.rallar?.crdtTransport,
-        'local-only',
-    )) === 'local-only';
+                request?.transport,
+                request?.rallar?.crdtTransport,
+                'local-only'
+            )) === 'local-only';
 }
 
 function isRecord(value: any): boolean {
@@ -614,7 +613,7 @@ function toArgsTransport(args: RallarRtcClientArgs): string {
     return String(firstDefined(
         args.request?.rallar?.transport,
         args.request?.transport,
-        'realtime',
+        'realtime'
     ));
 }
 
@@ -688,7 +687,7 @@ function toStringArray(value: any): string[] {
 
 function toExpectedTargetConnectionNames(
     interaction: any,
-    args: RallarRtcClientArgs,
+    args: RallarRtcClientArgs
 ): string[] {
     if (!interaction) {
         return [];
@@ -700,7 +699,7 @@ function toExpectedTargetConnectionNames(
         ...toStringArray(interaction.request?.toConnection),
         ...toStringArray(interaction.response?.connection),
         ...toStringArray(interaction.response?.onConnection),
-        ...toStringArray(interaction.request?.expectConnection),
+        ...toStringArray(interaction.request?.expectConnection)
     ];
 
     const targets = explicitTargets.length > 0
@@ -708,16 +707,16 @@ function toExpectedTargetConnectionNames(
         : [toRtcExpectedConnectionName(interaction)];
 
     return [...new Set(targets)]
-        .filter(connectionName => connectionName && connectionName !== args.connection);
+        .filter((connectionName) => connectionName && connectionName !== args.connection);
 }
 
 function toTargetPeerIds(
     state: RallarBrowserProviderState,
     interaction: any,
-    args: RallarRtcClientArgs,
+    args: RallarRtcClientArgs
 ): string[] {
     return toExpectedTargetConnectionNames(interaction, args)
-        .map(connectionName => state.sessions.get(connectionName)?.connectDiagnostics?.sessionId)
+        .map((connectionName) => state.sessions.get(connectionName)?.connectDiagnostics?.sessionId)
         .filter((sessionId): sessionId is string => typeof sessionId === 'string' && sessionId.length > 0);
 }
 
@@ -725,7 +724,7 @@ function toBrowserTransportSendInput(
     message: any,
     interaction: any,
     args: RallarRtcClientArgs,
-    context: any,
+    context: any
 ): any {
     const input = toBrowserSendInputBase(message, args);
     const state = toProviderState(context);
@@ -736,7 +735,8 @@ function toBrowserTransportSendInput(
         if (peerIds.length > 0) {
             input.nextHopPeerIds = peerIds;
         }
-    } else if (transport !== 'messages.rtc' && !input.peerIds && !input.remotePeerId) {
+    }
+    else if (transport !== 'messages.rtc' && !input.peerIds && !input.remotePeerId) {
         const peerIds = toTargetPeerIds(state, interaction, args);
         if (peerIds.length > 0) {
             input.peerIds = peerIds;
@@ -773,7 +773,7 @@ function toBrowserTransportSendInput(
 
 async function closeSharedResourcesIfIdle(
     state: RallarBrowserProviderState,
-    options: RallarBrowserCleanupOptions = {},
+    options: RallarBrowserCleanupOptions = {}
 ): Promise<void> {
     if (state.sessions.size > 0) {
         return;
@@ -785,12 +785,13 @@ async function closeSharedResourcesIfIdle(
         try {
             await browser.close();
             options.diagnostic?.('rallar.browser.provider.browser_closed', {
-                reason: options.reason || 'idle',
+                reason: options.reason || 'idle'
             });
-        } catch (error) {
+        }
+        catch (error) {
             options.diagnostic?.('rallar.browser.provider.browser_close_failed', {
                 reason: options.reason || 'idle',
-                error: serializeError(error),
+                error: serializeError(error)
             });
         }
     }
@@ -802,12 +803,13 @@ async function closeSharedResourcesIfIdle(
         try {
             await server.close();
             options.diagnostic?.('rallar.browser.provider.harness_closed', {
-                reason: options.reason || 'idle',
+                reason: options.reason || 'idle'
             });
-        } catch (error) {
+        }
+        catch (error) {
             options.diagnostic?.('rallar.browser.provider.harness_close_failed', {
                 reason: options.reason || 'idle',
-                error: serializeError(error),
+                error: serializeError(error)
             });
         }
     }
@@ -816,7 +818,7 @@ async function closeSharedResourcesIfIdle(
 async function closeSession(
     state: RallarBrowserProviderState,
     session: RallarBrowserRuntimeSession,
-    options: RallarBrowserCleanupOptions = {},
+    options: RallarBrowserCleanupOptions = {}
 ): Promise<void> {
     if (session.closed && !state.sessions.has(session.connection)) {
         return;
@@ -830,13 +832,14 @@ async function closeSession(
             await session.context.close();
             options.diagnostic?.('rallar.browser.provider.context_closed', {
                 connection: session.connection,
-                reason: options.reason || 'close',
+                reason: options.reason || 'close'
             });
-        } catch (error) {
+        }
+        catch (error) {
             options.diagnostic?.('rallar.browser.provider.context_close_failed', {
                 connection: session.connection,
                 reason: options.reason || 'close',
-                error: serializeError(error),
+                error: serializeError(error)
             });
         }
     }
@@ -849,7 +852,7 @@ async function createBrowserSession(
     dispatcher: RallarRtcClientEventDispatcher,
     context: any,
     options: RallarBrowserRtcProviderOptions,
-    sessionOptions: RallarBrowserSessionOptions = {},
+    sessionOptions: RallarBrowserSessionOptions = {}
 ): Promise<RallarRtcRuntimeSession> {
     const state = toProviderState(context);
     const existingSession = state.sessions.get(args.connection);
@@ -888,7 +891,7 @@ async function createBrowserSession(
             connection: args.connection,
             context: browserContext,
             page,
-            closed: false,
+            closed: false
         };
         state.sessions.set(args.connection, session);
 
@@ -903,13 +906,13 @@ async function createBrowserSession(
                 toConsoleMessageTopic(consoleDiagnostic.type),
                 args,
                 dispatcher,
-                consoleDiagnostic,
+                consoleDiagnostic
             );
         });
 
         page.on('pageerror', (error: any) => {
             dispatchProviderDiagnostic('rallar.browser.pageerror', args, dispatcher, {
-                error: serializeError(error),
+                error: serializeError(error)
             });
         });
 
@@ -921,7 +924,7 @@ async function createBrowserSession(
                     : 'rallar.browser.requestfailed',
                 args,
                 dispatcher,
-                requestDiagnostic,
+                requestDiagnostic
             );
         });
 
@@ -932,17 +935,18 @@ async function createBrowserSession(
 
             dispatchProviderClose(args, dispatcher, {
                 phase: 'page-close',
-                reason: 'browser page closed',
+                reason: 'browser page closed'
             });
 
             try {
                 await closeSession(state, session, {
                     reason: 'page-close',
-                    diagnostic,
+                    diagnostic
                 });
-            } catch (error) {
+            }
+            catch (error) {
                 diagnostic('rallar.browser.provider.page_close_cleanup_failed', {
-                    error: serializeError(error),
+                    error: serializeError(error)
                 });
             }
         });
@@ -950,12 +954,12 @@ async function createBrowserSession(
         setupPhase = 'page-load';
         await page.goto(harnessUrl, {
             waitUntil: 'domcontentloaded',
-            timeout: timeoutMs,
+            timeout: timeoutMs
         });
         await page.waitForFunction(
             () => Boolean((window as any).__blackBoxRallar),
             undefined,
-            { timeout: timeoutMs },
+            { timeout: timeoutMs }
         );
 
         if (sessionOptions.connectRuntime !== false) {
@@ -965,7 +969,7 @@ async function createBrowserSession(
                 async (input: BlackBoxRallarConnectionConfig) => {
                     return await (window as any).__blackBoxRallar.connect(input);
                 },
-                runtimeConfig,
+                runtimeConfig
             );
             session.connectDiagnostics = connectDiagnostics;
 
@@ -975,13 +979,14 @@ async function createBrowserSession(
                 dispatcher,
                 {
                     harnessUrl,
-                    connectDiagnostics,
-                },
+                    connectDiagnostics
+                }
             );
-        } else {
+        }
+        else {
             session.connectDiagnostics = {
                 status: 'local-only',
-                connection: args.connection,
+                connection: args.connection
             };
             dispatchProviderDiagnostic(
                 'rallar.browser.provider.local_crdt_session_ready',
@@ -989,53 +994,57 @@ async function createBrowserSession(
                 dispatcher,
                 {
                     harnessUrl,
-                    connectDiagnostics: session.connectDiagnostics,
-                },
+                    connectDiagnostics: session.connectDiagnostics
+                }
             );
         }
-    } catch (e) {
+    }
+    catch (e) {
         if (setupPhase === 'page-load') {
             diagnostic('rallar.browser.provider.page_load_failed', {
                 harnessUrl,
-                error: serializeError(e),
+                error: serializeError(e)
             });
-        } else if (setupPhase === 'runtime-connect') {
+        }
+        else if (setupPhase === 'runtime-connect') {
             diagnostic('rallar.browser.provider.runtime_connect_failed', {
                 harnessUrl,
-                error: serializeError(e),
+                error: serializeError(e)
             });
         }
 
         diagnostic('rallar.browser.provider.connect_failed', {
             phase: setupPhase,
-            error: serializeError(e),
+            error: serializeError(e)
         });
 
         if (session) {
             await closeSession(state, session, {
                 reason: 'connect-failed',
-                diagnostic,
+                diagnostic
             });
-        } else {
+        }
+        else {
             if (browserContext) {
                 try {
                     await browserContext.close();
                     diagnostic('rallar.browser.provider.context_closed', {
                         connection: args.connection,
-                        reason: 'connect-failed',
+                        reason: 'connect-failed'
                     });
-                } catch (error) {
+                }
+                catch (error) {
                     diagnostic('rallar.browser.provider.context_close_failed', {
                         connection: args.connection,
                         reason: 'connect-failed',
-                        error: serializeError(error),
+                        error: serializeError(error)
                     });
                 }
             }
 
             await closeSharedResourcesIfIdle(state, {
                 reason: 'connect-failed',
-                diagnostic,
+                diagnostic
             });
         }
 
@@ -1057,27 +1066,28 @@ async function createBrowserSession(
                     async (input: any) => {
                         return await (window as any).__blackBoxRallar.send(input);
                     },
-                    message,
+                    message
                 );
                 dispatchProviderDiagnostic(
                     'rallar.browser.provider.send_completed',
                     args,
                     dispatcher,
-                    response,
+                    response
                 );
                 assertBrowserSendSucceeded(response);
                 return response;
-            } catch (error) {
+            }
+            catch (error) {
                 const failedSendDiagnostics = {
                     sent: message,
                     response,
-                    error: serializeError(error),
+                    error: serializeError(error)
                 };
                 dispatchProviderDiagnostic(
                     'rallar.browser.provider.send_failed',
                     args,
                     dispatcher,
-                    failedSendDiagnostics,
+                    failedSendDiagnostics
                 );
                 if (error && typeof error === 'object') {
                     (error as any).sendResult = response;
@@ -1092,7 +1102,7 @@ async function createBrowserSession(
 
             try {
                 response = await page.evaluate(
-                    async (input: { action: string; request: any }) => {
+                    async (input: { action: string; request: any; }) => {
                         const crdt = (window as any).__blackBoxRallar?.crdt;
                         const command = crdt?.[input.action];
                         if (typeof command !== 'function') {
@@ -1100,7 +1110,7 @@ async function createBrowserSession(
                         }
                         return await command(input.request);
                     },
-                    { action, request },
+                    { action, request }
                 );
                 dispatchProviderDiagnostic(
                     'rallar.browser.provider.crdt_command_completed',
@@ -1109,22 +1119,23 @@ async function createBrowserSession(
                     {
                         action,
                         request,
-                        response,
-                    },
+                        response
+                    }
                 );
                 return response;
-            } catch (error) {
+            }
+            catch (error) {
                 const failedCommandDiagnostics = {
                     action,
                     request,
                     response,
-                    error: serializeError(error),
+                    error: serializeError(error)
                 };
                 dispatchProviderDiagnostic(
                     'rallar.browser.provider.crdt_command_failed',
                     args,
                     dispatcher,
-                    failedCommandDiagnostics,
+                    failedCommandDiagnostics
                 );
                 if (error && typeof error === 'object') {
                     (error as any).diagnostics = failedCommandDiagnostics;
@@ -1141,13 +1152,14 @@ async function createBrowserSession(
                     }).catch(() => undefined);
                     dispatchProviderClose(args, dispatcher);
                 }
-            } finally {
+            }
+            finally {
                 await closeSession(state, session, {
                     reason: 'close',
-                    diagnostic,
+                    diagnostic
                 });
             }
-        },
+        }
     };
 }
 
@@ -1159,12 +1171,12 @@ async function createBrowserSession(
  * `rallar` facade instead of reimplementing WebRTC in the runner.
  */
 export function createRallarBrowserRtcProvider(
-    options: RallarBrowserRtcProviderOptions = {},
+    options: RallarBrowserRtcProviderOptions = {}
 ): RtcProvider {
     const provider = createRtcProviderFromClientFactory({
         createClient: (request, _config, context) => {
             return createRallarBrowserRtcClient(request, context || {}, options);
-        },
+        }
     });
 
     return {
@@ -1183,10 +1195,10 @@ export function createRallarBrowserRtcProvider(
                         {
                             ...interaction.request,
                             connection: connectionName,
-                            provider: interaction.request.provider || 'rallar-browser',
+                            provider: interaction.request.provider || 'rallar-browser'
                         },
                         context || {},
-                        options,
+                        options
                     );
                     connection = {
                         client,
@@ -1198,14 +1210,15 @@ export function createRallarBrowserRtcProvider(
                         connectedAtEpochMs: connectStartedAtEpochMs,
                         connectLatencyMs: 0,
                         diagnostics: {
-                            localOnlyCrdt: true,
-                        },
+                            localOnlyCrdt: true
+                        }
                     };
                     context.rtcConnections[connectionName] = connection;
-                } else {
+                }
+                else {
                     return toCrdtProviderFailureStatus(config, interaction, 'CRDT connection is not open', {
                         connection: connectionName,
-                        action,
+                        action
                     });
                 }
             }
@@ -1213,7 +1226,7 @@ export function createRallarBrowserRtcProvider(
             if (!command) {
                 return toCrdtProviderFailureStatus(config, interaction, 'CRDT connection is not open', {
                     connection: connectionName,
-                    action,
+                    action
                 });
             }
 
@@ -1230,23 +1243,24 @@ export function createRallarBrowserRtcProvider(
                     result,
                     startedAtEpochMs,
                     endedAtEpochMs,
-                    latencyMs: endedAtEpochMs - startedAtEpochMs,
+                    latencyMs: endedAtEpochMs - startedAtEpochMs
                 });
-            } catch (error) {
+            }
+            catch (error) {
                 return toCrdtProviderFailureStatus(config, interaction, 'CRDT browser command failed', {
                     connection: connectionName,
                     action,
-                    error: serializeError(error),
+                    error: serializeError(error)
                 });
             }
-        },
+        }
     };
 }
 
 function createRallarBrowserRtcClient(
     request: any,
     context: any,
-    options: RallarBrowserRtcProviderOptions,
+    options: RallarBrowserRtcProviderOptions
 ): RtcClient {
     const args = toRallarRtcClientArgs(request);
     const dispatcher = createRallarRtcClientEventDispatcher();
@@ -1261,7 +1275,7 @@ function createRallarBrowserRtcClient(
                 args,
                 dispatcher,
                 context,
-                options,
+                options
             );
             connectDiagnostics = (runtimeSession as any).connectDiagnostics;
         },
@@ -1270,7 +1284,7 @@ function createRallarBrowserRtcClient(
             if (!runtimeSession) {
                 throw new Error(
                     'Rallar browser RTC client is not connected for connection: ' +
-                    args.connection,
+                        args.connection
                 );
             }
 
@@ -1278,7 +1292,7 @@ function createRallarBrowserRtcClient(
                 message,
                 interaction,
                 args,
-                sendContext || context,
+                sendContext || context
             ));
             return lastSendDiagnostics;
         },
@@ -1290,7 +1304,7 @@ function createRallarBrowserRtcClient(
                     dispatcher,
                     context,
                     options,
-                    { connectRuntime: false },
+                    { connectRuntime: false }
                 );
                 connectDiagnostics = (runtimeSession as any).connectDiagnostics;
             }
@@ -1298,7 +1312,7 @@ function createRallarBrowserRtcClient(
             if (!runtimeSession?.command) {
                 throw new Error(
                     'Rallar browser RTC client is not connected for CRDT command: ' +
-                    args.connection,
+                        args.connection
                 );
             }
 
@@ -1310,8 +1324,8 @@ function createRallarBrowserRtcClient(
                 roomRef: commandRequest.roomRef ?? args.request.roomRef,
                 rallar: {
                     ...(args.request.rallar || {}),
-                    ...(commandRequest.rallar || {}),
-                },
+                    ...(commandRequest.rallar || {})
+                }
             });
             return lastCrdtCommandDiagnostics;
         },
@@ -1338,9 +1352,9 @@ function createRallarBrowserRtcClient(
                 ...toRallarScopeDiagnostics(args.request, args.roomId),
                 connect: connectDiagnostics,
                 lastSend: lastSendDiagnostics,
-                lastCrdtCommand: lastCrdtCommandDiagnostics,
+                lastCrdtCommand: lastCrdtCommandDiagnostics
             };
-        },
+        }
     };
 }
 
@@ -1358,7 +1372,7 @@ function toCrdtProviderReportFields(interaction: any): any {
         scope: interaction.request.scope,
         roomRef: interaction.request.roomRef,
         transportStrategy: interaction.request.transport,
-        durableCatchUp: interaction.request.durableCatchUp,
+        durableCatchUp: interaction.request.durableCatchUp
     };
 }
 
@@ -1374,9 +1388,9 @@ function toCrdtProviderSuccessStatus(config: any, interaction: any, details: any
         expected: interaction.response,
         actual: {
             ...toCrdtProviderReportFields(interaction),
-            ...details,
+            ...details
         },
-        ...config,
+        ...config
     };
 }
 
@@ -1393,8 +1407,8 @@ function toCrdtProviderFailureStatus(config: any, interaction: any, result: stri
         expected: interaction.response,
         actual: {
             ...toCrdtProviderReportFields(interaction),
-            ...details,
+            ...details
         },
-        ...config,
+        ...config
     };
 }

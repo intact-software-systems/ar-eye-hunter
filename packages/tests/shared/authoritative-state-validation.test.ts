@@ -1,17 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import {
     validateAuthoritativeClientSnapshot,
     validateAuthoritativeGroupSnapshot,
-    validateAuthoritativeOverlayTopologySnapshot,
+    validateAuthoritativeOverlayTopologySnapshot
 } from '@shared/api/authoritative-state-validation.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { describe, expect, it } from 'vitest';
 import {
     createActiveClientInstanceFixture,
     createActiveClientSessionFixture,
     createActiveGroupPresenceSessionFixture,
     createAuditStampFixture,
     createClientSnapshotFixture,
-    createGroupSnapshotFixture,
+    createGroupSnapshotFixture
 } from '../shared-web/authoritative-group-fixtures.ts';
 
 const scope = { applicationId: 'app-1', workspaceId: 'workspace-1' };
@@ -20,70 +20,84 @@ describe('authoritative network state validation', () => {
     it('accepts canonical snapshots and rejects missing or wrong scope fields', () => {
         const client = createClientSnapshotFixture({
             ...scope,
-            principalId: 'alice',
+            principalId: 'alice'
         });
         const group = createGroupSnapshotFixture({
             ...scope,
             groupId: 'room-1',
-            sessionIds: ['alice-session'],
+            sessionIds: ['alice-session']
         });
 
         expect(() => validateAuthoritativeClientSnapshot(client, scope)).not.toThrow();
         expect(() => validateAuthoritativeGroupSnapshot(group, scope)).not.toThrow();
-        expect(() => validateAuthoritativeClientSnapshot({
-            ...client,
-            principal: { ...client.principal, workspaceId: undefined },
-        }, scope)).toThrow(/workspaceId/);
-        expect(() => validateAuthoritativeGroupSnapshot({
-            ...group,
-            group: { ...group.group, workspaceId: 'workspace-2' },
-        }, scope)).toThrow(/outside the requested scope/);
+        expect(() =>
+            validateAuthoritativeClientSnapshot({
+                ...client,
+                principal: { ...client.principal, workspaceId: undefined }
+            }, scope)
+        ).toThrow(/workspaceId/);
+        expect(() =>
+            validateAuthoritativeGroupSnapshot({
+                ...group,
+                group: { ...group.group, workspaceId: 'workspace-2' }
+            }, scope)
+        ).toThrow(/outside the requested scope/);
     });
 
     it('rejects missing causal authority, invalid discriminants, and bad array items', () => {
         const group = createGroupSnapshotFixture({
             ...scope,
             groupId: 'room-1',
-            sessionIds: ['alice-session'],
+            sessionIds: ['alice-session']
         });
         const { causalRevision: omitted, ...missingCausalRevision } = group;
         expect(omitted).toBeDefined();
         expect(() => validateAuthoritativeGroupSnapshot(missingCausalRevision, scope))
             .toThrow(/causalRevision/);
-        expect(() => validateAuthoritativeGroupSnapshot({
-            ...group,
-            group: { ...group.group, kind: 'invalid-kind' },
-        }, scope)).toThrow(/kind/);
-        expect(() => validateAuthoritativeGroupSnapshot({
-            ...group,
-            activeSessions: [{ ...group.activeSessions[0], sessionId: 42 }],
-        }, scope)).toThrow(/sessionId/);
+        expect(() =>
+            validateAuthoritativeGroupSnapshot({
+                ...group,
+                group: { ...group.group, kind: 'invalid-kind' }
+            }, scope)
+        ).toThrow(/kind/);
+        expect(() =>
+            validateAuthoritativeGroupSnapshot({
+                ...group,
+                activeSessions: [{ ...group.activeSessions[0], sessionId: 42 }]
+            }, scope)
+        ).toThrow(/sessionId/);
     });
 
     it('rejects lifecycle omissions and malformed topology collections', () => {
         const group = createGroupSnapshotFixture({
             ...scope,
             groupId: 'room-1',
-            sessionIds: ['alice-session'],
+            sessionIds: ['alice-session']
         });
-        expect(() => validateAuthoritativeGroupSnapshot({
-            ...group,
-            members: [{ ...group.members[0], joined: null }],
-        }, scope)).toThrow(/joined/);
-        expect(() => validateAuthoritativeGroupSnapshot({
-            ...group,
-            members: [
-                group.members[0],
-                { ...group.members[0], principalId: 'parker', status: 'pending', joined: null },
-            ],
-        }, scope)).not.toThrow();
-        expect(() => validateAuthoritativeGroupSnapshot({
-            ...group,
-            members: [
-                group.members[0],
-                { ...group.members[0], principalId: 'parker', status: 'pending' },
-            ],
-        }, scope)).toThrow(/joined/);
+        expect(() =>
+            validateAuthoritativeGroupSnapshot({
+                ...group,
+                members: [{ ...group.members[0], joined: null }]
+            }, scope)
+        ).toThrow(/joined/);
+        expect(() =>
+            validateAuthoritativeGroupSnapshot({
+                ...group,
+                members: [
+                    group.members[0],
+                    { ...group.members[0], principalId: 'parker', status: 'pending', joined: null }
+                ]
+            }, scope)
+        ).not.toThrow();
+        expect(() =>
+            validateAuthoritativeGroupSnapshot({
+                ...group,
+                members: [
+                    group.members[0],
+                    { ...group.members[0], principalId: 'parker', status: 'pending' }
+                ]
+            }, scope)
+        ).toThrow(/joined/);
 
         const topology = {
             sourceGroupStateCausalRevision: group.causalRevision,
@@ -98,24 +112,28 @@ describe('authoritative network state validation', () => {
             version: 1,
             createdByClientId: 'server',
             createdAtEpochMs: 1,
-            updatedAtEpochMs: 1,
+            updatedAtEpochMs: 1
         };
         expect(() => validateAuthoritativeOverlayTopologySnapshot(topology, scope))
             .not.toThrow();
-        expect(() => validateAuthoritativeOverlayTopologySnapshot({
-            ...topology,
-            activeSessionIds: ['alice-session', 42],
-        }, scope)).toThrow(/activeSessionIds/);
-        expect(() => validateAuthoritativeOverlayTopologySnapshot({
-            ...topology,
-            groupRef: { ...topology.groupRef, unexpected: true },
-        }, scope)).toThrow(/unexpected/);
+        expect(() =>
+            validateAuthoritativeOverlayTopologySnapshot({
+                ...topology,
+                activeSessionIds: ['alice-session', 42]
+            }, scope)
+        ).toThrow(/activeSessionIds/);
+        expect(() =>
+            validateAuthoritativeOverlayTopologySnapshot({
+                ...topology,
+                groupRef: { ...topology.groupRef, unexpected: true }
+            }, scope)
+        ).toThrow(/unexpected/);
     });
 
     it('rejects malformed principal versions, nullable profile fields, and actors', () => {
         const client = createClientSnapshotFixture({
             ...scope,
-            principalId: 'alice',
+            principalId: 'alice'
         });
         const invalidPrincipals = [
             { ...client.principal, displayName: 42 },
@@ -127,121 +145,133 @@ describe('authoritative network state validation', () => {
                 ...client.principal,
                 created: {
                     ...client.principal.created,
-                    actor: { kind: 'principal', principalId: '' },
-                },
-            },
+                    actor: { kind: 'principal', principalId: '' }
+                }
+            }
         ];
 
         for (const principal of invalidPrincipals) {
-            expect(() => validateAuthoritativeClientSnapshot({
-                ...client,
-                principal,
-            }, scope)).toThrow();
+            expect(() =>
+                validateAuthoritativeClientSnapshot({
+                    ...client,
+                    principal
+                }, scope)
+            ).toThrow();
         }
     });
 
     it('rejects malformed instance nullable fields and active session authority', () => {
         const client = createClientSnapshotFixture({
             ...scope,
-            principalId: 'alice',
+            principalId: 'alice'
         });
         const session = createActiveClientSessionFixture({
             ...scope,
             principalId: 'alice',
             clientInstanceId: 'alice-instance',
-            sessionId: 'alice-session',
+            sessionId: 'alice-session'
         });
         const invalidSessions = [
             { ...session, generationVersion: 0 },
             { ...session, connectionId: '' },
             { ...session, authenticatedAtEpochMs: 2 },
             { ...session, lastHeartbeatAtEpochMs: 60_001 },
-            { ...session, expiresAtEpochMs: -1 },
+            { ...session, expiresAtEpochMs: -1 }
         ];
 
         for (const invalidSession of invalidSessions) {
-            expect(() => validateAuthoritativeClientSnapshot({
-                ...client,
-                activeSessions: [invalidSession],
-                isOnline: true,
-                activeSessionCount: 1,
-            }, scope)).toThrow();
+            expect(() =>
+                validateAuthoritativeClientSnapshot({
+                    ...client,
+                    activeSessions: [invalidSession],
+                    isOnline: true,
+                    activeSessionCount: 1
+                }, scope)
+            ).toThrow();
         }
 
         const audit = createAuditStampFixture(1, 'alice');
-        expect(() => validateAuthoritativeClientSnapshot({
-            ...client,
-            instances: [{
-                ...scope,
-                principalId: 'alice',
-                clientInstanceId: 'alice-instance',
-                status: 'active',
-                platform: 'web',
-                deviceLabel: 42,
-                appVersion: null,
-                userAgent: null,
-                capabilities: [],
-                registered: audit,
-                updated: audit,
-                revoked: null,
-            }],
-        }, scope)).toThrow(/deviceLabel/);
+        expect(() =>
+            validateAuthoritativeClientSnapshot({
+                ...client,
+                instances: [{
+                    ...scope,
+                    principalId: 'alice',
+                    clientInstanceId: 'alice-instance',
+                    status: 'active',
+                    platform: 'web',
+                    deviceLabel: 42,
+                    appVersion: null,
+                    userAgent: null,
+                    capabilities: [],
+                    registered: audit,
+                    updated: audit,
+                    revoked: null
+                }]
+            }, scope)
+        ).toThrow(/deviceLabel/);
     });
 
     it('rejects active client sessions without a matching instance', () => {
         const client = createClientSnapshotFixture({
             ...scope,
-            principalId: 'alice',
+            principalId: 'alice'
         });
         const session = createActiveClientSessionFixture({
             ...scope,
             principalId: 'alice',
             clientInstanceId: 'missing-instance',
-            sessionId: 'alice-session',
+            sessionId: 'alice-session'
         });
 
-        expect(() => validateAuthoritativeClientSnapshot({
-            ...client,
-            activeSessions: [session],
-            isOnline: true,
-            activeSessionCount: 1,
-        }, scope)).toThrow(/instance/);
+        expect(() =>
+            validateAuthoritativeClientSnapshot({
+                ...client,
+                activeSessions: [session],
+                isOnline: true,
+                activeSessionCount: 1
+            }, scope)
+        ).toThrow(/instance/);
     });
 
     it('rejects duplicate client instance and active-session identities', () => {
         const client = createClientSnapshotFixture({
             ...scope,
-            principalId: 'alice',
+            principalId: 'alice'
         });
         const instance = createActiveClientInstanceFixture({
             ...scope,
             principalId: 'alice',
-            clientInstanceId: 'alice-instance',
+            clientInstanceId: 'alice-instance'
         });
-        expect(() => validateAuthoritativeClientSnapshot({
-            ...client,
-            instances: [instance, instance],
-        }, scope)).toThrow(/duplicate.*instance/i);
+        expect(() =>
+            validateAuthoritativeClientSnapshot({
+                ...client,
+                instances: [instance, instance]
+            }, scope)
+        ).toThrow(/duplicate.*instance/i);
 
         const session = createActiveClientSessionFixture({
             ...scope,
             principalId: 'alice',
             clientInstanceId: instance.clientInstanceId,
-            sessionId: 'alice-session',
+            sessionId: 'alice-session'
         });
-        expect(() => validateAuthoritativeClientSnapshot({
-            ...client,
-            instances: [instance],
-            activeSessions: [session, session],
-            isOnline: true,
-            activeSessionCount: 2,
-        }, scope)).toThrow(/duplicate.*session/i);
+        expect(() =>
+            validateAuthoritativeClientSnapshot({
+                ...client,
+                instances: [instance],
+                activeSessions: [session, session],
+                isOnline: true,
+                activeSessionCount: 2
+            }, scope)
+        ).toThrow(/duplicate.*session/i);
     });
 
     it('rejects a client snapshot whose last-seen aggregate is not canonical', () => {
         const client = createClientSnapshotFixture({
             ...scope,
-            principalId: 'alice',
+            principalId: 'alice'
         });
         const audit = createAuditStampFixture(1, 'alice');
         const session = {
@@ -249,39 +279,41 @@ describe('authoritative network state validation', () => {
                 ...scope,
                 principalId: 'alice',
                 clientInstanceId: 'alice-instance',
-                sessionId: 'alice-session',
+                sessionId: 'alice-session'
             }),
-            lastHeartbeatAtEpochMs: 5,
+            lastHeartbeatAtEpochMs: 5
         };
 
-        expect(() => validateAuthoritativeClientSnapshot({
-            ...client,
-            instances: [{
-                ...scope,
-                principalId: 'alice',
-                clientInstanceId: 'alice-instance',
-                status: 'active',
-                platform: 'web',
-                deviceLabel: null,
-                appVersion: null,
-                userAgent: null,
-                capabilities: [],
-                registered: audit,
-                updated: audit,
-                revoked: null,
-            }],
-            activeSessions: [session],
-            isOnline: true,
-            activeSessionCount: 1,
-            lastSeenAtEpochMs: 1,
-        }, scope)).toThrow(/lastSeenAtEpochMs/);
+        expect(() =>
+            validateAuthoritativeClientSnapshot({
+                ...client,
+                instances: [{
+                    ...scope,
+                    principalId: 'alice',
+                    clientInstanceId: 'alice-instance',
+                    status: 'active',
+                    platform: 'web',
+                    deviceLabel: null,
+                    appVersion: null,
+                    userAgent: null,
+                    capabilities: [],
+                    registered: audit,
+                    updated: audit,
+                    revoked: null
+                }],
+                activeSessions: [session],
+                isOnline: true,
+                activeSessionCount: 1,
+                lastSeenAtEpochMs: 1
+            }, scope)
+        ).toThrow(/lastSeenAtEpochMs/);
     });
 
     it('rejects malformed group versions, nullable limits, timestamps, and sessions', () => {
         const group = createGroupSnapshotFixture({
             ...scope,
             groupId: 'room-1',
-            sessionIds: ['alice'],
+            sessionIds: ['alice']
         });
         const invalidGroups = [
             { ...group.group, snapshotVersion: 0 },
@@ -294,32 +326,38 @@ describe('authoritative network state validation', () => {
             { ...group.group, purgeAfterEpochMs: -1 },
             { ...group.group, lifecycleState: 'bogus' },
             { ...group.group, formationEpoch: -1 },
-            { ...group.group, formationEpoch: 1.5 },
+            { ...group.group, formationEpoch: 1.5 }
         ];
 
         for (const invalidGroup of invalidGroups) {
-            expect(() => validateAuthoritativeGroupSnapshot({
-                ...group,
-                group: invalidGroup,
-            }, scope)).toThrow();
+            expect(() =>
+                validateAuthoritativeGroupSnapshot({
+                    ...group,
+                    group: invalidGroup
+                }, scope)
+            ).toThrow();
         }
 
         const session = createActiveGroupPresenceSessionFixture({
             ...scope,
             groupId: 'room-1',
             principalId: 'alice',
-            sessionId: 'alice',
+            sessionId: 'alice'
         });
-        for (const invalidSession of [
-            { ...session, generationVersion: 0 },
-            { ...session, generationVersion: 1.5 },
-            { ...session, lastHeartbeatAtEpochMs: 0 },
-            { ...session, expiresAtEpochMs: 0 },
-        ]) {
-            expect(() => validateAuthoritativeGroupSnapshot({
-                ...group,
-                activeSessions: [invalidSession],
-            }, scope)).toThrow();
+        for (
+            const invalidSession of [
+                { ...session, generationVersion: 0 },
+                { ...session, generationVersion: 1.5 },
+                { ...session, lastHeartbeatAtEpochMs: 0 },
+                { ...session, expiresAtEpochMs: 0 }
+            ]
+        ) {
+            expect(() =>
+                validateAuthoritativeGroupSnapshot({
+                    ...group,
+                    activeSessions: [invalidSession]
+                }, scope)
+            ).toThrow();
         }
     });
 
@@ -327,7 +365,7 @@ describe('authoritative network state validation', () => {
         const group = createGroupSnapshotFixture({
             ...scope,
             groupId: 'room-1',
-            sessionIds: ['alice'],
+            sessionIds: ['alice']
         });
         const member = group.members[0];
         const audit = createAuditStampFixture(2, 'alice');
@@ -339,15 +377,17 @@ describe('authoritative network state validation', () => {
                 ...member,
                 status: 'invited',
                 joined: null,
-                left: audit,
-            },
+                left: audit
+            }
         ];
 
         for (const invalidMember of invalidMembers) {
-            expect(() => validateAuthoritativeGroupSnapshot({
-                ...group,
-                members: [invalidMember],
-            }, scope)).toThrow();
+            expect(() =>
+                validateAuthoritativeGroupSnapshot({
+                    ...group,
+                    members: [invalidMember]
+                }, scope)
+            ).toThrow();
         }
     });
 
@@ -355,38 +395,44 @@ describe('authoritative network state validation', () => {
         const group = createGroupSnapshotFixture({
             ...scope,
             groupId: 'room-capacity-revisions',
-            sessionIds: ['alice', 'bob'],
+            sessionIds: ['alice', 'bob']
         });
-        expect(() => validateAuthoritativeGroupSnapshot({
-            ...group,
-            group: { ...group.group, maxMembers: 1 },
-        }, scope)).toThrow(/maxMembers|capacity/);
+        expect(() =>
+            validateAuthoritativeGroupSnapshot({
+                ...group,
+                group: { ...group.group, maxMembers: 1 }
+            }, scope)
+        ).toThrow(/maxMembers|capacity/);
     });
 
     it('rejects a zero canonical group revision', () => {
         const group = createGroupSnapshotFixture({
             ...scope,
             groupId: 'room-group-revision',
-            sessionIds: ['alice', 'bob'],
+            sessionIds: ['alice', 'bob']
         });
-        expect(() => validateAuthoritativeGroupSnapshot({
-            ...group,
-            stateRevision: 2,
-            causalRevision: { groupRevision: 0, presenceRevision: 2 },
-        }, scope)).toThrow(/groupRevision|group revision/);
+        expect(() =>
+            validateAuthoritativeGroupSnapshot({
+                ...group,
+                stateRevision: 2,
+                causalRevision: { groupRevision: 0, presenceRevision: 2 }
+            }, scope)
+        ).toThrow(/groupRevision|group revision/);
     });
 
     it('rejects a zero canonical state revision', () => {
         const noPresence = createGroupSnapshotFixture({
             ...scope,
             groupId: 'room-zero-revision',
-            sessionIds: [],
+            sessionIds: []
         });
-        expect(() => validateAuthoritativeGroupSnapshot({
-            ...noPresence,
-            stateRevision: 0,
-            causalRevision: { groupRevision: 0, presenceRevision: 0 },
-        }, scope)).toThrow(/stateRevision|state revision/);
+        expect(() =>
+            validateAuthoritativeGroupSnapshot({
+                ...noPresence,
+                stateRevision: 0,
+                causalRevision: { groupRevision: 0, presenceRevision: 0 }
+            }, scope)
+        ).toThrow(/stateRevision|state revision/);
     });
 
     it.each([
@@ -394,16 +440,16 @@ describe('authoritative network state validation', () => {
             defect: 'duplicate members',
             mutate: (group: ReturnType<typeof createGroupSnapshotFixture>) => ({
                 ...group,
-                members: [group.members[0], group.members[0]],
-            }),
+                members: [group.members[0], group.members[0]]
+            })
         },
         {
             defect: 'duplicate active sessions',
             mutate: (group: ReturnType<typeof createGroupSnapshotFixture>) => ({
                 ...group,
                 activeSessions: [group.activeSessions[0], group.activeSessions[0]],
-                onlineMemberCount: 1,
-            }),
+                onlineMemberCount: 1
+            })
         },
         {
             defect: 'a session for a non-active member',
@@ -415,18 +461,18 @@ describe('authoritative network state validation', () => {
                     {
                         ...group.members[1],
                         status: 'removed',
-                        removed: createAuditStampFixture(2, 'alice'),
-                    },
+                        removed: createAuditStampFixture(2, 'alice')
+                    }
                 ],
-                memberCount: 1,
-            }),
+                memberCount: 1
+            })
         },
         {
             defect: 'an owner that differs from the active owner member',
             mutate: (group: ReturnType<typeof createGroupSnapshotFixture>) => ({
                 ...group,
-                group: { ...group.group, ownerPrincipalId: 'bob' },
-            }),
+                group: { ...group.group, ownerPrincipalId: 'bob' }
+            })
         },
         {
             defect: 'multiple active owner members',
@@ -434,9 +480,9 @@ describe('authoritative network state validation', () => {
                 ...group,
                 members: [
                     group.members[0],
-                    { ...group.members[1], role: 'owner' },
-                ],
-            }),
+                    { ...group.members[1], role: 'owner' }
+                ]
+            })
         },
         {
             defect: 'active presence in an inactive group',
@@ -445,15 +491,15 @@ describe('authoritative network state validation', () => {
                 group: {
                     ...group.group,
                     status: 'archived',
-                    archived: createAuditStampFixture(2, 'alice'),
-                },
-            }),
-        },
+                    archived: createAuditStampFixture(2, 'alice')
+                }
+            })
+        }
     ])('rejects group snapshots with $defect', ({ mutate }) => {
         const group = createGroupSnapshotFixture({
             ...scope,
             groupId: 'room-aggregate-invariants',
-            sessionIds: ['alice', 'bob'],
+            sessionIds: ['alice', 'bob']
         });
 
         expect(() => validateAuthoritativeGroupSnapshot(mutate(group), scope))
@@ -465,23 +511,23 @@ describe('authoritative network state validation', () => {
             defect: 'a noncanonical overlay identity',
             mutate: (topology: ReturnType<typeof createTopologyFixture>) => ({
                 ...topology,
-                overlayId: 'wrong-overlay',
-            }),
+                overlayId: 'wrong-overlay'
+            })
         },
         {
             defect: 'inverted timestamps',
             mutate: (topology: ReturnType<typeof createTopologyFixture>) => ({
                 ...topology,
                 createdAtEpochMs: 2,
-                updatedAtEpochMs: 1,
-            }),
+                updatedAtEpochMs: 1
+            })
         },
         {
             defect: 'noncanonical active-session ordering',
             mutate: (topology: ReturnType<typeof createTopologyFixture>) => ({
                 ...topology,
-                activeSessionIds: ['session-b', 'session-a', 'session-c'],
-            }),
+                activeSessionIds: ['session-b', 'session-a', 'session-c']
+            })
         },
         {
             defect: 'routing keys that omit an active session',
@@ -489,9 +535,9 @@ describe('authoritative network state validation', () => {
                 ...topology,
                 nextHopsBySessionId: {
                     'session-a': ['session-b'],
-                    'session-b': ['session-a', 'session-c'],
-                },
-            }),
+                    'session-b': ['session-a', 'session-c']
+                }
+            })
         },
         {
             defect: 'a self edge',
@@ -499,9 +545,9 @@ describe('authoritative network state validation', () => {
                 ...topology,
                 nextHopsBySessionId: {
                     ...topology.nextHopsBySessionId,
-                    'session-a': ['session-a', 'session-b'],
-                },
-            }),
+                    'session-a': ['session-a', 'session-b']
+                }
+            })
         },
         {
             defect: 'duplicate next hops',
@@ -509,9 +555,9 @@ describe('authoritative network state validation', () => {
                 ...topology,
                 nextHopsBySessionId: {
                     ...topology.nextHopsBySessionId,
-                    'session-a': ['session-b', 'session-b'],
-                },
-            }),
+                    'session-a': ['session-b', 'session-b']
+                }
+            })
         },
         {
             defect: 'nonreciprocal edges',
@@ -519,16 +565,16 @@ describe('authoritative network state validation', () => {
                 ...topology,
                 nextHopsBySessionId: {
                     ...topology.nextHopsBySessionId,
-                    'session-b': ['session-c'],
-                },
-            }),
+                    'session-b': ['session-c']
+                }
+            })
         },
         {
             defect: 'degree-limit violations',
             mutate: (topology: ReturnType<typeof createTopologyFixture>) => ({
                 ...topology,
-                degreeLimit: 1,
-            }),
+                degreeLimit: 1
+            })
         },
         {
             defect: 'a disconnected active graph',
@@ -537,22 +583,24 @@ describe('authoritative network state validation', () => {
                 nextHopsBySessionId: {
                     'session-a': ['session-b'],
                     'session-b': ['session-a'],
-                    'session-c': [],
-                },
-            }),
+                    'session-c': []
+                }
+            })
         },
         {
             defect: 'edges on a removed overlay',
             mutate: (topology: ReturnType<typeof createTopologyFixture>) => ({
                 ...topology,
-                state: 'removed',
-            }),
-        },
+                state: 'removed'
+            })
+        }
     ])('rejects topology snapshots with $defect', ({ mutate }) => {
-        expect(() => validateAuthoritativeOverlayTopologySnapshot(
-            mutate(createTopologyFixture()),
-            scope,
-        )).toThrow();
+        expect(() =>
+            validateAuthoritativeOverlayTopologySnapshot(
+                mutate(createTopologyFixture()),
+                scope
+            )
+        ).toThrow();
     });
 });
 
@@ -560,7 +608,7 @@ function createTopologyFixture() {
     return {
         sourceGroupStateCausalRevision: {
             groupRevision: 1,
-            presenceRevision: 3,
+            presenceRevision: 3
         },
         state: 'active',
         overlayId: toScopedOverlayId({ ...scope, groupId: 'room-topology' }),
@@ -571,12 +619,12 @@ function createTopologyFixture() {
         nextHopsBySessionId: {
             'session-a': ['session-b'],
             'session-b': ['session-a', 'session-c'],
-            'session-c': ['session-b'],
+            'session-c': ['session-b']
         },
         degreeLimit: 2,
         version: 1,
         createdByClientId: 'server',
         createdAtEpochMs: 1,
-        updatedAtEpochMs: 1,
+        updatedAtEpochMs: 1
     };
 }

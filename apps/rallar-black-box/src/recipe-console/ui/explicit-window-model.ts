@@ -28,14 +28,14 @@ export type ExplicitWindowDirection = 'previous' | 'next';
 
 export function createExplicitWindowState(
     fingerprint: string,
-    revision?: object,
+    revision?: object
 ): ExplicitWindowState {
     return windowState(fingerprint, revision, 0);
 }
 
 export function deriveExplicitWindowModel(
     input: ExplicitWindowInput,
-    state: ExplicitWindowState,
+    state: ExplicitWindowState
 ): ExplicitWindowModel {
     const total = nonNegativeInteger(input.total);
     const windowSize = positiveInteger(input.windowSize);
@@ -60,13 +60,13 @@ export function deriveExplicitWindowModel(
         displayStart: total === 0 ? 0 : startIndex + 1,
         displayEnd: endIndexExclusive,
         canPrevious: startIndex > 0,
-        canNext: endIndexExclusive < total,
+        canNext: endIndexExclusive < total
     };
 }
 
 export function moveExplicitWindow(
     model: ExplicitWindowModel,
-    direction: ExplicitWindowDirection,
+    direction: ExplicitWindowDirection
 ): ExplicitWindowState {
     const startIndex = direction === 'previous'
         ? Math.max(0, model.startIndex - model.windowSize)
@@ -78,7 +78,7 @@ export function moveExplicitWindow(
 
 export function revealExplicitWindowIndex(
     model: ExplicitWindowModel,
-    index: number,
+    index: number
 ): ExplicitWindowState {
     const lastIndex = Math.max(0, model.total - 1);
     const boundedIndex = Math.min(nonNegativeInteger(index), lastIndex);
@@ -97,11 +97,11 @@ function positiveInteger(value: number): number {
 function windowState(
     fingerprint: string,
     revision: object | undefined,
-    startIndex: number,
+    startIndex: number
 ): ExplicitWindowState {
     return {
         fingerprint,
         ...(revision === undefined ? {} : { revision }),
-        startIndex,
+        startIndex
     };
 }

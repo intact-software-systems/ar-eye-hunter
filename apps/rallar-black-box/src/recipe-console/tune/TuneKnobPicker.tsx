@@ -1,14 +1,12 @@
 import { useMemo } from 'react';
-import { SearchableWindowedListbox } from
-    '../ui/SearchableWindowedListbox.tsx';
-import type { TuneCandidateKnobIndex } from
-    './tune-candidate-knob-index.ts';
+import { SearchableWindowedListbox } from '../ui/SearchableWindowedListbox.tsx';
+import type { TuneCandidateKnobIndex } from './tune-candidate-knob-index.ts';
 
 export function TuneKnobPicker({
     contextKey,
     index,
     onSelect,
-    selectedPointer,
+    selectedPointer
 }: Readonly<{
     contextKey: string;
     index: TuneCandidateKnobIndex;
@@ -22,7 +20,7 @@ export function TuneKnobPicker({
                 contextKey={contextKey}
                 id="tune-knob"
                 label="Exact knob path"
-                onSelect={option => onSelect(option.value)}
+                onSelect={(option) => onSelect(option.value)}
                 options={index.options}
                 placeholder="Select an editable knob"
                 revision={revision}

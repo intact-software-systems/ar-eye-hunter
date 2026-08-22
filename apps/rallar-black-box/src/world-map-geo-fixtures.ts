@@ -1,8 +1,7 @@
-import type { RallarBlackBoxGeoLocation } from
-    '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { RallarBlackBoxGeoLocation } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import {
     resolveFleetGeographyDocumentedLocation,
-    type FleetGeographyDocumentedLocationInput,
+    type FleetGeographyDocumentedLocationInput
 } from '@shared-test/rallar-bb-test/fleet-geography.ts';
 
 export type FleetWorldMapLocationSource =
@@ -10,17 +9,18 @@ export type FleetWorldMapLocationSource =
     | 'datacenter-lookup'
     | 'region-lookup';
 
-export type FleetWorldMapLocation = RallarBlackBoxGeoLocation & Readonly<{
-    label: string;
-    precision: 'exact' | 'approximate';
-    source: FleetWorldMapLocationSource;
-}>;
+export type FleetWorldMapLocation =
+    & RallarBlackBoxGeoLocation
+    & Readonly<{
+        label: string;
+        precision: 'exact' | 'approximate';
+        source: FleetWorldMapLocationSource;
+    }>;
 
-export type FleetWorldMapLocationInput =
-    FleetGeographyDocumentedLocationInput;
+export type FleetWorldMapLocationInput = FleetGeographyDocumentedLocationInput;
 
 export function resolveFleetWorldMapLocation(
-    input: FleetWorldMapLocationInput,
+    input: FleetWorldMapLocationInput
 ): FleetWorldMapLocation | undefined {
     const location = resolveFleetGeographyDocumentedLocation(input);
     return location
@@ -28,7 +28,7 @@ export function resolveFleetWorldMapLocation(
             ...location,
             source: location.source === 'explicit'
                 ? 'agent'
-                : location.source,
+                : location.source
         }
         : undefined;
 }

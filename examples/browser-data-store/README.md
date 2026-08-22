@@ -21,7 +21,7 @@ const settings = await rallar.data.open<Settings>('settings', {
     schemaVersion: 1,
     isValid: (value) =>
         typeof value.volume === 'number' &&
-        ['low', 'medium', 'high'].includes(value.graphics),
+        ['low', 'medium', 'high'].includes(value.graphics)
 });
 
 settings.onChange((event) => {
@@ -31,13 +31,13 @@ settings.onChange((event) => {
 await settings.set('ui', {
     volume: 0.75,
     graphics: 'medium',
-    showNetworkDebug: false,
+    showNetworkDebug: false
 });
 
 await settings.updateOrCreate('ui', (current) => ({
     volume: current?.volume ?? 0.75,
     graphics: 'high',
-    showNetworkDebug: current?.showNetworkDebug ?? false,
+    showNetworkDebug: current?.showNetworkDebug ?? false
 }));
 
 await settings.whenIdle();
@@ -45,4 +45,3 @@ await settings.whenIdle();
 
 Use `durability: 'write-behind'` for high-frequency local drafts, and call
 `whenIdle()` or `flush()` before important navigation boundaries.
-

@@ -1,8 +1,5 @@
-import type {
-    PersistenceProvider,
-    PersistenceSetItemOptions,
-} from '@shared/persistence/PersistenceProvider.ts';
 import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { PersistenceProvider, PersistenceSetItemOptions } from '@shared/persistence/PersistenceProvider.ts';
 
 export class PSqlJsonPersistenceProvider<V> implements PersistenceProvider<string, V> {
     private readonly repository: RuntimeStateRepositoryLike;
@@ -10,7 +7,7 @@ export class PSqlJsonPersistenceProvider<V> implements PersistenceProvider<strin
 
     constructor(
         repository: RuntimeStateRepositoryLike,
-        namespace: string,
+        namespace: string
     ) {
         this.repository = repository;
         this.namespace = namespace;
@@ -35,7 +32,7 @@ export class PSqlJsonPersistenceProvider<V> implements PersistenceProvider<strin
             this.namespace,
             key,
             JSON.stringify(value),
-            this.toExpireAtTimestamp(options.expireAtTimestamp),
+            this.toExpireAtTimestamp(options.expireAtTimestamp)
         );
     }
 

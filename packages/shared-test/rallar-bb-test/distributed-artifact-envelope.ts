@@ -1,20 +1,20 @@
 import type { DistributedRunArtifactFiles } from './distributed-artifact-analysis.ts';
 import {
     parseDistributedArtifactPipeline,
-    type ParsedDistributedArtifactPipeline,
+    type ParsedDistributedArtifactPipeline
 } from './distributed-artifact-pipeline.ts';
 import type { DistributedArtifactEnvelopeProjection } from './distributed-artifact-workspace-contracts.ts';
 
 export function projectDistributedArtifactEnvelope(
-    files: DistributedRunArtifactFiles,
+    files: DistributedRunArtifactFiles
 ): DistributedArtifactEnvelopeProjection {
     return projectDistributedArtifactEnvelopeFromParsed(
-        parseDistributedArtifactPipeline(files),
+        parseDistributedArtifactPipeline(files)
     );
 }
 
 export function projectDistributedArtifactEnvelopeFromParsed(
-    parsed: ParsedDistributedArtifactPipeline,
+    parsed: ParsedDistributedArtifactPipeline
 ): DistributedArtifactEnvelopeProjection {
     return parsed.projection;
 }

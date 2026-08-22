@@ -282,16 +282,16 @@ const roomRuntime = await rallar.room.open(roomRef, {
             lanes: ['realtime'],
             fallback: 'ws' | 'drop' | 'queue',
             timeoutMs: 1500,
-            minReadyPeers: 1,
-        },
-    },
+            minReadyPeers: 1
+        }
+    }
 });
 
 roomRuntime.onStatus((status) => renderRoomTransport(status));
 
 await roomRuntime.waitFor({
     rtc: 'partial',
-    timeoutMs: 1500,
+    timeoutMs: 1500
 });
 ```
 
@@ -310,20 +310,20 @@ Calls are explicit RTC sessions that may include media, data, or both.
 const directCall = await rallar.calls.start({
     peerId,
     media: { audio: true, video: false },
-    data: { lanes: ['realtime'] },
+    data: { lanes: ['realtime'] }
 });
 
 const groupCall = await rallar.calls.start({
     peerIds,
     media: { audio: true, video: true },
-    data: { lanes: ['realtime'] },
+    data: { lanes: ['realtime'] }
 });
 
 const liveRoomCall = await rallar.calls.start({
     roomRef,
     membership: 'live',
     topology: 'auto',
-    media: { audio: true, video: false },
+    media: { audio: true, video: false }
 });
 
 directCall.onStatus((status) => renderCallStatus(status));
@@ -397,13 +397,13 @@ const cursors = rallar.realtime.room<CursorUpdate>('cursor.v1', {
     roomRef,
     transport: 'rtc-with-ws-fallback',
     qos: 'latest-by-peer',
-    staleAfterMs: 250,
+    staleAfterMs: 250
 });
 
 const result = await cursors.send({
     x,
     y,
-    heading,
+    heading
 });
 ```
 
@@ -421,14 +421,14 @@ Targeted and room channel facades should cover the common data cases:
 ```ts
 const whisper = rallar.channels.targeted<Whisper>({
     peerIds: [peerId],
-    strategy: 'rtc-with-ws-fallback',
+    strategy: 'rtc-with-ws-fallback'
 });
 
 const roomSignals = rallar.channels.room<GameSignal>({
     roomRef,
     membership: 'live',
     topology: 'auto',
-    strategy: 'rtc-with-ws-fallback',
+    strategy: 'rtc-with-ws-fallback'
 });
 ```
 
@@ -445,19 +445,19 @@ App authors should choose intent-level lane profiles rather than raw
 const state = rallar.channels.room<PlayerState>({
     roomRef,
     lane: 'realtime',
-    strategy: 'rtc-with-ws-fallback',
+    strategy: 'rtc-with-ws-fallback'
 });
 
 const files = rallar.channels.targeted<FileChunk>({
     peerIds,
     lane: 'bulk',
-    strategy: 'rtc',
+    strategy: 'rtc'
 });
 
 const peerControl = rallar.channels.rpc<PeerRequest, PeerResponse>({
     peerId,
     lane: 'control',
-    timeoutMs: 1500,
+    timeoutMs: 1500
 });
 ```
 
@@ -541,13 +541,13 @@ Candidate API:
 await rallar.rtc.openRoom(roomRef, {
     mode: 'warm',
     laneId: 'realtime',
-    timeoutMs: 1500,
+    timeoutMs: 1500
 });
 
 await rallar.rtc.waitForRoom(roomRef, {
     laneId: 'realtime',
     minReadyPeers: 1,
-    timeoutMs: 1500,
+    timeoutMs: 1500
 });
 ```
 
@@ -601,13 +601,13 @@ const channel = rallar.messages.channel<GameSignal>({
     topicId: 'room.game.signal',
     typeId: 'game.signal.v1',
     roomRef,
-    strategy: 'rtc-with-ws-fallback',
+    strategy: 'rtc-with-ws-fallback'
 });
 
 await channel.send({
     kind: 'cursor',
     x,
-    y,
+    y
 });
 ```
 
@@ -641,7 +641,7 @@ const room = rallar.channels.room<T>({
     roomRef,
     membership: 'live',
     topology: 'auto',
-    strategy,
+    strategy
 });
 ```
 

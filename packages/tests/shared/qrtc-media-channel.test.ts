@@ -1,11 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
 import { MediaSessionState, QRtcMediaChannel } from '@shared/webrtc/QRtcMediaChannel.ts';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('QRtcMediaChannel', () => {
     it('subscribes once, caches remote streams, and resets cleanly', async () => {
         const peerConnection = new FakePeerConnection();
         const channel = new QRtcMediaChannel(peerConnection as never, {
-            peerId: 'peer-1',
+            peerId: 'peer-1'
         });
 
         const onTrack = vi.fn(async () => {
@@ -38,10 +38,10 @@ describe('QRtcMediaChannel', () => {
         expect(channel.status.state).toBe(MediaSessionState.Idle);
         expect(channel.getRemoteStreams()).toEqual([]);
         expect(peerConnection.removeOnRemoteStreamCallbackById).toHaveBeenCalledWith(
-            'peer-1:media:stream',
+            'peer-1:media:stream'
         );
         expect(peerConnection.removeOnTrackCallbackById).toHaveBeenCalledWith(
-            'peer-1:media:track',
+            'peer-1:media:track'
         );
 
         await peerConnection.emitRemoteStream(createMediaStream('remote-2'), remoteEvent);
@@ -51,7 +51,7 @@ describe('QRtcMediaChannel', () => {
     it('propagates local media state and reports openness from the peer connection', async () => {
         const peerConnection = new FakePeerConnection(true);
         const channel = new QRtcMediaChannel(peerConnection as never, {
-            peerId: 'peer-1',
+            peerId: 'peer-1'
         });
 
         channel.connect();
@@ -85,7 +85,7 @@ class FakePeerConnection {
         (id: string, cb: RemoteStreamCallback) => {
             this.remoteStreamCallbacks.set(id, cb);
             return this;
-        },
+        }
     );
     public readonly onTrackDo = vi.fn((id: string, cb: TrackCallback) => {
         this.trackCallbacks.set(id, cb);
@@ -126,7 +126,7 @@ class FakePeerConnection {
 type TrackCallback = (event: RTCTrackEvent) => Promise<void>;
 type RemoteStreamCallback = (
     stream: MediaStream,
-    event: RTCTrackEvent,
+    event: RTCTrackEvent
 ) => Promise<void>;
 
 function createMediaStream(id: string): MediaStream {
@@ -135,6 +135,6 @@ function createMediaStream(id: string): MediaStream {
 
 function createTrackEvent(stream: MediaStream): RTCTrackEvent {
     return {
-        streams: [stream],
+        streams: [stream]
     } as unknown as RTCTrackEvent;
 }

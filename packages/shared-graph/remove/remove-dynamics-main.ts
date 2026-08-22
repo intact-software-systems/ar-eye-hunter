@@ -1,10 +1,10 @@
-import { RemoveDynamicsContext, RemoveResult } from './remove-dynamics-types.ts';
+import { CoreSelectionAlgo } from '../graph/steiner-core-algorithms.ts';
 import { rvLeaf, rvODTwo, rvUnusedSP } from './remove-dynamics-basic.ts';
-import { rvTRMDDLN, type SelectSteinerCandidate } from './remove-dynamics-mddl.ts';
-import { rvTryReplace } from './remove-dynamics-try-replace.ts';
 import { rvMCEdge, rvSearchMCEdge } from './remove-dynamics-mc.ts';
 import { rvMDEdge, rvSearchMDEdge } from './remove-dynamics-md.ts';
-import { CoreSelectionAlgo } from '../graph/steiner-core-algorithms.ts';
+import { rvTRMDDLN, type SelectSteinerCandidate } from './remove-dynamics-mddl.ts';
+import { rvTryReplace } from './remove-dynamics-try-replace.ts';
+import { RemoveDynamicsContext, RemoveResult } from './remove-dynamics-types.ts';
 
 export type RemoveDynamicsDeps = {
     selectSteinerCandidate?: SelectSteinerCandidate;
@@ -13,7 +13,7 @@ export type RemoveDynamicsDeps = {
 
 export function removeVertex(
     ctx: RemoveDynamicsContext,
-    deps: RemoveDynamicsDeps = {},
+    deps: RemoveDynamicsDeps = {}
 ): RemoveResult {
     switch (ctx.treeAlgo) {
         case 'REMOVE_TRY_REPLACE_MDDL_NAIVE':

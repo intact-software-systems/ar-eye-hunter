@@ -1,10 +1,4 @@
-import {
-    compareVertexIds,
-    VertexArray,
-    VertexId,
-    VertexSet,
-    WeightedGraph,
-} from '../graph-props.ts';
+import { compareVertexIds, VertexArray, VertexId, VertexSet, WeightedGraph } from '../graph-props.ts';
 
 type RankedNode = {
     node: VertexId;
@@ -13,19 +7,19 @@ type RankedNode = {
 
 export function kBestLocatedNodesFromGraphAverage(
     graph: WeightedGraph,
-    k: number,
+    k: number
 ): VertexArray {
     return kBestLocatedNodesFromVertexSubsetAverage(
         graph,
         new Set(graph.nodes() as string[]),
-        k,
+        k
     );
 }
 
 export function kBestLocatedNodesFromVertexSubsetAverage(
     graph: WeightedGraph,
     vertices: VertexSet,
-    k: number,
+    k: number
 ): VertexArray {
     const ranked: RankedNode[] = [];
 
@@ -34,10 +28,14 @@ export function kBestLocatedNodesFromVertexSubsetAverage(
         let degree = 0;
 
         graph.forEachNeighbor(node, (neighbor: string) => {
-            if (!vertices.has(neighbor)) return;
+            if (!vertices.has(neighbor)) {
+                return;
+            }
 
             const edgeKey = graph.edge(node, neighbor);
-            if (edgeKey === undefined) return;
+            if (edgeKey === undefined) {
+                return;
+            }
 
             const weight = graph.getEdgeAttribute(edgeKey, 'weight') as number;
             sumWeight += weight;
@@ -47,52 +45,54 @@ export function kBestLocatedNodesFromVertexSubsetAverage(
         if (degree > 0) {
             ranked.push({
                 node,
-                score: sumWeight / degree,
+                score: sumWeight / degree
             });
         }
     }
 
     ranked.sort(compareRankedNodesAsc);
-    return ranked.slice(0, k).map(entry => entry.node);
+    return ranked.slice(0, k).map((entry) => entry.node);
 }
 
 export function kBestLocatedNodesFromGraphMedian(
     graph: WeightedGraph,
-    k: number,
+    k: number
 ): VertexArray {
     return kBestLocatedNodesFromVertexSubsetMedian(
         graph,
         new Set(graph.nodes() as string[]),
-        k,
+        k
     );
 }
 
 export function kBestLocatedNodesFromVertexSubsetMedian(
     graph: WeightedGraph,
     vertices: VertexSet,
-    k: number,
+    k: number
 ): VertexArray {
     const ranked: RankedNode[] = [];
 
     for (const node of vertices) {
         const weights = sortedIncidentWeights(graph, node, vertices);
-        if (weights.length === 0) continue;
+        if (weights.length === 0) {
+            continue;
+        }
 
         const medianIndex = Math.floor(weights.length / 2);
         ranked.push({
             node,
-            score: weights[medianIndex],
+            score: weights[medianIndex]
         });
     }
 
     ranked.sort(compareRankedNodesAsc);
-    return ranked.slice(0, k).map(entry => entry.node);
+    return ranked.slice(0, k).map((entry) => entry.node);
 }
 
 export function kCenterNodes(
     graph: WeightedGraph,
     vertices: VertexSet,
-    k: number,
+    k: number
 ): VertexArray {
     const ranked: RankedNode[] = [];
     const vertexList = [...vertices];
@@ -104,10 +104,14 @@ export function kCenterNodes(
             let worstCaseDistance = 0;
 
             for (const other of vertexList) {
-                if (node === other) continue;
+                if (node === other) {
+                    continue;
+                }
 
                 const edgeKey = graph.edge(node, other);
-                if (edgeKey === undefined) continue;
+                if (edgeKey === undefined) {
+                    continue;
+                }
 
                 const weight = graph.getEdgeAttribute(edgeKey, 'weight') as number;
                 if (weight > worstCaseDistance) {
@@ -117,10 +121,11 @@ export function kCenterNodes(
 
             ranked.push({
                 node,
-                score: worstCaseDistance,
+                score: worstCaseDistance
             });
         }
-    } else {
+    }
+    else {
         for (const node of vertexList) {
             let worstCaseDistance = 0;
 
@@ -130,19 +135,19 @@ export function kCenterNodes(
 
             ranked.push({
                 node,
-                score: worstCaseDistance,
+                score: worstCaseDistance
             });
         }
     }
 
     ranked.sort(compareRankedNodesAsc);
-    return ranked.slice(0, k).map(entry => entry.node);
+    return ranked.slice(0, k).map((entry) => entry.node);
 }
 
 export function eccentricityDistance(
     graph: WeightedGraph,
     vertices: VertexSet,
-    source: VertexId,
+    source: VertexId
 ): number {
     const distances = dijkstraDistances(graph, vertices, source);
 
@@ -160,7 +165,7 @@ export function eccentricityDistance(
 export function dijkstraDistances(
     graph: WeightedGraph,
     vertices: VertexSet,
-    source: VertexId,
+    source: VertexId
 ): Map<VertexId, number> {
     const distances = new Map<VertexId, number>();
     const visited = new Set<VertexId>();
@@ -175,7 +180,9 @@ export function dijkstraDistances(
         let currentDistance = Number.POSITIVE_INFINITY;
 
         for (const node of vertices) {
-            if (visited.has(node)) continue;
+            if (visited.has(node)) {
+                continue;
+            }
 
             const distance = distances.get(node) ?? Number.POSITIVE_INFINITY;
             if (distance < currentDistance) {
@@ -191,11 +198,17 @@ export function dijkstraDistances(
         visited.add(current);
 
         graph.forEachNeighbor(current, (neighbor: string) => {
-            if (!vertices.has(neighbor)) return;
-            if (visited.has(neighbor)) return;
+            if (!vertices.has(neighbor)) {
+                return;
+            }
+            if (visited.has(neighbor)) {
+                return;
+            }
 
             const edgeKey = graph.edge(current!, neighbor);
-            if (edgeKey === undefined) return;
+            if (edgeKey === undefined) {
+                return;
+            }
 
             const weight = graph.getEdgeAttribute(edgeKey, 'weight') as number;
             const alt = currentDistance + weight;
@@ -213,15 +226,19 @@ export function dijkstraDistances(
 function sortedIncidentWeights(
     graph: WeightedGraph,
     node: VertexId,
-    allowedVertices: VertexSet,
+    allowedVertices: VertexSet
 ): number[] {
     const weights: number[] = [];
 
     graph.forEachNeighbor(node, (neighbor: string) => {
-        if (!allowedVertices.has(neighbor)) return;
+        if (!allowedVertices.has(neighbor)) {
+            return;
+        }
 
         const edgeKey = graph.edge(node, neighbor);
-        if (edgeKey === undefined) return;
+        if (edgeKey === undefined) {
+            return;
+        }
 
         const weight = graph.getEdgeAttribute(edgeKey, 'weight') as number;
         weights.push(weight);
@@ -234,7 +251,7 @@ function sortedIncidentWeights(
 function degreeWithinSubset(
     graph: WeightedGraph,
     node: VertexId,
-    vertices: VertexSet,
+    vertices: VertexSet
 ): number {
     let degree = 0;
 
@@ -249,7 +266,7 @@ function degreeWithinSubset(
 
 function countEdgesWithinSubset(
     graph: WeightedGraph,
-    vertices: VertexSet,
+    vertices: VertexSet
 ): number {
     let count = 0;
 

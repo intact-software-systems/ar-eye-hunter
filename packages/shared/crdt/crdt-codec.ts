@@ -1,4 +1,10 @@
 import {
+    byteLengthOfRallarCrdtJson,
+    hashRallarCrdtSnapshotEnvelope,
+    hashRallarCrdtUpdateEnvelope,
+    validateRallarCrdtJsonValue
+} from './crdt-hash.ts';
+import {
     RALLAR_CRDT_OPERATION_VERSION,
     RALLAR_CRDT_PROTOCOL_VERSION,
     type RallarCrdtCounterAddOperation,
@@ -11,11 +17,11 @@ import {
     type RallarCrdtOperation,
     type RallarCrdtOperationBatch,
     type RallarCrdtOperationKind,
-    type RallarCrdtPathKind,
-    type RallarCrdtPathSchema,
     type RallarCrdtOrSetAddOperation,
     type RallarCrdtOrSetRemoveOperation,
     type RallarCrdtPath,
+    type RallarCrdtPathKind,
+    type RallarCrdtPathSchema,
     type RallarCrdtRegisterSetOperation,
     type RallarCrdtSequenceDeleteOperation,
     type RallarCrdtSequenceInsertOperation,
@@ -25,14 +31,8 @@ import {
     type RallarCrdtSyncResponseEnvelope,
     type RallarCrdtUpdateEnvelope,
     type RallarCrdtValidationIssue,
-    type RallarCrdtValidationResult,
+    type RallarCrdtValidationResult
 } from './crdt-types.ts';
-import {
-    byteLengthOfRallarCrdtJson,
-    hashRallarCrdtSnapshotEnvelope,
-    hashRallarCrdtUpdateEnvelope,
-    validateRallarCrdtJsonValue,
-} from './crdt-hash.ts';
 
 export type RallarCrdtValidationOptions = Readonly<{
     maxPayloadBytes?: number;
@@ -53,23 +53,23 @@ export type RallarCrdtValidationOptions = Readonly<{
 export function okRallarCrdtValidation(): RallarCrdtValidationResult {
     return {
         valid: true,
-        issues: [],
+        issues: []
     };
 }
 
 export function failRallarCrdtValidation(
-    issues: readonly RallarCrdtValidationIssue[],
+    issues: readonly RallarCrdtValidationIssue[]
 ): RallarCrdtValidationResult {
     return {
         valid: issues.length === 0,
-        issues,
+        issues
     };
 }
 
 export function validateRallarCrdtDocumentRef(
     value: unknown,
     path = '$',
-    options: RallarCrdtValidationOptions = {},
+    options: RallarCrdtValidationOptions = {}
 ): RallarCrdtValidationResult {
     const issues: RallarCrdtValidationIssue[] = [];
 
@@ -78,8 +78,8 @@ export function validateRallarCrdtDocumentRef(
             {
                 path,
                 code: 'invalid-document-ref',
-                message: 'CRDT document ref must be an object.',
-            },
+                message: 'CRDT document ref must be an object.'
+            }
         ]);
     }
 
@@ -89,7 +89,7 @@ export function validateRallarCrdtDocumentRef(
     requireOptionalNonEmptyString(
         value.workspaceId,
         `${path}.workspaceId`,
-        issues,
+        issues
     );
 
     if (
@@ -101,8 +101,7 @@ export function validateRallarCrdtDocumentRef(
         issues.push({
             path: `${path}.scope`,
             code: 'invalid-document-scope',
-            message:
-                'CRDT document scope must be app, principal, room, or custom.',
+            message: 'CRDT document scope must be app, principal, room, or custom.'
         });
     }
 
@@ -114,39 +113,40 @@ export function validateRallarCrdtDocumentRef(
         issues.push({
             path: `${path}.documentType`,
             code: 'document-type-not-allowed',
-            message: `CRDT document type is not allowed: ${value.documentType}.`,
+            message: `CRDT document type is not allowed: ${value.documentType}.`
         });
     }
 
     if (value.scope === 'room') {
         validateRoomDocumentRef(value, path, issues);
-    } else if (value.roomRef !== undefined) {
+    }
+    else if (value.roomRef !== undefined) {
         issues.push({
             path: `${path}.roomRef`,
             code: 'unexpected-room-ref',
-            message: 'Only room-scoped CRDT documents may include roomRef.',
+            message: 'Only room-scoped CRDT documents may include roomRef.'
         });
     }
 
     if (value.scope === 'principal') {
         requireNonEmptyString(value.principalId, `${path}.principalId`, issues);
-    } else if (value.principalId !== undefined) {
+    }
+    else if (value.principalId !== undefined) {
         issues.push({
             path: `${path}.principalId`,
             code: 'unexpected-principal-id',
-            message:
-                'Only principal-scoped CRDT documents may include principalId.',
+            message: 'Only principal-scoped CRDT documents may include principalId.'
         });
     }
 
     if (value.scope === 'custom') {
         requireNonEmptyString(value.customScope, `${path}.customScope`, issues);
-    } else if (value.customScope !== undefined) {
+    }
+    else if (value.customScope !== undefined) {
         issues.push({
             path: `${path}.customScope`,
             code: 'unexpected-custom-scope',
-            message:
-                'Only custom-scoped CRDT documents may include customScope.',
+            message: 'Only custom-scoped CRDT documents may include customScope.'
         });
     }
 
@@ -156,7 +156,7 @@ export function validateRallarCrdtDocumentRef(
 export function validateRallarCrdtOperation(
     value: unknown,
     path = '$',
-    options: RallarCrdtValidationOptions = {},
+    options: RallarCrdtValidationOptions = {}
 ): RallarCrdtValidationResult {
     const issues: RallarCrdtValidationIssue[] = [];
 
@@ -165,8 +165,8 @@ export function validateRallarCrdtOperation(
             {
                 path,
                 code: 'invalid-operation',
-                message: 'CRDT operation must be an object.',
-            },
+                message: 'CRDT operation must be an object.'
+            }
         ]);
     }
 
@@ -186,7 +186,7 @@ export function validateRallarCrdtOperation(
         issues.push({
             path: `${path}.kind`,
             code: 'invalid-operation-kind',
-            message: 'CRDT operation kind is not supported.',
+            message: 'CRDT operation kind is not supported.'
         });
         return failRallarCrdtValidation(issues);
     }
@@ -198,7 +198,7 @@ export function validateRallarCrdtOperation(
         issues.push({
             path: `${path}.kind`,
             code: 'operation-kind-not-allowed',
-            message: `CRDT operation kind is not allowed: ${value.kind}.`,
+            message: `CRDT operation kind is not allowed: ${value.kind}.`
         });
     }
 
@@ -241,7 +241,7 @@ export function validateRallarCrdtOperation(
         value as RallarCrdtOperation,
         path,
         options,
-        issues,
+        issues
     );
 
     return failRallarCrdtValidation(issues);
@@ -250,7 +250,7 @@ export function validateRallarCrdtOperation(
 export function validateRallarCrdtOperationBatch(
     value: unknown,
     path = '$',
-    options: RallarCrdtValidationOptions = {},
+    options: RallarCrdtValidationOptions = {}
 ): RallarCrdtValidationResult {
     const issues: RallarCrdtValidationIssue[] = [];
 
@@ -259,8 +259,8 @@ export function validateRallarCrdtOperationBatch(
             {
                 path,
                 code: 'invalid-operation-batch',
-                message: 'CRDT operation batch must be an object.',
-            },
+                message: 'CRDT operation batch must be an object.'
+            }
         ]);
     }
 
@@ -268,7 +268,7 @@ export function validateRallarCrdtOperationBatch(
         issues.push({
             path: `${path}.kind`,
             code: 'invalid-operation-batch-kind',
-            message: 'CRDT operation batch kind must be batch.',
+            message: 'CRDT operation batch kind must be batch.'
         });
     }
 
@@ -276,41 +276,43 @@ export function validateRallarCrdtOperationBatch(
         issues.push({
             path: `${path}.operations`,
             code: 'invalid-operation-list',
-            message: 'CRDT operation batch operations must be an array.',
+            message: 'CRDT operation batch operations must be an array.'
         });
-    } else if (
+    }
+    else if (
         options.maxOperationCount !== undefined &&
         value.operations.length > options.maxOperationCount
     ) {
         issues.push({
             path: `${path}.operations`,
             code: 'operation-count-too-large',
-            message: `CRDT operation batch exceeds ${options.maxOperationCount} operations.`,
+            message: `CRDT operation batch exceeds ${options.maxOperationCount} operations.`
         });
-    } else if (value.encryption !== undefined) {
+    }
+    else if (value.encryption !== undefined) {
         if (value.operations.length > 0) {
             issues.push({
                 path: `${path}.operations`,
                 code: 'encrypted-payload-must-hide-operations',
-                message:
-                    'Encrypted CRDT operation batches must not expose plaintext operations.',
+                message: 'Encrypted CRDT operation batches must not expose plaintext operations.'
             });
         }
-    } else {
+    }
+    else {
         value.operations.forEach((operation, index) => {
             issues.push(
                 ...validateRallarCrdtOperation(
                     operation,
                     `${path}.operations[${index}]`,
-                    options,
-                ).issues,
+                    options
+                ).issues
             );
         });
     }
     requireOptionalNonEmptyString(
         value.operationGroupId,
         `${path}.operationGroupId`,
-        issues,
+        issues
     );
     if (value.undo !== undefined) {
         validateUndoRedoMetadata(value.undo, `${path}.undo`, issues);
@@ -323,7 +325,7 @@ export function validateRallarCrdtOperationBatch(
             value.encryption,
             `${path}.encryption`,
             'operation-batch',
-            issues,
+            issues
         );
     }
 
@@ -333,7 +335,7 @@ export function validateRallarCrdtOperationBatch(
 export function validateRallarCrdtUpdateEnvelope(
     value: unknown,
     path = '$',
-    options: RallarCrdtValidationOptions = {},
+    options: RallarCrdtValidationOptions = {}
 ): RallarCrdtValidationResult {
     const issues: RallarCrdtValidationIssue[] = [];
 
@@ -342,8 +344,8 @@ export function validateRallarCrdtUpdateEnvelope(
             {
                 path,
                 code: 'invalid-update-envelope',
-                message: 'CRDT update envelope must be an object.',
-            },
+                message: 'CRDT update envelope must be an object.'
+            }
         ]);
     }
 
@@ -352,7 +354,7 @@ export function validateRallarCrdtUpdateEnvelope(
         RALLAR_CRDT_PROTOCOL_VERSION,
         `${path}.protocolVersion`,
         'unknown-protocol-version',
-        issues,
+        issues
     );
     requireNonEmptyString(value.updateId, `${path}.updateId`, issues);
     requireNonEmptyString(value.replicaId, `${path}.replicaId`, issues);
@@ -362,26 +364,26 @@ export function validateRallarCrdtUpdateEnvelope(
     requireNonNegativeInteger(
         value.createdAtEpochMs,
         `${path}.createdAtEpochMs`,
-        issues,
+        issues
     );
     requireNonNegativeInteger(
         value.schemaVersion,
         `${path}.schemaVersion`,
-        issues,
+        issues
     );
     requireAllowedVersion(
         value.schemaVersion,
         options.allowedSchemaVersions,
         `${path}.schemaVersion`,
         'schema-version-not-allowed',
-        issues,
+        issues
     );
     requireAllowedVersion(
         value.operationVersion,
         options.allowedOperationVersions ?? [RALLAR_CRDT_OPERATION_VERSION],
         `${path}.operationVersion`,
         'unknown-operation-version',
-        issues,
+        issues
     );
     validateStringArray(value.parents, `${path}.parents`, issues);
     if (
@@ -392,29 +394,29 @@ export function validateRallarCrdtUpdateEnvelope(
         issues.push({
             path: `${path}.parents`,
             code: 'parent-count-too-large',
-            message: `CRDT update exceeds ${options.maxParentCount} parents.`,
+            message: `CRDT update exceeds ${options.maxParentCount} parents.`
         });
     }
     if (value.causalFrontier !== undefined) {
         validateCausalFrontier(
             value.causalFrontier,
             `${path}.causalFrontier`,
-            issues,
+            issues
         );
     }
     issues.push(
         ...validateRallarCrdtDocumentRef(
             value.document,
             `${path}.document`,
-            options,
-        ).issues,
+            options
+        ).issues
     );
     issues.push(
         ...validateRallarCrdtOperationBatch(
             value.payload,
             `${path}.payload`,
-            options,
-        ).issues,
+            options
+        ).issues
     );
 
     if (options.maxPayloadBytes !== undefined && issues.length === 0) {
@@ -424,35 +426,36 @@ export function validateRallarCrdtUpdateEnvelope(
                 issues.push({
                     path: `${path}.payload`,
                     code: 'payload-too-large',
-                    message: `CRDT update payload exceeds ${options.maxPayloadBytes} bytes.`,
+                    message: `CRDT update payload exceeds ${options.maxPayloadBytes} bytes.`
                 });
             }
-        } catch (error) {
+        }
+        catch (error) {
             issues.push({
                 path: `${path}.payload`,
                 code: 'payload-not-json',
-                message: error instanceof Error ? error.message : String(error),
+                message: error instanceof Error ? error.message : String(error)
             });
         }
     }
 
     if (typeof value.hash === 'string' && issues.length === 0) {
         const expected = hashRallarCrdtUpdateEnvelope(
-            value as RallarCrdtUpdateEnvelope,
+            value as RallarCrdtUpdateEnvelope
         );
         if (value.hash !== expected) {
             issues.push({
                 path: `${path}.hash`,
                 code: 'hash-mismatch',
-                message:
-                    'CRDT update hash does not match its canonical payload.',
+                message: 'CRDT update hash does not match its canonical payload.'
             });
         }
-    } else if (value.hash !== undefined) {
+    }
+    else if (value.hash !== undefined) {
         issues.push({
             path: `${path}.hash`,
             code: 'invalid-hash',
-            message: 'CRDT update hash must be a string when present.',
+            message: 'CRDT update hash must be a string when present.'
         });
     }
 
@@ -462,7 +465,7 @@ export function validateRallarCrdtUpdateEnvelope(
 export function validateRallarCrdtSnapshotEnvelope(
     value: unknown,
     path = '$',
-    options: RallarCrdtValidationOptions = {},
+    options: RallarCrdtValidationOptions = {}
 ): RallarCrdtValidationResult {
     const issues: RallarCrdtValidationIssue[] = [];
 
@@ -471,8 +474,8 @@ export function validateRallarCrdtSnapshotEnvelope(
             {
                 path,
                 code: 'invalid-snapshot-envelope',
-                message: 'CRDT snapshot envelope must be an object.',
-            },
+                message: 'CRDT snapshot envelope must be an object.'
+            }
         ]);
     }
 
@@ -481,38 +484,38 @@ export function validateRallarCrdtSnapshotEnvelope(
         RALLAR_CRDT_PROTOCOL_VERSION,
         `${path}.protocolVersion`,
         'unknown-protocol-version',
-        issues,
+        issues
     );
     requireNonEmptyString(value.snapshotId, `${path}.snapshotId`, issues);
     requireNonNegativeInteger(
         value.schemaVersion,
         `${path}.schemaVersion`,
-        issues,
+        issues
     );
     requireAllowedVersion(
         value.schemaVersion,
         options.allowedSchemaVersions,
         `${path}.schemaVersion`,
         'schema-version-not-allowed',
-        issues,
+        issues
     );
     requireNonNegativeInteger(
         value.createdAtEpochMs,
         `${path}.createdAtEpochMs`,
-        issues,
+        issues
     );
     requireNonNegativeInteger(value.maxLamport, `${path}.maxLamport`, issues);
     validateStringArray(
         value.includedUpdateIds,
         `${path}.includedUpdateIds`,
-        issues,
+        issues
     );
     issues.push(
         ...validateRallarCrdtDocumentRef(
             value.document,
             `${path}.document`,
-            options,
-        ).issues,
+            options
+        ).issues
     );
     issues.push(...validateRallarCrdtJsonValue(value.value, `${path}.value`));
     if (isRecord(value.value) && value.value.kind === 'encrypted-json') {
@@ -520,28 +523,28 @@ export function validateRallarCrdtSnapshotEnvelope(
             value.value,
             `${path}.value`,
             'snapshot-body',
-            issues,
+            issues
         );
     }
     validateSnapshotMetadata(value.metadata, `${path}.metadata`, issues);
 
     if (typeof value.hash === 'string' && issues.length === 0) {
         const expected = hashRallarCrdtSnapshotEnvelope(
-            value as RallarCrdtSnapshotEnvelope,
+            value as RallarCrdtSnapshotEnvelope
         );
         if (value.hash !== expected) {
             issues.push({
                 path: `${path}.hash`,
                 code: 'hash-mismatch',
-                message:
-                    'CRDT snapshot hash does not match its canonical payload.',
+                message: 'CRDT snapshot hash does not match its canonical payload.'
             });
         }
-    } else if (value.hash !== undefined) {
+    }
+    else if (value.hash !== undefined) {
         issues.push({
             path: `${path}.hash`,
             code: 'invalid-hash',
-            message: 'CRDT snapshot hash must be a string when present.',
+            message: 'CRDT snapshot hash must be a string when present.'
         });
     }
 
@@ -551,7 +554,7 @@ export function validateRallarCrdtSnapshotEnvelope(
 export function validateRallarCrdtSyncRequestEnvelope(
     value: unknown,
     path = '$',
-    options: RallarCrdtValidationOptions = {},
+    options: RallarCrdtValidationOptions = {}
 ): RallarCrdtValidationResult {
     const issues: RallarCrdtValidationIssue[] = [];
 
@@ -560,8 +563,8 @@ export function validateRallarCrdtSyncRequestEnvelope(
             {
                 path,
                 code: 'invalid-sync-request-envelope',
-                message: 'CRDT sync request envelope must be an object.',
-            },
+                message: 'CRDT sync request envelope must be an object.'
+            }
         ]);
     }
 
@@ -570,35 +573,35 @@ export function validateRallarCrdtSyncRequestEnvelope(
         RALLAR_CRDT_PROTOCOL_VERSION,
         `${path}.protocolVersion`,
         'unknown-protocol-version',
-        issues,
+        issues
     );
     issues.push(
         ...validateRallarCrdtDocumentRef(
             value.document,
             `${path}.document`,
-            options,
-        ).issues,
+            options
+        ).issues
     );
     requireNonEmptyString(value.requestId, `${path}.requestId`, issues);
     requireNonEmptyString(value.replicaId, `${path}.replicaId`, issues);
     requireNonNegativeInteger(
         value.createdAtEpochMs,
         `${path}.createdAtEpochMs`,
-        issues,
+        issues
     );
     validateStringArray(value.knownUpdateIds, `${path}.knownUpdateIds`, issues);
     if (value.missingUpdateIds !== undefined) {
         validateStringArray(
             value.missingUpdateIds,
             `${path}.missingUpdateIds`,
-            issues,
+            issues
         );
     }
     if (value.maxUpdateCount !== undefined) {
         requireNonNegativeInteger(
             value.maxUpdateCount,
             `${path}.maxUpdateCount`,
-            issues,
+            issues
         );
     }
 
@@ -608,7 +611,7 @@ export function validateRallarCrdtSyncRequestEnvelope(
 export function validateRallarCrdtSyncResponseEnvelope(
     value: unknown,
     path = '$',
-    options: RallarCrdtValidationOptions = {},
+    options: RallarCrdtValidationOptions = {}
 ): RallarCrdtValidationResult {
     const issues: RallarCrdtValidationIssue[] = [];
 
@@ -617,8 +620,8 @@ export function validateRallarCrdtSyncResponseEnvelope(
             {
                 path,
                 code: 'invalid-sync-response-envelope',
-                message: 'CRDT sync response envelope must be an object.',
-            },
+                message: 'CRDT sync response envelope must be an object.'
+            }
         ]);
     }
 
@@ -627,14 +630,14 @@ export function validateRallarCrdtSyncResponseEnvelope(
         RALLAR_CRDT_PROTOCOL_VERSION,
         `${path}.protocolVersion`,
         'unknown-protocol-version',
-        issues,
+        issues
     );
     issues.push(
         ...validateRallarCrdtDocumentRef(
             value.document,
             `${path}.document`,
-            options,
-        ).issues,
+            options
+        ).issues
     );
     requireNonEmptyString(value.requestId, `${path}.requestId`, issues);
     requireNonEmptyString(value.responseId, `${path}.responseId`, issues);
@@ -642,31 +645,32 @@ export function validateRallarCrdtSyncResponseEnvelope(
     requireNonNegativeInteger(
         value.createdAtEpochMs,
         `${path}.createdAtEpochMs`,
-        issues,
+        issues
     );
     if (value.snapshot !== undefined) {
         issues.push(
             ...validateRallarCrdtSnapshotEnvelope(
                 value.snapshot,
                 `${path}.snapshot`,
-                options,
-            ).issues,
+                options
+            ).issues
         );
     }
     if (!Array.isArray(value.updates)) {
         issues.push({
             path: `${path}.updates`,
             code: 'invalid-sync-response-updates',
-            message: 'CRDT sync response updates must be an array.',
+            message: 'CRDT sync response updates must be an array.'
         });
-    } else {
+    }
+    else {
         value.updates.forEach((update, index) => {
             issues.push(
                 ...validateRallarCrdtUpdateEnvelope(
                     update,
                     `${path}.updates[${index}]`,
-                    options,
-                ).issues,
+                    options
+                ).issues
             );
         });
     }
@@ -674,7 +678,7 @@ export function validateRallarCrdtSyncResponseEnvelope(
         issues.push({
             path: `${path}.hasMore`,
             code: 'invalid-has-more',
-            message: 'CRDT sync response hasMore must be boolean when present.',
+            message: 'CRDT sync response hasMore must be boolean when present.'
         });
     }
     requireOptionalNonEmptyString(value.reason, `${path}.reason`, issues);
@@ -684,7 +688,7 @@ export function validateRallarCrdtSyncResponseEnvelope(
 
 export function assertValidRallarCrdtUpdateEnvelope(
     value: unknown,
-    options: RallarCrdtValidationOptions = {},
+    options: RallarCrdtValidationOptions = {}
 ): asserts value is RallarCrdtUpdateEnvelope {
     const result = validateRallarCrdtUpdateEnvelope(value, '$', options);
     if (!result.valid) {
@@ -694,7 +698,7 @@ export function assertValidRallarCrdtUpdateEnvelope(
 
 export function assertValidRallarCrdtSnapshotEnvelope(
     value: unknown,
-    options: RallarCrdtValidationOptions = {},
+    options: RallarCrdtValidationOptions = {}
 ): asserts value is RallarCrdtSnapshotEnvelope {
     const result = validateRallarCrdtSnapshotEnvelope(value, '$', options);
     if (!result.valid) {
@@ -704,7 +708,7 @@ export function assertValidRallarCrdtSnapshotEnvelope(
 
 export function assertValidRallarCrdtSyncRequestEnvelope(
     value: unknown,
-    options: RallarCrdtValidationOptions = {},
+    options: RallarCrdtValidationOptions = {}
 ): asserts value is RallarCrdtSyncRequestEnvelope {
     const result = validateRallarCrdtSyncRequestEnvelope(value, '$', options);
     if (!result.valid) {
@@ -714,7 +718,7 @@ export function assertValidRallarCrdtSyncRequestEnvelope(
 
 export function assertValidRallarCrdtSyncResponseEnvelope(
     value: unknown,
-    options: RallarCrdtValidationOptions = {},
+    options: RallarCrdtValidationOptions = {}
 ): asserts value is RallarCrdtSyncResponseEnvelope {
     const result = validateRallarCrdtSyncResponseEnvelope(value, '$', options);
     if (!result.valid) {
@@ -724,34 +728,34 @@ export function assertValidRallarCrdtSyncResponseEnvelope(
 
 export function isRallarCrdtUpdateEnvelope(
     value: unknown,
-    options: RallarCrdtValidationOptions = {},
+    options: RallarCrdtValidationOptions = {}
 ): value is RallarCrdtUpdateEnvelope {
     return validateRallarCrdtUpdateEnvelope(value, '$', options).valid;
 }
 
 export function isRallarCrdtSnapshotEnvelope(
     value: unknown,
-    options: RallarCrdtValidationOptions = {},
+    options: RallarCrdtValidationOptions = {}
 ): value is RallarCrdtSnapshotEnvelope {
     return validateRallarCrdtSnapshotEnvelope(value, '$', options).valid;
 }
 
 export function isRallarCrdtSyncRequestEnvelope(
     value: unknown,
-    options: RallarCrdtValidationOptions = {},
+    options: RallarCrdtValidationOptions = {}
 ): value is RallarCrdtSyncRequestEnvelope {
     return validateRallarCrdtSyncRequestEnvelope(value, '$', options).valid;
 }
 
 export function isRallarCrdtSyncResponseEnvelope(
     value: unknown,
-    options: RallarCrdtValidationOptions = {},
+    options: RallarCrdtValidationOptions = {}
 ): value is RallarCrdtSyncResponseEnvelope {
     return validateRallarCrdtSyncResponseEnvelope(value, '$', options).valid;
 }
 
 export function encodeRallarCrdtUpdateEnvelope(
-    envelope: RallarCrdtUpdateEnvelope,
+    envelope: RallarCrdtUpdateEnvelope
 ): string {
     assertValidRallarCrdtUpdateEnvelope(envelope);
     return JSON.stringify(envelope);
@@ -759,7 +763,7 @@ export function encodeRallarCrdtUpdateEnvelope(
 
 export function decodeRallarCrdtUpdateEnvelope(
     encoded: string,
-    options: RallarCrdtValidationOptions = {},
+    options: RallarCrdtValidationOptions = {}
 ): RallarCrdtUpdateEnvelope {
     const parsed = JSON.parse(encoded) as unknown;
     assertValidRallarCrdtUpdateEnvelope(parsed, options);
@@ -767,7 +771,7 @@ export function decodeRallarCrdtUpdateEnvelope(
 }
 
 export function formatRallarCrdtValidation(
-    result: RallarCrdtValidationResult,
+    result: RallarCrdtValidationResult
 ): string {
     if (result.valid) {
         return 'CRDT payload is valid.';
@@ -781,13 +785,13 @@ export function formatRallarCrdtValidation(
 function validateRoomDocumentRef(
     value: Record<string, unknown>,
     path: string,
-    issues: RallarCrdtValidationIssue[],
+    issues: RallarCrdtValidationIssue[]
 ): void {
     if (!isRecord(value.roomRef)) {
         issues.push({
             path: `${path}.roomRef`,
             code: 'missing-room-ref',
-            message: 'Room-scoped CRDT documents require roomRef.',
+            message: 'Room-scoped CRDT documents require roomRef.'
         });
         return;
     }
@@ -796,12 +800,12 @@ function validateRoomDocumentRef(
     requireNonEmptyString(
         roomRef.applicationId,
         `${path}.roomRef.applicationId`,
-        issues,
+        issues
     );
     requireOptionalNonEmptyString(
         roomRef.workspaceId,
         `${path}.roomRef.workspaceId`,
-        issues,
+        issues
     );
     requireNonEmptyString(roomRef.groupId, `${path}.roomRef.groupId`, issues);
 
@@ -813,8 +817,7 @@ function validateRoomDocumentRef(
         issues.push({
             path: `${path}.roomRef.applicationId`,
             code: 'room-application-mismatch',
-            message:
-                'Room ref applicationId must match document applicationId.',
+            message: 'Room ref applicationId must match document applicationId.'
         });
     }
 
@@ -826,7 +829,7 @@ function validateRoomDocumentRef(
         issues.push({
             path: `${path}.roomRef.workspaceId`,
             code: 'room-workspace-mismatch',
-            message: 'Room ref workspaceId must match document workspaceId.',
+            message: 'Room ref workspaceId must match document workspaceId.'
         });
     }
 }
@@ -835,7 +838,7 @@ function validateOrSetAddOperation(
     value: Record<string, unknown>,
     path: string,
     issues: RallarCrdtValidationIssue[],
-    options: RallarCrdtValidationOptions,
+    options: RallarCrdtValidationOptions
 ): asserts value is RallarCrdtOrSetAddOperation {
     validatePath(value.path, `${path}.path`, issues, options);
     requireNonEmptyString(value.elementId, `${path}.elementId`, issues);
@@ -845,7 +848,7 @@ function validateOrSetAddOperation(
         options.maxElementIdLength,
         'element-id-too-large',
         'CRDT elementId',
-        issues,
+        issues
     );
     issues.push(...validateRallarCrdtJsonValue(value.value, `${path}.value`));
 }
@@ -854,7 +857,7 @@ function validateOrSetRemoveOperation(
     value: Record<string, unknown>,
     path: string,
     issues: RallarCrdtValidationIssue[],
-    options: RallarCrdtValidationOptions,
+    options: RallarCrdtValidationOptions
 ): asserts value is RallarCrdtOrSetRemoveOperation {
     validatePath(value.path, `${path}.path`, issues, options);
     requireNonEmptyString(value.elementId, `${path}.elementId`, issues);
@@ -864,12 +867,12 @@ function validateOrSetRemoveOperation(
         options.maxElementIdLength,
         'element-id-too-large',
         'CRDT elementId',
-        issues,
+        issues
     );
     validateStringArray(
         value.observedAddUpdateIds,
         `${path}.observedAddUpdateIds`,
-        issues,
+        issues
     );
 }
 
@@ -877,14 +880,14 @@ function validateRegisterSetOperation(
     value: Record<string, unknown>,
     path: string,
     issues: RallarCrdtValidationIssue[],
-    options: RallarCrdtValidationOptions,
+    options: RallarCrdtValidationOptions
 ): asserts value is RallarCrdtRegisterSetOperation {
     validatePath(value.path, `${path}.path`, issues, options);
     if (value.policy !== 'lww' && value.policy !== 'multi') {
         issues.push({
             path: `${path}.policy`,
             code: 'invalid-register-policy',
-            message: 'CRDT register policy must be lww or multi.',
+            message: 'CRDT register policy must be lww or multi.'
         });
     }
     issues.push(...validateRallarCrdtJsonValue(value.value, `${path}.value`));
@@ -894,7 +897,7 @@ function validateMapSetOperation(
     value: Record<string, unknown>,
     path: string,
     issues: RallarCrdtValidationIssue[],
-    options: RallarCrdtValidationOptions,
+    options: RallarCrdtValidationOptions
 ): asserts value is RallarCrdtMapSetOperation {
     validatePath(value.path, `${path}.path`, issues, options);
     requireNonEmptyString(value.key, `${path}.key`, issues);
@@ -904,7 +907,7 @@ function validateMapSetOperation(
         options.maxKeyLength,
         'key-too-large',
         'CRDT map key',
-        issues,
+        issues
     );
     issues.push(...validateRallarCrdtJsonValue(value.value, `${path}.value`));
 }
@@ -913,7 +916,7 @@ function validateMapDeleteOperation(
     value: Record<string, unknown>,
     path: string,
     issues: RallarCrdtValidationIssue[],
-    options: RallarCrdtValidationOptions,
+    options: RallarCrdtValidationOptions
 ): asserts value is RallarCrdtMapDeleteOperation {
     validatePath(value.path, `${path}.path`, issues, options);
     requireNonEmptyString(value.key, `${path}.key`, issues);
@@ -923,12 +926,12 @@ function validateMapDeleteOperation(
         options.maxKeyLength,
         'key-too-large',
         'CRDT map key',
-        issues,
+        issues
     );
     validateStringArray(
         value.observedUpdateIds,
         `${path}.observedUpdateIds`,
-        issues,
+        issues
     );
 }
 
@@ -936,7 +939,7 @@ function validateSequenceInsertOperation(
     value: Record<string, unknown>,
     path: string,
     issues: RallarCrdtValidationIssue[],
-    options: RallarCrdtValidationOptions,
+    options: RallarCrdtValidationOptions
 ): asserts value is RallarCrdtSequenceInsertOperation {
     validatePath(value.path, `${path}.path`, issues, options);
     requireNonEmptyString(value.elementId, `${path}.elementId`, issues);
@@ -946,7 +949,7 @@ function validateSequenceInsertOperation(
         options.maxElementIdLength,
         'element-id-too-large',
         'CRDT elementId',
-        issues,
+        issues
     );
     requireNonEmptyString(value.positionId, `${path}.positionId`, issues);
     requireMaxStringLength(
@@ -955,7 +958,7 @@ function validateSequenceInsertOperation(
         options.maxElementIdLength,
         'position-id-too-large',
         'CRDT positionId',
-        issues,
+        issues
     );
     issues.push(...validateRallarCrdtJsonValue(value.value, `${path}.value`));
 }
@@ -964,7 +967,7 @@ function validateSequenceDeleteOperation(
     value: Record<string, unknown>,
     path: string,
     issues: RallarCrdtValidationIssue[],
-    options: RallarCrdtValidationOptions,
+    options: RallarCrdtValidationOptions
 ): asserts value is RallarCrdtSequenceDeleteOperation {
     validatePath(value.path, `${path}.path`, issues, options);
     requireNonEmptyString(value.elementId, `${path}.elementId`, issues);
@@ -974,12 +977,12 @@ function validateSequenceDeleteOperation(
         options.maxElementIdLength,
         'element-id-too-large',
         'CRDT elementId',
-        issues,
+        issues
     );
     validateStringArray(
         value.observedUpdateIds,
         `${path}.observedUpdateIds`,
-        issues,
+        issues
     );
 }
 
@@ -987,7 +990,7 @@ function validateSequenceMoveOperation(
     value: Record<string, unknown>,
     path: string,
     issues: RallarCrdtValidationIssue[],
-    options: RallarCrdtValidationOptions,
+    options: RallarCrdtValidationOptions
 ): asserts value is RallarCrdtSequenceMoveOperation {
     validatePath(value.path, `${path}.path`, issues, options);
     requireNonEmptyString(value.elementId, `${path}.elementId`, issues);
@@ -997,7 +1000,7 @@ function validateSequenceMoveOperation(
         options.maxElementIdLength,
         'element-id-too-large',
         'CRDT elementId',
-        issues,
+        issues
     );
     requireNonEmptyString(value.positionId, `${path}.positionId`, issues);
     requireMaxStringLength(
@@ -1006,12 +1009,12 @@ function validateSequenceMoveOperation(
         options.maxElementIdLength,
         'position-id-too-large',
         'CRDT positionId',
-        issues,
+        issues
     );
     validateStringArray(
         value.observedUpdateIds,
         `${path}.observedUpdateIds`,
-        issues,
+        issues
     );
 }
 
@@ -1019,7 +1022,7 @@ function validateCounterAddOperation(
     value: Record<string, unknown>,
     path: string,
     issues: RallarCrdtValidationIssue[],
-    options: RallarCrdtValidationOptions,
+    options: RallarCrdtValidationOptions
 ): asserts value is RallarCrdtCounterAddOperation {
     validatePath(value.path, `${path}.path`, issues, options);
     requireFiniteNumber(value.delta, `${path}.delta`, issues);
@@ -1029,7 +1032,7 @@ function validateNumberMinOperation(
     value: Record<string, unknown>,
     path: string,
     issues: RallarCrdtValidationIssue[],
-    options: RallarCrdtValidationOptions,
+    options: RallarCrdtValidationOptions
 ): asserts value is RallarCrdtNumberMinOperation {
     validatePath(value.path, `${path}.path`, issues, options);
     requireFiniteNumber(value.value, `${path}.value`, issues);
@@ -1039,7 +1042,7 @@ function validateNumberMaxOperation(
     value: Record<string, unknown>,
     path: string,
     issues: RallarCrdtValidationIssue[],
-    options: RallarCrdtValidationOptions,
+    options: RallarCrdtValidationOptions
 ): asserts value is RallarCrdtNumberMaxOperation {
     validatePath(value.path, `${path}.path`, issues, options);
     requireFiniteNumber(value.value, `${path}.value`, issues);
@@ -1048,13 +1051,13 @@ function validateNumberMaxOperation(
 function validateUndoRedoMetadata(
     value: unknown,
     path: string,
-    issues: RallarCrdtValidationIssue[],
+    issues: RallarCrdtValidationIssue[]
 ): void {
     if (!isRecord(value)) {
         issues.push({
             path,
             code: 'invalid-undo-redo-metadata',
-            message: 'CRDT undo/redo metadata must be an object.',
+            message: 'CRDT undo/redo metadata must be an object.'
         });
         return;
     }
@@ -1062,12 +1065,12 @@ function validateUndoRedoMetadata(
     requireNonEmptyString(
         value.targetOperationGroupId,
         `${path}.targetOperationGroupId`,
-        issues,
+        issues
     );
     validateStringArray(
         value.targetUpdateIds,
         `${path}.targetUpdateIds`,
-        issues,
+        issues
     );
 }
 
@@ -1075,13 +1078,13 @@ function validateEncryptedJsonEnvelope(
     value: unknown,
     path: string,
     plaintextType: RallarCrdtEncryptedJsonEnvelope['plaintextType'],
-    issues: RallarCrdtValidationIssue[],
+    issues: RallarCrdtValidationIssue[]
 ): void {
     if (!isRecord(value)) {
         issues.push({
             path,
             code: 'invalid-encrypted-json',
-            message: 'CRDT encrypted JSON envelope must be an object.',
+            message: 'CRDT encrypted JSON envelope must be an object.'
         });
         return;
     }
@@ -1090,30 +1093,28 @@ function validateEncryptedJsonEnvelope(
         issues.push({
             path: `${path}.kind`,
             code: 'invalid-encrypted-json-kind',
-            message:
-                'CRDT encrypted JSON envelope kind must be encrypted-json.',
+            message: 'CRDT encrypted JSON envelope kind must be encrypted-json.'
         });
     }
     if (value.format !== 'rallar.crdt.encrypted-json.v1') {
         issues.push({
             path: `${path}.format`,
             code: 'invalid-encrypted-json-format',
-            message:
-                'CRDT encrypted JSON envelope format must be rallar.crdt.encrypted-json.v1.',
+            message: 'CRDT encrypted JSON envelope format must be rallar.crdt.encrypted-json.v1.'
         });
     }
     if (value.algorithm !== 'AES-GCM-256') {
         issues.push({
             path: `${path}.algorithm`,
             code: 'invalid-encryption-algorithm',
-            message: 'CRDT encrypted JSON algorithm must be AES-GCM-256.',
+            message: 'CRDT encrypted JSON algorithm must be AES-GCM-256.'
         });
     }
     if (value.plaintextType !== plaintextType) {
         issues.push({
             path: `${path}.plaintextType`,
             code: 'invalid-encrypted-plaintext-type',
-            message: `CRDT encrypted JSON plaintextType must be ${plaintextType}.`,
+            message: `CRDT encrypted JSON plaintextType must be ${plaintextType}.`
         });
     }
     requireNonEmptyString(value.keyId, `${path}.keyId`, issues);
@@ -1124,13 +1125,13 @@ function validateEncryptedJsonEnvelope(
     requireNonNegativeInteger(
         value.encryptedAtEpochMs,
         `${path}.encryptedAtEpochMs`,
-        issues,
+        issues
     );
     if (value.visibleMetadataFields !== undefined) {
         validateStringArray(
             value.visibleMetadataFields,
             `${path}.visibleMetadataFields`,
-            issues,
+            issues
         );
     }
 }
@@ -1139,13 +1140,13 @@ function validatePath(
     value: unknown,
     path: string,
     issues: RallarCrdtValidationIssue[],
-    options: RallarCrdtValidationOptions = {},
+    options: RallarCrdtValidationOptions = {}
 ): asserts value is RallarCrdtPath {
     if (!Array.isArray(value)) {
         issues.push({
             path,
             code: 'invalid-path',
-            message: 'CRDT operation path must be an array of strings.',
+            message: 'CRDT operation path must be an array of strings.'
         });
         return;
     }
@@ -1157,7 +1158,7 @@ function validatePath(
         issues.push({
             path,
             code: 'path-too-deep',
-            message: `CRDT operation path exceeds ${options.maxPathDepth} segments.`,
+            message: `CRDT operation path exceeds ${options.maxPathDepth} segments.`
         });
     }
 
@@ -1166,17 +1167,17 @@ function validatePath(
             issues.push({
                 path: `${path}[${index}]`,
                 code: 'invalid-path-segment',
-                message:
-                    'CRDT operation path segments must be non-empty strings.',
+                message: 'CRDT operation path segments must be non-empty strings.'
             });
-        } else if (
+        }
+        else if (
             options.maxPathSegmentLength !== undefined &&
             entry.length > options.maxPathSegmentLength
         ) {
             issues.push({
                 path: `${path}[${index}]`,
                 code: 'path-segment-too-large',
-                message: `CRDT operation path segment exceeds ${options.maxPathSegmentLength} characters.`,
+                message: `CRDT operation path segment exceeds ${options.maxPathSegmentLength} characters.`
             });
         }
     });
@@ -1185,32 +1186,30 @@ function validatePath(
 function validateStringArray(
     value: unknown,
     path: string,
-    issues: RallarCrdtValidationIssue[],
+    issues: RallarCrdtValidationIssue[]
 ): asserts value is readonly string[] {
     if (!Array.isArray(value)) {
         issues.push({
             path,
             code: 'invalid-string-array',
-            message: 'Expected an array of strings.',
+            message: 'Expected an array of strings.'
         });
         return;
     }
 
-    value.forEach((entry, index) =>
-        requireNonEmptyString(entry, `${path}[${index}]`, issues),
-    );
+    value.forEach((entry, index) => requireNonEmptyString(entry, `${path}[${index}]`, issues));
 }
 
 function validateSnapshotMetadata(
     value: unknown,
     path: string,
-    issues: RallarCrdtValidationIssue[],
+    issues: RallarCrdtValidationIssue[]
 ): void {
     if (!isRecord(value)) {
         issues.push({
             path,
             code: 'invalid-snapshot-metadata',
-            message: 'CRDT snapshot metadata must be an object.',
+            message: 'CRDT snapshot metadata must be an object.'
         });
         return;
     }
@@ -1218,18 +1217,18 @@ function validateSnapshotMetadata(
     requireOptionalNonEmptyString(
         value.createdByReplicaId,
         `${path}.createdByReplicaId`,
-        issues,
+        issues
     );
     requireNonNegativeInteger(value.updateCount, `${path}.updateCount`, issues);
     requireOptionalNonNegativeInteger(
         value.tombstoneCount,
         `${path}.tombstoneCount`,
-        issues,
+        issues
     );
     requireOptionalNonNegativeInteger(
         value.conflictCount,
         `${path}.conflictCount`,
-        issues,
+        issues
     );
     requireOptionalNonEmptyString(value.reason, `${path}.reason`, issues);
     if (value.crdtState !== undefined) {
@@ -1240,40 +1239,43 @@ function validateSnapshotMetadata(
 function validateCausalFrontier(
     value: unknown,
     path: string,
-    issues: RallarCrdtValidationIssue[],
+    issues: RallarCrdtValidationIssue[]
 ): void {
     if (!isRecord(value)) {
         issues.push({
             path,
             code: 'invalid-causal-frontier',
-            message: 'CRDT causalFrontier must be an object.',
+            message: 'CRDT causalFrontier must be an object.'
         });
         return;
     }
     validateStringArray(
         value.frontierUpdateIds,
         `${path}.frontierUpdateIds`,
-        issues,
+        issues
     );
     if (value.replicaClocks !== undefined && !isRecord(value.replicaClocks)) {
         issues.push({
             path: `${path}.replicaClocks`,
             code: 'invalid-replica-clocks',
-            message: 'CRDT causalFrontier replicaClocks must be an object.',
+            message: 'CRDT causalFrontier replicaClocks must be an object.'
         });
-    } else if (isRecord(value.replicaClocks)) {
-        for (const [replicaId, lamport] of Object.entries(
-            value.replicaClocks,
-        )) {
+    }
+    else if (isRecord(value.replicaClocks)) {
+        for (
+            const [replicaId, lamport] of Object.entries(
+                value.replicaClocks
+            )
+        ) {
             requireNonEmptyString(
                 replicaId,
                 `${path}.replicaClocks.${replicaId}.replicaId`,
-                issues,
+                issues
             );
             requireNonNegativeInteger(
                 lamport,
                 `${path}.replicaClocks.${replicaId}`,
-                issues,
+                issues
             );
         }
     }
@@ -1282,13 +1284,13 @@ function validateCausalFrontier(
 function validateCrdtStateSnapshot(
     value: unknown,
     path: string,
-    issues: RallarCrdtValidationIssue[],
+    issues: RallarCrdtValidationIssue[]
 ): void {
     if (!isRecord(value)) {
         issues.push({
             path,
             code: 'invalid-crdt-state',
-            message: 'CRDT snapshot state sidecar must be an object.',
+            message: 'CRDT snapshot state sidecar must be an object.'
         });
         return;
     }
@@ -1296,8 +1298,7 @@ function validateCrdtStateSnapshot(
         issues.push({
             path: `${path}.format`,
             code: 'invalid-crdt-state-format',
-            message:
-                'CRDT snapshot state sidecar format must be rallar.crdt.state.v1.',
+            message: 'CRDT snapshot state sidecar format must be rallar.crdt.state.v1.'
         });
     }
     for (const key of ['registers', 'sets', 'maps', 'sequences']) {
@@ -1305,7 +1306,7 @@ function validateCrdtStateSnapshot(
             issues.push({
                 path: `${path}.${key}`,
                 code: 'invalid-crdt-state-section',
-                message: `CRDT snapshot state ${key} must be an object.`,
+                message: `CRDT snapshot state ${key} must be an object.`
             });
         }
     }
@@ -1314,7 +1315,7 @@ function validateCrdtStateSnapshot(
             issues.push({
                 path: `${path}.${key}`,
                 code: 'invalid-crdt-state-section',
-                message: `CRDT snapshot state ${key} must be an object when present.`,
+                message: `CRDT snapshot state ${key} must be an object when present.`
             });
         }
     }
@@ -1324,7 +1325,7 @@ function validateOperationPathOwnership(
     operation: RallarCrdtOperation,
     path: string,
     options: RallarCrdtValidationOptions,
-    issues: RallarCrdtValidationIssue[],
+    issues: RallarCrdtValidationIssue[]
 ): void {
     const schema = options.pathSchema;
     if (!schema || schema.mode !== 'strict') {
@@ -1345,15 +1346,14 @@ function validateOperationPathOwnership(
             issues.push({
                 path: `${entryPath}.kind`,
                 code: 'invalid-path-kind',
-                message:
-                    'CRDT strict path schema kind must be register, map, orset, sequence, counter, or number.',
+                message: 'CRDT strict path schema kind must be register, map, orset, sequence, counter, or number.'
             });
         }
         if (!Array.isArray(entry.path)) {
             issues.push({
                 path: `${entryPath}.path`,
                 code: 'invalid-path',
-                message: 'CRDT strict path schema path must be an array.',
+                message: 'CRDT strict path schema path must be an array.'
             });
             continue;
         }
@@ -1362,8 +1362,7 @@ function validateOperationPathOwnership(
             issues.push({
                 path: `${entryPath}.path`,
                 code: 'duplicate-path-owner',
-                message:
-                    'CRDT strict path schema declares the same path twice.',
+                message: 'CRDT strict path schema declares the same path twice.'
             });
         }
         declaredPathKeys.add(pathKey);
@@ -1371,14 +1370,13 @@ function validateOperationPathOwnership(
 
     const requiredKind = operationPathKind(operation.kind);
     const exact = schema.paths.find(
-        (entry) => toPathKey(entry.path) === toPathKey(operation.path),
+        (entry) => toPathKey(entry.path) === toPathKey(operation.path)
     );
     if (!exact) {
         issues.push({
             path: `${path}.path`,
             code: 'crdt-path-not-declared',
-            message:
-                'CRDT operation path is not declared in the strict path schema.',
+            message: 'CRDT operation path is not declared in the strict path schema.'
         });
         return;
     }
@@ -1386,7 +1384,7 @@ function validateOperationPathOwnership(
         issues.push({
             path: `${path}.path`,
             code: 'crdt-path-kind-mismatch',
-            message: `CRDT operation requires a ${requiredKind} path but schema declares ${exact.kind}.`,
+            message: `CRDT operation requires a ${requiredKind} path but schema declares ${exact.kind}.`
         });
     }
 
@@ -1398,8 +1396,7 @@ function validateOperationPathOwnership(
             issues.push({
                 path: `${path}.path`,
                 code: 'overlapping-path-owner',
-                message:
-                    'CRDT strict path schema must not declare overlapping parent/child paths.',
+                message: 'CRDT strict path schema must not declare overlapping parent/child paths.'
             });
             return;
         }
@@ -1443,13 +1440,13 @@ function requireExactNumber(
     expected: number,
     path: string,
     code: string,
-    issues: RallarCrdtValidationIssue[],
+    issues: RallarCrdtValidationIssue[]
 ): void {
     if (value !== expected) {
         issues.push({
             path,
             code,
-            message: `Expected ${expected}.`,
+            message: `Expected ${expected}.`
         });
     }
 }
@@ -1459,7 +1456,7 @@ function requireAllowedVersion(
     allowed: readonly number[] | undefined,
     path: string,
     code: string,
-    issues: RallarCrdtValidationIssue[],
+    issues: RallarCrdtValidationIssue[]
 ): void {
     requireNonNegativeInteger(value, path, issues);
     if (
@@ -1471,7 +1468,7 @@ function requireAllowedVersion(
         issues.push({
             path,
             code,
-            message: `Version is not supported: ${value}.`,
+            message: `Version is not supported: ${value}.`
         });
     }
 }
@@ -1479,13 +1476,13 @@ function requireAllowedVersion(
 function requireNonNegativeInteger(
     value: unknown,
     path: string,
-    issues: RallarCrdtValidationIssue[],
+    issues: RallarCrdtValidationIssue[]
 ): void {
     if (!Number.isInteger(value) || (value as number) < 0) {
         issues.push({
             path,
             code: 'invalid-non-negative-integer',
-            message: 'Expected a non-negative integer.',
+            message: 'Expected a non-negative integer.'
         });
     }
 }
@@ -1493,13 +1490,13 @@ function requireNonNegativeInteger(
 function requireFiniteNumber(
     value: unknown,
     path: string,
-    issues: RallarCrdtValidationIssue[],
+    issues: RallarCrdtValidationIssue[]
 ): void {
     if (typeof value !== 'number' || !Number.isFinite(value)) {
         issues.push({
             path,
             code: 'invalid-finite-number',
-            message: 'Expected a finite number.',
+            message: 'Expected a finite number.'
         });
     }
 }
@@ -1507,7 +1504,7 @@ function requireFiniteNumber(
 function requireOptionalNonNegativeInteger(
     value: unknown,
     path: string,
-    issues: RallarCrdtValidationIssue[],
+    issues: RallarCrdtValidationIssue[]
 ): void {
     if (value !== undefined) {
         requireNonNegativeInteger(value, path, issues);
@@ -1517,13 +1514,13 @@ function requireOptionalNonNegativeInteger(
 function requireNonEmptyString(
     value: unknown,
     path: string,
-    issues: RallarCrdtValidationIssue[],
+    issues: RallarCrdtValidationIssue[]
 ): void {
     if (typeof value !== 'string' || value.trim().length === 0) {
         issues.push({
             path,
             code: 'invalid-non-empty-string',
-            message: 'Expected a non-empty string.',
+            message: 'Expected a non-empty string.'
         });
     }
 }
@@ -1534,7 +1531,7 @@ function requireMaxStringLength(
     maxLength: number | undefined,
     code: string,
     label: string,
-    issues: RallarCrdtValidationIssue[],
+    issues: RallarCrdtValidationIssue[]
 ): void {
     if (
         maxLength !== undefined &&
@@ -1544,7 +1541,7 @@ function requireMaxStringLength(
         issues.push({
             path,
             code,
-            message: `${label} exceeds ${maxLength} characters.`,
+            message: `${label} exceeds ${maxLength} characters.`
         });
     }
 }
@@ -1552,7 +1549,7 @@ function requireMaxStringLength(
 function requireOptionalNonEmptyString(
     value: unknown,
     path: string,
-    issues: RallarCrdtValidationIssue[],
+    issues: RallarCrdtValidationIssue[]
 ): void {
     if (value !== undefined) {
         requireNonEmptyString(value, path, issues);
@@ -1564,19 +1561,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function isRallarCrdtOperationBatch(
-    value: unknown,
+    value: unknown
 ): value is RallarCrdtOperationBatch {
     return validateRallarCrdtOperationBatch(value).valid;
 }
 
 export function isRallarCrdtOperation(
-    value: unknown,
+    value: unknown
 ): value is RallarCrdtOperation {
     return validateRallarCrdtOperation(value).valid;
 }
 
 export function isRallarCrdtDocumentRef(
-    value: unknown,
+    value: unknown
 ): value is RallarCrdtDocumentRef {
     return validateRallarCrdtDocumentRef(value).valid;
 }

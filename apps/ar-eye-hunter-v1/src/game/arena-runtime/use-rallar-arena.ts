@@ -1,10 +1,10 @@
-import { useMemo } from 'react';
 import { readAuthSessionStorageKind } from '@shared/api/auth.ts';
+import { useMemo } from 'react';
 
-import type { ArenaConnection } from './arena-connection-contracts.ts';
 import { useArenaDiagnosticActions } from './actions/use-arena-diagnostic-actions.ts';
 import { useArenaSessionActions } from './actions/use-arena-session-actions.ts';
 import { useArenaAiDirectorLifecycle } from './ai/use-arena-ai-director-lifecycle.ts';
+import type { ArenaConnection } from './arena-connection-contracts.ts';
 import { useArenaCombatActions } from './game-actions/use-arena-combat-actions.ts';
 import { useArenaWorldActions } from './game-actions/use-arena-world-actions.ts';
 import { useArenaDirectorAppointment } from './match/use-arena-director-appointment.ts';
@@ -16,12 +16,8 @@ import { useArenaPresenceActions } from './state/use-arena-presence-actions.ts';
 import { useArenaPresenceLifecycle } from './state/use-arena-presence-lifecycle.ts';
 import { useArenaRuntimeState } from './state/use-arena-runtime-state.ts';
 import { useArenaStateAcceptance } from './state/use-arena-state-acceptance.ts';
-import {
-    useArenaConnectionSessionLifecycle,
-} from './transport/use-arena-connection-session-lifecycle.ts';
-import {
-    useArenaNetworkTransportSupport,
-} from './transport/use-arena-network-transport-support.ts';
+import { useArenaConnectionSessionLifecycle } from './transport/use-arena-connection-session-lifecycle.ts';
+import { useArenaNetworkTransportSupport } from './transport/use-arena-network-transport-support.ts';
 import { useArenaRtcLifecycle } from './transport/use-arena-rtc-lifecycle.ts';
 
 export type {
@@ -30,7 +26,7 @@ export type {
     ArenaHttpDiagnostics,
     ArenaTransportDiagnostics,
     DirectorAttemptState,
-    HttpProbeDiagnostics,
+    HttpProbeDiagnostics
 } from './arena-connection-contracts.ts';
 
 export function useRallarArena(): ArenaConnection {
@@ -105,7 +101,7 @@ export function useRallarArena(): ArenaConnection {
         setTransportDiagnostics,
         snapshotLaneReadySyncKeyRef,
         transportDiagnostics,
-        transportDiagnosticsRef,
+        transportDiagnosticsRef
     } = state;
 
     const { dismissPresenceNotice, linkState } = useArenaPresenceLifecycle({
@@ -122,7 +118,7 @@ export function useRallarArena(): ArenaConnection {
         rtcLanes,
         session,
         setPresenceNotices,
-        transportDiagnostics,
+        transportDiagnostics
     });
     useArenaAvatarProfile({
         arenaSnapshotRef,
@@ -130,38 +126,36 @@ export function useRallarArena(): ArenaConnection {
         localAvatarProfileRef,
         networkGenerationRef,
         roomId,
-        session,
+        session
     });
 
-    const { runBestEffortNetworkTask, scheduleReliableArenaSnapshot } =
-        useArenaNetworkTransportSupport({
-            arenaMatchRef,
-            arenaSnapshotRef,
-            clearPendingReliableArenaSnapshot,
-            directorStatusRef,
-            isCurrentNetworkGeneration,
-            localAvatarProfileRef,
-            networkGenerationRef,
-            reliableSnapshotLastSentAtRef,
-            reliableSnapshotLastSentRevisionRef,
-            reliableSnapshotPendingRef,
-            reliableSnapshotTimerRef,
-            roomId,
-            roomIdRef,
-            session,
-            setTransportDiagnostics,
-        });
-    const { acceptPlayerHit, acceptPickup, acceptEyeAttack, acceptMatchStartIntent } =
-        useArenaStateAcceptance({
-            arenaMatchRef,
-            arenaSnapshotRef,
-            roomIdRef,
-            setActiveEvent,
-            setArenaSnapshot,
-            setPickupAcceptances,
-            setRemoteEvents,
-            setRemotePlayerHits,
-        });
+    const { runBestEffortNetworkTask, scheduleReliableArenaSnapshot } = useArenaNetworkTransportSupport({
+        arenaMatchRef,
+        arenaSnapshotRef,
+        clearPendingReliableArenaSnapshot,
+        directorStatusRef,
+        isCurrentNetworkGeneration,
+        localAvatarProfileRef,
+        networkGenerationRef,
+        reliableSnapshotLastSentAtRef,
+        reliableSnapshotLastSentRevisionRef,
+        reliableSnapshotPendingRef,
+        reliableSnapshotTimerRef,
+        roomId,
+        roomIdRef,
+        session,
+        setTransportDiagnostics
+    });
+    const { acceptPlayerHit, acceptPickup, acceptEyeAttack, acceptMatchStartIntent } = useArenaStateAcceptance({
+        arenaMatchRef,
+        arenaSnapshotRef,
+        roomIdRef,
+        setActiveEvent,
+        setArenaSnapshot,
+        setPickupAcceptances,
+        setRemoteEvents,
+        setRemotePlayerHits
+    });
     const acceptDirectorOutput = useArenaDirectorMessageHandler({
         acceptEyeAttack,
         acceptPickup,
@@ -173,7 +167,7 @@ export function useRallarArena(): ArenaConnection {
         setArenaSnapshot,
         setRemoteEvents,
         setRemotePlayers,
-        setRemoteShots,
+        setRemoteShots
     });
     const { acceptMotionMessage, acceptRealtimeMessage } = useArenaPeerMessageHandlers({
         acceptEyeAttack,
@@ -184,7 +178,7 @@ export function useRallarArena(): ArenaConnection {
         setArenaSnapshot,
         setRemoteEvents,
         setRemotePlayers,
-        setRemoteShots,
+        setRemoteShots
     });
 
     const { connect } = useArenaConnectionSessionLifecycle({
@@ -201,7 +195,7 @@ export function useRallarArena(): ArenaConnection {
         setRemotePlayers,
         setRoomId,
         setRooms,
-        setSession,
+        setSession
     });
     useArenaRtcLifecycle({
         arenaMatchRef,
@@ -214,7 +208,7 @@ export function useRallarArena(): ArenaConnection {
         runBestEffortNetworkTask,
         setGameDiagnostics,
         setRtcLanes,
-        snapshotLaneReadySyncKeyRef,
+        snapshotLaneReadySyncKeyRef
     });
     const { attemptDirectorAppointment } = useArenaDirectorAppointment({
         arenaMatchRef,
@@ -223,7 +217,7 @@ export function useRallarArena(): ArenaConnection {
         roomIdRef,
         setDirectorAttempt,
         setDirectorStatus,
-        setGameDiagnostics,
+        setGameDiagnostics
     });
     useArenaMatchRuntime({
         acceptDirectorOutput,
@@ -246,7 +240,7 @@ export function useRallarArena(): ArenaConnection {
         setDirectorStatus,
         setError,
         setGameDiagnostics,
-        setRemoteEvents,
+        setRemoteEvents
     }, attemptDirectorAppointment);
     useArenaAiDirectorLifecycle({
         arenaMatchRef,
@@ -260,7 +254,7 @@ export function useRallarArena(): ArenaConnection {
         setActiveEvent,
         setAiError,
         setAiStatus,
-        setRemoteEvents,
+        setRemoteEvents
     });
 
     const sessionActions = useArenaSessionActions({
@@ -280,7 +274,7 @@ export function useRallarArena(): ArenaConnection {
         setError,
         setRoomId,
         setRooms,
-        setSession,
+        setSession
     });
     const diagnosticActions = useArenaDiagnosticActions({
         arenaMatchRef,
@@ -295,7 +289,7 @@ export function useRallarArena(): ArenaConnection {
         setPresenceNotices,
         setRtcLanes,
         setTransportDiagnostics,
-        transportDiagnosticsRef,
+        transportDiagnosticsRef
     });
     const presenceActions = useArenaPresenceActions({
         arenaMatchRef,
@@ -305,7 +299,7 @@ export function useRallarArena(): ArenaConnection {
         poseSendBudget,
         roomIdRef,
         runBestEffortNetworkTask,
-        sessionRef,
+        sessionRef
     });
     const combatActions = useArenaCombatActions({
         acceptPlayerHit,
@@ -317,7 +311,7 @@ export function useRallarArena(): ArenaConnection {
         roomIdRef,
         runBestEffortNetworkTask,
         sessionRef,
-        setArenaSnapshot,
+        setArenaSnapshot
     });
     const worldActions = useArenaWorldActions({
         acceptMatchStartIntent,
@@ -331,7 +325,7 @@ export function useRallarArena(): ArenaConnection {
         runBestEffortNetworkTask,
         scheduleReliableArenaSnapshot,
         sessionRef,
-        setArenaSnapshot,
+        setArenaSnapshot
     });
 
     return useMemo(() => ({
@@ -369,7 +363,7 @@ export function useRallarArena(): ArenaConnection {
         dismissPresenceNotice,
         ...presenceActions,
         ...combatActions,
-        ...worldActions,
+        ...worldActions
     }), [
         activeEvent,
         aiError,
@@ -403,6 +397,6 @@ export function useRallarArena(): ArenaConnection {
         sessionActions,
         sessionRef,
         transportDiagnostics,
-        worldActions,
+        worldActions
     ]);
 }

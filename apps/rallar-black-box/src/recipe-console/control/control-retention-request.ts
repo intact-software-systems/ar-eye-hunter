@@ -2,7 +2,7 @@ import { ControlRunManagerHttpError } from '../../control-http-error.ts';
 
 export type ControlRetentionRequestFetch = (
     input: RequestInfo | URL,
-    init?: RequestInit,
+    init?: RequestInit
 ) => Promise<Response>;
 
 type ControlRetentionRequestInput = Readonly<{
@@ -11,7 +11,7 @@ type ControlRetentionRequestInput = Readonly<{
 }>;
 
 export function requestControlRetentionPreview(
-    input: ControlRetentionRequestInput,
+    input: ControlRetentionRequestInput
 ): Promise<unknown> {
     const url = retentionCleanupUrl(input.baseUrl);
     url.searchParams.set('dryRun', 'true');
@@ -19,7 +19,7 @@ export function requestControlRetentionPreview(
 }
 
 export function requestControlRetentionConfirmation(
-    input: ControlRetentionRequestInput & Readonly<{ planToken: string }>,
+    input: ControlRetentionRequestInput & Readonly<{ planToken: string; }>
 ): Promise<unknown> {
     const url = retentionCleanupUrl(input.baseUrl);
     url.searchParams.set('planToken', input.planToken);
@@ -27,7 +27,7 @@ export function requestControlRetentionConfirmation(
 }
 
 export function requestLegacyControlRetentionCleanup(
-    input: ControlRetentionRequestInput,
+    input: ControlRetentionRequestInput
 ): Promise<unknown> {
     return requestRetention(input.fetchFn, retentionCleanupUrl(input.baseUrl));
 }
@@ -38,7 +38,7 @@ function retentionCleanupUrl(baseUrl: string): URL {
 
 async function requestRetention(
     fetchFn: ControlRetentionRequestFetch,
-    url: URL,
+    url: URL
 ): Promise<unknown> {
     const response = await fetchFn(url, { method: 'POST' });
     return readJsonResponse(response);
@@ -51,20 +51,23 @@ async function readJsonResponse(response: Response): Promise<unknown> {
     if (text.length > 0) {
         try {
             value = JSON.parse(text);
-        } catch (error) {
+        }
+        catch (error) {
             parseError = error;
         }
     }
     if (!response.ok) {
         const message = value && typeof value === 'object' && 'error' in value
-            ? String((value as { error: unknown }).error)
+            ? String((value as { error: unknown; }).error)
             : `Control server request failed: ${response.status} ${response.statusText}`;
         throw new ControlRunManagerHttpError(
             message,
             response.status,
-            response.statusText,
+            response.statusText
         );
     }
-    if (parseError) throw parseError;
+    if (parseError) {
+        throw parseError;
+    }
     return value;
 }

@@ -2,7 +2,7 @@ import { APP_MODES, type AppModeId } from '../../app-tabs.ts';
 
 export function AppModeSwitch({
     activeMode,
-    onSelect,
+    onSelect
 }: {
     activeMode: AppModeId;
     onSelect(mode: AppModeId): void;
@@ -12,8 +12,7 @@ export function AppModeSwitch({
             <div className="app-mode-copy">
                 <h2>Workspace Mode</h2>
                 <p>
-                    Choose direct live Rallar operations or black-box-runner
-                    recipes, control runs, and artifacts.
+                    Choose direct live Rallar operations or black-box-runner recipes, control runs, and artifacts.
                 </p>
             </div>
             <div className="app-mode-options">

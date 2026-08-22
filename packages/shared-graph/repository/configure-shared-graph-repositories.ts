@@ -1,7 +1,7 @@
-import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
-import { configureGraphRepository, type GraphRepositoryOptions, } from './graphs-repository.ts';
-import { configureVivaldiRepository, type VivaldiRepositoryOptions, } from './vivaldi-repository.ts';
+import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
+import { configureGraphRepository, type GraphRepositoryOptions } from './graphs-repository.ts';
+import { configureVivaldiRepository, type VivaldiRepositoryOptions } from './vivaldi-repository.ts';
 
 export interface SharedGraphRepositoryCacheConfiguration {
     graphs: GraphRepositoryOptions;
@@ -10,7 +10,7 @@ export interface SharedGraphRepositoryCacheConfiguration {
 
 export function configureSharedGraphRepositories(
     config: SharedGraphRepositoryCacheConfiguration,
-    manager: RepositoryManager = defaultRepositoryManager,
+    manager: RepositoryManager = defaultRepositoryManager
 ): void {
     configureGraphRepository(config.graphs, manager);
     configureVivaldiRepository(config.vivaldi, manager);

@@ -8,7 +8,7 @@ type PackageManifest = Readonly<{
 
 const repoRoot = process.cwd();
 const packageJson = JSON.parse(
-    fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'),
+    fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')
 ) as PackageManifest;
 
 const REQUIRED_LIVE_RTC_GATE_ENV = [
@@ -20,7 +20,7 @@ const REQUIRED_LIVE_RTC_GATE_ENV = [
     'VITE_RALLAR_AGENT_B_USERNAME=${VITE_RALLAR_AGENT_B_USERNAME:-bob}',
     'VITE_RALLAR_AGENT_B_PASSWORD=${VITE_RALLAR_AGENT_B_PASSWORD:-secret}',
     'VITE_RALLAR_AGENT_C_USERNAME=${VITE_RALLAR_AGENT_C_USERNAME:-charlie}',
-    'VITE_RALLAR_AGENT_C_PASSWORD=${VITE_RALLAR_AGENT_C_PASSWORD:-secret}',
+    'VITE_RALLAR_AGENT_C_PASSWORD=${VITE_RALLAR_AGENT_C_PASSWORD:-secret}'
 ] as const;
 
 describe('live three-browser RTC npm script gates', () => {
@@ -28,17 +28,17 @@ describe('live three-browser RTC npm script gates', () => {
         [
             'test:rallar:full-stack:memory:live-rtc-3',
             'VITE_RALLAR_API_BASE_URL=${VITE_RALLAR_API_BASE_URL:-http://localhost:18080}',
-            'VITE_RALLAR_SPA_BASE_URL=${VITE_RALLAR_SPA_BASE_URL:-http://localhost:5177}',
+            'VITE_RALLAR_SPA_BASE_URL=${VITE_RALLAR_SPA_BASE_URL:-http://localhost:5177}'
         ],
         [
             'test:rallar:full-stack:postgres:live-rtc-3',
             'VITE_RALLAR_API_BASE_URL=${VITE_RALLAR_API_BASE_URL:-http://localhost:18081}',
-            'VITE_RALLAR_SPA_BASE_URL=${VITE_RALLAR_SPA_BASE_URL:-http://localhost:5178}',
-        ],
+            'VITE_RALLAR_SPA_BASE_URL=${VITE_RALLAR_SPA_BASE_URL:-http://localhost:5178}'
+        ]
     ])('%s sets every env value required for a non-skipped baseline', (
         scriptName,
         apiBaseUrl,
-        spaBaseUrl,
+        spaBaseUrl
     ) => {
         const script = packageJson.scripts?.[scriptName] ?? '';
 
@@ -46,7 +46,7 @@ describe('live three-browser RTC npm script gates', () => {
         expect(script).toContain(spaBaseUrl);
         if (scriptName.includes(':postgres:')) {
             expect(script).toContain(
-                'DATABASE_URL=${DATABASE_URL:-postgres://app:app@localhost:5432/appdb}',
+                'DATABASE_URL=${DATABASE_URL:-postgres://app:app@localhost:5432/appdb}'
             );
         }
         for (const requiredEnv of REQUIRED_LIVE_RTC_GATE_ENV) {

@@ -2,22 +2,22 @@ import {
     distributedRecipeCommandKinds,
     distributedRecipePreflight,
     type DistributedRecipeCatalogItem,
-    type DistributedRecipePreflightSummary,
+    type DistributedRecipePreflightSummary
 } from './distributed-run-monitor.ts';
 import type { RallarBlackBoxDistributedGroupRef } from './distributed-run.ts';
 import {
-    RALLAR_BLACK_BOX_RECIPE_FIXTURES,
-    RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_MULTICAST_RECIPE_FIXTURE_ID,
-    RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_RECEIVER_RECIPE_FIXTURE_ID,
-    RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_SENDER_RECIPE_FIXTURE_ID,
-    RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
-    RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID,
     createRallarBlackBoxProviderParityLiveRecipe,
     createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe,
     createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes,
     createRallarBlackBoxRtcRealtimeRecipe,
     createRallarBlackBoxRtcRealtimeStabilityRecipe,
     createRallarBlackBoxRtcSmokeRecipe,
+    RALLAR_BLACK_BOX_RECIPE_FIXTURES,
+    RALLAR_BLACK_BOX_RTC_MESSAGES_ALL_PEER_MULTICAST_RECIPE_FIXTURE_ID,
+    RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_RECEIVER_RECIPE_FIXTURE_ID,
+    RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_SENDER_RECIPE_FIXTURE_ID,
+    RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
+    RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID
 } from './recipe-fixtures.ts';
 import { validateRallarBlackBoxRecipeCompatibility } from './schema.ts';
 
@@ -51,14 +51,14 @@ export type DistributedRecipeCatalogProjection = Readonly<{
     providerModes: readonly string[];
 }>;
 
-export const DISTRIBUTED_RECIPE_CATALOG: readonly DistributedRecipeCatalogItem[] =
-    RALLAR_BLACK_BOX_RECIPE_FIXTURES.map((fixture) => {
+export const DISTRIBUTED_RECIPE_CATALOG: readonly DistributedRecipeCatalogItem[] = RALLAR_BLACK_BOX_RECIPE_FIXTURES.map(
+    (fixture) => {
         const commandKinds = distributedRecipeCommandKinds(fixture.recipe);
         const usesNetwork = commandKinds.some(
             (kind) =>
                 kind.startsWith('rtc') ||
                 kind.startsWith('ws') ||
-                kind === 'http.request',
+                kind === 'http.request'
         );
 
         return {
@@ -69,37 +69,37 @@ export const DISTRIBUTED_RECIPE_CATALOG: readonly DistributedRecipeCatalogItem[]
             description: fixture.description,
             recipe: fixture.recipe,
             providerMode: usesNetwork ? 'browser-rallar' : 'simulated',
-            profiles:
-                fixture.fixtureId ===
-                RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID
-                    ? ['rtc', 'realtime', 'stability', 'green', 'rtc-realtime-stability']
-                    : fixture.fixtureId ===
-                      RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID
-                    ? ['rtc', 'realtime', 'soak']
-                    : [
-                          fixture.fixtureId.includes('rtc') ||
-                          commandKinds.some((kind) => kind.startsWith('rtc'))
-                              ? 'rtc'
-                              : 'general',
-                          fixture.fixtureId.includes('failure')
-                              ? 'negative'
-                              : 'smoke',
-                      ],
+            profiles: fixture.fixtureId ===
+                    RALLAR_BLACK_BOX_RTC_REALTIME_STABILITY_RECIPE_FIXTURE_ID
+                ? ['rtc', 'realtime', 'stability', 'green', 'rtc-realtime-stability']
+                : fixture.fixtureId ===
+                        RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID
+                ? ['rtc', 'realtime', 'soak']
+                : [
+                    fixture.fixtureId.includes('rtc') ||
+                        commandKinds.some((kind) => kind.startsWith('rtc'))
+                        ? 'rtc'
+                        : 'general',
+                    fixture.fixtureId.includes('failure')
+                        ? 'negative'
+                        : 'smoke'
+                ],
             prerequisites: usesNetwork
                 ? [
-                      'connected browser control agents',
-                      'matching global group',
-                      'live Rallar backend for real delivery',
-                  ]
+                    'connected browser control agents',
+                    'matching global group',
+                    'live Rallar backend for real delivery'
+                ]
                 : ['connected browser control agents'],
             live: usesNetwork,
-            source: 'app-local' as const,
+            source: 'app-local' as const
         };
-    });
+    }
+);
 
 export function configuredDistributedRecipeCatalogItem(
     item: DistributedRecipeCatalogItem,
-    input: DistributedRecipeCatalogConfiguration,
+    input: DistributedRecipeCatalogConfiguration
 ): DistributedRecipeCatalogItem {
     if (
         item.itemId ===
@@ -108,13 +108,13 @@ export function configuredDistributedRecipeCatalogItem(
             RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_RECEIVER_RECIPE_FIXTURE_ID
     ) {
         const [sender, receiver] = createRallarBlackBoxRtcMessagesPrincipalMulticastRecipes({
-            group: input.group,
+            group: input.group
         });
         const isSender = item.itemId ===
             RALLAR_BLACK_BOX_RTC_MESSAGES_PRINCIPAL_MULTICAST_SENDER_RECIPE_FIXTURE_ID;
         return {
             ...item,
-            recipe: isSender ? sender : receiver,
+            recipe: isSender ? sender : receiver
         };
     }
 
@@ -122,8 +122,8 @@ export function configuredDistributedRecipeCatalogItem(
         return {
             ...item,
             recipe: createRallarBlackBoxRtcMessagesAllPeerMulticastRecipe({
-                group: input.group,
-            }),
+                group: input.group
+            })
         };
     }
 
@@ -131,8 +131,8 @@ export function configuredDistributedRecipeCatalogItem(
         return {
             ...item,
             recipe: createRallarBlackBoxRtcSmokeRecipe({
-                group: input.group,
-            }),
+                group: input.group
+            })
         };
     }
 
@@ -141,8 +141,8 @@ export function configuredDistributedRecipeCatalogItem(
             ...item,
             recipe: createRallarBlackBoxProviderParityLiveRecipe({
                 group: input.group,
-                apiBaseUrl: input.apiBaseUrl,
-            }),
+                apiBaseUrl: input.apiBaseUrl
+            })
         };
     }
 
@@ -151,8 +151,8 @@ export function configuredDistributedRecipeCatalogItem(
             ...item,
             recipe: createRallarBlackBoxRtcRealtimeRecipe({
                 durationSeconds: input.rtcRealtimeDurationSeconds,
-                group: input.group,
-            }),
+                group: input.group
+            })
         };
     }
 
@@ -162,8 +162,8 @@ export function configuredDistributedRecipeCatalogItem(
             recipe: createRallarBlackBoxRtcRealtimeStabilityRecipe({
                 group: input.group,
                 readyPeerCount: 1,
-                readyTimeoutMs: 10_000,
-            }),
+                readyTimeoutMs: 10_000
+            })
         };
     }
 
@@ -173,7 +173,7 @@ export function configuredDistributedRecipeCatalogItem(
 export function distributedRecipeMatches(
     item: DistributedRecipeCatalogItem,
     query: string,
-    profile: string,
+    profile: string
 ): boolean {
     if (profile && !item.profiles.includes(profile)) {
         return false;
@@ -193,7 +193,7 @@ export function distributedRecipeMatches(
         item.providerMode,
         ...item.profiles,
         ...item.prerequisites,
-        ...distributedRecipeCommandKinds(item.recipe),
+        ...distributedRecipeCommandKinds(item.recipe)
     ]
         .join(' ')
         .toLowerCase();
@@ -204,7 +204,7 @@ export function projectDistributedRecipeCatalog(
     input: Readonly<{
         items?: readonly DistributedRecipeCatalogItem[];
         configuration?: DistributedRecipeCatalogConfiguration;
-    }> = {},
+    }> = {}
 ): DistributedRecipeCatalogProjection {
     const items = (input.items ?? DISTRIBUTED_RECIPE_CATALOG).map((item) =>
         input.configuration
@@ -213,8 +213,7 @@ export function projectDistributedRecipeCatalog(
     );
     const entries = items.map((item): DistributedRecipeCatalogEntryProjection => {
         const compatibility = validateRallarBlackBoxRecipeCompatibility(item.recipe);
-        const issueText = (issue: Readonly<{ path: string; message: string }>) =>
-            `${issue.path}: ${issue.message}`;
+        const issueText = (issue: Readonly<{ path: string; message: string; }>) => `${issue.path}: ${issue.message}`;
         const status = compatibility.ok
             ? compatibility.legacy
                 ? 'legacy-compatible'
@@ -234,16 +233,16 @@ export function projectDistributedRecipeCatalog(
                     ? 'Schema valid (compatible v1)'
                     : 'Schema invalid',
                 warnings: compatibility.warnings.map(issueText),
-                errors: compatibility.errors.map(issueText),
+                errors: compatibility.errors.map(issueText)
             },
-            preflight: distributedRecipePreflight(item.recipe),
+            preflight: distributedRecipePreflight(item.recipe)
         };
     });
 
     return {
         entries,
         profiles: uniqueSorted(items.flatMap((item) => item.profiles)),
-        providerModes: uniqueSorted(items.map((item) => item.providerMode)),
+        providerModes: uniqueSorted(items.map((item) => item.providerMode))
     };
 }
 

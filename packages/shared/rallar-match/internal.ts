@@ -1,6 +1,6 @@
 export function compareRallarMatchOrdinalStrings(
     left: string,
-    right: string,
+    right: string
 ): number {
     if (left < right) {
         return -1;

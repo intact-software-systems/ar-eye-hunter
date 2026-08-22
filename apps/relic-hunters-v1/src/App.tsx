@@ -1,7 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 (globalThis as any).Temporal = (globalThis as any).Temporal ?? Temporal;
 
-import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
     RelicActionInput,
     RelicActionKind,
@@ -9,73 +8,65 @@ import type {
     RelicEvent,
     RelicEventType,
     RelicPlayer,
-    RelicPublicSnapshot,
+    RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
-import { RELIC_CHARACTERS, findRelicCharacter } from '@relic-hunters/mod.ts';
+import { findRelicCharacter, RELIC_CHARACTERS } from '@relic-hunters/mod.ts';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import type { RelicPlanningAiProposal, RelicPlanningAiSuggestion } from './game/ai/relic-planning-ai.ts';
+import { useRelicPlanningAi, type UseRelicPlanningAiResult } from './game/ai/useRelicPlanningAi.ts';
+import { colorForId } from './game/color.ts';
+import { deriveRelicGameViewModel, RELIC_ACTION_KINDS, type ActionDraft } from './game/game-view-model.ts';
+import { GameHudLayout } from './game/hud/GameHudLayout.tsx';
 import { IntroScene } from './game/IntroScene.tsx';
+import { UI, type Lang } from './game/lang.ts';
 import { OpeningRelicScene } from './game/OpeningRelicScene.tsx';
+import type { RelicRuntimeDiagnostics } from './game/relic-hunters-runtime.ts';
 import { RelicScene as LegacyRelicScene } from './game/RelicScene.tsx';
 import { RelicSceneNext } from './game/RelicSceneNext.tsx';
-import { GameHudLayout } from './game/hud/GameHudLayout.tsx';
-import {
-    deriveRelicGameViewModel,
-    RELIC_ACTION_KINDS,
-    type ActionDraft,
-} from './game/game-view-model.ts';
-import {
-    useRelicPlanningAi,
-    type UseRelicPlanningAiResult,
-} from './game/ai/useRelicPlanningAi.ts';
-import type {
-    RelicPlanningAiProposal,
-    RelicPlanningAiSuggestion,
-} from './game/ai/relic-planning-ai.ts';
-import {
-    deriveCurrentTurnSummaryModel,
-    isPersonalEvent,
-    isTurnResultEvent,
-    isTurnTimelineEvent,
-    turnTimelineCategory,
-} from './game/turn-summary.ts';
-import type { RelicRuntimeDiagnostics } from './game/relic-hunters-runtime.ts';
 import { deriveSceneObjective } from './game/scene/objectives.ts';
 import {
     calculateFacilityBounds,
     projectFacilityMapPoint,
-    shouldShowFacilityMapLabel,
+    shouldShowFacilityMapLabel
 } from './game/scene/relicSceneNextModel.ts';
-import { UI, type Lang } from './game/lang.ts';
-import { useRelicHunters } from './game/useRelicHunters.ts';
-import { colorForId } from './game/color.ts';
 import {
     isAmbientSoundPlaying,
     playActionSound,
     playRelicEventSound,
     playUiSound,
     startAmbientSound,
-    stopAmbientSound,
+    stopAmbientSound
 } from './game/sound.ts';
+import {
+    deriveCurrentTurnSummaryModel,
+    isPersonalEvent,
+    isTurnResultEvent,
+    isTurnTimelineEvent,
+    turnTimelineCategory
+} from './game/turn-summary.ts';
+import { useRelicHunters } from './game/useRelicHunters.ts';
 
 type AuthMode = 'login' | 'register';
-const IS_DEV = Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV);
+const IS_DEV = Boolean((import.meta as { env?: { DEV?: boolean; }; }).env?.DEV);
 const INTRO_ENABLED = false;
 const ONBOARDING_ENABLED = false;
 const RELIC_SCENE_RUNTIME = ((import.meta as {
-    env?: { VITE_RELIC_SCENE_RUNTIME?: string };
-}).env?.VITE_RELIC_SCENE_RUNTIME === 'legacy')
+        env?: { VITE_RELIC_SCENE_RUNTIME?: string; };
+    }).env?.VITE_RELIC_SCENE_RUNTIME === 'legacy')
     ? LegacyRelicScene
     : RelicSceneNext;
 
 export default function App() {
     const [introComplete, setIntroComplete] = useState(!INTRO_ENABLED);
     const [lang, setLang] = useState<Lang>(
-        () => (localStorage.getItem('relic-lang') as Lang | null) ?? 'en',
+        () => (localStorage.getItem('relic-lang') as Lang | null) ?? 'en'
     );
-    const toggleLang = () => setLang((l) => {
-        const next: Lang = l === 'en' ? 'no' : 'en';
-        localStorage.setItem('relic-lang', next);
-        return next;
-    });
+    const toggleLang = () =>
+        setLang((l) => {
+            const next: Lang = l === 'en' ? 'no' : 'en';
+            localStorage.setItem('relic-lang', next);
+            return next;
+        });
     const game = useRelicHunters();
     const playedEventIdsRef = useRef<Set<string>>(new Set());
     const [authMode, setAuthMode] = useState<AuthMode>('login');
@@ -84,7 +75,7 @@ export default function App() {
     const [password, setPassword] = useState('');
     const [selectedRoomId, setSelectedRoomId] = useState<string | undefined>();
     const [selectedCharacterId, setSelectedCharacterId] = useState<RelicCharacterId>(
-        RELIC_CHARACTERS[0].id,
+        RELIC_CHARACTERS[0].id
     );
     const [draft, setDraft] = useState<ActionDraft>({ kind: 'search' });
     const [scenePrimedAction, setScenePrimedAction] = useState<RelicActionInput | undefined>();
@@ -92,9 +83,9 @@ export default function App() {
     const [ambientEnabled, setAmbientEnabled] = useState(false);
     const [revealedEvents, setRevealedEvents] = useState<readonly RelicEvent[]>([]);
     const [showOnboarding, setShowOnboarding] = useState(
-        () => ONBOARDING_ENABLED && !localStorage.getItem('relic-onboarding-v1'),
+        () => ONBOARDING_ENABLED && !localStorage.getItem('relic-onboarding-v1')
     );
-    const [personalFlash, setPersonalFlash] = useState<{ tone: 'good' | 'bad'; key: number } | null>(null);
+    const [personalFlash, setPersonalFlash] = useState<{ tone: 'good' | 'bad'; key: number; } | null>(null);
     const personalFlashKeyRef = useRef(0);
     const [lockedAction, setLockedAction] = useState<RelicActionInput | undefined>();
     const [showTensionBeat, setShowTensionBeat] = useState(false);
@@ -103,7 +94,7 @@ export default function App() {
     const [timeRemainingMs, setTimeRemainingMs] = useState<number | null>(null);
     const autoSubmittedForRoundRef = useRef<number | undefined>(undefined);
     const [phaseBanner, setPhaseBanner] = useState<string | null>(null);
-    const [roomEntryFlash, setRoomEntryFlash] = useState<{ room: string; key: number } | null>(null);
+    const [roomEntryFlash, setRoomEntryFlash] = useState<{ room: string; key: number; } | null>(null);
     const roomEntryKeyRef = useRef(0);
     const prevPhaseRef = useRef<RelicPublicSnapshot['phase'] | undefined>(undefined);
     const prevRoomIdRef = useRef<string | undefined>(undefined);
@@ -124,27 +115,29 @@ export default function App() {
         }).__relicHuntersRuntime = summarizeRelicHuntersRuntime(
             game.roomId,
             game.diagnostics,
-            game.snapshot,
+            game.snapshot
         );
     }, [game.diagnostics, game.roomId, game.snapshot]);
 
     const viewModel = useMemo(
-        () => deriveRelicGameViewModel({
-            snapshot: game.snapshot,
-            localPlayerId: game.session?.sessionId,
-            draft,
-            lang,
-            revealedEvents,
-        }),
-        [draft, game.session?.sessionId, game.snapshot, lang, revealedEvents],
+        () =>
+            deriveRelicGameViewModel({
+                snapshot: game.snapshot,
+                localPlayerId: game.session?.sessionId,
+                draft,
+                lang,
+                revealedEvents
+            }),
+        [draft, game.session?.sessionId, game.snapshot, lang, revealedEvents]
     );
     const sceneObjective = useMemo(
-        () => deriveSceneObjective({
-            snapshot: game.snapshot,
-            localPlayerId: game.session?.sessionId,
-            primedAction: scenePrimedAction,
-        }),
-        [game.session?.sessionId, game.snapshot, scenePrimedAction],
+        () =>
+            deriveSceneObjective({
+                snapshot: game.snapshot,
+                localPlayerId: game.session?.sessionId,
+                primedAction: scenePrimedAction
+            }),
+        [game.session?.sessionId, game.snapshot, scenePrimedAction]
     );
     const planningAi = useRelicPlanningAi({
         snapshot: game.snapshot,
@@ -152,7 +145,7 @@ export default function App() {
         draft,
         lang,
         viewModel,
-        sceneObjective,
+        sceneObjective
     });
     const currentPlayer = viewModel.currentPlayer;
     const currentRoom = viewModel.currentRoom;
@@ -164,30 +157,34 @@ export default function App() {
         game.snapshot?.phase === 'finished';
     const currentRoomSummary = useMemo(
         () => game.rooms.find((room) => room.roomId === game.roomId),
-        [game.roomId, game.rooms],
+        [game.roomId, game.rooms]
     );
     const selectedCharacter = findRelicCharacter(
         currentPlayer && game.snapshot?.phase !== 'lobby'
             ? currentPlayer.characterId
-            : selectedCharacterId,
+            : selectedCharacterId
     );
     const moveTargets = viewModel.moveTargets;
     const exitDistances = useMemo(
         () => game.snapshot ? castleMapExitDistances(game.snapshot.map) : new Map<string, number>(),
-        [game.snapshot],
+        [game.snapshot]
     );
     const stealTargets = viewModel.stealTargets;
-    const rooms = game.rooms.filter((room) =>
-        room.name.toLowerCase().includes('relic hunters')
-    );
+    const rooms = game.rooms.filter((room) => room.name.toLowerCase().includes('relic hunters'));
     const lastEvent = revealedEvents.at(-1);
     const eventFocusRoomId = useMemo(() => {
-        if (!lastEvent || !game.snapshot) return undefined;
-        if (!isTurnResultEvent(lastEvent) && lastEvent.type !== 'action_revealed') return undefined;
-        if (lastEvent.animationCue?.roomId) return lastEvent.animationCue.roomId;
+        if (!lastEvent || !game.snapshot) {
+            return undefined;
+        }
+        if (!isTurnResultEvent(lastEvent) && lastEvent.type !== 'action_revealed') {
+            return undefined;
+        }
+        if (lastEvent.animationCue?.roomId) {
+            return lastEvent.animationCue.roomId;
+        }
         if (lastEvent.animationCue?.playerId) {
             return game.snapshot.players.find(
-                (p) => p.playerId === lastEvent.animationCue?.playerId,
+                (p) => p.playerId === lastEvent.animationCue?.playerId
             )?.roomId;
         }
         return undefined;
@@ -224,7 +221,7 @@ export default function App() {
         ? [
             game.roomId,
             game.snapshot.players.length,
-            currentRoomSummary.onlineMemberCount,
+            currentRoomSummary.onlineMemberCount
         ].join(':')
         : undefined;
     const showPartyChangePrompt = !!partyChangeKey &&
@@ -237,21 +234,23 @@ export default function App() {
             currentPlayer,
             isAdmin,
             onlineMemberCount: currentRoomSummary?.onlineMemberCount,
-            lang,
+            lang
         })
         : undefined;
 
     // Latest-ref pattern: updated each render so the timer closure always calls the current version.
     revealNextRef.current = () => {
         const next = revealQueueRef.current.shift();
-        if (!next) return;
+        if (!next) {
+            return;
+        }
         setRevealedEvents((prev) => [...prev, next]);
         playRelicEventSound(next);
         if (isPersonalEvent(next, game.session?.sessionId)) {
             personalFlashKeyRef.current += 1;
             setPersonalFlash({
                 tone: next.tone === 'danger' ? 'bad' : 'good',
-                key: personalFlashKeyRef.current,
+                key: personalFlashKeyRef.current
             });
         }
         if (revealQueueRef.current.length > 0) {
@@ -263,7 +262,9 @@ export default function App() {
     };
 
     const scheduleReveal = useCallback(() => {
-        if (revealTimerRef.current !== null || revealQueueRef.current.length === 0) return;
+        if (revealTimerRef.current !== null || revealQueueRef.current.length === 0) {
+            return;
+        }
         revealTimerRef.current = window.setTimeout(() => {
             revealTimerRef.current = null;
             revealNextRef.current();
@@ -276,7 +277,9 @@ export default function App() {
 
         if (seen.size === 0) {
             // First load: show all historical events immediately, no animation.
-            for (const event of events) seen.add(event.id);
+            for (const event of events) {
+                seen.add(event.id);
+            }
             setRevealedEvents(events);
             return;
         }
@@ -293,7 +296,7 @@ export default function App() {
             const wasIdle = revealQueueRef.current.length === 0 && revealTimerRef.current === null;
             revealQueueRef.current.push(...newEvents);
             const hasTurnEvents = newEvents.some(
-                (e) => isTurnResultEvent(e) || e.type === 'action_revealed',
+                (e) => isTurnResultEvent(e) || e.type === 'action_revealed'
             );
             if (wasIdle && hasTurnEvents) {
                 setShowTensionBeat(true);
@@ -302,7 +305,8 @@ export default function App() {
                     setShowTensionBeat(false);
                     scheduleReveal();
                 }, 1200);
-            } else {
+            }
+            else {
                 scheduleReveal();
             }
         }
@@ -310,8 +314,12 @@ export default function App() {
 
     useEffect(() => {
         return () => {
-            if (revealTimerRef.current !== null) clearTimeout(revealTimerRef.current);
-            if (tensionTimerRef.current !== null) clearTimeout(tensionTimerRef.current);
+            if (revealTimerRef.current !== null) {
+                clearTimeout(revealTimerRef.current);
+            }
+            if (tensionTimerRef.current !== null) {
+                clearTimeout(tensionTimerRef.current);
+            }
         };
     }, []);
 
@@ -338,7 +346,12 @@ export default function App() {
         tick();
         const interval = window.setInterval(tick, 250);
         return () => clearInterval(interval);
-    }, [game.snapshot?.phase, game.snapshot?.roundStartedAtEpochMs, game.snapshot?.roundTimeLimitMs, game.snapshot?.round]);
+    }, [
+        game.snapshot?.phase,
+        game.snapshot?.roundStartedAtEpochMs,
+        game.snapshot?.roundTimeLimitMs,
+        game.snapshot?.round
+    ]);
 
     useEffect(() => {
         if (currentPlayer) {
@@ -359,12 +372,18 @@ export default function App() {
 
     useEffect(() => {
         const phase = game.snapshot?.phase;
-        if (!phase) { prevPhaseRef.current = undefined; return; }
+        if (!phase) {
+            prevPhaseRef.current = undefined;
+            return;
+        }
         if (prevPhaseRef.current && prevPhaseRef.current !== phase) {
             const isGameStart = prevPhaseRef.current === 'lobby' && phase === 'planning';
-            const msg = phase === 'planning' ? UI[lang].phaseBannerPlanning
-                : phase === 'review' ? 'Plans are revealed.'
-                : phase === 'finished' ? 'The ruin falls silent.'
+            const msg = phase === 'planning'
+                ? UI[lang].phaseBannerPlanning
+                : phase === 'review'
+                ? 'Plans are revealed.'
+                : phase === 'finished'
+                ? 'The ruin falls silent.'
                 : null;
             if (msg) {
                 setPhaseBanner(isGameStart ? `game-start:${msg}` : msg);
@@ -377,7 +396,10 @@ export default function App() {
 
     useEffect(() => {
         const roomId = currentPlayer?.roomId;
-        if (!roomId) { prevRoomIdRef.current = undefined; return; }
+        if (!roomId) {
+            prevRoomIdRef.current = undefined;
+            return;
+        }
         if (prevRoomIdRef.current !== undefined && prevRoomIdRef.current !== roomId) {
             const room = game.snapshot?.map.find((r) => r.id === roomId);
             if (room) {
@@ -405,12 +427,12 @@ export default function App() {
         const action: RelicActionInput = draft.kind === 'move'
             ? {
                 kind: 'move',
-                targetRoomId: draft.targetRoomId ?? selectedMoveTarget ?? moveTargets[0],
+                targetRoomId: draft.targetRoomId ?? selectedMoveTarget ?? moveTargets[0]
             }
             : draft.kind === 'steal'
             ? {
                 kind: 'steal',
-                targetPlayerId: draft.targetPlayerId ?? stealTargets[0]?.playerId,
+                targetPlayerId: draft.targetPlayerId ?? stealTargets[0]?.playerId
             }
             : { kind: draft.kind };
 
@@ -429,12 +451,12 @@ export default function App() {
                 kind,
                 targetRoomId: selectedRoomId && moveTargets.includes(selectedRoomId)
                     ? selectedRoomId
-                    : moveTargets[0],
+                    : moveTargets[0]
             }
             : kind === 'steal'
             ? {
                 kind,
-                targetPlayerId: stealTargets[0]?.playerId,
+                targetPlayerId: stealTargets[0]?.playerId
             }
             : { kind };
         setDraft(nextDraft);
@@ -448,7 +470,7 @@ export default function App() {
         playUiSound('select');
         const nextDraft = {
             kind: 'move' as const,
-            targetRoomId,
+            targetRoomId
         };
         setSelectedRoomId(targetRoomId);
         setDraft(nextDraft);
@@ -459,7 +481,7 @@ export default function App() {
         playUiSound('select');
         const nextDraft = {
             kind: 'steal' as const,
-            targetPlayerId,
+            targetPlayerId
         };
         setDraft(nextDraft);
         setScenePrimedAction(nextDraft);
@@ -477,9 +499,7 @@ export default function App() {
 
         if (draft.kind === 'steal' && stealTargets.length > 1) {
             const currentTarget = draft.targetPlayerId ?? stealTargets[0]?.playerId;
-            const index = Math.max(0, stealTargets.findIndex((player) =>
-                player.playerId === currentTarget
-            ));
+            const index = Math.max(0, stealTargets.findIndex((player) => player.playerId === currentTarget));
             const next = stealTargets[(index + direction + stealTargets.length) % stealTargets.length];
             selectStealTarget(next.playerId);
         }
@@ -491,7 +511,7 @@ export default function App() {
         selectedRoomId,
         selectMoveTarget,
         selectStealTarget,
-        stealTargets,
+        stealTargets
     ]);
 
     // Stable refs so closures (keyboard handler, timer) always call the latest versions.
@@ -502,15 +522,22 @@ export default function App() {
 
     useEffect(() => {
         const ACTION_KEYS: Record<string, RelicActionKind> = {
-            '1': 'move', '2': 'search', '3': 'steal', '4': 'escape',
+            '1': 'move',
+            '2': 'search',
+            '3': 'steal',
+            '4': 'escape'
         };
         const handler = (e: KeyboardEvent) => {
             const target = e.target;
             const isTyping = target instanceof HTMLInputElement ||
                 target instanceof HTMLTextAreaElement ||
                 (target instanceof HTMLElement && target.isContentEditable);
-            if (isTyping) return;
-            if (!game.snapshot || game.snapshot.phase !== 'planning') return;
+            if (isTyping) {
+                return;
+            }
+            if (!game.snapshot || game.snapshot.phase !== 'planning') {
+                return;
+            }
 
             const kind = ACTION_KEYS[e.key] as RelicActionKind | undefined;
             if (kind) {
@@ -575,7 +602,8 @@ export default function App() {
         try {
             await game.continueReview();
             reviewContinueSentKeyRef.current = reviewPlaybackKey;
-        } finally {
+        }
+        finally {
             if (reviewContinueInFlightKeyRef.current === reviewPlaybackKey) {
                 reviewContinueInFlightKeyRef.current = undefined;
             }
@@ -599,7 +627,7 @@ export default function App() {
             setSelectedRoomId(action.targetRoomId);
             setDraft({
                 kind: 'move',
-                targetRoomId: action.targetRoomId,
+                targetRoomId: action.targetRoomId
             });
             setScenePrimedAction(action);
             return;
@@ -620,7 +648,7 @@ export default function App() {
         if (action.kind === 'steal') {
             setDraft({
                 kind: 'steal',
-                targetPlayerId: action.targetPlayerId,
+                targetPlayerId: action.targetPlayerId
             });
             setScenePrimedAction(action);
         }
@@ -638,517 +666,566 @@ export default function App() {
     const jumpToSidePanelSection = useCallback((sectionId: string) => {
         document.getElementById(sectionId)?.scrollIntoView({
             block: 'start',
-            behavior: 'auto',
+            behavior: 'auto'
         });
     }, []);
 
     return (
         <GameHudLayout
-            scene={(
-                sceneVisible
-                    ? (
-                        <RELIC_SCENE_RUNTIME
-                            snapshot={game.snapshot}
-                            localPlayerId={game.session?.sessionId}
-                            selectedRoomId={selectedRoomId}
-                            primedAction={scenePrimedAction}
-                            focusRoomId={eventFocusRoomId}
-                            rtcReady={game.diagnostics.rtcReady}
-                            inputEnabled={sceneInputEnabled}
-                            reviewDirector={isAdmin}
-                            onSelectRoom={setSelectedRoomId}
-                            onPrimeAction={primeSceneAction}
-                            onPickupRelic={pickupRelic}
-                            onReviewPlaybackComplete={continueReview}
-                        />
-                    )
-                    : <OpeningRelicScene/>
-            )}
-            top={(
+            scene={sceneVisible
+                ? (
+                    <RELIC_SCENE_RUNTIME
+                        snapshot={game.snapshot}
+                        localPlayerId={game.session?.sessionId}
+                        selectedRoomId={selectedRoomId}
+                        primedAction={scenePrimedAction}
+                        focusRoomId={eventFocusRoomId}
+                        rtcReady={game.diagnostics.rtcReady}
+                        inputEnabled={sceneInputEnabled}
+                        reviewDirector={isAdmin}
+                        onSelectRoom={setSelectedRoomId}
+                        onPrimeAction={primeSceneAction}
+                        onPickupRelic={pickupRelic}
+                        onReviewPlaybackComplete={continueReview}
+                    />
+                )
+                : <OpeningRelicScene />}
+            top={
                 <AppTopBar
                     phaseText={phaseLabel(game.snapshot?.phase ?? game.connectionState, lang)}
                     snapshot={game.snapshot}
                     onToggleHelp={() => setShowHelpOverlay((v) => !v)}
                 />
-            )}
-            side={(
+            }
+            side={
                 <section className={`side-panel${sidePanelCollapsed ? ' collapsed' : ''}`}>
-                <button
-                    type="button"
-                    className="side-panel-toggle"
-                    onClick={() => setSidePanelCollapsed((v) => !v)}
-                    title={sidePanelCollapsed ? 'Expand panel' : 'Collapse panel'}
-                >
-                    {sidePanelCollapsed ? '▶ Panel' : '◀ Collapse'}
-                </button>
-                {game.session && (
-                    <SidePanelMenu
-                        items={[
-                            { id: 'hud-rooms', label: 'Rooms' },
-                            ...(game.roomId
-                                ? [{ id: 'hud-plan', label: game.snapshot?.phase === 'planning' ? 'Plan' : 'Party' }]
-                                : []),
-                            ...(game.roomId && game.snapshot
-                                ? [
-                                    { id: 'hud-ai', label: 'AI' },
-                                    { id: 'hud-map', label: 'Map' },
-                                    { id: 'hud-intel', label: 'Intel' },
-                                ]
-                                : []),
-                        ]}
-                        onJump={jumpToSidePanelSection}
-                    />
-                )}
-                {!game.session || game.connectionState === 'signed-out'
-                    ? (
-                        <form className="panel stack" onSubmit={submitAuth}>
-                            <div className="segmented">
-                                <button
-                                    type="button"
-                                    className={authMode === 'login' ? 'active' : ''}
-                                    onClick={() => setAuthMode('login')}
-                                >
-                                    Login
-                                </button>
-                                <button
-                                    type="button"
-                                    className={authMode === 'register' ? 'active' : ''}
-                                    onClick={() => setAuthMode('register')}
-                                >
-                                    Register
-                                </button>
-                            </div>
-                            <label>
-                                Username
-                                <input
-                                    autoComplete="username"
-                                    value={username}
-                                    onChange={(event) => setUsername(event.target.value)}
-                                />
-                            </label>
-                            {authMode === 'register' && (
+                    <button
+                        type="button"
+                        className="side-panel-toggle"
+                        onClick={() => setSidePanelCollapsed((v) => !v)}
+                        title={sidePanelCollapsed ? 'Expand panel' : 'Collapse panel'}
+                    >
+                        {sidePanelCollapsed ? '▶ Panel' : '◀ Collapse'}
+                    </button>
+                    {game.session && (
+                        <SidePanelMenu
+                            items={[
+                                { id: 'hud-rooms', label: 'Rooms' },
+                                ...(game.roomId
+                                    ? [{
+                                        id: 'hud-plan',
+                                        label: game.snapshot?.phase === 'planning' ? 'Plan' : 'Party'
+                                    }]
+                                    : []),
+                                ...(game.roomId && game.snapshot
+                                    ? [
+                                        { id: 'hud-ai', label: 'AI' },
+                                        { id: 'hud-map', label: 'Map' },
+                                        { id: 'hud-intel', label: 'Intel' }
+                                    ]
+                                    : [])
+                            ]}
+                            onJump={jumpToSidePanelSection}
+                        />
+                    )}
+                    {!game.session || game.connectionState === 'signed-out'
+                        ? (
+                            <form className="panel stack" onSubmit={submitAuth}>
+                                <div className="segmented">
+                                    <button
+                                        type="button"
+                                        className={authMode === 'login' ? 'active' : ''}
+                                        onClick={() => setAuthMode('login')}
+                                    >
+                                        Login
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={authMode === 'register' ? 'active' : ''}
+                                        onClick={() => setAuthMode('register')}
+                                    >
+                                        Register
+                                    </button>
+                                </div>
                                 <label>
-                                    Display name
+                                    Username
                                     <input
-                                        value={displayName}
-                                        onChange={(event) => setDisplayName(event.target.value)}
+                                        autoComplete="username"
+                                        value={username}
+                                        onChange={(event) => setUsername(event.target.value)}
                                     />
                                 </label>
-                            )}
-                            <label>
-                                Password
-                                <input
-                                    autoComplete={authMode === 'login'
-                                        ? 'current-password'
-                                        : 'new-password'}
-                                    type="password"
-                                    value={password}
-                                    onChange={(event) => setPassword(event.target.value)}
-                                />
-                            </label>
-                            <button
-                                type="submit"
-                                className="primary"
-                                disabled={!username.trim() || !password}
-                            >
-                                {authMode === 'login' ? 'Enter' : 'Create Hunter'}
-                            </button>
-                        </form>
-                    )
-                    : (
-                        <div id="hud-rooms" className="panel stack">
-                            <div className="profile-row">
-                                <span
-                                    className="hunter-dot"
-                                    style={{
-                                        background: colorForId(game.session.sessionId),
-                                    }}
-                                />
-                                <div>
-                                    <strong>{game.session.username}</strong>
-                                    <span>{shortId(game.session.sessionId)}</span>
+                                {authMode === 'register' && (
+                                    <label>
+                                        Display name
+                                        <input
+                                            value={displayName}
+                                            onChange={(event) => setDisplayName(event.target.value)}
+                                        />
+                                    </label>
+                                )}
+                                <label>
+                                    Password
+                                    <input
+                                        autoComplete={authMode === 'login'
+                                            ? 'current-password'
+                                            : 'new-password'}
+                                        type="password"
+                                        value={password}
+                                        onChange={(event) => setPassword(event.target.value)}
+                                    />
+                                </label>
+                                <button
+                                    type="submit"
+                                    className="primary"
+                                    disabled={!username.trim() || !password}
+                                >
+                                    {authMode === 'login' ? 'Enter' : 'Create Hunter'}
+                                </button>
+                            </form>
+                        )
+                        : (
+                            <div id="hud-rooms" className="panel stack">
+                                <div className="profile-row">
+                                    <span
+                                        className="hunter-dot"
+                                        style={{
+                                            background: colorForId(game.session.sessionId)
+                                        }}
+                                    />
+                                    <div>
+                                        <strong>{game.session.username}</strong>
+                                        <span>{shortId(game.session.sessionId)}</span>
+                                    </div>
+                                </div>
+
+                                <div className="button-grid">
+                                    <button type="button" onClick={game.createRoom}>New Room</button>
+                                    <button type="button" onClick={game.refreshRooms}>Refresh</button>
+                                    <button type="button" onClick={game.logout}>Logout</button>
+                                    <button
+                                        type="button"
+                                        className={ambientEnabled ? 'active' : ''}
+                                        onClick={toggleAmbient}
+                                    >
+                                        Atmosphere
+                                    </button>
+                                    <button type="button" onClick={toggleLang} title="Switch language / Bytt språk">
+                                        {lang === 'en' ? 'Norsk' : 'English'}
+                                    </button>
+                                </div>
+
+                                <div className="room-list">
+                                    {rooms.map((room) => (
+                                        <button
+                                            type="button"
+                                            key={room.roomId}
+                                            data-room-id={room.roomId}
+                                            className={room.roomId === game.roomId
+                                                ? 'room-row active'
+                                                : 'room-row'}
+                                            onClick={() => {
+                                                if (room.roomId !== game.roomId) {
+                                                    void game.joinRoom(room.roomId);
+                                                }
+                                            }}
+                                        >
+                                            <span>{room.name}</span>
+                                            <small>{room.onlineMemberCount} online</small>
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
+                        )}
+
+                    {game.session && game.roomId && (
+                        <div id="hud-plan" className="panel stack">
+                            <CharacterSelect
+                                currentPlayer={currentPlayer}
+                                selectedCharacterId={selectedCharacterId}
+                                onSelect={(characterId) => {
+                                    playUiSound('select');
+                                    setSelectedCharacterId(characterId);
+                                }}
+                                phase={game.snapshot?.phase}
+                            />
+
+                            <div className="objective-card">
+                                <span>Final Goal</span>
+                                <strong>
+                                    Collect relic points, reach the Exit, then submit Escape before the ruin closes.
+                                </strong>
+                                <small>Highest safe score claims the Heart Relic.</small>
+                            </div>
+
+                            <div className="objective-card objective-card-next">
+                                <span>Current Goal</span>
+                                <strong>{objective}</strong>
+                                {currentPlayer && (
+                                    <small>
+                                        {selectedCharacter.role} / {currentPlayer.health} health / {currentPlayer.score}
+                                        {' '}
+                                        score / {currentPlayer.relicIds.length} relics
+                                    </small>
+                                )}
+                            </div>
+
+                            {game.snapshot && game.snapshot.phase === 'lobby' && (
+                                <LobbyPartyPanel
+                                    snapshot={game.snapshot}
+                                    localPlayerId={game.session.sessionId}
+                                    onlineMemberCount={currentRoomSummary?.onlineMemberCount}
+                                    startBlocker={lobbyStartBlocker}
+                                    lang={lang}
+                                />
+                            )}
+
+                            {(!game.snapshot || game.snapshot.phase === 'lobby')
+                                ? (
+                                    <div className="lobby-ready-zone">
+                                        {currentPlayer
+                                            ? (
+                                                <button type="button" className="lobby-ready-confirmed" disabled>
+                                                    {UI[lang].readyConfirmed}
+                                                </button>
+                                            )
+                                            : (
+                                                <button
+                                                    type="button"
+                                                    className="primary lobby-ready-btn"
+                                                    onClick={joinExpedition}
+                                                >
+                                                    {lang === 'no' ? 'Bli med som' : 'Join as'} {selectedCharacter.name}
+                                                </button>
+                                            )}
+                                        {currentPlayer && isAdmin && game.snapshot && (
+                                            <div className="timer-limit-selector">
+                                                <span className="panel-label">{UI[lang].setTimerTitle}</span>
+                                                <div className="segmented">
+                                                    {([60_000, 180_000, 300_000] as const).map((ms) => (
+                                                        <button
+                                                            key={ms}
+                                                            type="button"
+                                                            className={game.snapshot!.roundTimeLimitMs === ms
+                                                                ? 'active'
+                                                                : ''}
+                                                            onClick={() => void game.setRoundLimit(ms)}
+                                                        >
+                                                            {ms === 60_000
+                                                                ? '1 min'
+                                                                : ms === 180_000
+                                                                ? '3 min'
+                                                                : '5 min'}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {currentPlayer && isAdmin && (
+                                            <button
+                                                type="button"
+                                                className="primary lobby-begin-btn"
+                                                onClick={startExpedition}
+                                                disabled={!!lobbyStartBlocker}
+                                                title={lobbyStartBlocker}
+                                            >
+                                                {UI[lang].beginTheHunt}
+                                            </button>
+                                        )}
+                                        {currentPlayer && isAdmin && lobbyStartBlocker && (
+                                            <small className="lobby-start-hint">{lobbyStartBlocker}</small>
+                                        )}
+                                        {currentPlayer && !isAdmin && (
+                                            <div className="lobby-waiting-admin">
+                                                {UI[lang].waitingForKeeper}
+                                            </div>
+                                        )}
+                                    </div>
+                                )
+                                : !currentPlayer
+                                ? (
+                                    <button type="button" onClick={joinExpedition}>
+                                        Join Expedition
+                                    </button>
+                                )
+                                : null}
 
                             <div className="button-grid">
-                                <button type="button" onClick={game.createRoom}>New Room</button>
-                                <button type="button" onClick={game.refreshRooms}>Refresh</button>
-                                <button type="button" onClick={game.logout}>Logout</button>
+                                <button type="button" onClick={resetExpedition}>
+                                    {lang === 'no' ? 'Tilbakestill' : 'Reset'}
+                                </button>
                                 <button
                                     type="button"
                                     className={ambientEnabled ? 'active' : ''}
                                     onClick={toggleAmbient}
                                 >
-                                    Atmosphere
+                                    {lang === 'no' ? 'Atmosfære' : 'Atmosphere'}
                                 </button>
                                 <button type="button" onClick={toggleLang} title="Switch language / Bytt språk">
                                     {lang === 'en' ? 'Norsk' : 'English'}
                                 </button>
                             </div>
 
-                            <div className="room-list">
-                                {rooms.map((room) => (
-                                    <button
-                                        type="button"
-                                        key={room.roomId}
-                                        data-room-id={room.roomId}
-                                        className={room.roomId === game.roomId
-                                            ? 'room-row active'
-                                            : 'room-row'}
-                                        onClick={() => {
-                                            if (room.roomId !== game.roomId) {
-                                                void game.joinRoom(room.roomId);
-                                            }
-                                        }}
-                                    >
-                                        <span>{room.name}</span>
-                                        <small>{room.onlineMemberCount} online</small>
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                {game.session && game.roomId && (
-                    <div id="hud-plan" className="panel stack">
-                        <CharacterSelect
-                            currentPlayer={currentPlayer}
-                            selectedCharacterId={selectedCharacterId}
-                            onSelect={(characterId) => {
-                                playUiSound('select');
-                                setSelectedCharacterId(characterId);
-                            }}
-                            phase={game.snapshot?.phase}
-                        />
-
-                        <div className="objective-card">
-                            <span>Final Goal</span>
-                            <strong>Collect relic points, reach the Exit, then submit Escape before the ruin closes.</strong>
-                            <small>Highest safe score claims the Heart Relic.</small>
-                        </div>
-
-                        <div className="objective-card objective-card-next">
-                            <span>Current Goal</span>
-                            <strong>{objective}</strong>
-                            {currentPlayer && (
-                                <small>
-                                    {selectedCharacter.role} / {currentPlayer.health} health / {currentPlayer.score} score / {currentPlayer.relicIds.length} relics
-                                </small>
-                            )}
-                        </div>
-
-                        {game.snapshot && game.snapshot.phase === 'lobby' && (
-                            <LobbyPartyPanel
-                                snapshot={game.snapshot}
-                                localPlayerId={game.session.sessionId}
-                                onlineMemberCount={currentRoomSummary?.onlineMemberCount}
-                                startBlocker={lobbyStartBlocker}
-                                lang={lang}
-                            />
-                        )}
-
-                        {(!game.snapshot || game.snapshot.phase === 'lobby') ? (
-                            <div className="lobby-ready-zone">
-                                {currentPlayer ? (
-                                    <button type="button" className="lobby-ready-confirmed" disabled>
-                                        {UI[lang].readyConfirmed}
-                                    </button>
-                                ) : (
-                                    <button type="button" className="primary lobby-ready-btn" onClick={joinExpedition}>
-                                        {lang === 'no' ? 'Bli med som' : 'Join as'} {selectedCharacter.name}
-                                    </button>
-                                )}
-                                {currentPlayer && isAdmin && game.snapshot && (
-                                    <div className="timer-limit-selector">
-                                        <span className="panel-label">{UI[lang].setTimerTitle}</span>
-                                        <div className="segmented">
-                                            {([60_000, 180_000, 300_000] as const).map((ms) => (
-                                                <button
-                                                    key={ms}
-                                                    type="button"
-                                                    className={game.snapshot!.roundTimeLimitMs === ms ? 'active' : ''}
-                                                    onClick={() => void game.setRoundLimit(ms)}
-                                                >
-                                                    {ms === 60_000 ? '1 min' : ms === 180_000 ? '3 min' : '5 min'}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                                {currentPlayer && isAdmin && (
-                                    <button
-                                        type="button"
-                                        className="primary lobby-begin-btn"
-                                        onClick={startExpedition}
-                                        disabled={!!lobbyStartBlocker}
-                                        title={lobbyStartBlocker}
-                                    >
-                                        {UI[lang].beginTheHunt}
-                                    </button>
-                                )}
-                                {currentPlayer && isAdmin && lobbyStartBlocker && (
-                                    <small className="lobby-start-hint">{lobbyStartBlocker}</small>
-                                )}
-                                {currentPlayer && !isAdmin && (
-                                    <div className="lobby-waiting-admin">
-                                        {UI[lang].waitingForKeeper}
-                                    </div>
-                                )}
-                            </div>
-                        ) : !currentPlayer ? (
-                            <button type="button" onClick={joinExpedition}>
-                                Join Expedition
-                            </button>
-                        ) : null}
-
-                        <div className="button-grid">
-                            <button type="button" onClick={resetExpedition}>
-                                {lang === 'no' ? 'Tilbakestill' : 'Reset'}
-                            </button>
-                            <button
-                                type="button"
-                                className={ambientEnabled ? 'active' : ''}
-                                onClick={toggleAmbient}
-                            >
-                                {lang === 'no' ? 'Atmosfære' : 'Atmosphere'}
-                            </button>
-                            <button type="button" onClick={toggleLang} title="Switch language / Bytt språk">
-                                {lang === 'en' ? 'Norsk' : 'English'}
-                            </button>
-                        </div>
-
-                        {showPlanningControls && game.snapshot && (
-                            <section className="action-command-panel" aria-label="Round plan">
-                                <TurnPlanStatusCard
-                                    snapshot={game.snapshot}
-                                    localPlayerId={game.session.sessionId}
-                                />
-
-                                {isLocked && (
-                                    <LockedPlanCard
-                                        action={lockedAction}
+                            {showPlanningControls && game.snapshot && (
+                                <section className="action-command-panel" aria-label="Round plan">
+                                    <TurnPlanStatusCard
                                         snapshot={game.snapshot}
                                         localPlayerId={game.session.sessionId}
                                     />
-                                )}
 
-                                <div className="action-picker">
-                                    {RELIC_ACTION_KINDS.map((kind, index) => {
-                                        const option = viewModel.actionOptions[kind];
-                                        const cq = option.consequence;
-                                        const isEscapeUrgent = kind === 'escape' &&
-                                            currentRoom?.kind === 'exit' &&
-                                            (currentPlayer?.relicIds.length ?? 0) > 0;
-                                        return (
-                                            <button
-                                                type="button"
-                                                key={kind}
-                                                className={[
-                                                    draft.kind === kind ? 'active' : '',
-                                                    isEscapeUrgent ? 'action-escape-urgent' : '',
-                                                    !option.legal ? 'action-option-blocked' : '',
-                                                ].filter(Boolean).join(' ')}
-                                                aria-pressed={draft.kind === kind}
-                                                onClick={() => selectActionKind(kind)}
-                                            >
-                                                <span>
-                                                    {option.info.label}
-                                                    <kbd className="action-key">{index + 1}</kbd>
-                                                </span>
-                                                <small>{option.info.noise}</small>
-                                                <em className={`action-cq action-cq-${cq.status}`}>{cq.text}</em>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-
-                                <div className="action-brief">
-                                    <strong>{actionInfo.label}</strong>
-                                    <span>{actionInfo.description}</span>
-                                    {isLocked && <small>Your submitted plan stays locked for this round.</small>}
-                                    {submitBlocker && !isLocked && <small>{submitBlocker}</small>}
-                                    {partyCoordination && <small>{partyCoordination.actionHint}</small>}
-                                    {viewModel.actionBriefDanger && (
-                                        <small className="action-brief-danger">! {viewModel.actionBriefDanger}</small>
+                                    {isLocked && (
+                                        <LockedPlanCard
+                                            action={lockedAction}
+                                            snapshot={game.snapshot}
+                                            localPlayerId={game.session.sessionId}
+                                        />
                                     )}
-                                </div>
 
-                                {draft.kind === 'move' && (
-                                    <MoveTargetChoices
-                                        snapshot={game.snapshot}
-                                        moveTargets={moveTargets}
-                                        selectedRoomId={draft.targetRoomId ?? selectedRoomId ?? moveTargets[0]}
-                                        exitDistances={exitDistances}
-                                        onSelect={selectMoveTarget}
-                                    />
-                                )}
-
-                                {draft.kind === 'steal' && (
-                                    <StealTargetChoices
-                                        stealTargets={stealTargets}
-                                        selectedPlayerId={draft.targetPlayerId ?? stealTargets[0]?.playerId}
-                                        onSelect={selectStealTarget}
-                                    />
-                                )}
-
-                                {roundNoiseCount > 0 && (
-                                    <div className={`noise-meter ${roundNoiseCount >= 3 ? 'noise-high' : roundNoiseCount >= 2 ? 'noise-medium' : 'noise-low'}`}>
-                                        <span>Last round noise</span>
-                                        <span className="noise-pips">
-                                            {Array.from({ length: Math.min(5, roundNoiseCount) }, (_, i) => (
-                                                <span key={i} className="noise-pip"/>
-                                            ))}
-                                        </span>
-                                        <small>{roundNoiseCount >= 3 ? 'Rooms destabilising' : 'Some disruption'}</small>
+                                    <div className="action-picker">
+                                        {RELIC_ACTION_KINDS.map((kind, index) => {
+                                            const option = viewModel.actionOptions[kind];
+                                            const cq = option.consequence;
+                                            const isEscapeUrgent = kind === 'escape' &&
+                                                currentRoom?.kind === 'exit' &&
+                                                (currentPlayer?.relicIds.length ?? 0) > 0;
+                                            return (
+                                                <button
+                                                    type="button"
+                                                    key={kind}
+                                                    className={[
+                                                        draft.kind === kind ? 'active' : '',
+                                                        isEscapeUrgent ? 'action-escape-urgent' : '',
+                                                        !option.legal ? 'action-option-blocked' : ''
+                                                    ].filter(Boolean).join(' ')}
+                                                    aria-pressed={draft.kind === kind}
+                                                    onClick={() => selectActionKind(kind)}
+                                                >
+                                                    <span>
+                                                        {option.info.label}
+                                                        <kbd className="action-key">{index + 1}</kbd>
+                                                    </span>
+                                                    <small>{option.info.noise}</small>
+                                                    <em className={`action-cq action-cq-${cq.status}`}>{cq.text}</em>
+                                                </button>
+                                            );
+                                        })}
                                     </div>
-                                )}
 
-                                {viewModel.roundLimitWarning && (
-                                    <div className={`round-warning ${viewModel.roundLimitWarning.severity === 'danger' ? 'round-warning-final' : ''}`}>
-                                        {viewModel.roundLimitWarning.message}
+                                    <div className="action-brief">
+                                        <strong>{actionInfo.label}</strong>
+                                        <span>{actionInfo.description}</span>
+                                        {isLocked && <small>Your submitted plan stays locked for this round.</small>}
+                                        {submitBlocker && !isLocked && <small>{submitBlocker}</small>}
+                                        {partyCoordination && <small>{partyCoordination.actionHint}</small>}
+                                        {viewModel.actionBriefDanger && (
+                                            <small className="action-brief-danger">
+                                                ! {viewModel.actionBriefDanger}
+                                            </small>
+                                        )}
                                     </div>
-                                )}
 
-                                {timeRemainingMs !== null && (
-                                    <RoundTimer timeRemainingMs={timeRemainingMs} lang={lang}/>
-                                )}
+                                    {draft.kind === 'move' && (
+                                        <MoveTargetChoices
+                                            snapshot={game.snapshot}
+                                            moveTargets={moveTargets}
+                                            selectedRoomId={draft.targetRoomId ?? selectedRoomId ?? moveTargets[0]}
+                                            exitDistances={exitDistances}
+                                            onSelect={selectMoveTarget}
+                                        />
+                                    )}
 
-                                <button
-                                    type="button"
-                                    className="primary action-submit-button"
-                                    disabled={!canSubmit}
-                                    onClick={submitAction}
-                                >
-                                    {isLocked
-                                        ? UI[lang].boundButton
-                                        : <>{UI[lang].submitButton} <kbd className="action-key action-key-enter">↵</kbd></>}
-                                </button>
+                                    {draft.kind === 'steal' && (
+                                        <StealTargetChoices
+                                            stealTargets={stealTargets}
+                                            selectedPlayerId={draft.targetPlayerId ?? stealTargets[0]?.playerId}
+                                            onSelect={selectStealTarget}
+                                        />
+                                    )}
 
-                                {canForceResolveRound && (
-                                    <div className="force-resolve-panel">
-                                        <small>
-                                            {viewModel.turnStatus.waitingPlayerCount} timed-out {plural('hunter', viewModel.turnStatus.waitingPlayerCount)}.
-                                        </small>
-                                        <button
-                                            type="button"
-                                            className="secondary action-force-resolve-button"
-                                            onClick={forceResolveRound}
+                                    {roundNoiseCount > 0 && (
+                                        <div
+                                            className={`noise-meter ${
+                                                roundNoiseCount >= 3
+                                                    ? 'noise-high'
+                                                    : roundNoiseCount >= 2
+                                                    ? 'noise-medium'
+                                                    : 'noise-low'
+                                            }`}
                                         >
-                                            Resolve Timed-Out Round
-                                        </button>
-                                    </div>
-                                )}
-                            </section>
-                        )}
+                                            <span>Last round noise</span>
+                                            <span className="noise-pips">
+                                                {Array.from(
+                                                    { length: Math.min(5, roundNoiseCount) },
+                                                    (_, i) => <span key={i} className="noise-pip" />
+                                                )}
+                                            </span>
+                                            <small>
+                                                {roundNoiseCount >= 3 ? 'Rooms destabilising' : 'Some disruption'}
+                                            </small>
+                                        </div>
+                                    )}
 
-                        {game.snapshot && game.session && showPlanningControls && (
-                            <RelicAiCompanionPanel
-                                state={planningAi}
-                                snapshot={game.snapshot}
-                                localPlayerId={game.session.sessionId}
-                                onAsk={planningAi.ask}
-                                onPrime={primeSceneAction}
-                            />
-                        )}
+                                    {viewModel.roundLimitWarning && (
+                                        <div
+                                            className={`round-warning ${
+                                                viewModel.roundLimitWarning.severity === 'danger'
+                                                    ? 'round-warning-final'
+                                                    : ''
+                                            }`}
+                                        >
+                                            {viewModel.roundLimitWarning.message}
+                                        </div>
+                                    )}
 
-                        {showReviewControls && game.snapshot && (
-                            <section className="action-command-panel review-command-panel" aria-label="Round review">
-                                <span className="panel-label">Round {game.snapshot.round} Review</span>
-                                <div className="action-brief">
-                                    <strong>Watch the revealed plans</strong>
-                                    <span>The neon facility is replaying every plan in the scene.</span>
-                                    <small>{isAdmin
-                                        ? 'Playback advances automatically, or the director can skip.'
-                                        : 'The director will advance after everyone has seen enough.'}</small>
-                                </div>
-                                {isAdmin && (
+                                    {timeRemainingMs !== null && (
+                                        <RoundTimer timeRemainingMs={timeRemainingMs} lang={lang} />
+                                    )}
+
                                     <button
                                         type="button"
                                         className="primary action-submit-button"
-                                        onClick={continueReview}
+                                        disabled={!canSubmit}
+                                        onClick={submitAction}
                                     >
-                                        {willReviewEndGame(game.snapshot)
-                                            ? 'Skip to finale'
-                                            : 'Skip review'}
+                                        {isLocked
+                                            ? UI[lang].boundButton
+                                            : (
+                                                <>
+                                                    {UI[lang].submitButton}{' '}
+                                                    <kbd className="action-key action-key-enter">↵</kbd>
+                                                </>
+                                            )}
                                     </button>
-                                )}
-                            </section>
-                        )}
-                    </div>
-                )}
 
-                {game.session && game.roomId && game.snapshot && (
-                    <EscapeDecisionPanel
-                        snapshot={game.snapshot}
-                        localPlayerId={game.session.sessionId}
-                    />
-                )}
+                                    {canForceResolveRound && (
+                                        <div className="force-resolve-panel">
+                                            <small>
+                                                {viewModel.turnStatus.waitingPlayerCount} timed-out{' '}
+                                                {plural('hunter', viewModel.turnStatus.waitingPlayerCount)}.
+                                            </small>
+                                            <button
+                                                type="button"
+                                                className="secondary action-force-resolve-button"
+                                                onClick={forceResolveRound}
+                                            >
+                                                Resolve Timed-Out Round
+                                            </button>
+                                        </div>
+                                    )}
+                                </section>
+                            )}
 
-                {game.session && game.roomId && game.snapshot && partyCoordination && (
-                    <PartyCoordinationPanel
-                        snapshot={game.snapshot}
-                        localPlayerId={game.session.sessionId}
-                        summary={partyCoordination}
-                    />
-                )}
+                            {game.snapshot && game.session && showPlanningControls && (
+                                <RelicAiCompanionPanel
+                                    state={planningAi}
+                                    snapshot={game.snapshot}
+                                    localPlayerId={game.session.sessionId}
+                                    onAsk={planningAi.ask}
+                                    onPrime={primeSceneAction}
+                                />
+                            )}
 
-                {game.session && game.roomId && game.snapshot && (
-                    <CastleMap
-                        snapshot={game.snapshot}
-                        localPlayerId={game.session.sessionId}
-                        selectedRoomId={selectedRoomId}
-                        lastEvent={lastEvent}
-                        onSelectRoom={setSelectedRoomId}
-                    />
-                )}
+                            {showReviewControls && game.snapshot && (
+                                <section
+                                    className="action-command-panel review-command-panel"
+                                    aria-label="Round review"
+                                >
+                                    <span className="panel-label">Round {game.snapshot.round} Review</span>
+                                    <div className="action-brief">
+                                        <strong>Watch the revealed plans</strong>
+                                        <span>The neon facility is replaying every plan in the scene.</span>
+                                        <small>
+                                            {isAdmin
+                                                ? 'Playback advances automatically, or the director can skip.'
+                                                : 'The director will advance after everyone has seen enough.'}
+                                        </small>
+                                    </div>
+                                    {isAdmin && (
+                                        <button
+                                            type="button"
+                                            className="primary action-submit-button"
+                                            onClick={continueReview}
+                                        >
+                                            {willReviewEndGame(game.snapshot)
+                                                ? 'Skip to finale'
+                                                : 'Skip review'}
+                                        </button>
+                                    )}
+                                </section>
+                            )}
+                        </div>
+                    )}
 
-                {game.session && game.roomId && game.snapshot && selectedRoomId && (
-                    <RoomDetailCard
-                        snapshot={game.snapshot}
-                        roomId={selectedRoomId}
-                        localPlayerId={game.session.sessionId}
-                        exitDistances={exitDistances}
-                        onPrimeMove={(targetRoomId) => {
-                            const next = { kind: 'move' as const, targetRoomId };
-                            setDraft(next);
-                            setScenePrimedAction(next);
-                        }}
-                        onDismiss={() => setSelectedRoomId(undefined)}
-                    />
-                )}
+                    {game.session && game.roomId && game.snapshot && (
+                        <EscapeDecisionPanel
+                            snapshot={game.snapshot}
+                            localPlayerId={game.session.sessionId}
+                        />
+                    )}
 
-                {game.session && game.roomId && game.snapshot && (
-                    <ClueJournal
-                        snapshot={game.snapshot}
-                        onSelectRoom={setSelectedRoomId}
-                    />
-                )}
+                    {game.session && game.roomId && game.snapshot && partyCoordination && (
+                        <PartyCoordinationPanel
+                            snapshot={game.snapshot}
+                            localPlayerId={game.session.sessionId}
+                            summary={partyCoordination}
+                        />
+                    )}
 
-                {showPartyChangePrompt && game.snapshot && currentRoomSummary && (
-                    <PartyChangePrompt
-                        expeditionPlayers={game.snapshot.players.length}
-                        onlinePlayers={currentRoomSummary.onlineMemberCount}
-                        onReset={resetExpedition}
-                        onContinue={() => setDismissedPartyChangeKey(partyChangeKey)}
-                    />
-                )}
+                    {game.session && game.roomId && game.snapshot && (
+                        <CastleMap
+                            snapshot={game.snapshot}
+                            localPlayerId={game.session.sessionId}
+                            selectedRoomId={selectedRoomId}
+                            lastEvent={lastEvent}
+                            onSelectRoom={setSelectedRoomId}
+                        />
+                    )}
 
-                {game.session && game.roomId && (
-                    <RoomIntel
-                        currentRoom={currentRoom}
-                        moveTargets={moveTargets}
-                        snapshot={game.snapshot}
-                    />
-                )}
+                    {game.session && game.roomId && game.snapshot && selectedRoomId && (
+                        <RoomDetailCard
+                            snapshot={game.snapshot}
+                            roomId={selectedRoomId}
+                            localPlayerId={game.session.sessionId}
+                            exitDistances={exitDistances}
+                            onPrimeMove={(targetRoomId) => {
+                                const next = { kind: 'move' as const, targetRoomId };
+                                setDraft(next);
+                                setScenePrimedAction(next);
+                            }}
+                            onDismiss={() => setSelectedRoomId(undefined)}
+                        />
+                    )}
 
-                {IS_DEV && game.session && (
-                    <RallarDiagnosticsPanel diagnostics={game.diagnostics}/>
-                )}
+                    {game.session && game.roomId && game.snapshot && (
+                        <ClueJournal
+                            snapshot={game.snapshot}
+                            onSelectRoom={setSelectedRoomId}
+                        />
+                    )}
 
-                {game.error && <div className="panel error-panel">{game.error}</div>}
-            </section>
-            )}
-            bottom={(
+                    {showPartyChangePrompt && game.snapshot && currentRoomSummary && (
+                        <PartyChangePrompt
+                            expeditionPlayers={game.snapshot.players.length}
+                            onlinePlayers={currentRoomSummary.onlineMemberCount}
+                            onReset={resetExpedition}
+                            onContinue={() => setDismissedPartyChangeKey(partyChangeKey)}
+                        />
+                    )}
+
+                    {game.session && game.roomId && (
+                        <RoomIntel
+                            currentRoom={currentRoom}
+                            moveTargets={moveTargets}
+                            snapshot={game.snapshot}
+                        />
+                    )}
+
+                    {IS_DEV && game.session && <RallarDiagnosticsPanel diagnostics={game.diagnostics} />}
+
+                    {game.error && <div className="panel error-panel">{game.error}</div>}
+                </section>
+            }
+            bottom={
                 <BottomHudPanel
                     snapshot={game.snapshot}
                     localPlayerId={game.session?.sessionId}
@@ -1156,152 +1233,178 @@ export default function App() {
                     lastEvent={lastEvent}
                     lang={lang}
                 />
-            )}
-            floating={(
+            }
+            floating={
                 <>
-            {personalFlash && (
-                <div
-                    key={personalFlash.key}
-                    className={`personal-event-flash flash-${personalFlash.tone}`}
-                    onAnimationEnd={() => setPersonalFlash(null)}
-                    aria-hidden="true"
-                />
-            )}
+                    {personalFlash && (
+                        <div
+                            key={personalFlash.key}
+                            className={`personal-event-flash flash-${personalFlash.tone}`}
+                            onAnimationEnd={() => setPersonalFlash(null)}
+                            aria-hidden="true"
+                        />
+                    )}
 
-            {viewModel.lowHealthWarning && (
-                <div className="low-health-banner" role="alert">
-                    {viewModel.lowHealthWarning.message}
-                </div>
-            )}
-
-            {showPlanningControls && (
-                <div className="controls-hud" aria-hidden="true">
-                    <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</span>
-                    <span><kbd>Q</kbd><kbd>E</kbd> Turn</span>
-                    <span><kbd>1</kbd>–<kbd>4</kbd> Pick action</span>
-                    <span><kbd>←</kbd><kbd>→</kbd> Target</span>
-                    <span><kbd>↵</kbd> Submit</span>
-                </div>
-            )}
-
-            {showPlanningControls && game.snapshot && game.session && !game.snapshot.submittedPlayerIds.includes(game.session.sessionId) && (
-                <div className="action-nudge" aria-live="polite">
-                    {currentRoom
-                        ? <RoomActionNudge room={currentRoom} lang={lang} />
-                        : <span>Pick an action and submit</span>}
-                </div>
-            )}
-
-            {game.snapshot && (
-                <SceneMinimapOverlay
-                    snapshot={game.snapshot}
-                    localPlayerId={game.session?.sessionId}
-                />
-            )}
-
-            {phaseBanner && (
-                <div
-                    className={`phase-banner${phaseBanner.startsWith('game-start:') ? ' phase-banner-start' : ''}`}
-                    role="status"
-                    aria-live="assertive"
-                    aria-atomic="true"
-                >
-                    {phaseBanner.startsWith('game-start:') ? phaseBanner.slice('game-start:'.length) : phaseBanner}
-                </div>
-            )}
-
-            {roomEntryFlash && (
-                <div
-                    key={roomEntryFlash.key}
-                    className="room-entry-flash"
-                    onAnimationEnd={() => setRoomEntryFlash(null)}
-                    aria-live="polite"
-                    aria-atomic="true"
-                >
-                    {roomEntryFlash.room}
-                </div>
-            )}
-                </>
-            )}
-            overlays={(
-                <>
-            {showHelpOverlay && (
-                <div
-                    className="help-overlay"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label="Keyboard shortcuts"
-                    onClick={() => setShowHelpOverlay(false)}
-                >
-                    <div className="help-card" onClick={(e) => e.stopPropagation()}>
-                        <span className="panel-label">Controls</span>
-                        <div className="help-grid">
-                            <kbd>WASD</kbd><span>Move in 3D scene</span>
-                            <kbd>Mouse</kbd><span>Look around</span>
-                            <kbd>1 – 4</kbd><span>Select action (Move/Search/Steal/Escape)</span>
-                            <kbd>↵</kbd><span>Submit plan</span>
-                            <kbd>? / F1</kbd><span>Toggle this help</span>
-                            <kbd>Esc</kbd><span>Close overlays</span>
+                    {viewModel.lowHealthWarning && (
+                        <div className="low-health-banner" role="alert">
+                            {viewModel.lowHealthWarning.message}
                         </div>
-                        <button type="button" className="primary" onClick={() => setShowHelpOverlay(false)}>
-                            Close
-                        </button>
-                    </div>
-                </div>
-            )}
+                    )}
 
-            {currentPlayer?.defeated && game.snapshot?.phase === 'planning' && (
-                <div className="defeated-overlay" aria-live="polite">
-                    <div className="defeated-card">
-                        <span className="panel-label">Fallen</span>
-                        <strong>You are down</strong>
-                        <p>The castle keeps your relics. Watch the others — the expedition may still turn.</p>
-                        <small>Your score: {currentPlayer.score} pts</small>
-                    </div>
-                </div>
-            )}
+                    {showPlanningControls && (
+                        <div className="controls-hud" aria-hidden="true">
+                            <span>
+                                <kbd>W</kbd>
+                                <kbd>A</kbd>
+                                <kbd>S</kbd>
+                                <kbd>D</kbd> Move
+                            </span>
+                            <span>
+                                <kbd>Q</kbd>
+                                <kbd>E</kbd> Turn
+                            </span>
+                            <span>
+                                <kbd>1</kbd>–<kbd>4</kbd> Pick action
+                            </span>
+                            <span>
+                                <kbd>←</kbd>
+                                <kbd>→</kbd> Target
+                            </span>
+                            <span>
+                                <kbd>↵</kbd> Submit
+                            </span>
+                        </div>
+                    )}
 
-            {showTensionBeat && (
-                <div className="tension-beat" aria-live="assertive" role="status">
-                    <span>The castle answers…</span>
-                </div>
-            )}
+                    {showPlanningControls && game.snapshot && game.session &&
+                        !game.snapshot.submittedPlayerIds.includes(game.session.sessionId) && (
+                        <div className="action-nudge" aria-live="polite">
+                            {currentRoom
+                                ? <RoomActionNudge room={currentRoom} lang={lang} />
+                                : <span>Pick an action and submit</span>}
+                        </div>
+                    )}
 
-            {game.snapshot?.phase === 'finished' && (
-                <VictoryPanel snapshot={game.snapshot}/>
-            )}
+                    {game.snapshot && (
+                        <SceneMinimapOverlay
+                            snapshot={game.snapshot}
+                            localPlayerId={game.session?.sessionId}
+                        />
+                    )}
 
-            {showOnboarding &&
-                game.snapshot?.phase === 'planning' &&
-                game.snapshot.round === 1 && (
-                <OnboardingOverlay onDismiss={() => {
-                    localStorage.setItem('relic-onboarding-v1', '1');
-                    setShowOnboarding(false);
-                }}/>
-            )}
+                    {phaseBanner && (
+                        <div
+                            className={`phase-banner${
+                                phaseBanner.startsWith('game-start:') ? ' phase-banner-start' : ''
+                            }`}
+                            role="status"
+                            aria-live="assertive"
+                            aria-atomic="true"
+                        >
+                            {phaseBanner.startsWith('game-start:')
+                                ? phaseBanner.slice('game-start:'.length)
+                                : phaseBanner}
+                        </div>
+                    )}
 
-            {timeRemainingMs !== null && timeRemainingMs > 0 && timeRemainingMs <= 10_000 &&
-                showPlanningControls && !isLocked && (
-                <div className="round-countdown-overlay" role="status" aria-live="assertive">
-                    <span className="round-countdown-number">{Math.ceil(timeRemainingMs / 1000)}</span>
-                    <span className="round-countdown-label">s</span>
-                </div>
-            )}
-
-            {INTRO_ENABLED && !introComplete && (
-                <IntroScene onComplete={() => setIntroComplete(true)} lang={lang} />
-            )}
+                    {roomEntryFlash && (
+                        <div
+                            key={roomEntryFlash.key}
+                            className="room-entry-flash"
+                            onAnimationEnd={() => setRoomEntryFlash(null)}
+                            aria-live="polite"
+                            aria-atomic="true"
+                        >
+                            {roomEntryFlash.room}
+                        </div>
+                    )}
                 </>
-            )}
+            }
+            overlays={
+                <>
+                    {showHelpOverlay && (
+                        <div
+                            className="help-overlay"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label="Keyboard shortcuts"
+                            onClick={() => setShowHelpOverlay(false)}
+                        >
+                            <div className="help-card" onClick={(e) => e.stopPropagation()}>
+                                <span className="panel-label">Controls</span>
+                                <div className="help-grid">
+                                    <kbd>WASD</kbd>
+                                    <span>Move in 3D scene</span>
+                                    <kbd>Mouse</kbd>
+                                    <span>Look around</span>
+                                    <kbd>1 – 4</kbd>
+                                    <span>Select action (Move/Search/Steal/Escape)</span>
+                                    <kbd>↵</kbd>
+                                    <span>Submit plan</span>
+                                    <kbd>? / F1</kbd>
+                                    <span>Toggle this help</span>
+                                    <kbd>Esc</kbd>
+                                    <span>Close overlays</span>
+                                </div>
+                                <button type="button" className="primary" onClick={() => setShowHelpOverlay(false)}>
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {currentPlayer?.defeated && game.snapshot?.phase === 'planning' && (
+                        <div className="defeated-overlay" aria-live="polite">
+                            <div className="defeated-card">
+                                <span className="panel-label">Fallen</span>
+                                <strong>You are down</strong>
+                                <p>The castle keeps your relics. Watch the others — the expedition may still turn.</p>
+                                <small>Your score: {currentPlayer.score} pts</small>
+                            </div>
+                        </div>
+                    )}
+
+                    {showTensionBeat && (
+                        <div className="tension-beat" aria-live="assertive" role="status">
+                            <span>The castle answers…</span>
+                        </div>
+                    )}
+
+                    {game.snapshot?.phase === 'finished' && <VictoryPanel snapshot={game.snapshot} />}
+
+                    {showOnboarding &&
+                        game.snapshot?.phase === 'planning' &&
+                        game.snapshot.round === 1 && (
+                        <OnboardingOverlay
+                            onDismiss={() => {
+                                localStorage.setItem('relic-onboarding-v1', '1');
+                                setShowOnboarding(false);
+                            }}
+                        />
+                    )}
+
+                    {timeRemainingMs !== null && timeRemainingMs > 0 && timeRemainingMs <= 10_000 &&
+                        showPlanningControls && !isLocked && (
+                        <div className="round-countdown-overlay" role="status" aria-live="assertive">
+                            <span className="round-countdown-number">{Math.ceil(timeRemainingMs / 1000)}</span>
+                            <span className="round-countdown-label">s</span>
+                        </div>
+                    )}
+
+                    {INTRO_ENABLED && !introComplete && (
+                        <IntroScene onComplete={() => setIntroComplete(true)} lang={lang} />
+                    )}
+                </>
+            }
         />
     );
 }
 
 function AppTopBar({
-                       phaseText,
-                       snapshot,
-                       onToggleHelp,
-                   }: Readonly<{
+    phaseText,
+    snapshot,
+    onToggleHelp
+}: Readonly<{
     phaseText: string;
     snapshot?: RelicPublicSnapshot;
     onToggleHelp(): void;
@@ -1309,7 +1412,7 @@ function AppTopBar({
     return (
         <section className="topbar">
             <div className="brand">
-                <span className="brand-mark"/>
+                <span className="brand-mark" />
                 <div>
                     <h1>Relic Hunters</h1>
                     <p>{phaseText}</p>
@@ -1317,29 +1420,30 @@ function AppTopBar({
             </div>
             <div className="status-row">
                 {snapshot
-                    ? <RoundStatus round={snapshot.round} maxRounds={snapshot.maxRounds}/>
-                    : <Status label="Round" value="-"/>
-                }
-                <Status label="Hunters" value={String(snapshot?.players.length ?? 0)}/>
-                <Status label="Submitted" value={String(snapshot?.submittedPlayerIds.length ?? 0)}/>
-                <RelicProgressPill relics={snapshot?.relics}/>
-                <WinLeader snapshot={snapshot}/>
+                    ? <RoundStatus round={snapshot.round} maxRounds={snapshot.maxRounds} />
+                    : <Status label="Round" value="-" />}
+                <Status label="Hunters" value={String(snapshot?.players.length ?? 0)} />
+                <Status label="Submitted" value={String(snapshot?.submittedPlayerIds.length ?? 0)} />
+                <RelicProgressPill relics={snapshot?.relics} />
+                <WinLeader snapshot={snapshot} />
                 <button
                     type="button"
                     className="help-toggle"
                     aria-label="Keyboard shortcuts"
                     onClick={onToggleHelp}
-                >?</button>
+                >
+                    ?
+                </button>
             </div>
         </section>
     );
 }
 
 function SidePanelMenu({
-                           items,
-                           onJump,
-                       }: Readonly<{
-    items: readonly Readonly<{ id: string; label: string }>[];
+    items,
+    onJump
+}: Readonly<{
+    items: readonly Readonly<{ id: string; label: string; }>[];
     onJump(id: string): void;
 }>) {
     return (
@@ -1358,12 +1462,12 @@ function SidePanelMenu({
 }
 
 function BottomHudPanel({
-                            snapshot,
-                            localPlayerId,
-                            revealedEvents,
-                            lastEvent,
-                            lang,
-                        }: Readonly<{
+    snapshot,
+    localPlayerId,
+    revealedEvents,
+    lastEvent,
+    lang
+}: Readonly<{
     snapshot?: RelicPublicSnapshot;
     localPlayerId?: string;
     revealedEvents: readonly RelicEvent[];
@@ -1399,7 +1503,7 @@ function TurnTimelinePanel({
     localPlayerId,
     events,
     lastEvent,
-    lang,
+    lang
 }: Readonly<{
     snapshot?: RelicPublicSnapshot;
     localPlayerId?: string;
@@ -1429,7 +1533,7 @@ function CurrentTurnSummary({
     snapshot,
     localPlayerId,
     events,
-    lang,
+    lang
 }: Readonly<{
     snapshot?: RelicPublicSnapshot;
     localPlayerId?: string;
@@ -1440,7 +1544,7 @@ function CurrentTurnSummary({
         snapshot,
         localPlayerId,
         events,
-        lang,
+        lang
     });
 
     return (
@@ -1458,8 +1562,8 @@ function CurrentTurnSummary({
 }
 
 function RallarDiagnosticsPanel({
-                                    diagnostics,
-                                }: Readonly<{ diagnostics: RelicRuntimeDiagnostics }>) {
+    diagnostics
+}: Readonly<{ diagnostics: RelicRuntimeDiagnostics; }>) {
     return (
         <div className="panel stack rallar-diagnostics-panel" aria-label="Rallar diagnostics">
             <div>
@@ -1467,13 +1571,13 @@ function RallarDiagnosticsPanel({
                 <strong>{diagnostics.phase}</strong>
             </div>
             <div className="diagnostic-grid">
-                <DiagnosticFlag label="Auth" active={diagnostics.authenticated}/>
-                <DiagnosticFlag label="Connect" active={diagnostics.middlewareConnected}/>
-                <DiagnosticFlag label="Room" active={diagnostics.roomReady}/>
-                <DiagnosticFlag label="Snapshot" active={diagnostics.snapshotReady}/>
-                <DiagnosticFlag label="WS" active={diagnostics.wsListenerReady}/>
-                <DiagnosticFlag label="Rooms" active={diagnostics.roomListenerReady}/>
-                <DiagnosticFlag label="RTC" active={diagnostics.rtcReady}/>
+                <DiagnosticFlag label="Auth" active={diagnostics.authenticated} />
+                <DiagnosticFlag label="Connect" active={diagnostics.middlewareConnected} />
+                <DiagnosticFlag label="Room" active={diagnostics.roomReady} />
+                <DiagnosticFlag label="Snapshot" active={diagnostics.snapshotReady} />
+                <DiagnosticFlag label="WS" active={diagnostics.wsListenerReady} />
+                <DiagnosticFlag label="Rooms" active={diagnostics.roomListenerReady} />
+                <DiagnosticFlag label="RTC" active={diagnostics.rtcReady} />
             </div>
             {diagnostics.roomId && <small>Room {diagnostics.roomId}</small>}
             <small>Commands {diagnostics.commandTransport.toUpperCase()}</small>
@@ -1481,7 +1585,9 @@ function RallarDiagnosticsPanel({
             {diagnostics.lastSnapshotSource && <small>Last snapshot {diagnostics.lastSnapshotSource}</small>}
             {diagnostics.lastAcceptedSnapshot && (
                 <small>
-                    Accepted {diagnostics.lastAcceptedSnapshot.phase} r{diagnostics.lastAcceptedSnapshot.round} / {diagnostics.lastAcceptedSnapshot.eventCount} events / {diagnostics.lastAcceptedSnapshot.submittedCount} submitted
+                    Accepted {diagnostics.lastAcceptedSnapshot.phase} r{diagnostics.lastAcceptedSnapshot.round} /{' '}
+                    {diagnostics.lastAcceptedSnapshot.eventCount} events /{' '}
+                    {diagnostics.lastAcceptedSnapshot.submittedCount} submitted
                 </small>
             )}
             {diagnostics.ignoredSnapshotCount > 0 && (
@@ -1497,9 +1603,9 @@ function RallarDiagnosticsPanel({
 }
 
 function DiagnosticFlag({
-                            label,
-                            active,
-                        }: Readonly<{ label: string; active: boolean }>) {
+    label,
+    active
+}: Readonly<{ label: string; active: boolean; }>) {
     return (
         <span className={`diagnostic-flag${active ? ' active' : ''}`}>
             {label}
@@ -1510,10 +1616,10 @@ function DiagnosticFlag({
 function summarizeRelicHuntersRuntime(
     roomId: string | undefined,
     diagnostics: RelicRuntimeDiagnostics,
-    snapshot: RelicPublicSnapshot | undefined,
+    snapshot: RelicPublicSnapshot | undefined
 ) {
     const activePlayerCount = snapshot?.players.filter(
-        (player) => !player.escaped && !player.defeated,
+        (player) => !player.escaped && !player.defeated
     ).length ?? 0;
 
     return {
@@ -1530,9 +1636,9 @@ function summarizeRelicHuntersRuntime(
                 activePlayerCount,
                 submittedPlayerIds: [...snapshot.submittedPlayerIds],
                 eventIds: snapshot.events.map((event) => event.id),
-                eventCount: snapshot.events.length,
+                eventCount: snapshot.events.length
             }
-            : undefined,
+            : undefined
     };
 }
 
@@ -1540,7 +1646,7 @@ function CharacterSelect({
     currentPlayer,
     selectedCharacterId,
     onSelect,
-    phase,
+    phase
 }: Readonly<{
     currentPlayer?: RelicPlayer;
     selectedCharacterId: RelicCharacterId;
@@ -1549,7 +1655,7 @@ function CharacterSelect({
 }>) {
     const locked = !!currentPlayer && phase !== 'lobby';
     const activeCharacter = findRelicCharacter(
-        locked ? currentPlayer.characterId : selectedCharacterId,
+        locked ? currentPlayer.characterId : selectedCharacterId
     );
 
     return (
@@ -1559,7 +1665,7 @@ function CharacterSelect({
                     className="character-sigil"
                     style={{
                         background: activeCharacter.colors.accent,
-                        boxShadow: `0 0 24px ${activeCharacter.colors.accent}55`,
+                        boxShadow: `0 0 24px ${activeCharacter.colors.accent}55`
                     }}
                 />
                 <div>
@@ -1582,13 +1688,14 @@ function CharacterSelect({
                         style={{
                             borderColor: character.id === activeCharacter.id
                                 ? `${character.colors.accent}cc`
-                                : undefined,
+                                : undefined
                         }}
                     >
                         <span
                             className="character-swatch"
                             style={{
-                                background: `linear-gradient(135deg, ${character.colors.primary}, ${character.colors.secondary})`,
+                                background:
+                                    `linear-gradient(135deg, ${character.colors.primary}, ${character.colors.secondary})`
                             }}
                         />
                         <strong>{character.name}</strong>
@@ -1607,25 +1714,27 @@ function CharacterSelect({
 
 function RoomActionNudge({
     room,
-    lang,
-}: Readonly<{ room: RelicPublicSnapshot['map'][number]; lang: Lang }>) {
-    const hints: Record<string, string> = lang === 'no' ? {
-        monster: '⚔️ Monsterrom — Søk for å bekjempe, eller flytt deg',
-        trap: '⚠️ Fellrom — Søk med forsiktighet, eller flytt deg',
-        treasure: '💎 Skattkammer — Søk etter en relikvie!',
-        shrine: '🌀 Helligdom — Søk for mystiske gaver',
-        entrance: '🏯 Inngang — Velg en rute inn i slottet',
-        exit: '🚪 Utgang — Bruk Unnslippe-handlingen hvis du har relikvier!',
-        hallway: '🔦 Korridor — Fortsett inn i slottet',
-    } : {
-        monster: '⚔️ Monster room — Search to fight, or move away',
-        trap: '⚠️ Trap room — Search carefully, or move away',
-        treasure: '💎 Treasure room — Search for a relic!',
-        shrine: '🌀 Shrine room — Search for mysterious gifts',
-        entrance: '🏯 Entrance — Choose a route into the castle',
-        exit: '🚪 Exit — Use Escape action if you carry relics!',
-        hallway: '🔦 Corridor — Press onward into the castle',
-    };
+    lang
+}: Readonly<{ room: RelicPublicSnapshot['map'][number]; lang: Lang; }>) {
+    const hints: Record<string, string> = lang === 'no'
+        ? {
+            monster: '⚔️ Monsterrom — Søk for å bekjempe, eller flytt deg',
+            trap: '⚠️ Fellrom — Søk med forsiktighet, eller flytt deg',
+            treasure: '💎 Skattkammer — Søk etter en relikvie!',
+            shrine: '🌀 Helligdom — Søk for mystiske gaver',
+            entrance: '🏯 Inngang — Velg en rute inn i slottet',
+            exit: '🚪 Utgang — Bruk Unnslippe-handlingen hvis du har relikvier!',
+            hallway: '🔦 Korridor — Fortsett inn i slottet'
+        }
+        : {
+            monster: '⚔️ Monster room — Search to fight, or move away',
+            trap: '⚠️ Trap room — Search carefully, or move away',
+            treasure: '💎 Treasure room — Search for a relic!',
+            shrine: '🌀 Shrine room — Search for mysterious gifts',
+            entrance: '🏯 Entrance — Choose a route into the castle',
+            exit: '🚪 Exit — Use Escape action if you carry relics!',
+            hallway: '🔦 Corridor — Press onward into the castle'
+        };
     const hint = hints[room.kind] ?? (lang === 'no' ? 'Velg en handling' : 'Choose an action');
     return <span>{hint}</span>;
 }
@@ -1635,7 +1744,7 @@ function deriveLobbyStartBlocker({
     currentPlayer,
     isAdmin,
     onlineMemberCount,
-    lang,
+    lang
 }: Readonly<{
     snapshot: RelicPublicSnapshot;
     currentPlayer?: RelicPlayer;
@@ -1686,7 +1795,7 @@ function LobbyPartyPanel({
     localPlayerId,
     onlineMemberCount,
     startBlocker,
-    lang,
+    lang
 }: Readonly<{
     snapshot: RelicPublicSnapshot;
     localPlayerId?: string;
@@ -1694,7 +1803,9 @@ function LobbyPartyPanel({
     startBlocker?: string;
     lang: Lang;
 }>) {
-    if (snapshot.phase !== 'lobby') return null;
+    if (snapshot.phase !== 'lobby') {
+        return null;
+    }
     const u = UI[lang];
     const joinedCount = snapshot.players.length;
     const onlineKnown = typeof onlineMemberCount === 'number';
@@ -1758,37 +1869,47 @@ function LobbyPartyPanel({
                     })}
                 </div>
             )}
-            {onlineOnlyCount > 0 ? (
-                <small className="lobby-party-hint">
-                    {lang === 'no'
-                        ? `${onlineOnlyCount} tilkoblet rommedlem må bli med i ekspedisjonen.`
-                        : `${onlineOnlyCount} online room member${onlineOnlyCount === 1 ? '' : 's'} still need${onlineOnlyCount === 1 ? 's' : ''} to join.`}
-                </small>
-            ) : offlineJoinedCount > 0 ? (
-                <small className="lobby-party-hint warning">
-                    {lang === 'no'
-                        ? `${offlineJoinedCount} jeger${offlineJoinedCount === 1 ? '' : 'e'} i ekspedisjonen ser frakoblet ut.`
-                        : `${offlineJoinedCount} joined hunter${offlineJoinedCount === 1 ? '' : 's'} appear offline.`}
-                </small>
-            ) : startBlocker ? (
-                <small className="lobby-party-hint">{startBlocker}</small>
-            ) : allJoinedOnline ? (
-                <small className="lobby-all-ready-hint">
-                    {lang === 'no'
-                        ? 'Ekspedisjonen er samlet. Vokteren kan starte jakten.'
-                        : 'The expedition is assembled. The Keeper can start when ready.'}
-                </small>
-            ) : (
-                <small className="lobby-party-hint">{u.keeperAwaits}</small>
-            )}
+            {onlineOnlyCount > 0
+                ? (
+                    <small className="lobby-party-hint">
+                        {lang === 'no'
+                            ? `${onlineOnlyCount} tilkoblet rommedlem må bli med i ekspedisjonen.`
+                            : `${onlineOnlyCount} online room member${onlineOnlyCount === 1 ? '' : 's'} still need${
+                                onlineOnlyCount === 1 ? 's' : ''
+                            } to join.`}
+                    </small>
+                )
+                : offlineJoinedCount > 0
+                ? (
+                    <small className="lobby-party-hint warning">
+                        {lang === 'no'
+                            ? `${offlineJoinedCount} jeger${
+                                offlineJoinedCount === 1 ? '' : 'e'
+                            } i ekspedisjonen ser frakoblet ut.`
+                            : `${offlineJoinedCount} joined hunter${
+                                offlineJoinedCount === 1 ? '' : 's'
+                            } appear offline.`}
+                    </small>
+                )
+                : startBlocker
+                ? <small className="lobby-party-hint">{startBlocker}</small>
+                : allJoinedOnline
+                ? (
+                    <small className="lobby-all-ready-hint">
+                        {lang === 'no'
+                            ? 'Ekspedisjonen er samlet. Vokteren kan starte jakten.'
+                            : 'The expedition is assembled. The Keeper can start when ready.'}
+                    </small>
+                )
+                : <small className="lobby-party-hint">{u.keeperAwaits}</small>}
         </div>
     );
 }
 
 function RoundTimer({
     timeRemainingMs,
-    lang,
-}: Readonly<{ timeRemainingMs: number; lang: Lang }>) {
+    lang
+}: Readonly<{ timeRemainingMs: number; lang: Lang; }>) {
     const totalSecs = Math.max(0, Math.ceil(timeRemainingMs / 1000));
     const mins = Math.floor(totalSecs / 60);
     const secs = totalSecs % 60;
@@ -1804,20 +1925,14 @@ function RoundTimer({
 
 function TurnPlanStatusCard({
     snapshot,
-    localPlayerId,
+    localPlayerId
 }: Readonly<{
     snapshot: RelicPublicSnapshot;
     localPlayerId?: string;
 }>) {
-    const activePlayers = snapshot.players.filter((player) =>
-        !player.escaped && !player.defeated
-    );
-    const submittedPlayers = activePlayers.filter((player) =>
-        snapshot.submittedPlayerIds.includes(player.playerId)
-    );
-    const waitingPlayers = activePlayers.filter((player) =>
-        !snapshot.submittedPlayerIds.includes(player.playerId)
-    );
+    const activePlayers = snapshot.players.filter((player) => !player.escaped && !player.defeated);
+    const submittedPlayers = activePlayers.filter((player) => snapshot.submittedPlayerIds.includes(player.playerId));
+    const waitingPlayers = activePlayers.filter((player) => !snapshot.submittedPlayerIds.includes(player.playerId));
     const localSubmitted = !!localPlayerId &&
         snapshot.submittedPlayerIds.includes(localPlayerId);
     const waitingCount = waitingPlayers.length;
@@ -1852,7 +1967,7 @@ function MoveTargetChoices({
     moveTargets,
     selectedRoomId,
     exitDistances,
-    onSelect,
+    onSelect
 }: Readonly<{
     snapshot: RelicPublicSnapshot;
     moveTargets: readonly string[];
@@ -1863,44 +1978,42 @@ function MoveTargetChoices({
     return (
         <div className="target-choice-section">
             <span className="panel-label">Move Target</span>
-            {moveTargets.length === 0 ? (
-                <div className="target-empty">No open adjacent paths.</div>
-            ) : (
-                <div className="target-choice-grid">
-                    {moveTargets.map((roomId) => {
-                        const room = snapshot.map.find((candidate) =>
-                            candidate.id === roomId
-                        );
-                        const dist = exitDistances.get(roomId);
-                        const hasRelic = snapshot.relics.some((relic) =>
-                            relic.roomId === roomId &&
-                            !relic.foundBy &&
-                            !relic.carriedBy &&
-                            !relic.escapedBy
-                        );
-                        const selected = selectedRoomId === roomId;
-                        return (
-                            <button
-                                type="button"
-                                key={roomId}
-                                className={`target-option${selected ? ' active' : ''}`}
-                                data-target-room-id={roomId}
-                                aria-pressed={selected}
-                                onClick={() => onSelect(roomId)}
-                            >
-                                <span className="target-option-title">
-                                    {room?.name ?? roomId}
-                                </span>
-                                <span className="target-option-meta">
-                                    {room?.kind ?? 'room'}
-                                    {dist !== undefined ? ` / ${dist} to exit` : ''}
-                                    {hasRelic ? ' / relic signal' : ''}
-                                </span>
-                            </button>
-                        );
-                    })}
-                </div>
-            )}
+            {moveTargets.length === 0
+                ? <div className="target-empty">No open adjacent paths.</div>
+                : (
+                    <div className="target-choice-grid">
+                        {moveTargets.map((roomId) => {
+                            const room = snapshot.map.find((candidate) => candidate.id === roomId);
+                            const dist = exitDistances.get(roomId);
+                            const hasRelic = snapshot.relics.some((relic) =>
+                                relic.roomId === roomId &&
+                                !relic.foundBy &&
+                                !relic.carriedBy &&
+                                !relic.escapedBy
+                            );
+                            const selected = selectedRoomId === roomId;
+                            return (
+                                <button
+                                    type="button"
+                                    key={roomId}
+                                    className={`target-option${selected ? ' active' : ''}`}
+                                    data-target-room-id={roomId}
+                                    aria-pressed={selected}
+                                    onClick={() => onSelect(roomId)}
+                                >
+                                    <span className="target-option-title">
+                                        {room?.name ?? roomId}
+                                    </span>
+                                    <span className="target-option-meta">
+                                        {room?.kind ?? 'room'}
+                                        {dist !== undefined ? ` / ${dist} to exit` : ''}
+                                        {hasRelic ? ' / relic signal' : ''}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
         </div>
     );
 }
@@ -1908,7 +2021,7 @@ function MoveTargetChoices({
 function StealTargetChoices({
     stealTargets,
     selectedPlayerId,
-    onSelect,
+    onSelect
 }: Readonly<{
     stealTargets: readonly RelicPlayer[];
     selectedPlayerId?: string;
@@ -1917,31 +2030,32 @@ function StealTargetChoices({
     return (
         <div className="target-choice-section">
             <span className="panel-label">Steal Target</span>
-            {stealTargets.length === 0 ? (
-                <div className="target-empty">No active hunter in this room carries a target.</div>
-            ) : (
-                <div className="target-choice-grid">
-                    {stealTargets.map((player) => {
-                        const character = findRelicCharacter(player.characterId);
-                        const selected = selectedPlayerId === player.playerId;
-                        return (
-                            <button
-                                type="button"
-                                key={player.playerId}
-                                className={`target-option${selected ? ' active' : ''}`}
-                                data-target-player-id={player.playerId}
-                                aria-pressed={selected}
-                                onClick={() => onSelect(player.playerId)}
-                            >
-                                <span className="target-option-title">{player.username}</span>
-                                <span className="target-option-meta">
-                                    {character.role} / {player.relicIds.length} {plural('relic', player.relicIds.length)} / {player.score} score
-                                </span>
-                            </button>
-                        );
-                    })}
-                </div>
-            )}
+            {stealTargets.length === 0
+                ? <div className="target-empty">No active hunter in this room carries a target.</div>
+                : (
+                    <div className="target-choice-grid">
+                        {stealTargets.map((player) => {
+                            const character = findRelicCharacter(player.characterId);
+                            const selected = selectedPlayerId === player.playerId;
+                            return (
+                                <button
+                                    type="button"
+                                    key={player.playerId}
+                                    className={`target-option${selected ? ' active' : ''}`}
+                                    data-target-player-id={player.playerId}
+                                    aria-pressed={selected}
+                                    onClick={() => onSelect(player.playerId)}
+                                >
+                                    <span className="target-option-title">{player.username}</span>
+                                    <span className="target-option-meta">
+                                        {character.role} / {player.relicIds.length}{' '}
+                                        {plural('relic', player.relicIds.length)} / {player.score} score
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
         </div>
     );
 }
@@ -1950,7 +2064,7 @@ function PartyChangePrompt({
     expeditionPlayers,
     onlinePlayers,
     onReset,
-    onContinue,
+    onContinue
 }: Readonly<{
     expeditionPlayers: number;
     onlinePlayers: number;
@@ -1988,7 +2102,7 @@ function RelicAiCompanionPanel({
     snapshot,
     localPlayerId,
     onAsk,
-    onPrime,
+    onPrime
 }: Readonly<{
     state: UseRelicPlanningAiResult;
     snapshot: RelicPublicSnapshot;
@@ -2017,22 +2131,20 @@ function RelicAiCompanionPanel({
                 </button>
             </div>
 
-            {state.error && (
-                <small className="relic-ai-error">{state.error}</small>
-            )}
+            {state.error && <small className="relic-ai-error">{state.error}</small>}
 
-            {localSuggestion ? (
-                <RelicAiSuggestionCard
-                    proposal={state.localProposal}
-                    suggestion={localSuggestion}
-                    snapshot={snapshot}
-                    localPlayerId={localPlayerId}
-                    showPrime={canPrime}
-                    onPrime={onPrime}
-                />
-            ) : (
-                <small className="relic-ai-empty">{relicAiStatusDetail(state.status)}</small>
-            )}
+            {localSuggestion
+                ? (
+                    <RelicAiSuggestionCard
+                        proposal={state.localProposal}
+                        suggestion={localSuggestion}
+                        snapshot={snapshot}
+                        localPlayerId={localPlayerId}
+                        showPrime={canPrime}
+                        onPrime={onPrime}
+                    />
+                )
+                : <small className="relic-ai-empty">{relicAiStatusDetail(state.status)}</small>}
 
             {remoteProposals.length > 0 && (
                 <div className="relic-ai-party-notes">
@@ -2060,7 +2172,7 @@ function RelicAiSuggestionCard({
     snapshot,
     localPlayerId,
     showPrime,
-    onPrime,
+    onPrime
 }: Readonly<{
     proposal?: RelicPlanningAiProposal;
     suggestion: RelicPlanningAiSuggestion;
@@ -2085,9 +2197,7 @@ function RelicAiSuggestionCard({
             <small>{suggestion.rationale}</small>
             {suggestion.risks.length > 0 && (
                 <div className="relic-ai-risks">
-                    {suggestion.risks.map((risk) => (
-                        <span key={risk}>{risk}</span>
-                    ))}
+                    {suggestion.risks.map((risk) => <span key={risk}>{risk}</span>)}
                 </div>
             )}
             {showPrime && action && (
@@ -2145,28 +2255,24 @@ function relicAiStatusDetail(status: UseRelicPlanningAiResult['status']): string
 function proposalSenderLabel(
     proposal: RelicPlanningAiProposal | undefined,
     snapshot: RelicPublicSnapshot,
-    localPlayerId: string | undefined,
+    localPlayerId: string | undefined
 ): string {
     if (!proposal || proposal.local || proposal.senderId === localPlayerId) {
         return 'You';
     }
-    const player = snapshot.players.find((candidate) =>
-        candidate.playerId === proposal.senderId
-    );
+    const player = snapshot.players.find((candidate) => candidate.playerId === proposal.senderId);
     return player?.username ?? (proposal.senderId ? shortId(proposal.senderId) : 'Hunter');
 }
 
 function relicAiActionLabel(
     action: RelicActionInput,
-    snapshot: RelicPublicSnapshot,
+    snapshot: RelicPublicSnapshot
 ): string {
     if (action.kind === 'move') {
         return `Move to ${roomName(snapshot, action.targetRoomId ?? '')}`;
     }
     if (action.kind === 'steal') {
-        const target = snapshot.players.find((player) =>
-            player.playerId === action.targetPlayerId
-        );
+        const target = snapshot.players.find((player) => player.playerId === action.targetPlayerId);
         return `Steal from ${target?.username ?? 'hunter'}`;
     }
     if (action.kind === 'escape') {
@@ -2176,7 +2282,7 @@ function relicAiActionLabel(
 }
 
 function toRelicActionInput(
-    action: RelicPlanningAiSuggestion['action'],
+    action: RelicPlanningAiSuggestion['action']
 ): RelicActionInput {
     if (action?.kind === 'move') {
         return { kind: 'move', targetRoomId: action.targetRoomId };
@@ -2190,7 +2296,7 @@ function toRelicActionInput(
 function RoomIntel({
     currentRoom,
     moveTargets,
-    snapshot,
+    snapshot
 }: Readonly<{
     currentRoom?: RelicPublicSnapshot['map'][number];
     moveTargets: readonly string[];
@@ -2198,14 +2304,10 @@ function RoomIntel({
 }>) {
     const [open, setOpen] = useState(false);
     const roomRelics = currentRoom && snapshot
-        ? snapshot.relics.filter((relic) =>
-            relic.roomId === currentRoom.id && !relic.carriedBy && !relic.escapedBy
-        )
+        ? snapshot.relics.filter((relic) => relic.roomId === currentRoom.id && !relic.carriedBy && !relic.escapedBy)
         : [];
     const investigation = currentRoom && snapshot
-        ? snapshot.roomInvestigations?.find((candidate) =>
-            candidate.roomId === currentRoom.id
-        )
+        ? snapshot.roomInvestigations?.find((candidate) => candidate.roomId === currentRoom.id)
         : undefined;
     const revealedRoom = investigation?.revealedRoomId && snapshot
         ? snapshot.map.find((room) => room.id === investigation.revealedRoomId)
@@ -2233,25 +2335,31 @@ function RoomIntel({
                     <div className="intel-grid">
                         <div>
                             <span>Paths</span>
-                            <strong>{moveTargets.length > 0
-                                ? moveTargets.map((roomId) => roomName(snapshot, roomId)).join(', ')
-                                : 'none'}</strong>
+                            <strong>
+                                {moveTargets.length > 0
+                                    ? moveTargets.map((roomId) => roomName(snapshot, roomId)).join(', ')
+                                    : 'none'}
+                            </strong>
                         </div>
                         <div>
                             <span>Relic Signal</span>
-                            <strong>{roomRelics.length > 0
-                                ? roomRelics.map((relic) => relic.name).join(', ')
-                                : investigation
-                                ? investigation.result === 'relic-found'
-                                    ? 'relic trail marked'
-                                    : 'searched clear'
-                                : 'quiet stone'}</strong>
+                            <strong>
+                                {roomRelics.length > 0
+                                    ? roomRelics.map((relic) => relic.name).join(', ')
+                                    : investigation
+                                    ? investigation.result === 'relic-found'
+                                        ? 'relic trail marked'
+                                        : 'searched clear'
+                                    : 'quiet stone'}
+                            </strong>
                         </div>
                         <div>
                             <span>Investigation</span>
-                            <strong>{investigation
-                                ? investigation.summary
-                                : 'unmarked'}</strong>
+                            <strong>
+                                {investigation
+                                    ? investigation.summary
+                                    : 'unmarked'}
+                            </strong>
                         </div>
                         {investigation && (
                             <div>
@@ -2290,11 +2398,9 @@ export type PartyCoordinationSummary = Readonly<{
 export function derivePartyCoordination(
     snapshot: RelicPublicSnapshot | undefined,
     localPlayerId: string | undefined,
-    actionKind: RelicActionKind = 'move',
+    actionKind: RelicActionKind = 'move'
 ): PartyCoordinationSummary | undefined {
-    const activePlayers = snapshot?.players.filter((player) =>
-        !player.escaped && !player.defeated
-    ) ?? [];
+    const activePlayers = snapshot?.players.filter((player) => !player.escaped && !player.defeated) ?? [];
     const localPlayer = activePlayers.find((player) => player.playerId === localPlayerId);
     const currentRoom = snapshot?.map.find((room) => room.id === localPlayer?.roomId);
     if (!snapshot || !localPlayer || !currentRoom) {
@@ -2304,9 +2410,8 @@ export function derivePartyCoordination(
     const roomOccupants = activePlayers.filter((player) => player.roomId === currentRoom.id);
     const stealTargets = roomOccupants.filter((player) => player.playerId !== localPlayer.playerId);
     const relicCarrierCount = stealTargets.filter((player) => player.relicIds.length > 0).length;
-    const submittedCount = activePlayers.filter((player) =>
-        snapshot.submittedPlayerIds.includes(player.playerId)
-    ).length;
+    const submittedCount =
+        activePlayers.filter((player) => snapshot.submittedPlayerIds.includes(player.playerId)).length;
     const hereCount = roomOccupants.length;
     const elsewhereCount = Math.max(0, activePlayers.length - hereCount);
 
@@ -2325,18 +2430,18 @@ export function derivePartyCoordination(
             hereCount,
             elsewhereCount,
             stealTargets,
-            relicCarrierCount,
+            relicCarrierCount
         }),
         roomOccupants,
         stealTargets,
-        relicCarrierCount,
+        relicCarrierCount
     };
 }
 
 function PartyCoordinationPanel({
     snapshot,
     localPlayerId,
-    summary,
+    summary
 }: Readonly<{
     snapshot: RelicPublicSnapshot;
     localPlayerId?: string;
@@ -2356,9 +2461,13 @@ function PartyCoordinationPanel({
                 </div>
                 <div>
                     <span>Steal Risk</span>
-                    <strong>{summary.relicCarrierCount > 0
-                        ? `${summary.relicCarrierCount} relic carrier${summary.relicCarrierCount === 1 ? '' : 's'} here`
-                        : 'no relic carrier here'}</strong>
+                    <strong>
+                        {summary.relicCarrierCount > 0
+                            ? `${summary.relicCarrierCount} relic carrier${
+                                summary.relicCarrierCount === 1 ? '' : 's'
+                            } here`
+                            : 'no relic carrier here'}
+                    </strong>
                 </div>
             </div>
             <small className="coordination-hint">{summary.actionHint}</small>
@@ -2379,7 +2488,7 @@ function PartyCoordinationPanel({
 function OccupantRow({
     player,
     local,
-    submitted,
+    submitted
 }: Readonly<{
     player: RelicPlayer;
     local: boolean;
@@ -2394,7 +2503,10 @@ function OccupantRow({
             />
             <div>
                 <strong>{player.username}{local ? ' (you)' : ''}</strong>
-                <small>{character.role} / {player.health} health / {player.relicIds.length} relic{player.relicIds.length === 1 ? '' : 's'} / {player.score} score</small>
+                <small>
+                    {character.role} / {player.health} health / {player.relicIds.length}{' '}
+                    relic{player.relicIds.length === 1 ? '' : 's'} / {player.score} score
+                </small>
             </div>
             <em>{submitted ? 'submitted' : 'choosing'}</em>
         </div>
@@ -2403,7 +2515,7 @@ function OccupantRow({
 
 function ClueJournal({
     snapshot,
-    onSelectRoom,
+    onSelectRoom
 }: Readonly<{
     snapshot: RelicPublicSnapshot;
     onSelectRoom(roomId: string): void;
@@ -2428,13 +2540,9 @@ function ClueJournal({
             {open && (
                 <div className="clue-journal-list">
                     {investigations.map((investigation) => {
-                        const room = snapshot.map.find((candidate) =>
-                            candidate.id === investigation.roomId
-                        );
+                        const room = snapshot.map.find((candidate) => candidate.id === investigation.roomId);
                         const target = investigation.revealedRoomId
-                            ? snapshot.map.find((candidate) =>
-                                candidate.id === investigation.revealedRoomId
-                            )
+                            ? snapshot.map.find((candidate) => candidate.id === investigation.revealedRoomId)
                             : undefined;
                         return (
                             <button
@@ -2472,7 +2580,7 @@ function CastleMap({
     localPlayerId,
     selectedRoomId,
     lastEvent,
-    onSelectRoom,
+    onSelectRoom
 }: Readonly<{
     snapshot: RelicPublicSnapshot;
     localPlayerId?: string;
@@ -2494,17 +2602,17 @@ function CastleMap({
             (localRoom?.neighbors ?? []).filter((nId) => {
                 const n = snapshot.map.find((r) => r.id === nId);
                 return n && !n.collapsed;
-            }),
+            })
         )
         : new Set<string>();
     const exitPath = localPlayer && localPlayer.relicIds.length > 0 &&
-        !localPlayer.escaped && !localPlayer.defeated
+            !localPlayer.escaped && !localPlayer.defeated
         ? castleMapExitPath(snapshot.map, localPlayer.roomId)
         : undefined;
     const clueTargetRoomIds = new Set(
         (snapshot.roomInvestigations ?? [])
             .map((investigation) => investigation.revealedRoomId)
-            .filter((roomId): roomId is string => !!roomId),
+            .filter((roomId): roomId is string => !!roomId)
     );
     const activePlayersByRoom = new Map<string, RelicPlayer[]>();
     for (const player of snapshot.players) {
@@ -2520,7 +2628,7 @@ function CastleMap({
             .filter((neighborId) => room.id < neighborId)
             .map((neighborId) => ({
                 from: room,
-                to: snapshot.map.find((candidate) => candidate.id === neighborId),
+                to: snapshot.map.find((candidate) => candidate.id === neighborId)
             }))
             .filter((edge): edge is Readonly<{
                 from: RelicPublicSnapshot['map'][number];
@@ -2529,10 +2637,10 @@ function CastleMap({
     );
 
     const clueTrails = (snapshot.roomInvestigations ?? []).filter(
-        (inv) => inv.revealedRoomId,
+        (inv) => inv.revealedRoomId
     );
     const relicRooms = snapshot.relics.filter(
-        (r) => !r.carriedBy && !r.escapedBy && r.foundBy && r.roomId,
+        (r) => !r.carriedBy && !r.escapedBy && r.foundBy && r.roomId
     );
 
     return (
@@ -2559,42 +2667,53 @@ function CastleMap({
                     {exitPath && exitPath.length > 1 && exitPath.slice(0, -1).map((roomId, i) => {
                         const from = snapshot.map.find((r) => r.id === roomId);
                         const to = snapshot.map.find((r) => r.id === exitPath[i + 1]);
-                        if (!from || !to) return null;
+                        if (!from || !to) {
+                            return null;
+                        }
                         const fp = castleMapPoint(from, bounds);
                         const tp = castleMapPoint(to, bounds);
                         return (
                             <line
                                 key={`exit-route-${roomId}`}
                                 className="castle-map-exit-route"
-                                x1={fp.x} y1={fp.y}
-                                x2={tp.x} y2={tp.y}
+                                x1={fp.x}
+                                y1={fp.y}
+                                x2={tp.x}
+                                y2={tp.y}
                             />
                         );
                     })}
                     {clueTrails.map((inv) => {
                         const from = snapshot.map.find((r) => r.id === inv.roomId);
                         const to = snapshot.map.find((r) => r.id === inv.revealedRoomId);
-                        if (!from || !to) return null;
+                        if (!from || !to) {
+                            return null;
+                        }
                         const fp = castleMapPoint(from, bounds);
                         const tp = castleMapPoint(to, bounds);
                         return (
                             <line
                                 key={`clue-${inv.roomId}-${inv.revealedRoomId}`}
                                 className="castle-map-clue-trail"
-                                x1={fp.x} y1={fp.y}
-                                x2={tp.x} y2={tp.y}
+                                x1={fp.x}
+                                y1={fp.y}
+                                x2={tp.x}
+                                y2={tp.y}
                             />
                         );
                     })}
                     {relicRooms.map((relic) => {
                         const room = snapshot.map.find((r) => r.id === relic.roomId);
-                        if (!room) return null;
+                        if (!room) {
+                            return null;
+                        }
                         const pt = castleMapPoint(room, bounds);
                         return (
                             <circle
                                 key={relic.id}
                                 className="castle-map-relic-dot"
-                                cx={pt.x} cy={pt.y}
+                                cx={pt.x}
+                                cy={pt.y}
                                 r="3.8"
                             />
                         );
@@ -2607,14 +2726,12 @@ function CastleMap({
                     const local = snapshot.players.some((player) =>
                         player.playerId === localPlayerId && player.roomId === room.id
                     );
-                    const hasOtherHunters = occupants.some((player) =>
-                        player.playerId !== localPlayerId
-                    );
+                    const hasOtherHunters = occupants.some((player) => player.playerId !== localPlayerId);
                     const labelVisible = shouldShowFacilityMapLabel({
                         room,
                         selectedRoomId,
                         localRoomId: localRoom?.id,
-                        exitRoomId: snapshot.map.find((candidate) => candidate.kind === 'exit')?.id,
+                        exitRoomId: snapshot.map.find((candidate) => candidate.kind === 'exit')?.id
                     });
                     return (
                         <button
@@ -2630,12 +2747,12 @@ function CastleMap({
                                 clueTargetRoomIds.has(room.id) ? 'clue-target' : '',
                                 room.unstable ? 'unstable' : '',
                                 room.collapsed ? 'collapsed' : '',
-                                labelVisible ? 'label-visible' : '',
+                                labelVisible ? 'label-visible' : ''
                             ].filter(Boolean).join(' ')}
                             style={{
                                 left: `${point.x}%`,
                                 top: `${point.y}%`,
-                                background: roomKindMapColor(room),
+                                background: roomKindMapColor(room)
                             }}
                             onClick={() => onSelectRoom(room.id)}
                         >
@@ -2651,7 +2768,9 @@ function CastleMap({
                             {occupants.length > 0 && (
                                 <span
                                     className="castle-map-occupancy"
-                                    aria-label={`${occupants.length} ${plural('hunter', occupants.length)} in ${room.name}`}
+                                    aria-label={`${occupants.length} ${
+                                        plural('hunter', occupants.length)
+                                    } in ${room.name}`}
                                 >
                                     {occupants.length}
                                 </span>
@@ -2662,7 +2781,7 @@ function CastleMap({
                                         <span
                                             key={player.playerId}
                                             style={{
-                                                background: findRelicCharacter(player.characterId).colors.accent,
+                                                background: findRelicCharacter(player.characterId).colors.accent
                                             }}
                                         />
                                     ))}
@@ -2689,12 +2808,12 @@ function CastleMap({
                             className={[
                                 'castle-map-hunter',
                                 player.playerId === localPlayerId ? 'local' : '',
-                                recentlyMoved ? 'recent-move' : '',
+                                recentlyMoved ? 'recent-move' : ''
                             ].filter(Boolean).join(' ')}
                             style={{
                                 left: `${point.x + offset.x}%`,
                                 top: `${point.y + offset.y}%`,
-                                background: character.colors.accent,
+                                background: character.colors.accent
                             }}
                             title={`${player.username}: ${character.name}`}
                         />
@@ -2709,7 +2828,7 @@ function RoundChronicle({
     events,
     phase,
     lastEvent,
-    localPlayerId,
+    localPlayerId
 }: Readonly<{
     events: readonly RelicEvent[];
     phase?: RelicPublicSnapshot['phase'];
@@ -2719,7 +2838,9 @@ function RoundChronicle({
     const roundGroups = useMemo(() => {
         const groups = new Map<number, RelicEvent[]>();
         for (const e of events) {
-            if (!isTurnTimelineEvent(e)) continue;
+            if (!isTurnTimelineEvent(e)) {
+                continue;
+            }
             const list = groups.get(e.round) ?? [];
             list.push(e);
             groups.set(e.round, list);
@@ -2736,44 +2857,54 @@ function RoundChronicle({
                 <strong>{chronicleHeadline(lastEvent, phase)}</strong>
             </div>
             <div className="chronicle-list chronicle-grouped">
-                {roundGroups.length > 0 ? (
-                    roundGroups.map(([round, roundEvents]) => (
-                        <div key={round} className="chronicle-round-group">
-                            <div className="chronicle-round-header">Round {round}</div>
-                            {roundEvents
-                                .slice(-6)
-                                .reverse()
-                                .map((event) => {
-                                    const narLine = narratorLine(event);
-                                    const personal = isPersonalEvent(event, localPlayerId);
-                                    const category = turnTimelineCategory(event, localPlayerId);
-                                    return (
-                                        <div
-                                            key={event.id}
-                                            className={`chronicle-entry ${toneClass(event)} ${personal ? 'personal' : ''}`}
-                                        >
-                                            <div className="timeline-entry-meta">
-                                                <span className={`timeline-category timeline-category-${category.kind}`}>
-                                                    {category.label}
-                                                </span>
-                                                <span className="timeline-symbol">{turnDiffSymbol(event.type)}</span>
+                {roundGroups.length > 0
+                    ? (
+                        roundGroups.map(([round, roundEvents]) => (
+                            <div key={round} className="chronicle-round-group">
+                                <div className="chronicle-round-header">Round {round}</div>
+                                {roundEvents
+                                    .slice(-6)
+                                    .reverse()
+                                    .map((event) => {
+                                        const narLine = narratorLine(event);
+                                        const personal = isPersonalEvent(event, localPlayerId);
+                                        const category = turnTimelineCategory(event, localPlayerId);
+                                        return (
+                                            <div
+                                                key={event.id}
+                                                className={`chronicle-entry ${toneClass(event)} ${
+                                                    personal ? 'personal' : ''
+                                                }`}
+                                            >
+                                                <div className="timeline-entry-meta">
+                                                    <span
+                                                        className={`timeline-category timeline-category-${category.kind}`}
+                                                    >
+                                                        {category.label}
+                                                    </span>
+                                                    <span className="timeline-symbol">
+                                                        {turnDiffSymbol(event.type)}
+                                                    </span>
+                                                </div>
+                                                {narLine && <em className="narrator-voice">{narLine}</em>}
+                                                <span className="chronicle-message">{event.message}</span>
                                             </div>
-                                            {narLine && <em className="narrator-voice">{narLine}</em>}
-                                            <span className="chronicle-message">{event.message}</span>
-                                        </div>
-                                    );
-                                })}
-                        </div>
-                    ))
-                ) : (
-                    <small className="chronicle-empty">Turn results will appear here as the castle resolves each round.</small>
-                )}
+                                        );
+                                    })}
+                            </div>
+                        ))
+                    )
+                    : (
+                        <small className="chronicle-empty">
+                            Turn results will appear here as the castle resolves each round.
+                        </small>
+                    )}
             </div>
         </div>
     );
 }
 
-function OnboardingOverlay({ onDismiss }: Readonly<{ onDismiss(): void }>) {
+function OnboardingOverlay({ onDismiss }: Readonly<{ onDismiss(): void; }>) {
     return (
         <div className="onboarding-overlay" role="dialog" aria-modal="true" aria-label="How to play">
             <div className="onboarding-card">
@@ -2784,21 +2915,30 @@ function OnboardingOverlay({ onDismiss }: Readonly<{ onDismiss(): void }>) {
                         <div className="onboarding-step-number">I</div>
                         <div>
                             <strong>Plan in secret</strong>
-                            <p>Each round, pick one action — Move, Search, Steal, or Escape — without seeing what others chose. Plans are locked simultaneously.</p>
+                            <p>
+                                Each round, pick one action — Move, Search, Steal, or Escape — without seeing what
+                                others chose. Plans are locked simultaneously.
+                            </p>
                         </div>
                     </div>
                     <div className="onboarding-step">
                         <div className="onboarding-step-number">II</div>
                         <div>
                             <strong>All revealed at once</strong>
-                            <p>When every hunter submits, all plans resolve at the same time. Positions shift, relics change hands, rooms may collapse. Expect chaos.</p>
+                            <p>
+                                When every hunter submits, all plans resolve at the same time. Positions shift, relics
+                                change hands, rooms may collapse. Expect chaos.
+                            </p>
                         </div>
                     </div>
                     <div className="onboarding-step">
                         <div className="onboarding-step-number">III</div>
                         <div>
                             <strong>Collect and escape</strong>
-                            <p>Find relics, reach the Exit room, and submit Escape before the ruin closes. The hunter who escapes with the highest score claims the Heart Relic.</p>
+                            <p>
+                                Find relics, reach the Exit room, and submit Escape before the ruin closes. The hunter
+                                who escapes with the highest score claims the Heart Relic.
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -2813,7 +2953,7 @@ function OnboardingOverlay({ onDismiss }: Readonly<{ onDismiss(): void }>) {
 function LockedPlanCard({
     action,
     snapshot,
-    localPlayerId,
+    localPlayerId
 }: Readonly<{
     action?: RelicActionInput;
     snapshot: RelicPublicSnapshot;
@@ -2872,7 +3012,7 @@ function LockedPlanCard({
 
 function EscapeDecisionPanel({
     snapshot,
-    localPlayerId,
+    localPlayerId
 }: Readonly<{
     snapshot: RelicPublicSnapshot;
     localPlayerId?: string;
@@ -2932,7 +3072,9 @@ function EscapeDecisionPanel({
                                 {Array.from({ length: maxHealth }, (_, i) => (
                                     <span
                                         key={i}
-                                        className={`health-pip ${i < player.health ? 'pip-full' : 'pip-empty'} ${player.health === 1 && i === 0 ? 'pip-critical' : ''}`}
+                                        className={`health-pip ${i < player.health ? 'pip-full' : 'pip-empty'} ${
+                                            player.health === 1 && i === 0 ? 'pip-critical' : ''
+                                        }`}
                                     />
                                 ))}
                             </span>
@@ -2966,10 +3108,8 @@ function EscapeDecisionPanel({
     );
 }
 
-function VictoryPanel({ snapshot }: Readonly<{ snapshot: RelicPublicSnapshot }>) {
-    const winners = snapshot.players.filter((player) =>
-        snapshot.winnerIds.includes(player.playerId)
-    );
+function VictoryPanel({ snapshot }: Readonly<{ snapshot: RelicPublicSnapshot; }>) {
+    const winners = snapshot.players.filter((player) => snapshot.winnerIds.includes(player.playerId));
     const sortedPlayers = [...snapshot.players].sort((left, right) => right.score - left.score);
     const confettiPieces = useMemo(() =>
         Array.from({ length: 20 }, (_, i) => ({
@@ -2978,9 +3118,8 @@ function VictoryPanel({ snapshot }: Readonly<{ snapshot: RelicPublicSnapshot }>)
             left: `${5 + ((i * 73 + 17) % 90)}%`,
             delay: `${(i * 137) % 2200}ms`,
             duration: `${1800 + (i * 79) % 1400}ms`,
-            size: `${6 + (i * 31) % 9}px`,
-        })),
-    []);
+            size: `${6 + (i * 31) % 9}px`
+        })), []);
 
     return (
         <section className="victory-panel">
@@ -2995,7 +3134,7 @@ function VictoryPanel({ snapshot }: Readonly<{ snapshot: RelicPublicSnapshot }>)
                             animationDelay: p.delay,
                             animationDuration: p.duration,
                             width: p.size,
-                            height: p.size,
+                            height: p.size
                         }}
                     />
                 ))}
@@ -3024,7 +3163,9 @@ function VictoryPanel({ snapshot }: Readonly<{ snapshot: RelicPublicSnapshot }>)
                                 )}
                                 {player.defeated && <span className="final-score-tag danger">fallen</span>}
                                 {player.escaped && <span className="final-score-tag success">escaped</span>}
-                                {!player.defeated && !player.escaped && <span className="final-score-tag">still inside</span>}
+                                {!player.defeated && !player.escaped && (
+                                    <span className="final-score-tag">still inside</span>
+                                )}
                             </div>
                             <strong className="final-score-value">{player.score}</strong>
                         </div>
@@ -3041,7 +3182,7 @@ function RoomDetailCard({
     localPlayerId,
     exitDistances,
     onPrimeMove,
-    onDismiss,
+    onDismiss
 }: Readonly<{
     snapshot: RelicPublicSnapshot;
     roomId: string;
@@ -3051,7 +3192,9 @@ function RoomDetailCard({
     onDismiss(): void;
 }>) {
     const room = snapshot.map.find((r) => r.id === roomId);
-    if (!room) return null;
+    if (!room) {
+        return null;
+    }
 
     const localPlayer = snapshot.players.find((p) => p.playerId === localPlayerId);
     const localRoom = localPlayer ? snapshot.map.find((r) => r.id === localPlayer.roomId) : undefined;
@@ -3066,13 +3209,13 @@ function RoomDetailCard({
         !snapshot.submittedPlayerIds.includes(localPlayer.playerId);
 
     const occupants = snapshot.players.filter(
-        (p) => p.roomId === roomId && !p.escaped && !p.defeated,
+        (p) => p.roomId === roomId && !p.escaped && !p.defeated
     );
     const investigations = (snapshot.roomInvestigations ?? []).filter(
-        (inv) => inv.roomId === roomId,
+        (inv) => inv.roomId === roomId
     );
     const foundRelics = snapshot.relics.filter(
-        (r) => r.roomId === roomId && r.foundBy && !r.carriedBy && !r.escapedBy,
+        (r) => r.roomId === roomId && r.foundBy && !r.carriedBy && !r.escapedBy
     );
     const dist = exitDistances.get(roomId);
 
@@ -3081,19 +3224,17 @@ function RoomDetailCard({
             <div className="room-detail-header">
                 <strong>{room.name}</strong>
                 <span className={`room-kind-pill room-kind-${room.kind}`}>{room.kind}</span>
-                {dist !== undefined && (
-                    <span className="room-detail-dist">{dist}→exit</span>
-                )}
+                {dist !== undefined && <span className="room-detail-dist">{dist}→exit</span>}
                 <button
                     type="button"
                     className="room-detail-close"
                     aria-label="Close room detail"
                     onClick={onDismiss}
-                >×</button>
+                >
+                    ×
+                </button>
             </div>
-            {room.collapsed && (
-                <p className="room-detail-status danger">This room has collapsed.</p>
-            )}
+            {room.collapsed && <p className="room-detail-status danger">This room has collapsed.</p>}
             {room.unstable && !room.collapsed && (
                 <p className="room-detail-status warn">Unstable — may collapse next round.</p>
             )}
@@ -3121,9 +3262,7 @@ function RoomDetailCard({
                     {inv.hint && <small>{inv.hint}</small>}
                 </div>
             ))}
-            {foundRelics.map((r) => (
-                <div key={r.id} className="room-detail-relic">◆ {r.name} — unclaimed</div>
-            ))}
+            {foundRelics.map((r) => <div key={r.id} className="room-detail-relic">◆ {r.name} — unclaimed</div>)}
             {canPrimeMove && (
                 <button type="button" className="primary" onClick={() => onPrimeMove(roomId)}>
                     Prime Move → {room.name}
@@ -3135,19 +3274,32 @@ function RoomDetailCard({
 
 function turnDiffSymbol(type: RelicEventType): string {
     switch (type) {
-        case 'player_moved': return '→';
-        case 'player_searched': return '?';
-        case 'relic_found': return '◆';
-        case 'relic_picked_up': return '◆';
-        case 'steal_succeeded': return '^';
-        case 'steal_failed': return 'x';
-        case 'escape_failed': return 'x';
-        case 'player_escaped': return '+';
-        case 'player_damaged': return '!';
-        case 'room_collapsed': return '#';
-        case 'room_unstable': return '~';
-        case 'noise_pulse': return '~';
-        default: return '·';
+        case 'player_moved':
+            return '→';
+        case 'player_searched':
+            return '?';
+        case 'relic_found':
+            return '◆';
+        case 'relic_picked_up':
+            return '◆';
+        case 'steal_succeeded':
+            return '^';
+        case 'steal_failed':
+            return 'x';
+        case 'escape_failed':
+            return 'x';
+        case 'player_escaped':
+            return '+';
+        case 'player_damaged':
+            return '!';
+        case 'room_collapsed':
+            return '#';
+        case 'room_unstable':
+            return '~';
+        case 'noise_pulse':
+            return '~';
+        default:
+            return '·';
     }
 }
 
@@ -3156,7 +3308,7 @@ function HunterList({
     localPlayerId,
     phase,
     submittedPlayerIds,
-    lang,
+    lang
 }: Readonly<{
     players: readonly RelicPlayer[];
     localPlayerId?: string;
@@ -3185,7 +3337,7 @@ function HunterChip({
     localPlayerId,
     phase,
     submitted,
-    lang,
+    lang
 }: Readonly<{
     player: RelicPlayer;
     localPlayerId?: string;
@@ -3211,7 +3363,7 @@ function HunterChip({
                 'hunter-chip',
                 player.playerId === localPlayerId ? 'active' : '',
                 submitted ? 'submitted' : '',
-                player.defeated ? 'defeated' : '',
+                player.defeated ? 'defeated' : ''
             ].filter(Boolean).join(' ')}
         >
             <span
@@ -3225,7 +3377,9 @@ function HunterChip({
                     {Array.from({ length: maxHealth }, (_, i) => (
                         <span
                             key={i}
-                            className={`hunter-chip-pip${i >= player.health ? ' empty' : ''}${player.health === 1 && i === 0 ? ' critical' : ''}`}
+                            className={`hunter-chip-pip${i >= player.health ? ' empty' : ''}${
+                                player.health === 1 && i === 0 ? ' critical' : ''
+                            }`}
                         />
                     ))}
                 </span>
@@ -3243,7 +3397,7 @@ function partyActionHint({
     hereCount,
     elsewhereCount,
     stealTargets,
-    relicCarrierCount,
+    relicCarrierCount
 }: Readonly<{
     actionKind: RelicActionKind;
     currentRoom: RelicPublicSnapshot['map'][number];
@@ -3259,7 +3413,9 @@ function partyActionHint({
         if (relicCarrierCount > 0) {
             const carrier = stealTargets.find((player) => player.relicIds.length > 0);
             return carrier
-                ? `Steal is possible here: ${carrier.username} carries ${carrier.relicIds.length} ${plural('relic', carrier.relicIds.length)}.`
+                ? `Steal is possible here: ${carrier.username} carries ${carrier.relicIds.length} ${
+                    plural('relic', carrier.relicIds.length)
+                }.`
                 : 'Steal is possible here.';
         }
         return 'Hunters are here, but no one carries a relic.';
@@ -3278,13 +3434,15 @@ function partyActionHint({
     }
 
     return elsewhereCount > 0
-        ? `Coordinate before the castle reacts; ${elsewhereCount} ${plural('hunter', elsewhereCount)} ${elsewhereCount === 1 ? 'is' : 'are'} elsewhere.`
+        ? `Coordinate before the castle reacts; ${elsewhereCount} ${plural('hunter', elsewhereCount)} ${
+            elsewhereCount === 1 ? 'is' : 'are'
+        } elsewhere.`
         : 'The active party is together in this room.';
 }
 
 function chronicleHeadline(
     event: RelicEvent | undefined,
-    phase: RelicPublicSnapshot['phase'] | undefined,
+    phase: RelicPublicSnapshot['phase'] | undefined
 ): string {
     if (!event) {
         return phase === 'lobby' ? 'The ruin waits.' : 'Listen for the next echo.';
@@ -3335,62 +3493,64 @@ function chronicleHeadline(
 const NARRATOR_LINES: Partial<Record<RelicEventType, readonly string[]>> = {
     game_waiting: ['The ruin holds its breath.'],
     player_joined: ['Another soul answers the call.', 'The expedition grows bolder.'],
-    round_started: ["The torches hold their breath.", "A new round stirs the castle's bones."],
+    round_started: ['The torches hold their breath.', 'A new round stirs the castle\'s bones.'],
     action_submitted: ['A plan is whispered into the dark.', 'Choices made in silence.'],
     action_revealed: ['Plans unravel in the flickering dark.', 'The castle watches as fates unfold.'],
     player_moved: [
         'Footfalls fade into shadow.',
         'The corridor swallows another hunter.',
-        'Stone whispers of passage.',
+        'Stone whispers of passage.'
     ],
     player_searched: [
         'Dust disturbed by desperate hands.',
         'Old secrets resist new fingers.',
-        'Every clue costs time.',
+        'Every clue costs time.'
     ],
     relic_found: [
         'The ancient stirs. Something answers.',
         'Fortune paid in danger.',
-        'Gold gleams where none expected.',
+        'Gold gleams where none expected.'
     ],
     relic_picked_up: [
         'A relic changes hands. The paperwork screams quietly.',
         'Asset Management updates its panic forecast.',
-        'Someone has stolen company property from destiny.',
+        'Someone has stolen company property from destiny.'
     ],
-    steal_succeeded: ["Trust collapses in the dark.", "One hunter's prize becomes another's."],
+    steal_succeeded: ['Trust collapses in the dark.', 'One hunter\'s prize becomes another\'s.'],
     steal_failed: ['Greed grasps and finds only air.', 'Some things are not so easily taken.'],
     escape_failed: ['The ruin holds fast.', 'The castle will not release you yet.'],
     player_escaped: ['Daylight claims another soul.', 'The ruin loosens its grip.'],
     noise_pulse: [
         'The walls remember every whisper.',
         'Stone carries sound to distant ears.',
-        'Something in the dark takes note.',
+        'Something in the dark takes note.'
     ],
     player_damaged: [
         'The castle exacts its toll.',
-        "Pain is the ruin's oldest currency.",
-        'Stone and shadow take their due.',
+        'Pain is the ruin\'s oldest currency.',
+        'Stone and shadow take their due.'
     ],
     room_unstable: [
         'A crack traces the ceiling like a curse.',
         'The walls breathe wrong.',
-        'This room will not last.',
+        'This room will not last.'
     ],
     room_collapsed: [
         'Dust and darkness swallow the chamber.',
         'What stood for centuries surrenders.',
-        'The ruin reclaims what it lent.',
+        'The ruin reclaims what it lent.'
     ],
     game_finished: [
         'The expedition breathes its last.',
-        'What was sought is either found or lost forever.',
-    ],
+        'What was sought is either found or lost forever.'
+    ]
 };
 
 function narratorLine(event: RelicEvent): string {
     const lines = NARRATOR_LINES[event.type];
-    if (!lines || lines.length === 0) return '';
+    if (!lines || lines.length === 0) {
+        return '';
+    }
     return lines[event.id.charCodeAt(event.id.length - 1) % lines.length];
 }
 
@@ -3403,32 +3563,43 @@ function plural(word: string, count: number): string {
 }
 
 function willReviewEndGame(snapshot: RelicPublicSnapshot): boolean {
-    const active = snapshot.players.some((player) =>
-        !player.escaped && !player.defeated
-    );
+    const active = snapshot.players.some((player) => !player.escaped && !player.defeated);
     return snapshot.round + 1 > snapshot.maxRounds || !active;
 }
 
 function phaseLabel(value: string, lang: Lang): string {
     const u = UI[lang];
     switch (value) {
-        case 'lobby':     return u.phaseLobby;
-        case 'planning':  return u.phasePlanning;
-        case 'review':    return u.phaseReview;
-        case 'finished':  return u.phaseFinished;
-        case 'connected': return u.phaseConnected;
-        case 'connecting':return u.phaseConnecting;
-        case 'signed-out':return u.phaseSignedOut;
-        case 'authenticating': return 'Authenticating';
-        case 'joining-room': return 'Joining room';
-        case 'ready': return u.phaseConnected;
-        case 'degraded': return 'Degraded';
-        case 'error': return 'Connection error';
-        default:          return value;
+        case 'lobby':
+            return u.phaseLobby;
+        case 'planning':
+            return u.phasePlanning;
+        case 'review':
+            return u.phaseReview;
+        case 'finished':
+            return u.phaseFinished;
+        case 'connected':
+            return u.phaseConnected;
+        case 'connecting':
+            return u.phaseConnecting;
+        case 'signed-out':
+            return u.phaseSignedOut;
+        case 'authenticating':
+            return 'Authenticating';
+        case 'joining-room':
+            return 'Joining room';
+        case 'ready':
+            return u.phaseConnected;
+        case 'degraded':
+            return 'Degraded';
+        case 'error':
+            return 'Connection error';
+        default:
+            return value;
     }
 }
 
-function Status({ label, value }: Readonly<{ label: string; value: string }>) {
+function Status({ label, value }: Readonly<{ label: string; value: string; }>) {
     return (
         <div className="status-pill">
             <span>{label}</span>
@@ -3437,27 +3608,33 @@ function Status({ label, value }: Readonly<{ label: string; value: string }>) {
     );
 }
 
-function WinLeader({ snapshot }: Readonly<{ snapshot?: RelicPublicSnapshot }>) {
+function WinLeader({ snapshot }: Readonly<{ snapshot?: RelicPublicSnapshot; }>) {
     if (!snapshot || snapshot.phase === 'lobby') {
-        return <Status label="Leader" value="-"/>;
+        return <Status label="Leader" value="-" />;
     }
     const leader = [...snapshot.players].sort((a, b) => {
-        const aScore = a.score + snapshot.relics.filter((r) => r.carriedBy === a.playerId).reduce((s, r) => s + r.value, 0);
-        const bScore = b.score + snapshot.relics.filter((r) => r.carriedBy === b.playerId).reduce((s, r) => s + r.value, 0);
+        const aScore = a.score +
+            snapshot.relics.filter((r) => r.carriedBy === a.playerId).reduce((s, r) => s + r.value, 0);
+        const bScore = b.score +
+            snapshot.relics.filter((r) => r.carriedBy === b.playerId).reduce((s, r) => s + r.value, 0);
         return bScore - aScore;
     })[0];
-    if (!leader) return <Status label="Leader" value="-"/>;
+    if (!leader) {
+        return <Status label="Leader" value="-" />;
+    }
     const projectedScore = leader.score +
         snapshot.relics.filter((r) => r.carriedBy === leader.playerId).reduce((s, r) => s + r.value, 0);
     return (
         <div className="status-pill">
             <span>Leader</span>
-            <strong>{leader.username.length > 8 ? leader.username.slice(0, 7) + '…' : leader.username} · {projectedScore}</strong>
+            <strong>
+                {leader.username.length > 8 ? leader.username.slice(0, 7) + '…' : leader.username} · {projectedScore}
+            </strong>
         </div>
     );
 }
 
-function RoundStatus({ round, maxRounds }: Readonly<{ round: number; maxRounds: number }>) {
+function RoundStatus({ round, maxRounds }: Readonly<{ round: number; maxRounds: number; }>) {
     const pct = Math.min(100, (round / maxRounds) * 100);
     const urgentClass = pct >= 70 ? 'round-urgent' : pct >= 45 ? 'round-near' : '';
     return (
@@ -3465,7 +3642,7 @@ function RoundStatus({ round, maxRounds }: Readonly<{ round: number; maxRounds: 
             <span>Round</span>
             <strong>{round} / {maxRounds}</strong>
             <div className="round-bar-track" aria-hidden="true">
-                <div className="round-bar-fill" style={{ width: `${pct}%` }}/>
+                <div className="round-bar-fill" style={{ width: `${pct}%` }} />
             </div>
         </div>
     );
@@ -3474,17 +3651,25 @@ function RoundStatus({ round, maxRounds }: Readonly<{ round: number; maxRounds: 
 function castleMapExitDistances(map: RelicPublicSnapshot['map']): Map<string, number> {
     const distances = new Map<string, number>();
     const exitRoom = map.find((room) => room.kind === 'exit');
-    if (!exitRoom) return distances;
+    if (!exitRoom) {
+        return distances;
+    }
     const queue: string[] = [exitRoom.id];
     distances.set(exitRoom.id, 0);
     while (queue.length > 0) {
         const currentId = queue.shift()!;
         const current = map.find((room) => room.id === currentId);
-        if (!current) continue;
+        if (!current) {
+            continue;
+        }
         for (const neighborId of current.neighbors) {
-            if (distances.has(neighborId)) continue;
+            if (distances.has(neighborId)) {
+                continue;
+            }
             const neighbor = map.find((room) => room.id === neighborId);
-            if (!neighbor || neighbor.collapsed) continue;
+            if (!neighbor || neighbor.collapsed) {
+                continue;
+            }
             distances.set(neighborId, distances.get(currentId)! + 1);
             queue.push(neighborId);
         }
@@ -3494,23 +3679,35 @@ function castleMapExitDistances(map: RelicPublicSnapshot['map']): Map<string, nu
 
 function castleMapExitPath(
     map: RelicPublicSnapshot['map'],
-    fromRoomId: string,
+    fromRoomId: string
 ): readonly string[] | undefined {
     const exitRoom = map.find((r) => r.kind === 'exit');
-    if (!exitRoom) return undefined;
-    if (fromRoomId === exitRoom.id) return [fromRoomId];
+    if (!exitRoom) {
+        return undefined;
+    }
+    if (fromRoomId === exitRoom.id) {
+        return [fromRoomId];
+    }
     const visited = new Set<string>([fromRoomId]);
     const queue: Array<readonly string[]> = [[fromRoomId]];
     while (queue.length > 0) {
         const path = queue.shift()!;
         const current = map.find((r) => r.id === path[path.length - 1]);
-        if (!current) continue;
+        if (!current) {
+            continue;
+        }
         for (const neighborId of current.neighbors) {
-            if (visited.has(neighborId)) continue;
+            if (visited.has(neighborId)) {
+                continue;
+            }
             const neighbor = map.find((r) => r.id === neighborId);
-            if (!neighbor || neighbor.collapsed) continue;
+            if (!neighbor || neighbor.collapsed) {
+                continue;
+            }
             const next = [...path, neighborId];
-            if (neighborId === exitRoom.id) return next;
+            if (neighborId === exitRoom.id) {
+                return next;
+            }
             visited.add(neighborId);
             queue.push(next);
         }
@@ -3524,36 +3721,47 @@ function castleMapBounds(map: RelicPublicSnapshot['map']): CastleMapBounds {
 
 function castleMapPoint(
     room: RelicPublicSnapshot['map'][number],
-    bounds: CastleMapBounds,
-): Readonly<{ x: number; y: number }> {
+    bounds: CastleMapBounds
+): Readonly<{ x: number; y: number; }> {
     return projectFacilityMapPoint(room, bounds);
 }
 
-function castleMapPlayerOffset(index: number): Readonly<{ x: number; y: number }> {
+function castleMapPlayerOffset(index: number): Readonly<{ x: number; y: number; }> {
     const angle = (Math.PI * 2 * index) / 4;
     return {
         x: Math.cos(angle) * 2.6,
-        y: Math.sin(angle) * 2.6,
+        y: Math.sin(angle) * 2.6
     };
 }
 
 function roomKindMapColor(room: RelicPublicSnapshot['map'][number]): string {
-    if (room.collapsed) return '#514a3f';
-    if (room.unstable) return '#df7a4560';
+    if (room.collapsed) {
+        return '#514a3f';
+    }
+    if (room.unstable) {
+        return '#df7a4560';
+    }
     switch (room.kind) {
-        case 'exit': return '#7dd3fc30';
-        case 'treasure': return '#b7e66e30';
-        case 'shrine': return '#b9a7f430';
-        case 'monster': return '#b86f7f30';
-        case 'trap': return '#f19a6430';
-        case 'storage': return '#c69b5f30';
-        default: return '#93b7aa18';
+        case 'exit':
+            return '#7dd3fc30';
+        case 'treasure':
+            return '#b7e66e30';
+        case 'shrine':
+            return '#b9a7f430';
+        case 'monster':
+            return '#b86f7f30';
+        case 'trap':
+            return '#f19a6430';
+        case 'storage':
+            return '#c69b5f30';
+        default:
+            return '#93b7aa18';
     }
 }
 
 function roomName(
-    snapshot: { map: readonly { id: string; name: string }[] } | undefined,
-    roomId: string,
+    snapshot: { map: readonly { id: string; name: string; }[]; } | undefined,
+    roomId: string
 ): string {
     return snapshot?.map.find((room) => room.id === roomId)?.name ?? roomId;
 }
@@ -3565,7 +3773,9 @@ function shortId(id: string): string {
 function RelicProgressPill({ relics }: Readonly<{
     relics?: RelicPublicSnapshot['relics'];
 }>) {
-    if (!relics) return <Status label="Relics" value="-"/>;
+    if (!relics) {
+        return <Status label="Relics" value="-" />;
+    }
     const found = relics.filter((r) => r.foundBy).length;
     const escaped = relics.filter((r) => r.escapedBy).length;
     const total = relics.length;
@@ -3577,10 +3787,8 @@ function RelicProgressPill({ relics }: Readonly<{
             <strong>{found}/{total}</strong>
             {escaped > 0 && <small>{escaped} safe</small>}
             <div className="relic-bar-track" aria-hidden="true">
-                <div className="relic-bar-fill" style={{ width: `${pct}%` }}/>
-                {escaped > 0 && (
-                    <div className="relic-bar-escaped" style={{ width: `${escapedPct}%` }}/>
-                )}
+                <div className="relic-bar-fill" style={{ width: `${pct}%` }} />
+                {escaped > 0 && <div className="relic-bar-escaped" style={{ width: `${escapedPct}%` }} />}
             </div>
         </div>
     );
@@ -3588,9 +3796,11 @@ function RelicProgressPill({ relics }: Readonly<{
 
 function SceneMinimapOverlay({
     snapshot,
-    localPlayerId,
-}: Readonly<{ snapshot: RelicPublicSnapshot; localPlayerId?: string }>) {
-    if (snapshot.phase === 'lobby') return null;
+    localPlayerId
+}: Readonly<{ snapshot: RelicPublicSnapshot; localPlayerId?: string; }>) {
+    if (snapshot.phase === 'lobby') {
+        return null;
+    }
     const bounds = castleMapBounds(snapshot.map);
     const localPlayer = snapshot.players.find((p) => p.playerId === localPlayerId);
 
@@ -3599,7 +3809,9 @@ function SceneMinimapOverlay({
             .filter((nId) => room.id < nId)
             .map((nId) => {
                 const neighbor = snapshot.map.find((r) => r.id === nId);
-                if (!neighbor) return null;
+                if (!neighbor) {
+                    return null;
+                }
                 const from = castleMapPoint(room, bounds);
                 const to = castleMapPoint(neighbor, bounds);
                 return { key: `${room.id}-${nId}`, from, to };
@@ -3613,8 +3825,10 @@ function SceneMinimapOverlay({
                 {edges.map((e) => (
                     <line
                         key={e.key}
-                        x1={e.from.x} y1={e.from.y}
-                        x2={e.to.x} y2={e.to.y}
+                        x1={e.from.x}
+                        y1={e.from.y}
+                        x2={e.to.x}
+                        y2={e.to.y}
                         className="minimap-edge"
                     />
                 ))}
@@ -3624,13 +3838,14 @@ function SceneMinimapOverlay({
                     return (
                         <circle
                             key={room.id}
-                            cx={pt.x} cy={pt.y}
+                            cx={pt.x}
+                            cy={pt.y}
                             r={isLocal ? 4.5 : 2.8}
                             className={[
                                 'minimap-room',
                                 `minimap-${room.kind}`,
                                 isLocal ? 'minimap-local' : '',
-                                room.collapsed ? 'minimap-collapsed' : '',
+                                room.collapsed ? 'minimap-collapsed' : ''
                             ].filter(Boolean).join(' ')}
                         />
                     );
@@ -3639,13 +3854,16 @@ function SceneMinimapOverlay({
                     .filter((p) => !p.escaped && !p.defeated && p.playerId !== localPlayerId)
                     .map((p) => {
                         const room = snapshot.map.find((r) => r.id === p.roomId);
-                        if (!room) return null;
+                        if (!room) {
+                            return null;
+                        }
                         const pt = castleMapPoint(room, bounds);
                         const char = findRelicCharacter(p.characterId);
                         return (
                             <circle
                                 key={p.playerId}
-                                cx={pt.x} cy={pt.y}
+                                cx={pt.x}
+                                cy={pt.y}
                                 r={2.2}
                                 fill={char.colors.accent}
                                 className="minimap-player"

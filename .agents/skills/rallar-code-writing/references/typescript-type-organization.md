@@ -39,7 +39,7 @@ named type:
 
 ```ts
 interface Account {
-  readonly id: string;
+    readonly id: string;
 }
 
 type AccountDto = Account; // forbidden: rename alias
@@ -85,8 +85,8 @@ type expression or semantic type:
 
 ```ts
 type CreateAccountResult =
-  | { readonly kind: 'success'; readonly value: Account }
-  | { readonly kind: 'failure'; readonly error: Error };
+    | { readonly kind: 'success'; readonly value: Account; }
+    | { readonly kind: 'failure'; readonly error: Error; };
 ```
 
 Do not use `type` merely to rename an already understandable existing type or
@@ -104,25 +104,25 @@ immediately before the class:
 
 ```ts
 export namespace CreateAccounts {
-  export interface InputDto {
-    readonly name: string;
-  }
+    export interface InputDto {
+        readonly name: string;
+    }
 
-  export interface Read {
-    readonly input: InputDto;
-    readonly existingAccountCount: number;
-  }
+    export interface Read {
+        readonly input: InputDto;
+        readonly existingAccountCount: number;
+    }
 
-  export interface Computed {
-    readonly read: Read;
-    readonly accountId: string;
-  }
+    export interface Computed {
+        readonly read: Read;
+        readonly accountId: string;
+    }
 }
 
 export class CreateAccounts {
-  read(input: CreateAccounts.InputDto): CreateAccounts.Read {
-    return { input, existingAccountCount: 0 };
-  }
+    read(input: CreateAccounts.InputDto): CreateAccounts.Read {
+        return { input, existingAccountCount: 0 };
+    }
 }
 ```
 
@@ -206,9 +206,9 @@ In those three Deno-owned trees, choose one of:
 ```ts
 // deno-lint-ignore no-namespace
 export namespace GroupStateReplay {
-  export interface InputDto {
-    readonly groupRef: string;
-  }
+    export interface InputDto {
+        readonly groupRef: string;
+    }
 }
 ```
 
@@ -231,7 +231,7 @@ import * as Billing from './billing-account.ts';
 import * as Identity from './identity-account.ts';
 
 function compareAccounts(billing: Billing.Account, identity: Identity.Account): boolean {
-  return billing.id === identity.id;
+    return billing.id === identity.id;
 }
 ```
 

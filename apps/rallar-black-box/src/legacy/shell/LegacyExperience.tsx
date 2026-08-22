@@ -1,21 +1,11 @@
 import { useEffect } from 'react';
 import { bootstrapMatchesAuthSession } from '../../auth-flow.ts';
 import { rallarBlackBoxRuntimeStore } from '../../runtime-store.ts';
-import {
-    LegacyDiagnosticContextProvider,
-} from '../diagnostics/context/LegacyDiagnosticContextBar.tsx';
-import {
-    parseLegacyDiagnosticContext,
-} from '../diagnostics/context/legacy-diagnostic-context.ts';
-import {
-    useRunnerShellSelectionSync,
-    useRunnerShellState,
-} from '../runner/shell/use-runner-shell-state.ts';
+import { parseLegacyDiagnosticContext } from '../diagnostics/context/legacy-diagnostic-context.ts';
+import { LegacyDiagnosticContextProvider } from '../diagnostics/context/LegacyDiagnosticContextBar.tsx';
+import { useRunnerShellSelectionSync, useRunnerShellState } from '../runner/shell/use-runner-shell-state.ts';
+import type { LegacyShellAuth, LegacyShellRuntime } from './legacy-shell-contracts.ts';
 import { LegacyAppShell } from './LegacyAppShell.tsx';
-import type {
-    LegacyShellAuth,
-    LegacyShellRuntime,
-} from './legacy-shell-contracts.ts';
 import { useCommandCenterGlobalContext } from './use-command-center-global-context.ts';
 import { useLegacyNavigation } from './use-legacy-navigation.ts';
 import '../../styles.css';
@@ -28,26 +18,26 @@ export type LegacyExperienceProps = Readonly<{
 
 export default function LegacyExperience({
     runtime,
-    auth,
+    auth
 }: LegacyExperienceProps) {
     const { state, bootstrap } = runtime;
     const diagnosticContext = parseLegacyDiagnosticContext(
-        typeof window === 'undefined' ? '' : window.location.search,
+        typeof window === 'undefined' ? '' : window.location.search
     );
     const runnerSelection = useRunnerShellState(
         state,
-        diagnosticContext.context,
+        diagnosticContext.context
     );
     const navigation = useLegacyNavigation();
     const globalContext = useCommandCenterGlobalContext({
         state,
         bootstrap,
         authSession: auth.authSession,
-        diagnosticContext: diagnosticContext.context,
+        diagnosticContext: diagnosticContext.context
     });
     const canBootstrap = bootstrap.providerMode === 'simulated' || Boolean(
         auth.authSession &&
-        bootstrapMatchesAuthSession(bootstrap, auth.authSession),
+            bootstrapMatchesAuthSession(bootstrap, auth.authSession)
     );
 
     useEffect(() => {

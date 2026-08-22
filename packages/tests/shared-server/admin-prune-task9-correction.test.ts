@@ -1,20 +1,20 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it } from 'vitest';
-import { EnqueuedType } from '@shared/api/api-config.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { PSqlAdminPruneExpiredRepository } from '@shared-server/postgres/admin-operations/PSqlAdminPruneExpiredRepository.ts';
+import {
+    createAdminPruneAggregate,
+    decodeAdminPruneAggregate,
+    toAdminPruneAggregateKey
+} from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
 import {
     AdminPruneExpiredWork,
     decodeAdminPruneWork,
     toAdminPruneOutbox,
     type AdminPrunePageComputed,
-    type AdminPrunePageWork,
+    type AdminPrunePageWork
 } from '@shared-server/rallar-system/admin-operations/AdminPruneExpiredWork.ts';
-import {
-    createAdminPruneAggregate,
-    decodeAdminPruneAggregate,
-    toAdminPruneAggregateKey,
-} from '@shared-server/rallar-system/admin-operations/admin-prune-progress.ts';
+import { EnqueuedType } from '@shared/api/api-config.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { describe, expect, it } from 'vitest';
 
 const NOW = 1_700_000_000_000;
 
@@ -29,7 +29,7 @@ describe('Task 9 admin prune correction contracts', () => {
         const deleted = await repository.deletePage(
             transaction,
             pageWork({ category: 'resource-inbox' }),
-            ['1', '2', '3'],
+            ['1', '2', '3']
         );
 
         expect(deleted).toBe(3);
@@ -60,21 +60,23 @@ describe('Task 9 admin prune correction contracts', () => {
             requestedBy: work.requestedBy,
             requestedSessionId: work.requestedSessionId,
             categories: [work.category],
-            expiredRows: { [work.category]: 0 },
+            expiredRows: { [work.category]: 0 }
         });
         const service = new AdminPruneExpiredWork({
             database: {} as never,
             repository: {} as never,
             serviceId: 'server-1',
             pageSize: 3,
-            readAuthority: () => Promise.resolve({ allowed: true, code: 'allowed' }),
+            readAuthority: () => Promise.resolve({ allowed: true, code: 'allowed' })
         });
         const command = decodeAdminPruneWork(entry);
         const read = {
-            rowIds: [], hasMore: false, aggregate,
+            rowIds: [],
+            hasMore: false,
+            aggregate,
             expectedAggregate: JSON.stringify(aggregate),
             authority: { allowed: true, code: 'allowed' },
-            nowEpochMs: NOW,
+            nowEpochMs: NOW
         } as const;
         const computed = service.compute(command, read);
 
@@ -88,22 +90,30 @@ describe('Task 9 admin prune correction contracts', () => {
 
     it('exactly decodes aggregate nested fields and cross-field completion invariants', () => {
         const aggregate = createAdminPruneAggregate({
-            jobId: 'job-1', generatedAtEpochMs: NOW, expireAtEpochMs: NOW + 60_000,
-            serverId: 'server-1', requestedBy: 'admin-1', requestedSessionId: 'session-1',
+            jobId: 'job-1',
+            generatedAtEpochMs: NOW,
+            expireAtEpochMs: NOW + 60_000,
+            serverId: 'server-1',
+            requestedBy: 'admin-1',
+            requestedSessionId: 'session-1',
             categories: ['runtime-state'],
-            expiredRows: { 'runtime-state': 1 },
+            expiredRows: { 'runtime-state': 1 }
         });
         expect(() => decodeAdminPruneAggregate({ ...aggregate, unexpected: true }))
             .toThrow(/field/i);
-        expect(() => decodeAdminPruneAggregate({
-            ...aggregate,
-            status: 'completed',
-            completedCategories: [],
-        })).toThrow(/completion|status/i);
-        expect(() => decodeAdminPruneAggregate({
-            ...aggregate,
-            results: [...aggregate.results, aggregate.results[0]],
-        })).toThrow(/duplicate|category/i);
+        expect(() =>
+            decodeAdminPruneAggregate({
+                ...aggregate,
+                status: 'completed',
+                completedCategories: []
+            })
+        ).toThrow(/completion|status/i);
+        expect(() =>
+            decodeAdminPruneAggregate({
+                ...aggregate,
+                results: [...aggregate.results, aggregate.results[0]]
+            })
+        ).toThrow(/duplicate|category/i);
     });
 
     it('write applies a computed aggregate successor without domain reads or clocks', async () => {
@@ -122,14 +132,21 @@ describe('Task 9 admin prune correction contracts', () => {
 });
 
 function pageWork(
-    overrides: Partial<AdminPrunePageWork> = {},
+    overrides: Partial<AdminPrunePageWork> = {}
 ): AdminPrunePageWork {
     return {
-        kind: 'page', jobId: 'job-1', category: 'runtime-state',
-        requestedBy: 'admin-1', requestedSessionId: 'session-1',
-        capturedAtEpochMs: NOW, expireAtEpochMs: NOW + 60_000,
-        pageSize: 3, afterCursor: null, pageIndex: 0, appData: null,
-        ...overrides,
+        kind: 'page',
+        jobId: 'job-1',
+        category: 'runtime-state',
+        requestedBy: 'admin-1',
+        requestedSessionId: 'session-1',
+        capturedAtEpochMs: NOW,
+        expireAtEpochMs: NOW + 60_000,
+        pageSize: 3,
+        afterCursor: null,
+        pageIndex: 0,
+        appData: null,
+        ...overrides
     };
 }
 
@@ -141,8 +158,8 @@ function reservedEntry(work: AdminPrunePageWork): ResourceEntry {
         status: EntityStatus.RESERVED,
         dequeueAudit: {
             startTs: Temporal.Instant.fromEpochMilliseconds(NOW),
-            attempts: 1,
-        },
+            attempts: 1
+        }
     };
 }
 

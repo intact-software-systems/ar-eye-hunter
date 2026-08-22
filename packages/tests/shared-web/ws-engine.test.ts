@@ -1,11 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { configureBrowserALRuntimeStores } from '@shared-web/browser/browser-al-runtime-stores.ts';
+import { toResilienceDto } from '@shared-web/browser/resilience-config.ts';
+import { initialiseWsEngine } from '@shared-web/browser/ws-engine.ts';
 import { type ClientInfo } from '@shared/api/api-config.ts';
 import { CommandTimedOutError } from '@shared/cache/Command.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { type WebSocketConnectOptions } from '@shared/websocket/JsonWebSocketClient.ts';
-import { configureBrowserALRuntimeStores } from '@shared-web/browser/browser-al-runtime-stores.ts';
-import { initialiseWsEngine } from '@shared-web/browser/ws-engine.ts';
-import { toResilienceDto } from '@shared-web/browser/resilience-config.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('initialiseWsEngine', () => {
     afterEach(() => {
@@ -23,8 +23,8 @@ describe('initialiseWsEngine', () => {
             testClientInfo(),
             toResilienceDto(),
             {
-                connectTimeoutMs: 25,
-            },
+                connectTimeoutMs: 25
+            }
         );
 
         expect(service.socket).toBe(socket);
@@ -37,7 +37,7 @@ describe('initialiseWsEngine', () => {
     it('rejects a hanging socket connect with CommandTimedOutError and aborts the connect signal', async () => {
         vi.useFakeTimers();
         const socket = new TestJsonWebSocketClient({
-            hangConnect: true,
+            hangConnect: true
         });
         const qboxEngine = new InboxOutboxEngine();
 
@@ -47,8 +47,8 @@ describe('initialiseWsEngine', () => {
             testClientInfo(),
             toResilienceDto(),
             {
-                connectTimeoutMs: 25,
-            },
+                connectTimeoutMs: 25
+            }
         );
         await Promise.resolve();
 
@@ -66,7 +66,7 @@ describe('initialiseWsEngine', () => {
     it('uses the default websocket connect timeout when no timeout is provided', async () => {
         vi.useFakeTimers();
         const socket = new TestJsonWebSocketClient({
-            hangConnect: true,
+            hangConnect: true
         });
         const qboxEngine = new InboxOutboxEngine();
 
@@ -74,7 +74,7 @@ describe('initialiseWsEngine', () => {
             qboxEngine,
             socket.asJsonWebSocketClient(),
             testClientInfo(),
-            toResilienceDto(),
+            toResilienceDto()
         );
         await Promise.resolve();
 
@@ -90,7 +90,7 @@ describe('initialiseWsEngine', () => {
 
     it('enables websocket callbacks only after the initial connect succeeds', async () => {
         const socket = new TestJsonWebSocketClient({
-            hangConnect: true,
+            hangConnect: true
         });
         const qboxEngine = new InboxOutboxEngine();
 
@@ -100,8 +100,8 @@ describe('initialiseWsEngine', () => {
             testClientInfo(),
             toResilienceDto(),
             {
-                connectTimeoutMs: 0,
-            },
+                connectTimeoutMs: 0
+            }
         );
         await Promise.resolve();
 
@@ -119,7 +119,7 @@ describe('initialiseWsEngine', () => {
     it('allows unbounded connect when connectTimeoutMs is zero or negative', async () => {
         vi.useFakeTimers();
         const socket = new TestJsonWebSocketClient({
-            hangConnect: true,
+            hangConnect: true
         });
         const qboxEngine = new InboxOutboxEngine();
 
@@ -129,8 +129,8 @@ describe('initialiseWsEngine', () => {
             testClientInfo(),
             toResilienceDto(),
             {
-                connectTimeoutMs: 0,
-            },
+                connectTimeoutMs: 0
+            }
         );
         await Promise.resolve();
 
@@ -143,8 +143,8 @@ describe('initialiseWsEngine', () => {
         socket.resolveConnect();
         await expect(initPromise).resolves.toMatchObject({
             input: {
-                sessionId: 'session-1',
-            },
+                sessionId: 'session-1'
+            }
         });
     });
 });
@@ -163,7 +163,7 @@ class TestJsonWebSocketClient {
     readonly messageCallbackIds: string[] = [];
     readonly url = 'ws://test';
     readonly ws = {
-        readyState: 1,
+        readyState: 1
     };
 
     private resolvePendingConnect: (() => void) | undefined;
@@ -176,7 +176,7 @@ class TestJsonWebSocketClient {
 
     connect(options: WebSocketConnectOptions = {}): Promise<void> {
         this.connectCalls.push({
-            signal: options.signal,
+            signal: options.signal
         });
         if (!this.options.hangConnect) {
             return Promise.resolve();
@@ -215,6 +215,6 @@ function testClientInfo(): ClientInfo {
     return {
         clientId: 'client-1',
         sessionId: 'session-1',
-        isOnline: true,
+        isOnline: true
     };
 }

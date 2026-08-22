@@ -11,7 +11,7 @@ export function requireRecord(value: unknown, label: string): Record<string, unk
 export function requireExactKeys(
     value: Record<string, unknown>,
     keys: readonly string[],
-    label: string,
+    label: string
 ): void {
     if (Object.keys(value).sort().join('\0') !== [...keys].sort().join('\0')) {
         throw new TypeError(`${label} fields are invalid`);
@@ -22,13 +22,15 @@ export function requireExactOptionalKeys(
     value: Record<string, unknown>,
     required: readonly string[],
     optional: readonly string[],
-    label: string,
+    label: string
 ): void {
     const keys = Object.keys(value);
     if (
         required.some((key) => !keys.includes(key)) ||
         keys.some((key) => !required.includes(key) && !optional.includes(key))
-    ) throw new TypeError(`${label} fields are invalid`);
+    ) {
+        throw new TypeError(`${label} fields are invalid`);
+    }
 }
 
 export function requireString(value: unknown, label: string): asserts value is string {
@@ -50,17 +52,21 @@ export function requirePositiveInteger(value: unknown, label: string): void {
 }
 
 export function requireNullableEpoch(value: unknown, label: string): void {
-    if (value !== null) requireEpoch(value, label);
+    if (value !== null) {
+        requireEpoch(value, label);
+    }
 }
 
 export function requireNullableInteger(value: unknown, label: string): void {
-    if (value !== null) requireEpoch(value, label);
+    if (value !== null) {
+        requireEpoch(value, label);
+    }
 }
 
 export function requireOneOf<T extends string>(
     value: unknown,
     values: readonly T[],
-    label: string,
+    label: string
 ): T {
     if (typeof value !== 'string' || !values.includes(value as T)) {
         throw new TypeError(`${label} is invalid`);

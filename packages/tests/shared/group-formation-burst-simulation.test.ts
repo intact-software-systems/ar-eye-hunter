@@ -1,21 +1,15 @@
-import { describe, expect, it } from 'vitest';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toOverlayInfoForSession } from '@shared/api/overlay-topology.ts';
-import {
-    createAndSetBootstrapOverlays,
-} from '@shared/repository/overlay-bootstrap.ts';
+import { createAndSetBootstrapOverlays } from '@shared/repository/overlay-bootstrap.ts';
 import {
     createAndSetStarOverlays,
     findOverlayById,
     readOverlayAdoptionDiagnostics,
     resetOverlayAdoptionDiagnostics,
-    setOverlayById,
+    setOverlayById
 } from '@shared/repository/overlays-repository.ts';
-import {
-    createRingTopologySnapshot,
-    createSimulatedClient,
-    createSimulationGroupSnapshot,
-} from './group-formation-simulation-clients.ts';
+import { describe, expect, it } from 'vitest';
+import { createRingTopologySnapshot, createSimulatedClient, createSimulationGroupSnapshot } from './group-formation-simulation-clients.ts';
 
 const MAX_PEER_CONNECTIONS = 10;
 const BOOTSTRAP_DEGREE = 5;
@@ -33,14 +27,14 @@ describe('group formation burst simulation', () => {
     it.each([
         { tier: 'small', memberCount: 6 },
         { tier: 'medium', memberCount: 20 },
-        { tier: 'large', memberCount: 50 },
+        { tier: 'large', memberCount: 50 }
     ])(
         'adopts the server overlay on every client with bounded dials ($tier, N=$memberCount)',
         async ({ memberCount }) => {
             resetOverlayAdoptionDiagnostics();
             const sessionIds = Array.from(
                 { length: memberCount },
-                (_, index) => `session-${index}`,
+                (_, index) => `session-${index}`
             );
             const group = createSimulationGroupSnapshot('burst-group', 3, sessionIds);
             const overlayId = toScopedOverlayId(group.group);
@@ -50,12 +44,12 @@ describe('group formation burst simulation', () => {
                 {
                     sourceGroupStateCausalRevision: { groupRevision: 2, presenceRevision: 2 },
                     version: 1,
-                    degreeLimit: BOOTSTRAP_DEGREE,
-                },
+                    degreeLimit: BOOTSTRAP_DEGREE
+                }
             );
             const clients = sessionIds.map((sessionId) =>
                 createSimulatedClient(sessionId, sessionIds, {
-                    maxPeerConnections: MAX_PEER_CONNECTIONS,
+                    maxPeerConnections: MAX_PEER_CONNECTIONS
                 })
             );
 
@@ -63,7 +57,7 @@ describe('group formation burst simulation', () => {
                 createAndSetBootstrapOverlays([group], {
                     localSessionId: client.sessionId,
                     mode: 'bounded-bootstrap',
-                    bootstrapDegree: BOOTSTRAP_DEGREE,
+                    bootstrapDegree: BOOTSTRAP_DEGREE
                 }, client.repositoryManager);
                 await client.manager.acceptGroupUpdate(group);
             }
@@ -71,7 +65,7 @@ describe('group formation burst simulation', () => {
             for (const client of clients) {
                 const bootstrapOverlay = findOverlayById(
                     overlayId,
-                    client.repositoryManager,
+                    client.repositoryManager
                 );
                 expect(bootstrapOverlay?.provenance).toBe('bootstrap');
                 expect(bootstrapOverlay?.nextHopSessionIds.length)
@@ -86,7 +80,7 @@ describe('group formation burst simulation', () => {
                 setOverlayById(
                     overlayId,
                     toOverlayInfoForSession(serverTopology, client.sessionId),
-                    client.repositoryManager,
+                    client.repositoryManager
                 );
                 await client.manager.notifyOverlayTopologyChanged();
             }
@@ -112,24 +106,24 @@ describe('group formation burst simulation', () => {
                 expect(client.manager.readDiagnostics().connectFailureCount)
                     .toBe(0);
             }
-        },
+        }
     );
 
     it('legacy-star mode reproduces the unbounded full-mesh dial storm (N=50)', async () => {
         const sessionIds = Array.from(
             { length: 50 },
-            (_, index) => `session-${index}`,
+            (_, index) => `session-${index}`
         );
         const group = createSimulationGroupSnapshot('legacy-group', 3, sessionIds);
         const client = createSimulatedClient(sessionIds[0], sessionIds, {
             groupFormationMode: 'legacy-star',
-            maxPeerConnections: MAX_PEER_CONNECTIONS,
+            maxPeerConnections: MAX_PEER_CONNECTIONS
         });
 
         createAndSetBootstrapOverlays([group], {
             localSessionId: client.sessionId,
             mode: 'legacy-star',
-            bootstrapDegree: BOOTSTRAP_DEGREE,
+            bootstrapDegree: BOOTSTRAP_DEGREE
         }, client.repositoryManager);
         await client.manager.acceptGroupUpdate(group);
 

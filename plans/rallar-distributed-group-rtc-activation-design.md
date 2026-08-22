@@ -352,9 +352,9 @@ Every authoritative contract carries the complete group scope:
 
 ```ts
 type GroupRef = Readonly<{
-  applicationId: string;
-  workspaceId: string;
-  groupId: string;
+    applicationId: string;
+    workspaceId: string;
+    groupId: string;
 }>;
 ```
 
@@ -452,26 +452,26 @@ one row.
 
 ```ts
 type AsyncRemoteRtcEdgeWorkV1 = Readonly<{
-  version: 1;
-  kind: 'establish-rtc-edge';
-  remoteWorkId: string;
-  batchId: string;
-  chunkId: string;
-  groupRef: GroupRef;
-  sourceGroupStateCausalRevision: Readonly<{
-    groupRevision: number;
-    presenceRevision: number;
-  }>;
-  topologyInputHash: string;
-  edgeId: string;
-  confirmationRole: 'initiator' | 'responder';
-  targetPrincipalId: string;
-  targetSessionId: string;
-  peerSessionId: string;
-  batchGeneration: number;
-  maximumAttempts: number;
-  responseTimeoutMs: number;
-  createdAtEpochMs: number;
+    version: 1;
+    kind: 'establish-rtc-edge';
+    remoteWorkId: string;
+    batchId: string;
+    chunkId: string;
+    groupRef: GroupRef;
+    sourceGroupStateCausalRevision: Readonly<{
+        groupRevision: number;
+        presenceRevision: number;
+    }>;
+    topologyInputHash: string;
+    edgeId: string;
+    confirmationRole: 'initiator' | 'responder';
+    targetPrincipalId: string;
+    targetSessionId: string;
+    peerSessionId: string;
+    batchGeneration: number;
+    maximumAttempts: number;
+    responseTimeoutMs: number;
+    createdAtEpochMs: number;
 }>;
 ```
 

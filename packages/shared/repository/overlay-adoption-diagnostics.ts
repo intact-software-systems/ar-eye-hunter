@@ -13,7 +13,7 @@ export type OverlayAdoptionDiagnosticsEvent = Readonly<{
 }>;
 
 export type OverlayAdoptionDiagnosticsSink = (
-    event: OverlayAdoptionDiagnosticsEvent,
+    event: OverlayAdoptionDiagnosticsEvent
 ) => void;
 
 interface MutableOverlayAdoptionDiagnostics {
@@ -33,7 +33,7 @@ let adoptionDiagnosticsSink: OverlayAdoptionDiagnosticsSink | undefined;
 const adoptionCounters: MutableOverlayAdoptionDiagnostics = emptyOverlayAdoptionDiagnostics();
 
 export function setOverlayAdoptionDiagnosticsSink(
-    sink: OverlayAdoptionDiagnosticsSink | undefined,
+    sink: OverlayAdoptionDiagnosticsSink | undefined
 ): void {
     adoptionDiagnosticsSink = sink;
 }
@@ -54,32 +54,39 @@ function emptyOverlayAdoptionDiagnostics(): MutableOverlayAdoptionDiagnostics {
         dominatedDroppedCount: 0,
         incomparableConflictCount: 0,
         serverSupersededBootstrapCount: 0,
-        bootstrapDroppedOverServerCount: 0,
+        bootstrapDroppedOverServerCount: 0
     };
 }
 
 export function emitOverlayAdoption(
     overlayId: string,
-    outcome: OverlayAdoptionOutcome,
+    outcome: OverlayAdoptionOutcome
 ): void {
     if (outcome === 'initial-set') {
         adoptionCounters.initialSetCount += 1;
-    } else if (outcome === 'adopted') {
+    }
+    else if (outcome === 'adopted') {
         adoptionCounters.adoptedCount += 1;
-    } else if (outcome === 'equal') {
+    }
+    else if (outcome === 'equal') {
         adoptionCounters.equalCount += 1;
-    } else if (outcome === 'dominated-dropped') {
+    }
+    else if (outcome === 'dominated-dropped') {
         adoptionCounters.dominatedDroppedCount += 1;
-    } else if (outcome === 'server-superseded-bootstrap') {
+    }
+    else if (outcome === 'server-superseded-bootstrap') {
         adoptionCounters.serverSupersededBootstrapCount += 1;
-    } else if (outcome === 'bootstrap-dropped-over-server') {
+    }
+    else if (outcome === 'bootstrap-dropped-over-server') {
         adoptionCounters.bootstrapDroppedOverServerCount += 1;
-    } else {
+    }
+    else {
         adoptionCounters.incomparableConflictCount += 1;
     }
     try {
         adoptionDiagnosticsSink?.({ overlayId, outcome });
-    } catch {
+    }
+    catch {
         // Recording must never affect overlay adoption behavior.
     }
 }

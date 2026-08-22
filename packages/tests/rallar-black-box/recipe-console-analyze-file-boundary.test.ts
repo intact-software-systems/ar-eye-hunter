@@ -8,7 +8,7 @@ import {
     readAnalyzeArtifactFiles,
     readAnalyzeArtifactTransferFiles,
     type AnalyzeFileLike,
-    type AnalyzeTransferFileLike,
+    type AnalyzeTransferFileLike
 } from '../../../apps/rallar-black-box/src/recipe-console/analyze/analyze-file-boundary.ts';
 
 const utf8 = new TextEncoder();
@@ -21,7 +21,7 @@ function file(
         type?: string;
         webkitRelativePath?: string;
         read?: () => Promise<string>;
-    }> = {},
+    }> = {}
 ): AnalyzeFileLike {
     return {
         name,
@@ -30,7 +30,7 @@ function file(
         ...(options.webkitRelativePath === undefined
             ? {}
             : { webkitRelativePath: options.webkitRelativePath }),
-        text: options.read ?? (async () => contents),
+        text: options.read ?? (async () => contents)
     };
 }
 
@@ -38,7 +38,7 @@ function bufferFromText(contents: string): ArrayBuffer {
     const bytes = utf8.encode(contents);
     return bytes.buffer.slice(
         bytes.byteOffset,
-        bytes.byteOffset + bytes.byteLength,
+        bytes.byteOffset + bytes.byteLength
     ) as ArrayBuffer;
 }
 
@@ -50,7 +50,7 @@ function transferFile(
         type?: string;
         webkitRelativePath?: string;
         read?: () => Promise<ArrayBuffer>;
-    }> = {},
+    }> = {}
 ): AnalyzeTransferFileLike {
     const bytes = bufferFromText(contents);
     return {
@@ -60,16 +60,16 @@ function transferFile(
         ...(options.webkitRelativePath === undefined
             ? {}
             : { webkitRelativePath: options.webkitRelativePath }),
-        arrayBuffer: options.read ?? (async () => bytes),
+        arrayBuffer: options.read ?? (async () => bytes)
     };
 }
 
 async function expectIntakeError(
     promise: Promise<unknown>,
     code: AnalyzeFileIntakeError['code'],
-    message: string | RegExp,
+    message: string | RegExp
 ) {
-    const error = await promise.catch(reason => reason);
+    const error = await promise.catch((reason) => reason);
     expect(error).toBeInstanceOf(AnalyzeFileIntakeError);
     expect(error).toMatchObject({ code });
     // Unreachable once the instanceof expectation above holds; it only narrows
@@ -79,7 +79,8 @@ async function expectIntakeError(
     }
     if (typeof message === 'string') {
         expect(error.message).toBe(message);
-    } else {
+    }
+    else {
         expect(error.message).toMatch(message);
     }
 }
@@ -105,7 +106,7 @@ describe('Recipe Console Analyze file boundary', () => {
             'results.jsonl',
             'events.jsonl',
             'failures.json',
-            'metadata.json',
+            'metadata.json'
         ]);
     });
 
@@ -113,27 +114,27 @@ describe('Recipe Console Analyze file boundary', () => {
         const intake = await readAnalyzeArtifactFiles([
             file('dist-42-artifact.json', '{"files":{}}', {
                 type: 'application/octet-stream',
-                webkitRelativePath: 'downloads/dist-42-artifact.json',
+                webkitRelativePath: 'downloads/dist-42-artifact.json'
             }),
             file('events.jsonl', '{"kind":"diagnostic"}\n', {
                 type: 'text/plain',
-                webkitRelativePath: 'ci/nested/events.jsonl',
+                webkitRelativePath: 'ci/nested/events.jsonl'
             }),
             file('manifest.json', '{"distributedRunId":"dist-42"}', {
                 type: 'application/json',
-                webkitRelativePath: 'ci/manifest.json',
-            }),
+                webkitRelativePath: 'ci/manifest.json'
+            })
         ]);
 
         expect(Object.keys(intake.files)).toEqual([
             'dist-42-artifact.json',
             'events.jsonl',
-            'manifest.json',
+            'manifest.json'
         ]);
         expect(intake.files).toEqual({
             'dist-42-artifact.json': '{"files":{}}',
             'events.jsonl': '{"kind":"diagnostic"}\n',
-            'manifest.json': '{"distributedRunId":"dist-42"}',
+            'manifest.json': '{"distributedRunId":"dist-42"}'
         });
         expect(intake.acceptedFiles).toEqual([
             {
@@ -141,52 +142,55 @@ describe('Recipe Console Analyze file boundary', () => {
                 sourcePath: 'downloads/dist-42-artifact.json',
                 sizeBytes: 12,
                 type: 'application/octet-stream',
-                kind: 'envelope-candidate',
+                kind: 'envelope-candidate'
             },
             {
                 basename: 'events.jsonl',
                 sourcePath: 'ci/nested/events.jsonl',
                 sizeBytes: 22,
                 type: 'text/plain',
-                kind: 'authoritative',
+                kind: 'authoritative'
             },
             {
                 basename: 'manifest.json',
                 sourcePath: 'ci/manifest.json',
                 sizeBytes: 30,
                 type: 'application/json',
-                kind: 'authoritative',
-            },
+                kind: 'authoritative'
+            }
         ]);
         expect(intake.ignoredFiles).toEqual([]);
         expect(intake.totalSelectedBytes).toBe(64);
     });
 
     it('reads sorted transfer-safe buffers without decoding artifact text on the main thread', async () => {
-        vi.stubGlobal('TextDecoder', class ForbiddenTextDecoder {
-            constructor() {
-                throw new Error('artifact bytes must be decoded in the worker');
+        vi.stubGlobal(
+            'TextDecoder',
+            class ForbiddenTextDecoder {
+                constructor() {
+                    throw new Error('artifact bytes must be decoded in the worker');
+                }
             }
-        });
+        );
 
         try {
             const intake = await readAnalyzeArtifactTransferFiles([
                 transferFile('manifest.json', '{"distributedRunId":"dist-42"}', {
                     type: 'application/json',
-                    webkitRelativePath: 'ci/manifest.json',
+                    webkitRelativePath: 'ci/manifest.json'
                 }),
                 transferFile('dist-42-artifact.json', '{"files":{}}', {
                     type: 'application/octet-stream',
-                    webkitRelativePath: 'downloads/dist-42-artifact.json',
-                }),
+                    webkitRelativePath: 'downloads/dist-42-artifact.json'
+                })
             ]);
 
-            expect(intake.files.map(file => file.name)).toEqual([
+            expect(intake.files.map((file) => file.name)).toEqual([
                 'dist-42-artifact.json',
-                'manifest.json',
+                'manifest.json'
             ]);
             expect([...new Uint8Array(intake.files[0].bytes)]).toEqual([
-                ...utf8.encode('{"files":{}}'),
+                ...utf8.encode('{"files":{}}')
             ]);
             expect(intake.acceptedFiles).toEqual([
                 {
@@ -194,29 +198,30 @@ describe('Recipe Console Analyze file boundary', () => {
                     sourcePath: 'downloads/dist-42-artifact.json',
                     sizeBytes: 12,
                     type: 'application/octet-stream',
-                    kind: 'envelope-candidate',
+                    kind: 'envelope-candidate'
                 },
                 {
                     basename: 'manifest.json',
                     sourcePath: 'ci/manifest.json',
                     sizeBytes: 30,
                     type: 'application/json',
-                    kind: 'authoritative',
-                },
+                    kind: 'authoritative'
+                }
             ]);
             expect(intake.ignoredFiles).toEqual([]);
             expect(intake.totalSelectedBytes).toBe(42);
-            expect(intake.transferList).toEqual(intake.files.map(file => file.bytes));
+            expect(intake.transferList).toEqual(intake.files.map((file) => file.bytes));
 
             const cloned = structuredClone(intake.files, {
-                transfer: [...intake.transferList],
+                transfer: [...intake.transferList]
             });
-            expect(cloned.map(file => [file.name, file.bytes.byteLength])).toEqual([
+            expect(cloned.map((file) => [file.name, file.bytes.byteLength])).toEqual([
                 ['dist-42-artifact.json', 12],
-                ['manifest.json', 30],
+                ['manifest.json', 30]
             ]);
-            expect(intake.transferList.map(bytes => bytes.byteLength)).toEqual([0, 0]);
-        } finally {
+            expect(intake.transferList.map((bytes) => bytes.byteLength)).toEqual([0, 0]);
+        }
+        finally {
             vi.unstubAllGlobals();
         }
     });
@@ -226,11 +231,11 @@ describe('Recipe Console Analyze file boundary', () => {
             readAnalyzeArtifactTransferFiles([
                 transferFile('manifest.json', '{}', {
                     size: 2,
-                    read: async () => bufferFromText('{}\n'),
-                }),
+                    read: async () => bufferFromText('{}\n')
+                })
             ]),
             'file-size-mismatch',
-            'File "manifest.json" reported 2 bytes but returned 3 bytes. No files were imported.',
+            'File "manifest.json" reported 2 bytes but returned 3 bytes. No files were imported.'
         );
     });
 
@@ -241,11 +246,11 @@ describe('Recipe Console Analyze file boundary', () => {
             readAnalyzeArtifactTransferFiles([
                 transferFile('events.jsonl', '', {
                     size: 0,
-                    read: async () => oversized,
-                }),
+                    read: async () => oversized
+                })
             ]),
             'file-too-large',
-            `File "events.jsonl" exceeds the ${ANALYZE_ARTIFACT_MAX_FILE_BYTES}-byte limit (${ANALYZE_ARTIFACT_MAX_FILE_BYTES + 1} bytes).`,
+            `File "events.jsonl" exceeds the ${ANALYZE_ARTIFACT_MAX_FILE_BYTES}-byte limit (${ANALYZE_ARTIFACT_MAX_FILE_BYTES + 1} bytes).`
         );
     });
 
@@ -259,10 +264,10 @@ describe('Recipe Console Analyze file boundary', () => {
                 transferFile('artifact-a.json', '', { size: quarter, read: async () => exactQuarters[0] }),
                 transferFile('artifact-b.json', '', { size: quarter, read: async () => exactQuarters[1] }),
                 transferFile('artifact-c.json', '', { size: quarter, read: async () => exactQuarters[2] }),
-                transferFile('artifact-d.json', '', { size: quarter, read: async () => oversizedQuarter }),
+                transferFile('artifact-d.json', '', { size: quarter, read: async () => oversizedQuarter })
             ]),
             'total-too-large',
-            `Selected files exceed the ${ANALYZE_ARTIFACT_MAX_TOTAL_BYTES}-byte total limit (${ANALYZE_ARTIFACT_MAX_TOTAL_BYTES + 1} bytes).`,
+            `Selected files exceed the ${ANALYZE_ARTIFACT_MAX_TOTAL_BYTES}-byte total limit (${ANALYZE_ARTIFACT_MAX_TOTAL_BYTES + 1} bytes).`
         );
     });
 
@@ -274,45 +279,45 @@ describe('Recipe Console Analyze file boundary', () => {
         };
         const cases = [
             {
-                files: Array.from({ length: ANALYZE_ARTIFACT_MAX_FILE_COUNT + 1 }, (_, index) =>
-                    transferFile(`artifact-${index}.json`, '{}', { read })),
+                files: Array.from({ length: ANALYZE_ARTIFACT_MAX_FILE_COUNT + 1 }, (_, index) => transferFile(`artifact-${index}.json`, '{}', { read })),
                 code: 'too-many-files' as const,
-                message: 'Select at most 24 files; received 25.',
+                message: 'Select at most 24 files; received 25.'
             },
             {
                 files: [transferFile('manifest.json', '{}', {
                     size: ANALYZE_ARTIFACT_MAX_FILE_BYTES + 1,
-                    read,
+                    read
                 })],
                 code: 'file-too-large' as const,
-                message: `File "manifest.json" exceeds the ${ANALYZE_ARTIFACT_MAX_FILE_BYTES}-byte limit (${ANALYZE_ARTIFACT_MAX_FILE_BYTES + 1} bytes).`,
+                message: `File "manifest.json" exceeds the ${ANALYZE_ARTIFACT_MAX_FILE_BYTES}-byte limit (${ANALYZE_ARTIFACT_MAX_FILE_BYTES + 1} bytes).`
             },
             {
                 files: [
                     transferFile('manifest.json', '{}', {
                         webkitRelativePath: 'first/manifest.json',
-                        read,
+                        read
                     }),
                     transferFile('manifest.json', '{}', {
                         webkitRelativePath: 'second/manifest.json',
-                        read,
-                    }),
+                        read
+                    })
                 ],
                 code: 'duplicate-basename' as const,
-                message: 'Duplicate artifact basename "manifest.json" was selected from "first/manifest.json" and "second/manifest.json". Remove one; files are never overwritten.',
+                message:
+                    'Duplicate artifact basename "manifest.json" was selected from "first/manifest.json" and "second/manifest.json". Remove one; files are never overwritten.'
             },
             {
                 files: [transferFile('../manifest.json', '{}', { read })],
                 code: 'unsafe-path' as const,
-                message: 'File path "../manifest.json" is unsafe: traversal segments are not allowed.',
-            },
+                message: 'File path "../manifest.json" is unsafe: traversal segments are not allowed.'
+            }
         ];
 
         for (const intakeCase of cases) {
             await expectIntakeError(
                 readAnalyzeArtifactTransferFiles(intakeCase.files),
                 intakeCase.code,
-                intakeCase.message,
+                intakeCase.message
             );
         }
         expect(readCount).toBe(0);
@@ -327,9 +332,9 @@ describe('Recipe Console Analyze file boundary', () => {
                 read: async () => {
                     ignoredRead = true;
                     throw new Error('ignored files must not be read');
-                },
+                }
             }),
-            file('screenshot.png', 'binary', { webkitRelativePath: 'ci/screenshot.png' }),
+            file('screenshot.png', 'binary', { webkitRelativePath: 'ci/screenshot.png' })
         ]);
 
         expect(ignoredRead).toBe(false);
@@ -337,26 +342,26 @@ describe('Recipe Console Analyze file boundary', () => {
             {
                 basename: 'notes.txt',
                 sourcePath: 'ci/notes.txt',
-                reason: 'unsupported-extension',
+                reason: 'unsupported-extension'
             },
             {
                 basename: 'screenshot.png',
                 sourcePath: 'ci/screenshot.png',
-                reason: 'unsupported-extension',
-            },
+                reason: 'unsupported-extension'
+            }
         ]);
     });
 
     it('preserves a sole arbitrary JSON export for shared envelope detection', async () => {
         const intake = await readAnalyzeArtifactFiles([
-            file('dist-42-artifact.json', '{"artifactSchemaVersion":2,"files":{}}'),
+            file('dist-42-artifact.json', '{"artifactSchemaVersion":2,"files":{}}')
         ]);
 
         expect(intake.files).toEqual({
-            'dist-42-artifact.json': '{"artifactSchemaVersion":2,"files":{}}',
+            'dist-42-artifact.json': '{"artifactSchemaVersion":2,"files":{}}'
         });
         expect(intake.acceptedFiles).toMatchObject([
-            { basename: 'dist-42-artifact.json', kind: 'envelope-candidate' },
+            { basename: 'dist-42-artifact.json', kind: 'envelope-candidate' }
         ]);
     });
 
@@ -364,10 +369,10 @@ describe('Recipe Console Analyze file boundary', () => {
         await expectIntakeError(
             readAnalyzeArtifactFiles([
                 file('notes.txt'),
-                file('trace.log'),
+                file('trace.log')
             ]),
             'no-json-files',
-            'No JSON or JSONL artifact files were selected. Ignored: notes.txt, trace.log.',
+            'No JSON or JSONL artifact files were selected. Ignored: notes.txt, trace.log.'
         );
     });
 
@@ -378,13 +383,13 @@ describe('Recipe Console Analyze file boundary', () => {
                 read: async () => {
                     readCount += 1;
                     return '{}';
-                },
+                }
             }));
 
         await expectIntakeError(
             readAnalyzeArtifactFiles(files),
             'too-many-files',
-            'Select at most 24 files; received 25.',
+            'Select at most 24 files; received 25.'
         );
         expect(readCount).toBe(0);
     });
@@ -399,11 +404,11 @@ describe('Recipe Console Analyze file boundary', () => {
                     read: async () => {
                         readCount += 1;
                         return '';
-                    },
-                }),
+                    }
+                })
             ]),
             'file-too-large',
-            `File "events.jsonl" exceeds the ${ANALYZE_ARTIFACT_MAX_FILE_BYTES}-byte limit (${ANALYZE_ARTIFACT_MAX_FILE_BYTES + 1} bytes).`,
+            `File "events.jsonl" exceeds the ${ANALYZE_ARTIFACT_MAX_FILE_BYTES}-byte limit (${ANALYZE_ARTIFACT_MAX_FILE_BYTES + 1} bytes).`
         );
         expect(readCount).toBe(0);
     });
@@ -416,10 +421,10 @@ describe('Recipe Console Analyze file boundary', () => {
                 file('manifest.json', '', { size: quarter }),
                 file('events.jsonl', '', { size: quarter }),
                 file('notes.txt', '', { size: quarter }),
-                file('trace.log', '', { size: quarter + 1 }),
+                file('trace.log', '', { size: quarter + 1 })
             ]),
             'total-too-large',
-            `Selected files exceed the ${ANALYZE_ARTIFACT_MAX_TOTAL_BYTES}-byte total limit (${ANALYZE_ARTIFACT_MAX_TOTAL_BYTES + 1} bytes).`,
+            `Selected files exceed the ${ANALYZE_ARTIFACT_MAX_TOTAL_BYTES}-byte total limit (${ANALYZE_ARTIFACT_MAX_TOTAL_BYTES + 1} bytes).`
         );
     });
 
@@ -427,7 +432,7 @@ describe('Recipe Console Analyze file boundary', () => {
         await expectIntakeError(
             readAnalyzeArtifactFiles([file('manifest.json', '{}', { size: Number.NaN })]),
             'invalid-file-size',
-            'File "manifest.json" reports an invalid size.',
+            'File "manifest.json" reports an invalid size.'
         );
     });
 
@@ -438,22 +443,22 @@ describe('Recipe Console Analyze file boundary', () => {
         'ci/%2e%2e/manifest.json',
         'C:\\temp\\manifest.json',
         'ci/manifest.json\u0000',
-        'ci/ manifest.json',
-    ])('rejects the unsafe or suspicious selected path %j', async sourcePath => {
+        'ci/ manifest.json'
+    ])('rejects the unsafe or suspicious selected path %j', async (sourcePath) => {
         await expectIntakeError(
             readAnalyzeArtifactFiles([file(sourcePath)]),
             'unsafe-path',
-            /is unsafe:/,
+            /is unsafe:/
         );
     });
 
     it('rejects a suspicious webkitRelativePath even when File.name is safe', async () => {
         await expectIntakeError(
             readAnalyzeArtifactFiles([
-                file('manifest.json', '{}', { webkitRelativePath: '../manifest.json' }),
+                file('manifest.json', '{}', { webkitRelativePath: '../manifest.json' })
             ]),
             'unsafe-path',
-            /\.\.\/manifest\.json.*is unsafe:/,
+            /\.\.\/manifest\.json.*is unsafe:/
         );
     });
 
@@ -468,15 +473,15 @@ describe('Recipe Console Analyze file boundary', () => {
             readAnalyzeArtifactFiles([
                 file('manifest.json', '{}', {
                     webkitRelativePath: 'first/manifest.json',
-                    read,
+                    read
                 }),
                 file('manifest.json', '{}', {
                     webkitRelativePath: 'second/manifest.json',
-                    read,
-                }),
+                    read
+                })
             ]),
             'duplicate-basename',
-            'Duplicate artifact basename "manifest.json" was selected from "first/manifest.json" and "second/manifest.json". Remove one; files are never overwritten.',
+            'Duplicate artifact basename "manifest.json" was selected from "first/manifest.json" and "second/manifest.json". Remove one; files are never overwritten.'
         );
         expect(readCount).toBe(0);
     });
@@ -485,10 +490,10 @@ describe('Recipe Console Analyze file boundary', () => {
         await expectIntakeError(
             readAnalyzeArtifactFiles([
                 file('Run-Artifact.json'),
-                file('run-artifact.JSON'),
+                file('run-artifact.JSON')
             ]),
             'duplicate-basename',
-            /Duplicate artifact basename "run-artifact\.json"/,
+            /Duplicate artifact basename "run-artifact\.json"/
         );
     });
 
@@ -499,11 +504,11 @@ describe('Recipe Console Analyze file boundary', () => {
                 file('events.jsonl', '', {
                     read: async () => {
                         throw new Error('disk unavailable');
-                    },
-                }),
+                    }
+                })
             ]),
             'read-failed',
-            'Could not read "events.jsonl": disk unavailable. No files were imported.',
+            'Could not read "events.jsonl": disk unavailable. No files were imported.'
         );
     });
 });

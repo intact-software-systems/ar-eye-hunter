@@ -1,6 +1,4 @@
-import {
-    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES,
-} from './distributed-run.ts';
+import { RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES } from './distributed-run.ts';
 import {
     RALLAR_BLACK_BOX_FLEET_REPORT_SCHEMA_VERSION,
     type ControlFleetAgentRunOutcome,
@@ -9,7 +7,7 @@ import {
     type ControlFleetRegionSummary,
     type ControlFleetReportBundle,
     type ControlFleetRunReport,
-    type ControlFleetTimingDistribution,
+    type ControlFleetTimingDistribution
 } from './fleet-report.ts';
 
 export const RALLAR_BLACK_BOX_FLEET_REPORT_VALIDATION_MAX_ISSUES = 64;
@@ -21,7 +19,7 @@ const FLEET_REPORT_BUNDLE_FILE_NAMES = [
     'fleet-report.json',
     'summary.md',
     'agent-results.csv',
-    'failure-signatures.csv',
+    'failure-signatures.csv'
 ] as const;
 
 const FLEET_AGENT_STATES = new Set([
@@ -31,7 +29,7 @@ const FLEET_AGENT_STATES = new Set([
     'running',
     'cancelled',
     'timed-out',
-    'unknown',
+    'unknown'
 ]);
 
 const FLEET_FAILURE_CATEGORIES = new Set([
@@ -41,11 +39,11 @@ const FLEET_FAILURE_CATEGORIES = new Set([
     'command',
     'diagnostic',
     'runtime',
-    'unknown',
+    'unknown'
 ]);
 
 const DISTRIBUTED_RUN_STATES = new Set<string>(
-    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES,
+    RALLAR_BLACK_BOX_DISTRIBUTED_RUN_STATES
 );
 
 export type ControlFleetReportValidationIssueCode =
@@ -73,25 +71,30 @@ type ValidationSummary = Readonly<{
     omittedIssueCount: number;
 }>;
 
-export type ControlFleetRunReportValidationResult = ValidationSummary & Readonly<{
-    ok: boolean;
-    report?: ControlFleetRunReport;
-    sourceCount: 1;
-    acceptedCount: 0 | 1;
-    quarantinedCount: 0 | 1;
-}>;
+export type ControlFleetRunReportValidationResult =
+    & ValidationSummary
+    & Readonly<{
+        ok: boolean;
+        report?: ControlFleetRunReport;
+        sourceCount: 1;
+        acceptedCount: 0 | 1;
+        quarantinedCount: 0 | 1;
+    }>;
 
-export type ControlFleetReportsResponseValidationResult = ValidationSummary & Readonly<{
-    ok: boolean;
-    reports: readonly ControlFleetRunReport[];
-    aggregate?: ControlFleetAggregateReport;
-    sourceCount: number;
-    acceptedCount: number;
-    quarantinedCount: number;
-}>;
+export type ControlFleetReportsResponseValidationResult =
+    & ValidationSummary
+    & Readonly<{
+        ok: boolean;
+        reports: readonly ControlFleetRunReport[];
+        aggregate?: ControlFleetAggregateReport;
+        sourceCount: number;
+        acceptedCount: number;
+        quarantinedCount: number;
+    }>;
 
 export type ControlFleetRunReportCollectionValidationResult =
-    ValidationSummary & Readonly<{
+    & ValidationSummary
+    & Readonly<{
         ok: boolean;
         reports: readonly ControlFleetRunReport[];
         sourceCount: number;
@@ -99,15 +102,19 @@ export type ControlFleetRunReportCollectionValidationResult =
         quarantinedCount: number;
     }>;
 
-export type ControlFleetReportBundleValidationResult = ValidationSummary & Readonly<{
-    ok: boolean;
-    bundle?: ControlFleetReportBundle;
-}>;
+export type ControlFleetReportBundleValidationResult =
+    & ValidationSummary
+    & Readonly<{
+        ok: boolean;
+        bundle?: ControlFleetReportBundle;
+    }>;
 
-type ValidationIssueInput = Omit<ControlFleetReportValidationIssue, 'path' | 'message'> & Readonly<{
-    path: string;
-    message: string;
-}>;
+type ValidationIssueInput =
+    & Omit<ControlFleetReportValidationIssue, 'path' | 'message'>
+    & Readonly<{
+        path: string;
+        message: string;
+    }>;
 
 type ValidationIssueCollector = Readonly<{
     add(issue: ValidationIssueInput): void;
@@ -116,7 +123,7 @@ type ValidationIssueCollector = Readonly<{
 }>;
 
 export function validateControlFleetRunReport(
-    value: unknown,
+    value: unknown
 ): ControlFleetRunReportValidationResult {
     const collector = createValidationIssueCollector();
     const report = normalizeControlFleetRunReport(
@@ -124,8 +131,8 @@ export function validateControlFleetRunReport(
         '$',
         collectorForDistributedRun(
             collector,
-            candidateDistributedRunId(value),
-        ),
+            candidateDistributedRunId(value)
+        )
     );
     const summary = collector.finish();
     return {
@@ -134,12 +141,12 @@ export function validateControlFleetRunReport(
         sourceCount: 1,
         acceptedCount: report === undefined ? 0 : 1,
         quarantinedCount: report === undefined ? 1 : 0,
-        ...summary,
+        ...summary
     };
 }
 
 export function validateControlFleetReportsResponse(
-    value: unknown,
+    value: unknown
 ): ControlFleetReportsResponseValidationResult {
     const collector = createValidationIssueCollector();
     if (!isRecord(value)) {
@@ -147,7 +154,7 @@ export function validateControlFleetReportsResponse(
             source: 'response',
             code: 'invalid-type',
             path: '$',
-            message: 'Fleet reports response must be an object.',
+            message: 'Fleet reports response must be an object.'
         });
         return collectionResult([], undefined, 0, collector);
     }
@@ -155,23 +162,23 @@ export function validateControlFleetReportsResponse(
     const aggregate = normalizeControlFleetAggregateReport(
         value.aggregate,
         '$.aggregate',
-        collector,
+        collector
     );
     const collection = normalizeFleetRunReportCollection(
         value.reports,
-        collector,
+        collector
     );
 
     return collectionResult(
         collection.reports,
         aggregate,
         collection.sourceCount,
-        collector,
+        collector
     );
 }
 
 export function validateControlFleetRunReportCollection(
-    value: unknown,
+    value: unknown
 ): ControlFleetRunReportCollectionValidationResult {
     const collector = createValidationIssueCollector();
     const collection = normalizeFleetRunReportCollection(value, collector);
@@ -181,15 +188,14 @@ export function validateControlFleetRunReportCollection(
         reports: collection.reports,
         sourceCount: collection.sourceCount,
         acceptedCount: collection.reports.length,
-        quarantinedCount:
-            collection.sourceCount - collection.reports.length,
-        ...summary,
+        quarantinedCount: collection.sourceCount - collection.reports.length,
+        ...summary
     };
 }
 
 export function validateControlFleetReportBundle(
     value: unknown,
-    requestedDistributedRunId: string,
+    requestedDistributedRunId: string
 ): ControlFleetReportBundleValidationResult {
     const collector = createValidationIssueCollector();
     if (!isRecord(value)) {
@@ -197,7 +203,7 @@ export function validateControlFleetReportBundle(
             source: 'bundle',
             code: 'invalid-type',
             path: '$',
-            message: 'Fleet report bundle must be an object.',
+            message: 'Fleet report bundle must be an object.'
         });
         return bundleResult(undefined, collector);
     }
@@ -208,18 +214,20 @@ export function validateControlFleetReportBundle(
         distributedRunId,
         '$.distributedRunId',
         collector,
-        'bundle',
+        'bundle'
     );
     if (
-        validDistributedRunId
-        && distributedRunId !== requestedDistributedRunId
+        validDistributedRunId &&
+        distributedRunId !== requestedDistributedRunId
     ) {
         collector.add({
             source: 'bundle',
             code: 'bundle-run-id-mismatch',
             path: '$.distributedRunId',
-            message: `Bundle distributedRunId ${JSON.stringify(distributedRunId)} does not match requested run ${JSON.stringify(requestedDistributedRunId)}.`,
-            distributedRunId,
+            message: `Bundle distributedRunId ${JSON.stringify(distributedRunId)} does not match requested run ${
+                JSON.stringify(requestedDistributedRunId)
+            }.`,
+            distributedRunId
         });
     }
     validateNonNegativeInteger(value.generatedAtEpochMs, '$.generatedAtEpochMs', collector, 'bundle');
@@ -230,9 +238,10 @@ export function validateControlFleetReportBundle(
             source: 'bundle',
             code: 'invalid-type',
             path: '$.files',
-            message: 'Bundle files must be an object.',
+            message: 'Bundle files must be an object.'
         });
-    } else {
+    }
+    else {
         const expected = new Set<string>(FLEET_REPORT_BUNDLE_FILE_NAMES);
         for (const fileName of FLEET_REPORT_BUNDLE_FILE_NAMES) {
             const path = `$.files[${JSON.stringify(fileName)}]`;
@@ -241,7 +250,7 @@ export function validateControlFleetReportBundle(
                     source: 'bundle',
                     code: 'missing-bundle-file',
                     path,
-                    message: `Bundle is missing required file ${JSON.stringify(fileName)}.`,
+                    message: `Bundle is missing required file ${JSON.stringify(fileName)}.`
                 });
                 continue;
             }
@@ -251,7 +260,7 @@ export function validateControlFleetReportBundle(
                     source: 'bundle',
                     code: 'invalid-type',
                     path,
-                    message: `Bundle file ${JSON.stringify(fileName)} must be text.`,
+                    message: `Bundle file ${JSON.stringify(fileName)} must be text.`
                 });
                 continue;
             }
@@ -262,17 +271,21 @@ export function validateControlFleetReportBundle(
                     source: 'bundle',
                     code: 'bundle-file-too-large',
                     path,
-                    message: `Bundle file ${JSON.stringify(fileName)} is ${fileBytes} UTF-8 bytes; the limit is ${RALLAR_BLACK_BOX_FLEET_REPORT_FILE_MAX_BYTES}.`,
+                    message: `Bundle file ${
+                        JSON.stringify(fileName)
+                    } is ${fileBytes} UTF-8 bytes; the limit is ${RALLAR_BLACK_BOX_FLEET_REPORT_FILE_MAX_BYTES}.`
                 });
             }
         }
         for (const fileName of Object.keys(value.files)) {
-            if (expected.has(fileName)) continue;
+            if (expected.has(fileName)) {
+                continue;
+            }
             collector.add({
                 source: 'bundle',
                 code: 'unexpected-bundle-file',
                 path: `$.files[${JSON.stringify(fileName)}]`,
-                message: `Bundle contains unexpected file ${JSON.stringify(fileName)}.`,
+                message: `Bundle contains unexpected file ${JSON.stringify(fileName)}.`
             });
         }
     }
@@ -281,7 +294,8 @@ export function validateControlFleetReportBundle(
             source: 'bundle',
             code: 'bundle-too-large',
             path: '$.files',
-            message: `Bundle files total ${totalBytes} UTF-8 bytes; the limit is ${RALLAR_BLACK_BOX_FLEET_REPORT_BUNDLE_MAX_BYTES}.`,
+            message:
+                `Bundle files total ${totalBytes} UTF-8 bytes; the limit is ${RALLAR_BLACK_BOX_FLEET_REPORT_BUNDLE_MAX_BYTES}.`
         });
     }
 
@@ -294,14 +308,14 @@ export function validateControlFleetReportBundle(
 function normalizeControlFleetRunReport(
     value: unknown,
     path: string,
-    collector: ValidationIssueCollector,
+    collector: ValidationIssueCollector
 ): ControlFleetRunReport | undefined {
     if (!isRecord(value)) {
         collector.add({
             source: 'report',
             code: 'invalid-type',
             path,
-            message: 'Fleet run report must be an object.',
+            message: 'Fleet run report must be an object.'
         });
         return undefined;
     }
@@ -324,7 +338,7 @@ function normalizeControlFleetRunReport(
         value.failureSignatures,
         `${path}.failureSignatures`,
         collector,
-        'report',
+        'report'
     );
     validateArtifactRefs(value.artifactRefs, `${path}.artifactRefs`, collector);
 
@@ -333,35 +347,37 @@ function normalizeControlFleetRunReport(
     }
     return {
         ...value,
-        agents,
+        agents
     } as unknown as ControlFleetRunReport;
 }
 
 function normalizeControlFleetAggregateReport(
     value: unknown,
     path: string,
-    collector: ValidationIssueCollector,
+    collector: ValidationIssueCollector
 ): ControlFleetAggregateReport | undefined {
     if (!isRecord(value)) {
         collector.add({
             source: 'aggregate',
             code: 'invalid-type',
             path,
-            message: 'Fleet aggregate report must be an object.',
+            message: 'Fleet aggregate report must be an object.'
         });
         return undefined;
     }
     const issueCountBefore = collector.count();
-    for (const key of [
-        'generatedAtEpochMs',
-        'reportCount',
-        'runCount',
-        'agentCount',
-        'regionCount',
-        'staleAgentCount',
-        'flakyAgentCount',
-        'failureGroupCount',
-    ] as const) {
+    for (
+        const key of [
+            'generatedAtEpochMs',
+            'reportCount',
+            'runCount',
+            'agentCount',
+            'regionCount',
+            'staleAgentCount',
+            'flakyAgentCount',
+            'failureGroupCount'
+        ] as const
+    ) {
         validateNonNegativeInteger(value[key], `${path}.${key}`, collector, 'aggregate');
     }
     validateFiniteNumber(value.passRate, `${path}.passRate`, collector, 'aggregate');
@@ -370,9 +386,10 @@ function normalizeControlFleetAggregateReport(
             source: 'aggregate',
             code: 'invalid-type',
             path: `${path}.timing`,
-            message: 'Aggregate timing must be an object.',
+            message: 'Aggregate timing must be an object.'
         });
-    } else {
+    }
+    else {
         validateTimingDistribution(value.timing.runs, `${path}.timing.runs`, collector, 'aggregate');
         validateTimingDistribution(value.timing.commands, `${path}.timing.commands`, collector, 'aggregate');
     }
@@ -381,7 +398,7 @@ function normalizeControlFleetAggregateReport(
         value.failureSignatures,
         `${path}.failureSignatures`,
         collector,
-        'aggregate',
+        'aggregate'
     );
     return collector.count() === issueCountBefore
         ? value as unknown as ControlFleetAggregateReport
@@ -391,14 +408,14 @@ function normalizeControlFleetAggregateReport(
 function normalizeAgents(
     value: unknown,
     path: string,
-    collector: ValidationIssueCollector,
+    collector: ValidationIssueCollector
 ): readonly ControlFleetAgentRunOutcome[] | undefined {
     if (!Array.isArray(value)) {
         collector.add({
             source: 'report',
             code: 'invalid-type',
             path,
-            message: 'Fleet report agents must be an array.',
+            message: 'Fleet report agents must be an array.'
         });
         return undefined;
     }
@@ -406,8 +423,12 @@ function normalizeAgents(
     let valid = true;
     for (let index = 0; index < value.length; index += 1) {
         const agent = normalizeAgent(value[index], `${path}[${index}]`, collector);
-        if (agent === undefined) valid = false;
-        else agents.push(agent);
+        if (agent === undefined) {
+            valid = false;
+        }
+        else {
+            agents.push(agent);
+        }
     }
     return valid ? agents : undefined;
 }
@@ -415,14 +436,14 @@ function normalizeAgents(
 function normalizeAgent(
     value: unknown,
     path: string,
-    collector: ValidationIssueCollector,
+    collector: ValidationIssueCollector
 ): ControlFleetAgentRunOutcome | undefined {
     if (!isRecord(value)) {
         collector.add({
             source: 'report',
             code: 'invalid-type',
             path,
-            message: 'Fleet agent outcome must be an object.',
+            message: 'Fleet agent outcome must be an object.'
         });
         return undefined;
     }
@@ -432,20 +453,22 @@ function normalizeAgent(
         value.label,
         validAgentId ? value.agentId as string : undefined,
         `${path}.label`,
-        collector,
+        collector
     );
     validateEnumString(value.state, FLEET_AGENT_STATES, `${path}.state`, collector, 'report');
     for (const key of ['ok', 'missing', 'flaky', 'stale'] as const) {
         validateBoolean(value[key], `${path}.${key}`, collector, 'report');
     }
-    for (const key of [
-        'commandCount',
-        'failedCommandCount',
-        'resultCount',
-        'eventCount',
-        'diagnosticCount',
-        'reconnectCount',
-    ] as const) {
+    for (
+        const key of [
+            'commandCount',
+            'failedCommandCount',
+            'resultCount',
+            'eventCount',
+            'diagnosticCount',
+            'reconnectCount'
+        ] as const
+    ) {
         validateNonNegativeInteger(value[key], `${path}.${key}`, collector, 'report');
     }
     validateOptionalNumber(value.durationMs, `${path}.durationMs`, collector, 'report');
@@ -453,20 +476,20 @@ function normalizeAgent(
         value.lastHeartbeatAtEpochMs,
         `${path}.lastHeartbeatAtEpochMs`,
         collector,
-        'report',
+        'report'
     );
     validateStringArray(
         value.failureSignatureIds,
         `${path}.failureSignatureIds`,
         collector,
-        'report',
+        'report'
     );
     if (collector.count() !== issueCountBefore || label === undefined) {
         return undefined;
     }
     return {
         ...value,
-        label,
+        label
     } as unknown as ControlFleetAgentRunOutcome;
 }
 
@@ -474,14 +497,14 @@ function normalizeAgentLabel(
     value: unknown,
     outerAgentId: string | undefined,
     path: string,
-    collector: ValidationIssueCollector,
+    collector: ValidationIssueCollector
 ): Record<string, unknown> | undefined {
     if (!isRecord(value)) {
         collector.add({
             source: 'report',
             code: 'invalid-type',
             path,
-            message: 'Fleet agent label must be an object.',
+            message: 'Fleet agent label must be an object.'
         });
         return undefined;
     }
@@ -491,33 +514,35 @@ function normalizeAgentLabel(
             value.agentId,
             `${path}.agentId`,
             collector,
-            'report',
+            'report'
         );
         if (
-            validLabelAgentId
-            && outerAgentId !== undefined
-            && value.agentId !== outerAgentId
+            validLabelAgentId &&
+            outerAgentId !== undefined &&
+            value.agentId !== outerAgentId
         ) {
             collector.add({
                 source: 'report',
                 code: 'invalid-value',
                 path: `${path}.agentId`,
                 message: 'Fleet agent label agentId must match the outer agentId.',
-                distributedRunId: undefined,
+                distributedRunId: undefined
             });
         }
     }
-    for (const key of [
-        'region',
-        'provider',
-        'datacenter',
-        'hostId',
-        'agentPoolId',
-        'deploymentId',
-        'browserName',
-        'browserVersion',
-        'os',
-    ] as const) {
+    for (
+        const key of [
+            'region',
+            'provider',
+            'datacenter',
+            'hostId',
+            'agentPoolId',
+            'deploymentId',
+            'browserName',
+            'browserVersion',
+            'os'
+        ] as const
+    ) {
         validateOptionalString(value[key], `${path}.${key}`, collector, 'report');
     }
     if (value.tags !== undefined) {
@@ -531,64 +556,64 @@ function normalizeAgentLabel(
     }
     return {
         ...value,
-        agentId: value.agentId ?? outerAgentId,
+        agentId: value.agentId ?? outerAgentId
     };
 }
 
 function validateLocation(
     value: unknown,
     path: string,
-    collector: ValidationIssueCollector,
+    collector: ValidationIssueCollector
 ): boolean {
     if (!isRecord(value)) {
         collector.add({
             source: 'report',
             code: 'invalid-type',
             path,
-            message: 'Fleet agent location must be an object.',
+            message: 'Fleet agent location must be an object.'
         });
         return false;
     }
     let valid = true;
     if (
-        typeof value.latitude !== 'number'
-        || !Number.isFinite(value.latitude)
-        || value.latitude < -90
-        || value.latitude > 90
+        typeof value.latitude !== 'number' ||
+        !Number.isFinite(value.latitude) ||
+        value.latitude < -90 ||
+        value.latitude > 90
     ) {
         collector.add({
             source: 'report',
             code: 'invalid-coordinate',
             path: `${path}.latitude`,
-            message: 'Latitude must be a finite number from -90 through 90.',
+            message: 'Latitude must be a finite number from -90 through 90.'
         });
         valid = false;
     }
     if (
-        typeof value.longitude !== 'number'
-        || !Number.isFinite(value.longitude)
-        || value.longitude < -180
-        || value.longitude > 180
+        typeof value.longitude !== 'number' ||
+        !Number.isFinite(value.longitude) ||
+        value.longitude < -180 ||
+        value.longitude > 180
     ) {
         collector.add({
             source: 'report',
             code: 'invalid-coordinate',
             path: `${path}.longitude`,
-            message: 'Longitude must be a finite number from -180 through 180.',
+            message: 'Longitude must be a finite number from -180 through 180.'
         });
         valid = false;
     }
     validateOptionalString(value.label, `${path}.label`, collector, 'report');
     if (
-        value.precision !== undefined
-        && value.precision !== 'exact'
-        && value.precision !== 'approximate'
+        value.precision !== undefined &&
+        value.precision !== 'exact' &&
+        value.precision !== 'approximate'
     ) {
         collector.add({
             source: 'report',
             code: 'invalid-value',
             path: `${path}.precision`,
-            message: 'Location precision must be exact or approximate.',
+            message: 'Location precision must be exact or approximate.'
         });
         valid = false;
     }
@@ -598,14 +623,14 @@ function validateLocation(
 function validateGroup(
     value: unknown,
     path: string,
-    collector: ValidationIssueCollector,
+    collector: ValidationIssueCollector
 ): boolean {
     if (!isRecord(value)) {
         collector.add({
             source: 'report',
             code: 'invalid-type',
             path,
-            message: 'Fleet report group must be an object.',
+            message: 'Fleet report group must be an object.'
         });
         return false;
     }
@@ -619,28 +644,30 @@ function validateGroup(
 function validateSummary(
     value: unknown,
     path: string,
-    collector: ValidationIssueCollector,
+    collector: ValidationIssueCollector
 ): boolean {
     if (!isRecord(value)) {
         collector.add({
             source: 'report',
             code: 'invalid-type',
             path,
-            message: 'Fleet report summary must be an object.',
+            message: 'Fleet report summary must be an object.'
         });
         return false;
     }
     let valid = true;
-    for (const key of [
-        'agents',
-        'regions',
-        'passed',
-        'failed',
-        'missing',
-        'flaky',
-        'stale',
-        'failureGroups',
-    ] as const) {
+    for (
+        const key of [
+            'agents',
+            'regions',
+            'passed',
+            'failed',
+            'missing',
+            'flaky',
+            'stale',
+            'failureGroups'
+        ] as const
+    ) {
         valid = validateNonNegativeInteger(value[key], `${path}.${key}`, collector, 'report') && valid;
     }
     valid = validateFiniteNumber(value.passRate, `${path}.passRate`, collector, 'report') && valid;
@@ -650,14 +677,14 @@ function validateSummary(
 function validateReportTiming(
     value: unknown,
     path: string,
-    collector: ValidationIssueCollector,
+    collector: ValidationIssueCollector
 ): boolean {
     if (!isRecord(value)) {
         collector.add({
             source: 'report',
             code: 'invalid-type',
             path,
-            message: 'Fleet report timing must be an object.',
+            message: 'Fleet report timing must be an object.'
         });
         return false;
     }
@@ -666,7 +693,7 @@ function validateReportTiming(
         value.commands,
         `${path}.commands`,
         collector,
-        'report',
+        'report'
     );
     return runValid && commandsValid;
 }
@@ -675,14 +702,14 @@ function validateTimingDistribution(
     value: unknown,
     path: string,
     collector: ValidationIssueCollector,
-    source: ControlFleetReportValidationIssue['source'],
+    source: ControlFleetReportValidationIssue['source']
 ): value is ControlFleetTimingDistribution {
     if (!isRecord(value)) {
         collector.add({
             source,
             code: 'invalid-type',
             path,
-            message: 'Fleet timing distribution must be an object.',
+            message: 'Fleet timing distribution must be an object.'
         });
         return false;
     }
@@ -697,14 +724,14 @@ function validateRegions(
     value: unknown,
     path: string,
     collector: ValidationIssueCollector,
-    source: 'report' | 'aggregate',
+    source: 'report' | 'aggregate'
 ): value is readonly ControlFleetRegionSummary[] {
     if (!Array.isArray(value)) {
         collector.add({
             source,
             code: 'invalid-type',
             path,
-            message: 'Fleet regions must be an array.',
+            message: 'Fleet regions must be an array.'
         });
         return false;
     }
@@ -717,7 +744,7 @@ function validateRegions(
                 source,
                 code: 'invalid-type',
                 path: regionPath,
-                message: 'Fleet region summary must be an object.',
+                message: 'Fleet region summary must be an object.'
             });
             valid = false;
             continue;
@@ -733,7 +760,7 @@ function validateRegions(
             region.dominantFailureSignatureId,
             `${regionPath}.dominantFailureSignatureId`,
             collector,
-            source,
+            source
         ) && valid;
     }
     return valid;
@@ -743,14 +770,14 @@ function validateFailureSignatures(
     value: unknown,
     path: string,
     collector: ValidationIssueCollector,
-    source: 'report' | 'aggregate',
+    source: 'report' | 'aggregate'
 ): value is readonly ControlFleetFailureSignature[] {
     if (!Array.isArray(value)) {
         collector.add({
             source,
             code: 'invalid-type',
             path,
-            message: 'Fleet failure signatures must be an array.',
+            message: 'Fleet failure signatures must be an array.'
         });
         return false;
     }
@@ -763,18 +790,20 @@ function validateFailureSignatures(
                 source,
                 code: 'invalid-type',
                 path: failurePath,
-                message: 'Fleet failure signature must be an object.',
+                message: 'Fleet failure signature must be an object.'
             });
             valid = false;
             continue;
         }
-        for (const key of [
-            'signatureId',
-            'title',
-            'normalizedMessage',
-            'likelyCause',
-            'nextAction',
-        ] as const) {
+        for (
+            const key of [
+                'signatureId',
+                'title',
+                'normalizedMessage',
+                'likelyCause',
+                'nextAction'
+            ] as const
+        ) {
             valid = validateNonEmptyString(failure[key], `${failurePath}.${key}`, collector, source) && valid;
         }
         valid = validateEnumString(
@@ -782,15 +811,17 @@ function validateFailureSignatures(
             FLEET_FAILURE_CATEGORIES,
             `${failurePath}.category`,
             collector,
-            source,
+            source
         ) && valid;
-        for (const key of [
-            'code',
-            'recipeId',
-            'commandKind',
-            'diagnosticTypeId',
-            'transport',
-        ] as const) {
+        for (
+            const key of [
+                'code',
+                'recipeId',
+                'commandKind',
+                'diagnosticTypeId',
+                'transport'
+            ] as const
+        ) {
             valid = validateOptionalString(failure[key], `${failurePath}.${key}`, collector, source) && valid;
         }
         valid = validateNonNegativeInteger(failure.count, `${failurePath}.count`, collector, source) && valid;
@@ -798,13 +829,13 @@ function validateFailureSignatures(
             failure.firstSeenAtEpochMs,
             `${failurePath}.firstSeenAtEpochMs`,
             collector,
-            source,
+            source
         ) && valid;
         valid = validateOptionalNonNegativeInteger(
             failure.lastSeenAtEpochMs,
             `${failurePath}.lastSeenAtEpochMs`,
             collector,
-            source,
+            source
         ) && valid;
         for (const key of ['affectedAgents', 'affectedRegions', 'affectedRuns'] as const) {
             valid = validateStringArray(failure[key], `${failurePath}.${key}`, collector, source) && valid;
@@ -816,14 +847,14 @@ function validateFailureSignatures(
 function validateArtifactRefs(
     value: unknown,
     path: string,
-    collector: ValidationIssueCollector,
+    collector: ValidationIssueCollector
 ): boolean {
     if (!isRecord(value)) {
         collector.add({
             source: 'report',
             code: 'invalid-type',
             path,
-            message: 'Fleet artifact references must be an object.',
+            message: 'Fleet artifact references must be an object.'
         });
         return false;
     }
@@ -838,14 +869,16 @@ function validateFleetSchemaVersion(
     value: unknown,
     path: string,
     collector: ValidationIssueCollector,
-    source: 'report' | 'bundle',
+    source: 'report' | 'bundle'
 ): boolean {
-    if (value === RALLAR_BLACK_BOX_FLEET_REPORT_SCHEMA_VERSION) return true;
+    if (value === RALLAR_BLACK_BOX_FLEET_REPORT_SCHEMA_VERSION) {
+        return true;
+    }
     collector.add({
         source,
         code: 'unsupported-schema-version',
         path,
-        message: `Fleet report schema version must be ${RALLAR_BLACK_BOX_FLEET_REPORT_SCHEMA_VERSION}.`,
+        message: `Fleet report schema version must be ${RALLAR_BLACK_BOX_FLEET_REPORT_SCHEMA_VERSION}.`
     });
     return false;
 }
@@ -855,14 +888,16 @@ function validateEnumString(
     allowed: ReadonlySet<string>,
     path: string,
     collector: ValidationIssueCollector,
-    source: ControlFleetReportValidationIssue['source'],
+    source: ControlFleetReportValidationIssue['source']
 ): value is string {
-    if (typeof value === 'string' && allowed.has(value)) return true;
+    if (typeof value === 'string' && allowed.has(value)) {
+        return true;
+    }
     collector.add({
         source,
         code: 'invalid-value',
         path,
-        message: 'Value is not one of the supported strings.',
+        message: 'Value is not one of the supported strings.'
     });
     return false;
 }
@@ -871,14 +906,16 @@ function validateNonEmptyString(
     value: unknown,
     path: string,
     collector: ValidationIssueCollector,
-    source: ControlFleetReportValidationIssue['source'],
+    source: ControlFleetReportValidationIssue['source']
 ): value is string {
-    if (typeof value === 'string' && value.trim().length > 0) return true;
+    if (typeof value === 'string' && value.trim().length > 0) {
+        return true;
+    }
     collector.add({
         source,
         code: typeof value === 'string' ? 'invalid-value' : 'invalid-type',
         path,
-        message: 'Value must be a non-empty string.',
+        message: 'Value must be a non-empty string.'
     });
     return false;
 }
@@ -887,14 +924,16 @@ function validateOptionalString(
     value: unknown,
     path: string,
     collector: ValidationIssueCollector,
-    source: ControlFleetReportValidationIssue['source'],
+    source: ControlFleetReportValidationIssue['source']
 ): value is string | undefined {
-    if (value === undefined || typeof value === 'string') return true;
+    if (value === undefined || typeof value === 'string') {
+        return true;
+    }
     collector.add({
         source,
         code: 'invalid-type',
         path,
-        message: 'Optional value must be a string when present.',
+        message: 'Optional value must be a string when present.'
     });
     return false;
 }
@@ -903,25 +942,27 @@ function validateStringArray(
     value: unknown,
     path: string,
     collector: ValidationIssueCollector,
-    source: ControlFleetReportValidationIssue['source'],
+    source: ControlFleetReportValidationIssue['source']
 ): value is readonly string[] {
     if (!Array.isArray(value)) {
         collector.add({
             source,
             code: 'invalid-type',
             path,
-            message: 'Value must be an array of strings.',
+            message: 'Value must be an array of strings.'
         });
         return false;
     }
     let valid = true;
     for (let index = 0; index < value.length; index += 1) {
-        if (typeof value[index] === 'string') continue;
+        if (typeof value[index] === 'string') {
+            continue;
+        }
         collector.add({
             source,
             code: 'invalid-type',
             path: `${path}[${index}]`,
-            message: 'Array entry must be a string.',
+            message: 'Array entry must be a string.'
         });
         valid = false;
     }
@@ -932,14 +973,16 @@ function validateBoolean(
     value: unknown,
     path: string,
     collector: ValidationIssueCollector,
-    source: ControlFleetReportValidationIssue['source'],
+    source: ControlFleetReportValidationIssue['source']
 ): value is boolean {
-    if (typeof value === 'boolean') return true;
+    if (typeof value === 'boolean') {
+        return true;
+    }
     collector.add({
         source,
         code: 'invalid-type',
         path,
-        message: 'Value must be a boolean.',
+        message: 'Value must be a boolean.'
     });
     return false;
 }
@@ -948,14 +991,16 @@ function validateFiniteNumber(
     value: unknown,
     path: string,
     collector: ValidationIssueCollector,
-    source: ControlFleetReportValidationIssue['source'],
+    source: ControlFleetReportValidationIssue['source']
 ): value is number {
-    if (typeof value === 'number' && Number.isFinite(value)) return true;
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return true;
+    }
     collector.add({
         source,
         code: typeof value === 'number' ? 'invalid-value' : 'invalid-type',
         path,
-        message: 'Value must be a finite number.',
+        message: 'Value must be a finite number.'
     });
     return false;
 }
@@ -964,15 +1009,19 @@ function validateOptionalNumber(
     value: unknown,
     path: string,
     collector: ValidationIssueCollector,
-    source: ControlFleetReportValidationIssue['source'],
+    source: ControlFleetReportValidationIssue['source']
 ): value is number | undefined {
-    if (value === undefined) return true;
-    if (typeof value === 'number' && Number.isFinite(value)) return true;
+    if (value === undefined) {
+        return true;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return true;
+    }
     collector.add({
         source,
         code: typeof value === 'number' ? 'invalid-value' : 'invalid-type',
         path,
-        message: 'Optional value must be a finite number when present.',
+        message: 'Optional value must be a finite number when present.'
     });
     return false;
 }
@@ -981,14 +1030,16 @@ function validateNonNegativeInteger(
     value: unknown,
     path: string,
     collector: ValidationIssueCollector,
-    source: ControlFleetReportValidationIssue['source'],
+    source: ControlFleetReportValidationIssue['source']
 ): value is number {
-    if (Number.isSafeInteger(value) && (value as number) >= 0) return true;
+    if (Number.isSafeInteger(value) && (value as number) >= 0) {
+        return true;
+    }
     collector.add({
         source,
         code: typeof value === 'number' ? 'invalid-value' : 'invalid-type',
         path,
-        message: 'Value must be a non-negative safe integer.',
+        message: 'Value must be a non-negative safe integer.'
     });
     return false;
 }
@@ -997,10 +1048,10 @@ function validateOptionalNonNegativeInteger(
     value: unknown,
     path: string,
     collector: ValidationIssueCollector,
-    source: ControlFleetReportValidationIssue['source'],
+    source: ControlFleetReportValidationIssue['source']
 ): value is number | undefined {
-    return value === undefined
-        || validateNonNegativeInteger(value, path, collector, source);
+    return value === undefined ||
+        validateNonNegativeInteger(value, path, collector, source);
 }
 
 function createValidationIssueCollector(): ValidationIssueCollector {
@@ -1015,12 +1066,12 @@ function createValidationIssueCollector(): ValidationIssueCollector {
                 message: boundedIssueText(input.message),
                 distributedRunId: input.distributedRunId === undefined
                     ? undefined
-                    : boundedIssueText(input.distributedRunId),
+                    : boundedIssueText(input.distributedRunId)
             });
             retained.sort(compareValidationIssues);
             if (
-                retained.length
-                > RALLAR_BLACK_BOX_FLEET_REPORT_VALIDATION_MAX_ISSUES
+                retained.length >
+                    RALLAR_BLACK_BOX_FLEET_REPORT_VALIDATION_MAX_ISSUES
             ) {
                 retained.pop();
             }
@@ -1031,53 +1082,59 @@ function createValidationIssueCollector(): ValidationIssueCollector {
         finish() {
             return {
                 issues: retained,
-                omittedIssueCount: totalIssueCount - retained.length,
+                omittedIssueCount: totalIssueCount - retained.length
             };
-        },
+        }
     };
 }
 
 function boundedIssueText(value: string): string {
     if (
-        value.length
-        <= RALLAR_BLACK_BOX_FLEET_REPORT_VALIDATION_MAX_ISSUE_TEXT_LENGTH
+        value.length <=
+            RALLAR_BLACK_BOX_FLEET_REPORT_VALIDATION_MAX_ISSUE_TEXT_LENGTH
     ) {
         return value;
     }
-    return `${value.slice(
-        0,
-        RALLAR_BLACK_BOX_FLEET_REPORT_VALIDATION_MAX_ISSUE_TEXT_LENGTH - 1,
-    )}…`;
+    return `${
+        value.slice(
+            0,
+            RALLAR_BLACK_BOX_FLEET_REPORT_VALIDATION_MAX_ISSUE_TEXT_LENGTH - 1
+        )
+    }…`;
 }
 
 function compareValidationIssues(
     left: ControlFleetReportValidationIssue,
-    right: ControlFleetReportValidationIssue,
+    right: ControlFleetReportValidationIssue
 ): number {
-    return compareText(left.code, right.code)
-        || compareText(left.path, right.path)
-        || compareText(left.message, right.message)
-        || compareText(left.source, right.source)
-        || compareText(left.distributedRunId ?? '', right.distributedRunId ?? '');
+    return compareText(left.code, right.code) ||
+        compareText(left.path, right.path) ||
+        compareText(left.message, right.message) ||
+        compareText(left.source, right.source) ||
+        compareText(left.distributedRunId ?? '', right.distributedRunId ?? '');
 }
 
 function compareFleetReports(
     left: ControlFleetRunReport,
-    right: ControlFleetRunReport,
+    right: ControlFleetRunReport
 ): number {
-    return right.generatedAtEpochMs - left.generatedAtEpochMs
-        || compareText(left.distributedRunId, right.distributedRunId);
+    return right.generatedAtEpochMs - left.generatedAtEpochMs ||
+        compareText(left.distributedRunId, right.distributedRunId);
 }
 
 function compareText(left: string, right: string): number {
-    if (left < right) return -1;
-    if (left > right) return 1;
+    if (left < right) {
+        return -1;
+    }
+    if (left > right) {
+        return 1;
+    }
     return 0;
 }
 
 function normalizeFleetRunReportCollection(
     value: unknown,
-    collector: ValidationIssueCollector,
+    collector: ValidationIssueCollector
 ): Readonly<{
     reports: readonly ControlFleetRunReport[];
     sourceCount: number;
@@ -1087,7 +1144,7 @@ function normalizeFleetRunReportCollection(
             source: 'response',
             code: 'invalid-type',
             path: '$.reports',
-            message: 'Fleet reports must be an array.',
+            message: 'Fleet reports must be an array.'
         });
         return { reports: [], sourceCount: 0 };
     }
@@ -1098,21 +1155,22 @@ function normalizeFleetRunReportCollection(
         if (distributedRunId !== undefined) {
             duplicateCounts.set(
                 distributedRunId,
-                (duplicateCounts.get(distributedRunId) ?? 0) + 1,
+                (duplicateCounts.get(distributedRunId) ?? 0) + 1
             );
         }
     }
     const duplicatedIds = new Set<string>();
     for (const [distributedRunId, count] of duplicateCounts) {
-        if (count < 2) continue;
+        if (count < 2) {
+            continue;
+        }
         duplicatedIds.add(distributedRunId);
         collector.add({
             source: 'report',
             code: 'duplicate-distributed-run-id',
             path: collectionReportPath(distributedRunId),
-            message:
-                `Every report for the duplicated distributedRunId was quarantined (${count} reports).`,
-            distributedRunId,
+            message: `Every report for the duplicated distributedRunId was quarantined (${count} reports).`,
+            distributedRunId
         });
     }
 
@@ -1122,7 +1180,7 @@ function normalizeFleetRunReportCollection(
         const normalized = normalizeControlFleetRunReport(
             candidate,
             collectionReportPath(distributedRunId),
-            collectorForDistributedRun(collector, distributedRunId),
+            collectorForDistributedRun(collector, distributedRunId)
         );
         if (
             normalized !== undefined &&
@@ -1136,27 +1194,30 @@ function normalizeFleetRunReportCollection(
 }
 
 function candidateDistributedRunId(value: unknown): string | undefined {
-    if (!isRecord(value)) return undefined;
-    return typeof value.distributedRunId === 'string'
-        && value.distributedRunId.trim().length > 0
+    if (!isRecord(value)) {
+        return undefined;
+    }
+    return typeof value.distributedRunId === 'string' &&
+            value.distributedRunId.trim().length > 0
         ? value.distributedRunId
         : undefined;
 }
 
 function collectorForDistributedRun(
     collector: ValidationIssueCollector,
-    distributedRunId: string | undefined,
+    distributedRunId: string | undefined
 ): ValidationIssueCollector {
     if (distributedRunId === undefined) {
         return collector;
     }
     return {
-        add: issue => collector.add({
-            ...issue,
-            distributedRunId: issue.distributedRunId ?? distributedRunId,
-        }),
+        add: (issue) =>
+            collector.add({
+                ...issue,
+                distributedRunId: issue.distributedRunId ?? distributedRunId
+            }),
         count: collector.count,
-        finish: collector.finish,
+        finish: collector.finish
     };
 }
 
@@ -1170,7 +1231,7 @@ function collectionResult(
     reports: readonly ControlFleetRunReport[],
     aggregate: ControlFleetAggregateReport | undefined,
     sourceCount: number,
-    collector: ValidationIssueCollector,
+    collector: ValidationIssueCollector
 ): ControlFleetReportsResponseValidationResult {
     const summary = collector.finish();
     const acceptedCount = reports.length;
@@ -1181,18 +1242,18 @@ function collectionResult(
         sourceCount,
         acceptedCount,
         quarantinedCount: sourceCount - acceptedCount,
-        ...summary,
+        ...summary
     };
 }
 
 function bundleResult(
     bundle: ControlFleetReportBundle | undefined,
-    collector: ValidationIssueCollector,
+    collector: ValidationIssueCollector
 ): ControlFleetReportBundleValidationResult {
     return {
         ok: bundle !== undefined,
         bundle,
-        ...collector.finish(),
+        ...collector.finish()
     };
 }
 

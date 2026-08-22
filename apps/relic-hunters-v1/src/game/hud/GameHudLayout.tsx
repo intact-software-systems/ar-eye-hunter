@@ -10,13 +10,13 @@ export type GameHudLayoutProps = Readonly<{
 }>;
 
 export function GameHudLayout({
-                                  scene,
-                                  top,
-                                  side,
-                                  bottom,
-                                  floating,
-                                  overlays,
-                              }: GameHudLayoutProps) {
+    scene,
+    top,
+    side,
+    bottom,
+    floating,
+    overlays
+}: GameHudLayoutProps) {
     return (
         <main className="app-root">
             <div className="scene-layer">

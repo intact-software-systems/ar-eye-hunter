@@ -150,67 +150,67 @@ Rallar core should not import any of these files. The current repo already uses 
 The shared contract should describe generated JSON as an envelope, not just a raw value.
 
 ```ts
-export type RallarAiJsonSource = "browser" | "server" | "mock";
+export type RallarAiJsonSource = 'browser' | 'server' | 'mock';
 
 export interface RallarAiJsonRequest<TContext = unknown> {
-  requestId?: string;
-  schemaId: string;
-  schemaVersion: string;
-  schema: unknown;
-  prompt: string;
-  context?: TContext;
-  baseStateRevision?: string;
-  dedupeKey?: string;
-  maxOutputTokens?: number;
-  temperature?: number;
-  timeoutMs?: number;
-  signal?: AbortSignal;
+    requestId?: string;
+    schemaId: string;
+    schemaVersion: string;
+    schema: unknown;
+    prompt: string;
+    context?: TContext;
+    baseStateRevision?: string;
+    dedupeKey?: string;
+    maxOutputTokens?: number;
+    temperature?: number;
+    timeoutMs?: number;
+    signal?: AbortSignal;
 }
 
 export interface RallarAiJsonResult<TValue = unknown> {
-  protocolVersion: 1;
-  requestId?: string;
-  generationId: string;
-  dedupeKey?: string;
-  supersedesGenerationId?: string;
-  source: RallarAiJsonSource;
-  providerId: string;
-  modelId?: string;
-  schemaId: string;
-  schemaVersion: string;
-  schemaHash: string;
-  promptHash: string;
-  baseStateRevision?: string;
-  createdAtEpochMs: number;
-  value: TValue;
-  rawText?: string;
-  validation: {
-    ok: boolean;
-    errors: string[];
-  };
-  timing?: {
-    startedAtEpochMs: number;
-    completedAtEpochMs: number;
-  };
+    protocolVersion: 1;
+    requestId?: string;
+    generationId: string;
+    dedupeKey?: string;
+    supersedesGenerationId?: string;
+    source: RallarAiJsonSource;
+    providerId: string;
+    modelId?: string;
+    schemaId: string;
+    schemaVersion: string;
+    schemaHash: string;
+    promptHash: string;
+    baseStateRevision?: string;
+    createdAtEpochMs: number;
+    value: TValue;
+    rawText?: string;
+    validation: {
+        ok: boolean;
+        errors: string[];
+    };
+    timing?: {
+        startedAtEpochMs: number;
+        completedAtEpochMs: number;
+    };
 }
 
 export interface RallarAiJsonProvider {
-  providerId: string;
-  source: RallarAiJsonSource;
-  capabilities: RallarAiProviderCapabilities;
-  generateJson<TValue = unknown, TContext = unknown>(
-    request: RallarAiJsonRequest<TContext>,
-  ): Promise<RallarAiJsonResult<TValue>>;
+    providerId: string;
+    source: RallarAiJsonSource;
+    capabilities: RallarAiProviderCapabilities;
+    generateJson<TValue = unknown, TContext = unknown>(
+        request: RallarAiJsonRequest<TContext>
+    ): Promise<RallarAiJsonResult<TValue>>;
 }
 
 export interface RallarAiProviderCapabilities {
-  supportsJsonSchema: boolean;
-  supportsStreaming: boolean;
-  supportsCancellation: boolean;
-  maxContextTokens?: number;
-  maxOutputTokens?: number;
-  typicalColdStartMs?: number;
-  target: "browser" | "server" | "shared";
+    supportsJsonSchema: boolean;
+    supportsStreaming: boolean;
+    supportsCancellation: boolean;
+    maxContextTokens?: number;
+    maxOutputTokens?: number;
+    typicalColdStartMs?: number;
+    target: 'browser' | 'server' | 'shared';
 }
 ```
 
@@ -237,11 +237,11 @@ RallarAI should support raw schemas, but the preferred path should be a small sc
 
 ```ts
 const registry = createRallarAiSchemaRegistry()
-  .register({
-    schemaId: "game-event",
-    schemaVersion: "1",
-    schema,
-  });
+    .register({
+        schemaId: 'game-event',
+        schemaVersion: '1',
+        schema
+    });
 ```
 
 The registry should provide:
@@ -259,13 +259,13 @@ Applications should be able to decide where generation is allowed and how fallba
 
 Suggested policy modes:
 
-| Mode | Behavior |
-| --- | --- |
-| `disabled` | RallarAI is unavailable even if packages are installed. |
-| `browser-only` | Generate only in the browser. |
-| `server-only` | Generate only through RallarAI Server. |
+| Mode            | Behavior                                                                 |
+| --------------- | ------------------------------------------------------------------------ |
+| `disabled`      | RallarAI is unavailable even if packages are installed.                  |
+| `browser-only`  | Generate only in the browser.                                            |
+| `server-only`   | Generate only through RallarAI Server.                                   |
 | `browser-first` | Try browser provider, fall back to server when unavailable or timed out. |
-| `server-first` | Try server provider, fall back to browser when configured. |
+| `server-first`  | Try server provider, fall back to browser when configured.               |
 
 The default should be explicit, not magical. An app should opt into a policy when creating the browser or server facade.
 
@@ -329,31 +329,31 @@ Diagnostics should include provider ID, model ID when known, schema ID/version/h
 Browser-side RallarAI should be imported explicitly by the application:
 
 ```ts
-import { rallar } from "@shared-web/browser/rallar.ts";
-import { createRallarBrowserAi } from "@shared-web/browser/rallar-ai.ts";
+import { createRallarBrowserAi } from '@shared-web/browser/rallar-ai.ts';
+import { rallar } from '@shared-web/browser/rallar.ts';
 
 const ai = createRallarBrowserAi({ rallar, provider });
 
 const result = await ai.generateJson<GameEvent>({
-  schemaId: "game-event",
-  schemaVersion: "1",
-  schema,
-  prompt,
-  context,
+    schemaId: 'game-event',
+    schemaVersion: '1',
+    schema,
+    prompt,
+    context
 });
 
 await ai.broadcastJson({
-  result,
-  roomRef,
-  laneId: "game-events",
-  transport: "realtime",
+    result,
+    roomRef,
+    laneId: 'game-events',
+    transport: 'realtime'
 });
 
 await ai.persistJson({
-  result,
-  storeName: "ai-results",
-  key: result.generationId,
-  scope: "session",
+    result,
+    storeName: 'ai-results',
+    key: result.generationId,
+    scope: 'session'
 });
 ```
 
@@ -375,30 +375,30 @@ Browser deployment has no Rallar Server dependency. This is useful for local-fir
 Server-side RallarAI should also be imported explicitly:
 
 ```ts
-import { createRallarServerApplication } from "@shared-server/rallar-facade/RallarServerApplication.ts";
-import { createRallarServerAi } from "@shared-server/rallar-ai/RallarAiServer.ts";
+import { createRallarServerAi } from '@shared-server/rallar-ai/RallarAiServer.ts';
+import { createRallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
 
 const rallar = createRallarServerApplication({
-  runtime,
-  routes: {
-    ws: installWsRoutes,
-    rest: [installAuthRoutes, installStateRoutes],
-  },
+    runtime,
+    routes: {
+        ws: installWsRoutes,
+        rest: [installAuthRoutes, installStateRoutes]
+    }
 });
 
 const ai = createRallarServerAi({ rallar, provider });
 
 ai.installRestRoutes(app, {
-  path: "/api/ai/generate-json",
+    path: '/api/ai/generate-json'
 });
 
 ai.installGenerationTopic({
-  requestTopicId: "room.ai",
-  requestTypeId: "generate",
-  resultTopicId: "room.ai",
-  resultTypeId: "generated",
-  scope: "room",
-  fanout: "live-only",
+    requestTopicId: 'room.ai',
+    requestTypeId: 'generate',
+    resultTopicId: 'room.ai',
+    resultTypeId: 'generated',
+    scope: 'room',
+    fanout: 'live-only'
 });
 ```
 
@@ -420,14 +420,14 @@ For local development, Ollama can run as a sidecar on `127.0.0.1:11434`. In prod
 
 RallarAI should separate deterministic test providers from optional live providers.
 
-| Provider | Target | Required in CI | Purpose |
-| --- | --- | --- | --- |
-| `mock` | shared/browser/server | yes | Deterministic contract, validation, and workflow tests. |
-| `fake-sidecar-http` | server | yes | Tests HTTP provider behavior, timeout handling, malformed output, and error mapping without a real model. |
-| `ollama` | server | no | Optional local live test for server-side structured JSON generation. |
-| `webllm` | browser | no | Optional local live test for in-browser generation. |
-| `vllm` | server | no | Future high-throughput deployment option, not a V1 gate. |
-| `llama.cpp` | server/browser-adjacent | no | Future lightweight local runtime option, not a V1 gate. |
+| Provider            | Target                  | Required in CI | Purpose                                                                                                   |
+| ------------------- | ----------------------- | -------------- | --------------------------------------------------------------------------------------------------------- |
+| `mock`              | shared/browser/server   | yes            | Deterministic contract, validation, and workflow tests.                                                   |
+| `fake-sidecar-http` | server                  | yes            | Tests HTTP provider behavior, timeout handling, malformed output, and error mapping without a real model. |
+| `ollama`            | server                  | no             | Optional local live test for server-side structured JSON generation.                                      |
+| `webllm`            | browser                 | no             | Optional local live test for in-browser generation.                                                       |
+| `vllm`              | server                  | no             | Future high-throughput deployment option, not a V1 gate.                                                  |
+| `llama.cpp`         | server/browser-adjacent | no             | Future lightweight local runtime option, not a V1 gate.                                                   |
 
 Recommended live-test gates:
 

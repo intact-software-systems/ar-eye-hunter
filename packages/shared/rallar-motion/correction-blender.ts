@@ -2,14 +2,14 @@ import {
     distanceRallarMotionVec3,
     distanceRallarMotionWrappedVec3,
     interpolateRallarMotionWrappedEuler,
-    lerpRallarMotionVec3,
+    lerpRallarMotionVec3
 } from './math.ts';
 import type {
     RallarMotionCorrectionBlender,
     RallarMotionCorrectionBlenderOptions,
     RallarMotionCorrectionInput,
     RallarMotionCorrectionPose,
-    RallarMotionCorrectionResult,
+    RallarMotionCorrectionResult
 } from './types.ts';
 
 const DEFAULT_CORRECTION_BLEND_DURATION_MS = 100;
@@ -22,11 +22,11 @@ type ActiveCorrection = Readonly<{
 }>;
 
 export function createRallarMotionCorrectionBlender(
-    options: RallarMotionCorrectionBlenderOptions = {},
+    options: RallarMotionCorrectionBlenderOptions = {}
 ): RallarMotionCorrectionBlender {
     const blendDurationMs = Math.max(
         0,
-        options.blendDurationMs ?? DEFAULT_CORRECTION_BLEND_DURATION_MS,
+        options.blendDurationMs ?? DEFAULT_CORRECTION_BLEND_DURATION_MS
     );
     let active: ActiveCorrection | undefined;
 
@@ -40,7 +40,7 @@ export function createRallarMotionCorrectionBlender(
                     mode: 'snapped',
                     progress: 1,
                     startedAtEpochMs: input.nowEpochMs,
-                    completedAtEpochMs: input.nowEpochMs,
+                    completedAtEpochMs: input.nowEpochMs
                 };
             }
 
@@ -48,7 +48,7 @@ export function createRallarMotionCorrectionBlender(
                 source: input.current,
                 target: input.target,
                 startedAtEpochMs: input.nowEpochMs,
-                completedAtEpochMs: input.nowEpochMs + blendDurationMs,
+                completedAtEpochMs: input.nowEpochMs + blendDurationMs
             };
 
             return sampleCorrection(active, input.nowEpochMs, options);
@@ -66,14 +66,14 @@ export function createRallarMotionCorrectionBlender(
         },
         reset(): void {
             active = undefined;
-        },
+        }
     };
 }
 
 function shouldSnap(
     current: RallarMotionCorrectionPose,
     target: RallarMotionCorrectionPose,
-    options: RallarMotionCorrectionBlenderOptions,
+    options: RallarMotionCorrectionBlenderOptions
 ): boolean {
     if (
         options.snapPositionDelta !== undefined &&
@@ -90,7 +90,7 @@ function shouldSnap(
         distanceRallarMotionWrappedVec3(
                 current.rotation,
                 target.rotation,
-                options.rotationWrap,
+                options.rotationWrap
             ) > options.snapRotationDelta
     ) {
         return true;
@@ -102,34 +102,34 @@ function shouldSnap(
 function sampleCorrection(
     active: ActiveCorrection,
     nowEpochMs: number,
-    options: RallarMotionCorrectionBlenderOptions,
+    options: RallarMotionCorrectionBlenderOptions
 ): RallarMotionCorrectionResult {
     const durationMs = active.completedAtEpochMs - active.startedAtEpochMs;
     const progress = durationMs <= 0
         ? 1
         : Math.max(
             0,
-            Math.min(1, (nowEpochMs - active.startedAtEpochMs) / durationMs),
+            Math.min(1, (nowEpochMs - active.startedAtEpochMs) / durationMs)
         );
 
     return {
         position: lerpRallarMotionVec3(
             active.source.position,
             active.target.position,
-            progress,
+            progress
         ),
         rotation: interpolateCorrectionRotation(active, progress, options),
         mode: progress >= 1 ? 'settled' : 'blending',
         progress,
         startedAtEpochMs: active.startedAtEpochMs,
-        completedAtEpochMs: active.completedAtEpochMs,
+        completedAtEpochMs: active.completedAtEpochMs
     };
 }
 
 function interpolateCorrectionRotation(
     active: ActiveCorrection,
     progress: number,
-    options: RallarMotionCorrectionBlenderOptions,
+    options: RallarMotionCorrectionBlenderOptions
 ) {
     if (!active.source.rotation && !active.target.rotation) {
         return undefined;
@@ -145,13 +145,13 @@ function interpolateCorrectionRotation(
             active.source.rotation,
             active.target.rotation,
             progress,
-            options.rotationWrap,
+            options.rotationWrap
         );
     }
 
     return lerpRallarMotionVec3(
         active.source.rotation,
         active.target.rotation,
-        progress,
+        progress
     );
 }

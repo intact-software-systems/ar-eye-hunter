@@ -32,21 +32,21 @@ default.
 
 ## Implemented Provider Layers
 
-| Provider | Status | Purpose |
-| --- | --- | --- |
-| `rallar-stub` | Implemented | Simple fake provider for smoke tests and runner validation. |
-| `rallar-memory` | Implemented | Deterministic multi-peer runtime for direct, broadcast, reconnect, close, and routing tests. |
-| `rallar-signaling` | Implemented as signaling-only | Uses global WebSocket for signaling, requires `signalingUrl`, waits for open by default. |
-| `rallar` | Compatibility alias | Same implementation as `rallar-signaling`; prefer the explicit provider name in new recipes. |
-| `rallar-browser` | Browser-backed Rallar provider | Uses Playwright plus the browser Rallar facade. Provider registration, `rtc.connect`, `rtc.close`, event bridging, realtime sends, `messages.rtc` sends, cleanup, diagnostics, and operational docs are implemented at provider-test level. |
-| Direct non-browser Rallar RTC adapter | Deferred | Browser-backed providers are the current real RTC path. Add a direct adapter only if a future runner use case needs it without a browser. |
+| Provider                              | Status                         | Purpose                                                                                                                                                                                                                                     |
+| ------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rallar-stub`                         | Implemented                    | Simple fake provider for smoke tests and runner validation.                                                                                                                                                                                 |
+| `rallar-memory`                       | Implemented                    | Deterministic multi-peer runtime for direct, broadcast, reconnect, close, and routing tests.                                                                                                                                                |
+| `rallar-signaling`                    | Implemented as signaling-only  | Uses global WebSocket for signaling, requires `signalingUrl`, waits for open by default.                                                                                                                                                    |
+| `rallar`                              | Compatibility alias            | Same implementation as `rallar-signaling`; prefer the explicit provider name in new recipes.                                                                                                                                                |
+| `rallar-browser`                      | Browser-backed Rallar provider | Uses Playwright plus the browser Rallar facade. Provider registration, `rtc.connect`, `rtc.close`, event bridging, realtime sends, `messages.rtc` sends, cleanup, diagnostics, and operational docs are implemented at provider-test level. |
+| Direct non-browser Rallar RTC adapter | Deferred                       | Browser-backed providers are the current real RTC path. Add a direct adapter only if a future runner use case needs it without a browser.                                                                                                   |
 
 ## Current `rallar-signaling` Meaning
 
 The CLI provider named `rallar-signaling` currently maps to:
 
 ```ts
-createRallarWebRtcWebSocketSignalingProvider()
+createRallarWebRtcWebSocketSignalingProvider();
 ```
 
 The legacy provider name `rallar` is still registered as a compatibility alias.
@@ -526,15 +526,15 @@ Companion coverage outside the runner is now documented and guarded:
 
 ## Important Naming Distinction
 
-| Factory | Meaning |
-| --- | --- |
+| Factory                                          | Meaning                                                                             |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------- |
 | `createRallarWebRtcWebSocketSignalingProvider()` | Current default CLI `rallar` provider. Uses global WebSocket and is signaling-only. |
-| `createRallarBrowserRtcProvider()` | Opt-in Playwright/Vite browser provider named `rallar-browser`. |
-| `createRallarWebRtcSignalingOnlyProvider(...)` | Test/provider wrapper around an injected signaling factory. |
-| `createRallarWebRtcSignalingOnlyRuntime(...)` | Runtime adapter exposing a signaling session through the generic RTC contract. |
-| `createRallarWebRtcProvider(...)` | Wrapper around the future/real WebRTC runtime. Not the current CLI default. |
-| `createRallarWebRtcRuntime(...)` | Runtime entry point that can be backed by an injected `createSession`. |
-| `createRallarInMemoryProvider(...)` | Deterministic in-memory multi-peer provider. |
+| `createRallarBrowserRtcProvider()`               | Opt-in Playwright/Vite browser provider named `rallar-browser`.                     |
+| `createRallarWebRtcSignalingOnlyProvider(...)`   | Test/provider wrapper around an injected signaling factory.                         |
+| `createRallarWebRtcSignalingOnlyRuntime(...)`    | Runtime adapter exposing a signaling session through the generic RTC contract.      |
+| `createRallarWebRtcProvider(...)`                | Wrapper around the future/real WebRTC runtime. Not the current CLI default.         |
+| `createRallarWebRtcRuntime(...)`                 | Runtime entry point that can be backed by an injected `createSession`.              |
+| `createRallarInMemoryProvider(...)`              | Deterministic in-memory multi-peer provider.                                        |
 
 ## Current Boundary
 
@@ -554,14 +554,14 @@ The adapter already plugs into the existing runtime/client seam:
 
 ```ts
 createRallarRtcProvider({
-  createClient: (args, config, context) => {
-    return createRallarRtcClientFromRuntime(args, {
-      connect: (runtimeArgs, dispatcher) => {
-        // create and wrap browser-backed Rallar session here
-      }
-    })
-  }
-})
+    createClient: (args, config, context) => {
+        return createRallarRtcClientFromRuntime(args, {
+            connect: (runtimeArgs, dispatcher) => {
+                // create and wrap browser-backed Rallar session here
+            }
+        });
+    }
+});
 ```
 
 Provider-mode realtime sends now resolve `expect.connection` to live browser session IDs. Provider-mode `messages.rtc` sends resolve `expect.connection` to `nextHopPeerIds`. The remaining work is live-service hardening.

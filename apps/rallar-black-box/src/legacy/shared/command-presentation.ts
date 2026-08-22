@@ -1,7 +1,7 @@
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestResult,
-    RallarBlackBoxTestRuntimeStatus,
+    RallarBlackBoxTestRuntimeStatus
 } from '@shared-test/rallar-bb-test/types.ts';
 
 export function commandId(command: RallarBlackBoxTestCommand, index: number): string {

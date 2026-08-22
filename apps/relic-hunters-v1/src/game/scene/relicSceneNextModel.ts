@@ -26,7 +26,7 @@ export const NEON_ROOM_GRID_SCALE = 15.2;
 export const RELIC_SCENE_NEXT_CAMERA_MODES: readonly RelicSceneNextCameraMode[] = [
     'avatar',
     'first-person',
-    'overview',
+    'overview'
 ] as const;
 
 export const RELIC_SCENE_NEXT_FLYOVER_DURATION_MS = 6200;
@@ -36,42 +36,42 @@ export const RELIC_SCENE_NEXT_VISUAL_CONTRACT = {
     minAverageLuma: 0.28,
     maxDarkPixelRatio: 0.62,
     minNeonPixelRatio: 0.035,
-    persistentHudBudgetDesktop: 0.25,
+    persistentHudBudgetDesktop: 0.25
 } as const;
 
 const BLACK_HUMOUR_SIGNS: Record<RelicRoom['kind'], readonly string[]> = {
     entrance: [
         'Welcome. Liability has already escaped.',
-        'Visitor badge optional. Survival less so.',
+        'Visitor badge optional. Survival less so.'
     ],
     hallway: [
         'Queue here for ominous certainty.',
-        'This corridor has been optimized for regret.',
+        'This corridor has been optimized for regret.'
     ],
     storage: [
         'Inventory says nothing is missing. Bold claim.',
-        'Please alphabetize the cursed assets.',
+        'Please alphabetize the cursed assets.'
     ],
     shrine: [
         'Morale Compliance Shrine',
-        'Pray quickly. The meter is running.',
+        'Pray quickly. The meter is running.'
     ],
     trap: [
         'Safety Third',
-        'Caution: floor pursuing new opportunities.',
+        'Caution: floor pursuing new opportunities.'
     ],
     treasure: [
         'Executive Bonus Vault',
-        'Please declare all stolen destiny.',
+        'Please declare all stolen destiny.'
     ],
     monster: [
         'Employee Wellness Kennel',
-        'Do not feed the quarterly predator.',
+        'Do not feed the quarterly predator.'
     ],
     exit: [
         'Exit Through Gift Shop Protocol',
-        'Emergency evacuation, premium tier only.',
-    ],
+        'Emergency evacuation, premium tier only.'
+    ]
 };
 
 export function facilityRoomPosition(room: Pick<RelicRoom, 'x' | 'z'>): Vector3 {
@@ -88,20 +88,20 @@ export function calculateFacilityBounds(map: readonly Pick<RelicRoom, 'x' | 'z'>
         minX: Math.min(...xs),
         maxX: Math.max(...xs),
         minZ: Math.min(...zs),
-        maxZ: Math.max(...zs),
+        maxZ: Math.max(...zs)
     };
 }
 
 export function projectFacilityMapPoint(
     room: Pick<RelicRoom, 'x' | 'z'>,
     bounds: FacilityBounds,
-    padding = 11,
+    padding = 11
 ): FacilityPoint {
     const width = Math.max(1, bounds.maxX - bounds.minX);
     const depth = Math.max(1, bounds.maxZ - bounds.minZ);
     return {
         x: padding + ((room.x - bounds.minX) / width) * (100 - padding * 2),
-        y: padding + ((room.z - bounds.minZ) / depth) * (100 - padding * 2),
+        y: padding + ((room.z - bounds.minZ) / depth) * (100 - padding * 2)
     };
 }
 
@@ -109,7 +109,7 @@ export function shouldShowFacilityMapLabel({
     room,
     selectedRoomId,
     localRoomId,
-    exitRoomId,
+    exitRoomId
 }: Readonly<{
     room: Pick<RelicRoom, 'id' | 'kind'>;
     selectedRoomId?: string;
@@ -144,7 +144,7 @@ export function planNeonTacticalCameraPose({
     localPlayerId,
     selectedRoomId,
     focusRoomId,
-    aspectRatio,
+    aspectRatio
 }: Readonly<{
     snapshot: RelicPublicSnapshot;
     localPlayerId?: string;
@@ -170,17 +170,17 @@ export function planNeonTacticalCameraPose({
         position: new Vector3(
             center.x - distance * 0.54,
             height,
-            center.z - distance * 0.76,
+            center.z - distance * 0.76
         ),
         target: center,
-        fov: 0.78,
+        fov: 0.78
     };
 }
 
 export function planNeonAvatarCameraPose({
     avatarPosition,
     cameraYaw,
-    cameraPitch = 0,
+    cameraPitch = 0
 }: Readonly<{
     avatarPosition: Vector3;
     cameraYaw: number;
@@ -202,14 +202,14 @@ export function planNeonAvatarCameraPose({
     return {
         position,
         target,
-        fov: 0.86,
+        fov: 0.86
     };
 }
 
 export function planNeonFirstPersonCameraPose({
     avatarPosition,
     cameraYaw,
-    cameraPitch = 0,
+    cameraPitch = 0
 }: Readonly<{
     avatarPosition: Vector3;
     cameraYaw: number;
@@ -228,13 +228,13 @@ export function planNeonFirstPersonCameraPose({
     return {
         position: eye,
         target: eye.add(look.scale(8)),
-        fov: 0.98,
+        fov: 0.98
     };
 }
 
 export function planNeonOverviewCameraPose({
     snapshot,
-    aspectRatio,
+    aspectRatio
 }: Readonly<{
     snapshot: RelicPublicSnapshot;
     aspectRatio: number;
@@ -244,7 +244,7 @@ export function planNeonOverviewCameraPose({
         return {
             position: new Vector3(-18, 24, -26),
             target: Vector3.Zero(),
-            fov: 0.76,
+            fov: 0.76
         };
     }
     const minX = Math.min(...positions.map((position) => position.x));
@@ -262,17 +262,17 @@ export function planNeonOverviewCameraPose({
         position: new Vector3(
             center.x - distance * 0.52,
             height,
-            center.z - distance * 0.78,
+            center.z - distance * 0.78
         ),
         target: center,
-        fov: 0.74,
+        fov: 0.74
     };
 }
 
 export function planNeonFlyoverCameraPose({
     snapshot,
     progress,
-    aspectRatio,
+    aspectRatio
 }: Readonly<{
     snapshot: RelicPublicSnapshot;
     progress: number;
@@ -287,7 +287,7 @@ export function planNeonFlyoverCameraPose({
         return {
             position: center.add(new Vector3(-7, 5.6, -8)),
             target: center.add(new Vector3(0, 1.2, 0)),
-            fov: 0.82,
+            fov: 0.82
         };
     }
 
@@ -309,7 +309,7 @@ export function planNeonFlyoverCameraPose({
             .add(side.scale(1.4))
             .add(new Vector3(0, 4.9 + rise, 0)),
         target: Vector3.Lerp(next, lookahead, 0.38).add(new Vector3(0, 1.1, 0)),
-        fov: 0.84,
+        fov: 0.84
     };
 }
 
@@ -319,8 +319,8 @@ export function neonFlyoverRouteRooms(snapshot: RelicPublicSnapshot): readonly R
     const routeIds = entrance && exit
         ? shortestRoomPath(snapshot.map, entrance.id, exit.id)
         : entrance
-            ? [entrance.id]
-            : [];
+        ? [entrance.id]
+        : [];
     const route = routeIds
         .map((roomId) => snapshot.map.find((room) => room.id === roomId))
         .filter((room): room is RelicRoom => !!room);
@@ -335,7 +335,7 @@ function selectCameraFocusRooms(
     snapshot: RelicPublicSnapshot,
     localPlayerId?: string,
     selectedRoomId?: string,
-    focusRoomId?: string,
+    focusRoomId?: string
 ): readonly RelicRoom[] {
     const roomById = new Map(snapshot.map.map((room) => [room.id, room]));
     const ids = new Set<string>();
@@ -347,8 +347,12 @@ function selectCameraFocusRooms(
             ids.add(neighborId);
         }
     }
-    if (selectedRoomId) ids.add(selectedRoomId);
-    if (focusRoomId) ids.add(focusRoomId);
+    if (selectedRoomId) {
+        ids.add(selectedRoomId);
+    }
+    if (focusRoomId) {
+        ids.add(focusRoomId);
+    }
     if (ids.size === 0) {
         for (const room of snapshot.map) {
             ids.add(room.id);
@@ -363,22 +367,32 @@ function selectCameraFocusRooms(
 function shortestRoomPath(
     map: readonly RelicRoom[],
     fromRoomId: string,
-    toRoomId: string,
+    toRoomId: string
 ): readonly string[] {
-    if (fromRoomId === toRoomId) return [fromRoomId];
+    if (fromRoomId === toRoomId) {
+        return [fromRoomId];
+    }
     const roomById = new Map(map.map((room) => [room.id, room]));
     const visited = new Set<string>([fromRoomId]);
     const queue: string[][] = [[fromRoomId]];
     while (queue.length > 0) {
         const path = queue.shift()!;
         const room = roomById.get(path[path.length - 1]);
-        if (!room) continue;
+        if (!room) {
+            continue;
+        }
         for (const neighborId of room.neighbors) {
-            if (visited.has(neighborId)) continue;
+            if (visited.has(neighborId)) {
+                continue;
+            }
             const neighbor = roomById.get(neighborId);
-            if (!neighbor || neighbor.collapsed) continue;
+            if (!neighbor || neighbor.collapsed) {
+                continue;
+            }
             const next = [...path, neighborId];
-            if (neighborId === toRoomId) return next;
+            if (neighborId === toRoomId) {
+                return next;
+            }
             visited.add(neighborId);
             queue.push(next);
         }

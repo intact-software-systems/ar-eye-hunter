@@ -3,14 +3,14 @@ import {
     RECIPE_CONSOLE_RUN_STATUSES,
     type RecipeConsoleFailureCategory,
     type RecipeConsoleRunStatus,
-    type RecipeConsoleUrlState,
+    type RecipeConsoleUrlState
 } from '../routing/url-state-contract.ts';
 
 export const HISTORY_FILTER_PRESET_LIMITS = {
     count: 12,
     name: 64,
     query: 512,
-    string: 256,
+    string: 256
 } as const;
 
 export const HISTORY_FILTER_KEYS = [
@@ -21,7 +21,7 @@ export const HISTORY_FILTER_KEYS = [
     'failureCategory',
     'status',
     'from',
-    'to',
+    'to'
 ] as const;
 
 export type HistoryFilterValues = Readonly<{
@@ -48,7 +48,7 @@ const PRESET_KEY_SET = new Set<string>(PRESET_KEYS);
 
 export function createHistoryFilterPreset(
     name: string,
-    committedUrlState: RecipeConsoleUrlState,
+    committedUrlState: RecipeConsoleUrlState
 ): HistoryFilterPreset | undefined {
     const normalizedName = normalizeHistoryFilterPresetName(name);
     const filters = historyFiltersFromCommittedUrlState(committedUrlState);
@@ -58,18 +58,20 @@ export function createHistoryFilterPreset(
 }
 
 export function historyFiltersFromCommittedUrlState(
-    state: RecipeConsoleUrlState,
+    state: RecipeConsoleUrlState
 ): HistoryFilterValues | undefined {
     const candidate: Record<string, unknown> = {};
     for (const key of HISTORY_FILTER_KEYS) {
         const value = state[key];
-        if (value !== undefined) candidate[key] = value;
+        if (value !== undefined) {
+            candidate[key] = value;
+        }
     }
     return parseHistoryFilterValues(candidate);
 }
 
 export function parseHistoryFilterPreset(
-    value: unknown,
+    value: unknown
 ): HistoryFilterPreset | undefined {
     const record = exactDataRecord(value, PRESET_KEY_SET);
     if (!record || !hasOwnData(record, 'name') || !hasOwnData(record, 'filters')) {
@@ -86,40 +88,42 @@ export function parseHistoryFilterPreset(
 }
 
 export function parseHistoryFilterValues(
-    value: unknown,
+    value: unknown
 ): HistoryFilterValues | undefined {
     const record = exactDataRecord(value, FILTER_KEY_SET);
-    if (!record) return undefined;
+    if (!record) {
+        return undefined;
+    }
 
     const historyQuery = readOptionalBoundedString(
         record,
         'historyQuery',
-        HISTORY_FILTER_PRESET_LIMITS.query,
+        HISTORY_FILTER_PRESET_LIMITS.query
     );
     const historyGroup = readOptionalBoundedString(
         record,
         'historyGroup',
-        HISTORY_FILTER_PRESET_LIMITS.string,
+        HISTORY_FILTER_PRESET_LIMITS.string
     );
     const historyRecipeId = readOptionalBoundedString(
         record,
         'historyRecipeId',
-        HISTORY_FILTER_PRESET_LIMITS.string,
+        HISTORY_FILTER_PRESET_LIMITS.string
     );
     const historyProfile = readOptionalBoundedString(
         record,
         'historyProfile',
-        HISTORY_FILTER_PRESET_LIMITS.string,
+        HISTORY_FILTER_PRESET_LIMITS.string
     );
     const failureCategory = readOptionalEnum(
         record,
         'failureCategory',
-        RECIPE_CONSOLE_FAILURE_CATEGORIES,
+        RECIPE_CONSOLE_FAILURE_CATEGORIES
     );
     const status = readOptionalEnum(
         record,
         'status',
-        RECIPE_CONSOLE_RUN_STATUSES,
+        RECIPE_CONSOLE_RUN_STATUSES
     );
     const from = readOptionalEpoch(record, 'from');
     const to = readOptionalEpoch(record, 'to');
@@ -141,24 +145,26 @@ export function parseHistoryFilterValues(
         ...(failureCategory === undefined ? {} : { failureCategory }),
         ...(status === undefined ? {} : { status }),
         ...(from === undefined ? {} : { from }),
-        ...(to === undefined ? {} : { to }),
+        ...(to === undefined ? {} : { to })
     };
 }
 
 export function canonicalizeHistoryFilterPresets(
-    values: readonly unknown[],
+    values: readonly unknown[]
 ): readonly HistoryFilterPreset[] {
     let presets: readonly HistoryFilterPreset[] = [];
     for (const value of values) {
         const parsed = parseHistoryFilterPreset(value);
-        if (parsed) presets = appendNewest(presets, parsed);
+        if (parsed) {
+            presets = appendNewest(presets, parsed);
+        }
     }
     return presets;
 }
 
 export function upsertHistoryFilterPreset(
     current: readonly HistoryFilterPreset[],
-    next: HistoryFilterPreset,
+    next: HistoryFilterPreset
 ): readonly HistoryFilterPreset[] {
     const parsed = parseHistoryFilterPreset(next);
     const canonical = canonicalizeHistoryFilterPresets(current);
@@ -167,17 +173,17 @@ export function upsertHistoryFilterPreset(
 
 export function removeHistoryFilterPreset(
     current: readonly HistoryFilterPreset[],
-    name: string,
+    name: string
 ): readonly HistoryFilterPreset[] {
     const normalizedName = normalizeHistoryFilterPresetName(name);
     const canonical = canonicalizeHistoryFilterPresets(current);
     return normalizedName
-        ? canonical.filter(entry => entry.name !== normalizedName)
+        ? canonical.filter((entry) => entry.name !== normalizedName)
         : canonical;
 }
 
 export function historyFilterPresetApplyPatch(
-    preset: HistoryFilterPreset,
+    preset: HistoryFilterPreset
 ): Partial<RecipeConsoleUrlState> {
     return {
         historyQuery: preset.filters.historyQuery,
@@ -187,12 +193,12 @@ export function historyFilterPresetApplyPatch(
         failureCategory: preset.filters.failureCategory,
         status: preset.filters.status,
         from: preset.filters.from,
-        to: preset.filters.to,
+        to: preset.filters.to
     };
 }
 
 export function normalizeHistoryFilterPresetName(
-    value: string,
+    value: string
 ): string | undefined {
     const normalized = value.trim();
     return normalized && normalized.length <= HISTORY_FILTER_PRESET_LIMITS.name
@@ -204,17 +210,17 @@ const INVALID = Symbol('invalid-history-filter-value');
 
 function appendNewest(
     current: readonly HistoryFilterPreset[],
-    next: HistoryFilterPreset,
+    next: HistoryFilterPreset
 ): readonly HistoryFilterPreset[] {
     return [
-        ...current.filter(entry => entry.name !== next.name),
-        next,
+        ...current.filter((entry) => entry.name !== next.name),
+        next
     ].slice(-HISTORY_FILTER_PRESET_LIMITS.count);
 }
 
 function exactDataRecord(
     value: unknown,
-    allowedKeys: ReadonlySet<string>,
+    allowedKeys: ReadonlySet<string>
 ): DataRecord | undefined {
     if (
         !value || typeof value !== 'object' || Array.isArray(value) ||
@@ -241,7 +247,7 @@ function hasOwnData(record: DataRecord, key: string): boolean {
     const descriptor = Object.getOwnPropertyDescriptor(record, key);
     return Boolean(
         descriptor && descriptor.enumerable &&
-        Object.prototype.hasOwnProperty.call(descriptor, 'value'),
+            Object.prototype.hasOwnProperty.call(descriptor, 'value')
     );
 }
 
@@ -252,11 +258,15 @@ function ownDataValue(record: DataRecord, key: string): unknown {
 function readOptionalBoundedString(
     record: DataRecord,
     key: string,
-    maxLength: number,
+    maxLength: number
 ): string | undefined | typeof INVALID {
-    if (!hasOwnData(record, key)) return undefined;
+    if (!hasOwnData(record, key)) {
+        return undefined;
+    }
     const value = ownDataValue(record, key);
-    if (typeof value !== 'string') return INVALID;
+    if (typeof value !== 'string') {
+        return INVALID;
+    }
     const normalized = value.trim();
     return normalized && normalized.length <= maxLength
         ? normalized
@@ -266,9 +276,11 @@ function readOptionalBoundedString(
 function readOptionalEnum<const Value extends string>(
     record: DataRecord,
     key: string,
-    allowed: readonly Value[],
+    allowed: readonly Value[]
 ): Value | undefined | typeof INVALID {
-    if (!hasOwnData(record, key)) return undefined;
+    if (!hasOwnData(record, key)) {
+        return undefined;
+    }
     const value = ownDataValue(record, key);
     return typeof value === 'string' && (allowed as readonly string[]).includes(value)
         ? value as Value
@@ -277,9 +289,11 @@ function readOptionalEnum<const Value extends string>(
 
 function readOptionalEpoch(
     record: DataRecord,
-    key: string,
+    key: string
 ): number | undefined | typeof INVALID {
-    if (!hasOwnData(record, key)) return undefined;
+    if (!hasOwnData(record, key)) {
+        return undefined;
+    }
     const value = ownDataValue(record, key);
     return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
         ? value

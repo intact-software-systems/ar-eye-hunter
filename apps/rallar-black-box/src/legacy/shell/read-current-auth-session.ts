@@ -4,7 +4,8 @@ import { readSession } from '@shared/api/auth.ts';
 export function readCurrentAuthSession(): AuthSession | undefined {
     try {
         return readSession();
-    } catch {
+    }
+    catch {
         return undefined;
     }
 }

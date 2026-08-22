@@ -1,10 +1,10 @@
-import type { AuthSession, LoginRequest, LoginResponse, RegisterRequest } from '@shared/api/api-config.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+import type { AuthSession, LoginRequest, LoginResponse, RegisterRequest } from '@shared/api/api-config.ts';
 
 import type { RallarBlackBoxBootstrapConfig } from './runtime-store.ts';
 
 export type RallarBlackBoxAuthFacade = Readonly<{
-    configure(config: { apiBaseUrl?: string }): void;
+    configure(config: { apiBaseUrl?: string; }): void;
     auth: Readonly<{
         login(request: LoginRequest): Promise<LoginResponse>;
         registerAndLogin(request: RegisterRequest): Promise<LoginResponse>;
@@ -20,28 +20,29 @@ export type RallarBlackBoxLoginInput = Readonly<{
 
 export async function authenticateRallarBlackBox(
     facade: RallarBlackBoxAuthFacade,
-    input: RallarBlackBoxLoginInput,
+    input: RallarBlackBoxLoginInput
 ): Promise<AuthSession> {
     facade.configure({ apiBaseUrl: input.apiBaseUrl });
     if (!input.register) {
         return await facade.auth.login({
             username: input.username,
-            password: input.password,
+            password: input.password
         });
     }
 
     try {
         return await facade.auth.registerAndLogin({
             username: input.username,
-            password: input.password,
+            password: input.password
         });
-    } catch (error) {
+    }
+    catch (error) {
         if (!isExistingUserRegistrationError(error)) {
             throw error;
         }
         return await facade.auth.login({
             username: input.username,
-            password: input.password,
+            password: input.password
         });
     }
 }
@@ -54,7 +55,7 @@ function isExistingUserRegistrationError(error: unknown): boolean {
 
 export function bootstrapPatchFromAuthSession(
     session: AuthSession,
-    apiBaseUrl: string,
+    apiBaseUrl: string
 ): Partial<RallarBlackBoxBootstrapConfig> {
     return {
         apiBaseUrl,
@@ -63,13 +64,13 @@ export function bootstrapPatchFromAuthSession(
         rallarUsername: session.username,
         rallarPassword: undefined,
         rallarRegister: false,
-        rallarRestoreSession: true,
+        rallarRestoreSession: true
     };
 }
 
 export function bootstrapMatchesAuthSession(
     bootstrap: RallarBlackBoxBootstrapConfig,
-    session: AuthSession,
+    session: AuthSession
 ): boolean {
     return bootstrap.actor === session.username &&
         bootstrap.sessionId === session.sessionId &&

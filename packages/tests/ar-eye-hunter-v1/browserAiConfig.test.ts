@@ -8,7 +8,7 @@ import {
     DEFAULT_ARENA_WEBLLM_MODEL_ID,
     isArenaBrowserAiEnabled,
     resolveArenaBrowserAiConfig,
-    resolveArenaBrowserAiMode,
+    resolveArenaBrowserAiMode
 } from '../../../apps/ar-eye-hunter-v1/src/game/browserAiConfig.ts';
 
 describe('AR Eye Hunter browser RallarAI config', () => {
@@ -16,7 +16,7 @@ describe('AR Eye Hunter browser RallarAI config', () => {
         const env = {
             [ARENA_BROWSER_AI_MODE_ENV_KEY]: 'webllm',
             [ARENA_BROWSER_AI_ENABLED_ENV_KEY]: 'true',
-            [ARENA_BROWSER_AI_WEBLLM_MODEL_ENV_KEY]: DEFAULT_ARENA_WEBLLM_MODEL_ID,
+            [ARENA_BROWSER_AI_WEBLLM_MODEL_ENV_KEY]: DEFAULT_ARENA_WEBLLM_MODEL_ID
         };
 
         expect(resolveArenaBrowserAiMode(env)).toBe('webllm');
@@ -25,7 +25,7 @@ describe('AR Eye Hunter browser RallarAI config', () => {
             enabled: true,
             mode: 'webllm',
             modelId: DEFAULT_ARENA_WEBLLM_MODEL_ID,
-            fallbackMode: 'mock',
+            fallbackMode: 'mock'
         });
     });
 
@@ -34,19 +34,19 @@ describe('AR Eye Hunter browser RallarAI config', () => {
             enabled: true,
             mode: 'mock',
             modelId: DEFAULT_ARENA_WEBLLM_MODEL_ID,
-            fallbackMode: 'mock',
+            fallbackMode: 'mock'
         });
     });
 
     it('allows WebLLM fallback to be disabled explicitly', () => {
         expect(resolveArenaBrowserAiConfig({
             [ARENA_BROWSER_AI_MODE_ENV_KEY]: 'webllm',
-            [ARENA_BROWSER_AI_WEBLLM_FALLBACK_ENV_KEY]: 'off',
+            [ARENA_BROWSER_AI_WEBLLM_FALLBACK_ENV_KEY]: 'off'
         })).toEqual({
             enabled: true,
             mode: 'webllm',
             modelId: DEFAULT_ARENA_WEBLLM_MODEL_ID,
-            fallbackMode: 'off',
+            fallbackMode: 'off'
         });
     });
 
@@ -54,10 +54,10 @@ describe('AR Eye Hunter browser RallarAI config', () => {
         expect(resolveArenaBrowserAiMode({})).toBe('mock');
         expect(isArenaBrowserAiEnabled({
             [ARENA_BROWSER_AI_ENABLED_ENV_KEY]: 'false',
-            [ARENA_BROWSER_AI_MODE_ENV_KEY]: 'mock',
+            [ARENA_BROWSER_AI_MODE_ENV_KEY]: 'mock'
         })).toBe(false);
         expect(isArenaBrowserAiEnabled({
-            [ARENA_BROWSER_AI_MODE_ENV_KEY]: 'off',
+            [ARENA_BROWSER_AI_MODE_ENV_KEY]: 'off'
         })).toBe(false);
     });
 });

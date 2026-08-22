@@ -1,7 +1,8 @@
 function runnerProbeUrl(baseUrl: string, path: string): string {
     try {
         return new URL(path, baseUrl).toString();
-    } catch (_error) {
+    }
+    catch (_error) {
         return path;
     }
 }
@@ -14,9 +15,10 @@ export function runnerApiProbeUrl(baseUrl: string): string {
         const apiBasePath = url.pathname.replace(/\/+$/, '');
         return new URL(
             apiBasePath.endsWith('/api') ? 'config' : 'api/config',
-            url,
+            url
         ).toString();
-    } catch (_error) {
+    }
+    catch (_error) {
         return '/api/config';
     }
 }
@@ -32,14 +34,16 @@ export function runnerControlWsUrlFromHttpBaseUrl(value: string): string {
         const url = new URL(value);
         if (url.protocol === 'http:') {
             url.protocol = 'ws:';
-        } else if (url.protocol === 'https:') {
+        }
+        else if (url.protocol === 'https:') {
             url.protocol = 'wss:';
         }
         url.pathname = '/control';
         url.search = '';
         url.hash = '';
         return url.toString();
-    } catch (_error) {
+    }
+    catch (_error) {
         return 'ws://localhost:5180/control';
     }
 }

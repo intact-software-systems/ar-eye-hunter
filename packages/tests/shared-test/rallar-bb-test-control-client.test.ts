@@ -1,19 +1,16 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
-import { createRallarBlackBoxTestRuntime } from '../../../packages/shared-test/rallar-bb-test/runtime.ts';
-import type { RallarBlackBoxTestCommand } from '../../../packages/shared-test/rallar-bb-test/types.ts';
+import { RallarBlackBoxControlClient, type RallarBlackBoxControlSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-client.ts';
 import {
-    RallarBlackBoxControlClient,
-    type RallarBlackBoxControlSnapshot,
-} from '../../../packages/shared-test/rallar-bb-test/control-client.ts';
-import {
+    parseControlClientMessage,
+    parseControlServerMessage,
     type ControlClientEnvelope,
     type ControlCommandEnvelope,
     type ControlEventEnvelope,
-    type ControlResultEnvelope,
-    parseControlClientMessage,
-    parseControlServerMessage,
+    type ControlResultEnvelope
 } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
+import { createRallarBlackBoxTestRuntime } from '../../../packages/shared-test/rallar-bb-test/runtime.ts';
+import type { RallarBlackBoxTestCommand } from '../../../packages/shared-test/rallar-bb-test/types.ts';
 
 type Listener = (event: unknown) => void;
 
@@ -55,12 +52,12 @@ class FakeControlSocket {
     }
 
     private emit(type: string, event: unknown): void {
-        this.listeners.get(type)?.forEach(listener => listener(event));
+        this.listeners.get(type)?.forEach((listener) => listener(event));
     }
 }
 
 function envelopes(socket: FakeControlSocket): ControlClientEnvelope[] {
-    return socket.sent.map(serialized => JSON.parse(serialized) as ControlClientEnvelope);
+    return socket.sent.map((serialized) => JSON.parse(serialized) as ControlClientEnvelope);
 }
 
 function resultsFor(socket: FakeControlSocket, commandId: string): ControlResultEnvelope[] {
@@ -78,7 +75,7 @@ function eventsFor(socket: FakeControlSocket, kind: 'stats' | 'report'): Control
 
 function commandEnvelope(
     commandId: string,
-    command: RallarBlackBoxTestCommand,
+    command: RallarBlackBoxTestCommand
 ): ControlCommandEnvelope {
     return {
         kind: 'command',
@@ -86,7 +83,7 @@ function commandEnvelope(
         runId: 'run-1',
         agentId: 'agent-1',
         commandId,
-        command,
+        command
     };
 }
 
@@ -99,7 +96,7 @@ function memoryStorage(): Pick<Storage, 'setItem' | 'getItem' | 'clear'> {
         getItem: (key: string) => values.get(key) ?? null,
         clear: () => {
             values.clear();
-        },
+        }
     };
 }
 
@@ -109,8 +106,8 @@ function configureCommand(): RallarBlackBoxTestCommand {
         config: {
             runId: 'run-1',
             agentId: 'agent-1',
-            actor: 'alice',
-        },
+            actor: 'alice'
+        }
     };
 }
 
@@ -121,7 +118,7 @@ describe('shared rallar black-box control client', () => {
             state: 'idle',
             reconnectAttempt: 0,
             sentCount: 0,
-            receivedCount: 0,
+            receivedCount: 0
         };
         expect(snapshot.state).toBe('idle');
     });
@@ -129,7 +126,7 @@ describe('shared rallar black-box control client', () => {
     it('validates control command envelopes', () => {
         const valid = parseControlServerMessage(
             JSON.stringify(commandEnvelope('configure-1', configureCommand())),
-            { runId: 'run-1', agentId: 'agent-1' },
+            { runId: 'run-1', agentId: 'agent-1' }
         );
 
         expect(valid.ok).toBe(true);
@@ -140,9 +137,9 @@ describe('shared rallar black-box control client', () => {
                 kind: 'loop',
                 commandId: 'loop-1',
                 count: 2,
-                commands: [{ kind: 'health', commandId: 'loop-health' }],
+                commands: [{ kind: 'health', commandId: 'loop-health' }]
             })),
-            { runId: 'run-1', agentId: 'agent-1' },
+            { runId: 'run-1', agentId: 'agent-1' }
         );
         expect(loop.ok).toBe(true);
 
@@ -156,10 +153,10 @@ describe('shared rallar black-box control client', () => {
                     topic: 'rallar.bb.ws.message',
                     transport: 'ws',
                     payloadPath: 'data.topic',
-                    contains: 'chat',
-                },
+                    contains: 'chat'
+                }
             })),
-            { runId: 'run-1', agentId: 'agent-1' },
+            { runId: 'run-1', agentId: 'agent-1' }
         );
         expect(wait.ok).toBe(true);
 
@@ -169,9 +166,9 @@ describe('shared rallar black-box control client', () => {
                 commandId: 'assert-1',
                 source: 'state.messages.length',
                 operator: 'gte',
-                expected: 1,
+                expected: 1
             })),
-            { runId: 'run-1', agentId: 'agent-1' },
+            { runId: 'run-1', agentId: 'agent-1' }
         );
         expect(assertCommand.ok).toBe(true);
 
@@ -187,9 +184,9 @@ describe('shared rallar black-box control client', () => {
                 intentTypeId: 'app.test.director.intent',
                 outputTypeId: 'app.test.director.output',
                 heartbeatIntervalMs: 300,
-                snapshotIntervalMs: 500,
+                snapshotIntervalMs: 500
             })),
-            { runId: 'run-1', agentId: 'agent-1' },
+            { runId: 'run-1', agentId: 'agent-1' }
         );
         expect(directorCommand.ok).toBe(true);
 
@@ -203,16 +200,16 @@ describe('shared rallar black-box control client', () => {
                     commands: [
                         {
                             kind: 'health',
-                            commandId: 'versioned-health-1',
-                        },
-                    ],
-                },
+                            commandId: 'versioned-health-1'
+                        }
+                    ]
+                }
             })),
-            { runId: 'run-1', agentId: 'agent-1' },
+            { runId: 'run-1', agentId: 'agent-1' }
         );
         expect(versionedRecipeLoad.ok).toBe(true);
         expect(versionedRecipeLoad.ok ? versionedRecipeLoad.envelope.command.commandId : '').toBe(
-            'recipe-load-versioned-1',
+            'recipe-load-versioned-1'
         );
 
         const rtcReadinessRecipeLoad = parseControlServerMessage(
@@ -234,13 +231,13 @@ describe('shared rallar black-box control client', () => {
                             readiness: {
                                 minReadyPeers: 1,
                                 timeoutMs: 10_000,
-                                intervalMs: 100,
-                            },
-                        },
-                    ],
-                },
+                                intervalMs: 100
+                            }
+                        }
+                    ]
+                }
             })),
-            { runId: 'run-1', agentId: 'agent-1' },
+            { runId: 'run-1', agentId: 'agent-1' }
         );
         expect(rtcReadinessRecipeLoad.ok).toBe(true);
 
@@ -257,17 +254,17 @@ describe('shared rallar black-box control client', () => {
                             commandId: 'rtc-connect-invalid-ready',
                             connection: 'rtc',
                             readiness: {
-                                timeoutMs: 0,
-                            },
-                        },
-                    ],
-                },
+                                timeoutMs: 0
+                            }
+                        }
+                    ]
+                }
             })),
-            { runId: 'run-1', agentId: 'agent-1' },
+            { runId: 'run-1', agentId: 'agent-1' }
         );
         expect(invalidRtcReadinessRecipeLoad).toEqual({
             ok: false,
-            error: 'Control command payload is invalid: recipe.load.recipe.commands[0]: rtc.readiness.timeoutMs must be >= 1.',
+            error: 'Control command payload is invalid: recipe.load.recipe.commands[0]: rtc.readiness.timeoutMs must be >= 1.'
         });
 
         const invalidRtc = parseControlServerMessage(
@@ -276,45 +273,45 @@ describe('shared rallar black-box control client', () => {
                 commandId: 'rtc-invalid-room',
                 roomId: 'bad room',
                 applicationId: 'rallar-server',
-                workspaceId: 'default',
+                workspaceId: 'default'
             })),
-            { runId: 'run-1', agentId: 'agent-1' },
+            { runId: 'run-1', agentId: 'agent-1' }
         );
         expect(invalidRtc.ok).toBe(false);
         expect(invalidRtc.ok ? [] : invalidRtc.issues).toEqual([
             {
                 path: 'rtc.roomId',
                 code: 'invalid-route-id',
-                message: expect.stringContaining('Room ID'),
-            },
+                message: expect.stringContaining('Room ID')
+            }
         ]);
 
         const mismatchedRun = parseControlServerMessage(
             JSON.stringify({
                 ...commandEnvelope('configure-1', configureCommand()),
-                runId: 'other-run',
+                runId: 'other-run'
             }),
-            { runId: 'run-1', agentId: 'agent-1' },
+            { runId: 'run-1', agentId: 'agent-1' }
         );
 
         expect(mismatchedRun).toEqual({
             ok: false,
-            error: 'Control command runId does not match this agent.',
+            error: 'Control command runId does not match this agent.'
         });
 
         const unsupportedCommand = parseControlServerMessage(
             JSON.stringify({
                 ...commandEnvelope('unknown-1', configureCommand()),
                 command: {
-                    kind: 'script.eval',
-                },
+                    kind: 'script.eval'
+                }
             }),
-            { runId: 'run-1', agentId: 'agent-1' },
+            { runId: 'run-1', agentId: 'agent-1' }
         );
 
         expect(unsupportedCommand).toEqual({
             ok: false,
-            error: 'Control command payload is invalid: Command must be an object with a supported kind.',
+            error: 'Control command payload is invalid: Command must be an object with a supported kind.'
         });
     });
 
@@ -324,14 +321,14 @@ describe('shared rallar black-box control client', () => {
         const client = new RallarBlackBoxControlClient({
             runtime,
             heartbeatIntervalMs: 60_000,
-            webSocketFactory: () => socket,
+            webSocketFactory: () => socket
         });
 
         try {
             client.connect({
                 url: 'ws://control.example.test',
                 runId: 'run-1',
-                agentId: 'agent-1',
+                agentId: 'agent-1'
             });
             socket.open();
 
@@ -340,8 +337,8 @@ describe('shared rallar black-box control client', () => {
                 runId: 'run-1',
                 agentId: 'agent-1',
                 identity: {
-                    sessionLabel: 'agent-1',
-                },
+                    sessionLabel: 'agent-1'
+                }
             });
 
             socket.message(JSON.stringify(commandEnvelope('configure-1', configureCommand())));
@@ -354,17 +351,20 @@ describe('shared rallar black-box control client', () => {
                 kind: 'result',
                 commandId: 'configure-1',
                 ok: true,
-                replayed: false,
+                replayed: false
             });
-            expect(envelopes(socket).some(envelope =>
-                envelope.kind === 'diagnostic' &&
-                envelope.commandId === 'configure-1'
-            )).toBe(true);
+            expect(
+                envelopes(socket).some((envelope) =>
+                    envelope.kind === 'diagnostic' &&
+                    envelope.commandId === 'configure-1'
+                )
+            ).toBe(true);
             expect(client.currentSnapshot()).toMatchObject({
                 state: 'registered',
-                receivedCount: 1,
+                receivedCount: 1
             });
-        } finally {
+        }
+        finally {
             client.dispose();
         }
     });
@@ -384,12 +384,12 @@ describe('shared rallar black-box control client', () => {
                     applicationId: 'rallar-server',
                     workspaceId: 'default',
                     groupId: 'bb-group',
-                    providerMode: 'browser-rallar',
+                    providerMode: 'browser-rallar'
                 },
                 browser: {
                     name: 'chromium',
                     version: '126',
-                    os: 'linux',
+                    os: 'linux'
                 },
                 fleet: {
                     region: 'eu-north',
@@ -399,26 +399,26 @@ describe('shared rallar black-box control client', () => {
                         latitude: 52.5333,
                         longitude: 13.3833,
                         label: 'fsn1 worker rack',
-                        precision: 'exact',
+                        precision: 'exact'
                     },
                     hostId: 'host-1',
                     agentPoolId: 'pool-a',
                     deploymentId: 'deploy-1',
-                    tags: ['canary', 'rtc'],
-                },
-            },
+                    tags: ['canary', 'rtc']
+                }
+            }
         });
         const client = new RallarBlackBoxControlClient({
             runtime,
             heartbeatIntervalMs: 60_000,
-            webSocketFactory: () => socket,
+            webSocketFactory: () => socket
         });
 
         try {
             client.connect({
                 url: 'ws://control.example.test',
                 runId: 'run-1',
-                agentId: 'agent-1',
+                agentId: 'agent-1'
             });
             socket.open();
 
@@ -433,7 +433,7 @@ describe('shared rallar black-box control client', () => {
                         latitude: 52.5333,
                         longitude: 13.3833,
                         label: 'fsn1 worker rack',
-                        precision: 'exact',
+                        precision: 'exact'
                     },
                     hostId: 'host-1',
                     agentPoolId: 'pool-a',
@@ -445,15 +445,15 @@ describe('shared rallar black-box control client', () => {
                     capabilities: {
                         crdt: {
                             supported: true,
-                            apiBaseUrlConfigured: true,
-                        },
-                    },
-                },
+                            apiBaseUrlConfigured: true
+                        }
+                    }
+                }
             });
             expect(
                 register.kind === 'register'
                     ? register.identity?.capabilities?.crdt?.transports
-                    : [],
+                    : []
             ).toContain('rtc-with-ws-fallback');
 
             const parsed = parseControlClientMessage(JSON.stringify(register));
@@ -467,17 +467,18 @@ describe('shared rallar black-box control client', () => {
                         latitude: 52.5333,
                         longitude: 13.3833,
                         label: 'fsn1 worker rack',
-                        precision: 'exact',
+                        precision: 'exact'
                     },
                     capabilities: {
                         crdt: {
                             supported: true,
-                            transports: expect.arrayContaining(['local-only', 'ws', 'rtc']),
-                        },
-                    },
-                },
+                            transports: expect.arrayContaining(['local-only', 'ws', 'rtc'])
+                        }
+                    }
+                }
             });
-        } finally {
+        }
+        finally {
             client.dispose();
         }
     });
@@ -488,7 +489,7 @@ describe('shared rallar black-box control client', () => {
         const client = new RallarBlackBoxControlClient({
             runtime,
             heartbeatIntervalMs: 60_000,
-            webSocketFactory: () => socket,
+            webSocketFactory: () => socket
         });
         const command = JSON.stringify(commandEnvelope('configure-1', configureCommand()));
 
@@ -496,7 +497,7 @@ describe('shared rallar black-box control client', () => {
             client.connect({
                 url: 'ws://control.example.test',
                 runId: 'run-1',
-                agentId: 'agent-1',
+                agentId: 'agent-1'
             });
             socket.open();
             socket.message(command);
@@ -514,9 +515,12 @@ describe('shared rallar black-box control client', () => {
             const results = resultsFor(socket, 'configure-1');
             expect(results[0].replayed).toBe(false);
             expect(results[1].replayed).toBe(true);
-            expect(runtime.state().commandHistory
-                .filter(result => result.commandId === 'configure-1')).toHaveLength(1);
-        } finally {
+            expect(
+                runtime.state().commandHistory
+                    .filter((result) => result.commandId === 'configure-1')
+            ).toHaveLength(1);
+        }
+        finally {
             client.dispose();
         }
     });
@@ -535,14 +539,14 @@ describe('shared rallar black-box control client', () => {
                 const socket = new FakeControlSocket();
                 sockets.push(socket);
                 return socket;
-            },
+            }
         });
 
         try {
             client.connect({
                 url: 'ws://control.example.test',
                 runId: 'run-1',
-                agentId: 'agent-1',
+                agentId: 'agent-1'
             });
             sockets[0].open();
             sockets[0].message(JSON.stringify(commandEnvelope('configure-1', configureCommand())));
@@ -566,11 +570,12 @@ describe('shared rallar black-box control client', () => {
             expect(envelopes(sockets[1])[0]).toMatchObject({
                 kind: 'register',
                 resume: {
-                    completedCommandIds: ['configure-1'],
-                },
+                    completedCommandIds: ['configure-1']
+                }
             });
             expect(resultsFor(sockets[1], 'configure-1')[0].replayed).toBe(true);
-        } finally {
+        }
+        finally {
             client.dispose();
             vi.useRealTimers();
         }
@@ -585,14 +590,14 @@ describe('shared rallar black-box control client', () => {
             runtime,
             heartbeatIntervalMs: 60_000,
             statsIntervalMs: 25,
-            webSocketFactory: () => socket,
+            webSocketFactory: () => socket
         });
 
         try {
             client.connect({
                 url: 'ws://control.example.test',
                 runId: 'run-1',
-                agentId: 'agent-1',
+                agentId: 'agent-1'
             });
             socket.open();
 
@@ -600,7 +605,7 @@ describe('shared rallar black-box control client', () => {
 
             await runtime.execute({
                 ...configureCommand(),
-                commandId: 'configure-local-1',
+                commandId: 'configure-local-1'
             });
 
             await vi.advanceTimersByTimeAsync(25);
@@ -612,7 +617,8 @@ describe('shared rallar black-box control client', () => {
             expect(statsEvent.topic).toBe('rallar.bb.stats');
             expect(statsEvent.payload.counters.commands).toBe(1);
             expect(client.currentSnapshot().lastStatsAtEpochMs).toBeDefined();
-        } finally {
+        }
+        finally {
             client.dispose();
             vi.useRealTimers();
         }
@@ -631,10 +637,10 @@ describe('shared rallar black-box control client', () => {
             uploads.push({
                 url: String(input),
                 body: JSON.parse(String(init?.body ?? '{}')) as ControlClientEnvelope,
-                authorization: headers.get('authorization') ?? undefined,
+                authorization: headers.get('authorization') ?? undefined
             });
             return new Response('{}', {
-                status: 202,
+                status: 202
             });
         });
         const client = new RallarBlackBoxControlClient({
@@ -644,14 +650,14 @@ describe('shared rallar black-box control client', () => {
             statsIntervalMs: 0,
             finalReportUploadUrl: 'http://control.example.test/runs/run-1/agents/agent-1/report',
             token: 'run-token-1',
-            webSocketFactory: () => socket,
+            webSocketFactory: () => socket
         });
 
         try {
             client.connect({
                 url: 'ws://control.example.test',
                 runId: 'run-1',
-                agentId: 'agent-1',
+                agentId: 'agent-1'
             });
             socket.open();
 
@@ -662,9 +668,9 @@ describe('shared rallar black-box control client', () => {
                     runId: 'run-1',
                     agentId: 'agent-1',
                     rallar: {
-                        token: 'secret-token',
-                    },
-                },
+                        token: 'secret-token'
+                    }
+                }
             });
 
             client.disconnect();
@@ -681,7 +687,7 @@ describe('shared rallar black-box control client', () => {
             const uploadedBody = uploads[0].body;
             if (uploadedBody.kind !== 'report') {
                 throw new Error(
-                    `expected an uploaded report envelope, received ${uploadedBody.kind}`,
+                    `expected an uploaded report envelope, received ${uploadedBody.kind}`
                 );
             }
             const uploadedEvent = uploadedBody.payload as any;
@@ -694,7 +700,8 @@ describe('shared rallar black-box control client', () => {
             expect(socketEvent.payload.results).toBeUndefined();
             expect(socketEvent.payload.events).toBeUndefined();
             expect(client.currentSnapshot().lastReportAtEpochMs).toBeDefined();
-        } finally {
+        }
+        finally {
             client.dispose();
         }
     });
@@ -708,7 +715,7 @@ describe('shared rallar black-box control client', () => {
             runtime,
             heartbeatIntervalMs: 60_000,
             statsIntervalMs: 0,
-            webSocketFactory: () => socket,
+            webSocketFactory: () => socket
         });
 
         try {
@@ -717,11 +724,11 @@ describe('shared rallar black-box control client', () => {
             client.connect({
                 url: 'ws://control.example.test',
                 runId: 'run-1',
-                agentId: 'agent-1',
+                agentId: 'agent-1'
             });
             socket.open();
             socket.message(JSON.stringify(commandEnvelope('reset-1', {
-                kind: 'reset',
+                kind: 'reset'
             })));
 
             await vi.waitFor(() => {
@@ -730,12 +737,15 @@ describe('shared rallar black-box control client', () => {
 
             expect(localStorage.getItem('rallar-secret')).toBeNull();
             expect(sessionStorage.getItem('rallar-session-secret')).toBeNull();
-            expect(envelopes(socket).some(envelope =>
-                envelope.kind === 'diagnostic' &&
-                envelope.commandId === 'reset-1' &&
-                (envelope.payload as any).topic === 'rallar.bb.control.browser_storage_cleaned'
-            )).toBe(true);
-        } finally {
+            expect(
+                envelopes(socket).some((envelope) =>
+                    envelope.kind === 'diagnostic' &&
+                    envelope.commandId === 'reset-1' &&
+                    (envelope.payload as any).topic === 'rallar.bb.control.browser_storage_cleaned'
+                )
+            ).toBe(true);
+        }
+        finally {
             client.dispose();
             vi.unstubAllGlobals();
         }

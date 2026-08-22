@@ -1,13 +1,10 @@
 import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { useMemo, useState } from 'react';
-import {
-    deriveControlAgentBoardRows,
-    summarizeControlAgentBoardRows,
-} from '../../../control-agent-board.ts';
+import { deriveControlAgentBoardRows, summarizeControlAgentBoardRows } from '../../../control-agent-board.ts';
 import type {
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
-    RallarBlackBoxDistributedTargetResolution,
+    RallarBlackBoxDistributedTargetResolution
 } from '../../../control-run-manager.ts';
 import {
     buildDistributedRunManifest,
@@ -17,23 +14,23 @@ import {
     reconcileDistributedRecipeTargetIds,
     type DistributedRecipeRolePattern,
     type DistributedRecipeTargetPolicyMode,
-    type DistributedRunAgentProgressRow,
+    type DistributedRunAgentProgressRow
 } from '../../../distributed-recipes.ts';
 import {
     RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS,
     RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
-    RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
+    RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID
 } from '../../../recipe-fixtures.ts';
 import { validateSchemaAuthoringValue } from '../../../schema-authoring.ts';
-import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { safeIdSegment } from '../../shared/safe-id-segment.ts';
 import { uniqueValues } from '../../shared/unique-values.ts';
-import {
-    DISTRIBUTED_RECIPE_CATALOG,
-    configuredDistributedRecipeCatalogItem,
-    distributedRecipeMatches,
-} from './distributed-recipe-catalog.ts';
+import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { validateDistributedRecipeManifest } from './distributed-manifest-validation.ts';
+import {
+    configuredDistributedRecipeCatalogItem,
+    DISTRIBUTED_RECIPE_CATALOG,
+    distributedRecipeMatches
+} from './distributed-recipe-catalog.ts';
 
 type UseDistributedRecipeBuilderInput = Readonly<{
     globalValues: CommandCenterGlobalValues;
@@ -56,44 +53,43 @@ export function useDistributedRecipeBuilder({
     targetResolutionPreview,
     monitorAgentProgress,
     initialDistributedRunId,
-    diagnosticSelectionIssue,
+    diagnosticSelectionIssue
 }: UseDistributedRecipeBuilderInput) {
     const [distributedRunId, setDistributedRunId] = useState(
-        () => initialDistributedRunId ??
-            `dist-${safeIdSegment(globalValues.roomId || 'group')}-${Date.now()}`,
+        () =>
+            initialDistributedRunId ??
+                `dist-${safeIdSegment(globalValues.roomId || 'group')}-${Date.now()}`
     );
     const [query, setQuery] = useState('');
     const [profile, setProfile] = useState('');
-    const [selectedRecipeIds, setSelectedRecipeIds] = useState<
-        readonly string[]
-    >(() => DISTRIBUTED_RECIPE_CATALOG.slice(0, 1).map((item) => item.itemId));
-    const [rtcRealtimeDurationSeconds, setRtcRealtimeDurationSeconds] =
-        useState(RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS);
-    const [targetPolicyMode, setTargetPolicyMode] =
-        useState<DistributedRecipeTargetPolicyMode>('selected-agents');
-    const [rolePattern, setRolePattern] =
-        useState<DistributedRecipeRolePattern>('all-agents');
+    const [selectedRecipeIds, setSelectedRecipeIds] = useState<readonly string[]>(() =>
+        DISTRIBUTED_RECIPE_CATALOG.slice(0, 1).map((item) => item.itemId)
+    );
+    const [rtcRealtimeDurationSeconds, setRtcRealtimeDurationSeconds] = useState(
+        RALLAR_BLACK_BOX_RTC_REALTIME_DEFAULT_DURATION_SECONDS
+    );
+    const [targetPolicyMode, setTargetPolicyMode] = useState<DistributedRecipeTargetPolicyMode>('selected-agents');
+    const [rolePattern, setRolePattern] = useState<DistributedRecipeRolePattern>('all-agents');
     const [expectedParticipantCount, setExpectedParticipantCount] = useState(50);
     const [ackTimeoutMs, setAckTimeoutMs] = useState(15_000);
     const [barrierEnabled, setBarrierEnabled] = useState(false);
     const [barrierTimeoutMs, setBarrierTimeoutMs] = useState(15_000);
-    const [startMode, setStartMode] =
-        useState<RallarBlackBoxDistributedRunManifest['startMode']>('manual');
+    const [startMode, setStartMode] = useState<RallarBlackBoxDistributedRunManifest['startMode']>('manual');
     const [startDelayMs, setStartDelayMs] = useState(3_000);
     const [selectedAgentIds, setSelectedAgentIds] = useState<readonly string[]>(
-        [],
+        []
     );
     const groupRef = useMemo(
         () => ({
             applicationId: globalValues.applicationId,
             workspaceId: globalValues.workspaceId,
-            groupId: globalValues.roomId,
+            groupId: globalValues.roomId
         }),
         [
             globalValues.applicationId,
             globalValues.roomId,
-            globalValues.workspaceId,
-        ],
+            globalValues.workspaceId
+        ]
     );
     const recipeCatalog = useMemo(
         () =>
@@ -101,56 +97,51 @@ export function useDistributedRecipeBuilder({
                 configuredDistributedRecipeCatalogItem(item, {
                     group: groupRef,
                     apiBaseUrl: globalValues.apiBaseUrl,
-                    rtcRealtimeDurationSeconds,
-                }),
+                    rtcRealtimeDurationSeconds
+                })
             ),
-        [globalValues.apiBaseUrl, groupRef, rtcRealtimeDurationSeconds],
+        [globalValues.apiBaseUrl, groupRef, rtcRealtimeDurationSeconds]
     );
     const profileOptions = useMemo(
         () => uniqueValues(recipeCatalog.flatMap((item) => item.profiles)),
-        [recipeCatalog],
+        [recipeCatalog]
     );
     const filteredRecipes = useMemo(
-        () =>
-            recipeCatalog.filter((item) =>
-                distributedRecipeMatches(item, query, profile),
-            ),
-        [profile, query, recipeCatalog],
+        () => recipeCatalog.filter((item) => distributedRecipeMatches(item, query, profile)),
+        [profile, query, recipeCatalog]
     );
     const selectedRecipes = useMemo(
-        () =>
-            recipeCatalog.filter((item) =>
-                selectedRecipeIds.includes(item.itemId),
-            ),
-        [recipeCatalog, selectedRecipeIds],
+        () => recipeCatalog.filter((item) => selectedRecipeIds.includes(item.itemId)),
+        [recipeCatalog, selectedRecipeIds]
     );
     const selectedRecipePreflights = useMemo(
         () =>
             selectedRecipes.map((item) => ({
                 item,
-                preflight: distributedRecipePreflight(item.recipe),
+                preflight: distributedRecipePreflight(item.recipe)
             })),
-        [selectedRecipes],
+        [selectedRecipes]
     );
-    const selectedPreflightEffectiveOperations =
-        selectedRecipePreflights.reduce(
-            (sum, entry) => sum + entry.preflight.effectiveCommandCount,
-            0,
-        );
+    const selectedPreflightEffectiveOperations = selectedRecipePreflights.reduce(
+        (sum, entry) => sum + entry.preflight.effectiveCommandCount,
+        0
+    );
     const selectedPreflightWarnings = selectedRecipePreflights.reduce(
         (sum, entry) => sum + entry.preflight.warnings.length,
-        0,
+        0
     );
     const selectedPreflightErrors = selectedRecipePreflights.reduce(
         (sum, entry) => sum + entry.preflight.errors.length,
-        0,
+        0
     );
     const selectedPreflightCommandKinds = useMemo(
         () =>
-            Array.from(new Set(selectedRecipePreflights.flatMap(
-                (entry) => entry.preflight.commandKinds,
-            ))),
-        [selectedRecipePreflights],
+            Array.from(
+                new Set(selectedRecipePreflights.flatMap(
+                    (entry) => entry.preflight.commandKinds
+                ))
+            ),
+        [selectedRecipePreflights]
     );
     const targetRows = useMemo(
         () =>
@@ -159,17 +150,17 @@ export function useDistributedRecipeBuilder({
                 group: groupRef,
                 requiredCommandKinds: selectedPreflightCommandKinds,
                 requiredRecipes: selectedRecipes.map((item) => item.recipe),
-                nowEpochMs: Date.now(),
+                nowEpochMs: Date.now()
             }),
-        [groupRef, run, selectedPreflightCommandKinds, selectedRecipes],
+        [groupRef, run, selectedPreflightCommandKinds, selectedRecipes]
     );
     const effectiveSelectedAgentIds = useMemo(
         () => reconcileDistributedRecipeTargetIds(selectedAgentIds, targetRows),
-        [selectedAgentIds, targetRows],
+        [selectedAgentIds, targetRows]
     );
     const selectedAgentSet = useMemo(
         () => new Set(effectiveSelectedAgentIds),
-        [effectiveSelectedAgentIds],
+        [effectiveSelectedAgentIds]
     );
     const targetableRows = targetRows.filter((row) => row.targetable);
     const usesWorldFleetTargets = targetPolicyMode === 'all-online-group-members';
@@ -193,21 +184,19 @@ export function useDistributedRecipeBuilder({
             ackTimeoutMs,
             barrier: barrierEnabled
                 ? {
-                      enabled: true,
-                      timeoutMs: barrierTimeoutMs,
-                  }
+                    enabled: true,
+                    timeoutMs: barrierTimeoutMs
+                }
                 : undefined,
             startMode: startMode ?? 'manual',
-            startDeadlineEpochMs:
-                startMode === 'scheduled'
-                    ? Date.now() + Math.max(1, startDelayMs)
-                    : undefined,
-            expectedParticipantCount:
-                usesWorldFleetTargets
-                    ? expectedParticipantCount
-                    : effectiveSelectedAgentIds.length > 0
-                    ? effectiveSelectedAgentIds.length
-                    : undefined,
+            startDeadlineEpochMs: startMode === 'scheduled'
+                ? Date.now() + Math.max(1, startDelayMs)
+                : undefined,
+            expectedParticipantCount: usesWorldFleetTargets
+                ? expectedParticipantCount
+                : effectiveSelectedAgentIds.length > 0
+                ? effectiveSelectedAgentIds.length
+                : undefined
         });
     }, [
         ackTimeoutMs,
@@ -223,21 +212,23 @@ export function useDistributedRecipeBuilder({
         startDelayMs,
         startMode,
         targetPolicyMode,
-        usesWorldFleetTargets,
+        usesWorldFleetTargets
     ]);
     const manifestValidation = useMemo(
-        () => diagnosticSelectionIssue ?? (
-            manifest
-                ? validateDistributedRecipeManifest(manifest)
-                : 'Select a run, group, and at least one recipe.'),
-        [diagnosticSelectionIssue, manifest],
+        () =>
+            diagnosticSelectionIssue ?? (
+                manifest
+                    ? validateDistributedRecipeManifest(manifest)
+                    : 'Select a run, group, and at least one recipe.'
+            ),
+        [diagnosticSelectionIssue, manifest]
     );
     const worldFleetTargetGate = deriveDistributedWorldFleetTargetGate({
         usesWorldFleetTargets,
         expectedParticipantCount,
         targetResolutionPreview,
         selectedDistributedRun,
-        distributedRunId,
+        distributedRunId
     });
     const activeTargetResolution = worldFleetTargetGate.targetResolution;
     const worldFleetPreviewSelected = worldFleetTargetGate.previewSelected;
@@ -247,11 +238,11 @@ export function useDistributedRecipeBuilder({
         () =>
             manifest
                 ? validateSchemaAuthoringValue(
-                      'distributed-run-manifest',
-                      manifest,
-                  )
+                    'distributed-run-manifest',
+                    manifest
+                )
                 : undefined,
-        [manifest],
+        [manifest]
     );
     const distributedTargetAgentRows = useMemo(
         () =>
@@ -263,7 +254,7 @@ export function useDistributedRecipeBuilder({
                 distributedRuns,
                 selectedDistributedRun,
                 monitorAgentProgress: monitorAgentProgress ?? [],
-                nowEpochMs: Date.now(),
+                nowEpochMs: Date.now()
             }),
         [
             distributedRuns,
@@ -272,42 +263,75 @@ export function useDistributedRecipeBuilder({
             selectedDistributedRun,
             monitorAgentProgress,
             selectedPreflightCommandKinds,
-            selectedRecipes,
-        ],
+            selectedRecipes
+        ]
     );
     const distributedTargetAgentSummary = useMemo(
         () => summarizeControlAgentBoardRows(distributedTargetAgentRows),
-        [distributedTargetAgentRows],
+        [distributedTargetAgentRows]
     );
     const liveSelectedRecipeCount = selectedRecipes.filter(
-        (item) => item.live,
+        (item) => item.live
     ).length;
     const rtcRealtimeSelected = selectedRecipeIds.includes(
-        RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID,
+        RALLAR_BLACK_BOX_RTC_REALTIME_RECIPE_FIXTURE_ID
     );
-    const rtcRealtimeFrameCount =
-        rtcRealtimeDurationSeconds * RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ;
+    const rtcRealtimeFrameCount = rtcRealtimeDurationSeconds * RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ;
 
     return {
-        distributedRunId, setDistributedRunId, query, setQuery, profile, setProfile,
-        selectedRecipeIds, setSelectedRecipeIds, rtcRealtimeDurationSeconds,
-        setRtcRealtimeDurationSeconds, targetPolicyMode, setTargetPolicyMode,
-        rolePattern, setRolePattern, expectedParticipantCount,
-        setExpectedParticipantCount, ackTimeoutMs, setAckTimeoutMs,
-        barrierEnabled, setBarrierEnabled, barrierTimeoutMs, setBarrierTimeoutMs,
-        startMode, setStartMode, startDelayMs, setStartDelayMs,
-        selectedAgentIds: effectiveSelectedAgentIds, setSelectedAgentIds, groupRef, profileOptions,
-        filteredRecipes, selectedRecipes, selectedRecipePreflights,
-        selectedPreflightEffectiveOperations, selectedPreflightWarnings,
-        selectedPreflightErrors, targetRows, selectedAgentSet, targetableRows,
-        usesWorldFleetTargets, manifest, manifestValidation,
-        activeTargetResolution, worldFleetPreviewSelected,
-        worldFleetStageStartBlocked, worldFleetBlockReason,
-        manifestAuthoringValidation, distributedTargetAgentRows,
-        distributedTargetAgentSummary, liveSelectedRecipeCount,
-        rtcRealtimeSelected, rtcRealtimeFrameCount,
+        distributedRunId,
+        setDistributedRunId,
+        query,
+        setQuery,
+        profile,
+        setProfile,
+        selectedRecipeIds,
+        setSelectedRecipeIds,
+        rtcRealtimeDurationSeconds,
+        setRtcRealtimeDurationSeconds,
+        targetPolicyMode,
+        setTargetPolicyMode,
+        rolePattern,
+        setRolePattern,
+        expectedParticipantCount,
+        setExpectedParticipantCount,
+        ackTimeoutMs,
+        setAckTimeoutMs,
+        barrierEnabled,
+        setBarrierEnabled,
+        barrierTimeoutMs,
+        setBarrierTimeoutMs,
+        startMode,
+        setStartMode,
+        startDelayMs,
+        setStartDelayMs,
+        selectedAgentIds: effectiveSelectedAgentIds,
+        setSelectedAgentIds,
+        groupRef,
+        profileOptions,
+        filteredRecipes,
+        selectedRecipes,
+        selectedRecipePreflights,
+        selectedPreflightEffectiveOperations,
+        selectedPreflightWarnings,
+        selectedPreflightErrors,
+        targetRows,
+        selectedAgentSet,
+        targetableRows,
+        usesWorldFleetTargets,
+        manifest,
+        manifestValidation,
+        activeTargetResolution,
+        worldFleetPreviewSelected,
+        worldFleetStageStartBlocked,
+        worldFleetBlockReason,
+        manifestAuthoringValidation,
+        distributedTargetAgentRows,
+        distributedTargetAgentSummary,
+        liveSelectedRecipeCount,
+        rtcRealtimeSelected,
+        rtcRealtimeFrameCount
     };
 }
 
-export type DistributedRecipeBuilderModel =
-    ReturnType<typeof useDistributedRecipeBuilder>;
+export type DistributedRecipeBuilderModel = ReturnType<typeof useDistributedRecipeBuilder>;

@@ -1,35 +1,35 @@
 /// <reference lib="deno.ns" />
 // deno-lint-ignore-file no-explicit-any
-type ValidationMode = 'dry-run' | 'live' | 'both'
-type ValidationTransport = 'realtime' | 'messages.rtc' | 'both'
+type ValidationMode = 'dry-run' | 'live' | 'both';
+type ValidationTransport = 'realtime' | 'messages.rtc' | 'both';
 
 type CliOptions = {
-    mode: ValidationMode
-    transport: ValidationTransport
-    recordDir?: string
-    continueOnFailure: boolean
-    verbose: boolean
-    help: boolean
-}
+    mode: ValidationMode;
+    transport: ValidationTransport;
+    recordDir?: string;
+    continueOnFailure: boolean;
+    verbose: boolean;
+    help: boolean;
+};
 
 type ValidationRun = {
-    mode: Exclude<ValidationMode, 'both'>
-    transport: Exclude<ValidationTransport, 'both'>
-    scenarioPath: string
-    success: boolean
-    code: number
-    stdout: string
-    stderr: string
-    parsedReport?: any
-}
+    mode: Exclude<ValidationMode, 'both'>;
+    transport: Exclude<ValidationTransport, 'both'>;
+    scenarioPath: string;
+    success: boolean;
+    code: number;
+    stdout: string;
+    stderr: string;
+    parsedReport?: any;
+};
 
-const SCRIPT_DIR = new URL('.', import.meta.url)
-const REPO_ROOT = new URL('../../../', SCRIPT_DIR)
-const SCENARIO_CLI = new URL('./scenario-black-box.ts', SCRIPT_DIR)
+const SCRIPT_DIR = new URL('.', import.meta.url);
+const REPO_ROOT = new URL('../../../', SCRIPT_DIR);
+const SCENARIO_CLI = new URL('./scenario-black-box.ts', SCRIPT_DIR);
 const SCENARIOS: Record<Exclude<ValidationTransport, 'both'>, URL> = {
     realtime: new URL('./examples/rtc-rallar-browser-realtime.json', SCRIPT_DIR),
-    'messages.rtc': new URL('./examples/rtc-rallar-browser-messages-rtc.json', SCRIPT_DIR),
-}
+    'messages.rtc': new URL('./examples/rtc-rallar-browser-messages-rtc.json', SCRIPT_DIR)
+};
 
 const REQUIRED_LIVE_ENV = [
     'RALLAR_API_BASE_URL',
@@ -37,13 +37,13 @@ const REQUIRED_LIVE_ENV = [
     'RALLAR_ALICE_USERNAME',
     'RALLAR_ALICE_PASSWORD',
     'RALLAR_BOB_USERNAME',
-    'RALLAR_BOB_PASSWORD',
-]
+    'RALLAR_BOB_PASSWORD'
+];
 
 const SECRET_ENV = [
     'RALLAR_ALICE_PASSWORD',
-    'RALLAR_BOB_PASSWORD',
-]
+    'RALLAR_BOB_PASSWORD'
+];
 
 function usage(): string {
     return [
@@ -61,12 +61,12 @@ function usage(): string {
         '  --help                         Print this help',
         '',
         'Required for --mode=live or --mode=both:',
-        ...REQUIRED_LIVE_ENV.map(name => '  ' + name),
+        ...REQUIRED_LIVE_ENV.map((name) => '  ' + name),
         '',
         'Optional:',
         '  RALLAR_MESSAGE_TYPE_ID         Default: black-box.chat.message',
-        '  RALLAR_TOPIC_ID                Default: black-box.chat',
-    ].join('\n')
+        '  RALLAR_TOPIC_ID                Default: black-box.chat'
+    ].join('\n');
 }
 
 function parseArgs(args: string[]): CliOptions {
@@ -75,96 +75,96 @@ function parseArgs(args: string[]): CliOptions {
         transport: 'both',
         continueOnFailure: true,
         verbose: false,
-        help: false,
-    }
+        help: false
+    };
 
     for (const arg of args) {
         if (arg === '--help' || arg === '-h') {
-            options.help = true
-            continue
+            options.help = true;
+            continue;
         }
 
         if (arg === '--live') {
-            options.mode = 'live'
-            continue
+            options.mode = 'live';
+            continue;
         }
 
         if (arg === '--dry-run') {
-            options.mode = 'dry-run'
-            continue
+            options.mode = 'dry-run';
+            continue;
         }
 
         if (arg === '--fail-fast') {
-            options.continueOnFailure = false
-            continue
+            options.continueOnFailure = false;
+            continue;
         }
 
         if (arg === '--continue-on-failure') {
-            options.continueOnFailure = true
-            continue
+            options.continueOnFailure = true;
+            continue;
         }
 
         if (arg === '--verbose') {
-            options.verbose = true
-            continue
+            options.verbose = true;
+            continue;
         }
 
         if (arg.startsWith('--mode=')) {
-            const mode = arg.slice('--mode='.length)
+            const mode = arg.slice('--mode='.length);
             if (mode !== 'dry-run' && mode !== 'live' && mode !== 'both') {
-                throw new Error('Unsupported --mode value: ' + mode)
+                throw new Error('Unsupported --mode value: ' + mode);
             }
-            options.mode = mode
-            continue
+            options.mode = mode;
+            continue;
         }
 
         if (arg.startsWith('--transport=')) {
-            const transport = arg.slice('--transport='.length)
+            const transport = arg.slice('--transport='.length);
             if (
                 transport !== 'realtime' &&
                 transport !== 'messages.rtc' &&
                 transport !== 'both'
             ) {
-                throw new Error('Unsupported --transport value: ' + transport)
+                throw new Error('Unsupported --transport value: ' + transport);
             }
-            options.transport = transport
-            continue
+            options.transport = transport;
+            continue;
         }
 
         if (arg.startsWith('--record-dir=')) {
-            options.recordDir = arg.slice('--record-dir='.length)
-            continue
+            options.recordDir = arg.slice('--record-dir='.length);
+            continue;
         }
 
-        throw new Error('Unknown argument: ' + arg)
+        throw new Error('Unknown argument: ' + arg);
     }
 
-    return options
+    return options;
 }
 
 function filePath(url: URL): string {
-    return decodeURIComponent(url.pathname)
+    return decodeURIComponent(url.pathname);
 }
 
 function repoRelativePath(url: URL): string {
-    const root = filePath(REPO_ROOT).replace(/\/$/, '') + '/'
-    const path = filePath(url)
-    return path.startsWith(root) ? path.slice(root.length) : path
+    const root = filePath(REPO_ROOT).replace(/\/$/, '') + '/';
+    const path = filePath(url);
+    return path.startsWith(root) ? path.slice(root.length) : path;
 }
 
 function selectedModes(mode: ValidationMode): Array<Exclude<ValidationMode, 'both'>> {
-    return mode === 'both' ? ['dry-run', 'live'] : [mode]
+    return mode === 'both' ? ['dry-run', 'live'] : [mode];
 }
 
 function selectedTransports(
-    transport: ValidationTransport,
+    transport: ValidationTransport
 ): Array<Exclude<ValidationTransport, 'both'>> {
-    return transport === 'both' ? ['realtime', 'messages.rtc'] : [transport]
+    return transport === 'both' ? ['realtime', 'messages.rtc'] : [transport];
 }
 
 function envOrDefault(name: string, fallback: string): string {
-    const value = Deno.env.get(name)
-    return value && value.length > 0 ? value : fallback
+    const value = Deno.env.get(name);
+    return value && value.length > 0 ? value : fallback;
 }
 
 function toReplacementMap(): Record<string, string> {
@@ -176,74 +176,74 @@ function toReplacementMap(): Record<string, string> {
         bobUsername: envOrDefault('RALLAR_BOB_USERNAME', 'bob'),
         bobPassword: envOrDefault('RALLAR_BOB_PASSWORD', 'secret'),
         messageTypeId: envOrDefault('RALLAR_MESSAGE_TYPE_ID', 'black-box.chat.message'),
-        topicId: envOrDefault('RALLAR_TOPIC_ID', 'black-box.chat'),
-    }
+        topicId: envOrDefault('RALLAR_TOPIC_ID', 'black-box.chat')
+    };
 }
 
 function assertReplacementValuesAreCliSafe(replacements: Record<string, string>): void {
     const unsafeNames = Object.entries(replacements)
         .filter(([, value]) => value.includes(','))
-        .map(([name]) => name)
+        .map(([name]) => name);
 
     if (unsafeNames.length > 0) {
         throw new Error(
             'Replacement values cannot contain commas with the current scenario CLI. Unsafe keys: ' +
-            unsafeNames.join(', '),
-        )
+                unsafeNames.join(', ')
+        );
     }
 }
 
 function toReplacementArg(replacements: Record<string, string>): string {
-    assertReplacementValuesAreCliSafe(replacements)
+    assertReplacementValuesAreCliSafe(replacements);
     return Object.entries(replacements)
         .map(([key, value]) => `${key}:=${value}`)
-        .join(',')
+        .join(',');
 }
 
 function missingLiveEnv(): string[] {
-    return REQUIRED_LIVE_ENV.filter(name => {
-        const value = Deno.env.get(name)
-        return !value || value.length === 0
-    })
+    return REQUIRED_LIVE_ENV.filter((name) => {
+        const value = Deno.env.get(name);
+        return !value || value.length === 0;
+    });
 }
 
 function assertLiveEnvironmentIfNeeded(options: CliOptions): void {
     if (!selectedModes(options.mode).includes('live')) {
-        return
+        return;
     }
 
-    const missing = missingLiveEnv()
+    const missing = missingLiveEnv();
     if (missing.length === 0) {
-        return
+        return;
     }
 
     throw new Error(
         'Live rallar-browser validation requires deployed-service environment variables:\n' +
-        missing.map(name => '  - ' + name).join('\n'),
-    )
+            missing.map((name) => '  - ' + name).join('\n')
+    );
 }
 
 function toSecretMap(): Record<string, string> {
     return Object.fromEntries(
         SECRET_ENV
-            .map(name => [name, Deno.env.get(name) || ''] as const)
-            .filter(([, value]) => value.length > 0),
-    )
+            .map((name) => [name, Deno.env.get(name) || ''] as const)
+            .filter(([, value]) => value.length > 0)
+    );
 }
 
 function maskString(value: string, secrets = toSecretMap()): string {
     return Object.entries(secrets).reduce((masked, [name, secret]) => {
-        return masked.replaceAll(secret, `<redacted:${name}>`)
-    }, value)
+        return masked.replaceAll(secret, `<redacted:${name}>`);
+    }, value);
 }
 
 function maskValue(value: any, secrets = toSecretMap()): any {
     if (typeof value === 'string') {
-        return maskString(value, secrets)
+        return maskString(value, secrets);
     }
 
     if (Array.isArray(value)) {
-        return value.map(item => maskValue(item, secrets))
+        return value.map((item) => maskValue(item, secrets));
     }
 
     if (value && typeof value === 'object') {
@@ -252,19 +252,20 @@ function maskValue(value: any, secrets = toSecretMap()): any {
                 key,
                 key.toLowerCase().includes('password')
                     ? '<redacted>'
-                    : maskValue(child, secrets),
-            ]),
-        )
+                    : maskValue(child, secrets)
+            ])
+        );
     }
 
-    return value
+    return value;
 }
 
 function tryParseJson(text: string): any | undefined {
     try {
-        return JSON.parse(text)
-    } catch (_error) {
-        return undefined
+        return JSON.parse(text);
+    }
+    catch (_error) {
+        return undefined;
     }
 }
 
@@ -278,42 +279,43 @@ function toReportSummary(report: any): any {
                 result: result.result,
                 connection: result.connection,
                 action: result.action,
-                exception: result.actual?.exception,
+                exception: result.actual?.exception
             }))
-        : []
+        : [];
 
     return {
         summary: report?.summary,
         rtcProviderNames: report?.rtcProviderNames,
-        failedResults,
-    }
+        failedResults
+    };
 }
 
 function summarizeRun(run: ValidationRun, verbose: boolean): void {
-    console.log('')
-    console.log(`=== ${run.transport} ${run.mode} ===`)
-    console.log(`status: ${run.success ? 'SUCCESS' : 'FAILURE'} (${run.code})`)
+    console.log('');
+    console.log(`=== ${run.transport} ${run.mode} ===`);
+    console.log(`status: ${run.success ? 'SUCCESS' : 'FAILURE'} (${run.code})`);
 
-    const maskedStdout = maskString(run.stdout)
-    const maskedStderr = maskString(run.stderr)
-    const parsed = tryParseJson(run.stdout)
+    const maskedStdout = maskString(run.stdout);
+    const maskedStderr = maskString(run.stderr);
+    const parsed = tryParseJson(run.stdout);
 
     if (parsed !== undefined) {
-        const masked = maskValue(parsed)
-        console.log(JSON.stringify(verbose ? masked : toReportSummary(masked), null, 2))
-    } else if (maskedStdout.trim().length > 0) {
-        console.log(maskedStdout)
+        const masked = maskValue(parsed);
+        console.log(JSON.stringify(verbose ? masked : toReportSummary(masked), null, 2));
+    }
+    else if (maskedStdout.trim().length > 0) {
+        console.log(maskedStdout);
     }
 
     if (maskedStderr.trim().length > 0) {
-        console.error(maskedStderr)
+        console.error(maskedStderr);
     }
 }
 
 async function recordRun(run: ValidationRun, recordDir: string): Promise<void> {
-    await Deno.mkdir(recordDir, { recursive: true })
+    await Deno.mkdir(recordDir, { recursive: true });
 
-    const parsed = tryParseJson(run.stdout)
+    const parsed = tryParseJson(run.stdout);
     const artifact = {
         mode: run.mode,
         transport: run.transport,
@@ -322,21 +324,21 @@ async function recordRun(run: ValidationRun, recordDir: string): Promise<void> {
         code: run.code,
         report: parsed === undefined ? undefined : maskValue(parsed),
         stdout: parsed === undefined ? maskString(run.stdout) : undefined,
-        stderr: maskString(run.stderr),
-    }
-    const filename = `rallar-browser-${run.transport.replace('.', '-')}-${run.mode}.json`
+        stderr: maskString(run.stderr)
+    };
+    const filename = `rallar-browser-${run.transport.replace('.', '-')}-${run.mode}.json`;
     await Deno.writeTextFile(
         `${recordDir.replace(/\/$/, '')}/${filename}`,
-        JSON.stringify(artifact, null, 2),
-    )
+        JSON.stringify(artifact, null, 2)
+    );
 }
 
 async function runScenario(
     mode: Exclude<ValidationMode, 'both'>,
-    transport: Exclude<ValidationTransport, 'both'>,
+    transport: Exclude<ValidationTransport, 'both'>
 ): Promise<ValidationRun> {
-    const replacements = toReplacementMap()
-    const scenarioPath = repoRelativePath(SCENARIOS[transport])
+    const replacements = toReplacementMap();
+    const scenarioPath = repoRelativePath(SCENARIOS[transport]);
     const args = [
         'run',
         '-A',
@@ -344,21 +346,21 @@ async function runScenario(
         '-c',
         scenarioPath,
         '-r',
-        toReplacementArg(replacements),
-    ]
+        toReplacementArg(replacements)
+    ];
 
     if (mode === 'dry-run') {
-        args.push('-n')
+        args.push('-n');
     }
 
     const output = await new Deno.Command(Deno.execPath(), {
         args,
         cwd: filePath(REPO_ROOT),
         stdout: 'piped',
-        stderr: 'piped',
-    }).output()
+        stderr: 'piped'
+    }).output();
 
-    const decoder = new TextDecoder()
+    const decoder = new TextDecoder();
     return {
         mode,
         transport,
@@ -367,50 +369,52 @@ async function runScenario(
         code: output.code,
         stdout: decoder.decode(output.stdout),
         stderr: decoder.decode(output.stderr),
-        parsedReport: tryParseJson(decoder.decode(output.stdout)),
-    }
+        parsedReport: tryParseJson(decoder.decode(output.stdout))
+    };
 }
 
 async function main(): Promise<void> {
-    const options = parseArgs(Deno.args)
+    const options = parseArgs(Deno.args);
     if (options.help) {
-        console.log(usage())
-        return
+        console.log(usage());
+        return;
     }
 
-    assertLiveEnvironmentIfNeeded(options)
+    assertLiveEnvironmentIfNeeded(options);
 
     const runs = selectedModes(options.mode)
-        .flatMap(mode => selectedTransports(options.transport).map(transport => ({
-            mode,
-            transport,
-        })))
+        .flatMap((mode) =>
+            selectedTransports(options.transport).map((transport) => ({
+                mode,
+                transport
+            }))
+        );
 
-    const results: ValidationRun[] = []
+    const results: ValidationRun[] = [];
     for (const run of runs) {
-        const result = await runScenario(run.mode, run.transport)
-        results.push(result)
-        summarizeRun(result, options.verbose)
+        const result = await runScenario(run.mode, run.transport);
+        results.push(result);
+        summarizeRun(result, options.verbose);
 
         if (options.recordDir) {
-            await recordRun(result, options.recordDir)
+            await recordRun(result, options.recordDir);
         }
 
         if (!result.success && !options.continueOnFailure) {
-            break
+            break;
         }
     }
 
-    const failed = results.filter(result => !result.success)
-    console.log('')
-    console.log(`Validated ${results.length} run(s), failures: ${failed.length}`)
+    const failed = results.filter((result) => !result.success);
+    console.log('');
+    console.log(`Validated ${results.length} run(s), failures: ${failed.length}`);
 
     if (failed.length > 0) {
-        Deno.exit(1)
+        Deno.exit(1);
     }
 }
 
-main().catch(error => {
-    console.error(error instanceof Error ? error.message : String(error))
-    Deno.exit(1)
-})
+main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    Deno.exit(1);
+});

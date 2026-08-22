@@ -3,7 +3,7 @@ import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.
 import { rallarBlackBoxProviderModeFromConfig } from '../../../runtime-store.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
 
-export function ConfigurationPanel({ state }: { state: RallarBlackBoxTestState }) {
+export function ConfigurationPanel({ state }: { state: RallarBlackBoxTestState; }) {
     const config = selectRallarBlackBoxCurrentConfig(state);
     const providerMode = rallarBlackBoxProviderModeFromConfig(config);
 

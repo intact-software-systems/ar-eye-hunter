@@ -13,12 +13,12 @@ export type AsyncCommandWatch<TResource, TKey> = Readonly<{
     isComplete: (resource: TResource) => boolean;
     onTimeout: (
         resource: TResource,
-        event: AsyncCommandTimeoutEvent<TKey>,
+        event: AsyncCommandTimeoutEvent<TKey>
     ) => void | Promise<void>;
     onError?: (
         error: unknown,
         resource: TResource,
-        event: AsyncCommandTimeoutEvent<TKey>,
+        event: AsyncCommandTimeoutEvent<TKey>
     ) => void;
 }>;
 
@@ -40,12 +40,12 @@ export class AsyncCommand<TKey, TResource> {
         const startedAtEpochMs = Date.now();
         const timeout = setTimeout(
             () => this.handleTimeout(input, startedAtEpochMs),
-            input.timeoutMs,
+            input.timeoutMs
         );
 
         this.pending.set(input.key, {
             resource: input.resource,
-            timeout,
+            timeout
         });
 
         return true;
@@ -78,7 +78,7 @@ export class AsyncCommand<TKey, TResource> {
 
     private handleTimeout(
         input: AsyncCommandWatch<TResource, TKey>,
-        startedAtEpochMs: number,
+        startedAtEpochMs: number
     ): void {
         const pending = this.pending.get(input.key);
         if (!pending || pending.resource !== input.resource) {
@@ -96,7 +96,7 @@ export class AsyncCommand<TKey, TResource> {
             timeoutMs: input.timeoutMs,
             startedAtEpochMs,
             timedOutAtEpochMs: Date.now(),
-            reason: 'async-command-timeout',
+            reason: 'async-command-timeout'
         };
 
         void Promise.resolve()

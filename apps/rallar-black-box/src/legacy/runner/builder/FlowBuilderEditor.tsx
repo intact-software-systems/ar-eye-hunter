@@ -1,8 +1,5 @@
 import type { RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types.ts';
-import {
-    FLOW_BUILDER_TEMPLATES,
-    type FlowBuilderStepKind,
-} from '../../../flow-builder.ts';
+import { FLOW_BUILDER_TEMPLATES, type FlowBuilderStepKind } from '../../../flow-builder.ts';
 import { FLOW_STEP_BUTTONS } from './flow-builder-support.ts';
 
 type FlowBuilderEditorProps = Readonly<{
@@ -40,11 +37,11 @@ export function FlowBuilderEditor({
     setVariablesEdited,
     setVariablesText,
     flowText,
-    setFlowText,
+    setFlowText
 }: FlowBuilderEditorProps) {
     return (
         <>
-<div className="flow-builder-toolbar">
+            <div className="flow-builder-toolbar">
                 <label className="field">
                     <span>Template</span>
                     <select
@@ -87,7 +84,7 @@ export function FlowBuilderEditor({
                     Copy Runner Scenario
                 </button>
             </div>
-<div className="flow-builder-add-grid" aria-label="Add flow step">
+            <div className="flow-builder-add-grid" aria-label="Add flow step">
                 {FLOW_STEP_BUTTONS.map((kind) => (
                     <button
                         key={kind}
@@ -99,7 +96,7 @@ export function FlowBuilderEditor({
                     </button>
                 ))}
             </div>
-<div className="flow-builder-editors">
+            <div className="flow-builder-editors">
                 <label className="json-editor">
                     <span>Variables JSON</span>
                     <textarea
@@ -122,6 +119,6 @@ export function FlowBuilderEditor({
                     />
                 </label>
             </div>
-</>
+        </>
     );
 }

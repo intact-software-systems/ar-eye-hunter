@@ -450,118 +450,118 @@ export type ArenaFxEvent = Readonly<{
 
 export type GameRealtimeMessage =
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'player-pose';
-    pose: PlayerPose;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'player-pose';
+        pose: PlayerPose;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'player-shot';
-    shot: PlayerShot;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'player-shot';
+        shot: PlayerShot;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'player-shot-intent';
-    shot: ShotIntent;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'player-shot-intent';
+        shot: ShotIntent;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'player-pose-intent';
-    pose: PlayerPose;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'player-pose-intent';
+        pose: PlayerPose;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'director-shot-accepted';
-    accepted: ShotAccepted;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'director-shot-accepted';
+        accepted: ShotAccepted;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'player-hit-intent';
-    intent: PlayerHitIntent;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'player-hit-intent';
+        intent: PlayerHitIntent;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'director-player-hit-accepted';
-    accepted: PlayerHitAccepted;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'director-player-hit-accepted';
+        accepted: PlayerHitAccepted;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'pickup-intent';
-    intent: PickupIntent;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'pickup-intent';
+        intent: PickupIntent;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'director-pickup-accepted';
-    accepted: PickupAccepted;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'director-pickup-accepted';
+        accepted: PickupAccepted;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'match-start-intent';
-    intent: MatchStartIntent;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'match-start-intent';
+        intent: MatchStartIntent;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'director-match-started';
-    accepted: MatchStartedAccepted;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'director-match-started';
+        accepted: MatchStartedAccepted;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'director-match-ended';
-    accepted: MatchEndedAccepted;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'director-match-ended';
+        accepted: MatchEndedAccepted;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'director-eye-attack-accepted';
-    accepted: EyeAttackAccepted;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'director-eye-attack-accepted';
+        accepted: EyeAttackAccepted;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'director-player-state';
-    pose: PlayerPose;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'director-player-state';
+        pose: PlayerPose;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'director-shot-event';
-    shot: PlayerShot;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'director-shot-event';
+        shot: PlayerShot;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'arena-event';
-    event: ArenaEvent;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'arena-event';
+        event: ArenaEvent;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'director-arena-snapshot';
-    snapshot: ArenaSnapshot;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'director-arena-snapshot';
+        snapshot: ArenaSnapshot;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'ai-director-proposal';
-    proposal: AiDirectorProposal;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'ai-director-proposal';
+        proposal: AiDirectorProposal;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'fx-event';
-    event: ArenaFxEvent;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'fx-event';
+        event: ArenaFxEvent;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'director-heartbeat';
-    sessionId: string;
-    sentAtEpochMs: number;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'director-heartbeat';
+        sessionId: string;
+        sentAtEpochMs: number;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'director-state-snapshot';
-    players: readonly PlayerPose[];
-    sentAtEpochMs: number;
-}>
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'director-state-snapshot';
+        players: readonly PlayerPose[];
+        sentAtEpochMs: number;
+    }>
     | Readonly<{
-    protocol: typeof GAME_PROTOCOL;
-    kind: 'director-sync-request';
-    sessionId: string;
-    sentAtEpochMs: number;
-}>;
+        protocol: typeof GAME_PROTOCOL;
+        kind: 'director-sync-request';
+        sessionId: string;
+        sentAtEpochMs: number;
+    }>;
 
 export type RemotePlayer = Readonly<{
     pose: PlayerPose;

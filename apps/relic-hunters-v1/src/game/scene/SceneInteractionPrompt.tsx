@@ -3,7 +3,7 @@ import type { ScenePrompt } from './types.ts';
 
 export function SceneInteractionPrompt({
     prompt,
-    onPrimeAction,
+    onPrimeAction
 }: Readonly<{
     prompt?: ScenePrompt;
     onPrimeAction(action: RelicActionInput): void;

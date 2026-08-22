@@ -1,16 +1,16 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LatestMementoValue } from '@shared/cache/LatestMementoValue.ts';
 import { LatestValue } from '@shared/cache/LatestValue.ts';
 import { LoanedMementoValue } from '@shared/cache/LoanedMementoValue.ts';
 import { LoanedValue } from '@shared/cache/LoanedValue.ts';
 import { MementoLoanedValue } from '@shared/cache/MementoLoanedValues.ts';
 import { MementoValue } from '@shared/cache/MementoValue.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('MementoValue', () => {
     it('tracks bounded undo and redo history', () => {
         const memento = new MementoValue<string>({
             undoDepth: 2,
-            redoDepth: 2,
+            redoDepth: 2
         });
 
         memento.set('A').set('B').set('C');
@@ -49,7 +49,7 @@ describe('LatestMementoValue', () => {
     it('captures raw values in undo and redo history', () => {
         const memento = LatestMementoValue.empty<number>({
             undoDepth: 2,
-            redoDepth: 2,
+            redoDepth: 2
         });
         const callback = memento.asCallback();
 
@@ -67,7 +67,7 @@ describe('LatestMementoValue', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const memento = LatestMementoValue.fromValue(2, {
-            ttlMs: 50,
+            ttlMs: 50
         });
 
         vi.setSystemTime(new Date('2026-01-01T00:00:00.051Z'));
@@ -86,7 +86,7 @@ describe('LatestMementoValue', () => {
 
         const memento = LatestMementoValue.fromLatest(first, {
             undoDepth: 2,
-            redoDepth: 2,
+            redoDepth: 2
         });
 
         expect(memento.compareAndSetLatest(second, undefined)).toBe(false);
@@ -102,7 +102,7 @@ describe('LoanedMementoValue', () => {
 
         const memento = LoanedMementoValue.fromRefresher(async () => source, {
             undoDepth: 2,
-            redoDepth: 2,
+            redoDepth: 2
         });
 
         expect(await memento.get()).toBe(1);
@@ -129,7 +129,7 @@ describe('LoanedMementoValue', () => {
 
         const memento = new LoanedMementoValue(first, {
             undoDepth: 2,
-            redoDepth: 2,
+            redoDepth: 2
         });
 
         expect(memento.compareAndSetLoan(second, undefined)).toBe(false);
@@ -149,7 +149,7 @@ describe('MementoLoanedValue', () => {
 
         const memento = new MementoLoanedValue(first, {
             undoDepth: 2,
-            redoDepth: 2,
+            redoDepth: 2
         });
 
         memento.setLoan(second);
@@ -166,7 +166,7 @@ describe('MementoLoanedValue', () => {
 
         const memento = MementoLoanedValue.fromRefresher(async () => source, {
             undoDepth: 2,
-            redoDepth: 2,
+            redoDepth: 2
         });
 
         const originalCurrent = memento.currentLoan();

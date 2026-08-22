@@ -1,7 +1,4 @@
-import type {
-    RallarBlackBoxTestEvent,
-    RallarBlackBoxTestWaitMatch,
-} from '../types.ts';
+import type { RallarBlackBoxTestEvent, RallarBlackBoxTestWaitMatch } from '../types.ts';
 
 export type PayloadPathLookup = Readonly<{
     exists: boolean;
@@ -25,14 +22,14 @@ export function lookupPayloadPath(payload: unknown, path: string | undefined): P
     if (!path || path.trim().length === 0) {
         return {
             exists: payload !== undefined,
-            value: payload,
+            value: payload
         };
     }
 
     let current = payload;
     const segments = normalisePayloadPath(path)
         .split('.')
-        .filter(segment => segment.length > 0);
+        .filter((segment) => segment.length > 0);
     for (const segment of segments) {
         if ((Array.isArray(current) || typeof current === 'string') && segment === 'length') {
             current = current.length;
@@ -61,14 +58,15 @@ export function lookupPayloadPath(payload: unknown, path: string | undefined): P
 
     return {
         exists: true,
-        value: current,
+        value: current
     };
 }
 
 export function sameJsonValue(left: unknown, right: unknown): boolean {
     try {
         return JSON.stringify(left) === JSON.stringify(right);
-    } catch (_error) {
+    }
+    catch (_error) {
         return Object.is(left, right);
     }
 }
@@ -82,14 +80,15 @@ export function containsValue(value: unknown, expected: string): boolean {
         return typeof serialized === 'string'
             ? serialized.includes(expected)
             : String(value).includes(expected);
-    } catch (_error) {
+    }
+    catch (_error) {
         return String(value).includes(expected);
     }
 }
 
 export function waitEventMatches(
     event: RallarBlackBoxTestEvent,
-    match: RallarBlackBoxTestWaitMatch,
+    match: RallarBlackBoxTestWaitMatch
 ): boolean {
     if (match.kind !== undefined && event.kind !== match.kind) {
         return false;
@@ -136,7 +135,7 @@ export function waitEventMatches(
 
 export function findWaitEvent(
     events: readonly RallarBlackBoxTestEvent[],
-    match: RallarBlackBoxTestWaitMatch,
+    match: RallarBlackBoxTestWaitMatch
 ): RallarBlackBoxTestEvent | undefined {
     for (let index = events.length - 1; index >= 0; index--) {
         const event = events[index];

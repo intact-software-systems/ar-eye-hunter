@@ -2,7 +2,7 @@ import type { ControlDistributedRunArtifactBundle } from './control-snapshots.ts
 import type {
     DistributedRunAnalysis,
     DistributedRunArtifactFiles,
-    DistributedRunArtifactSnapshots,
+    DistributedRunArtifactSnapshots
 } from './distributed-artifact-analysis.ts';
 
 export type DistributedArtifactFamily =
@@ -94,7 +94,7 @@ export type DistributedArtifactEnvelopeProjection = Readonly<{
 export const DISTRIBUTED_ARTIFACT_CORE_FILE_NAMES = [
     'distributed-run.json',
     'manifest.json',
-    'control-run.json',
+    'control-run.json'
 ] as const;
 
 export const DISTRIBUTED_ARTIFACT_OPTIONAL_FILE_NAMES = [
@@ -103,7 +103,7 @@ export const DISTRIBUTED_ARTIFACT_OPTIONAL_FILE_NAMES = [
     'results.jsonl',
     'events.jsonl',
     'failures.json',
-    'metadata.json',
+    'metadata.json'
 ] as const;
 
 export const DISTRIBUTED_ARTIFACT_KNOWN_SCHEMA_VERSIONS = new Set([1, 2]);

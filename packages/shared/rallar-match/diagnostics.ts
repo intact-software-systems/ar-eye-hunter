@@ -1,10 +1,7 @@
-import type {
-    RallarMatchDiagnostics,
-    RallarMatchDiagnosticsInput,
-} from './types.ts';
+import type { RallarMatchDiagnostics, RallarMatchDiagnosticsInput } from './types.ts';
 
 export function deriveRallarMatchDiagnostics(
-    input: RallarMatchDiagnosticsInput,
+    input: RallarMatchDiagnosticsInput
 ): RallarMatchDiagnostics {
     const participants = input.participants ?? [];
     const standings = input.standings ?? [];
@@ -40,6 +37,6 @@ export function deriveRallarMatchDiagnostics(
         hasResult: input.result !== undefined,
         pendingCommandCount,
         snapshotAgeMs: input.snapshotAgeMs,
-        issues,
+        issues
     };
 }

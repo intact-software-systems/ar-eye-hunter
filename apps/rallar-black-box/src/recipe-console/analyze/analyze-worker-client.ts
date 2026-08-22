@@ -1,29 +1,27 @@
+import { createDistributedRunArtifactFilename } from '../control/distributed-run-artifact-download.ts';
+import { createAnalyzeExportBlobRetention } from './analyze-export-blob.ts';
+import type {
+    AnalyzeWorkerClient,
+    AnalyzeWorkerClientOptions,
+    AnalyzeWorkerTimerHandle
+} from './analyze-worker-client-contract.ts';
+import { createAnalyzeWorkerRpcClient } from './analyze-worker-client-rpc.ts';
+import { recordAnalyzeWorkerClientTelemetry } from './analyze-worker-client-telemetry.ts';
 import type {
     AnalyzeWorkerArtifactOffer,
     AnalyzeWorkerEnvelope,
     AnalyzeWorkerRequest,
-    AnalyzeWorkerResponse,
+    AnalyzeWorkerResponse
 } from './analyze-worker-contract.ts';
-import { createAnalyzeExportBlobRetention } from './analyze-export-blob.ts';
 import type { AnalyzeWorkerPort } from './analyze-worker-factory.ts';
-import { createDistributedRunArtifactFilename } from
-    '../control/distributed-run-artifact-download.ts';
 import { isAnalyzeWorkerArtifactOffer } from './analyze-worker-request-boundary.ts';
-import { createAnalyzeWorkerRpcClient } from './analyze-worker-client-rpc.ts';
-import { recordAnalyzeWorkerClientTelemetry } from
-    './analyze-worker-client-telemetry.ts';
-import type {
-    AnalyzeWorkerClient,
-    AnalyzeWorkerClientOptions,
-    AnalyzeWorkerTimerHandle,
-} from './analyze-worker-client-contract.ts';
 
 export type {
     AnalyzeWorkerClient,
-    AnalyzeWorkerClientCallbacks,
+    AnalyzeWorkerClientCallbacks
 } from './analyze-worker-client-contract.ts';
 
-type CompleteResponse = Extract<AnalyzeWorkerResponse, { type: 'complete' }>;
+type CompleteResponse = Extract<AnalyzeWorkerResponse, { type: 'complete'; }>;
 type WorkerOwner = {
     worker: AnalyzeWorkerPort;
     operationGeneration: number;
@@ -35,7 +33,7 @@ type WorkerOwner = {
 };
 
 export function createAnalyzeWorkerClient(
-    input: AnalyzeWorkerClientOptions,
+    input: AnalyzeWorkerClientOptions
 ): AnalyzeWorkerClient {
     const callbacks = input.callbacks ?? {};
     const frame = input.requestAnimationFrame ??
@@ -50,26 +48,31 @@ export function createAnalyzeWorkerClient(
     let disposed = false;
 
     const rpc = createAnalyzeWorkerRpcClient({
-        getAccepted: () => accepted?.modelGeneration === undefined
-            ? undefined
-            : { worker: accepted.worker, modelGeneration: accepted.modelGeneration },
+        getAccepted: () =>
+            accepted?.modelGeneration === undefined
+                ? undefined
+                : { worker: accepted.worker, modelGeneration: accepted.modelGeneration },
         isDisposed: () => disposed,
         callbacks,
         setTimer,
         clearTimer,
         watchdogMs,
-        performance: input.performance,
+        performance: input.performance
     });
 
     function offer(
         artifact: AnalyzeWorkerArtifactOffer,
-        requestedGeneration?: number,
+        requestedGeneration?: number
     ): number {
-        if (disposed) throw new Error('The Analyze worker client is disposed.');
+        if (disposed) {
+            throw new Error('The Analyze worker client is disposed.');
+        }
         if (!isAnalyzeWorkerArtifactOffer(artifact)) {
             throw new Error('Analyze worker offer metadata exceeds its bounded contract.');
         }
-        if (candidate) terminateOwner(candidate, 'replacement');
+        if (candidate) {
+            terminateOwner(candidate, 'replacement');
+        }
         const generation = requestedGeneration ?? operationGeneration + 1;
         if (!Number.isSafeInteger(generation) || generation <= operationGeneration) {
             throw new Error('Analyze worker operation generations must increase monotonically.');
@@ -78,7 +81,9 @@ export function createAnalyzeWorkerClient(
         const owner = attachWorker(input.createWorker(), generation);
         candidate = owner;
         owner.watchdog = setTimer(() => {
-            if (candidate !== owner) return;
+            if (candidate !== owner) {
+                return;
+            }
             candidate = undefined;
             terminateOwner(owner, 'crash');
             exports.reject(generation);
@@ -86,13 +91,18 @@ export function createAnalyzeWorkerClient(
         }, watchdogMs);
         try {
             post(owner.worker, {
-                type: 'offer', operationGeneration: generation, artifact,
+                type: 'offer',
+                operationGeneration: generation,
+                artifact
             }, [
-                ...artifact.files.map(file => file.bytes),
-                ...(artifact.controlEnvelope ? [artifact.controlEnvelope] : []),
+                ...artifact.files.map((file) => file.bytes),
+                ...(artifact.controlEnvelope ? [artifact.controlEnvelope] : [])
             ]);
-        } catch (error) {
-            if (candidate === owner) candidate = undefined;
+        }
+        catch (error) {
+            if (candidate === owner) {
+                candidate = undefined;
+            }
             exports.reject(generation);
             terminateOwner(owner, 'crash');
             throw error;
@@ -102,14 +112,17 @@ export function createAnalyzeWorkerClient(
 
     function attachWorker(worker: AnalyzeWorkerPort, generation: number): WorkerOwner {
         const owner = {} as WorkerOwner;
-        const messageListener: EventListener = event => {
+        const messageListener: EventListener = (event) => {
             void handleMessage(owner, (event as MessageEvent<AnalyzeWorkerResponse>).data);
         };
         const errorListener: EventListener = () => unavailable(owner, 'error');
         const messageErrorListener: EventListener = () => unavailable(owner, 'messageerror');
         Object.assign(owner, {
-            worker, operationGeneration: generation,
-            messageListener, errorListener, messageErrorListener,
+            worker,
+            operationGeneration: generation,
+            messageListener,
+            errorListener,
+            messageErrorListener
         });
         worker.addEventListener('message', messageListener);
         worker.addEventListener('error', errorListener);
@@ -119,20 +132,31 @@ export function createAnalyzeWorkerClient(
 
     async function handleMessage(
         owner: WorkerOwner,
-        message: AnalyzeWorkerResponse,
+        message: AnalyzeWorkerResponse
     ): Promise<void> {
-        if (disposed || (owner !== candidate && owner !== accepted)) return;
+        if (disposed || (owner !== candidate && owner !== accepted)) {
+            return;
+        }
         if (message.type === 'accepted') {
-            if (owner !== candidate ||
-                message.operationGeneration !== owner.operationGeneration) return;
+            if (
+                owner !== candidate ||
+                message.operationGeneration !== owner.operationGeneration
+            ) {
+                return;
+            }
             callbacks.onAccepted?.(message.operationGeneration);
             frame(() => {
-                if (candidate !== owner || disposed) return;
+                if (candidate !== owner || disposed) {
+                    return;
+                }
                 callbacks.onPendingPaint?.(message.operationGeneration);
                 frame(() => {
-                    if (candidate !== owner || disposed) return;
+                    if (candidate !== owner || disposed) {
+                        return;
+                    }
                     post(owner.worker, {
-                        type: 'start', operationGeneration: message.operationGeneration,
+                        type: 'start',
+                        operationGeneration: message.operationGeneration
                     });
                 });
             });
@@ -148,25 +172,36 @@ export function createAnalyzeWorkerClient(
                 candidate = undefined;
                 exports.reject(owner.operationGeneration);
                 terminateOwner(owner, 'crash');
-            } else {
+            }
+            else {
                 rpc.finishFailure(message);
             }
             return;
         }
-        if (message.type === 'disposed') return;
-        if (owner !== accepted || message.modelGeneration !== owner.modelGeneration) return;
+        if (message.type === 'disposed') {
+            return;
+        }
+        if (owner !== accepted || message.modelGeneration !== owner.modelGeneration) {
+            return;
+        }
         rpc.handleResponse(message);
     }
 
     function complete(owner: WorkerOwner, message: CompleteResponse): void {
-        if (owner !== candidate ||
-            message.operationGeneration !== owner.operationGeneration) return;
+        if (
+            owner !== candidate ||
+            message.operationGeneration !== owner.operationGeneration
+        ) {
+            return;
+        }
         if (input.validateComplete?.(message) === false) {
             clearOwnerWatchdog(owner);
             candidate = undefined;
             exports.reject(owner.operationGeneration);
             callbacks.onFailure?.({
-                code: 'identity-mismatch', stage: 'model', recoverable: true,
+                code: 'identity-mismatch',
+                stage: 'model',
+                recoverable: true
             }, owner.operationGeneration);
             terminateOwner(owner, 'crash');
             return;
@@ -176,8 +211,8 @@ export function createAnalyzeWorkerClient(
             generation: message.operationGeneration,
             blob: new Blob([message.exportBytes], { type: 'application/json' }),
             filename: createDistributedRunArtifactFilename(
-                message.projection.distributedRunId,
-            ),
+                message.projection.distributedRunId
+            )
         });
         const previous = accepted;
         accepted = owner;
@@ -186,20 +221,25 @@ export function createAnalyzeWorkerClient(
         exports.commit(message.operationGeneration);
         rpc.clear();
         callbacks.onComplete?.(message);
-        if (previous && previous !== owner) terminateOwner(previous, 'replacement');
+        if (previous && previous !== owner) {
+            terminateOwner(previous, 'replacement');
+        }
         recordAnalyzeWorkerClientTelemetry(input.performance, 'model', message);
     }
 
     function unavailable(
         owner: WorkerOwner,
-        reason: 'error' | 'messageerror',
+        reason: 'error' | 'messageerror'
     ): void {
-        if (owner !== candidate && owner !== accepted) return;
+        if (owner !== candidate && owner !== accepted) {
+            return;
+        }
         const scope = owner === candidate ? 'candidate' : 'accepted-worker';
         if (owner === candidate) {
             candidate = undefined;
             exports.reject(owner.operationGeneration);
-        } else {
+        }
+        else {
             accepted = undefined;
             rpc.clear();
         }
@@ -209,24 +249,33 @@ export function createAnalyzeWorkerClient(
 
     function terminateOwner(
         owner: WorkerOwner,
-        reason: Extract<AnalyzeWorkerRequest, { type: 'dispose' }>['reason'],
+        reason: Extract<AnalyzeWorkerRequest, { type: 'dispose'; }>['reason']
     ): void {
         clearOwnerWatchdog(owner);
         owner.worker.removeEventListener('message', owner.messageListener);
         owner.worker.removeEventListener('error', owner.errorListener);
         owner.worker.removeEventListener('messageerror', owner.messageErrorListener);
-        try { post(owner.worker, { type: 'dispose', reason }); } catch { /* terminated */ }
+        try {
+            post(owner.worker, { type: 'dispose', reason });
+        }
+        catch { /* terminated */ }
         owner.worker.terminate();
     }
 
     function clearOwnerWatchdog(owner: WorkerOwner): void {
-        if (owner.watchdog !== undefined) clearTimer(owner.watchdog);
+        if (owner.watchdog !== undefined) {
+            clearTimer(owner.watchdog);
+        }
         owner.watchdog = undefined;
     }
 
     function clear(): void {
-        if (candidate) terminateOwner(candidate, 'clear');
-        if (accepted) terminateOwner(accepted, 'clear');
+        if (candidate) {
+            terminateOwner(candidate, 'clear');
+        }
+        if (accepted) {
+            terminateOwner(accepted, 'clear');
+        }
         candidate = undefined;
         accepted = undefined;
         rpc.clear();
@@ -234,7 +283,9 @@ export function createAnalyzeWorkerClient(
     }
 
     function cancelCandidate(reason: 'replacement' | 'crash' = 'replacement'): void {
-        if (!candidate) return;
+        if (!candidate) {
+            return;
+        }
         const owner = candidate;
         candidate = undefined;
         exports.reject(owner.operationGeneration);
@@ -242,7 +293,9 @@ export function createAnalyzeWorkerClient(
     }
 
     function dispose(): void {
-        if (disposed) return;
+        if (disposed) {
+            return;
+        }
         clear();
         disposed = true;
     }
@@ -256,14 +309,14 @@ export function createAnalyzeWorkerClient(
         currentExport: exports.current,
         cancelCandidate,
         clear,
-        dispose,
+        dispose
     };
 }
 
 function post(
     worker: AnalyzeWorkerPort,
     message: AnalyzeWorkerRequest,
-    transfer: readonly Transferable[] = [],
+    transfer: readonly Transferable[] = []
 ): void {
     worker.postMessage(message, transfer as Transferable[]);
 }

@@ -1,5 +1,5 @@
-import {describe, expect, it} from 'vitest';
-import {executeBlackBox} from '../../shared-test/black-box-runner/execute-black-box.ts';
+import { describe, expect, it } from 'vitest';
+import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
 
 class EchoFakeWebSocket {
     static CONNECTING = 0;
@@ -10,7 +10,7 @@ class EchoFakeWebSocket {
     readyState = EchoFakeWebSocket.CONNECTING;
     bufferedAmount = 0;
     onopen: ((event: unknown) => void) | undefined;
-    onmessage: ((event: { data: unknown }) => void) | undefined;
+    onmessage: ((event: { data: unknown; }) => void) | undefined;
     onclose: ((event: unknown) => void) | undefined;
     onerror: ((event: unknown) => void) | undefined;
 
@@ -21,7 +21,7 @@ class EchoFakeWebSocket {
         setTimeout(() => {
             this.readyState = EchoFakeWebSocket.OPEN;
             this.onopen?.({
-                url: this.url,
+                url: this.url
             });
         }, 0);
     }
@@ -30,7 +30,7 @@ class EchoFakeWebSocket {
         this.bufferedAmount = String(data).length;
         setTimeout(() => {
             this.onmessage?.({
-                data,
+                data
             });
         }, 0);
     }
@@ -40,7 +40,7 @@ class EchoFakeWebSocket {
         this.onclose?.({
             code,
             reason,
-            wasClean: true,
+            wasClean: true
         });
     }
 }
@@ -53,11 +53,11 @@ function wsOpenStep(interactionExecutionNumber: number): Record<string, unknown>
                 connection: 'echoWs',
                 path: 'ws://example.invalid/echo',
                 scenarioExecutionNumber: 1,
-                interactionExecutionNumber,
+                interactionExecutionNumber
             },
-            response: {},
+            response: {}
         },
-        openEchoWs: {},
+        openEchoWs: {}
     };
 }
 
@@ -69,27 +69,27 @@ function wsSendStep(interactionExecutionNumber: number): Record<string, unknown>
                 connection: 'echoWs',
                 send: {
                     kind: 'bb.echo',
-                    scopeId: 'application-a',
+                    scopeId: 'application-a'
                 },
                 scenarioExecutionNumber: 1,
-                interactionExecutionNumber,
+                interactionExecutionNumber
             },
             response: {
                 connection: 'echoWs',
                 withinMs: 1000,
                 message: {
                     kind: 'bb.echo',
-                    scopeId: 'application-a',
-                },
-            },
+                    scopeId: 'application-a'
+                }
+            }
         },
-        sendEchoWs: {},
+        sendEchoWs: {}
     };
 }
 
 function wsAbsentWaitStep(
     interactionExecutionNumber: number,
-    absent: Record<string, unknown>,
+    absent: Record<string, unknown>
 ): Record<string, unknown> {
     return {
         WS: {
@@ -97,15 +97,15 @@ function wsAbsentWaitStep(
                 action: 'wait',
                 connection: 'echoWs',
                 scenarioExecutionNumber: 1,
-                interactionExecutionNumber,
+                interactionExecutionNumber
             },
             response: {
                 connection: 'echoWs',
                 withinMs: 120,
-                absent,
-            },
+                absent
+            }
         },
-        expectNoForeignScopeFrame: {},
+        expectNoForeignScopeFrame: {}
     };
 }
 
@@ -114,27 +114,30 @@ async function withEchoWebSocket<T>(run: () => Promise<T>): Promise<T> {
     (globalThis as any).WebSocket = EchoFakeWebSocket;
     try {
         return await run();
-    } finally {
+    }
+    finally {
         (globalThis as any).WebSocket = originalWebSocket;
     }
 }
 
 describe('executeBlackBox expect.absent', () => {
     it('passes a WS absence wait when no buffered frame matches within the window', async () => {
-        const report = await withEchoWebSocket(() => executeBlackBox(
-            [
-                wsOpenStep(1),
-                wsSendStep(2),
-                wsAbsentWaitStep(3, {
-                    kind: 'bb.echo',
-                    scopeId: 'application-b',
-                }),
-            ],
-            0,
-            {
-                failFast: true,
-            },
-        ));
+        const report = await withEchoWebSocket(() =>
+            executeBlackBox(
+                [
+                    wsOpenStep(1),
+                    wsSendStep(2),
+                    wsAbsentWaitStep(3, {
+                        kind: 'bb.echo',
+                        scopeId: 'application-b'
+                    })
+                ],
+                0,
+                {
+                    failFast: true
+                }
+            )
+        );
 
         expect(report.summary.failure).toBe(0);
         const absenceResult = report.resultsByName.expectNoForeignScopeFrame[0];
@@ -145,20 +148,22 @@ describe('executeBlackBox expect.absent', () => {
     });
 
     it('fails a WS absence wait with the offending frame when a match arrives', async () => {
-        const report = await withEchoWebSocket(() => executeBlackBox(
-            [
-                wsOpenStep(1),
-                wsSendStep(2),
-                wsAbsentWaitStep(3, {
-                    kind: 'bb.echo',
-                    scopeId: 'application-a',
-                }),
-            ],
-            0,
-            {
-                failFast: true,
-            },
-        ));
+        const report = await withEchoWebSocket(() =>
+            executeBlackBox(
+                [
+                    wsOpenStep(1),
+                    wsSendStep(2),
+                    wsAbsentWaitStep(3, {
+                        kind: 'bb.echo',
+                        scopeId: 'application-a'
+                    })
+                ],
+                0,
+                {
+                    failFast: true
+                }
+            )
+        );
 
         expect(report.summary.failure).toBe(1);
         const absenceResult = report.resultsByName.expectNoForeignScopeFrame[0];
@@ -166,41 +171,43 @@ describe('executeBlackBox expect.absent', () => {
         expect(absenceResult.result).toBe('WebSocket message expected to be absent was received');
         expect(absenceResult.actual.matchedMessage.data).toEqual({
             kind: 'bb.echo',
-            scopeId: 'application-a',
+            scopeId: 'application-a'
         });
         expect(absenceResult.actual.waitedMs).toBeGreaterThanOrEqual(100);
     });
 
     it('fails a WS absence wait without a matcher', async () => {
-        const report = await withEchoWebSocket(() => executeBlackBox(
-            [
-                wsOpenStep(1),
+        const report = await withEchoWebSocket(() =>
+            executeBlackBox(
+                [
+                    wsOpenStep(1),
+                    {
+                        WS: {
+                            request: {
+                                action: 'wait',
+                                connection: 'echoWs',
+                                scenarioExecutionNumber: 1,
+                                interactionExecutionNumber: 2
+                            },
+                            response: {
+                                connection: 'echoWs',
+                                withinMs: 50,
+                                absent: null
+                            }
+                        },
+                        absentWithoutMatcher: {}
+                    }
+                ],
+                0,
                 {
-                    WS: {
-                        request: {
-                            action: 'wait',
-                            connection: 'echoWs',
-                            scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 2,
-                        },
-                        response: {
-                            connection: 'echoWs',
-                            withinMs: 50,
-                            absent: null,
-                        },
-                    },
-                    absentWithoutMatcher: {},
-                },
-            ],
-            0,
-            {
-                failFast: true,
-            },
-        ));
+                    failFast: true
+                }
+            )
+        );
 
         expect(report.summary.failure).toBe(1);
         expect(report.resultsByName.absentWithoutMatcher[0].result).toBe(
-            'WebSocket absence wait expects expect.absent to be a partial message matcher.',
+            'WebSocket absence wait expects expect.absent to be a partial message matcher.'
         );
     });
 
@@ -214,11 +221,11 @@ describe('executeBlackBox expect.absent', () => {
                             provider: 'rallar-stub',
                             connection: 'actorA',
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 1,
+                            interactionExecutionNumber: 1
                         },
-                        response: {},
+                        response: {}
                     },
-                    connectActorA: {},
+                    connectActorA: {}
                 },
                 {
                     RTC: {
@@ -227,11 +234,11 @@ describe('executeBlackBox expect.absent', () => {
                             provider: 'rallar-stub',
                             connection: 'actorB',
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 2,
+                            interactionExecutionNumber: 2
                         },
-                        response: {},
+                        response: {}
                     },
-                    connectActorB: {},
+                    connectActorB: {}
                 },
                 {
                     RTC: {
@@ -242,14 +249,14 @@ describe('executeBlackBox expect.absent', () => {
                             deliverTo: 'actorB',
                             send: {
                                 kind: 'bb.room-event',
-                                groupId: 'group-application-a',
+                                groupId: 'group-application-a'
                             },
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 3,
+                            interactionExecutionNumber: 3
                         },
-                        response: {},
+                        response: {}
                     },
-                    sendFromActorA: {},
+                    sendFromActorA: {}
                 },
                 {
                     RTC: {
@@ -258,18 +265,18 @@ describe('executeBlackBox expect.absent', () => {
                             provider: 'rallar-stub',
                             connection: 'actorB',
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 4,
+                            interactionExecutionNumber: 4
                         },
                         response: {
                             connection: 'actorB',
                             withinMs: 120,
                             absent: {
                                 kind: 'bb.room-event',
-                                groupId: 'group-application-b',
-                            },
-                        },
+                                groupId: 'group-application-b'
+                            }
+                        }
                     },
-                    expectNoForeignGroupMessage: {},
+                    expectNoForeignGroupMessage: {}
                 },
                 {
                     RTC: {
@@ -279,24 +286,24 @@ describe('executeBlackBox expect.absent', () => {
                             connection: 'actorB',
                             nonBlockingFailure: true,
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 5,
+                            interactionExecutionNumber: 5
                         },
                         response: {
                             connection: 'actorB',
                             withinMs: 120,
                             absent: {
                                 kind: 'bb.room-event',
-                                groupId: 'group-application-a',
-                            },
-                        },
+                                groupId: 'group-application-a'
+                            }
+                        }
                     },
-                    expectDeliveredMessageAbsenceFails: {},
-                },
+                    expectDeliveredMessageAbsenceFails: {}
+                }
             ],
             0,
             {
-                failFast: true,
-            },
+                failFast: true
+            }
         );
 
         const absentPass = report.resultsByName.expectNoForeignGroupMessage[0];
@@ -310,7 +317,7 @@ describe('executeBlackBox expect.absent', () => {
         expect(absentFail.result).toBe('RTC message expected to be absent was received');
         expect(absentFail.actual.matchedMessage.data).toEqual({
             kind: 'bb.room-event',
-            groupId: 'group-application-a',
+            groupId: 'group-application-a'
         });
     });
 });

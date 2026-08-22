@@ -67,16 +67,16 @@ executed (`topologyUpdateCount`) / published (`topologyPublishedCount`);
 
 ### Burst window (T1−T0)
 
-| Tier × backend | Server | Burst wall clock | Mutations | Expansions (=WS rows ×3) | Recomputes T/E/P | WS sends | Deliveries |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| small × memory | primary | 4.6 s | 12 | 12 | 12 / 12 / 12 | 36 | 113 |
-| medium × memory | primary | 4.8 s | 40 | 40 | 40 / 40 / 40 | 117 | 1,229 |
-| small × postgres | primary | 1.9 s | 12 | 12 | 12 / 12 / 12 | 36 | 165 |
-| small × postgres | secondary | — | 0 | 0 | 0 / 0 / 0 | 0 | 0 |
-| medium × postgres | primary | 2.4 s | 31 | 23 | 23 / 26 / 21 | 117 | 1,485 |
-| medium × postgres | secondary | — | 9 | 17 | 17 / 29 / 19 | 0 | 0 |
-| large × postgres | primary | 6.6 s | 38 | 41 | 41 / 44 / 36 | 306 | 8,467 |
-| large × postgres | secondary | — | 26 | 22 | 22 / 42 / 33 | 0 | 0 |
+| Tier × backend    | Server    | Burst wall clock | Mutations | Expansions (=WS rows ×3) | Recomputes T/E/P | WS sends | Deliveries |
+| ----------------- | --------- | ---------------- | --------- | ------------------------ | ---------------- | -------- | ---------- |
+| small × memory    | primary   | 4.6 s            | 12        | 12                       | 12 / 12 / 12     | 36       | 113        |
+| medium × memory   | primary   | 4.8 s            | 40        | 40                       | 40 / 40 / 40     | 117      | 1,229      |
+| small × postgres  | primary   | 1.9 s            | 12        | 12                       | 12 / 12 / 12     | 36       | 165        |
+| small × postgres  | secondary | —                | 0         | 0                        | 0 / 0 / 0        | 0        | 0          |
+| medium × postgres | primary   | 2.4 s            | 31        | 23                       | 23 / 26 / 21     | 117      | 1,485      |
+| medium × postgres | secondary | —                | 9         | 17                       | 17 / 29 / 19     | 0        | 0          |
+| large × postgres  | primary   | 6.6 s            | 38        | 41                       | 41 / 44 / 36     | 306      | 8,467      |
+| large × postgres  | secondary | —                | 26        | 22                       | 22 / 42 / 33     | 0        | 0          |
 
 Joins issued/succeeded: 6/6, 20/20, and 50/50 (every join and presence call
 asserted success; the S1 false-failure tail did not appear at these tiers on
@@ -86,27 +86,27 @@ secondary + ~21 on the uncaptured tertiary).
 
 ### Steady-state window (T2−T1, ~60 s ≈ per minute)
 
-| Tier × backend | Server | Mutations | Expansions | Recomputes T/E/P | WS sends | Deliveries |
-| --- | --- | --- | --- | --- | --- | --- |
-| small × memory | primary | 12 | 12 | 12 / 12 / 12 | 48 | 288 |
-| medium × memory | primary | 40 | 40 | 40 / 40 / 40 | 160 | 3,200 |
-| small × postgres | primary | 12 | 12 | 12 / 12 / 12 | 48 | 288 |
-| medium × postgres | primary | 40 | 37 | 37 / 40 / 39 | 160 | 3,200 |
-| large × postgres | primary | 57 | 56 | 56 / 62 / 34 | 400 | 20,000 |
-| large × postgres | secondary | 28 | 23 | 23 / 62 / 40 | 0 | 0 |
+| Tier × backend    | Server    | Mutations | Expansions | Recomputes T/E/P | WS sends | Deliveries |
+| ----------------- | --------- | --------- | ---------- | ---------------- | -------- | ---------- |
+| small × memory    | primary   | 12        | 12         | 12 / 12 / 12     | 48       | 288        |
+| medium × memory   | primary   | 40        | 40         | 40 / 40 / 40     | 160      | 3,200      |
+| small × postgres  | primary   | 12        | 12         | 12 / 12 / 12     | 48       | 288        |
+| medium × postgres | primary   | 40        | 37         | 37 / 40 / 39     | 160      | 3,200      |
+| large × postgres  | primary   | 57        | 56         | 56 / 62 / 34     | 400      | 20,000     |
+| large × postgres  | secondary | 28        | 23         | 23 / 62 / 40     | 0        | 0          |
 
 The steady-state mutations are exactly the two heartbeat rounds (2 × N,
 split across servers under the cluster) — nothing else was running.
 
 ### Queue depth (rows in `resource_inbox` at capture instants)
 
-| Tier × backend | T0 | T1 | T2 |
-| --- | --- | --- | --- |
-| small × memory | 138 | 282 | 367 |
-| medium × memory | 401 | 882 | 1,163 |
-| small × postgres | 140 | 284 | 371 |
-| medium × postgres | 405 | 885 | 1,168 |
-| large × postgres | 13 | 1,213 | 1,916 |
+| Tier × backend    | T0  | T1    | T2    |
+| ----------------- | --- | ----- | ----- |
+| small × memory    | 138 | 282   | 367   |
+| medium × memory   | 401 | 882   | 1,163 |
+| small × postgres  | 140 | 284   | 371   |
+| medium × postgres | 405 | 885   | 1,168 |
+| large × postgres  | 13  | 1,213 | 1,916 |
 
 These are sampled totals (completed rows retained until expiry included),
 not instantaneous backlog peaks.

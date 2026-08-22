@@ -1,12 +1,12 @@
-import type { ReactNode } from 'react';
 import type {
     RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntimeStatus,
-    RallarBlackBoxTestStatsSnapshot,
+    RallarBlackBoxTestStatsSnapshot
 } from '@shared-test/rallar-bb-test/types.ts';
+import type { ReactNode } from 'react';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
-import { Metric } from '../../shared/Metric.tsx';
 import { statusTone } from '../../shared/command-presentation.ts';
+import { Metric } from '../../shared/Metric.tsx';
 import { formatTime } from '../../shared/time-format.ts';
 
 type RunnerLocalRunsSectionProps = Readonly<{
@@ -22,11 +22,19 @@ type RunnerLocalRunsSectionProps = Readonly<{
 }>;
 
 export function RunnerLocalRunsSection({
-    runtimeStatus, commandCount, failureCount, eventCount, latestStats,
-    controlState, recentHistory, failurePanel, reportPanel,
+    runtimeStatus,
+    commandCount,
+    failureCount,
+    eventCount,
+    latestStats,
+    controlState,
+    recentHistory,
+    failurePanel,
+    reportPanel
 }: RunnerLocalRunsSectionProps) {
     return (
-<><div className="runner-runs-summary-grid">
+        <>
+            <div className="runner-runs-summary-grid">
                 <Metric
                     label="Runtime"
                     value={runtimeStatus}
@@ -52,7 +60,8 @@ export function RunnerLocalRunsSection({
                     value={controlState}
                     tone={statusTone(controlState)}
                 />
-            </div><div className="runner-runs-layout">
+            </div>
+            <div className="runner-runs-layout">
                 <section className="runner-runs-subpanel">
                     <div className="section-heading">
                         <h3>Recent commands</h3>
@@ -75,9 +84,7 @@ export function RunnerLocalRunsSection({
                                 </span>
                             </article>
                         ))}
-                        {recentHistory.length === 0 && (
-                            <div className="empty-state">No local run yet</div>
-                        )}
+                        {recentHistory.length === 0 && <div className="empty-state">No local run yet</div>}
                     </div>
                 </section>
                 <section className="runner-runs-subpanel">
@@ -86,6 +93,7 @@ export function RunnerLocalRunsSection({
                 <section className="runner-runs-subpanel">
                     {reportPanel}
                 </section>
-            </div></>
+            </div>
+        </>
     );
 }

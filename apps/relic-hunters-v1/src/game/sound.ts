@@ -9,11 +9,13 @@ type AmbientDrone = Readonly<{
     lfo: OscillatorNode;
     lfoGain: GainNode;
 }>;
-let ambientSound: Readonly<{
-    master: GainNode;
-    drones: readonly AmbientDrone[];
-    chimeTimer: number;
-}> | undefined;
+let ambientSound:
+    | Readonly<{
+        master: GainNode;
+        drones: readonly AmbientDrone[];
+        chimeTimer: number;
+    }>
+    | undefined;
 
 export function playUiSound(sound: UiSound): void {
     const ctx = ensureAudioContext();
@@ -141,7 +143,7 @@ export function startAmbientSound(): boolean {
     const drones = [
         createDrone(ctx, master, 55, 'sine', 0.034),
         createDrone(ctx, master, 82.41, 'triangle', 0.022),
-        createDrone(ctx, master, 110, 'sine', 0.018),
+        createDrone(ctx, master, 110, 'sine', 0.018)
     ];
 
     const chimeTimer = window.setInterval(() => {
@@ -154,7 +156,7 @@ export function startAmbientSound(): boolean {
     ambientSound = {
         master,
         drones,
-        chimeTimer,
+        chimeTimer
     };
     return true;
 }
@@ -183,7 +185,7 @@ export function isAmbientSoundPlaying(): boolean {
 
 function ensureAudioContext(): AudioContext | undefined {
     const AudioContextCtor = globalThis.AudioContext ??
-        (globalThis as unknown as { webkitAudioContext?: typeof AudioContext })
+        (globalThis as unknown as { webkitAudioContext?: typeof AudioContext; })
             .webkitAudioContext;
     if (!AudioContextCtor) {
         return undefined;
@@ -202,7 +204,7 @@ function createDrone(
     master: GainNode,
     frequency: number,
     type: OscillatorType,
-    volume: number,
+    volume: number
 ): AmbientDrone {
     const oscillator = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -225,7 +227,7 @@ function createDrone(
         oscillator,
         gain,
         lfo,
-        lfoGain,
+        lfoGain
     };
 }
 
@@ -235,7 +237,7 @@ function playTone(
     durationSeconds: number,
     type: OscillatorType,
     volume: number,
-    delaySeconds = 0,
+    delaySeconds = 0
 ): void {
     const oscillator = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -257,7 +259,7 @@ function playNoise(
     ctx: AudioContext,
     durationSeconds: number,
     volume: number,
-    filterFrequency: number,
+    filterFrequency: number
 ): void {
     const sampleCount = Math.max(1, Math.floor(ctx.sampleRate * durationSeconds));
     const buffer = ctx.createBuffer(1, sampleCount, ctx.sampleRate);

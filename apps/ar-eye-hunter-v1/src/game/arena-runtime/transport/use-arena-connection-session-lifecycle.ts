@@ -1,19 +1,14 @@
-import { useCallback, useEffect } from 'react';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
-import type { AuthSession } from '@shared/api/api-config.ts';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarDirectorStatus, RallarRoomSummary } from '@shared-web/browser/rallar.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { useCallback, useEffect } from 'react';
+import type { Dispatch, RefObject, SetStateAction } from 'react';
 
-import {
-    GAME_AI_LANE_ID,
-    GAME_COMBAT_LANE_ID,
-    GAME_MOTION_LANE_ID,
-    type GameRealtimeMessage,
-} from '../../types.ts';
 import { ARENA_RALLAR_GAME_DATA_CHANNEL_LANES } from '../../rallar-game-match-adapter.ts';
-import { toErrorMessage } from '../arena-connection-helpers.ts';
-import type { ArenaConnectionState } from '../arena-connection-contracts.ts';
+import { GAME_AI_LANE_ID, GAME_COMBAT_LANE_ID, GAME_MOTION_LANE_ID, type GameRealtimeMessage } from '../../types.ts';
 import type { RemotePlayer } from '../../types.ts';
+import type { ArenaConnectionState } from '../arena-connection-contracts.ts';
+import { toErrorMessage } from '../arena-connection-helpers.ts';
 
 interface ArenaConnectionSessionLifecycleInput {
     readonly acceptMotionMessage: (senderId: string, message: GameRealtimeMessage) => void;
@@ -33,8 +28,8 @@ interface ArenaConnectionSessionLifecycleInput {
 }
 
 export function useArenaConnectionSessionLifecycle(
-    input: ArenaConnectionSessionLifecycleInput,
-): Readonly<{ connect: () => Promise<void> }> {
+    input: ArenaConnectionSessionLifecycleInput
+): Readonly<{ connect: () => Promise<void>; }> {
     const {
         acceptMotionMessage,
         acceptRealtimeMessage,
@@ -49,7 +44,7 @@ export function useArenaConnectionSessionLifecycle(
         setRemotePlayers,
         setRoomId,
         setRooms,
-        setSession,
+        setSession
     } = input;
 
     const connect = useCallback(async () => {
@@ -62,7 +57,7 @@ export function useArenaConnectionSessionLifecycle(
             const startup = await rallar.start({
                 refreshRooms: true,
                 dataChannelLanes: ARENA_RALLAR_GAME_DATA_CHANNEL_LANES,
-                signal,
+                signal
             });
             if (!isCurrentNetworkGeneration(generation) || signal.aborted) {
                 return;
@@ -78,7 +73,8 @@ export function useArenaConnectionSessionLifecycle(
             setRooms(roomState.rooms);
             setRoomId(roomState.currentRoomId);
             setConnectionState('connected');
-        } catch (err) {
+        }
+        catch (err) {
             if (!isCurrentNetworkGeneration(generation) || signal.aborted) {
                 return;
             }
@@ -102,38 +98,38 @@ export function useArenaConnectionSessionLifecycle(
                     GAME_MOTION_LANE_ID,
                     (message) => {
                         acceptMotionMessage(message.peerId, message.data);
-                    },
-                ),
+                    }
+                )
             )
             .add(
                 rallar.realtime.onJson<GameRealtimeMessage>(
                     GAME_COMBAT_LANE_ID,
                     (message) => {
                         acceptRealtimeMessage(message.peerId, message.data);
-                    },
-                ),
+                    }
+                )
             )
             .add(
                 rallar.realtime.onJson<GameRealtimeMessage>(
                     GAME_AI_LANE_ID,
                     (message) => {
                         acceptRealtimeMessage(message.peerId, message.data);
-                    },
-                ),
+                    }
+                )
             )
             .add(
                 rallar.rooms.onChange((state) => {
                     setRooms(state.rooms);
                     setRoomId(state.currentRoomId);
                     setDirectorStatus(
-                        rallar.director.status(state.currentRoomRef),
+                        rallar.director.status(state.currentRoomRef)
                     );
-                }),
+                })
             )
             .add(
                 rallar.director.onStatus((status) => {
                     setDirectorStatus(status);
-                }),
+                })
             );
 
         const directorPoll = window.setInterval(() => {
@@ -146,7 +142,7 @@ export function useArenaConnectionSessionLifecycle(
             const cutoff = Date.now() - 10_000;
             setRemotePlayers((previous) => {
                 const next = new Map(
-                    [...previous].filter(([, remote]) => remote.lastSeenEpochMs >= cutoff),
+                    [...previous].filter(([, remote]) => remote.lastSeenEpochMs >= cutoff)
                 );
                 return next.size === previous.size ? previous : next;
             });

@@ -1,14 +1,14 @@
+import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
+import type { RallarBlackBoxTestHttpRequestCommand } from '@shared-test/rallar-bb-test/types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toApiMutationRequestPath } from '@shared/api/mutation/api-mutation-request.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
-import type { RallarBlackBoxTestHttpRequestCommand } from '@shared-test/rallar-bb-test/types.ts';
-import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 
 import { RALLAR_SERVER_STATE_ENDPOINT_PRESETS } from './rallar-server-workbench/rallar-server-state-endpoint-presets.ts';
 import type {
     RallarServerEndpointPreset,
     RallarServerResponseBodyMode,
-    RallarServerRestMethod,
+    RallarServerRestMethod
 } from './rallar-server-workbench/rallar-server-workbench-contracts.ts';
 
 export type RallarServerEndpointDraft = Readonly<{
@@ -24,11 +24,11 @@ export type RallarServerEndpointDraft = Readonly<{
 export type RallarServerRestRequestInput =
     & RallarServerEndpointDraft
     & Readonly<{
-    apiBaseUrl: string;
-    timeoutMs: number;
-    authSession?: AuthSession;
-    forbidPlaceholderBaseUrl?: boolean;
-}>;
+        apiBaseUrl: string;
+        timeoutMs: number;
+        authSession?: AuthSession;
+        forbidPlaceholderBaseUrl?: boolean;
+    }>;
 
 export type RallarServerRestRequest = Readonly<{
     url: string;
@@ -160,7 +160,7 @@ export const RALLAR_SERVER_ENDPOINT_PRESETS: readonly RallarServerEndpointPreset
         label: 'Read runtime config',
         method: 'GET',
         pathTemplate: '/api/config',
-        requiresAuth: false,
+        requiresAuth: false
     },
     {
         presetId: 'auth-ws-ticket',
@@ -169,7 +169,7 @@ export const RALLAR_SERVER_ENDPOINT_PRESETS: readonly RallarServerEndpointPreset
         method: 'POST',
         pathTemplate: '/api/auth/ws-ticket/requests/{requestId}',
         requiresAuth: true,
-        body: {},
+        body: {}
     },
     {
         presetId: 'webrtc-ice',
@@ -177,7 +177,7 @@ export const RALLAR_SERVER_ENDPOINT_PRESETS: readonly RallarServerEndpointPreset
         label: 'Read ICE servers',
         method: 'GET',
         pathTemplate: '/api/webrtc/ice',
-        requiresAuth: true,
+        requiresAuth: true
     },
     ...RALLAR_SERVER_STATE_ENDPOINT_PRESETS,
     {
@@ -186,12 +186,12 @@ export const RALLAR_SERVER_ENDPOINT_PRESETS: readonly RallarServerEndpointPreset
         label: 'Read OpenAPI JSON',
         method: 'GET',
         pathTemplate: '/api/openapi.json',
-        requiresAuth: false,
-    },
+        requiresAuth: false
+    }
 ];
 
 export function defaultRallarServerWorkbenchVariables(
-    input: Partial<RallarServerWorkbenchVariables>,
+    input: Partial<RallarServerWorkbenchVariables>
 ): RallarServerWorkbenchVariables {
     const principalId = input.principalId || 'alice';
     const sessionId = input.sessionId || 'visible-session-alice';
@@ -205,13 +205,13 @@ export function defaultRallarServerWorkbenchVariables(
         requestId: input.requestId || crypto.randomUUID(),
         clientInstanceId: input.clientInstanceId || `${sessionId}-browser`,
         groupId: input.groupId || 'rallar-black-box-room',
-        username: input.username || principalId,
+        username: input.username || principalId
     };
 }
 
 export function applyRallarServerEndpointPreset(
     preset: RallarServerEndpointPreset,
-    variables: RallarServerWorkbenchVariables,
+    variables: RallarServerWorkbenchVariables
 ): RallarServerEndpointDraft {
     return {
         method: preset.method,
@@ -222,26 +222,28 @@ export function applyRallarServerEndpointPreset(
             ? ''
             : resolveRallarServerBodyTemplate(preset.body, variables),
         responseBodyMode: preset.responseBodyMode ?? 'auto',
-        attachAuth: preset.requiresAuth,
+        attachAuth: preset.requiresAuth
     };
 }
 
 export function resolveRallarServerPathTemplate(
     template: string,
-    variables: RallarServerWorkbenchVariables,
+    variables: RallarServerWorkbenchVariables
 ): string {
-    return template.replace(/\{([A-Za-z0-9_]+)\}/g, (_, key: keyof RallarServerWorkbenchVariables) =>
-        encodeURIComponent(variables[key] ?? `{${String(key)}}`)
+    return template.replace(
+        /\{([A-Za-z0-9_]+)\}/g,
+        (_, key: keyof RallarServerWorkbenchVariables) => encodeURIComponent(variables[key] ?? `{${String(key)}}`)
     );
 }
 
 export function resolveRallarServerBodyTemplate(
     body: unknown,
-    variables: RallarServerWorkbenchVariables,
+    variables: RallarServerWorkbenchVariables
 ): string {
     const template = JSON.stringify(body, null, 2);
-    return template.replace(/\{([A-Za-z0-9_]+)\}/g, (_, key: keyof RallarServerWorkbenchVariables) =>
-        variables[key] ?? `{${String(key)}}`
+    return template.replace(
+        /\{([A-Za-z0-9_]+)\}/g,
+        (_, key: keyof RallarServerWorkbenchVariables) => variables[key] ?? `{${String(key)}}`
     );
 }
 
@@ -255,7 +257,7 @@ export function buildRallarServerRestRequest(input: RallarServerRestRequestInput
         : parseOptionalJsonValue(input.bodyText, 'Body JSON');
     const headers: Record<string, string> = {
         accept: 'application/json',
-        ...customHeaders,
+        ...customHeaders
     };
 
     if (bodyValue !== undefined && !hasHeader(headers, 'content-type')) {
@@ -278,15 +280,15 @@ export function buildRallarServerRestRequest(input: RallarServerRestRequestInput
         bodyText: bodyValue === undefined
             ? undefined
             : typeof bodyValue === 'string'
-                ? bodyValue
-                : JSON.stringify(bodyValue),
-        redactedHeaders: redactRallarServerValue(headers, input.authSession),
+            ? bodyValue
+            : JSON.stringify(bodyValue),
+        redactedHeaders: redactRallarServerValue(headers, input.authSession)
     };
 }
 
 export async function executeRallarServerRestRequest(
     input: RallarServerRestRequestInput,
-    fetchImpl: typeof fetch = fetch,
+    fetchImpl: typeof fetch = fetch
 ): Promise<RallarServerRestResponse> {
     const request = buildRallarServerRestRequest(input);
     const controller = new AbortController();
@@ -300,7 +302,7 @@ export async function executeRallarServerRestRequest(
             method: request.method,
             headers: request.headers,
             body: request.bodyText,
-            signal: controller.signal,
+            signal: controller.signal
         });
         const durationMs = Date.now() - startedAt;
         const headers = toHeadersRecord(response.headers);
@@ -313,7 +315,7 @@ export async function executeRallarServerRestRequest(
                 ? undefined
                 : {
                     kind: classifyHttpStatus(response.status),
-                    message: `HTTP ${response.status} ${response.statusText}`,
+                    message: `HTTP ${response.status} ${response.statusText}`
                 });
 
         return {
@@ -326,9 +328,10 @@ export async function executeRallarServerRestRequest(
             bodyText,
             bodyJson: parsed.bodyJson,
             bodyKind: parsed.bodyKind,
-            error,
+            error
         };
-    } catch (error) {
+    }
+    catch (error) {
         const durationMs = Date.now() - startedAt;
         return {
             ok: false,
@@ -339,9 +342,10 @@ export async function executeRallarServerRestRequest(
             headers: {},
             bodyText: '',
             bodyKind: 'empty',
-            error: classifyFetchError(error),
+            error: classifyFetchError(error)
         };
-    } finally {
+    }
+    finally {
         if (timeout !== undefined) {
             clearTimeout(timeout);
         }
@@ -351,21 +355,21 @@ export async function executeRallarServerRestRequest(
 export async function executeRallarServerMutationRequest(
     input: RallarServerRestRequestInput,
     requestId: string,
-    fetchImpl: typeof fetch = fetch,
+    fetchImpl: typeof fetch = fetch
 ): Promise<RallarServerRestResponse> {
     return await executeRallarServerRestRequest(
         {
             ...input,
             path: toApiMutationRequestPath(input.path, requestId),
-            bodyText: withoutMutationRequestId(input.bodyText),
+            bodyText: withoutMutationRequestId(input.bodyText)
         },
-        fetchImpl,
+        fetchImpl
     );
 }
 
 export function toRallarServerBlackBoxCommand(
     input: RallarServerRestRequestInput,
-    commandId = `rallar-server-${input.method.toLowerCase()}-${Date.now()}`,
+    commandId = `rallar-server-${input.method.toLowerCase()}-${Date.now()}`
 ): RallarBlackBoxTestHttpRequestCommand {
     const query = parseOptionalJsonRecord(input.queryText, 'Query JSON');
     const headers = parseStringRecord(input.headersText, 'Headers JSON');
@@ -381,29 +385,31 @@ export function toRallarServerBlackBoxCommand(
             path,
             method: input.method,
             ...(Object.keys(headers).length > 0 ? { headers } : {}),
-            ...(bodyValue === undefined ? {} : { body: bodyValue }),
+            ...(bodyValue === undefined ? {} : { body: bodyValue })
         },
         response: {
             body: input.responseBodyMode === 'none'
                 ? 'none'
                 : input.responseBodyMode === 'text'
-                    ? 'text'
-                    : 'json',
-        },
+                ? 'text'
+                : 'json'
+        }
     };
 }
 
-export function buildRallarServerCollectionStepRequestInput(input: Readonly<{
-    step: RallarServerRestCollectionStep;
-    apiBaseUrl: string;
-    variables: RallarServerRestCollectionVariables;
-    authSession?: AuthSession;
-    defaultTimeoutMs: number;
-    forbidPlaceholderBaseUrl?: boolean;
-}>): RallarServerRestRequestInput {
+export function buildRallarServerCollectionStepRequestInput(
+    input: Readonly<{
+        step: RallarServerRestCollectionStep;
+        apiBaseUrl: string;
+        variables: RallarServerRestCollectionVariables;
+        authSession?: AuthSession;
+        defaultTimeoutMs: number;
+        forbidPlaceholderBaseUrl?: boolean;
+    }>
+): RallarServerRestRequestInput {
     const request = resolveRallarServerCollectionValue(
         input.step.request,
-        input.variables,
+        input.variables
     ) as RallarServerRestCollectionRequest;
 
     return {
@@ -419,14 +425,14 @@ export function buildRallarServerCollectionStepRequestInput(input: Readonly<{
         attachAuth: request.attachAuth ?? false,
         authSession: input.authSession,
         timeoutMs: request.timeoutMs ?? input.defaultTimeoutMs,
-        forbidPlaceholderBaseUrl: input.forbidPlaceholderBaseUrl,
+        forbidPlaceholderBaseUrl: input.forbidPlaceholderBaseUrl
     };
 }
 
 export function assertRallarServerRestResponse(
     response: RallarServerRestResponse,
     expectation: RallarServerRestCollectionExpectation | undefined,
-    variables: RallarServerRestCollectionVariables = {},
+    variables: RallarServerRestCollectionVariables = {}
 ): readonly RallarServerRestAssertionResult[] {
     if (!expectation) {
         return [
@@ -434,8 +440,8 @@ export function assertRallarServerRestResponse(
                 label: 'response ok',
                 ok: response.ok,
                 expected: true,
-                actual: response.ok,
-            },
+                actual: response.ok
+            }
         ];
     }
 
@@ -445,7 +451,7 @@ export function assertRallarServerRestResponse(
             label: 'response ok',
             ok: response.ok === expectation.ok,
             expected: expectation.ok,
-            actual: response.ok,
+            actual: response.ok
         });
     }
     if (expectation.status !== undefined) {
@@ -456,7 +462,7 @@ export function assertRallarServerRestResponse(
             label: 'status',
             ok: expectedStatuses.includes(response.status),
             expected: expectedStatuses,
-            actual: response.status,
+            actual: response.status
         });
     }
 
@@ -466,7 +472,7 @@ export function assertRallarServerRestResponse(
             `body ${bodyExpectation.path}`,
             actual,
             bodyExpectation,
-            variables,
+            variables
         ));
     }
 
@@ -477,7 +483,7 @@ export function assertRallarServerRestResponse(
             `header ${headerExpectation.name}`,
             actual,
             headerExpectation,
-            variables,
+            variables
         ));
     }
 
@@ -488,7 +494,7 @@ export function assertRallarServerRestResponse(
 
 export function extractRallarServerRestVariables(
     response: RallarServerRestResponse,
-    extractions: readonly RallarServerRestCollectionExtraction[] | undefined,
+    extractions: readonly RallarServerRestCollectionExtraction[] | undefined
 ): RallarServerRestCollectionVariables {
     const extracted: Record<string, unknown> = {};
     const headers = lowerCaseHeaders(response.headers);
@@ -498,10 +504,12 @@ export function extractRallarServerRestVariables(
         let value: unknown;
         if (from === 'status') {
             value = response.status;
-        } else if (from === 'headers') {
+        }
+        else if (from === 'headers') {
             const headerName = extraction.header ?? extraction.path ?? '';
             value = headers[headerName.toLowerCase()];
-        } else {
+        }
+        else {
             value = readRallarServerJsonPath(response.bodyJson, extraction.path ?? '$');
         }
 
@@ -513,7 +521,7 @@ export function extractRallarServerRestVariables(
 
 export function resolveRallarServerCollectionValue(
     value: unknown,
-    variables: RallarServerRestCollectionVariables,
+    variables: RallarServerRestCollectionVariables
 ): unknown {
     if (typeof value === 'string') {
         return value.replace(
@@ -522,18 +530,18 @@ export function resolveRallarServerCollectionValue(
                 const key = moustacheKey ?? dollarKey;
                 const resolved = readRallarServerJsonPath(variables, key);
                 return resolved === undefined || resolved === null ? match : String(resolved);
-            },
+            }
         );
     }
     if (Array.isArray(value)) {
-        return value.map(item => resolveRallarServerCollectionValue(item, variables));
+        return value.map((item) => resolveRallarServerCollectionValue(item, variables));
     }
     if (value && typeof value === 'object') {
         return Object.fromEntries(
             Object.entries(value).map(([key, entry]) => [
                 key,
-                resolveRallarServerCollectionValue(entry, variables),
-            ]),
+                resolveRallarServerCollectionValue(entry, variables)
+            ])
         );
     }
 
@@ -548,23 +556,25 @@ export function readRallarServerJsonPath(value: unknown, path: string | undefine
     const normalized = path.startsWith('$.')
         ? path.slice(2)
         : path.startsWith('$')
-            ? path.slice(1).replace(/^\./, '')
-            : path;
+        ? path.slice(1).replace(/^\./, '')
+        : path;
     if (!normalized) {
         return value;
     }
 
     const tokens = [...normalized.matchAll(/([^.[\]]+)|\[(\d+)\]/g)]
-        .map(match => match[1] ?? match[2])
+        .map((match) => match[1] ?? match[2])
         .filter(Boolean);
     let current = value;
     for (const token of tokens) {
         if (Array.isArray(current)) {
             const index = Number(token);
             current = Number.isInteger(index) ? current[index] : undefined;
-        } else if (current && typeof current === 'object') {
+        }
+        else if (current && typeof current === 'object') {
             current = (current as Record<string, unknown>)[token];
-        } else {
+        }
+        else {
             return undefined;
         }
     }
@@ -572,17 +582,19 @@ export function readRallarServerJsonPath(value: unknown, path: string | undefine
     return current;
 }
 
-export function toRallarServerRestCollectionRecipe(input: Readonly<{
-    collection: RallarServerRestCollection;
-    apiBaseUrl: string;
-    variables: RallarServerRestCollectionVariables;
-    authSession?: AuthSession;
-    defaultTimeoutMs: number;
-    forbidPlaceholderBaseUrl?: boolean;
-}>): unknown {
+export function toRallarServerRestCollectionRecipe(
+    input: Readonly<{
+        collection: RallarServerRestCollection;
+        apiBaseUrl: string;
+        variables: RallarServerRestCollectionVariables;
+        authSession?: AuthSession;
+        defaultTimeoutMs: number;
+        forbidPlaceholderBaseUrl?: boolean;
+    }>
+): unknown {
     const variables = {
         ...(input.collection.variables ?? {}),
-        ...input.variables,
+        ...input.variables
     };
 
     return {
@@ -596,11 +608,11 @@ export function toRallarServerRestCollectionRecipe(input: Readonly<{
                 variables,
                 authSession: input.authSession,
                 defaultTimeoutMs: input.defaultTimeoutMs,
-                forbidPlaceholderBaseUrl: input.forbidPlaceholderBaseUrl,
+                forbidPlaceholderBaseUrl: input.forbidPlaceholderBaseUrl
             });
             const command = toRallarServerBlackBoxCommand(
                 requestInput,
-                `${input.collection.collectionId}-${index + 1}-${step.stepId}`,
+                `${input.collection.collectionId}-${index + 1}-${step.stepId}`
             );
             return {
                 ...command,
@@ -611,16 +623,16 @@ export function toRallarServerRestCollectionRecipe(input: Readonly<{
                         stepId: step.stepId,
                         attachAuth: requestInput.attachAuth,
                         expect: step.expect,
-                        extract: step.extract,
-                    },
-                },
+                        extract: step.extract
+                    }
+                }
             };
-        }),
+        })
     };
 }
 
 export function toRallarServerCurl(
-    input: RallarServerRestRequestInput,
+    input: RallarServerRestRequestInput
 ): string {
     const request = buildRallarServerRestRequest(input);
     const redactedBodyText = request.bodyText
@@ -636,7 +648,7 @@ export function toRallarServerCurl(
             .flat(),
         ...(redactedBodyText
             ? ['--data', quoteShell(redactedBodyText)]
-            : []),
+            : [])
     ];
 
     return lines.join(' ');
@@ -646,8 +658,8 @@ export function redactRallarServerValue<T>(value: T, authSession?: AuthSession):
     return redactRallarBlackBoxValue(value, {
         secretValues: [
             authSession?.accessToken,
-            authSession ? `Bearer ${authSession.accessToken}` : undefined,
-        ].filter((entry): entry is string => Boolean(entry)),
+            authSession ? `Bearer ${authSession.accessToken}` : undefined
+        ].filter((entry): entry is string => Boolean(entry))
     });
 }
 
@@ -661,9 +673,10 @@ export function redactRallarServerText(text: string, authSession?: AuthSession):
         return JSON.stringify(
             redactRallarServerValue(JSON.parse(trimmed) as unknown, authSession),
             null,
-            2,
+            2
         );
-    } catch {
+    }
+    catch {
         return redactRallarServerValue(text, authSession);
     }
 }
@@ -678,13 +691,14 @@ export function redactRallarServerUrl(url: string, authSession?: AuthSession): s
             }
         }
         return parsed.toString();
-    } catch {
+    }
+    catch {
         return redactRallarServerValue(url, authSession);
     }
 }
 
 export function extractRallarServerOpenApiEndpoints(
-    openApi: OpenApiDocument,
+    openApi: OpenApiDocument
 ): readonly RallarServerEndpointPreset[] {
     const paths = openApi.paths ?? {};
 
@@ -708,7 +722,7 @@ export function extractRallarServerOpenApiEndpoints(
                     label: summary,
                     method: method.toUpperCase() as RallarServerRestMethod,
                     pathTemplate,
-                    requiresAuth: Array.isArray(operationRecord.security),
+                    requiresAuth: Array.isArray(operationRecord.security)
                 };
             })
     );
@@ -716,7 +730,7 @@ export function extractRallarServerOpenApiEndpoints(
 
 export async function fetchRallarServerOpenApiEndpoints(
     apiBaseUrl: string,
-    fetchImpl: typeof fetch = fetch,
+    fetchImpl: typeof fetch = fetch
 ): Promise<readonly RallarServerEndpointPreset[]> {
     const baseUrl = normalizeRallarServerBaseUrl(apiBaseUrl, false);
     const response = await fetchImpl(new URL('/api/openapi.json', baseUrl).toString());
@@ -735,7 +749,7 @@ function evaluateCollectionValueExpectation(
         contains?: string;
         exists?: boolean;
     }>,
-    variables: RallarServerRestCollectionVariables,
+    variables: RallarServerRestCollectionVariables
 ): readonly RallarServerRestAssertionResult[] {
     const results: RallarServerRestAssertionResult[] = [];
 
@@ -745,7 +759,7 @@ function evaluateCollectionValueExpectation(
             label: `${label} exists`,
             ok: exists === expectation.exists,
             expected: expectation.exists,
-            actual: exists,
+            actual: exists
         });
     }
     if (Object.prototype.hasOwnProperty.call(expectation, 'equals')) {
@@ -754,7 +768,7 @@ function evaluateCollectionValueExpectation(
             label: `${label} equals`,
             ok: stableJson(actual) === stableJson(expected),
             expected,
-            actual,
+            actual
         });
     }
     if (expectation.contains !== undefined) {
@@ -762,7 +776,7 @@ function evaluateCollectionValueExpectation(
             label: `${label} contains`,
             ok: stableJson(actual).includes(expectation.contains),
             expected: expectation.contains,
-            actual,
+            actual
         });
     }
 
@@ -771,7 +785,7 @@ function evaluateCollectionValueExpectation(
 
 function lowerCaseHeaders(headers: Readonly<Record<string, string>>): Readonly<Record<string, string>> {
     return Object.fromEntries(
-        Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]),
+        Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value])
     );
 }
 
@@ -781,7 +795,7 @@ function stableJson(value: unknown): string {
 
 function normalizeRallarServerBaseUrl(
     apiBaseUrl: string,
-    forbidPlaceholderBaseUrl?: boolean,
+    forbidPlaceholderBaseUrl?: boolean
 ): string {
     const trimmed = apiBaseUrl.trim();
     if (!trimmed) {
@@ -797,7 +811,7 @@ function normalizeRallarServerBaseUrl(
 function toRallarServerRequestUrl(
     apiBaseUrl: string,
     path: string,
-    query: Readonly<Record<string, unknown>>,
+    query: Readonly<Record<string, unknown>>
 ): string {
     return withQueryString(new URL(normalizePath(path), apiBaseUrl).toString(), query);
 }
@@ -815,7 +829,7 @@ function normalizePath(path: string): string {
 
 function withQueryString(
     pathOrUrl: string,
-    query: Readonly<Record<string, unknown>>,
+    query: Readonly<Record<string, unknown>>
 ): string {
     const url = /^https?:\/\//i.test(pathOrUrl)
         ? new URL(pathOrUrl)
@@ -841,7 +855,7 @@ function withQueryString(
 
 function parseOptionalJsonRecord(
     text: string,
-    label: string,
+    label: string
 ): Readonly<Record<string, unknown>> {
     const value = parseOptionalJsonValue(text, label);
     if (value === undefined) {
@@ -856,7 +870,7 @@ function parseOptionalJsonRecord(
 
 function parseStringRecord(
     text: string,
-    label: string,
+    label: string
 ): Readonly<Record<string, string>> {
     const record = parseOptionalJsonRecord(text, label);
     return Object.fromEntries(
@@ -870,7 +884,7 @@ function parseStringRecord(
             }
 
             return [key, String(value)];
-        }),
+        })
     );
 }
 
@@ -882,7 +896,8 @@ function parseOptionalJsonValue(text: string, label: string): unknown | undefine
 
     try {
         return JSON.parse(trimmed) as unknown;
-    } catch (error) {
+    }
+    catch (error) {
         throw new Error(`${label} is invalid: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
@@ -894,13 +909,13 @@ function withoutMutationRequestId(bodyText: string): string {
     }
 
     return JSON.stringify(
-        Object.fromEntries(Object.entries(body).filter(([key]) => key !== 'requestId')),
+        Object.fromEntries(Object.entries(body).filter(([key]) => key !== 'requestId'))
     );
 }
 
 function hasHeader(headers: Readonly<Record<string, string>>, expected: string): boolean {
     const lowerExpected = expected.toLowerCase();
-    return Object.keys(headers).some(key => key.toLowerCase() === lowerExpected);
+    return Object.keys(headers).some((key) => key.toLowerCase() === lowerExpected);
 }
 
 function toHeadersRecord(headers: Headers): Readonly<Record<string, string>> {
@@ -914,7 +929,7 @@ function toHeadersRecord(headers: Headers): Readonly<Record<string, string>> {
 function parseResponseBody(
     bodyText: string,
     headers: Readonly<Record<string, string>>,
-    mode: RallarServerResponseBodyMode,
+    mode: RallarServerResponseBodyMode
 ): Pick<RallarServerRestResponse, 'bodyKind' | 'bodyJson' | 'error'> {
     if (!bodyText) {
         return { bodyKind: 'empty' };
@@ -929,15 +944,16 @@ function parseResponseBody(
     try {
         return {
             bodyKind: 'json',
-            bodyJson: JSON.parse(bodyText) as unknown,
+            bodyJson: JSON.parse(bodyText) as unknown
         };
-    } catch (error) {
+    }
+    catch (error) {
         return {
             bodyKind: 'text',
             error: {
                 kind: 'invalid-json',
-                message: `Response JSON is invalid: ${error instanceof Error ? error.message : String(error)}`,
-            },
+                message: `Response JSON is invalid: ${error instanceof Error ? error.message : String(error)}`
+            }
         };
     }
 }
@@ -956,13 +972,13 @@ function classifyFetchError(error: unknown): RallarServerRestResponse['error'] {
     if (error instanceof DOMException && error.name === 'AbortError') {
         return {
             kind: 'timeout',
-            message: 'Rallar Server request timed out.',
+            message: 'Rallar Server request timed out.'
         };
     }
 
     return {
         kind: 'network-or-cors',
-        message: error instanceof Error ? error.message : String(error),
+        message: error instanceof Error ? error.message : String(error)
     };
 }
 
@@ -971,5 +987,5 @@ function isRallarServerRestMethod(value: string): boolean {
 }
 
 function quoteShell(value: string): string {
-    return `'${value.replaceAll("'", "'\\''")}'`;
+    return `'${value.replaceAll('\'', '\'\\\'\'')}'`;
 }

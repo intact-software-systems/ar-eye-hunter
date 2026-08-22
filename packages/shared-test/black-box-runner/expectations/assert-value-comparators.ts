@@ -11,11 +11,11 @@ function toPathSegments(path: string): string[] {
     return path
         .replaceAll(/\[(\d+)]/g, '.$1')
         .split('.')
-        .map(segment => segment.trim())
-        .filter(segment => segment.length > 0);
+        .map((segment) => segment.trim())
+        .filter((segment) => segment.length > 0);
 }
 
-function resolveComparatorValue(path: string, root: any): { found: boolean, value?: any } {
+function resolveComparatorValue(path: string, root: any): { found: boolean; value?: any; } {
     let value = root;
 
     for (const segment of toPathSegments(path)) {
@@ -41,7 +41,7 @@ function toIssue(input: {
         comparator: input.comparator,
         expected: input.expected,
         actual: input.actual,
-        message: input.message,
+        message: input.message
     };
 }
 
@@ -52,7 +52,7 @@ function numericIssues(entry: any, value: any): AssertComparatorIssue[] {
         ['gt', (actual, bound) => actual > bound],
         ['gte', (actual, bound) => actual >= bound],
         ['lt', (actual, bound) => actual < bound],
-        ['lte', (actual, bound) => actual <= bound],
+        ['lte', (actual, bound) => actual <= bound]
     ];
 
     for (const [comparator, satisfies] of numericComparators) {
@@ -67,7 +67,7 @@ function numericIssues(entry: any, value: any): AssertComparatorIssue[] {
                 comparator,
                 expected: entry[comparator],
                 actual: value,
-                message: 'Comparator requires finite numeric values.',
+                message: 'Comparator requires finite numeric values.'
             }));
             continue;
         }
@@ -78,7 +78,7 @@ function numericIssues(entry: any, value: any): AssertComparatorIssue[] {
                 comparator,
                 expected: entry[comparator],
                 actual: value,
-                message: `Expected value ${comparator} ${bound}.`,
+                message: `Expected value ${comparator} ${bound}.`
             }));
         }
     }
@@ -99,7 +99,7 @@ function betweenIssues(entry: any, value: any): AssertComparatorIssue[] {
             comparator: 'between',
             expected: entry.between,
             actual: value,
-            message: 'Comparator between requires a [low, high] numeric pair.',
+            message: 'Comparator between requires a [low, high] numeric pair.'
         })];
     }
 
@@ -109,7 +109,7 @@ function betweenIssues(entry: any, value: any): AssertComparatorIssue[] {
             comparator: 'between',
             expected: entry.between,
             actual: value,
-            message: `Expected value between ${bounds[0]} and ${bounds[1]} inclusive.`,
+            message: `Expected value between ${bounds[0]} and ${bounds[1]} inclusive.`
         })];
     }
 
@@ -131,7 +131,7 @@ function lengthIssues(entry: any, value: any): AssertComparatorIssue[] {
             comparator: 'length',
             expected: entry.length,
             actual: value,
-            message: `Expected an array or string of length ${expectedLength}.`,
+            message: `Expected an array or string of length ${expectedLength}.`
         })];
     }
 
@@ -148,7 +148,7 @@ function stringIssues(entry: any, value: any): AssertComparatorIssue[] {
                 comparator: 'contains',
                 expected: entry.contains,
                 actual: value,
-                message: `Expected a string containing ${String(entry.contains)}.`,
+                message: `Expected a string containing ${String(entry.contains)}.`
             }));
         }
     }
@@ -160,7 +160,7 @@ function stringIssues(entry: any, value: any): AssertComparatorIssue[] {
                 comparator: 'matches',
                 expected: entry.matches,
                 actual: value,
-                message: `Expected a string matching /${String(entry.matches)}/.`,
+                message: `Expected a string matching /${String(entry.matches)}/.`
             }));
         }
     }
@@ -177,17 +177,17 @@ function entryIssues(entry: any, actual: any): AssertComparatorIssue[] {
             comparator: 'path',
             expected: undefined,
             actual: undefined,
-            message: 'Comparator entries need a non-empty string path.',
+            message: 'Comparator entries need a non-empty string path.'
         })];
     }
 
-    if (!COMPARATOR_KEYS.some(key => entry[key] !== undefined)) {
+    if (!COMPARATOR_KEYS.some((key) => entry[key] !== undefined)) {
         return [toIssue({
             path: entry.path,
             comparator: 'none',
             expected: undefined,
             actual: undefined,
-            message: `Comparator entries need at least one of: ${COMPARATOR_KEYS.join(', ')}.`,
+            message: `Comparator entries need at least one of: ${COMPARATOR_KEYS.join(', ')}.`
         })];
     }
 
@@ -198,7 +198,7 @@ function entryIssues(entry: any, actual: any): AssertComparatorIssue[] {
             comparator: 'path',
             expected: undefined,
             actual: undefined,
-            message: 'Comparator path did not resolve to a value.',
+            message: 'Comparator path did not resolve to a value.'
         })];
     }
 
@@ -206,7 +206,7 @@ function entryIssues(entry: any, actual: any): AssertComparatorIssue[] {
         ...numericIssues(entry, resolved.value),
         ...betweenIssues(entry, resolved.value),
         ...lengthIssues(entry, resolved.value),
-        ...stringIssues(entry, resolved.value),
+        ...stringIssues(entry, resolved.value)
     ];
 }
 
@@ -214,11 +214,11 @@ function entryIssues(entry: any, actual: any): AssertComparatorIssue[] {
 // every failing comparator is reported, never just the first.
 export function validateAssertValueComparators(
     actual: any,
-    comparators: any,
+    comparators: any
 ): readonly AssertComparatorIssue[] {
     if (!Array.isArray(comparators)) {
         return [];
     }
 
-    return comparators.flatMap(entry => entryIssues(entry, actual));
+    return comparators.flatMap((entry) => entryIssues(entry, actual));
 }

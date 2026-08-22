@@ -27,7 +27,7 @@ export function createInitialMonitorOperationState(): MonitorOperationState {
         artifact: { status: 'idle', bundle: undefined, error: undefined },
         operationGeneration: 0,
         activeOperation: undefined,
-        operationError: undefined,
+        operationError: undefined
     };
 }
 
@@ -35,11 +35,13 @@ export function beginMonitorOperation<State extends MonitorOperationState>(
     state: State,
     contextKey: string,
     action: MonitorAction,
-    generation = state.operationGeneration + 1,
-): Readonly<{ state: State; authority: MonitorOperationAuthority }> {
+    generation = state.operationGeneration + 1
+): Readonly<{ state: State; authority: MonitorOperationAuthority; }> {
     const nextGeneration = Math.max(generation, state.operationGeneration + 1);
     const authority = { contextKey, generation: nextGeneration, action };
-    if (state.contextKey !== contextKey) return { state, authority };
+    if (state.contextKey !== contextKey) {
+        return { state, authority };
+    }
     const artifactOperation = action === 'load-artifact' ||
         action === 'export-artifact';
     return {
@@ -51,46 +53,46 @@ export function beginMonitorOperation<State extends MonitorOperationState>(
             operationError: undefined,
             artifact: artifactOperation
                 ? { status: 'pending', bundle: state.artifact.bundle }
-                : state.artifact,
-        },
-    } as Readonly<{ state: State; authority: MonitorOperationAuthority }>;
+                : state.artifact
+        }
+    } as Readonly<{ state: State; authority: MonitorOperationAuthority; }>;
 }
 
-export function completeMonitorArtifactOperation<
-    State extends MonitorOperationState,
->(
+export function completeMonitorArtifactOperation<State extends MonitorOperationState>(
     state: State,
     authority: MonitorOperationAuthority,
-    bundle: ControlDistributedRunArtifactBundle,
+    bundle: ControlDistributedRunArtifactBundle
 ): State {
-    if (!hasMonitorOperationAuthority(state, authority)) return state;
+    if (!hasMonitorOperationAuthority(state, authority)) {
+        return state;
+    }
     if (
         bundle.distributedRunId !== distributedRunIdFromContext(
-            authority.contextKey,
+            authority.contextKey
         )
     ) {
         return finishArtifactError(
             state,
-            new Error('Artifact response belongs to a different distributed run.'),
+            new Error('Artifact response belongs to a different distributed run.')
         );
     }
     return {
         ...state,
         artifact: { status: 'ready', bundle, error: undefined },
         activeOperation: undefined,
-        operationError: undefined,
+        operationError: undefined
     } as State;
 }
 
 export function completeMonitorOperation<State extends MonitorOperationState>(
     state: State,
-    authority: MonitorOperationAuthority,
+    authority: MonitorOperationAuthority
 ): State {
     return hasMonitorOperationAuthority(state, authority)
         ? {
             ...state,
             activeOperation: undefined,
-            operationError: undefined,
+            operationError: undefined
         } as State
         : state;
 }
@@ -98,22 +100,24 @@ export function completeMonitorOperation<State extends MonitorOperationState>(
 export function failMonitorOperation<State extends MonitorOperationState>(
     state: State,
     authority: MonitorOperationAuthority,
-    error: unknown,
+    error: unknown
 ): State {
-    if (!hasMonitorOperationAuthority(state, authority)) return state;
+    if (!hasMonitorOperationAuthority(state, authority)) {
+        return state;
+    }
     return authority.action === 'load-artifact' ||
             authority.action === 'export-artifact'
         ? finishArtifactError(state, error)
         : {
             ...state,
             activeOperation: undefined,
-            operationError: error,
+            operationError: error
         } as State;
 }
 
 export function hasMonitorOperationAuthority(
     state: MonitorOperationState,
-    authority: MonitorOperationAuthority,
+    authority: MonitorOperationAuthority
 ): boolean {
     const active = state.activeOperation;
     return state.contextKey === authority.contextKey &&
@@ -124,27 +128,28 @@ export function hasMonitorOperationAuthority(
 
 function finishArtifactError<State extends MonitorOperationState>(
     state: State,
-    error: unknown,
+    error: unknown
 ): State {
     return {
         ...state,
         artifact: {
             status: 'error',
             bundle: state.artifact.bundle,
-            error: errorMessage(error),
+            error: errorMessage(error)
         },
         activeOperation: undefined,
-        operationError: error,
+        operationError: error
     } as State;
 }
 
 function distributedRunIdFromContext(contextKey: string): string | undefined {
     try {
-        const value = JSON.parse(contextKey) as { distributedRunId?: unknown };
+        const value = JSON.parse(contextKey) as { distributedRunId?: unknown; };
         return typeof value.distributedRunId === 'string'
             ? value.distributedRunId
             : undefined;
-    } catch {
+    }
+    catch {
         return undefined;
     }
 }

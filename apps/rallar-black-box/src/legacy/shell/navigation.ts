@@ -1,23 +1,18 @@
 import {
-    DEFAULT_APP_MODE_ID,
-    DEFAULT_APP_TAB_ID,
     appModeForTab,
     appModeFromValue,
-    appTabInMode,
     appTabFromValue,
+    appTabInMode,
+    DEFAULT_APP_MODE_ID,
+    DEFAULT_APP_TAB_ID,
     defaultAppTabForMode,
     runnerAdvancedSurfaceForTab,
     visibleAppTabForTab,
     type AppModeId,
     type AppTabId,
-    type RunnerAdvancedSurfaceId,
+    type RunnerAdvancedSurfaceId
 } from '../../app-tabs.ts';
-import {
-    readStoredAppMode,
-    readStoredAppTab,
-    writeStoredAppMode,
-    writeStoredAppTab,
-} from '../../ui-persistence.ts';
+import { readStoredAppMode, readStoredAppTab, writeStoredAppMode, writeStoredAppTab } from '../../ui-persistence.ts';
 import { browserUiStorage } from './browser-ui-storage.ts';
 
 export type AppNavigationState = Readonly<{
@@ -39,25 +34,25 @@ function advancedSurfaceFromValue(value: string | null | undefined): RunnerAdvan
     }
 }
 
-export function normalizeAppNavigation(input: Readonly<{
-    mode?: AppModeId;
-    tab: AppTabId;
-    advancedSurface?: RunnerAdvancedSurfaceId;
-}>): AppNavigationState {
+export function normalizeAppNavigation(
+    input: Readonly<{
+        mode?: AppModeId;
+        tab: AppTabId;
+        advancedSurface?: RunnerAdvancedSurfaceId;
+    }>
+): AppNavigationState {
     const visibleTab = visibleAppTabForTab(input.tab);
-    const mode =
-        input.mode && appTabInMode(visibleTab, input.mode)
-            ? input.mode
-            : appModeForTab(visibleTab);
-    const advancedSurface =
-        visibleTab === 'advanced'
-            ? input.advancedSurface ?? runnerAdvancedSurfaceForTab(input.tab)
-            : undefined;
+    const mode = input.mode && appTabInMode(visibleTab, input.mode)
+        ? input.mode
+        : appModeForTab(visibleTab);
+    const advancedSurface = visibleTab === 'advanced'
+        ? input.advancedSurface ?? runnerAdvancedSurfaceForTab(input.tab)
+        : undefined;
 
     return {
         mode,
         tab: visibleTab,
-        ...(advancedSurface ? { advancedSurface } : {}),
+        ...(advancedSurface ? { advancedSurface } : {})
     };
 }
 
@@ -65,7 +60,7 @@ export function readInitialAppNavigation(): AppNavigationState {
     if (typeof window === 'undefined') {
         return {
             mode: DEFAULT_APP_MODE_ID,
-            tab: DEFAULT_APP_TAB_ID,
+            tab: DEFAULT_APP_TAB_ID
         };
     }
 
@@ -81,8 +76,8 @@ export function readInitialAppNavigation(): AppNavigationState {
             mode: explicitMode,
             tab,
             advancedSurface: advancedSurfaceFromValue(
-                params.get('advancedSurface') ?? params.get('advanced'),
-            ),
+                params.get('advancedSurface') ?? params.get('advanced')
+            )
         });
         writeStoredAppMode(browserUiStorage(), navigation.mode);
         writeStoredAppTab(browserUiStorage(), navigation.tab);
@@ -92,16 +87,15 @@ export function readInitialAppNavigation(): AppNavigationState {
     const storedMode = readStoredAppMode(browserUiStorage());
     const mode = explicitMode ?? storedMode ?? DEFAULT_APP_MODE_ID;
     const storedTab = readStoredAppTab(browserUiStorage());
-    const requestedTab =
-        storedTab && appTabInMode(storedTab, mode)
-            ? storedTab
-            : defaultAppTabForMode(mode);
+    const requestedTab = storedTab && appTabInMode(storedTab, mode)
+        ? storedTab
+        : defaultAppTabForMode(mode);
     const navigation = normalizeAppNavigation({
         mode,
         tab: requestedTab,
         advancedSurface: advancedSurfaceFromValue(
-            params.get('advancedSurface') ?? params.get('advanced'),
-        ),
+            params.get('advancedSurface') ?? params.get('advanced')
+        )
     });
 
     writeStoredAppMode(browserUiStorage(), navigation.mode);
@@ -121,7 +115,8 @@ export function writeAppNavigationToUrl(navigation: AppNavigationState): void {
     url.searchParams.set('tab', navigation.tab);
     if (navigation.advancedSurface) {
         url.searchParams.set('advancedSurface', navigation.advancedSurface);
-    } else {
+    }
+    else {
         url.searchParams.delete('advancedSurface');
         url.searchParams.delete('advanced');
     }

@@ -1,11 +1,11 @@
-import { describe, expect, it } from 'vitest';
 import { computeOutboundDialPlan } from '@shared/services/webrtc-outbound-dial-plan.ts';
+import { describe, expect, it } from 'vitest';
 
 describe('computeOutboundDialPlan', () => {
     it('keeps legacy-star dialing unbounded', () => {
         const connectablePeerIds = Array.from(
             { length: 49 },
-            (_, index) => `peer-${index}`,
+            (_, index) => `peer-${index}`
         );
 
         expect(
@@ -15,15 +15,15 @@ describe('computeOutboundDialPlan', () => {
                 knownPeerIds: new Set(),
                 desiredPeerIds: new Set(connectablePeerIds),
                 connectablePeerIds,
-                serverDesiredPeerIds: new Set(),
-            }),
+                serverDesiredPeerIds: new Set()
+            })
         ).toEqual({ peersToConnect: connectablePeerIds, deferredPeerIds: [] });
     });
 
     it('caps new dials at the connection budget and defers the rest', () => {
         const connectablePeerIds = Array.from(
             { length: 49 },
-            (_, index) => `peer-${index}`,
+            (_, index) => `peer-${index}`
         );
 
         const plan = computeOutboundDialPlan({
@@ -32,7 +32,7 @@ describe('computeOutboundDialPlan', () => {
             knownPeerIds: new Set(),
             desiredPeerIds: new Set(connectablePeerIds),
             connectablePeerIds,
-            serverDesiredPeerIds: new Set(),
+            serverDesiredPeerIds: new Set()
         });
 
         expect(plan.peersToConnect).toHaveLength(10);
@@ -46,7 +46,7 @@ describe('computeOutboundDialPlan', () => {
             knownPeerIds: new Set(['peer-a', 'peer-b']),
             desiredPeerIds: new Set(['peer-a', 'peer-b', 'peer-c', 'peer-d']),
             connectablePeerIds: ['peer-a', 'peer-b', 'peer-c', 'peer-d'],
-            serverDesiredPeerIds: new Set(),
+            serverDesiredPeerIds: new Set()
         });
 
         expect(plan.peersToConnect).toEqual(['peer-a', 'peer-b', 'peer-c']);
@@ -63,9 +63,9 @@ describe('computeOutboundDialPlan', () => {
                 'peer-boot-1',
                 'peer-server-1',
                 'peer-boot-2',
-                'peer-server-2',
+                'peer-server-2'
             ],
-            serverDesiredPeerIds: new Set(['peer-server-1', 'peer-server-2']),
+            serverDesiredPeerIds: new Set(['peer-server-1', 'peer-server-2'])
         });
 
         expect(plan.peersToConnect).toEqual(['peer-server-1', 'peer-server-2']);
@@ -82,7 +82,7 @@ describe('computeOutboundDialPlan', () => {
             knownPeerIds: new Set(['old-a', 'old-b', 'old-c', 'old-d', 'old-e']),
             desiredPeerIds: new Set(['peer-new']),
             connectablePeerIds: ['peer-new'],
-            serverDesiredPeerIds: new Set(),
+            serverDesiredPeerIds: new Set()
         });
 
         expect(plan.peersToConnect).toEqual(['peer-new']);
@@ -96,7 +96,7 @@ describe('computeOutboundDialPlan', () => {
             knownPeerIds: new Set(['peer-a', 'peer-b']),
             desiredPeerIds: new Set(['peer-a', 'peer-b', 'peer-c']),
             connectablePeerIds: ['peer-a', 'peer-b', 'peer-c'],
-            serverDesiredPeerIds: new Set(),
+            serverDesiredPeerIds: new Set()
         });
 
         expect(plan.peersToConnect).toEqual(['peer-a', 'peer-b']);

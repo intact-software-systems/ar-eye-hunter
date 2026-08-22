@@ -87,15 +87,15 @@ links, and rollback URLs remain unchanged.
 ## Task 0: Baseline And Critical Review
 
 - [x] Read the parent plan, product spec, migration register, Direction A
-  fidelity contract, shared monitor derivations, live control query/selection,
-  execution adapter, legacy monitor behavior, browser tests, and full-stack
-  configuration.
+      fidelity contract, shared monitor derivations, live control query/selection,
+      execution adapter, legacy monitor behavior, browser tests, and full-stack
+      configuration.
 - [x] Dispatch independent contract, UI/browser, and control/live audits.
 - [x] Establish a green baseline: 83/83 across
-  `distributed-recipes`, seeded state, URL state, and structure tests; app
-  typecheck passes.
+      `distributed-recipes`, seeded state, URL state, and structure tests; app
+      typecheck passes.
 - [x] Record the critical partial-refresh, selected-failure, role-scope, and
-  full-stack-discovery gaps in this plan before editing code.
+      full-stack-discovery gaps in this plan before editing code.
 
 ## Task 1: Correct Shared Monitor Truth
 
@@ -108,15 +108,15 @@ Files:
 - Modify `packages/tests/rallar-black-box/distributed-recipes.test.ts`
 
 - [x] RED-test role-scoped expected agents using resolved assignments,
-  manifest assignments, `recipeIds`, and role-only selections; prove no sibling
-  role is falsely counted missing.
+      manifest assignments, `recipeIds`, and role-only selections; prove no sibling
+      role is falsely counted missing.
 - [x] RED-test selected-failure evidence destinations for first and later run,
-  participant, recipe, command, and composite failures. Agent, recipe, command,
-  direct diagnostics, matching timeline/events, and valid artifact destinations
-  appear only when available.
+      participant, recipe, command, and composite failures. Agent, recipe, command,
+      direct diagnostics, matching timeline/events, and valid artifact destinations
+      appear only when available.
 - [x] Implement narrow deterministic helpers without changing existing
-  signatures or exports. Additive public exports remain available from both
-  shared-test and the app compatibility barrel.
+      signatures or exports. Additive public exports remain available from both
+      shared-test and the app compatibility barrel.
 - [x] Pass focused shared tests and shared-test TypeScript checks.
 - [x] Commit `fix: derive role-aware distributed monitor evidence`.
 
@@ -144,19 +144,19 @@ Files:
 - Modify `packages/tests/rallar-black-box/recipe-console-control-selection.test.ts`
 
 - [x] RED-test no selection, sole-run canonicalization, explicit unavailable and
-  incompatible IDs, multiple-run ambiguity, and run-selection dependency
-  clearing.
+      incompatible IDs, multiple-run ambiguity, and run-selection dependency
+      clearing.
 - [x] RED-test complete current evidence, total stale/offline preservation,
-  partial distributed-context preservation, partial coherent replacement,
-  authoritative deletion, recovery, newer mutation truth, and context-change
-  clearing. Never mix unrelated run/control snapshots.
+      partial distributed-context preservation, partial coherent replacement,
+      authoritative deletion, recovery, newer mutation truth, and context-change
+      clearing. Never mix unrelated run/control snapshots.
 - [x] RED-test artifact pending/success/failure retention, identity mismatch,
-  operation generations, and abort-resistant stale response rejection.
+      operation generations, and abort-resistant stale response rejection.
 - [x] RED-test Cancel/Load/Export policies across live, partial, stale, offline,
-  authorization, credential-trust, non-terminal, terminal, busy, armed, and
-  unarmed states.
+      authorization, credential-trust, non-terminal, terminal, busy, armed, and
+      unarmed states.
 - [x] Derive monitor/report/verdict once per coherent source, with
-  `RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS` supplied to analysis.
+      `RECIPE_CONSOLE_CONTROL_SNAPSHOT_BOUNDS` supplied to analysis.
 - [x] Pass focused state/policy/selection tests and app typecheck.
 - [x] Commit `feat: reconcile live monitor workspace truth`.
 
@@ -182,14 +182,14 @@ Files:
 - Modify `packages/tests/rallar-black-box/recipe-console-structure.test.ts`
 
 - [x] RED-test structural ownership: no Monitor fetch/timer/legacy imports,
-  bounded owners, no seeded Monitor dependencies, root execution adapter only,
-  and shared confirmation ownership without Execute-to-Monitor coupling.
+      bounded owners, no seeded Monitor dependencies, root execution adapter only,
+      and shared confirmation ownership without Execute-to-Monitor coupling.
 - [x] Bind Refresh, Cancel, Load artifact, and Export to the current context.
-  Abort on route/context changes, check context again after every await, retain
-  same-run artifact on load failure, download deterministic content/filename,
-  project successful Cancel, and queue `refreshAfterCurrent()`.
+      Abort on route/context changes, check context again after every await, retain
+      same-run artifact on load failure, download deterministic content/filename,
+      project successful Cancel, and queue `refreshAfterCurrent()`.
 - [x] Extract the accessible focus-trapped Cancel confirmation behind a narrow
-  control-level component while preserving Execute behavior and selectors.
+      control-level component while preserving Execute behavior and selectors.
 - [x] Pass focused operation/structure/Execute regression tests and typecheck.
 - [x] Commit `feat: bind live monitor control operations`.
 
@@ -222,19 +222,19 @@ Files:
 
 - [x] Add structure and model RED assertions before React implementation.
 - [x] Render current/last-known provenance, run selection, verdict, affected
-  identity, next action, failures, agent × phase matrix, recipe progress, ACK
-  and barrier readiness, diagnostic counts/filtering, artifact status, and
-  bounded timeline/event/composite evidence in failure-first order.
+      identity, next action, failures, agent × phase matrix, recipe progress, ACK
+      and barrier readiness, diagnostic counts/filtering, artifact status, and
+      bounded timeline/event/composite evidence in failure-first order.
 - [x] Make every available correlated evidence destination operable. Update
-  agent/recipe/command URL state and restore it through reload/back/copy.
+      agent/recipe/command URL state and restore it through reload/back/copy.
 - [x] Preserve the 360px desktop inspector, tablet overlay, portrait dock/sheet,
-  landscape split, keyboard selection, focus trap/restore, 44px targets,
-  reduced motion, announcements, and contained scrolling.
+      landscape split, keyboard selection, focus trap/restore, 44px targets,
+      reduced motion, announcements, and contained scrolling.
 - [x] Render honest empty, loading, current, partial, stale, offline,
-  authorization, credential-trust, running, waiting ACK/barrier, ready, passed,
-  failed, timed-out, cancelled, artifact missing/invalid, and recovered states.
+      authorization, credential-trust, running, waiting ACK/barrier, ready, passed,
+      failed, timed-out, cancelled, artifact missing/invalid, and recovered states.
 - [x] Remove only seeded Monitor ownership; keep Tune's deterministic seed
-  isolated. Keep both legacy workflow rows visible and uncut.
+      isolated. Keep both legacy workflow rows visible and uncut.
 - [x] Pass focused unit/structure/browser RED→GREEN, typecheck, and build.
 - [x] Commit `feat: replace seeded monitor with live evidence`.
 
@@ -267,23 +267,23 @@ Files:
 - Update controlled Darwin Monitor baselines without changing Direction A
 
 - [x] Keep these acceptance names exact:
-  `places the failure verdict and failure list before raw event evidence`;
-  `opens all available correlated evidence from a failure row`;
-  `preserves last-known evidence while a selected run refresh fails`; and
-  `completes the configured live distributed run lifecycle and exports its artifact`.
+      `places the failure verdict and failure list before raw event evidence`;
+      `opens all available correlated evidence from a failure row`;
+      `preserves last-known evidence while a selected run refresh fails`; and
+      `completes the configured live distributed run lifecycle and exports its artifact`.
 - [x] Prove a mocked one-agent failure, running/pass/fail/timeout/cancelled and
-  reconnect transitions, complete/partial/stale/offline truth, Execute handoff,
-  copied deep-link restoration, bounded secondary evidence, armed visible
-  Cancel, artifact Load/Export, and abort-ignoring late responses.
+      reconnect transitions, complete/partial/stale/offline truth, Execute handoff,
+      copied deep-link restoration, bounded secondary evidence, armed visible
+      Cancel, artifact Load/Export, and abort-ignoring late responses.
 - [x] Prove desktop, tablet, 430×932 portrait, 932×430 landscape,
-  keyboard-only paths, 44px targets, focus trap/restore, reduced motion,
-  announcements, no document overflow, and actual Monitor CSS in both load
-  orders. Refresh and inspect the approved Monitor baselines.
+      keyboard-only paths, 44px targets, focus trap/restore, reduced motion,
+      announcements, no document overflow, and actual Monitor CSS in both load
+      orders. Refresh and inspect the approved Monitor baselines.
 - [x] Extend the configured Postgres acceptance through visible Monitor truth
-  and a distinct live non-terminal cancellation. The full-stack wrapper must
-  verify per-target cancel links and dispatched/completed `recipe.cancel`
-  commands. If unavailable, skip for exactly:
-  `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
+      and a distinct live non-terminal cancellation. The full-stack wrapper must
+      verify per-target cancel links and dispatched/completed `recipe.cancel`
+      commands. If unavailable, skip for exactly:
+      `Set RALLAR_BLACK_BOX_FULL_STACK=1 with Postgres-backed apps/api-v1,
   apps/rallar-black-box-control-server, and apps/rallar-black-box available.`
 - [x] Commit `test: prove live monitor lifecycle and evidence`.
 
@@ -314,22 +314,22 @@ is not represented as a live pass.
 ## Task 6: Fresh Exit, Review, And Documentation
 
 - [x] Run the exact focused unit list, complete app suite, shared-test check,
-  app typecheck/build/chunk assertion, complete Recipe Console browser config,
-  exact legacy navigation/ticket pair, control-server check/test, and the
-  configured full-stack acceptance when services are available.
+      app typecheck/build/chunk assertion, complete Recipe Console browser config,
+      exact legacy navigation/ticket pair, control-server check/test, and the
+      configured full-stack acceptance when services are available.
 - [x] Perform desktop/mobile portrait/mobile landscape, keyboard, reduced
-  motion, operational-state, CSS-isolation, and visual-fidelity QA. Try the
-  in-app Browser first; record its exact unavailable reason if fallback is
-  required.
+      motion, operational-state, CSS-isolation, and visual-fidelity QA. Try the
+      in-app Browser first; record its exact unavailable reason if fallback is
+      required.
 - [x] Dispatch independent code/contract and browser/cutover reviews. Cover
-  every Critical/Important finding with RED/GREEN proof and rerun fresh exit
-  validation after the final fix.
+      every Critical/Important finding with RED/GREEN proof and rerun fresh exit
+      validation after the final fix.
 - [x] Update this plan, parent plan, migration register, and fidelity ledger
-  with commits, actual counts, cutover evidence, the exact configured-live
-  result, and remaining risks. Mark `runner.distributed-monitor` code-backed
-  only if all core proofs pass; keep owning legacy rows visible and uncut.
+      with commits, actual counts, cutover evidence, the exact configured-live
+      result, and remaining risks. Mark `runner.distributed-monitor` code-backed
+      only if all core proofs pass; keep owning legacy rows visible and uncut.
 - [x] Commit `docs: record live recipe monitor exit` (fulfilled atomically by
-  the commit containing this exit record).
+      the commit containing this exit record).
 
 **Fresh exit evidence (2026-07-12):** the exact nine-file focused slice passes
 229/229; the complete app suite passes 708/708 across 72 files; shared-test and

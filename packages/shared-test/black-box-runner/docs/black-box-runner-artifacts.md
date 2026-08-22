@@ -16,16 +16,16 @@ deno run -A packages/shared-test/black-box-runner/scenario-black-box.ts \
 
 The directory contains:
 
-| File | Purpose |
-| --- | --- |
-| `report.json` | Full redacted runner report with summary, metrics, and runner correlation IDs. |
-| `events.jsonl` | One JSON event per line, including step results, post-run assertions, WS events, RTC messages, diagnostics, and close events. |
-| `failures.json` | Copyable failure bundle with summary, failed steps, post-run assertion failures, expected/actual data, outputs, and correlation IDs. |
-| `metadata.json` | Run metadata, config path, mode, summary, runner correlation IDs, and redacted command line. |
-| `artifact-index.json` | Optional browser-friendly index with event counts, first-failure pointers, step-result sequence numbers, run/connection summaries, truncation metadata, and compacted success summaries. |
-| `expanded-recipe.json` | Optional fully expanded recipe after static includes/fragments, variable merge metadata, traffic/soak expansion, and redaction. |
-| `preflight-report.json` | Optional live-environment provisioning report written by matrix live entries before recipe execution. |
-| `reduced-plan.json` | Optional replay-compatible traffic-plan candidate written by the offline reducer after a failing seeded traffic run. |
+| File                    | Purpose                                                                                                                                                                                  |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `report.json`           | Full redacted runner report with summary, metrics, and runner correlation IDs.                                                                                                           |
+| `events.jsonl`          | One JSON event per line, including step results, post-run assertions, WS events, RTC messages, diagnostics, and close events.                                                            |
+| `failures.json`         | Copyable failure bundle with summary, failed steps, post-run assertion failures, expected/actual data, outputs, and correlation IDs.                                                     |
+| `metadata.json`         | Run metadata, config path, mode, summary, runner correlation IDs, and redacted command line.                                                                                             |
+| `artifact-index.json`   | Optional browser-friendly index with event counts, first-failure pointers, step-result sequence numbers, run/connection summaries, truncation metadata, and compacted success summaries. |
+| `expanded-recipe.json`  | Optional fully expanded recipe after static includes/fragments, variable merge metadata, traffic/soak expansion, and redaction.                                                          |
+| `preflight-report.json` | Optional live-environment provisioning report written by matrix live entries before recipe execution.                                                                                    |
+| `reduced-plan.json`     | Optional replay-compatible traffic-plan candidate written by the offline reducer after a failing seeded traffic run.                                                                     |
 
 Artifacts are written before the CLI exits. A failing recipe still exits with
 code `1`, but the artifact bundle remains available.

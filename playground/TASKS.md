@@ -6,7 +6,6 @@ It looks like this table grows indefinitely. Investigate if evictions are being 
 
 Is there a risk that we read expired data or data belonging to a different login session?
 
-
 ## Web RTC signaling and connection phase
 
 Rallar should expose API to wait for RTC connections to be established before proceeding with further operations.
@@ -31,11 +30,7 @@ We should also investigate the impact of network conditions on RTC connection es
 
 We have to stabilise the RTC connection establishment. Now it fails too often. Especially when reconnecting occurs.
 
-##### rallar.ts line 735 
+##### rallar.ts line 735
 
-enqueueOutboxIfAbsent() might fail, we should handle different cases here. Some are correctly skipped over, 
+enqueueOutboxIfAbsent() might fail, we should handle different cases here. Some are correctly skipped over,
 but can it happen that some are quitely not enqueued? Investigate.
-
-
-
-

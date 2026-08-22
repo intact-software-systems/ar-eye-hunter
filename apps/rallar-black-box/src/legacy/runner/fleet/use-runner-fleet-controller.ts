@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { deriveControlAgentBoardRows, summarizeControlAgentBoardRows } from '../../../control-agent-board.ts';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import {
     controlHttpBaseUrlFromWsUrl,
@@ -8,12 +9,8 @@ import {
     rebuildFleetReports,
     type ControlFleetReportBundle,
     type ControlFleetReportsResponse,
-    type ControlServerSnapshot,
+    type ControlServerSnapshot
 } from '../../../control-run-manager.ts';
-import {
-    deriveControlAgentBoardRows,
-    summarizeControlAgentBoardRows,
-} from '../../../control-agent-board.ts';
 import { runnerFriendlyErrorMessage } from '../../../runner-readiness.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import {
@@ -21,18 +18,13 @@ import {
     routeEvidenceFromControlRun,
     type FleetWorldMapLayerId,
     type FleetWorldMapLayerState,
-    type FleetWorldMapRegion,
+    type FleetWorldMapRegion
 } from '../../../world-map-model.ts';
 import { json } from '../../shared/json-presentation.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { RUN_MANAGER_SNAPSHOT_BOUNDS } from '../shared/control-snapshot-bounds.ts';
 import { useLatestRequestGuard } from '../shared/use-latest-request-guard.ts';
-import {
-    fleetAgentDetail,
-    fleetHeatmapRows,
-    fleetMissingLabelAgents,
-    fleetRegionRows,
-} from './fleet-derivations.ts';
+import { fleetAgentDetail, fleetHeatmapRows, fleetMissingLabelAgents, fleetRegionRows } from './fleet-derivations.ts';
 import {
     applyFleetLabelOverrides,
     buildFleetShareUrl,
@@ -41,16 +33,10 @@ import {
     readFleetFiltersFromUrl,
     readFleetWorldMapLayersFromUrl,
     writeFleetFiltersToUrl,
-    writeFleetWorldMapLayersToUrl,
+    writeFleetWorldMapLayersToUrl
 } from './fleet-helpers.ts';
-import {
-    fleetDisplaySummary,
-    fleetFailureRows,
-} from './fleet-rollups.ts';
-import {
-    fleetTimingGroupsByRecipe,
-    fleetTimingGroupsByRegion,
-} from './fleet-timing.ts';
+import { fleetDisplaySummary, fleetFailureRows } from './fleet-rollups.ts';
+import { fleetTimingGroupsByRecipe, fleetTimingGroupsByRegion } from './fleet-timing.ts';
 import type { FleetFilterState } from './fleet-types.ts';
 
 export type UseRunnerFleetControllerInput = Readonly<{
@@ -62,28 +48,24 @@ export type UseRunnerFleetControllerInput = Readonly<{
 export function useRunnerFleetController({
     bootstrap,
     control,
-    globalValues,
+    globalValues
 }: UseRunnerFleetControllerInput) {
     const [controlBaseUrl, setControlBaseUrl] = useState(() =>
         controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl)
     );
     const [controlToken, setControlToken] = useState(
-        bootstrap.controlToken ?? '',
+        bootstrap.controlToken ?? ''
     );
     const [filters, setFilters] = useState<FleetFilterState>(
-        readFleetFiltersFromUrl,
+        readFleetFiltersFromUrl
     );
     const [mapLayers, setMapLayers] = useState<FleetWorldMapLayerState>(
-        readFleetWorldMapLayersFromUrl,
+        readFleetWorldMapLayersFromUrl
     );
-    const [response, setResponse] = useState<
-        ControlFleetReportsResponse | undefined
-    >();
-    const [liveSnapshot, setLiveSnapshot] = useState<
-        ControlServerSnapshot | undefined
-    >();
+    const [response, setResponse] = useState<ControlFleetReportsResponse | undefined>();
+    const [liveSnapshot, setLiveSnapshot] = useState<ControlServerSnapshot | undefined>();
     const [liveRunId, setLiveRunId] = useState(
-        control.runId ?? bootstrap.runId ?? '',
+        control.runId ?? bootstrap.runId ?? ''
     );
     const [busy, setBusy] = useState<string | undefined>();
     const [error, setError] = useState<string | undefined>();
@@ -92,81 +74,79 @@ export function useRunnerFleetController({
     const [selectedFailureId, setSelectedFailureId] = useState('');
     const [selectedReportId, setSelectedReportId] = useState('');
     const [overrideText, setOverrideText] = useState('');
-    const [lastExport, setLastExport] = useState<
-        ControlFleetReportBundle | undefined
-    >();
+    const [lastExport, setLastExport] = useState<ControlFleetReportBundle | undefined>();
     const fleetRefreshRequests = useLatestRequestGuard();
     const overrides = useMemo(
         () => parseFleetLabelOverrides(overrideText),
-        [overrideText],
+        [overrideText]
     );
     const reports = useMemo(
         () =>
             applyFleetLabelOverrides(
                 response?.reports ?? [],
-                overrides.value,
+                overrides.value
             ),
-        [overrides.value, response?.reports],
+        [overrides.value, response?.reports]
     );
     const displaySummary = useMemo(
         () => fleetDisplaySummary(reports, response),
-        [reports, response],
+        [reports, response]
     );
     const heatmapRuns = useMemo(() => reports.slice(0, 12), [reports]);
     const heatmapRows = useMemo(
         () => fleetHeatmapRows(reports, heatmapRuns),
-        [heatmapRuns, reports],
+        [heatmapRuns, reports]
     );
     const regionRows = useMemo(() => fleetRegionRows(reports), [reports]);
     const failureRows = useMemo(
         () => fleetFailureRows(reports),
-        [reports],
+        [reports]
     );
     const selectedFailure = failureRows.find(
-        (failure) => failure.signatureId === selectedFailureId,
+        (failure) => failure.signatureId === selectedFailureId
     ) ?? failureRows[0];
     const selectedAgent = selectedAgentId
         ? fleetAgentDetail(selectedAgentId, reports)
         : undefined;
     const regionTiming = useMemo(
         () => fleetTimingGroupsByRegion(reports).slice(0, 8),
-        [reports],
+        [reports]
     );
     const recipeTiming = useMemo(
         () => fleetTimingGroupsByRecipe(reports).slice(0, 8),
-        [reports],
+        [reports]
     );
     const missingLabelAgents = useMemo(
         () => fleetMissingLabelAgents(reports),
-        [reports],
+        [reports]
     );
     const selectedReport = reports.find(
-        (report) => report.distributedRunId === selectedReportId,
+        (report) => report.distributedRunId === selectedReportId
     ) ?? reports[0];
     const liveGroupRef = useMemo(
         () => ({
             applicationId: globalValues.applicationId,
             workspaceId: globalValues.workspaceId,
-            groupId: globalValues.roomId,
+            groupId: globalValues.roomId
         }),
         [
             globalValues.applicationId,
             globalValues.roomId,
-            globalValues.workspaceId,
-        ],
+            globalValues.workspaceId
+        ]
     );
     const liveRunOptions = useMemo(
         () =>
             [...(liveSnapshot?.runs ?? [])].sort(
-                (left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs,
+                (left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs
             ),
-        [liveSnapshot],
+        [liveSnapshot]
     );
     const liveRun = useMemo(
         () =>
             liveRunOptions.find((run) => run.runId === liveRunId) ??
-            liveRunOptions[0],
-        [liveRunId, liveRunOptions],
+                liveRunOptions[0],
+        [liveRunId, liveRunOptions]
     );
     const liveAgentRows = useMemo(
         () =>
@@ -174,30 +154,30 @@ export function useRunnerFleetController({
                 run: liveRun,
                 group: liveGroupRef,
                 distributedRuns: liveSnapshot?.distributedRuns ?? [],
-                nowEpochMs: Date.now(),
+                nowEpochMs: Date.now()
             }),
-        [liveGroupRef, liveRun, liveSnapshot?.distributedRuns],
+        [liveGroupRef, liveRun, liveSnapshot?.distributedRuns]
     );
     const liveAgentSummary = useMemo(
         () => summarizeControlAgentBoardRows(liveAgentRows),
-        [liveAgentRows],
+        [liveAgentRows]
     );
     const routeEvidence = useMemo(
         () => routeEvidenceFromControlRun(liveRun),
-        [liveRun],
+        [liveRun]
     );
     const worldMapModel = useMemo(
         () =>
             deriveFleetWorldMapModel({
                 liveAgents: liveAgentRows,
                 reports,
-                routeEvidence,
+                routeEvidence
             }),
-        [liveAgentRows, reports, routeEvidence],
+        [liveAgentRows, reports, routeEvidence]
     );
 
     const refreshFleet = async (
-        options: Readonly<{ rebuild?: boolean; quiet?: boolean }> = {},
+        options: Readonly<{ rebuild?: boolean; quiet?: boolean; }> = {}
     ): Promise<void> => {
         const request = fleetRefreshRequests.begin();
         if (!options.quiet) {
@@ -208,45 +188,51 @@ export function useRunnerFleetController({
             const nextResponse = options.rebuild
                 ? await rebuildFleetReports({
                     baseUrl: controlBaseUrl,
-                    token: controlToken,
+                    token: controlToken
                 })
                 : await fetchFleetReports({
                     baseUrl: controlBaseUrl,
                     token: controlToken,
-                    filter: fleetReportFilterFromUi(filters),
+                    filter: fleetReportFilterFromUi(filters)
                 });
-            if (!request.isCurrent()) return;
+            if (!request.isCurrent()) {
+                return;
+            }
             const nextSnapshot = await fetchControlServerSnapshot({
                 baseUrl: controlBaseUrl,
                 token: controlToken,
-                bounds: RUN_MANAGER_SNAPSHOT_BOUNDS,
+                bounds: RUN_MANAGER_SNAPSHOT_BOUNDS
             });
-            if (!request.isCurrent()) return;
+            if (!request.isCurrent()) {
+                return;
+            }
             setResponse(nextResponse);
             setLiveSnapshot(nextSnapshot);
             setLiveRunId((current) => {
                 const knownRunIds = new Set(
-                    nextSnapshot.runs.map((run) => run.runId),
+                    nextSnapshot.runs.map((run) => run.runId)
                 );
                 return current && knownRunIds.has(current)
                     ? current
                     : [
                         control.runId,
                         bootstrap.runId,
-                        nextSnapshot.runs[0]?.runId,
+                        nextSnapshot.runs[0]?.runId
                     ].find((runId) => runId && knownRunIds.has(runId)) ?? '';
             });
             setLastRefresh(Date.now());
             setSelectedReportId((current) =>
                 current ||
                 nextResponse.reports[0]?.distributedRunId ||
-                '',
+                ''
             );
-        } catch (caught) {
+        }
+        catch (caught) {
             if (request.isCurrent()) {
                 setError(runnerFriendlyErrorMessage(caught));
             }
-        } finally {
+        }
+        finally {
             if (request.isCurrent() && !options.quiet) {
                 setBusy(undefined);
             }
@@ -275,18 +261,18 @@ export function useRunnerFleetController({
 
     const updateFilter = <K extends keyof FleetFilterState>(
         key: K,
-        value: FleetFilterState[K],
+        value: FleetFilterState[K]
     ): void => {
         setFilters((current) => ({ ...current, [key]: value }));
     };
 
     const updateMapLayer = (
         layerId: FleetWorldMapLayerId,
-        enabled: boolean,
+        enabled: boolean
     ): void => {
         setMapLayers((current) => ({
             ...current,
-            [layerId]: enabled,
+            [layerId]: enabled
         }));
     };
 
@@ -307,7 +293,7 @@ export function useRunnerFleetController({
             return;
         }
         await navigator.clipboard?.writeText(
-            buildFleetShareUrl(window.location.href, filters, mapLayers),
+            buildFleetShareUrl(window.location.href, filters, mapLayers)
         );
     };
 
@@ -321,13 +307,15 @@ export function useRunnerFleetController({
             const bundle = await fetchFleetReportBundle({
                 baseUrl: controlBaseUrl,
                 token: controlToken,
-                distributedRunId: selectedReport.distributedRunId,
+                distributedRunId: selectedReport.distributedRunId
             });
             setLastExport(bundle);
             await navigator.clipboard?.writeText(json(bundle.files));
-        } catch (caught) {
+        }
+        catch (caught) {
             setError(runnerFriendlyErrorMessage(caught));
-        } finally {
+        }
+        finally {
             setBusy(undefined);
         }
     };
@@ -376,9 +364,8 @@ export function useRunnerFleetController({
         updateMapLayer,
         selectMapRegion,
         copyShareLink,
-        exportSelectedReport,
+        exportSelectedReport
     };
 }
 
-export type RunnerFleetControllerModel =
-    ReturnType<typeof useRunnerFleetController>;
+export type RunnerFleetControllerModel = ReturnType<typeof useRunnerFleetController>;

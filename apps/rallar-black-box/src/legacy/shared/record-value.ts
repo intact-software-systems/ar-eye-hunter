@@ -4,7 +4,7 @@ export function recordArray(value: unknown): readonly Record<string, unknown>[] 
             (item): item is Record<string, unknown> =>
                 Boolean(item) &&
                 typeof item === 'object' &&
-                !Array.isArray(item),
+                !Array.isArray(item)
         );
     }
 

@@ -2,22 +2,14 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createAdvancedRecipeConsoleReturnHref } from
-    '../../../apps/rallar-black-box/src/recipe-console/advanced/advanced-legacy-href.ts';
-import { MonitorDiagnosticHandoffs } from
-    '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorDiagnosticHandoffs.tsx';
-import { MonitorInspector } from
-    '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorInspector.tsx';
-import type { MonitorWorkspaceModel } from
-    '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-model.ts';
-import type { RecipeConsoleUrlState } from
-    '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
-import type {
-    DistributedRunFailureRow,
-    DistributedRunRuntimeDiagnosticRow,
-} from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import { createAdvancedRecipeConsoleReturnHref } from '../../../apps/rallar-black-box/src/recipe-console/advanced/advanced-legacy-href.ts';
+import type { MonitorWorkspaceModel } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-model.ts';
+import { MonitorDiagnosticHandoffs } from '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorDiagnosticHandoffs.tsx';
+import { MonitorInspector } from '../../../apps/rallar-black-box/src/recipe-console/monitor/MonitorInspector.tsx';
+import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
+import type { DistributedRunFailureRow, DistributedRunRuntimeDiagnosticRow } from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean })
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; })
     .IS_REACT_ACT_ENVIRONMENT = true;
 
 const URL_STATE: RecipeConsoleUrlState = {
@@ -29,13 +21,13 @@ const URL_STATE: RecipeConsoleUrlState = {
     agentId: 'stale-agent',
     recipeId: 'stale-recipe',
     commandId: 'stale-command',
-    transport: 'ws',
+    transport: 'ws'
 };
 
 const GROUP = {
     applicationId: 'root/application',
     workspaceId: 'root workspace',
-    groupId: 'root-group::\u2067exact\u2069',
+    groupId: 'root-group::\u2067exact\u2069'
 } as const;
 
 describe('Recipe Console Monitor diagnostic handoffs', () => {
@@ -56,17 +48,19 @@ describe('Recipe Console Monitor diagnostic handoffs', () => {
     async function renderHandoffs(
         selectedFailure: DistributedRunFailureRow,
         diagnostics: readonly DistributedRunRuntimeDiagnosticRow[] = [],
-        sourceSearch = '',
+        sourceSearch = ''
     ): Promise<void> {
-        await act(async () => root.render(createElement(MonitorDiagnosticHandoffs, {
-            controlRunId: 'control/root',
-            diagnostics,
-            distributedRunId: 'distributed root',
-            failure: selectedFailure,
-            group: GROUP,
-            sourceSearch,
-            state: URL_STATE,
-        })));
+        await act(async () =>
+            root.render(createElement(MonitorDiagnosticHandoffs, {
+                controlRunId: 'control/root',
+                diagnostics,
+                distributedRunId: 'distributed root',
+                failure: selectedFailure,
+                group: GROUP,
+                sourceSearch,
+                state: URL_STATE
+            }))
+        );
     }
 
     it('maps selected failures to stable deduplicated legacy diagnostic links', async () => {
@@ -74,7 +68,7 @@ describe('Recipe Console Monitor diagnostic handoffs', () => {
             [failure({ code: 'BAD_AUTH' }), ['Auth', 'WebSocket']],
             [failure({ code: 'RTC_NO_ROUTE' }), ['RTC Diagnostics']],
             [failure({ code: 'MISSING_MEMBER' }), ['Groups/Clients']],
-            [failure({ code: 'HTTP_SERVICE_UNAVAILABLE' }), ['Rallar Server']],
+            [failure({ code: 'HTTP_SERVICE_UNAVAILABLE' }), ['Rallar Server']]
         ];
         for (const [selectedFailure, labels] of cases) {
             await renderHandoffs(selectedFailure);
@@ -83,53 +77,63 @@ describe('Recipe Console Monitor diagnostic handoffs', () => {
                 .toBe(false);
         }
 
-        await renderHandoffs(failure({
-            code: 'BAD_AUTH',
-            message: 'Missing group; Rallar Server status 503',
-        }), [
-            diagnostic('selected', 'rallar.browser.rtc.no_route'),
-            diagnostic('selected', 'rallar.browser.rtc.no_route'),
-        ]);
+        await renderHandoffs(
+            failure({
+                code: 'BAD_AUTH',
+                message: 'Missing group; Rallar Server status 503'
+            }),
+            [
+                diagnostic('selected', 'rallar.browser.rtc.no_route'),
+                diagnostic('selected', 'rallar.browser.rtc.no_route')
+            ]
+        );
         expect(linkLabels()).toEqual([
             'Auth',
             'WebSocket',
             'RTC Diagnostics',
             'Groups/Clients',
-            'Rallar Server',
+            'Rallar Server'
         ]);
-        expect(new Set(handoffLinks().map(link => link.href)).size).toBe(5);
+        expect(new Set(handoffLinks().map((link) => link.href)).size).toBe(5);
     });
 
     it('classifies only diagnostics correlated to the selected failure and omits unknowns', async () => {
         await renderHandoffs(failure({ message: 'Command failed' }), [
             diagnostic('other', 'rallar.browser.auth.ticket_forbidden'),
             diagnostic('other', 'rallar.browser.rtc.no_route'),
-            diagnostic('selected', 'rallar.browser.rtc.no_peer'),
+            diagnostic('selected', 'rallar.browser.rtc.no_peer')
         ]);
         expect(linkLabels()).toEqual(['RTC Diagnostics']);
 
-        await renderHandoffs(failure({
-            key: 'unknown',
-            message: 'A generic route reached an authentic server response',
-        }), [diagnostic('other', 'rallar.browser.rtc.no_route')]);
+        await renderHandoffs(
+            failure({
+                key: 'unknown',
+                message: 'A generic route reached an authentic server response'
+            }),
+            [diagnostic('other', 'rallar.browser.rtc.no_route')]
+        );
         expect(container.querySelector('[data-monitor-diagnostic-handoffs]'))
             .toBeNull();
     });
 
     it('uses the exact authoritative run group and selected-failure context in safe links', async () => {
-        await renderHandoffs(failure({
-            code: 'BAD_AUTH',
-            agentId: 'agent/exact',
-            recipeId: 'recipe exact',
-            commandId: 'command::\u2067exact\u2069',
-        }), [], '?' + new URLSearchParams({
-            provider: 'browser-rallar',
-            applicationId: 'spoof-application',
-            workspaceId: 'spoof-workspace',
-            groupId: 'spoof-group',
-            controlToken: 'control-secret',
-            returnTo: 'https://attacker.test/steal',
-        }));
+        await renderHandoffs(
+            failure({
+                code: 'BAD_AUTH',
+                agentId: 'agent/exact',
+                recipeId: 'recipe exact',
+                commandId: 'command::\u2067exact\u2069'
+            }),
+            [],
+            '?' + new URLSearchParams({
+                provider: 'browser-rallar',
+                applicationId: 'spoof-application',
+                workspaceId: 'spoof-workspace',
+                groupId: 'spoof-group',
+                controlToken: 'control-secret',
+                returnTo: 'https://attacker.test/steal'
+            })
+        );
 
         const auth = new URL(handoffLinks()[0]!.getAttribute('href')!, 'https://console.test');
         expect(Object.fromEntries(auth.searchParams)).toEqual({
@@ -148,14 +152,14 @@ describe('Recipe Console Monitor diagnostic handoffs', () => {
             agentId: 'agent/exact',
             recipeId: 'recipe exact',
             commandId: 'command::\u2067exact\u2069',
-            transport: 'ws',
+            transport: 'ws'
         });
         expect(auth.search).not.toMatch(/spoof|control-secret|returnTo|attacker/i);
         expect(createAdvancedRecipeConsoleReturnHref(auth.search)).toBe(
             '/?provider=browser-rallar&v=1&experience=recipe-console&view=monitor' +
-            '&controlRunId=control%2Froot&distributedRunId=distributed+root' +
-            '&agentId=agent%2Fexact&recipeId=recipe+exact' +
-            '&commandId=command%3A%3A%E2%81%A7exact%E2%81%A9&transport=ws',
+                '&controlRunId=control%2Froot&distributedRunId=distributed+root' +
+                '&agentId=agent%2Fexact&recipeId=recipe+exact' +
+                '&commandId=command%3A%3A%E2%81%A7exact%E2%81%A9&transport=ws'
         );
 
         await renderHandoffs(failure({
@@ -163,11 +167,11 @@ describe('Recipe Console Monitor diagnostic handoffs', () => {
             code: 'BAD_AUTH',
             agentId: undefined,
             recipeId: undefined,
-            commandId: undefined,
+            commandId: undefined
         }));
         const runScoped = new URL(
             handoffLinks()[0]!.getAttribute('href')!,
-            'https://console.test',
+            'https://console.test'
         );
         expect(runScoped.searchParams.get('controlRunId')).toBe('control/root');
         expect(runScoped.searchParams.get('distributedRunId'))
@@ -181,47 +185,49 @@ describe('Recipe Console Monitor diagnostic handoffs', () => {
     it('renders handoffs only for the selected inspector failure', async () => {
         const auth = failure({ key: 'auth', code: 'BAD_AUTH' });
         const rtc = failure({ key: 'rtc', code: 'RTC_NO_ROUTE' });
-        await act(async () => root.render(createElement(MonitorInspector, {
-            legacyHref: '/?experience=legacy&tab=runs',
-            model: monitorModel([auth, rtc]),
-            onSelectEvidence: () => undefined,
-            selection: { kind: 'failure', id: 'rtc' },
-            sourceSearch: '?provider=simulated',
-            urlState: URL_STATE,
-        })));
+        await act(async () =>
+            root.render(createElement(MonitorInspector, {
+                legacyHref: '/?experience=legacy&tab=runs',
+                model: monitorModel([auth, rtc]),
+                onSelectEvidence: () => undefined,
+                selection: { kind: 'failure', id: 'rtc' },
+                sourceSearch: '?provider=simulated',
+                urlState: URL_STATE
+            }))
+        );
 
         expect(linkLabels()).toEqual(['RTC Diagnostics']);
         expect(container.textContent).not.toContain('Open Auth');
     });
 
     it('uses bounded native semantic links without runtime or duplicate monitor ownership', async () => {
-        await renderHandoffs(failure({
-            code: 'BAD_AUTH',
-            message: 'Missing group; Rallar Server status 503',
-        }), [diagnostic('selected', 'rallar.browser.rtc.no_route')]);
+        await renderHandoffs(
+            failure({
+                code: 'BAD_AUTH',
+                message: 'Missing group; Rallar Server status 503'
+            }),
+            [diagnostic('selected', 'rallar.browser.rtc.no_route')]
+        );
 
         const nav = container.querySelector('nav[aria-label="Relevant legacy diagnostics"]');
         expect(nav).not.toBeNull();
         expect(nav?.querySelectorAll('a')).toHaveLength(5);
-        expect([...nav!.querySelectorAll('a')].every(link =>
-            link instanceof HTMLAnchorElement && !link.hasAttribute('role')
-        )).toBe(true);
-
+        expect([...nav!.querySelectorAll('a')].every((link) => link instanceof HTMLAnchorElement && !link.hasAttribute('role'))).toBe(true);
     });
 
     function handoffLinks(): HTMLAnchorElement[] {
         return [...container.querySelectorAll<HTMLAnchorElement>(
-            '[data-monitor-diagnostic-handoffs] a',
+            '[data-monitor-diagnostic-handoffs] a'
         )];
     }
 
     function linkLabels(): string[] {
-        return handoffLinks().map(link => link.textContent?.trim() ?? '');
+        return handoffLinks().map((link) => link.textContent?.trim() ?? '');
     }
 });
 
 function failure(
-    overrides: Partial<DistributedRunFailureRow> = {},
+    overrides: Partial<DistributedRunFailureRow> = {}
 ): DistributedRunFailureRow {
     return {
         kind: 'command',
@@ -230,13 +236,13 @@ function failure(
         agentId: 'agent-a',
         recipeId: 'recipe-a',
         commandId: 'command-a',
-        ...overrides,
+        ...overrides
     };
 }
 
 function diagnostic(
     failureKey: string,
-    diagnosticTypeId: string,
+    diagnosticTypeId: string
 ): DistributedRunRuntimeDiagnosticRow {
     return {
         eventId: `${failureKey}:${diagnosticTypeId}`,
@@ -249,12 +255,12 @@ function diagnostic(
         message: diagnosticTypeId,
         summary: diagnosticTypeId,
         payloadSummary: '{}',
-        correlatedFailureKeys: [failureKey],
+        correlatedFailureKeys: [failureKey]
     };
 }
 
 function monitorModel(
-    failures: readonly DistributedRunFailureRow[],
+    failures: readonly DistributedRunFailureRow[]
 ): MonitorWorkspaceModel {
     return {
         source: {
@@ -262,9 +268,9 @@ function monitorModel(
             controlRun: { runId: 'control/root', agents: [] },
             distributedRun: {
                 distributedRunId: 'distributed root',
-                manifest: { group: GROUP },
+                manifest: { group: GROUP }
             },
-            freshness: 'current',
+            freshness: 'current'
         },
         monitor: {
             distributedRunId: 'distributed root',
@@ -275,8 +281,8 @@ function monitorModel(
             timeline: [],
             events: [],
             compositeDrilldowns: [],
-            artifact: { status: 'invalid', message: 'No artifact.', fileCount: 0 },
+            artifact: { status: 'invalid', message: 'No artifact.', fileCount: 0 }
         },
-        report: { nextActions: [] },
+        report: { nextActions: [] }
     } as unknown as MonitorWorkspaceModel;
 }

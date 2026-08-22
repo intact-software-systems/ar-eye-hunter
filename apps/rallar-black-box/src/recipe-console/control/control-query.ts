@@ -48,7 +48,7 @@ export type ControlQuerySnapshot<Snapshot, Provenance = unknown> = Readonly<{
 }>;
 
 export type ControlQueryEvent<Snapshot, Provenance = unknown> =
-    | Readonly<{ type: 'attempt-started'; atEpochMs: number }>
+    | Readonly<{ type: 'attempt-started'; atEpochMs: number; }>
     | Readonly<{
         type: 'attempt-succeeded';
         atEpochMs: number;
@@ -60,21 +60,21 @@ export type ControlQueryEvent<Snapshot, Provenance = unknown> =
         error: ControlQueryError;
     }>;
 
-export function createInitialControlQueryState<
+export function createInitialControlQueryState<Snapshot, Provenance = unknown>(): ControlQuerySnapshot<
     Snapshot,
-    Provenance = unknown,
->(): ControlQuerySnapshot<Snapshot, Provenance> {
+    Provenance
+> {
     return {
         status: 'connecting',
         reachability: 'unknown',
         authorization: 'unknown',
-        isRefreshing: false,
+        isRefreshing: false
     };
 }
 
 export function transitionControlQueryState<Snapshot, Provenance = unknown>(
     state: ControlQuerySnapshot<Snapshot, Provenance>,
-    event: ControlQueryEvent<Snapshot, Provenance>,
+    event: ControlQueryEvent<Snapshot, Provenance>
 ): ControlQuerySnapshot<Snapshot, Provenance> {
     const atEpochMs = monotonicEpochMs(state, event.atEpochMs);
     switch (event.type) {
@@ -82,7 +82,7 @@ export function transitionControlQueryState<Snapshot, Provenance = unknown>(
             return {
                 ...state,
                 attemptedAtEpochMs: atEpochMs,
-                isRefreshing: true,
+                isRefreshing: true
             };
         case 'attempt-succeeded':
             return {
@@ -94,7 +94,7 @@ export function transitionControlQueryState<Snapshot, Provenance = unknown>(
                 provenance: event.result.provenance,
                 attemptedAtEpochMs: state.attemptedAtEpochMs ?? atEpochMs,
                 receivedAtEpochMs: atEpochMs,
-                isRefreshing: false,
+                isRefreshing: false
             };
         case 'attempt-failed': {
             const authorizationRequired = event.error.authorizationRequired === true ||
@@ -106,17 +106,17 @@ export function transitionControlQueryState<Snapshot, Provenance = unknown>(
                 reachability: event.error.reachability ?? (
                     event.error.kind === 'http' ||
                         event.error.kind === 'protocol'
-                    ? 'reachable'
-                    : event.error.kind === 'network' || event.error.kind === 'timeout'
-                    ? 'unreachable'
-                    : 'unknown'
+                        ? 'reachable'
+                        : event.error.kind === 'network' || event.error.kind === 'timeout'
+                        ? 'unreachable'
+                        : 'unknown'
                 ),
                 authorization: authorizationRequired
                     ? 'required'
                     : state.authorization,
                 attemptedAtEpochMs: state.attemptedAtEpochMs ?? atEpochMs,
                 isRefreshing: false,
-                lastError: event.error,
+                lastError: event.error
             };
         }
     }
@@ -125,7 +125,7 @@ export function transitionControlQueryState<Snapshot, Provenance = unknown>(
 export function observeControlQueryFreshness<Snapshot, Provenance = unknown>(
     state: ControlQuerySnapshot<Snapshot, Provenance>,
     nowEpochMs: number,
-    freshnessMs = CONTROL_QUERY_FRESHNESS_MS,
+    freshnessMs = CONTROL_QUERY_FRESHNESS_MS
 ): ControlQuerySnapshot<Snapshot, Provenance> {
     if (
         state.snapshot === undefined ||
@@ -137,7 +137,7 @@ export function observeControlQueryFreshness<Snapshot, Provenance = unknown>(
     }
     return {
         ...state,
-        status: 'stale',
+        status: 'stale'
     };
 }
 
@@ -149,9 +149,7 @@ export type ControlQueryScheduler = Readonly<{
 }>;
 
 export type ControlQueryServiceOptions<Snapshot, Provenance = unknown> = Readonly<{
-    query(input: Readonly<{ signal: AbortSignal }>): Promise<
-        ControlQueryResult<Snapshot, Provenance>
-    >;
+    query(input: Readonly<{ signal: AbortSignal; }>): Promise<ControlQueryResult<Snapshot, Provenance>>;
     now(): number;
     scheduler: ControlQueryScheduler;
     pollIntervalMs: number;
@@ -169,7 +167,7 @@ export type ControlQueryService<Snapshot, Provenance = unknown> = Readonly<{
 }>;
 
 export function createControlQueryService<Snapshot, Provenance = unknown>(
-    options: ControlQueryServiceOptions<Snapshot, Provenance>,
+    options: ControlQueryServiceOptions<Snapshot, Provenance>
 ): ControlQueryService<Snapshot, Provenance> {
     let state = createInitialControlQueryState<Snapshot, Provenance>();
     let running = false;
@@ -187,7 +185,7 @@ export function createControlQueryService<Snapshot, Provenance = unknown>(
             return;
         }
         state = next;
-        listeners.forEach(listener => listener());
+        listeners.forEach((listener) => listener());
     }
 
     function clearPollTimer(): void {
@@ -226,12 +224,12 @@ export function createControlQueryService<Snapshot, Provenance = unknown>(
             observeControlQueryFreshness(
                 state,
                 options.now(),
-                options.freshnessMs ?? CONTROL_QUERY_FRESHNESS_MS,
+                options.freshnessMs ?? CONTROL_QUERY_FRESHNESS_MS
             ),
             {
                 type: 'attempt-started',
-                atEpochMs: options.now(),
-            },
+                atEpochMs: options.now()
+            }
         ));
 
         const controller = new AbortController();
@@ -249,7 +247,8 @@ export function createControlQueryService<Snapshot, Provenance = unknown>(
         let query: Promise<ControlQueryResult<Snapshot, Provenance>>;
         try {
             query = options.query({ signal: controller.signal });
-        } catch (error) {
+        }
+        catch (error) {
             query = Promise.reject(error);
         }
 
@@ -261,10 +260,11 @@ export function createControlQueryService<Snapshot, Provenance = unknown>(
                     publish(transitionControlQueryState(state, {
                         type: 'attempt-succeeded',
                         atEpochMs: options.now(),
-                        result,
+                        result
                     }));
                 }
-            } catch (error) {
+            }
+            catch (error) {
                 if (running && currentGeneration === generation) {
                     publish(transitionControlQueryState(state, {
                         type: 'attempt-failed',
@@ -272,11 +272,12 @@ export function createControlQueryService<Snapshot, Provenance = unknown>(
                         error: controlQueryError(
                             timedOut
                                 ? new ControlQueryTimeoutError(options.requestTimeoutMs)
-                                : error,
-                        ),
+                                : error
+                        )
                     }));
                 }
-            } finally {
+            }
+            finally {
                 if (activeRequestId === requestId) {
                     options.scheduler.clearTimeout(timeoutHandle);
                     if (requestTimer === timeoutHandle) {
@@ -299,10 +300,14 @@ export function createControlQueryService<Snapshot, Provenance = unknown>(
 
     function refreshAfterCurrent(): Promise<void> {
         const current = inFlight;
-        if (!current) return refresh();
+        if (!current) {
+            return refresh();
+        }
         const currentGeneration = generation;
         return current.then(() => {
-            if (!running || generation !== currentGeneration) return;
+            if (!running || generation !== currentGeneration) {
+                return;
+            }
             return refresh();
         });
     }
@@ -334,7 +339,7 @@ export function createControlQueryService<Snapshot, Provenance = unknown>(
         if (state.isRefreshing) {
             publish({
                 ...state,
-                isRefreshing: false,
+                isRefreshing: false
             });
         }
     }
@@ -348,18 +353,18 @@ export function createControlQueryService<Snapshot, Provenance = unknown>(
         subscribe(listener) {
             listeners.add(listener);
             return () => listeners.delete(listener);
-        },
+        }
     };
 }
 
 function monotonicEpochMs<Snapshot>(
     state: ControlQuerySnapshot<Snapshot>,
-    atEpochMs: number,
+    atEpochMs: number
 ): number {
     return Math.max(
         atEpochMs,
         state.attemptedAtEpochMs ?? atEpochMs,
-        state.receivedAtEpochMs ?? atEpochMs,
+        state.receivedAtEpochMs ?? atEpochMs
     );
 }
 
@@ -376,7 +381,7 @@ function controlQueryError(error: unknown): ControlQueryError {
     if (error instanceof ControlQueryTimeoutError) {
         return {
             kind: 'timeout',
-            message: error.message,
+            message: error.message
         };
     }
     const record = error && typeof error === 'object'
@@ -408,50 +413,50 @@ function controlQueryError(error: unknown): ControlQueryError {
             brokerStatus: numberProperty(record, 'brokerStatus') ??
                 (brokerError === undefined ? undefined : broker.status),
             brokerStatusText: stringProperty(record, 'brokerStatusText'),
-            credentialTrustRequired: record.credentialTrustRequired === true || undefined,
+            credentialTrustRequired: record.credentialTrustRequired === true || undefined
         };
     }
     if (typeof record?.status === 'number') {
         return {
             kind: 'http',
             status: record.status,
-            message,
+            message
         };
     }
     if (record?.reachable === true) {
         return {
             kind: 'protocol',
-            message,
+            message
         };
     }
     if (record?.name === 'AbortError') {
         return {
             kind: 'aborted',
-            message,
+            message
         };
     }
     if (error instanceof TypeError) {
         return {
             kind: 'network',
-            message,
+            message
         };
     }
     return {
         kind: 'unknown',
-        message,
+        message
     };
 }
 
 function numberProperty(
     record: Record<string, unknown>,
-    key: string,
+    key: string
 ): number | undefined {
     return typeof record[key] === 'number' ? record[key] : undefined;
 }
 
 function stringProperty(
     record: Record<string, unknown>,
-    key: string,
+    key: string
 ): string | undefined {
     return typeof record[key] === 'string' ? record[key] : undefined;
 }

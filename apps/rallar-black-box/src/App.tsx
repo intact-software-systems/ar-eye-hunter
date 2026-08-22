@@ -1,27 +1,21 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { clearSession, writeSession } from '@shared/api/auth.ts';
-import {
-    rallarBlackBoxRuntimeStore,
-    useRallarBlackBoxRuntimeStore,
-} from './runtime-store.ts';
-import {
-    authErrorMessage,
-    bootstrapPatchFromAuthSession,
-} from './auth-flow.ts';
-import { readAuthSessionFromRallarAuthState } from './auth-lifecycle.ts';
-import { useExperienceRoute } from './app/use-experience-route.ts';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import {
     captureInitialRecipeConsoleControlCredentialPolicy,
-    scrubCurrentRecipeConsoleUrlBeforeLoad,
+    scrubCurrentRecipeConsoleUrlBeforeLoad
 } from './app/recipe-console-url-guard.ts';
-import { loadBrowserRallarFacade } from './legacy/rallar/load-browser-rallar-facade.ts';
-import { LoginScreen } from './legacy/shell/LoginScreen.tsx';
+import { useExperienceRoute } from './app/use-experience-route.ts';
+import { authErrorMessage, bootstrapPatchFromAuthSession } from './auth-flow.ts';
+import { readAuthSessionFromRallarAuthState } from './auth-lifecycle.ts';
 import {
     consumeBootstrapAgentSessionTicket,
-    scrubBrowserAgentBootstrapSecretsFromUrl,
+    scrubBrowserAgentBootstrapSecretsFromUrl
 } from './bootstrap-agent-session.ts';
+import { loadBrowserRallarFacade } from './legacy/rallar/load-browser-rallar-facade.ts';
+import { LoginScreen } from './legacy/shell/LoginScreen.tsx';
 import { readCurrentAuthSession } from './legacy/shell/read-current-auth-session.ts';
+import { rallarBlackBoxRuntimeStore, useRallarBlackBoxRuntimeStore } from './runtime-store.ts';
 
 // Recipe Console work belongs under `src/recipe-console/**`; legacy extraction belongs under `src/legacy/**`; no new feature panel belongs in `App.tsx`.
 
@@ -35,16 +29,14 @@ const RecipeConsoleApp = lazy(() => {
     scrubCurrentRecipeConsoleUrlBeforeLoad();
     return import('./recipe-console/app/RecipeConsoleApp.tsx');
 });
-const LegacyExperience = lazy(() =>
-    import('./legacy/shell/LegacyExperience.tsx')
-);
+const LegacyExperience = lazy(() => import('./legacy/shell/LegacyExperience.tsx'));
 
 export default function App() {
     const runtime = useRallarBlackBoxRuntimeStore();
     const { bootstrap } = runtime;
     const canConsumeBootstrapAgentTicket = initialRecipeConsoleControlCredentialPolicy.allowBootstrapAgentTicket;
     const [authSession, setAuthSession] = useState<AuthSession | undefined>(
-        () => bootstrap.rallarAgentSessionTicket ? undefined : readCurrentAuthSession(),
+        () => bootstrap.rallarAgentSessionTicket ? undefined : readCurrentAuthSession()
     );
     const [authBusy, setAuthBusy] = useState(false);
     const [authError, setAuthError] = useState<string | undefined>();
@@ -91,7 +83,7 @@ export default function App() {
         bootstrap.apiBaseUrl,
         bootstrap.rallarAgentSessionTicket,
         canConsumeBootstrapAgentTicket,
-        requiresLogin,
+        requiresLogin
     ]);
 
     useEffect(() => {
@@ -99,8 +91,8 @@ export default function App() {
             rallarBlackBoxRuntimeStore.updateBootstrapConfig(
                 bootstrapPatchFromAuthSession(
                     authSession,
-                    bootstrap.apiBaseUrl,
-                ),
+                    bootstrap.apiBaseUrl
+                )
             );
         }
     }, [authSession, bootstrap.apiBaseUrl, requiresLogin]);
@@ -124,7 +116,7 @@ export default function App() {
             clearSession();
             const session = await consumeBootstrapAgentSessionTicket(
                 bootstrap.rallarAgentSessionTicket ?? '',
-                bootstrap.apiBaseUrl,
+                bootstrap.apiBaseUrl
             );
             if (cancelled) {
                 return;
@@ -137,10 +129,10 @@ export default function App() {
                 {
                     ...bootstrapPatchFromAuthSession(
                         session,
-                        bootstrap.apiBaseUrl,
+                        bootstrap.apiBaseUrl
                     ),
-                    rallarAgentSessionTicket: undefined,
-                },
+                    rallarAgentSessionTicket: undefined
+                }
             );
         })()
             .catch((error) => {
@@ -161,7 +153,7 @@ export default function App() {
         bootstrap.apiBaseUrl,
         bootstrap.rallarAgentSessionTicket,
         canConsumeBootstrapAgentTicket,
-        requiresLogin,
+        requiresLogin
     ]);
 
     const logout = async (): Promise<void> => {
@@ -172,9 +164,11 @@ export default function App() {
             facade.configure({ apiBaseUrl: bootstrap.apiBaseUrl });
             await facade.disconnect();
             await facade.auth.logout();
-        } catch (error) {
+        }
+        catch (error) {
             setAuthError(authErrorMessage(error));
-        } finally {
+        }
+        finally {
             setAuthSession(readCurrentAuthSession());
             setAuthBusy(false);
         }
@@ -228,33 +222,34 @@ export default function App() {
         authBusy,
         authError,
         setAuthSession,
-        logout,
+        logout
     };
 
     return (
         <Suspense fallback={<main className="auth-shell">Loading experience…</main>}>
             {experience === 'recipe-console'
-                ? <RecipeConsoleApp
-                    authSession={authSession}
-                    authBusy={authBusy}
-                    authError={authError}
-                    controlBootstrap={{
-                        controlUrl: bootstrap.controlUrl,
-                        bootstrapRunId: bootstrap.runId,
-                        apiBaseUrl: bootstrap.apiBaseUrl,
-                        providerMode: bootstrap.providerMode,
-                        manualToken: bootstrap.controlToken,
-                        credentialPolicy: initialRecipeConsoleControlCredentialPolicy,
-                        bootstrapGroup: {
-                            applicationId: bootstrap.applicationId,
-                            workspaceId: bootstrap.workspaceId,
-                            groupId: bootstrap.roomId,
-                        },
-                    }}
-                    onLogout={logout}
-                />
-                : <LegacyExperience runtime={runtime} auth={auth}/>
-            }
+                ? (
+                    <RecipeConsoleApp
+                        authSession={authSession}
+                        authBusy={authBusy}
+                        authError={authError}
+                        controlBootstrap={{
+                            controlUrl: bootstrap.controlUrl,
+                            bootstrapRunId: bootstrap.runId,
+                            apiBaseUrl: bootstrap.apiBaseUrl,
+                            providerMode: bootstrap.providerMode,
+                            manualToken: bootstrap.controlToken,
+                            credentialPolicy: initialRecipeConsoleControlCredentialPolicy,
+                            bootstrapGroup: {
+                                applicationId: bootstrap.applicationId,
+                                workspaceId: bootstrap.workspaceId,
+                                groupId: bootstrap.roomId
+                            }
+                        }}
+                        onLogout={logout}
+                    />
+                )
+                : <LegacyExperience runtime={runtime} auth={auth} />}
         </Suspense>
     );
 }

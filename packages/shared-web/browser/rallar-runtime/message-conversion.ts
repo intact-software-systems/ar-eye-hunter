@@ -1,13 +1,10 @@
-import type {
-    RallarMessage,
-    RallarMessageTransport,
-} from '@shared-web/browser/rallar-messages-facade.ts';
 import { readRallarMessageRoomId } from '@shared-web/browser/rallar-message-selectors.ts';
+import type { RallarMessage, RallarMessageTransport } from '@shared-web/browser/rallar-messages-facade.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 
 export function toRallarMessage<T>(
     transport: RallarMessageTransport,
-    message: ALMessage,
+    message: ALMessage
 ): RallarMessage<T> {
     return {
         transport,
@@ -19,14 +16,15 @@ export function toRallarMessage<T>(
         senderId: message.id.senderId,
         payload: decodeMessagePayload<T>(message),
         raw: message,
-        receivedAtEpochMs: Date.now(),
+        receivedAtEpochMs: Date.now()
     };
 }
 
 function decodeMessagePayload<T>(message: ALMessage): T {
     try {
         return JSON.parse(message.payload.resource) as T;
-    } catch {
+    }
+    catch {
         return message.payload.resource as T;
     }
 }

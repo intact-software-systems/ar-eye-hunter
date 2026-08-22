@@ -1,7 +1,7 @@
 # Rallar WebRTC Connect/Disconnect Leak Test
 
-Date: 2026-07-02  
-Mode: runtime leak validation, no production behavior changes  
+Date: 2026-07-02\
+Mode: runtime leak validation, no production behavior changes\
 Artifacts: `tmp/perf/scripts/webrtc-connect-disconnect-leak-test.mjs`, `tmp/perf/results/webrtc-connect-disconnect-leak-200cycles-2026-07-02.json`
 
 Related runtime report:
@@ -88,38 +88,38 @@ Those require a full-stack Rallar session run, not just a local `RTCPeerConnecti
 
 ## Results
 
-| Metric | Result |
-| --- | --- |
-| Cycles | `200` total: `180` clean, `20` abrupt |
-| Connection success | `200/200` DataChannel opens, `200/200` remote media paths observed |
-| Message path | `6,400` sent, `6,400` received |
-| Signaling path | `1,600` in-memory signaling messages |
-| ICE candidates | `800` local-side candidate events, `400` remote-side candidate events |
-| ICE queue | max queued candidates `0`, pending signaling after cleanup `0` |
-| DataChannel buffer | max `bufferedAmount` `66,710`, post-drain `0` on measured cycles |
-| Before cleanup | max `2` peer connections, `2` data channels, `2` active tracks, `11` listeners |
-| After cleanup | max `0` peer connections, `0` data channels, `0` active tracks, `0` listeners, `0` timers, `0` WebSockets |
-| Final counters | all tracked active resources `0` |
-| Browser JS heap | `564,968` bytes before, `809,532` bytes after, delta `244,564` bytes |
-| Heap trend | slope `~160 bytes/cycle`; first 20-cycle mean `787,637`; last 20-cycle mean `817,455` |
-| Per-cycle heap delta | p50 `0` bytes, p95 `23,792` bytes |
-| Node harness RSS | `+36,077,568` bytes; treated as harness/Playwright noise, not browser retained WebRTC proof |
-| Cycle duration | mean `25.0 ms`, p95 `26.9 ms` |
+| Metric               | Result                                                                                                    |
+| -------------------- | --------------------------------------------------------------------------------------------------------- |
+| Cycles               | `200` total: `180` clean, `20` abrupt                                                                     |
+| Connection success   | `200/200` DataChannel opens, `200/200` remote media paths observed                                        |
+| Message path         | `6,400` sent, `6,400` received                                                                            |
+| Signaling path       | `1,600` in-memory signaling messages                                                                      |
+| ICE candidates       | `800` local-side candidate events, `400` remote-side candidate events                                     |
+| ICE queue            | max queued candidates `0`, pending signaling after cleanup `0`                                            |
+| DataChannel buffer   | max `bufferedAmount` `66,710`, post-drain `0` on measured cycles                                          |
+| Before cleanup       | max `2` peer connections, `2` data channels, `2` active tracks, `11` listeners                            |
+| After cleanup        | max `0` peer connections, `0` data channels, `0` active tracks, `0` listeners, `0` timers, `0` WebSockets |
+| Final counters       | all tracked active resources `0`                                                                          |
+| Browser JS heap      | `564,968` bytes before, `809,532` bytes after, delta `244,564` bytes                                      |
+| Heap trend           | slope `~160 bytes/cycle`; first 20-cycle mean `787,637`; last 20-cycle mean `817,455`                     |
+| Per-cycle heap delta | p50 `0` bytes, p95 `23,792` bytes                                                                         |
+| Node harness RSS     | `+36,077,568` bytes; treated as harness/Playwright noise, not browser retained WebRTC proof               |
+| Cycle duration       | mean `25.0 ms`, p95 `26.9 ms`                                                                             |
 
 Heap bucket check:
 
-| Cycles | Mean JS heap after GC | After-cleanup max active resources |
-| --- | ---: | --- |
-| 1-20 | `787,637` | all `0` |
-| 21-40 | `797,871` | all `0` |
-| 41-60 | `801,538` | all `0` |
-| 61-80 | `803,243` | all `0` |
-| 81-100 | `804,331` | all `0` |
-| 101-120 | `810,589` | all `0` |
-| 121-140 | `815,427` | all `0` |
-| 141-160 | `816,443` | all `0` |
-| 161-180 | `817,545` | all `0` |
-| 181-200 | `817,455` | all `0` |
+| Cycles  | Mean JS heap after GC | After-cleanup max active resources |
+| ------- | --------------------: | ---------------------------------- |
+| 1-20    |             `787,637` | all `0`                            |
+| 21-40   |             `797,871` | all `0`                            |
+| 41-60   |             `801,538` | all `0`                            |
+| 61-80   |             `803,243` | all `0`                            |
+| 81-100  |             `804,331` | all `0`                            |
+| 101-120 |             `810,589` | all `0`                            |
+| 121-140 |             `815,427` | all `0`                            |
+| 141-160 |             `816,443` | all `0`                            |
+| 161-180 |             `817,545` | all `0`                            |
+| 181-200 |             `817,455` | all `0`                            |
 
 ## Leak Indicators
 

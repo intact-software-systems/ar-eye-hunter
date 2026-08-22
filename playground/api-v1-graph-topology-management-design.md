@@ -52,21 +52,21 @@ This keeps graph and topology operations next to clients and groups, and avoids 
 
 ### Existing Product Resources
 
-| Resource | Purpose |
-| --- | --- |
-| `/clients` | Manage client principals, instances, sessions, and presence. |
-| `/groups` | Manage group identity, membership, invites, roles, ownership, and presence. |
+| Resource   | Purpose                                                                     |
+| ---------- | --------------------------------------------------------------------------- |
+| `/clients` | Manage client principals, instances, sessions, and presence.                |
+| `/groups`  | Manage group identity, membership, invites, roles, ownership, and presence. |
 
 ### New Product Resources
 
-| Resource | Purpose |
-| --- | --- |
-| `/graphs/global` | Read app/workspace-scoped graph diagnostics across active sessions in the scope. |
-| `/groups/:groupId/graphs/latest` | Read the latest diagnostic graph snapshot for one group. |
-| `/groups/:groupId/topology` | Read the effective topology management view for one group. |
-| `/groups/:groupId/topology/config` | Read, write, and delete durable group topology config. |
-| `/groups/:groupId/topology/override` | Read, write, and delete temporary group topology override config. |
-| `/groups/:groupId/topology/reconfigure` | Recompute and optionally publish the group topology immediately. |
+| Resource                                | Purpose                                                                          |
+| --------------------------------------- | -------------------------------------------------------------------------------- |
+| `/graphs/global`                        | Read app/workspace-scoped graph diagnostics across active sessions in the scope. |
+| `/groups/:groupId/graphs/latest`        | Read the latest diagnostic graph snapshot for one group.                         |
+| `/groups/:groupId/topology`             | Read the effective topology management view for one group.                       |
+| `/groups/:groupId/topology/config`      | Read, write, and delete durable group topology config.                           |
+| `/groups/:groupId/topology/override`    | Read, write, and delete temporary group topology override config.                |
+| `/groups/:groupId/topology/reconfigure` | Recompute and optionally publish the group topology immediately.                 |
 
 ## Graph Diagnostics API
 
@@ -96,12 +96,12 @@ Response shape:
 
 ```ts
 type GraphDiagnosticReadResponse = Readonly<{
-  groupRef: GroupRef;
-  snapshot: SerializedGraphInfoSnapshot;
-  cache: {
-    hit: boolean;
-    refreshed: boolean;
-  };
+    groupRef: GroupRef;
+    snapshot: SerializedGraphInfoSnapshot;
+    cache: {
+        hit: boolean;
+        refreshed: boolean;
+    };
 }>;
 ```
 
@@ -126,14 +126,14 @@ Response shape:
 
 ```ts
 type GroupTopologyManagementView = Readonly<{
-  groupRef: GroupRef;
-  overlayId: string;
-  snapshot?: RallarOverlayTopologySnapshot;
-  config: GroupTopologyConfigView;
-  pending?: {
-    reconfigureQueued: boolean;
-    dueAtEpochMs?: number;
-  };
+    groupRef: GroupRef;
+    overlayId: string;
+    snapshot?: RallarOverlayTopologySnapshot;
+    config: GroupTopologyConfigView;
+    pending?: {
+        reconfigureQueued: boolean;
+        dueAtEpochMs?: number;
+    };
 }>;
 ```
 
@@ -157,9 +157,9 @@ Request shape:
 
 ```ts
 type PutGroupTopologyConfigRequest = Readonly<{
-  requestId?: string;
-  config: GroupTopologyConfigPatch;
-  reconfigure?: boolean;
+    requestId?: string;
+    config: GroupTopologyConfigPatch;
+    reconfigure?: boolean;
 }>;
 ```
 
@@ -185,11 +185,11 @@ Request shape:
 
 ```ts
 type PutGroupTopologyOverrideRequest = Readonly<{
-  requestId?: string;
-  config: GroupTopologyConfigPatch;
-  ttlMs?: number;
-  expiresAtEpochMs?: number;
-  reconfigure?: boolean;
+    requestId?: string;
+    config: GroupTopologyConfigPatch;
+    ttlMs?: number;
+    expiresAtEpochMs?: number;
+    reconfigure?: boolean;
 }>;
 ```
 
@@ -213,9 +213,9 @@ Request shape:
 
 ```ts
 type ReconfigureGroupTopologyRequest = Readonly<{
-  requestId?: string;
-  options?: GroupTopologyConfigPatch;
-  publish?: boolean;
+    requestId?: string;
+    options?: GroupTopologyConfigPatch;
+    publish?: boolean;
 }>;
 ```
 
@@ -225,13 +225,13 @@ Response shape:
 
 ```ts
 type ReconfigureGroupTopologyResponse = Readonly<{
-  groupRef: GroupRef;
-  overlayId: string;
-  changed: boolean;
-  snapshot: RallarOverlayTopologySnapshot;
-  previous?: RallarOverlayTopologySnapshot;
-  config: GroupTopologyConfigView;
-  published: boolean;
+    groupRef: GroupRef;
+    overlayId: string;
+    changed: boolean;
+    snapshot: RallarOverlayTopologySnapshot;
+    previous?: RallarOverlayTopologySnapshot;
+    config: GroupTopologyConfigView;
+    published: boolean;
 }>;
 ```
 
@@ -241,33 +241,35 @@ type ReconfigureGroupTopologyResponse = Readonly<{
 type GroupTopologyKindSetting = 'auto' | 'star' | 'tree' | 'mesh';
 
 type GroupTopologyConfigPatch = Readonly<{
-  topologyKind?: GroupTopologyKindSetting;
-  degreeLimit?: number;
-  treeMinSize?: number;
-  meshMinSize?: number;
-  meshParamK?: number;
+    topologyKind?: GroupTopologyKindSetting;
+    degreeLimit?: number;
+    treeMinSize?: number;
+    meshMinSize?: number;
+    meshParamK?: number;
 }>;
 
 type StoredGroupTopologyConfig = Readonly<{
-  groupRef: GroupRef;
-  config: GroupTopologyConfigPatch;
-  version: number;
-  createdAtEpochMs: number;
-  updatedAtEpochMs: number;
-  updatedByPrincipalId: string;
-  requestId?: string;
+    groupRef: GroupRef;
+    config: GroupTopologyConfigPatch;
+    version: number;
+    createdAtEpochMs: number;
+    updatedAtEpochMs: number;
+    updatedByPrincipalId: string;
+    requestId?: string;
 }>;
 
-type StoredGroupTopologyOverride = StoredGroupTopologyConfig & Readonly<{
-  expiresAtEpochMs: number;
-}>;
+type StoredGroupTopologyOverride =
+    & StoredGroupTopologyConfig
+    & Readonly<{
+        expiresAtEpochMs: number;
+    }>;
 
 type GroupTopologyConfigView = Readonly<{
-  serverDefaults: Required<GroupTopologyConfigPatch>;
-  durable?: StoredGroupTopologyConfig;
-  temporary?: StoredGroupTopologyOverride;
-  requestOptions?: GroupTopologyConfigPatch;
-  effective: Required<GroupTopologyConfigPatch>;
+    serverDefaults: Required<GroupTopologyConfigPatch>;
+    durable?: StoredGroupTopologyConfig;
+    temporary?: StoredGroupTopologyOverride;
+    requestOptions?: GroupTopologyConfigPatch;
+    effective: Required<GroupTopologyConfigPatch>;
 }>;
 ```
 

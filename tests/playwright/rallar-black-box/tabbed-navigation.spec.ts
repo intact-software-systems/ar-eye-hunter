@@ -9,7 +9,7 @@ import { createTuneArtifactEnvelope } from './recipe-console-tune-artifacts.ts';
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const ARTIFACT_FIXTURE_DIR = path.join(
     REPO_ROOT,
-    'packages/shared-test/black-box-runner/fixtures/schema/v1/artifact-bundle',
+    'packages/shared-test/black-box-runner/fixtures/schema/v1/artifact-bundle'
 );
 
 type RunnerSurfaceTab =
@@ -20,16 +20,15 @@ type RunnerSurfaceTab =
     | 'shared-test'
     | 'flow-builder';
 
-const RUNNER_SURFACE_TARGETS: Readonly<Record<
-    RunnerSurfaceTab,
-    Readonly<{ visibleTab: string; surfaceButton?: string }>
->> = {
+const RUNNER_SURFACE_TARGETS: Readonly<
+    Record<RunnerSurfaceTab, Readonly<{ visibleTab: string; surfaceButton?: string; }>>
+> = {
     'manual-rallar': { visibleTab: 'Advanced', surfaceButton: 'Manual Rallar' },
     'local-workbench': { visibleTab: 'Advanced', surfaceButton: 'Local Workbench' },
     'run-manager': { visibleTab: 'Advanced', surfaceButton: 'Run Manager' },
     'distributed-recipes': { visibleTab: 'Advanced', surfaceButton: 'Distributed Recipes' },
     'shared-test': { visibleTab: 'Advanced', surfaceButton: 'Shared Test' },
-    'flow-builder': { visibleTab: 'Builder' },
+    'flow-builder': { visibleTab: 'Builder' }
 };
 
 async function openRunnerSurface(page: Page, tab: RunnerSurfaceTab): Promise<void> {
@@ -89,17 +88,17 @@ test('moves legacy tab focus with roving keys and recovers it after panel naviga
 });
 
 test('imports CI artifact files through the Runs panel and renders their analysis', async ({
-    page,
+    page
 }, testInfo) => {
     const pageErrors: Error[] = [];
-    page.on('pageerror', error => pageErrors.push(error));
+    page.on('pageerror', (error) => pageErrors.push(error));
     const artifact = createTuneArtifactEnvelope();
     const artifactDirectory = testInfo.outputPath('distributed-artifact');
     await mkdir(artifactDirectory, { recursive: true });
     await Promise.all(
         Object.entries(artifact.files ?? {}).map(([name, contents]) =>
             writeFile(path.join(artifactDirectory, name), contents)
-        ),
+        )
     );
     await page.goto('/?provider=simulated&experience=legacy&tab=runs');
 
@@ -109,7 +108,7 @@ test('imports CI artifact files through the Runs panel and renders their analysi
 
     const analysis = runsPanel.locator('.imported-distributed-artifact-analysis');
     await expect(analysis.getByRole('heading', {
-        name: 'Imported CI artifact analysis',
+        name: 'Imported CI artifact analysis'
     })).toBeVisible();
     await expect(analysis).toContainText('Required files');
     await expect(analysis).toContainText('Selected files');
@@ -121,7 +120,7 @@ test('imports CI artifact files through the Runs panel and renders their analysi
         .filter({ hasText: 'Distributed Run' })
         .locator('select');
     await expect(selectedRun).toHaveValue(artifact.distributedRunId);
-    await expect.poll(() => pageErrors.map(error => error.message)).toEqual([]);
+    await expect.poll(() => pageErrors.map((error) => error.message)).toEqual([]);
 });
 
 test('recovers tab focus when a retained legacy panel becomes hidden', async ({ page }) => {
@@ -131,7 +130,7 @@ test('recovers tab focus when a retained legacy panel becomes hidden', async ({ 
     const quickControl = quickPanel.getByRole('button', {
         includeHidden: true,
         name: 'Hide Quick Test Info',
-        exact: true,
+        exact: true
     });
     await quickControl.focus();
     await expect(quickControl).toBeFocused();
@@ -155,13 +154,13 @@ test('opens a tab from the URL and updates tab state in the address bar', async 
 
     await expect(page.getByRole('tab', { name: 'RTC Diagnostics' })).toHaveAttribute(
         'aria-selected',
-        'true',
+        'true'
     );
     await expect(page.locator('#panel-rtc-diagnostics')).toBeVisible();
     const modeSwitch = page.getByLabel('Rallar workspace mode');
     await expect(modeSwitch.getByRole('button', { name: /Rallar Direct live/ })).toHaveAttribute(
         'aria-pressed',
-        'true',
+        'true'
     );
     await expect(page.getByRole('tab', { name: 'Local Workbench' })).toHaveCount(0);
     const trace = page.locator('[aria-label="Rallar browser trace"]');
@@ -191,7 +190,7 @@ test('opens a tab from the URL and updates tab state in the address bar', async 
     await expect(page).toHaveURL(/workspace=black-box-runner/);
     await expect(page.getByRole('tab', { name: 'Recipes', exact: true })).toHaveAttribute(
         'aria-selected',
-        'true',
+        'true'
     );
     await expect(directPanel).toHaveCount(0);
     await expect(trace).toContainText('black-box-runner mode');
@@ -205,7 +204,7 @@ test('opens Quick Test as the default Rallar workspace screen', async ({ page })
 
     await expect(page.getByRole('tab', { name: 'Quick Test' })).toHaveAttribute(
         'aria-selected',
-        'true',
+        'true'
     );
     const panel = page.getByLabel('Rallar Quick Test');
     await expect(panel).toBeVisible();
@@ -231,13 +230,13 @@ test('opens Quick Test as the default Rallar workspace screen', async ({ page })
         .click();
     await expect(page.getByRole('tab', { name: 'Quick Test' })).toHaveAttribute(
         'aria-selected',
-        'true',
+        'true'
     );
     await panel.getByRole('button', { name: 'Open runner mode' }).click();
     await expect(page.getByLabel('Runner mode boundary')).toContainText('Runner Workspace');
     await expect(page.getByRole('tab', { name: 'Recipes', exact: true })).toHaveAttribute(
         'aria-selected',
-        'true',
+        'true'
     );
 });
 
@@ -246,7 +245,7 @@ test('opens runner mode on Recipes and runs a local recipe from the launcher', a
 
     await expect(page.getByRole('tab', { name: 'Recipes', exact: true })).toHaveAttribute(
         'aria-selected',
-        'true',
+        'true'
     );
     const panel = page.locator('#panel-recipes');
     await expect(panel).toBeVisible();
@@ -263,7 +262,7 @@ test('opens runner mode on Recipes and runs a local recipe from the launcher', a
     await expect(localRunButton).toBeEnabled();
     await expect(distributedRunButton).toBeDisabled();
     await expect(panel).toContainText(
-        /Distributed: (Control run missing|No agents connected|Control server offline)/,
+        /Distributed: (Control run missing|No agents connected|Control server offline)/
     );
 
     const agentSetup = panel.getByLabel('Connect Agents');
@@ -284,7 +283,7 @@ test('opens runner mode on Recipes and runs a local recipe from the launcher', a
     expect(agentUrl.searchParams.get('roomId')).toBe('bb-group');
     await agentPage.close();
     await expect(agentSetup).toContainText(
-        'Opened 1 agent tab with fresh one-time sessions.',
+        'Opened 1 agent tab with fresh one-time sessions.'
     );
 
     await panel.getByRole('button', { name: 'Open in editor' }).first().click();
@@ -293,7 +292,7 @@ test('opens runner mode on Recipes and runs a local recipe from the launcher', a
     await localRunButton.click();
     await expect(panel.locator('.runner-launch-result')).toContainText(
         /finished|completed|passed/i,
-        { timeout: 15_000 },
+        { timeout: 15_000 }
     );
     await expect(panel.getByLabel('Artifact summary')).toContainText('local replay');
     await expect(panel.locator('.runner-result-grid')).toContainText('Commands');
@@ -301,7 +300,7 @@ test('opens runner mode on Recipes and runs a local recipe from the launcher', a
     await panel.getByRole('button', { name: 'Open Runs' }).click();
     await expect(page.getByRole('tab', { name: 'Runs' })).toHaveAttribute(
         'aria-selected',
-        'true',
+        'true'
     );
     await expect(page.locator('#panel-runs')).toContainText('Recent commands');
 
@@ -309,7 +308,7 @@ test('opens runner mode on Recipes and runs a local recipe from the launcher', a
     await page.locator('#panel-recipes').getByRole('button', { name: 'Open Advanced' }).click();
     await expect(page.getByRole('tab', { name: 'Advanced' })).toHaveAttribute(
         'aria-selected',
-        'true',
+        'true'
     );
     const advancedPanel = page.locator('#panel-advanced');
     await expect(advancedPanel.getByRole('button', { name: 'Local Workbench' })).toBeVisible();
@@ -322,27 +321,27 @@ test('opens fresh same-user agent tabs through the visible UI', async ({ page })
         accessToken: 'operator-token-value',
         username: 'alice',
         sessionId: 'operator-session',
-        expiresAtEpochMs: Date.now() + 60_000,
+        expiresAtEpochMs: Date.now() + 60_000
     };
     const issuedSessions = new Map<string, typeof operatorSession>();
     const context = page.context();
 
-    await context.route('http://localhost:8080/api/auth/login/requests/*', async route => {
+    await context.route('http://localhost:8080/api/auth/login/requests/*', async (route) => {
         expect(route.request().postDataJSON()).not.toHaveProperty('requestId');
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
-            body: JSON.stringify(operatorSession),
+            body: JSON.stringify(operatorSession)
         });
     });
-    await context.route('http://localhost:8080/api/auth/logout/requests/*', async route => {
+    await context.route('http://localhost:8080/api/auth/logout/requests/*', async (route) => {
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
-            body: JSON.stringify({ loggedOut: true }),
+            body: JSON.stringify({ loggedOut: true })
         });
     });
-    await context.route('http://localhost:8080/api/config', async route => {
+    await context.route('http://localhost:8080/api/config', async (route) => {
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
@@ -350,45 +349,45 @@ test('opens fresh same-user agent tabs through the visible UI', async ({ page })
                 apiBaseUrl: 'http://localhost:8080',
                 wsBaseUrl: 'ws://localhost:8080',
                 endpoints: {
-                    createWs: '/api/ws/{auth.sessionId}',
-                },
-            }),
+                    createWs: '/api/ws/{auth.sessionId}'
+                }
+            })
         });
     });
     await context.route(
         'http://localhost:8080/api/auth/agent-session-tickets/requests/*',
-        async route => {
-        expect(route.request().headers().authorization).toBe(
-            'Bearer operator-token-value',
-        );
-        const request = route.request().postDataJSON() as { agentIds?: readonly string[] };
-        expect(request).not.toHaveProperty('requestId');
-        const tickets = (request.agentIds ?? []).map((agentId, index) => {
-            const ticket = `agent-ticket-${index + 1}-secret-value`;
-            const session = {
-                ...operatorSession,
-                accessToken: `agent-access-${index + 1}-secret-value`,
-                sessionId: `${agentId}-session`,
-            };
-            issuedSessions.set(ticket, session);
-            return {
-                agentId,
-                ticket,
-                sessionId: session.sessionId,
-                expiresAtEpochMs: Date.now() + 30_000,
-            };
-        });
-        await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({ tickets }),
-        });
-        },
+        async (route) => {
+            expect(route.request().headers().authorization).toBe(
+                'Bearer operator-token-value'
+            );
+            const request = route.request().postDataJSON() as { agentIds?: readonly string[]; };
+            expect(request).not.toHaveProperty('requestId');
+            const tickets = (request.agentIds ?? []).map((agentId, index) => {
+                const ticket = `agent-ticket-${index + 1}-secret-value`;
+                const session = {
+                    ...operatorSession,
+                    accessToken: `agent-access-${index + 1}-secret-value`,
+                    sessionId: `${agentId}-session`
+                };
+                issuedSessions.set(ticket, session);
+                return {
+                    agentId,
+                    ticket,
+                    sessionId: session.sessionId,
+                    expiresAtEpochMs: Date.now() + 30_000
+                };
+            });
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({ tickets })
+            });
+        }
     );
     await context.route(
         'http://localhost:8080/api/auth/agent-session-tickets/consume/requests/*',
-        async route => {
-            const request = route.request().postDataJSON() as { ticket?: string };
+        async (route) => {
+            const request = route.request().postDataJSON() as { ticket?: string; };
             expect(request).not.toHaveProperty('requestId');
             const session = request.ticket
                 ? issuedSessions.get(request.ticket)
@@ -398,8 +397,8 @@ test('opens fresh same-user agent tabs through the visible UI', async ({ page })
                     status: 404,
                     contentType: 'application/json',
                     body: JSON.stringify({
-                        error: 'Agent session ticket is invalid or expired.',
-                    }),
+                        error: 'Agent session ticket is invalid or expired.'
+                    })
                 });
                 return;
             }
@@ -407,13 +406,13 @@ test('opens fresh same-user agent tabs through the visible UI', async ({ page })
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify(session),
+                body: JSON.stringify(session)
             });
-        },
+        }
     );
 
     await page.goto(
-        '/?provider=browser-rallar&workspace=black-box-runner&tab=recipes&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&roomId=bb-group',
+        '/?provider=browser-rallar&workspace=black-box-runner&tab=recipes&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&roomId=bb-group'
     );
     await expect(page.getByRole('heading', { name: 'Rallar Server Login' })).toBeVisible();
     await page.getByLabel('API Base URL').fill('http://localhost:8080');
@@ -436,27 +435,28 @@ test('opens fresh same-user agent tabs through the visible UI', async ({ page })
     await agentSetup.getByRole('button', { name: 'Open agent tabs' }).click();
     await expect.poll(() => agentPages.length, { timeout: 10_000 }).toBe(2);
     page.off('popup', collectPopup);
-    await Promise.all(agentPages.map(async agentPage => {
+    await Promise.all(agentPages.map(async (agentPage) => {
         await agentPage.waitForURL(/mode=control/, { timeout: 10_000 });
         await agentPage.waitForLoadState('domcontentloaded');
         await expect.poll(
             async () => await agentPage.evaluate(() => Boolean(sessionStorage.getItem('auth.session'))),
-            { timeout: 10_000 },
+            { timeout: 10_000 }
         ).toBe(true);
     }));
 
-    const popupStates = await Promise.all(agentPages.map(async agentPage =>
+    const popupStates = await Promise.all(agentPages.map(async (agentPage) =>
         await agentPage.evaluate(() => {
             const sessionRaw = sessionStorage.getItem('auth.session');
             const localRaw = localStorage.getItem('auth.session');
             return {
                 href: window.location.href,
                 hash: window.location.hash,
-                session: sessionRaw ? JSON.parse(sessionRaw) as { username?: string; sessionId?: string } : undefined,
-                local: localRaw ? JSON.parse(localRaw) as { sessionId?: string } : undefined,
+                session: sessionRaw ? JSON.parse(sessionRaw) as { username?: string; sessionId?: string; } : undefined,
+                local: localRaw ? JSON.parse(localRaw) as { sessionId?: string; } : undefined
             };
-        })));
-    const sessionIds = popupStates.map(state => state.session?.sessionId);
+        })
+    ));
+    const sessionIds = popupStates.map((state) => state.session?.sessionId);
     expect(new Set(sessionIds).size).toBe(2);
     for (const popupState of popupStates) {
         expect(popupState.session?.username).toBe('alice');
@@ -470,51 +470,51 @@ test('opens fresh same-user agent tabs through the visible UI', async ({ page })
     await firstAgentPage.getByRole('button', { name: 'Show details' }).click();
     await firstAgentPage.getByRole('button', { name: 'Logout' }).click();
     await expect(
-        firstAgentPage.getByRole('heading', { name: 'Rallar Server Login' }),
+        firstAgentPage.getByRole('heading', { name: 'Rallar Server Login' })
     ).toBeVisible();
-    await expect.poll(async () =>
-        await firstAgentPage.evaluate(() =>
-            Boolean(sessionStorage.getItem('auth.session'))
-        ),
-    ).toBe(false);
+    await expect.poll(async () => await firstAgentPage.evaluate(() => Boolean(sessionStorage.getItem('auth.session'))))
+        .toBe(false);
 
-    await Promise.all(agentPages.map(agentPage => agentPage.close()));
+    await Promise.all(agentPages.map((agentPage) => agentPage.close()));
 });
 
 test('explains runner readiness failures before live recipe launch', async ({ page }) => {
     await page.addInitScript(() => {
-        localStorage.setItem('auth.session', JSON.stringify({
-            clientId: 'readiness-client',
-            accessToken: 'readiness-secret-token',
-            username: 'alice',
-            sessionId: 'readiness-session',
-            expiresAtEpochMs: Date.now() + 60_000,
-        }));
+        localStorage.setItem(
+            'auth.session',
+            JSON.stringify({
+                clientId: 'readiness-client',
+                accessToken: 'readiness-secret-token',
+                username: 'alice',
+                sessionId: 'readiness-session',
+                expiresAtEpochMs: Date.now() + 60_000
+            })
+        );
     });
-    await page.route('http://localhost:8080/api/config', async route => {
+    await page.route('http://localhost:8080/api/config', async (route) => {
         await route.fulfill({
             status: 503,
             contentType: 'application/json',
-            body: JSON.stringify({ error: 'offline for readiness test' }),
+            body: JSON.stringify({ error: 'offline for readiness test' })
         });
     });
-    await page.route('http://127.0.0.1:5180/**', async route => {
+    await page.route('http://127.0.0.1:5180/**', async (route) => {
         await route.fulfill({
             status: 503,
             contentType: 'application/json',
-            body: JSON.stringify({ error: 'control offline for readiness test' }),
+            body: JSON.stringify({ error: 'control offline for readiness test' })
         });
     });
-    await page.route('http://localhost:5180/**', async route => {
+    await page.route('http://localhost:5180/**', async (route) => {
         await route.fulfill({
             status: 503,
             contentType: 'application/json',
-            body: JSON.stringify({ error: 'control offline for readiness test' }),
+            body: JSON.stringify({ error: 'control offline for readiness test' })
         });
     });
 
     await page.goto(
-        '/?provider=browser-rallar&workspace=black-box-runner&roomId=bb-group&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080',
+        '/?provider=browser-rallar&workspace=black-box-runner&roomId=bb-group&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080'
     );
 
     const panel = page.locator('#panel-recipes');
@@ -558,30 +558,33 @@ test('warns when ICE returns no TURN servers without blocking recipe actions', a
                     capabilities: {
                         crdt: {
                             supported: true,
-                            transports: ['local', 'server'],
-                        },
-                    },
-                },
-            },
+                            transports: ['local', 'server']
+                        }
+                    }
+                }
+            }
         ],
         commands: [],
         results: [],
         events: [],
         stats: [],
         reports: [],
-        heartbeats: [],
+        heartbeats: []
     };
 
     await page.addInitScript(() => {
-        localStorage.setItem('auth.session', JSON.stringify({
-            clientId: 'alice-client',
-            accessToken: 'turn-secret-token',
-            username: 'alice',
-            sessionId: 'alice-session',
-            expiresAtEpochMs: Date.now() + 60_000,
-        }));
+        localStorage.setItem(
+            'auth.session',
+            JSON.stringify({
+                clientId: 'alice-client',
+                accessToken: 'turn-secret-token',
+                username: 'alice',
+                sessionId: 'alice-session',
+                expiresAtEpochMs: Date.now() + 60_000
+            })
+        );
     });
-    await page.route('http://localhost:8080/api/config', async route => {
+    await page.route('http://localhost:8080/api/config', async (route) => {
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
@@ -589,29 +592,29 @@ test('warns when ICE returns no TURN servers without blocking recipe actions', a
                 apiBaseUrl: 'http://localhost:8080',
                 wsBaseUrl: 'ws://localhost:8080',
                 endpoints: {
-                    createWs: '/api/ws/:id',
-                },
-            }),
+                    createWs: '/api/ws/:id'
+                }
+            })
         });
     });
-    await page.route('http://localhost:8080/api/webrtc/ice', async route => {
+    await page.route('http://localhost:8080/api/webrtc/ice', async (route) => {
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
             body: JSON.stringify({
                 iceServers: [],
-                expiresAtEpochMs: Date.now() + 300_000,
-            }),
+                expiresAtEpochMs: Date.now() + 300_000
+            })
         });
     });
-    await page.route('http://localhost:5180/**', async route => {
+    await page.route('http://localhost:5180/**', async (route) => {
         const request = route.request();
         const url = new URL(request.url());
         if (request.method() === 'GET' && url.pathname === '/runs') {
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify({ runs: [run] }),
+                body: JSON.stringify({ runs: [run] })
             });
             return;
         }
@@ -619,19 +622,19 @@ test('warns when ICE returns no TURN servers without blocking recipe actions', a
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify(run),
+                body: JSON.stringify(run)
             });
             return;
         }
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
-            body: JSON.stringify({ ok: true }),
+            body: JSON.stringify({ ok: true })
         });
     });
 
     await page.goto(
-        '/?provider=browser-rallar&workspace=black-box-runner&roomId=bb-group&runId=turn-ready-run&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&applicationId=rallar-server&workspaceId=default',
+        '/?provider=browser-rallar&workspace=black-box-runner&roomId=bb-group&runId=turn-ready-run&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&applicationId=rallar-server&workspaceId=default'
     );
 
     const panel = page.locator('#panel-recipes');
@@ -648,19 +651,19 @@ test('warns when ICE returns no TURN servers without blocking recipe actions', a
 
 test('does not poll control runs while direct Rallar tabs are active', async ({ page }) => {
     const controlRunRequests: string[] = [];
-    await page.route('http://localhost:5180/runs**', async route => {
+    await page.route('http://localhost:5180/runs**', async (route) => {
         controlRunRequests.push(route.request().url());
         await route.fulfill({
             status: 500,
             contentType: 'application/json',
-            body: JSON.stringify({ error: 'unexpected control run request' }),
+            body: JSON.stringify({ error: 'unexpected control run request' })
         });
     });
 
     await page.goto('/?provider=simulated&tab=quick-test');
     await expect(page.getByRole('tab', { name: 'Quick Test' })).toHaveAttribute(
         'aria-selected',
-        'true',
+        'true'
     );
     await expect(page.locator('#panel-quick-test')).toBeVisible();
     await page.waitForTimeout(300);
@@ -675,7 +678,7 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
             accessToken: 'secret-token-value',
             username: 'alice',
             sessionId: 'alice-session',
-            expiresAtEpochMs: Date.now() + 60_000,
+            expiresAtEpochMs: Date.now() + 60_000
         };
         localStorage.setItem('auth.session', JSON.stringify(session));
         (window as any).__quickCreateInputs = [];
@@ -689,7 +692,7 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
             isConnected: () => true,
             session: () => session,
             auth: {
-                restore: () => session,
+                restore: () => session
             },
             start: async () => ({ session, connected: true }),
             connect: async () => ({ status: 'connected' }),
@@ -705,8 +708,8 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
                     return {
                         group: {
                             groupId,
-                            displayName: input.displayName,
-                        },
+                            displayName: input.displayName
+                        }
                     };
                 },
                 join: async (groupId: string) => {
@@ -714,13 +717,13 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
                     return {
                         group: {
                             groupId,
-                            displayName: groupId,
-                        },
+                            displayName: groupId
+                        }
                     };
-                },
+                }
             },
             people: {
-                list: () => [],
+                list: () => []
             },
             messages: {
                 ws: {
@@ -729,26 +732,28 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
                         return {
                             status: 'sent',
                             transport: 'ws',
-                            input,
+                            input
                         };
                     },
-                    onMessage: () => () => undefined,
-                },
+                    onMessage: () => () => undefined
+                }
             },
             ws: {
                 status: () => ({ readyState: 'open', isOpen: true }),
-                waitForOpen: async () => ({ status: 'open' }),
+                waitForOpen: async () => ({ status: 'open' })
             },
             rtc: {
-                status: () => ({}),
+                status: () => ({})
             },
             realtime: {
-                health: () => ({ connected: true }),
-            },
+                health: () => ({ connected: true })
+            }
         };
     });
 
-    await page.goto('/?provider=browser-rallar&experience=legacy&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&roomId=rallar');
+    await page.goto(
+        '/?provider=browser-rallar&experience=legacy&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&roomId=rallar'
+    );
 
     const panel = page.getByLabel('Rallar Quick Test');
     const groupInput = panel.getByRole('textbox', { name: 'Group', exact: true });
@@ -762,7 +767,7 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
     await expect.poll(async () => page.evaluate(() => (window as any).__quickCreateInputs.at(-1)))
         .toMatchObject({
             groupId: 'rallar',
-            displayName: 'rallar',
+            displayName: 'rallar'
         });
 
     await panel.getByRole('button', { name: 'Subscribe WS', exact: true }).click();
@@ -776,7 +781,7 @@ test('keeps Quick Test group stable after create subscribe and send', async ({ p
         .toMatchObject({
             roomId: 'rallar',
             groupId: 'rallar',
-            contextId: 'rallar',
+            contextId: 'rallar'
         });
 });
 
@@ -786,7 +791,7 @@ test('surfaces direct RTC, Rallar Data, and Media tabs with real-backend guardra
     const rtcPanel = page.locator('#panel-rtc-realtime');
     await expect(page.getByRole('tab', { name: 'RTC/Realtimes' })).toHaveAttribute(
         'aria-selected',
-        'true',
+        'true'
     );
     await expect(rtcPanel).toContainText('realtime.sendJson');
     await expect(rtcPanel.getByRole('button', { name: 'Send realtime JSON' })).toBeDisabled();
@@ -822,7 +827,7 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
                 receivedResultCount: 1,
                 receivedEventCount: 2,
                 completedCommandIds: ['stats-a'],
-                resumeCompletedCommandIds: [],
+                resumeCompletedCommandIds: []
             },
             {
                 runId: 'demo-run',
@@ -836,8 +841,8 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
                 receivedResultCount: 0,
                 receivedEventCount: 1,
                 completedCommandIds: [],
-                resumeCompletedCommandIds: [],
-            },
+                resumeCompletedCommandIds: []
+            }
         ],
         commands: [],
         results: [{
@@ -846,7 +851,7 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
             runId: 'demo-run',
             agentId: 'agent-a',
             commandId: 'stats-a',
-            ok: true,
+            ok: true
         }],
         events: [{
             kind: 'diagnostic',
@@ -855,23 +860,23 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
             agentId: 'agent-a',
             atEpochMs: Date.now() - 800,
             eventId: 'event-a',
-            payload: { topic: 'rallar.bb.control.command_received' },
+            payload: { topic: 'rallar.bb.control.command_received' }
         }],
         stats: [],
         reports: [],
-        heartbeats: [],
+        heartbeats: []
     };
     let bulkBody: unknown;
     let resetCalled = false;
 
-    await page.route('http://localhost:5180/**', async route => {
+    await page.route('http://localhost:5180/**', async (route) => {
         const request = route.request();
         const url = new URL(request.url());
         if (request.method() === 'GET' && url.pathname === '/runs') {
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify({ runs: [run] }),
+                body: JSON.stringify({ runs: [run] })
             });
             return;
         }
@@ -879,7 +884,7 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify(run),
+                body: JSON.stringify(run)
             });
             return;
         }
@@ -888,31 +893,31 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
             const body = bulkBody as {
                 agentIds: string[];
                 commandIdPrefix: string;
-                command: { kind: string };
+                command: { kind: string; };
             };
             run = {
                 ...run,
                 updatedAtEpochMs: Date.now(),
-                commands: body.agentIds.map(agentId => ({
+                commands: body.agentIds.map((agentId) => ({
                     envelope: {
                         kind: 'command',
                         protocolVersion: 1,
                         runId: 'demo-run',
                         agentId,
                         commandId: `${body.commandIdPrefix}-${agentId}`,
-                        command: body.command,
+                        command: body.command
                     },
                     queuedAtEpochMs: Date.now(),
-                    dispatchCount: 0,
-                })),
+                    dispatchCount: 0
+                }))
             };
             await route.fulfill({
                 status: 202,
                 contentType: 'application/json',
                 body: JSON.stringify({
                     accepted: true,
-                    commands: run.commands.map(command => command.envelope),
-                }),
+                    commands: run.commands.map((command) => command.envelope)
+                })
             });
             return;
         }
@@ -925,12 +930,12 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
                 events: [],
                 stats: [],
                 reports: [],
-                heartbeats: [],
+                heartbeats: []
             };
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify({ reset: true, run }),
+                body: JSON.stringify({ reset: true, run })
             });
             return;
         }
@@ -949,26 +954,27 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
                             summary: {
                                 total: 1,
                                 success: 1,
-                                failure: 0,
+                                failure: 0
                             },
                             results: {},
                             resultsList: [{
                                 resultKey: 'stats-a',
                                 name: 'stats-a',
                                 status: 'SUCCESS',
-                                transport: 'control',
+                                transport: 'control'
                             }],
-                            outputs: {},
+                            outputs: {}
                         }),
-                        'events.jsonl': '{"kind":"step-result","name":"stats-a","status":"SUCCESS","transport":"control"}\n',
+                        'events.jsonl':
+                            '{"kind":"step-result","name":"stats-a","status":"SUCCESS","transport":"control"}\n',
                         'failures.json': JSON.stringify({
                             summary: {
                                 total: 1,
                                 success: 1,
-                                failure: 0,
+                                failure: 0
                             },
                             failures: [],
-                            outputs: {},
+                            outputs: {}
                         }),
                         'metadata.json': JSON.stringify({
                             schemaVersion: 1,
@@ -977,11 +983,11 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
                             summary: {
                                 total: 1,
                                 success: 1,
-                                failure: 0,
-                            },
-                        }),
-                    },
-                }),
+                                failure: 0
+                            }
+                        })
+                    }
+                })
             });
             return;
         }
@@ -989,7 +995,7 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
             await route.fulfill({
                 status: 200,
                 contentType: 'application/x-ndjson',
-                body: '{"kind":"step-result","name":"stats-a","status":"SUCCESS"}\n',
+                body: '{"kind":"step-result","name":"stats-a","status":"SUCCESS"}\n'
             });
             return;
         }
@@ -997,7 +1003,7 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
             await route.fulfill({
                 status: 200,
                 contentType: 'application/x-ndjson',
-                body: '{"name":"stats-a","status":"SUCCESS"}\n',
+                body: '{"name":"stats-a","status":"SUCCESS"}\n'
             });
             return;
         }
@@ -1005,7 +1011,7 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify({ failures: [] }),
+                body: JSON.stringify({ failures: [] })
             });
             return;
         }
@@ -1021,7 +1027,7 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
     await expect(panel).toContainText('agent-b');
 
     await panel.getByRole('button', { name: 'Enqueue Selected' }).click();
-    await expect.poll(() => (bulkBody as { agentIds?: string[] } | undefined)?.agentIds?.length).toBe(2);
+    await expect.poll(() => (bulkBody as { agentIds?: string[]; } | undefined)?.agentIds?.length).toBe(2);
     await expect(panel).toContainText('agent-a - health');
     await expect(panel).toContainText('agent-b - health');
 
@@ -1036,14 +1042,14 @@ test('inspects control-server runs and enqueues a bulk command', async ({ page }
 
 test('run manager does not fetch default run when the control server has no runs', async ({ page }) => {
     const runDetailRequests: string[] = [];
-    await page.route('http://localhost:5180/runs**', async route => {
+    await page.route('http://localhost:5180/runs**', async (route) => {
         const request = route.request();
         const url = new URL(request.url());
         if (request.method() === 'GET' && url.pathname === '/runs') {
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify({ runs: [] }),
+                body: JSON.stringify({ runs: [] })
             });
             return;
         }
@@ -1052,7 +1058,7 @@ test('run manager does not fetch default run when the control server has no runs
         await route.fulfill({
             status: 404,
             contentType: 'application/json',
-            body: JSON.stringify({ error: 'Run not found.' }),
+            body: JSON.stringify({ error: 'Run not found.' })
         });
     });
 
@@ -1084,7 +1090,7 @@ test('keeps manual form and event filters mounted across tab changes', async ({ 
     await expect(eventPanel.getByLabel('Selector')).toBeVisible();
     const messageFilter = eventPanel.getByRole('button', {
         name: 'message',
-        exact: true,
+        exact: true
     });
     await messageFilter.click();
     await eventPanel.getByLabel('Window').selectOption('100');
@@ -1135,7 +1141,7 @@ test('keeps manual form and event filters mounted across tab changes', async ({ 
 });
 
 test('sends a Rallar Server REST request from the server tab', async ({ page }) => {
-    await page.route('http://localhost:8080/api/config', async route => {
+    await page.route('http://localhost:8080/api/config', async (route) => {
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
@@ -1143,17 +1149,17 @@ test('sends a Rallar Server REST request from the server tab', async ({ page }) 
                 apiBaseUrl: 'http://localhost:8080',
                 wsBaseUrl: 'ws://localhost:8080',
                 endpoints: {
-                    createWs: '/api/auth/ws-ticket',
+                    createWs: '/api/auth/ws-ticket'
                 },
                 groupId: 'server-group',
                 clientId: 'server-client',
-                sessionId: 'server-session',
-            }),
+                sessionId: 'server-session'
+            })
         });
     });
 
     await page.goto(
-        '/?provider=simulated&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&tab=rallar-server',
+        '/?provider=simulated&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&tab=rallar-server'
     );
 
     const serverPanel = page.locator('#panel-rallar-server');
@@ -1178,19 +1184,19 @@ test('sends a Rallar Server REST request from the server tab', async ({ page }) 
 });
 
 test('shows explicit failed feedback and expanded Rallar trace payload for REST errors', async ({ page }) => {
-    await page.route('http://localhost:8080/api/config', async route => {
+    await page.route('http://localhost:8080/api/config', async (route) => {
         await route.fulfill({
             status: 500,
             contentType: 'application/json',
             body: JSON.stringify({
                 error: 'complete failure message from server',
-                detail: 'full diagnostic detail',
-            }),
+                detail: 'full diagnostic detail'
+            })
         });
     });
 
     await page.goto(
-        '/?provider=simulated&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&tab=rallar-server',
+        '/?provider=simulated&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&tab=rallar-server'
     );
 
     const serverPanel = page.locator('#panel-rallar-server');
@@ -1208,56 +1214,64 @@ test('shows explicit failed feedback and expanded Rallar trace payload for REST 
 });
 
 test('runs a Rallar Server REST collection with assertions and extraction', async ({ page }) => {
-    await page.route('http://localhost:8080/api/config', async route => {
+    await page.route('http://localhost:8080/api/config', async (route) => {
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
             headers: { 'x-config-version': '7' },
             body: JSON.stringify({
                 apiBaseUrl: 'http://localhost:8080',
-                wsBaseUrl: 'ws://localhost:8080',
-            }),
+                wsBaseUrl: 'ws://localhost:8080'
+            })
         });
     });
 
     await page.goto(
-        '/?provider=simulated&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&tab=rallar-server',
+        '/?provider=simulated&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&tab=rallar-server'
     );
 
     const serverPanel = page.locator('#panel-rallar-server');
-    await serverPanel.getByLabel('Variables JSON').fill(JSON.stringify({
-        configPath: '/api/config',
-        expectedBase: 'http://localhost:8080',
-    }, null, 2));
-    await serverPanel.getByLabel('Collection JSON').fill(JSON.stringify({
-        collectionId: 'config-collection',
-        name: 'Config collection',
-        steps: [{
-            stepId: 'read-config',
-            label: 'Read config',
-            request: {
-                method: 'GET',
-                path: '{{configPath}}',
-                responseBodyMode: 'json',
-                attachAuth: false,
-            },
-            expect: {
-                status: 200,
-                body: [{
-                    path: '$.apiBaseUrl',
-                    equals: '{{expectedBase}}',
-                }],
-                headers: [{
-                    name: 'x-config-version',
-                    equals: '7',
-                }],
-            },
-            extract: [{
-                name: 'observedWsBaseUrl',
-                path: '$.wsBaseUrl',
-            }],
-        }],
-    }, null, 2));
+    await serverPanel.getByLabel('Variables JSON').fill(JSON.stringify(
+        {
+            configPath: '/api/config',
+            expectedBase: 'http://localhost:8080'
+        },
+        null,
+        2
+    ));
+    await serverPanel.getByLabel('Collection JSON').fill(JSON.stringify(
+        {
+            collectionId: 'config-collection',
+            name: 'Config collection',
+            steps: [{
+                stepId: 'read-config',
+                label: 'Read config',
+                request: {
+                    method: 'GET',
+                    path: '{{configPath}}',
+                    responseBodyMode: 'json',
+                    attachAuth: false
+                },
+                expect: {
+                    status: 200,
+                    body: [{
+                        path: '$.apiBaseUrl',
+                        equals: '{{expectedBase}}'
+                    }],
+                    headers: [{
+                        name: 'x-config-version',
+                        equals: '7'
+                    }]
+                },
+                extract: [{
+                    name: 'observedWsBaseUrl',
+                    path: '$.wsBaseUrl'
+                }]
+            }]
+        },
+        null,
+        2
+    ));
 
     await serverPanel.getByRole('button', { name: 'Run Collection' }).click();
 
@@ -1269,7 +1283,7 @@ test('runs a Rallar Server REST collection with assertions and extraction', asyn
 });
 
 test('runs auth command-center actions with redacted session output', async ({ page }) => {
-    await page.route('http://localhost:8080/api/auth/register/requests/*', async route => {
+    await page.route('http://localhost:8080/api/auth/register/requests/*', async (route) => {
         expect(route.request().postDataJSON()).not.toHaveProperty('requestId');
         await route.fulfill({
             status: 201,
@@ -1278,18 +1292,18 @@ test('runs auth command-center actions with redacted session output', async ({ p
                 clientId: 'alice-client',
                 username: 'alice',
                 displayName: 'alice',
-                registeredAtEpochMs: Date.now(),
-            }),
+                registeredAtEpochMs: Date.now()
+            })
         });
     });
-    await page.route('http://localhost:8080/api/auth/login/requests/*', async route => {
-        const body = route.request().postDataJSON() as { username?: string; password?: string };
+    await page.route('http://localhost:8080/api/auth/login/requests/*', async (route) => {
+        const body = route.request().postDataJSON() as { username?: string; password?: string; };
         expect(body).not.toHaveProperty('requestId');
         if (body.password?.includes('invalid')) {
             await route.fulfill({
                 status: 401,
                 contentType: 'application/json',
-                body: JSON.stringify({ error: 'invalid credentials' }),
+                body: JSON.stringify({ error: 'invalid credentials' })
             });
             return;
         }
@@ -1302,16 +1316,16 @@ test('runs auth command-center actions with redacted session output', async ({ p
                 accessToken: 'secret-token-value',
                 username: body.username ?? 'alice',
                 sessionId: 'alice-session',
-                expiresAtEpochMs: Date.now() + 60_000,
-            }),
+                expiresAtEpochMs: Date.now() + 60_000
+            })
         });
     });
-    await page.route('http://localhost:8080/api/auth/ws-ticket/requests/*', async route => {
+    await page.route('http://localhost:8080/api/auth/ws-ticket/requests/*', async (route) => {
         if (!route.request().headers().authorization) {
             await route.fulfill({
                 status: 401,
                 contentType: 'application/json',
-                body: JSON.stringify({ error: 'missing token' }),
+                body: JSON.stringify({ error: 'missing token' })
             });
             return;
         }
@@ -1322,13 +1336,13 @@ test('runs auth command-center actions with redacted session output', async ({ p
             body: JSON.stringify({
                 ticket: 'secret-ticket-value',
                 sessionId: 'alice-session',
-                expiresAtEpochMs: Date.now() + 30_000,
-            }),
+                expiresAtEpochMs: Date.now() + 30_000
+            })
         });
     });
 
     await page.goto(
-        '/?provider=simulated&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&tab=auth',
+        '/?provider=simulated&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&tab=auth'
     );
 
     const panel = page.locator('#panel-auth');
@@ -1365,14 +1379,14 @@ test('runs auth command-center actions with redacted session output', async ({ p
 });
 
 test('refreshes rooms and clients state with authenticated REST evidence', async ({ page }) => {
-    await page.addInitScript(session => {
+    await page.addInitScript((session) => {
         localStorage.setItem('auth.session', JSON.stringify(session));
     }, {
         clientId: 'alice-client',
         accessToken: 'secret-token-value',
         username: 'alice',
         sessionId: 'alice-session',
-        expiresAtEpochMs: Date.now() + 60_000,
+        expiresAtEpochMs: Date.now() + 60_000
     });
 
     const groupSnapshot = {
@@ -1382,15 +1396,15 @@ test('refreshes rooms and clients state with authenticated REST evidence', async
             status: 'active',
             snapshotVersion: 3,
             created: { atEpochMs: 1_000 },
-            updated: { atEpochMs: 2_000 },
+            updated: { atEpochMs: 2_000 }
         },
         memberCount: 1,
         onlineMemberCount: 1,
         activeSessions: [{
             sessionId: 'alice-session',
             connectedAtEpochMs: 3_000,
-            lastHeartbeatAtEpochMs: 4_000,
-        }],
+            lastHeartbeatAtEpochMs: 4_000
+        }]
     };
     const clientSnapshot = {
         principal: {
@@ -1399,7 +1413,7 @@ test('refreshes rooms and clients state with authenticated REST evidence', async
             status: 'active',
             snapshotVersion: 2,
             created: { atEpochMs: 1_000 },
-            updated: { atEpochMs: 2_000 },
+            updated: { atEpochMs: 2_000 }
         },
         isOnline: true,
         activeSessionCount: 1,
@@ -1408,8 +1422,8 @@ test('refreshes rooms and clients state with authenticated REST evidence', async
             sessionId: 'alice-session',
             connectedAtEpochMs: 3_000,
             authenticatedAtEpochMs: 2_500,
-            lastHeartbeatAtEpochMs: 4_000,
-        }],
+            lastHeartbeatAtEpochMs: 4_000
+        }]
     };
     const emptyGroupSnapshot = {
         group: {
@@ -1418,11 +1432,11 @@ test('refreshes rooms and clients state with authenticated REST evidence', async
             status: 'active',
             snapshotVersion: 1,
             created: { atEpochMs: 9_000 },
-            updated: { atEpochMs: 9_500 },
+            updated: { atEpochMs: 9_500 }
         },
         memberCount: 0,
         onlineMemberCount: 0,
-        activeSessions: [],
+        activeSessions: []
     };
     const offlineClientSnapshot = {
         principal: {
@@ -1431,12 +1445,12 @@ test('refreshes rooms and clients state with authenticated REST evidence', async
             status: 'active',
             snapshotVersion: 1,
             created: { atEpochMs: 9_000 },
-            updated: { atEpochMs: 9_500 },
+            updated: { atEpochMs: 9_500 }
         },
         isOnline: false,
         activeSessionCount: 0,
         lastSeenAtEpochMs: 500,
-        activeSessions: [],
+        activeSessions: []
     };
     const groupEvents = {
         events: [{
@@ -1444,8 +1458,8 @@ test('refreshes rooms and clients state with authenticated REST evidence', async
             eventType: 'member-joined',
             groupId: 'bb-group',
             snapshotVersion: 2,
-            occurredAtEpochMs: Date.now(),
-        }],
+            occurredAtEpochMs: Date.now()
+        }]
     };
     const clientEvents = {
         events: [{
@@ -1453,16 +1467,16 @@ test('refreshes rooms and clients state with authenticated REST evidence', async
             eventType: 'session-connected',
             principalId: 'alice-client',
             snapshotVersion: 1,
-            occurredAtEpochMs: Date.now(),
-        }],
+            occurredAtEpochMs: Date.now()
+        }]
     };
 
-    await page.route('http://localhost:8080/api/state/apps/**', async route => {
+    await page.route('http://localhost:8080/api/state/apps/**', async (route) => {
         if (!route.request().headers().authorization) {
             await route.fulfill({
                 status: 401,
                 contentType: 'application/json',
-                body: JSON.stringify({ error: 'missing token' }),
+                body: JSON.stringify({ error: 'missing token' })
             });
             return;
         }
@@ -1471,23 +1485,23 @@ test('refreshes rooms and clients state with authenticated REST evidence', async
         const pathname = url.pathname;
         const body = pathname.includes('/clients/') && pathname.includes('/events')
             ? clientEvents
-                : pathname.includes('/groups/') && pathname.includes('/events')
-                    ? groupEvents
-                    : pathname.includes('/clients')
-                        ? [clientSnapshot, offlineClientSnapshot]
-                        : pathname.endsWith('/groups')
-                            ? [groupSnapshot, emptyGroupSnapshot]
-                            : groupSnapshot;
+            : pathname.includes('/groups/') && pathname.includes('/events')
+            ? groupEvents
+            : pathname.includes('/clients')
+            ? [clientSnapshot, offlineClientSnapshot]
+            : pathname.endsWith('/groups')
+            ? [groupSnapshot, emptyGroupSnapshot]
+            : groupSnapshot;
 
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
-            body: JSON.stringify(body),
+            body: JSON.stringify(body)
         });
     });
 
     await page.goto(
-        '/?provider=simulated&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&tab=rooms-clients',
+        '/?provider=simulated&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&tab=rooms-clients'
     );
 
     const panel = page.locator('#panel-rooms-clients');
@@ -1549,18 +1563,18 @@ test('refreshes rooms and clients state with authenticated REST evidence', async
 });
 
 test('surfaces browser-rallar signaling and RTC connection status', async ({ page }) => {
-    await page.addInitScript(session => {
+    await page.addInitScript((session) => {
         localStorage.setItem('auth.session', JSON.stringify(session));
     }, {
         clientId: 'alice-client',
         accessToken: 'secret-token-value',
         username: 'alice',
         sessionId: 'alice-session',
-        expiresAtEpochMs: Date.now() + 60_000,
+        expiresAtEpochMs: Date.now() + 60_000
     });
 
     await page.goto(
-        '/?provider=browser-rallar&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&roomId=awesome&tab=manual-rallar',
+        '/?provider=browser-rallar&apiBaseUrl=http%3A%2F%2Flocalhost%3A8080&roomId=awesome&tab=manual-rallar'
     );
     await page.waitForFunction(() => typeof (window as any).__blackBoxRallarEmit === 'function');
     await page.getByRole('button', { name: 'Show details' }).click();
@@ -1578,7 +1592,7 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
             reconnectEnabled: true,
             reconnectAttempts: 0,
             maxReconnectAttempts: 3,
-            reconnectExhausted: false,
+            reconnectExhausted: false
         };
         const rtcStatus = {
             sessionId: 'alice-session',
@@ -1587,7 +1601,7 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
             activePeerIds: ['bob-session'],
             readyPeerIds: ['bob-session'],
             peerIdsWithNoReconnectableLanes: [],
-            peers: [],
+            peers: []
         };
 
         await emit({
@@ -1599,8 +1613,8 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
             roomId: 'awesome',
             data: {
                 kind: 'open',
-                status: wsStatus,
-            },
+                status: wsStatus
+            }
         });
         await emit({
             kind: 'diagnostic',
@@ -1615,8 +1629,8 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
                 connection: 'manualRtc',
                 roomId: 'awesome',
                 wsStatus,
-                rtcStatus,
-            },
+                rtcStatus
+            }
         });
     });
 
@@ -1641,19 +1655,19 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
             accessToken: 'secret-token-value',
             username: 'alice',
             sessionId: 'alice-session',
-            expiresAtEpochMs: Date.now() + 60_000,
+            expiresAtEpochMs: Date.now() + 60_000
         };
         (window as any).__rallarDirectFacade = {
             configure: (config: unknown) => {
                 (window as any).__rallarCallLog.push({
                     kind: 'configure',
-                    config,
+                    config
                 });
             },
             setDefaults: (defaults: unknown) => {
                 (window as any).__rallarCallLog.push({
                     kind: 'setDefaults',
-                    defaults,
+                    defaults
                 });
             },
             defaults: () => ({}),
@@ -1661,13 +1675,13 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
             isConnected: () => connected,
             session: () => session,
             auth: {
-                restore: () => session,
+                restore: () => session
             },
             start: async (config: unknown) => {
                 connected = true;
                 (window as any).__rallarCallLog.push({
                     kind: 'start',
-                    config,
+                    config
                 });
                 return { session, connected: true };
             },
@@ -1682,10 +1696,10 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
                 current: () => undefined,
                 list: () => [],
                 create: async (input: unknown) => input,
-                join: async (groupId: string) => ({ groupId }),
+                join: async (groupId: string) => ({ groupId })
             },
             people: {
-                list: () => [],
+                list: () => []
             },
             messages: {
                 ws: {
@@ -1695,13 +1709,13 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
                         }
                         (window as any).__rallarCallLog.push({
                             kind: 'messages.ws.send',
-                            input,
+                            input
                         });
                         (window as any).__lastRallarWsSend = input;
                         return {
                             status: 'sent',
                             transport: 'ws',
-                            input,
+                            input
                         };
                     },
                     onMessage: (_selector: unknown, handler: (message: unknown) => void) => {
@@ -1709,19 +1723,19 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
                         return () => {
                             (window as any).__rallarWsMessageHandler = undefined;
                         };
-                    },
-                },
+                    }
+                }
             },
             ws: {
                 status: () => ({ readyState: 'open', isOpen: connected }),
-                waitForOpen: async () => ({ status: 'open' }),
+                waitForOpen: async () => ({ status: 'open' })
             },
             rtc: {
-                status: () => ({ readyPeerIds: ['bob-session'] }),
+                status: () => ({ readyPeerIds: ['bob-session'] })
             },
             realtime: {
-                health: () => ({ connected }),
-            },
+                health: () => ({ connected })
+            }
         };
     });
     await page.getByLabel('Rallar workspace mode')
@@ -1736,9 +1750,13 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
     await expect(websocketPanel.getByLabel('WebSocket route preview')).toContainText('Group awesome');
     await websocketPanel.getByRole('textbox', { name: 'Type ID', exact: true }).fill('room.black-box.ws.probe');
     await websocketPanel.getByRole('textbox', { name: 'Topic ID', exact: true }).fill('room.black-box.ws.probe');
-    await websocketPanel.getByLabel('Payload JSON').fill(JSON.stringify({
-        text: 'hello over rallar ws',
-    }, null, 2));
+    await websocketPanel.getByLabel('Payload JSON').fill(JSON.stringify(
+        {
+            text: 'hello over rallar ws'
+        },
+        null,
+        2
+    ));
     await websocketPanel.getByRole('button', { name: 'Subscribe WS', exact: true }).click();
     await expect(websocketPanel).toContainText('rallar.direct.ws.subscribe.completed');
     await websocketPanel.getByRole('button', { name: 'Send JSON' }).click();
@@ -1750,12 +1768,12 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
         expect.objectContaining({
             kind: 'start',
             config: expect.objectContaining({
-                connect: true,
-            }),
+                connect: true
+            })
         }),
         expect.objectContaining({
-            kind: 'messages.ws.send',
-        }),
+            kind: 'messages.ws.send'
+        })
     ]));
     const lastRallarWsSend = await page.evaluate(() => (window as any).__lastRallarWsSend);
     expect(lastRallarWsSend).toMatchObject({
@@ -1768,8 +1786,8 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
         topicId: 'room.black-box.ws.probe',
         typeId: 'room.black-box.ws.probe',
         payload: {
-            text: 'hello over rallar ws',
-        },
+            text: 'hello over rallar ws'
+        }
     });
     await page.evaluate(() => {
         (window as any).__rallarWsMessageHandler?.({
@@ -1779,8 +1797,8 @@ test('surfaces browser-rallar signaling and RTC connection status', async ({ pag
             contextId: 'awesome',
             senderId: 'bob',
             payload: {
-                text: 'received over rallar ws',
-            },
+                text: 'received over rallar ws'
+            }
         });
     });
     await expect(websocketPanel).toContainText('rallar.direct.ws.message');
@@ -1803,10 +1821,14 @@ test('keeps WebSocket Rallar actions direct-only in simulated mode', async ({ pa
     await expect(panel.getByRole('button', { name: 'Wait Rallar WS open' })).toBeDisabled();
     await panel.getByLabel('Connection').fill('playwrightWs');
     await panel.getByLabel('Timeout').fill('300');
-    await panel.getByLabel('Payload JSON').fill(JSON.stringify({
-        kind: 'playwright-ws',
-        message: 'hello websocket command center',
-    }, null, 2));
+    await panel.getByLabel('Payload JSON').fill(JSON.stringify(
+        {
+            kind: 'playwright-ws',
+            message: 'hello websocket command center'
+        },
+        null,
+        2
+    ));
 
     await panel.getByRole('button', { name: 'Configure WS' }).click();
     await expect(panel).toContainText('rallar.direct.raw_ws.configure.completed');
@@ -1856,8 +1878,12 @@ test('wraps room-scoped WebSocket group messages and validates group configurati
     await expect(panel).toContainText('room.manual.message');
     await expect(panel).toContainText('bb-group');
     await expect(receivedPanel).toContainText('No received WebSocket messages');
-    await expect(panel.locator('.websocket-status-grid .metric').filter({ hasText: 'Group' })).toContainText('bb-group');
-    await expect(panel.locator('.websocket-status-grid .metric').filter({ hasText: 'Selector' })).toContainText('room.manual.message / room.manual.message');
+    await expect(panel.locator('.websocket-status-grid .metric').filter({ hasText: 'Group' })).toContainText(
+        'bb-group'
+    );
+    await expect(panel.locator('.websocket-status-grid .metric').filter({ hasText: 'Selector' })).toContainText(
+        'room.manual.message / room.manual.message'
+    );
 });
 
 test('runs the RTC delivery matrix with scoped addressing and NACK diagnostics', async ({ page }) => {
@@ -1873,13 +1899,17 @@ test('runs the RTC delivery matrix with scoped addressing and NACK diagnostics',
     await panel.getByLabel('Scope JSON').fill(JSON.stringify({ tenant: 'playwright' }));
     await panel.getByLabel('Room Ref JSON').fill(JSON.stringify({
         type: 'group',
-        id: 'playwright-rtc-matrix',
+        id: 'playwright-rtc-matrix'
     }));
     await panel.getByLabel('Min Snapshot').fill('7');
-    await panel.getByLabel('Payload JSON').fill(JSON.stringify({
-        topic: 'playwright.rtc.matrix',
-        message: 'hello rtc matrix',
-    }, null, 2));
+    await panel.getByLabel('Payload JSON').fill(JSON.stringify(
+        {
+            topic: 'playwright.rtc.matrix',
+            message: 'hello rtc matrix'
+        },
+        null,
+        2
+    ));
 
     await panel.getByRole('button', { name: 'Run Realtime Matrix' }).click();
     await expect(panel).toContainText('RTC realtime delivery matrix');
@@ -1944,31 +1974,35 @@ test('builds and runs a command-center flow', async ({ page }) => {
     await expect(page.getByRole('tab', { name: 'Builder' }))
         .toHaveAttribute('aria-selected', 'true');
     await expect(panel).toContainText('Auth, REST, WS, RTC smoke');
-    await panel.getByLabel('Variables JSON').fill(JSON.stringify({
-        providerMode: 'simulated',
-        environment: 'playwright',
-        apiBaseUrl: 'http://localhost:8080',
-        wsUrl: 'ws://localhost:8080/api/ws/{auth.sessionId}?ticket={auth.wsTicket}',
-        applicationId: 'playwright-app',
-        workspaceId: 'playwright-workspace',
-        groupId: 'playwright-flow-group',
-        actor: 'alice',
-        sessionId: 'alice-session',
-        username: 'alice',
-        password: 'local-password',
-        rtcConnection: 'flowRtc',
-        wsConnection: 'flowWs',
-        targetClient: 'bob-peer',
-        multicastClients: 'bob-peer,charlie-peer',
-        typeId: 'flow.type',
-        topicId: 'flow.topic',
-        topic: 'flow.message',
-        timeoutMs: 5000,
-        payload: {
+    await panel.getByLabel('Variables JSON').fill(JSON.stringify(
+        {
+            providerMode: 'simulated',
+            environment: 'playwright',
+            apiBaseUrl: 'http://localhost:8080',
+            wsUrl: 'ws://localhost:8080/api/ws/{auth.sessionId}?ticket={auth.wsTicket}',
+            applicationId: 'playwright-app',
+            workspaceId: 'playwright-workspace',
+            groupId: 'playwright-flow-group',
+            actor: 'alice',
+            sessionId: 'alice-session',
+            username: 'alice',
+            password: 'local-password',
+            rtcConnection: 'flowRtc',
+            wsConnection: 'flowWs',
+            targetClient: 'bob-peer',
+            multicastClients: 'bob-peer,charlie-peer',
+            typeId: 'flow.type',
+            topicId: 'flow.topic',
             topic: 'flow.message',
-            text: 'hello flow builder',
+            timeoutMs: 5000,
+            payload: {
+                topic: 'flow.message',
+                text: 'hello flow builder'
+            }
         },
-    }, null, 2));
+        null,
+        2
+    ));
 
     await panel.getByRole('button', { name: 'Add wait' }).click();
     await expect(panel.getByLabel('Flow JSON')).toHaveValue(/wait-10/);
@@ -1986,7 +2020,7 @@ test('shows shared-test recipes and imports a runner artifact bundle', async ({ 
 
     await expect(page.getByRole('tab', { name: 'Advanced' })).toHaveAttribute(
         'aria-selected',
-        'true',
+        'true'
     );
 
     const panel = page.locator('#panel-shared-test');
@@ -2005,7 +2039,7 @@ test('shows shared-test recipes and imports a runner artifact bundle', async ({ 
         path.join(ARTIFACT_FIXTURE_DIR, 'failures.json'),
         path.join(ARTIFACT_FIXTURE_DIR, 'metadata.json'),
         path.join(ARTIFACT_FIXTURE_DIR, 'expanded-plan.json'),
-        path.join(ARTIFACT_FIXTURE_DIR, 'matrix-summary.json'),
+        path.join(ARTIFACT_FIXTURE_DIR, 'matrix-summary.json')
     ]);
 
     await expect(panel.getByRole('heading', { name: 'Imported Summary' })).toBeVisible();
@@ -2026,17 +2060,17 @@ test('shows distributed recipe composite preflight before staging', async ({ pag
         events: [],
         stats: [],
         reports: [],
-        heartbeats: [],
+        heartbeats: []
     };
 
-    await page.route('http://localhost:5180/**', async route => {
+    await page.route('http://localhost:5180/**', async (route) => {
         const request = route.request();
         const url = new URL(request.url());
         if (request.method() === 'GET' && url.pathname === '/runs') {
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify({ runs: [run] }),
+                body: JSON.stringify({ runs: [run] })
             });
             return;
         }
@@ -2044,7 +2078,7 @@ test('shows distributed recipe composite preflight before staging', async ({ pag
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify(run),
+                body: JSON.stringify(run)
             });
             return;
         }
@@ -2052,25 +2086,25 @@ test('shows distributed recipe composite preflight before staging', async ({ pag
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify({ distributedRuns: [] }),
+                body: JSON.stringify({ distributedRuns: [] })
             });
             return;
         }
         await route.fulfill({
             status: 404,
             contentType: 'application/json',
-            body: JSON.stringify({ error: 'not found' }),
+            body: JSON.stringify({ error: 'not found' })
         });
     });
 
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], {
-        origin: 'http://127.0.0.1:5176',
+        origin: 'http://127.0.0.1:5176'
     });
     await page.goto('/?provider=simulated&workspace=black-box-runner&tab=distributed-recipes&roomId=bb-group');
 
     await expect(page.getByRole('tab', { name: 'Advanced' })).toHaveAttribute(
         'aria-selected',
-        'true',
+        'true'
     );
     const panel = page.locator('#panel-distributed-recipes');
     const authoring = panel.getByLabel('Generate With AI');
@@ -2093,7 +2127,7 @@ test('shows distributed recipe composite preflight before staging', async ({ pag
         group: {
             applicationId: 'rallar-server',
             workspaceId: 'black-box-runner',
-            groupId: 'bb-group',
+            groupId: 'bb-group'
         },
         recipes: [{
             recipeId: 'ai-health-recipe',
@@ -2103,16 +2137,16 @@ test('shows distributed recipe composite preflight before staging', async ({ pag
                 recipeId: 'ai-health-recipe',
                 commands: [{
                     kind: 'health',
-                    commandId: 'ai-health',
-                }],
-            },
+                    commandId: 'ai-health'
+                }]
+            }
         }],
         targetPolicy: {
             mode: 'all-online-group-members',
-            expectedParticipantCount: 1,
+            expectedParticipantCount: 1
         },
         ackTimeoutMs: 30000,
-        startMode: 'manual',
+        startMode: 'manual'
     };
     await authoring.getByRole('textbox', { name: 'Generated JSON' }).fill(JSON.stringify(generatedManifest, null, 2));
     const generatedValidation = authoring.getByRole('region', { name: 'Generated JSON validation' });
@@ -2124,7 +2158,7 @@ test('shows distributed recipe composite preflight before staging', async ({ pag
 
     await catalog.getByLabel('Search').fill('rtc realtime');
     const rtcRow = catalog.locator('.distributed-recipe-row').filter({
-        has: page.getByText('RTC Realtime', { exact: true }),
+        has: page.getByText('RTC Realtime', { exact: true })
     });
     await rtcRow.getByRole('checkbox').check();
     await expect(rtcRow).toContainText('Preflight');
@@ -2160,12 +2194,12 @@ test('uses fresh world-fleet target previews after loading an older distributed 
         events: [],
         stats: [],
         reports: [],
-        heartbeats: [],
+        heartbeats: []
     };
     const group = {
         applicationId: 'rallar-server',
         workspaceId: 'default',
-        groupId: 'bb-group',
+        groupId: 'bb-group'
     };
     const staleResolution = {
         group,
@@ -2187,8 +2221,8 @@ test('uses fresh world-fleet target previews after loading an older distributed 
             agentsWithoutIdentity: 0,
             roleCounts: {},
             regions: {},
-            providers: {},
-        },
+            providers: {}
+        }
     };
     const freshResolution = {
         ...staleResolution,
@@ -2199,8 +2233,8 @@ test('uses fresh world-fleet target previews after loading an older distributed 
             agents: 50,
             targetable: 50,
             selected: 50,
-            expectedParticipantCount: 50,
-        },
+            expectedParticipantCount: 50
+        }
     };
     const staleDistributedRun = {
         distributedRunId: 'dist-stale-world',
@@ -2222,15 +2256,15 @@ test('uses fresh world-fleet target previews after loading an older distributed 
                 recipe: {
                     schemaVersion: 1,
                     recipeId: 'stale-health',
-                    commands: [{ kind: 'health', commandId: 'stale-health' }],
-                },
+                    commands: [{ kind: 'health', commandId: 'stale-health' }]
+                }
             }],
             targetPolicy: {
                 mode: 'all-online-group-members',
-                expectedParticipantCount: 2,
+                expectedParticipantCount: 2
             },
             ackTimeoutMs: 30_000,
-            startMode: 'manual',
+            startMode: 'manual'
         },
         commandLinks: [],
         rollup: {
@@ -2246,20 +2280,20 @@ test('uses fresh world-fleet target previews after loading an older distributed 
                 requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 0,
-                blockingFailures: 0,
+                blockingFailures: 0
             },
-            failures: [],
-        },
+            failures: []
+        }
     };
 
-    await page.route(/https?:\/\/(localhost|127\.0\.0\.1):5180\/.*/, async route => {
+    await page.route(/https?:\/\/(localhost|127\.0\.0\.1):5180\/.*/, async (route) => {
         const request = route.request();
         const url = new URL(request.url());
         if (request.method() === 'GET' && url.pathname === '/runs') {
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify({ runs: [run] }),
+                body: JSON.stringify({ runs: [run] })
             });
             return;
         }
@@ -2267,7 +2301,7 @@ test('uses fresh world-fleet target previews after loading an older distributed 
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify(run),
+                body: JSON.stringify(run)
             });
             return;
         }
@@ -2275,7 +2309,7 @@ test('uses fresh world-fleet target previews after loading an older distributed 
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify({ distributedRuns: [staleDistributedRun] }),
+                body: JSON.stringify({ distributedRuns: [staleDistributedRun] })
             });
             return;
         }
@@ -2283,7 +2317,7 @@ test('uses fresh world-fleet target previews after loading an older distributed 
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify(staleDistributedRun),
+                body: JSON.stringify(staleDistributedRun)
             });
             return;
         }
@@ -2291,14 +2325,14 @@ test('uses fresh world-fleet target previews after loading an older distributed 
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify(freshResolution),
+                body: JSON.stringify(freshResolution)
             });
             return;
         }
         await route.fulfill({
             status: 404,
             contentType: 'application/json',
-            body: JSON.stringify({ error: 'not found' }),
+            body: JSON.stringify({ error: 'not found' })
         });
     });
 
@@ -2339,12 +2373,15 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                     runId: 'demo-run',
                     agentId: 'agent-a',
                     commandId: 'start-a',
-                    command: { kind: 'recipe.run', recipe: { recipeId: 'diagnostic-recipe', commands: [{ kind: 'health' }] } },
+                    command: {
+                        kind: 'recipe.run',
+                        recipe: { recipeId: 'diagnostic-recipe', commands: [{ kind: 'health' }] }
+                    }
                 },
                 queuedAtEpochMs: now - 5_000,
                 dispatchedAtEpochMs: now - 4_900,
                 completedAtEpochMs: now - 4_000,
-                dispatchCount: 1,
+                dispatchCount: 1
             },
             {
                 envelope: {
@@ -2353,13 +2390,16 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                     runId: 'demo-run',
                     agentId: 'agent-b',
                     commandId: 'start-b',
-                    command: { kind: 'recipe.run', recipe: { recipeId: 'diagnostic-recipe', commands: [{ kind: 'health' }] } },
+                    command: {
+                        kind: 'recipe.run',
+                        recipe: { recipeId: 'diagnostic-recipe', commands: [{ kind: 'health' }] }
+                    }
                 },
                 queuedAtEpochMs: now - 5_000,
                 dispatchedAtEpochMs: now - 4_900,
                 completedAtEpochMs: now - 3_900,
-                dispatchCount: 1,
-            },
+                dispatchCount: 1
+            }
         ],
         results: [
             {
@@ -2376,8 +2416,8 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                     ok: true,
                     startedAtEpochMs: now - 4_900,
                     endedAtEpochMs: now - 4_000,
-                    durationMs: 900,
-                },
+                    durationMs: 900
+                }
             },
             {
                 kind: 'result',
@@ -2388,7 +2428,7 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                 ok: false,
                 error: {
                     code: 'ASSERTION_FAILED',
-                    message: 'Receiver did not observe payload.',
+                    message: 'Receiver did not observe payload.'
                 },
                 result: {
                     commandId: 'start-b',
@@ -2447,43 +2487,47 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                                                     cancelled: false,
                                                     results: [
                                                         {
-                                                            commandId: 'root-parallel:g1:left:c1:frame-loop:i1:c1:position-send',
+                                                            commandId:
+                                                                'root-parallel:g1:left:c1:frame-loop:i1:c1:position-send',
                                                             originalCommandId: 'position-send',
                                                             parentCommandId: 'root-parallel:g1:left:c1:frame-loop',
                                                             commandIndex: 0,
                                                             iteration: 1,
                                                             result: {
-                                                                commandId: 'root-parallel:g1:left:c1:frame-loop:i1:c1:position-send',
+                                                                commandId:
+                                                                    'root-parallel:g1:left:c1:frame-loop:i1:c1:position-send',
                                                                 kind: 'rtc.send',
                                                                 status: 'ok',
                                                                 ok: true,
                                                                 startedAtEpochMs: now - 4_800,
                                                                 endedAtEpochMs: now - 4_700,
                                                                 durationMs: 100,
-                                                                value: { sent: true },
-                                                            },
+                                                                value: { sent: true }
+                                                            }
                                                         },
                                                         {
-                                                            commandId: 'root-parallel:g1:left:c1:frame-loop:i2:c1:position-send',
+                                                            commandId:
+                                                                'root-parallel:g1:left:c1:frame-loop:i2:c1:position-send',
                                                             originalCommandId: 'position-send',
                                                             parentCommandId: 'root-parallel:g1:left:c1:frame-loop',
                                                             commandIndex: 0,
                                                             iteration: 2,
                                                             result: {
-                                                                commandId: 'root-parallel:g1:left:c1:frame-loop:i2:c1:position-send',
+                                                                commandId:
+                                                                    'root-parallel:g1:left:c1:frame-loop:i2:c1:position-send',
                                                                 kind: 'rtc.send',
                                                                 status: 'ok',
                                                                 ok: true,
                                                                 startedAtEpochMs: now - 4_680,
                                                                 endedAtEpochMs: now - 4_580,
                                                                 durationMs: 100,
-                                                                value: { sent: true },
-                                                            },
-                                                        },
-                                                    ],
-                                                },
-                                            },
-                                        }],
+                                                                value: { sent: true }
+                                                            }
+                                                        }
+                                                    ]
+                                                }
+                                            }
+                                        }]
                                     },
                                     {
                                         groupId: 'right',
@@ -2514,16 +2558,16 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                                                         match: {
                                                             topic: 'rallar.test.ready',
                                                             payloadPath: 'state',
-                                                            equals: 'ready',
+                                                            equals: 'ready'
                                                         },
                                                         event: {
                                                             kind: 'message',
                                                             topic: 'rallar.test.ready',
                                                             atEpochMs: now - 4_250,
-                                                            payload: { state: 'ready' },
-                                                        },
-                                                    },
-                                                },
+                                                            payload: { state: 'ready' }
+                                                        }
+                                                    }
+                                                }
                                             },
                                             {
                                                 commandId: 'root-parallel:g2:right:c2:assert-event-count',
@@ -2547,30 +2591,31 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                                                         expected: 99,
                                                         actual: 1,
                                                         exists: true,
-                                                        passed: false,
+                                                        passed: false
                                                     },
                                                     error: {
                                                         code: 'RALLAR_BLACK_BOX_ASSERT_FAILED',
-                                                        message: 'Assert failed for events.length.',
-                                                    },
-                                                },
-                                            },
-                                        ],
-                                    },
-                                ],
+                                                        message: 'Assert failed for events.length.'
+                                                    }
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ]
                             },
                             error: {
                                 code: 'RALLAR_BLACK_BOX_PARALLEL_CHILD_FAILED',
-                                message: 'Parallel failed at child command root-parallel:g2:right:c2:assert-event-count.',
-                            },
-                        }],
+                                message:
+                                    'Parallel failed at child command root-parallel:g2:right:c2:assert-event-count.'
+                            }
+                        }]
                     },
                     error: {
                         code: 'ASSERTION_FAILED',
-                        message: 'Receiver did not observe payload.',
-                    },
-                },
-            },
+                        message: 'Receiver did not observe payload.'
+                    }
+                }
+            }
         ],
         events: [
             {
@@ -2602,9 +2647,9 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                         topicId: 'room.payload',
                         contextId: 'bb-group',
                         resourceId: 'payload-1',
-                        source: 'browser-rallar-runtime',
-                    },
-                },
+                        source: 'browser-rallar-runtime'
+                    }
+                }
             },
             {
                 kind: 'diagnostic',
@@ -2634,14 +2679,14 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                         expectedChannelLabel: 'rtc-realtime',
                         observedChannelLabel: 'rtc-data-channel',
                         accepted: false,
-                        source: 'browser-rallar-runtime',
-                    },
-                },
-            },
+                        source: 'browser-rallar-runtime'
+                    }
+                }
+            }
         ],
         stats: [],
         reports: [],
-        heartbeats: [],
+        heartbeats: []
     };
     const distributedRun = {
         distributedRunId: 'dist-diagnostics',
@@ -2661,18 +2706,30 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
             group: {
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
-                groupId: 'bb-group',
+                groupId: 'bb-group'
             },
             recipes: [{ recipeId: 'diagnostic-recipe', required: true }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: ['agent-a', 'agent-b'],
-                expectedParticipantCount: 2,
-            },
+                expectedParticipantCount: 2
+            }
         },
         commandLinks: [
-            { phase: 'start', agentId: 'agent-a', commandId: 'start-a', recipeId: 'diagnostic-recipe', queuedAtEpochMs: now - 5_000 },
-            { phase: 'start', agentId: 'agent-b', commandId: 'start-b', recipeId: 'diagnostic-recipe', queuedAtEpochMs: now - 5_000 },
+            {
+                phase: 'start',
+                agentId: 'agent-a',
+                commandId: 'start-a',
+                recipeId: 'diagnostic-recipe',
+                queuedAtEpochMs: now - 5_000
+            },
+            {
+                phase: 'start',
+                agentId: 'agent-b',
+                commandId: 'start-b',
+                recipeId: 'diagnostic-recipe',
+                queuedAtEpochMs: now - 5_000
+            }
         ],
         rollup: {
             state: 'failed',
@@ -2687,7 +2744,7 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                 requiredRecipes: 1,
                 passedRecipes: 0,
                 failedRecipes: 1,
-                blockingFailures: 1,
+                blockingFailures: 1
             },
             failures: [{
                 kind: 'recipe',
@@ -2696,10 +2753,10 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
                 required: true,
                 error: {
                     code: 'RECIPE_FAILED',
-                    message: 'Receiver did not observe payload.',
-                },
-            }],
-        },
+                    message: 'Receiver did not observe payload.'
+                }
+            }]
+        }
     };
     const distributedArtifact = {
         artifactSchemaVersion: 2,
@@ -2709,37 +2766,49 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
             'distributed-run.json': JSON.stringify(distributedRun, null, 2),
             'manifest.json': JSON.stringify(distributedRun.manifest, null, 2),
             'control-run.json': JSON.stringify(controlRun, null, 2),
-            'report.json': JSON.stringify({
-                schemaVersion: 2,
-                artifactSchemaVersion: 2,
-                execution: 'distributed-run',
-                distributedRunId: 'dist-diagnostics',
-                controlRunId: 'demo-run',
-                state: 'failed',
-                ok: false,
-            }, null, 2),
-            'results.jsonl': controlRun.results.map(result => JSON.stringify(result)).join('\n'),
-            'events.jsonl': controlRun.events.map(event => JSON.stringify(event)).join('\n'),
-            'failures.json': JSON.stringify({
-                failures: distributedRun.rollup.failures,
-            }, null, 2),
-            'metadata.json': JSON.stringify({
-                schemaVersion: 2,
-                artifactSchemaVersion: 2,
-                execution: 'distributed-run',
-                generatedAtEpochMs: now - 3_700,
-            }, null, 2),
-        },
+            'report.json': JSON.stringify(
+                {
+                    schemaVersion: 2,
+                    artifactSchemaVersion: 2,
+                    execution: 'distributed-run',
+                    distributedRunId: 'dist-diagnostics',
+                    controlRunId: 'demo-run',
+                    state: 'failed',
+                    ok: false
+                },
+                null,
+                2
+            ),
+            'results.jsonl': controlRun.results.map((result) => JSON.stringify(result)).join('\n'),
+            'events.jsonl': controlRun.events.map((event) => JSON.stringify(event)).join('\n'),
+            'failures.json': JSON.stringify(
+                {
+                    failures: distributedRun.rollup.failures
+                },
+                null,
+                2
+            ),
+            'metadata.json': JSON.stringify(
+                {
+                    schemaVersion: 2,
+                    artifactSchemaVersion: 2,
+                    execution: 'distributed-run',
+                    generatedAtEpochMs: now - 3_700
+                },
+                null,
+                2
+            )
+        }
     };
 
-    await page.route('http://localhost:5180/**', async route => {
+    await page.route('http://localhost:5180/**', async (route) => {
         const request = route.request();
         const url = new URL(request.url());
         if (request.method() === 'GET' && url.pathname === '/runs') {
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify({ runs: [controlRun] }),
+                body: JSON.stringify({ runs: [controlRun] })
             });
             return;
         }
@@ -2747,7 +2816,7 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify(controlRun),
+                body: JSON.stringify(controlRun)
             });
             return;
         }
@@ -2755,7 +2824,7 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify({ distributedRuns: [distributedRun] }),
+                body: JSON.stringify({ distributedRuns: [distributedRun] })
             });
             return;
         }
@@ -2763,7 +2832,7 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify(distributedRun),
+                body: JSON.stringify(distributedRun)
             });
             return;
         }
@@ -2771,14 +2840,14 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify(distributedArtifact),
+                body: JSON.stringify(distributedArtifact)
             });
             return;
         }
         await route.fulfill({
             status: 404,
             contentType: 'application/json',
-            body: JSON.stringify({ error: 'not found' }),
+            body: JSON.stringify({ error: 'not found' })
         });
     });
 
@@ -2810,7 +2879,7 @@ test('shows distributed WS and RTC runtime diagnostics in the run monitor', asyn
     await page.getByRole('tab', { name: 'Runs', exact: true }).click();
     await expect(page.getByRole('tab', { name: 'Runs', exact: true })).toHaveAttribute(
         'aria-selected',
-        'true',
+        'true'
     );
     const runsPanel = page.locator('#panel-runs');
     await expect(runsPanel).toContainText('Distributed Analysis');
@@ -2834,10 +2903,10 @@ test('restores selected tab and redacted UI drafts after a fresh load', async ({
     await requestGrid.getByLabel('Method').selectOption('POST');
     await requestGrid.getByLabel('Path').fill('/api/private');
     await requestEditors.getByLabel('Headers JSON').fill(JSON.stringify({
-        authorization: 'Bearer header-secret',
+        authorization: 'Bearer header-secret'
     }));
     await requestEditors.getByLabel('Body JSON').fill(JSON.stringify({
-        password: 'body-secret',
+        password: 'body-secret'
     }));
 
     await page.getByLabel('Rallar workspace mode')
@@ -2848,7 +2917,7 @@ test('restores selected tab and redacted UI drafts after a fresh load', async ({
     await manualPanel.getByLabel('Group').fill('persisted-ui-room');
     await manualPanel.getByLabel('Payload JSON').fill(JSON.stringify({
         token: 'payload-secret',
-        kind: 'probe',
+        kind: 'probe'
     }));
 
     await page.getByRole('tab', { name: 'Event Stream' }).click();
@@ -2861,11 +2930,13 @@ test('restores selected tab and redacted UI drafts after a fresh load', async ({
 
     await expect(page.getByRole('tab', { name: 'Event Stream' })).toHaveAttribute(
         'aria-selected',
-        'true',
+        'true'
     );
-    await expect(page
-        .locator('#panel-event-stream')
-        .getByRole('button', { name: 'message', exact: true }))
+    await expect(
+        page
+            .locator('#panel-event-stream')
+            .getByRole('button', { name: 'message', exact: true })
+    )
         .toHaveClass(/selected/);
 
     await openRunnerSurface(page, 'manual-rallar');

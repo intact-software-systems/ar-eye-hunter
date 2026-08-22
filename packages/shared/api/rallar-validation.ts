@@ -11,7 +11,7 @@ const RALLAR_ROUTE_ID_PATTERN = /^[A-Za-z0-9._:-]+$/;
 const RESERVED_ROUTE_IDS = new Set(['.', '..']);
 const RESERVED_WS_TOPIC_IDS = new Set<string>([
     ...Object.values(AppTopics),
-    RALLAR_AL_CONTROL_TOPIC_ID,
+    RALLAR_AL_CONTROL_TOPIC_ID
 ]);
 
 export type RallarValidationIssue = Readonly<{
@@ -26,13 +26,14 @@ export type RallarValidationResult = Readonly<{
     issues: readonly RallarValidationIssue[];
 }>;
 
-export type RallarJsonPayloadValidationResult = RallarValidationResult & Readonly<{
-    serialized?: string;
-    byteLength?: number;
-}>;
+export type RallarJsonPayloadValidationResult =
+    & RallarValidationResult
+    & Readonly<{
+        serialized?: string;
+        byteLength?: number;
+    }>;
 
-export type RallarBrandedString<TBrand extends string> =
-    string & { readonly __rallarBrand: TBrand };
+export type RallarBrandedString<TBrand extends string> = string & { readonly __rallarBrand: TBrand; };
 
 export type RallarRouteId = RallarBrandedString<'routeId'>;
 export type RallarRoomId = RallarBrandedString<'roomId'>;
@@ -45,7 +46,7 @@ export class RallarValidationError extends Error {
 
     constructor(
         message: string,
-        issues: readonly RallarValidationIssue[],
+        issues: readonly RallarValidationIssue[]
     ) {
         super(message);
         this.name = 'RallarValidationError';
@@ -57,22 +58,22 @@ export function okRallarValidation(): RallarValidationResult {
     return {
         ok: true,
         errors: [],
-        issues: [],
+        issues: []
     };
 }
 
 export function failRallarValidation(
-    issues: readonly RallarValidationIssue[],
+    issues: readonly RallarValidationIssue[]
 ): RallarValidationResult {
     return {
         ok: issues.length === 0,
         errors: issues.map((issue) => `${issue.path}: ${issue.message}`),
-        issues,
+        issues
     };
 }
 
 export function formatRallarValidation(
-    result: RallarValidationResult | readonly RallarValidationIssue[],
+    result: RallarValidationResult | readonly RallarValidationIssue[]
 ): string {
     const issues: readonly RallarValidationIssue[] = Array.isArray(result)
         ? result
@@ -87,19 +88,19 @@ export function formatRallarValidation(
 }
 
 export function isRallarValidationError(
-    error: unknown,
+    error: unknown
 ): error is RallarValidationError {
     return error instanceof RallarValidationError ||
         (
             typeof error === 'object' &&
             error !== null &&
-            (error as { name?: unknown }).name === 'RallarValidationError' &&
-            Array.isArray((error as { issues?: unknown }).issues)
+            (error as { name?: unknown; }).name === 'RallarValidationError' &&
+            Array.isArray((error as { issues?: unknown; }).issues)
         );
 }
 
 export function throwRallarValidation(
-    issues: readonly RallarValidationIssue[],
+    issues: readonly RallarValidationIssue[]
 ): never {
     throw new RallarValidationError(formatRallarValidation(issues), issues);
 }
@@ -107,7 +108,7 @@ export function throwRallarValidation(
 export function assertValidRallarRouteId(
     value: unknown,
     path = '$',
-    label = 'Route ID',
+    label = 'Route ID'
 ): RallarRouteId {
     const result = validateRallarRouteId(value, path, label);
     if (!result.ok) {
@@ -120,7 +121,7 @@ export function assertValidRallarRouteId(
 export function validateRallarRouteId(
     value: unknown,
     path = '$',
-    label = 'Route ID',
+    label = 'Route ID'
 ): RallarValidationResult {
     const issues: RallarValidationIssue[] = [];
     pushRouteIdIssues(value, path, label, issues);
@@ -146,7 +147,7 @@ export function toRallarWsUserTopicId(value: unknown): RallarWsUserTopicId {
 
 export function assertValidRallarWsUserTopicId(
     value: unknown,
-    path = '$',
+    path = '$'
 ): RallarWsUserTopicId {
     const result = validateRallarWsUserTopicId(value, path);
     if (!result.ok) {
@@ -158,7 +159,7 @@ export function assertValidRallarWsUserTopicId(
 
 export function validateRallarWsUserTopicId(
     value: unknown,
-    path = '$',
+    path = '$'
 ): RallarValidationResult {
     const routeId = validateRallarRouteId(value, path, 'WS user topic ID');
     if (!routeId.ok) {
@@ -171,8 +172,8 @@ export function validateRallarWsUserTopicId(
             {
                 path,
                 code: 'reserved-ws-topic',
-                message: `Rallar WS topic is reserved: ${topicId}.`,
-            },
+                message: `Rallar WS topic is reserved: ${topicId}.`
+            }
         ]);
     }
 
@@ -181,9 +182,8 @@ export function validateRallarWsUserTopicId(
             {
                 path,
                 code: 'invalid-ws-user-topic',
-                message:
-                    `Rallar user WS topic must start with ${RALLAR_USER_WS_TOPIC_PREFIXES.join(' or ')}.`,
-            },
+                message: `Rallar user WS topic must start with ${RALLAR_USER_WS_TOPIC_PREFIXES.join(' or ')}.`
+            }
         ]);
     }
 
@@ -197,7 +197,7 @@ export function isReservedRallarWsTopicId(topicId: string): boolean {
 
 export function validateRallarGroupRef(
     value: unknown,
-    path = '$',
+    path = '$'
 ): RallarValidationResult {
     const issues: RallarValidationIssue[] = [];
     if (!isRecord(value)) {
@@ -205,8 +205,8 @@ export function validateRallarGroupRef(
             {
                 path,
                 code: 'invalid-group-ref',
-                message: 'Group ref must be an object.',
-            },
+                message: 'Group ref must be an object.'
+            }
         ]);
     }
 
@@ -214,14 +214,14 @@ export function validateRallarGroupRef(
         value.applicationId,
         `${path}.applicationId`,
         'Application ID',
-        issues,
+        issues
     );
     if (value.workspaceId !== undefined) {
         pushRouteIdIssues(
             value.workspaceId,
             `${path}.workspaceId`,
             'Workspace ID',
-            issues,
+            issues
         );
     }
     pushRouteIdIssues(value.groupId, `${path}.groupId`, 'Group ID', issues);
@@ -231,7 +231,7 @@ export function validateRallarGroupRef(
 
 export function assertValidRallarGroupRef(
     value: unknown,
-    path = '$',
+    path = '$'
 ): GroupRef {
     const result = validateRallarGroupRef(value, path);
     if (!result.ok) {
@@ -246,7 +246,7 @@ export function validateRallarJsonPayload(
     options: Readonly<{
         path?: string;
         maxBytes?: number;
-    }> = {},
+    }> = {}
 ): RallarJsonPayloadValidationResult {
     const path = options.path ?? '$';
     const maxBytes = options.maxBytes ?? RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES;
@@ -256,7 +256,7 @@ export function validateRallarJsonPayload(
         return {
             ...failRallarValidation(issues),
             serialized: undefined,
-            byteLength: undefined,
+            byteLength: undefined
         };
     }
 
@@ -267,11 +267,11 @@ export function validateRallarJsonPayload(
                 {
                     path,
                     code: 'invalid-json-payload',
-                    message: 'Payload must serialize to JSON.',
-                },
+                    message: 'Payload must serialize to JSON.'
+                }
             ]),
             serialized: undefined,
-            byteLength: undefined,
+            byteLength: undefined
         };
     }
 
@@ -282,18 +282,18 @@ export function validateRallarJsonPayload(
                 {
                     path,
                     code: 'payload-too-large',
-                    message: `Payload exceeds ${maxBytes} bytes.`,
-                },
+                    message: `Payload exceeds ${maxBytes} bytes.`
+                }
             ]),
             serialized,
-            byteLength,
+            byteLength
         };
     }
 
     return {
         ...okRallarValidation(),
         serialized,
-        byteLength,
+        byteLength
     };
 }
 
@@ -302,8 +302,8 @@ export function assertValidRallarJsonPayload(
     options: Readonly<{
         path?: string;
         maxBytes?: number;
-    }> = {},
-): Readonly<{ serialized: string; byteLength: number }> {
+    }> = {}
+): Readonly<{ serialized: string; byteLength: number; }> {
     const result = validateRallarJsonPayload(value, options);
     if (!result.ok) {
         throwRallarValidation(result.issues);
@@ -311,13 +311,13 @@ export function assertValidRallarJsonPayload(
 
     return {
         serialized: result.serialized ?? JSON.stringify(value),
-        byteLength: result.byteLength ?? 0,
+        byteLength: result.byteLength ?? 0
     };
 }
 
 export function validateRallarNonNegativeInteger(
     value: unknown,
-    path = '$',
+    path = '$'
 ): RallarValidationResult {
     if (
         typeof value === 'number' &&
@@ -331,14 +331,14 @@ export function validateRallarNonNegativeInteger(
         {
             path,
             code: 'invalid-non-negative-integer',
-            message: 'Expected a finite non-negative integer.',
-        },
+            message: 'Expected a finite non-negative integer.'
+        }
     ]);
 }
 
 export function assertValidRallarNonNegativeInteger(
     value: unknown,
-    path = '$',
+    path = '$'
 ): number {
     const result = validateRallarNonNegativeInteger(value, path);
     if (!result.ok) {
@@ -352,13 +352,13 @@ function pushRouteIdIssues(
     value: unknown,
     path: string,
     label: string,
-    issues: RallarValidationIssue[],
+    issues: RallarValidationIssue[]
 ): void {
     if (typeof value !== 'string') {
         issues.push({
             path,
             code: 'invalid-type',
-            message: `${label} must be a string.`,
+            message: `${label} must be a string.`
         });
         return;
     }
@@ -367,7 +367,7 @@ function pushRouteIdIssues(
         issues.push({
             path,
             code: 'required',
-            message: `${label} is required.`,
+            message: `${label} is required.`
         });
         return;
     }
@@ -376,7 +376,7 @@ function pushRouteIdIssues(
         issues.push({
             path,
             code: 'not-trimmed',
-            message: `${label} must not include leading or trailing whitespace.`,
+            message: `${label} must not include leading or trailing whitespace.`
         });
         return;
     }
@@ -385,7 +385,7 @@ function pushRouteIdIssues(
         issues.push({
             path,
             code: 'max-length',
-            message: `${label} must be at most ${RALLAR_ROUTE_ID_MAX_LENGTH} characters.`,
+            message: `${label} must be at most ${RALLAR_ROUTE_ID_MAX_LENGTH} characters.`
         });
         return;
     }
@@ -394,7 +394,7 @@ function pushRouteIdIssues(
         issues.push({
             path,
             code: 'reserved-route-id',
-            message: `${label} is reserved.`,
+            message: `${label} is reserved.`
         });
         return;
     }
@@ -403,8 +403,7 @@ function pushRouteIdIssues(
         issues.push({
             path,
             code: 'invalid-route-id',
-            message:
-                `${label} may only contain letters, numbers, dot, underscore, colon, and hyphen.`,
+            message: `${label} may only contain letters, numbers, dot, underscore, colon, and hyphen.`
         });
     }
 }
@@ -413,7 +412,7 @@ function validateJsonCompatibleValue(
     value: unknown,
     path: string,
     issues: RallarValidationIssue[],
-    seen: WeakSet<object>,
+    seen: WeakSet<object>
 ): void {
     if (value === null) {
         return;
@@ -428,7 +427,7 @@ function validateJsonCompatibleValue(
                 issues.push({
                     path,
                     code: 'invalid-json-number',
-                    message: 'JSON payload numbers must be finite.',
+                    message: 'JSON payload numbers must be finite.'
                 });
             }
             return;
@@ -438,7 +437,7 @@ function validateJsonCompatibleValue(
             issues.push({
                 path,
                 code: 'invalid-json-payload',
-                message: 'Payload must be JSON-compatible.',
+                message: 'Payload must be JSON-compatible.'
             });
             return;
         case 'undefined':
@@ -451,17 +450,16 @@ function validateJsonCompatibleValue(
         issues.push({
             path,
             code: 'invalid-json-payload',
-            message: 'Payload must not contain cyclic references.',
+            message: 'Payload must not contain cyclic references.'
         });
         return;
     }
 
     seen.add(value);
     if (Array.isArray(value)) {
-        value.forEach((entry, index) =>
-            validateJsonCompatibleValue(entry, `${path}[${index}]`, issues, seen)
-        );
-    } else {
+        value.forEach((entry, index) => validateJsonCompatibleValue(entry, `${path}[${index}]`, issues, seen));
+    }
+    else {
         for (const [key, entry] of Object.entries(value)) {
             validateJsonCompatibleValue(entry, `${path}.${key}`, issues, seen);
         }

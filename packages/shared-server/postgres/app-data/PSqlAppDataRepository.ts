@@ -3,10 +3,10 @@ import type {
     AppDataConditionalInsertResult,
     AppDataConditionalRepositoryLike,
     AppDataConditionalWriteResult,
-    AppDataEntryPageOptions,
     AppDataEntry,
-    AppDataUpsertInput,
+    AppDataEntryPageOptions,
     AppDataUpsertIfRevisionInput,
+    AppDataUpsertInput
 } from '../../app-data/AppDataRepository.ts';
 import type { PSqlSql } from '../PostgresSqlClient.ts';
 
@@ -31,7 +31,7 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
     async findEntry(
         namespace: string,
         storeName: string,
-        key: string,
+        key: string
     ): Promise<AppDataEntry | undefined> {
         const rows = await this.sql<AppDataRow[]>`
             select app_namespace,
@@ -55,7 +55,7 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
     async findEntries(
         namespace: string,
         storeName: string,
-        keyPrefix?: string,
+        keyPrefix?: string
     ): Promise<readonly AppDataEntry[]> {
         const rows = keyPrefix
             ? await this.sql<AppDataRow[]>`
@@ -94,7 +94,7 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
     async findEntriesPage(
         namespace: string,
         storeName: string,
-        options: AppDataEntryPageOptions,
+        options: AppDataEntryPageOptions
     ): Promise<readonly AppDataEntry[]> {
         const limit = Math.max(1, Math.floor(options.limit));
         const rows = await this.findEntryPageRows(namespace, storeName, options, limit);
@@ -105,7 +105,7 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
         namespace: string,
         storeName: string,
         options: AppDataEntryPageOptions,
-        limit: number,
+        limit: number
     ): Promise<AppDataRow[]> {
         if (options.keyPrefix && options.afterKey !== undefined) {
             return await this.sql<AppDataRow[]>`
@@ -210,7 +210,7 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
     }
 
     async insertIfAbsent<V = unknown>(
-        input: AppDataUpsertInput<V>,
+        input: AppDataUpsertInput<V>
     ): Promise<AppDataConditionalInsertResult<V>> {
         const rows = await this.sql<AppDataRow[]>`
             insert into app_data_store (app_namespace,
@@ -244,7 +244,7 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
         if (rows[0]) {
             return {
                 status: 'inserted',
-                entry: toEntry(rows[0]) as AppDataEntry<V>,
+                entry: toEntry(rows[0]) as AppDataEntry<V>
             };
         }
 
@@ -253,13 +253,13 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
             current: await this.findEntry(
                 input.namespace,
                 input.storeName,
-                input.key,
-            ) as AppDataEntry<V> | undefined,
+                input.key
+            ) as AppDataEntry<V> | undefined
         };
     }
 
     async upsertIfRevision<V = unknown>(
-        input: AppDataUpsertIfRevisionInput<V>,
+        input: AppDataUpsertIfRevisionInput<V>
     ): Promise<AppDataConditionalWriteResult<V>> {
         const rows = await this.sql<AppDataRow[]>`
             update app_data_store
@@ -285,7 +285,7 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
         if (rows[0]) {
             return {
                 status: 'written',
-                entry: toEntry(rows[0]) as AppDataEntry<V>,
+                entry: toEntry(rows[0]) as AppDataEntry<V>
             };
         }
 
@@ -294,13 +294,13 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
             current: await this.findEntry(
                 input.namespace,
                 input.storeName,
-                input.key,
-            ) as AppDataEntry<V> | undefined,
+                input.key
+            ) as AppDataEntry<V> | undefined
         };
     }
 
     async deleteByKey(namespace: string, storeName: string, key: string): Promise<boolean> {
-        const rows = await this.sql<{ data_key: string }[]>`
+        const rows = await this.sql<{ data_key: string; }[]>`
             delete
             from app_data_store
             where app_namespace = ${namespace}
@@ -316,7 +316,7 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
         namespace: string,
         storeName: string,
         key: string,
-        expectedRevision: number,
+        expectedRevision: number
     ): Promise<AppDataConditionalDeleteResult> {
         const rows = await this.sql<AppDataRow[]>`
             delete
@@ -338,19 +338,19 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
         if (rows[0]) {
             return {
                 status: 'deleted',
-                entry: toEntry(rows[0]),
+                entry: toEntry(rows[0])
             };
         }
 
         return {
             status: 'conflict',
-            current: await this.findEntry(namespace, storeName, key),
+            current: await this.findEntry(namespace, storeName, key)
         };
     }
 
     async deleteExpired(namespace: string, storeName?: string): Promise<number> {
         const rows = storeName
-            ? await this.sql<{ data_key: string }[]>`
+            ? await this.sql<{ data_key: string; }[]>`
                 delete
                 from app_data_store
                 where app_namespace = ${namespace}
@@ -358,7 +358,7 @@ export class PSqlAppDataRepository implements AppDataConditionalRepositoryLike {
                   and expire_at_ts <= now()
                 returning data_key
             `
-            : await this.sql<{ data_key: string }[]>`
+            : await this.sql<{ data_key: string; }[]>`
                 delete
                 from app_data_store
                 where app_namespace = ${namespace}
@@ -374,7 +374,7 @@ function toEntry(row: AppDataRow): AppDataEntry {
     const expireAtTimestamp = Date.parse(row.expire_at_ts);
     if (!Number.isFinite(expireAtTimestamp)) {
         throw new Error(
-            `Invalid expire_at_ts for app_data_store row ${row.app_namespace}/${row.store_name}/${row.data_key}`,
+            `Invalid expire_at_ts for app_data_store row ${row.app_namespace}/${row.store_name}/${row.data_key}`
         );
     }
 
@@ -386,7 +386,7 @@ function toEntry(row: AppDataRow): AppDataEntry {
         schemaVersion: Number(row.schema_version),
         expireAtTimestamp,
         updatedTimestamp: row.updated_ts,
-        revision: Number(row.revision),
+        revision: Number(row.revision)
     };
 }
 

@@ -46,13 +46,13 @@ that map; per-topic splits are shown where they carry the story.
 
 ## Baseline: burst egress bytes (T1−T0, primary server)
 
-| Tier × backend | Total egress | group-state.snapshot | group-directory.snapshot | group-state.event | overlay.topology | client-state.* | Snapshot share |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| small × memory (N=6) | 551,678 | 230,374 | 230,605 | 22,317 | 34,680 | 33,702 | 83.6% |
-| medium × memory (N=20) | 12,751,445 | 6,030,229 | 6,032,539 | 286,155 | 290,120 | 112,402 | 94.6% |
-| small × postgres (N=6) | 679,507 | 287,570 | 287,867 | 35,688 | 34,680 | 33,702 | 84.7% |
-| medium × postgres (N=20) | 19,449,936 | 9,064,169 | 9,497,911 | 485,334 | 290,120 | 112,402 | 95.4% |
-| **large × postgres (N=50)** | **254,951,157** | **121,645,845** | **123,346,245** | **2,615,001** | 7,242,932 | 101,134 | **96.1%** |
+| Tier × backend              | Total egress    | group-state.snapshot | group-directory.snapshot | group-state.event | overlay.topology | client-state.* | Snapshot share |
+| --------------------------- | --------------- | -------------------- | ------------------------ | ----------------- | ---------------- | -------------- | -------------- |
+| small × memory (N=6)        | 551,678         | 230,374              | 230,605                  | 22,317            | 34,680           | 33,702         | 83.6%          |
+| medium × memory (N=20)      | 12,751,445      | 6,030,229            | 6,032,539                | 286,155           | 290,120          | 112,402        | 94.6%          |
+| small × postgres (N=6)      | 679,507         | 287,570              | 287,867                  | 35,688            | 34,680           | 33,702         | 84.7%          |
+| medium × postgres (N=20)    | 19,449,936      | 9,064,169            | 9,497,911                | 485,334           | 290,120          | 112,402        | 95.4%          |
+| **large × postgres (N=50)** | **254,951,157** | **121,645,845**      | **123,346,245**          | **2,615,001**     | 7,242,932        | 101,134        | **96.1%**      |
 
 Secondary-server egress is 0 in every capture (all recipe WS clients connect
 to the primary; the secondary's rows resolve no local recipients). Memory
@@ -80,14 +80,14 @@ Observations:
 
 ## Baseline: burst counts (cross-check against Phase 2)
 
-| Tier × backend | Server | Mutations | Expansions | WS sends | Deliveries |
-| --- | --- | --- | --- | --- | --- |
-| small × memory | primary | 12 | 12 | 31 | 81 |
-| medium × memory | primary | 40 | 40 | 102 | 691 |
-| small × postgres | primary | 12 | 12 | 32 | 102 |
-| medium × postgres | primary | 40 | 40 | 102 | 1,082 |
-| large × postgres | primary | 34 | 35 | 211 | 6,110 |
-| large × postgres | secondary | 35 | 46 | 0 | 0 |
+| Tier × backend    | Server    | Mutations | Expansions | WS sends | Deliveries |
+| ----------------- | --------- | --------- | ---------- | -------- | ---------- |
+| small × memory    | primary   | 12        | 12         | 31       | 81         |
+| medium × memory   | primary   | 40        | 40         | 102      | 691        |
+| small × postgres  | primary   | 12        | 12         | 32       | 102        |
+| medium × postgres | primary   | 40        | 40         | 102      | 1,082      |
+| large × postgres  | primary   | 34        | 35         | 211      | 6,110      |
+| large × postgres  | secondary | 35        | 46         | 0        | 0          |
 
 Counts are the same order as the Phase 2 results (e.g. large-tier primary
 deliveries 6,110 here vs 4,934 in the Phase 2 capture — run-to-run split
@@ -118,13 +118,13 @@ set `RALLAR_GROUP_STATE_DISSEMINATION=delta-primary` on the managed servers.
 
 ### Burst egress bytes (T1−T0, primary server): baseline → dual-emit → delta-primary
 
-| Tier × backend | Baseline | Dual-emit | Delta-primary | Reduction (baseline → delta-primary) |
-| --- | --- | --- | --- | --- |
-| small × memory (N=6) | 551,678 | 589,431 | 122,835 | **4.5×** |
-| medium × memory (N=20) | 12,751,445 | 13,374,455 | 1,334,784 | **9.6×** |
-| small × postgres (N=6) | 679,507 | — | 181,790 | **3.7×** |
-| medium × postgres (N=20) | 19,449,936 | — | 1,833,900 | **10.6×** |
-| **large × postgres (N=50)** | **254,951,157** | 259,502,056 | **13,215,859** | **19.3×** |
+| Tier × backend              | Baseline        | Dual-emit   | Delta-primary  | Reduction (baseline → delta-primary) |
+| --------------------------- | --------------- | ----------- | -------------- | ------------------------------------ |
+| small × memory (N=6)        | 551,678         | 589,431     | 122,835        | **4.5×**                             |
+| medium × memory (N=20)      | 12,751,445      | 13,374,455  | 1,334,784      | **9.6×**                             |
+| small × postgres (N=6)      | 679,507         | —           | 181,790        | **3.7×**                             |
+| medium × postgres (N=20)    | 19,449,936      | —           | 1,833,900      | **10.6×**                            |
+| **large × postgres (N=50)** | **254,951,157** | 259,502,056 | **13,215,859** | **19.3×**                            |
 
 - **The N=50 target is met with 2× headroom: 13.2 MB against the ≤25.5 MB
   target from the measured 255.0 MB baseline.** Both per-change full-snapshot

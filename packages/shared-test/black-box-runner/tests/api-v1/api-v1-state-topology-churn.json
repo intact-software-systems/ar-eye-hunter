@@ -985,9 +985,15 @@
                       { "path": "outputs.secondaryChurnPresenceRevision" },
                       {
                         "max": [
-                          { "path": "outputs.primaryChurnPresenceRevision" },
-                          { "path": "outputs.secondaryChurnPresenceRevision" },
-                          { "path": "outputs.tertiaryChurnPresenceRevision" }
+                          {
+                            "path": "outputs.primaryChurnPresenceRevision"
+                          },
+                          {
+                            "path": "outputs.secondaryChurnPresenceRevision"
+                          },
+                          {
+                            "path": "outputs.tertiaryChurnPresenceRevision"
+                          }
                         ]
                       }
                     ]
@@ -1011,11 +1017,17 @@
           "presenceRevision": {
             "if": {
               "condition": {
-                "equals": [{ "path": "outputs.latestChurnObservation.onlineMemberCount" }, 13]
+                "equals": [
+                  { "path": "outputs.latestChurnObservation.onlineMemberCount" },
+                  13
+                ]
               },
               "then": { "path": "outputs.latestChurnObservation.presenceRevision" },
               "else": {
-                "add": [{ "path": "outputs.latestChurnObservation.presenceRevision" }, 1]
+                "add": [
+                  { "path": "outputs.latestChurnObservation.presenceRevision" },
+                  1
+                ]
               }
             }
           }
@@ -1064,9 +1076,15 @@
                       { "path": "outputs.secondarySharedPresenceRevision" },
                       {
                         "max": [
-                          { "path": "outputs.primarySharedPresenceRevision" },
-                          { "path": "outputs.secondarySharedPresenceRevision" },
-                          { "path": "outputs.tertiarySharedPresenceRevision" }
+                          {
+                            "path": "outputs.primarySharedPresenceRevision"
+                          },
+                          {
+                            "path": "outputs.secondarySharedPresenceRevision"
+                          },
+                          {
+                            "path": "outputs.tertiarySharedPresenceRevision"
+                          }
                         ]
                       }
                     ]
@@ -1090,11 +1108,17 @@
           "presenceRevision": {
             "if": {
               "condition": {
-                "equals": [{ "path": "outputs.latestSharedObservation.onlineMemberCount" }, 13]
+                "equals": [
+                  { "path": "outputs.latestSharedObservation.onlineMemberCount" },
+                  13
+                ]
               },
               "then": { "path": "outputs.latestSharedObservation.presenceRevision" },
               "else": {
-                "add": [{ "path": "outputs.latestSharedObservation.presenceRevision" }, 1]
+                "add": [
+                  { "path": "outputs.latestSharedObservation.presenceRevision" },
+                  1
+                ]
               }
             }
           }

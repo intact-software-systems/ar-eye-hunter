@@ -1,9 +1,5 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type { RallarWsStatus } from '@shared-web/browser/rallar-realtime-facade.ts';
-import {
-    readSelectedCandidatePairDiagnostics,
-} from '@shared-web/browser/rtc-diagnostics/read-selected-candidate-pair-diagnostics.ts';
-import { readOverlayAdoptionDiagnostics } from '@shared/repository/overlays-repository.ts';
 import type {
     CreateRallarRtcFacadeOptions,
     RallarRoomTransportState,
@@ -32,7 +28,7 @@ import type {
     RallarRtcStatusSubscriptionOptions,
     RallarRtcWaitForOpenOptions,
     RallarRtcWaitForOpenResult,
-    RallarWaitForOpenStatus,
+    RallarWaitForOpenStatus
 } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import { normalizeWaitTimeoutMs } from '@shared-web/browser/rallar-runtime/wait.ts';
@@ -41,14 +37,18 @@ import {
     evaluateRallarReadinessExpectation,
     normalizeRallarReadinessExpectation,
     type RallarNormalizedReadinessExpectation,
-    type RallarReadinessEvaluation,
+    type RallarReadinessEvaluation
 } from '@shared-web/browser/readiness.ts';
+import {
+    readSelectedCandidatePairDiagnostics
+} from '@shared-web/browser/rtc-diagnostics/read-selected-candidate-pair-diagnostics.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
+import { readOverlayAdoptionDiagnostics } from '@shared/repository/overlays-repository.ts';
 import {
     DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
     type QRtcPeerDto,
-    type WebRtcPeerLaneOpenResult,
+    type WebRtcPeerLaneOpenResult
 } from '@shared/services/WebRtcConnectionService.ts';
 import type { QRtcClientCallbacks } from '@shared/webrtc/QRtcClientCallbacks.ts';
 import type { RtcDataChannelHealth } from '@shared/webrtc/QRtcDataChannel.ts';
@@ -85,15 +85,14 @@ export type RallarRtcController = Readonly<{
 }>;
 
 export function createRallarRtcController(
-    options: CreateRallarRtcControllerOptions,
+    options: CreateRallarRtcControllerOptions
 ): RallarRtcController {
     return new BrowserRallarRtcController(options);
 }
 
 class BrowserRallarRtcController implements RallarRtcController {
     private readonly rtcStatusListeners = new Set<RallarRtcStatusSubscription>();
-    private readonly rtcLifecycleListeners =
-        new Set<RallarRtcLifecycleSubscription>();
+    private readonly rtcLifecycleListeners = new Set<RallarRtcLifecycleSubscription>();
 
     private readonly options: CreateRallarRtcControllerOptions;
 
@@ -103,44 +102,32 @@ class BrowserRallarRtcController implements RallarRtcController {
 
     readonly operations: CreateRallarRtcFacadeOptions = {
         status: (statusOptions) => this.toRtcStatus(statusOptions),
-        roomStatus: (room, roomOptions) =>
-            this.toRoomTransportStatus(room, roomOptions),
-        openRoom: async (room, roomOptions) =>
-            await this.openRtcRoom(room, roomOptions),
-        waitForRoom: async (room, roomOptions) =>
-            await this.waitForRtcRoom(room, roomOptions),
-        onStatus: (listener, subscriptionOptions = {}) =>
-            this.onRtcStatus(listener, subscriptionOptions),
-        onLifecycle: (listener, subscriptionOptions = {}) =>
-            this.onRtcLifecycle(listener, subscriptionOptions),
-        waitForLane: async (peerId, laneId, waitOptions) =>
-            await this.waitForRtcLaneOpen(peerId, laneId, waitOptions),
+        roomStatus: (room, roomOptions) => this.toRoomTransportStatus(room, roomOptions),
+        openRoom: async (room, roomOptions) => await this.openRtcRoom(room, roomOptions),
+        waitForRoom: async (room, roomOptions) => await this.waitForRtcRoom(room, roomOptions),
+        onStatus: (listener, subscriptionOptions = {}) => this.onRtcStatus(listener, subscriptionOptions),
+        onLifecycle: (listener, subscriptionOptions = {}) => this.onRtcLifecycle(listener, subscriptionOptions),
+        waitForLane: async (peerId, laneId, waitOptions) => await this.waitForRtcLaneOpen(peerId, laneId, waitOptions),
         waitForOpen: async (peerId, waitOptions = {}) =>
             await this.waitForRtcLaneOpen(
                 peerId,
                 waitOptions.laneId ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
-                waitOptions,
+                waitOptions
             ),
         waitForRoomLane: async (room, laneId, waitOptions = {}) =>
             await this.waitForRtcRoomLaneOpen(
                 waitOptions.roomRef ?? room,
                 laneId,
-                waitOptions,
+                waitOptions
             ),
-        peer: (peerId, statusOptions) =>
-            this.toRtcStatus(statusOptions).peers.find((peer) =>
-                peer.peerId === peerId
-            ),
+        peer: (peerId, statusOptions) => this.toRtcStatus(statusOptions).peers.find((peer) => peer.peerId === peerId),
         knownPeerIds: () => this.knownRtcPeerIds(),
         activePeerIds: () => this.activeRtcPeerIds(),
-        peerIdsWithNoReconnectableLanes: () =>
-            this.rtcPeerIdsWithNoReconnectableLanes(),
+        peerIdsWithNoReconnectableLanes: () => this.rtcPeerIdsWithNoReconnectableLanes(),
         readyPeerIds: (laneId) => this.readyRtcPeerIds(laneId),
-        diagnostics: async (diagnosticOptions) =>
-            await this.toRtcDiagnostics(diagnosticOptions),
+        diagnostics: async (diagnosticOptions) => await this.toRtcDiagnostics(diagnosticOptions),
         restartIce: async (peerId) => await this.restartRtcIce(peerId),
-        reconnectPeer: async (peerId, reconnectOptions) =>
-            await this.reconnectRtcPeer(peerId, reconnectOptions),
+        reconnectPeer: async (peerId, reconnectOptions) => await this.reconnectRtcPeer(peerId, reconnectOptions)
     };
 
     attach(ctx = this.readMiddleware()): void {
@@ -161,11 +148,11 @@ class BrowserRallarRtcController implements RallarRtcController {
 
     private onRtcStatus(
         listener: RallarRtcStatusListener,
-        options: RallarRtcStatusSubscriptionOptions,
+        options: RallarRtcStatusSubscriptionOptions
     ): RallarUnsubscribe {
         const subscription: RallarRtcStatusSubscription = {
             listener,
-            options,
+            options
         };
         this.rtcStatusListeners.add(subscription);
         this.registerRtcStatusCallbacks();
@@ -181,18 +168,18 @@ class BrowserRallarRtcController implements RallarRtcController {
 
     private onRtcLifecycle(
         listener: RallarRtcLifecycleListener,
-        options: RallarRtcStatusSubscriptionOptions,
+        options: RallarRtcStatusSubscriptionOptions
     ): RallarUnsubscribe {
         const subscription: RallarRtcLifecycleSubscription = {
             listener,
-            options,
+            options
         };
         this.rtcLifecycleListeners.add(subscription);
         this.registerRtcStatusCallbacks();
         if (options.emitCurrent ?? true) {
             this.notifyRtcLifecycleSubscription(
                 subscription,
-                'snapshot',
+                'snapshot'
             );
         }
 
@@ -221,12 +208,12 @@ class BrowserRallarRtcController implements RallarRtcController {
     private readyRtcPeerIds(laneId?: string): readonly string[] {
         const ctx = this.readMiddleware();
         return ctx?.middleware.webRtcConnectionService.readyPeerIdsForLane(
-            laneId ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
+            laneId ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID
         ) ?? [];
     }
 
     private toRtcStatus(
-        options: RallarRtcStatusOptions = {},
+        options: RallarRtcStatusOptions = {}
     ): RallarRtcStatus {
         const laneId = options.laneId ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID;
         const ctx = this.readMiddleware();
@@ -238,7 +225,7 @@ class BrowserRallarRtcController implements RallarRtcController {
                 activePeerIds: [],
                 peerIdsWithNoReconnectableLanes: [],
                 readyPeerIds: [],
-                peers: [],
+                peers: []
             };
         }
 
@@ -250,7 +237,7 @@ class BrowserRallarRtcController implements RallarRtcController {
         const readyPeerIds = service.readyPeerIdsForLane(laneId);
         const activePeerIdSet = new Set(activePeerIds);
         const peerIdsWithNoReconnectableLanesSet = new Set(
-            peerIdsWithNoReconnectableLanes,
+            peerIdsWithNoReconnectableLanes
         );
         const readyPeerIdSet = new Set(readyPeerIds);
 
@@ -267,9 +254,9 @@ class BrowserRallarRtcController implements RallarRtcController {
                     service.readPeer(peerId),
                     activePeerIdSet,
                     peerIdsWithNoReconnectableLanesSet,
-                    readyPeerIdSet,
+                    readyPeerIdSet
                 )
-            ),
+            )
         };
     }
 
@@ -278,7 +265,7 @@ class BrowserRallarRtcController implements RallarRtcController {
         peer: QRtcPeerDto | undefined,
         activePeerIds: ReadonlySet<string>,
         peerIdsWithNoReconnectableLanes: ReadonlySet<string>,
-        readyPeerIds: ReadonlySet<string>,
+        readyPeerIds: ReadonlySet<string>
     ): RallarRtcPeerStatus {
         const lanes = peer
             ? Array.from(peer.channels.entries()).map(([laneId, channel]) =>
@@ -295,12 +282,12 @@ class BrowserRallarRtcController implements RallarRtcController {
             isRoutable: readyPeerIds.has(peerId),
             readyLaneIds: lanes
                 .filter((lane) => lane.isOpen)
-                .map((lane) => lane.laneId),
+                .map((lane) => lane.laneId)
         };
     }
 
     private async toRtcDiagnostics(
-        options: RallarRtcDiagnosticsOptions = {},
+        options: RallarRtcDiagnosticsOptions = {}
     ): Promise<RallarRtcDiagnostics> {
         const ctx = this.readMiddleware();
         const sessionId = ctx?.session.sessionId ??
@@ -312,7 +299,7 @@ class BrowserRallarRtcController implements RallarRtcController {
                 peerCount: 0,
                 connectedPeerCount: 0,
                 relayPeerCount: 0,
-                peers: [],
+                peers: []
             };
         }
 
@@ -320,12 +307,12 @@ class BrowserRallarRtcController implements RallarRtcController {
         const peerIds = options.peerIds ?? service.knownPeerIds();
         const activePeerIds = new Set(service.activePeerIds());
         const noReconnectableLanePeerIds = new Set(
-            service.peerIdsWithNoReconnectableLanes(),
+            service.peerIdsWithNoReconnectableLanes()
         );
         const readyPeerIds = new Set(
             service.readyPeerIdsForLane(
-                options.laneIds?.[0] ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
-            ),
+                options.laneIds?.[0] ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID
+            )
         );
         const peers = await Promise.all(
             [...new Set(peerIds)].map(async (peerId) => {
@@ -335,35 +322,33 @@ class BrowserRallarRtcController implements RallarRtcController {
                     peer,
                     activePeerIds,
                     noReconnectableLanePeerIds,
-                    readyPeerIds,
+                    readyPeerIds
                 );
                 return await this.toRtcPeerDiagnostics(
                     status,
                     peer,
-                    options,
+                    options
                 );
-            }),
+            })
         );
 
         return {
             sessionId,
             generatedAtEpochMs: Date.now(),
             peerCount: peers.length,
-            connectedPeerCount: peers.filter((peer) =>
-                peer.connection.connectionState === 'connected'
-            ).length,
+            connectedPeerCount: peers.filter((peer) => peer.connection.connectionState === 'connected').length,
             relayPeerCount: peers.filter((peer) => peer.usesRelay).length,
             peers,
             groupManager: ctx.middleware.webRtcGroupManager.readDiagnostics?.(),
             overlayAdoption: readOverlayAdoptionDiagnostics(),
-            connectionAttemptBudget: service.readPeerConnectionAttemptBudgetDiagnostics?.(),
+            connectionAttemptBudget: service.readPeerConnectionAttemptBudgetDiagnostics?.()
         };
     }
 
     private async toRtcPeerDiagnostics(
         status: RallarRtcPeerStatus,
         peer: QRtcPeerDto | undefined,
-        options: RallarRtcDiagnosticsOptions,
+        options: RallarRtcDiagnosticsOptions
     ): Promise<RallarRtcPeerDiagnostics> {
         const laneIds = options.laneIds
             ? new Set(options.laneIds)
@@ -375,7 +360,7 @@ class BrowserRallarRtcController implements RallarRtcController {
 
         try {
             const selectedCandidatePair = await readSelectedCandidatePairDiagnostics(
-                peer?.connection.status.pc,
+                peer?.connection.status.pc
             );
             const diagnostics = {
                 peerId: status.peerId,
@@ -383,19 +368,20 @@ class BrowserRallarRtcController implements RallarRtcController {
                 lanes,
                 selectedCandidatePair,
                 usesRelay: selectedCandidatePair?.usesRelay ?? false,
-                statsAvailable: selectedCandidatePair !== undefined,
+                statsAvailable: selectedCandidatePair !== undefined
             };
             return connectionDiagnostics === undefined
                 ? diagnostics
                 : { ...diagnostics, connectionDiagnostics };
-        } catch (error) {
+        }
+        catch (error) {
             const diagnostics = {
                 peerId: status.peerId,
                 connection: status.connection,
                 lanes,
                 usesRelay: false,
                 statsAvailable: false,
-                statsError: toErrorMessage(error),
+                statsError: toErrorMessage(error)
             };
             return connectionDiagnostics === undefined
                 ? diagnostics
@@ -404,7 +390,7 @@ class BrowserRallarRtcController implements RallarRtcController {
     }
 
     private async restartRtcIce(
-        peerId: string,
+        peerId: string
     ): Promise<RallarRtcRecoveryResult> {
         const ctx = this.readMiddleware();
         if (!ctx) {
@@ -412,7 +398,7 @@ class BrowserRallarRtcController implements RallarRtcController {
                 peerId,
                 'restart-ice',
                 'not-connected',
-                'Rallar is not connected.',
+                'Rallar is not connected.'
             );
         }
 
@@ -422,7 +408,7 @@ class BrowserRallarRtcController implements RallarRtcController {
                 peerId,
                 'restart-ice',
                 'no-peer',
-                `RTC peer ${peerId} is not known.`,
+                `RTC peer ${peerId} is not known.`
             );
         }
 
@@ -432,26 +418,27 @@ class BrowserRallarRtcController implements RallarRtcController {
                 peerId,
                 'restart-ice',
                 'unsupported',
-                `RTC peer ${peerId} does not expose restartIce().`,
+                `RTC peer ${peerId} does not expose restartIce().`
             );
         }
 
         try {
             pc.restartIce();
             return this.toRtcRecoveryResult(peerId, 'restart-ice', 'restarted');
-        } catch (error) {
+        }
+        catch (error) {
             return this.toRtcRecoveryResult(
                 peerId,
                 'restart-ice',
                 'failed',
-                toErrorMessage(error),
+                toErrorMessage(error)
             );
         }
     }
 
     private async reconnectRtcPeer(
         peerId: string,
-        options: RallarRtcReconnectOptions = {},
+        options: RallarRtcReconnectOptions = {}
     ): Promise<RallarRtcRecoveryResult> {
         const ctx = this.readMiddleware();
         if (!ctx) {
@@ -459,7 +446,7 @@ class BrowserRallarRtcController implements RallarRtcController {
                 peerId,
                 'reconnect',
                 'not-connected',
-                'Rallar is not connected.',
+                'Rallar is not connected.'
             );
         }
 
@@ -472,14 +459,14 @@ class BrowserRallarRtcController implements RallarRtcController {
                     laneId,
                     {
                         ...options,
-                        connect: true,
-                    },
+                        connect: true
+                    }
                 );
                 return this.toRtcRecoveryResult(
                     peerId,
                     'reconnect',
                     result.status === 'open' ? 'started' : 'failed',
-                    result.reason,
+                    result.reason
                 );
             }
 
@@ -490,17 +477,18 @@ class BrowserRallarRtcController implements RallarRtcController {
                     peerId,
                     'reconnect',
                     started.left.kind === 'self' ? 'failed' : 'failed',
-                    started.left.kind,
+                    started.left.kind
                 );
             }
 
             return this.toRtcRecoveryResult(peerId, 'reconnect', 'started');
-        } catch (error) {
+        }
+        catch (error) {
             return this.toRtcRecoveryResult(
                 peerId,
                 'reconnect',
                 'failed',
-                toErrorMessage(error),
+                toErrorMessage(error)
             );
         }
     }
@@ -509,21 +497,21 @@ class BrowserRallarRtcController implements RallarRtcController {
         peerId: string,
         action: RallarRtcRecoveryResult['action'],
         status: RallarRtcRecoveryStatus,
-        reason?: string,
+        reason?: string
     ): RallarRtcRecoveryResult {
         return {
             peerId,
             action,
             status,
             rtcStatus: this.toRtcStatus(),
-            reason,
+            reason
         };
     }
 
     private async waitForRtcLaneOpen(
         peerId: string,
         laneId: string,
-        options: RallarRtcWaitForOpenOptions = {},
+        options: RallarRtcWaitForOpenOptions = {}
     ): Promise<RallarRtcWaitForOpenResult> {
         const ctx = this.readMiddleware();
         if (options.signal?.aborted) {
@@ -539,7 +527,7 @@ class BrowserRallarRtcController implements RallarRtcController {
                 ctx,
                 peerId,
                 laneId,
-                options,
+                options
             );
         }
 
@@ -563,7 +551,7 @@ class BrowserRallarRtcController implements RallarRtcController {
         }
 
         const timeoutMs = normalizeWaitTimeoutMs(
-            this.resolveRtcWaitTimeoutMs(options.timeoutMs),
+            this.resolveRtcWaitTimeoutMs(options.timeoutMs)
         );
         if (timeoutMs <= 0) {
             return this.toRtcWaitForOpenResult('timeout', peerId, laneId);
@@ -571,7 +559,7 @@ class BrowserRallarRtcController implements RallarRtcController {
 
         const opened = await waitForRtcChannelOpenOrAbort(
             channel.waitUntilOpen(timeoutMs),
-            options.signal,
+            options.signal
         );
         if (opened === 'aborted') {
             return this.toRtcWaitForOpenResult('aborted', peerId, laneId);
@@ -584,19 +572,19 @@ class BrowserRallarRtcController implements RallarRtcController {
         return this.toRtcWaitForOpenResult(
             isClosedRtcLaneHealth(channel.readHealth()) ? 'closed' : 'timeout',
             peerId,
-            laneId,
+            laneId
         );
     }
 
     private async waitForRtcRoomLaneOpen(
         room: string | GroupRef,
         laneId: string,
-        options: RallarRtcRoomLaneWaitOptions = {},
+        options: RallarRtcRoomLaneWaitOptions = {}
     ): Promise<RallarRtcRoomLaneWaitResult> {
         const roomId = typeof room === 'string' ? room : room.groupId;
         const peerIds = this.resolveRoomPeerIds(options.roomRef ?? room);
         const expectation = normalizeRallarReadinessExpectation(
-            options.expect ?? { exact: peerIds.length },
+            options.expect ?? { exact: peerIds.length }
         );
         if (peerIds.length === 0) {
             return this.toRtcRoomLaneWaitResult(
@@ -605,7 +593,7 @@ class BrowserRallarRtcController implements RallarRtcController {
                 [],
                 [],
                 expectation,
-                options.expect !== undefined,
+                options.expect !== undefined
             );
         }
 
@@ -614,9 +602,9 @@ class BrowserRallarRtcController implements RallarRtcController {
                 this.waitForRtcLaneOpen(
                     peerId,
                     laneId,
-                    options,
+                    options
                 )
-            ),
+            )
         );
         const ready = results.filter((result) => result.status === 'open');
         const notReady = results.filter((result) => result.status !== 'open');
@@ -627,19 +615,19 @@ class BrowserRallarRtcController implements RallarRtcController {
             ready,
             notReady,
             expectation,
-            options.expect !== undefined,
+            options.expect !== undefined
         );
     }
 
     private async openRtcRoom(
         room: string | GroupRef,
-        options: RallarRtcRoomTransportOptions = {},
+        options: RallarRtcRoomTransportOptions = {}
     ): Promise<RallarRoomTransportStatus> {
         const mode = options.mode ?? 'lazy';
         if (mode === 'off' || mode === 'lazy') {
             return this.toRoomTransportStatus(room, {
                 ...options,
-                mode,
+                mode
             });
         }
 
@@ -649,20 +637,20 @@ class BrowserRallarRtcController implements RallarRtcController {
             laneId,
             {
                 ...options,
-                connect: true,
-            },
+                connect: true
+            }
         );
 
         return this.toRoomTransportStatus(room, {
             ...options,
             mode,
-            laneId,
+            laneId
         }, readiness);
     }
 
     private async waitForRtcRoom(
         room: string | GroupRef,
-        options: RallarRtcRoomTransportOptions = {},
+        options: RallarRtcRoomTransportOptions = {}
     ): Promise<RallarRoomTransportStatus> {
         const laneId = options.laneId ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID;
         const readiness = await this.waitForRtcRoomLaneOpen(
@@ -670,20 +658,20 @@ class BrowserRallarRtcController implements RallarRtcController {
             laneId,
             {
                 ...options,
-                connect: options.connect ?? true,
-            },
+                connect: options.connect ?? true
+            }
         );
 
         return this.toRoomTransportStatus(room, {
             ...options,
-            laneId,
+            laneId
         }, readiness);
     }
 
     private toRoomTransportStatus(
         room: string | GroupRef,
         options: RallarRtcRoomTransportOptions = {},
-        readiness?: RallarRtcRoomLaneWaitResult,
+        readiness?: RallarRtcRoomLaneWaitResult
     ): RallarRoomTransportStatus {
         const laneId = options.laneId ?? DEFAULT_RTC_DATA_CHANNEL_LANE_ID;
         const mode = options.mode ?? 'lazy';
@@ -692,21 +680,15 @@ class BrowserRallarRtcController implements RallarRtcController {
         const desiredPeerIds = this.resolveRoomPeerIds(roomRef ?? room);
         const desiredPeerIdSet = new Set(desiredPeerIds);
         const rtcStatus = this.toRtcStatus({ laneId });
-        const knownPeerIds = rtcStatus.knownPeerIds.filter((peerId) =>
-            desiredPeerIdSet.has(peerId)
-        );
-        const activePeerIds = rtcStatus.activePeerIds.filter((peerId) =>
-            desiredPeerIdSet.has(peerId)
-        );
-        const readyPeerIds = rtcStatus.readyPeerIds.filter((peerId) =>
-            desiredPeerIdSet.has(peerId)
-        );
+        const knownPeerIds = rtcStatus.knownPeerIds.filter((peerId) => desiredPeerIdSet.has(peerId));
+        const activePeerIds = rtcStatus.activePeerIds.filter((peerId) => desiredPeerIdSet.has(peerId));
+        const readyPeerIds = rtcStatus.readyPeerIds.filter((peerId) => desiredPeerIdSet.has(peerId));
         const failedPeerIds = rtcStatus.peerIdsWithNoReconnectableLanes.filter(
-            (peerId) => desiredPeerIdSet.has(peerId),
+            (peerId) => desiredPeerIdSet.has(peerId)
         );
         const minReadyPeers = Math.max(
             0,
-            options.minReadyPeers ?? desiredPeerIds.length,
+            options.minReadyPeers ?? desiredPeerIds.length
         );
         const state = toRoomTransportState({
             mode,
@@ -716,7 +698,7 @@ class BrowserRallarRtcController implements RallarRtcController {
             readyPeerCount: readyPeerIds.length,
             failedPeerCount: failedPeerIds.length,
             minReadyPeers,
-            waitStatus: readiness?.status,
+            waitStatus: readiness?.status
         });
 
         return {
@@ -734,8 +716,8 @@ class BrowserRallarRtcController implements RallarRtcController {
                 failedPeerIds,
                 laneId,
                 lastChangedAtEpochMs: Date.now(),
-                reason: toRoomTransportReason(state, readiness),
-            },
+                reason: toRoomTransportReason(state, readiness)
+            }
         };
     }
 
@@ -743,7 +725,7 @@ class BrowserRallarRtcController implements RallarRtcController {
         ctx: ApiMiddleware,
         peerId: string,
         laneId: string,
-        options: RallarRtcWaitForOpenOptions,
+        options: RallarRtcWaitForOpenOptions
     ): Promise<RallarRtcWaitForOpenResult> {
         try {
             const result = await ctx.middleware.webRtcConnectionService
@@ -752,31 +734,32 @@ class BrowserRallarRtcController implements RallarRtcController {
                     laneId,
                     {
                         timeoutMs: normalizeWaitTimeoutMs(
-                            this.resolveRtcWaitTimeoutMs(options.timeoutMs),
+                            this.resolveRtcWaitTimeoutMs(options.timeoutMs)
                         ),
-                        signal: options.signal,
-                    },
+                        signal: options.signal
+                    }
                 );
 
             return this.toRtcWaitForOpenResultFromPeerLaneOpen(result);
-        } catch (error) {
+        }
+        catch (error) {
             return this.toRtcWaitForOpenResult(
                 'failed',
                 peerId,
                 laneId,
-                toErrorMessage(error),
+                toErrorMessage(error)
             );
         }
     }
 
     private toRtcWaitForOpenResultFromPeerLaneOpen(
-        result: WebRtcPeerLaneOpenResult,
+        result: WebRtcPeerLaneOpenResult
     ): RallarRtcWaitForOpenResult {
         return this.toRtcWaitForOpenResult(
             toRallarWaitForOpenStatus(result.status),
             result.peerId,
             result.laneId,
-            toPeerLaneOpenReason(result),
+            toPeerLaneOpenReason(result)
         );
     }
 
@@ -786,13 +769,13 @@ class BrowserRallarRtcController implements RallarRtcController {
         ready: readonly RallarRtcWaitForOpenResult[],
         notReady: readonly RallarRtcWaitForOpenResult[],
         expectation: RallarNormalizedReadinessExpectation,
-        preferUnsatisfiedTerminalStatus: boolean,
+        preferUnsatisfiedTerminalStatus: boolean
     ): RallarRtcRoomLaneWaitResult {
         const readyPeerIds = uniquePeerIds(ready.map((result) => result.peerId));
         const notReadyPeerIds = uniquePeerIds(notReady.map((result) => result.peerId));
         const evaluation = evaluateRallarReadinessExpectation(
             readyPeerIds,
-            expectation,
+            expectation
         );
         const waitStatus = toRtcRoomLaneWaitStatus(ready, notReady);
         return {
@@ -804,7 +787,7 @@ class BrowserRallarRtcController implements RallarRtcController {
                 waitStatus,
                 readyPeerIds,
                 notReady,
-                preferUnsatisfiedTerminalStatus,
+                preferUnsatisfiedTerminalStatus
             ),
             rtcStatus: this.toRtcStatus({ laneId }),
             ready,
@@ -814,7 +797,7 @@ class BrowserRallarRtcController implements RallarRtcController {
             missingPeerIds: evaluation.missingSessionIds,
             extraPeerIds: evaluation.extraSessionIds,
             observedCount: evaluation.observedCount,
-            expectedCount: evaluation.expectedCount,
+            expectedCount: evaluation.expectedCount
         };
     }
 
@@ -822,15 +805,11 @@ class BrowserRallarRtcController implements RallarRtcController {
         status: RallarWaitForOpenStatus,
         peerId: string,
         laneId: string,
-        reason?: string,
+        reason?: string
     ): RallarRtcWaitForOpenResult {
         const rtcStatus = this.toRtcStatus({ laneId });
-        const peer = rtcStatus.peers.find((candidate) =>
-            candidate.peerId === peerId
-        );
-        const lane = peer?.lanes.find((candidate) =>
-            candidate.laneId === laneId
-        );
+        const peer = rtcStatus.peers.find((candidate) => candidate.peerId === peerId);
+        const lane = peer?.lanes.find((candidate) => candidate.laneId === laneId);
         return {
             transport: 'rtc',
             status,
@@ -839,12 +818,12 @@ class BrowserRallarRtcController implements RallarRtcController {
             rtcStatus,
             peer,
             lane,
-            reason,
+            reason
         };
     }
 
     private registerRtcStatusCallbacks(
-        ctx: ApiMiddleware | undefined = this.readMiddleware(),
+        ctx: ApiMiddleware | undefined = this.readMiddleware()
     ): void {
         if (!ctx || !this.hasRtcStatusSubscriptions()) {
             return;
@@ -857,21 +836,21 @@ class BrowserRallarRtcController implements RallarRtcController {
                 onCreated: (peer) => {
                     this.registerRtcStatusCallbacksForPeer(peer);
                     this.emitRtcLifecycle('peer-created', {
-                        peerId: peer.peerId,
+                        peerId: peer.peerId
                     });
                 },
                 onDeleted: (peer) => {
                     this.unregisterRtcStatusCallbacksForPeer(peer);
                     this.emitRtcLifecycleSoon('peer-deleted', {
-                        peerId: peer.peerId,
+                        peerId: peer.peerId
                     });
                 },
                 onConnectTimeout: (peer) => {
                     this.emitRtcLifecycle('peer-timeout', {
-                        peerId: peer.peerId,
+                        peerId: peer.peerId
                     });
-                },
-            },
+                }
+            }
         );
 
         for (const peerId of service.knownPeerIds()) {
@@ -886,14 +865,14 @@ class BrowserRallarRtcController implements RallarRtcController {
         for (const [laneId, channel] of peer.channels.entries()) {
             channel.onRtcCallbacksDo(
                 RALLAR_RTC_STATUS_CALLBACK_ID,
-                this.toRtcLaneLifecycleCallbacks(peer.peerId, laneId),
+                this.toRtcLaneLifecycleCallbacks(peer.peerId, laneId)
             );
         }
     }
 
     private toRtcLaneLifecycleCallbacks(
         peerId: string,
-        laneId: string,
+        laneId: string
     ): QRtcClientCallbacks {
         return {
             onOpen: async () => {
@@ -904,7 +883,7 @@ class BrowserRallarRtcController implements RallarRtcController {
             },
             onError: async () => {
                 this.emitRtcLifecycle('lane-error', { peerId, laneId });
-            },
+            }
         };
     }
 
@@ -917,7 +896,7 @@ class BrowserRallarRtcController implements RallarRtcController {
     }
 
     private unregisterRtcStatusCallbacks(
-        ctx: ApiMiddleware | undefined = this.readMiddleware(),
+        ctx: ApiMiddleware | undefined = this.readMiddleware()
     ): void {
         if (!ctx) {
             return;
@@ -949,7 +928,7 @@ class BrowserRallarRtcController implements RallarRtcController {
         input: Readonly<{
             peerId?: string;
             laneId?: string;
-        }> = {},
+        }> = {}
     ): void {
         queueMicrotask(() => this.emitRtcLifecycle(kind, input));
     }
@@ -959,7 +938,7 @@ class BrowserRallarRtcController implements RallarRtcController {
         input: Readonly<{
             peerId?: string;
             laneId?: string;
-        }> = {},
+        }> = {}
     ): void {
         this.emitRtcStatus();
         for (const subscription of this.rtcLifecycleListeners) {
@@ -971,7 +950,7 @@ class BrowserRallarRtcController implements RallarRtcController {
         for (const subscription of this.rtcStatusListeners) {
             notifyListener(
                 subscription.listener,
-                this.toRtcStatus(subscription.options),
+                this.toRtcStatus(subscription.options)
             );
         }
     }
@@ -982,7 +961,7 @@ class BrowserRallarRtcController implements RallarRtcController {
         input: Readonly<{
             peerId?: string;
             laneId?: string;
-        }> = {},
+        }> = {}
     ): void {
         const status = this.toRtcStatus(subscription.options);
         const peer = input.peerId
@@ -999,7 +978,7 @@ class BrowserRallarRtcController implements RallarRtcController {
             peerId: input.peerId,
             laneId: input.laneId,
             peer,
-            lane,
+            lane
         });
     }
 
@@ -1012,13 +991,13 @@ class BrowserRallarRtcController implements RallarRtcController {
     }
 
     private resolveRoomRef(
-        room: string | GroupRef | undefined,
+        room: string | GroupRef | undefined
     ): GroupRef | undefined {
         return this.options.resolveRoomRef(room);
     }
 
     private toRoomId(
-        room: string | GroupRef | undefined,
+        room: string | GroupRef | undefined
     ): string | undefined {
         return this.options.toRoomId(room);
     }
@@ -1031,13 +1010,13 @@ class BrowserRallarRtcController implements RallarRtcController {
         return this.options.resolveRtcConnectOnWait(connect);
     }
 
-    private get ws(): Readonly<{ status(): RallarWsStatus }> {
+    private get ws(): Readonly<{ status(): RallarWsStatus; }> {
         return { status: this.options.readWsStatus };
     }
 }
 
 function toRtcConnectionStatus(
-    peer: QRtcPeerDto | undefined,
+    peer: QRtcPeerDto | undefined
 ): RallarRtcPeerConnectionStatus {
     const status = peer?.connection.status;
     const pc = status?.pc;
@@ -1060,26 +1039,26 @@ function toRtcConnectionStatus(
         ignoreOffer: status?.ignoreOffer ?? false,
         iceCandidateQueueSize: status?.iceCandidateQueue.length ?? 0,
         localStreamId: status?.localStream?.id,
-        remoteStreamIds: Array.from(status?.remoteStreams.keys() ?? []),
+        remoteStreamIds: Array.from(status?.remoteStreams.keys() ?? [])
     };
 }
 
 function toRtcLaneStatus(
     peerId: string,
     laneId: string,
-    channel: RtcDataChannelHealth | undefined,
+    channel: RtcDataChannelHealth | undefined
 ): RallarRtcLaneStatus {
     return {
         peerId,
         laneId,
         channel,
         isOpen: channel?.readyState === 'open' || channel?.state === 'Open',
-        isReconnectable: isReconnectableRtcLane(channel),
+        isReconnectable: isReconnectableRtcLane(channel)
     };
 }
 
 function isReconnectableRtcLane(
-    channel: RtcDataChannelHealth | undefined,
+    channel: RtcDataChannelHealth | undefined
 ): boolean {
     return channel?.state === 'Idle' ||
         channel?.state === 'Closed' ||
@@ -1087,7 +1066,7 @@ function isReconnectableRtcLane(
 }
 
 function isClosedRtcLaneHealth(
-    channel: RtcDataChannelHealth | undefined,
+    channel: RtcDataChannelHealth | undefined
 ): boolean {
     return channel?.readyState === 'closing' ||
         channel?.readyState === 'closed' ||
@@ -1097,7 +1076,7 @@ function isClosedRtcLaneHealth(
 
 function waitForRtcChannelOpenOrAbort(
     waitUntilOpen: Promise<boolean>,
-    signal?: AbortSignal,
+    signal?: AbortSignal
 ): Promise<boolean | 'aborted'> {
     if (!signal) {
         return waitUntilOpen;
@@ -1130,7 +1109,7 @@ function toErrorMessage(error: unknown): string {
 }
 
 function toRallarWaitForOpenStatus(
-    status: WebRtcPeerLaneOpenResult['status'],
+    status: WebRtcPeerLaneOpenResult['status']
 ): RallarWaitForOpenStatus {
     switch (status) {
         case 'open':
@@ -1150,7 +1129,7 @@ function toRallarWaitForOpenStatus(
 
 function toRtcRoomLaneWaitStatus(
     ready: readonly RallarRtcWaitForOpenResult[],
-    notReady: readonly RallarRtcWaitForOpenResult[],
+    notReady: readonly RallarRtcWaitForOpenResult[]
 ): RallarRtcRoomLaneWaitStatus {
     if (ready.length === 0 && notReady.length === 0) {
         return 'empty';
@@ -1188,7 +1167,7 @@ function toExpectationAwareRtcRoomLaneWaitStatus(
     waitStatus: RallarRtcRoomLaneWaitStatus,
     readyPeerIds: readonly string[],
     notReady: readonly RallarRtcWaitForOpenResult[],
-    preferUnsatisfiedTerminalStatus: boolean,
+    preferUnsatisfiedTerminalStatus: boolean
 ): RallarRtcRoomLaneWaitStatus {
     if (evaluation.status === 'over-capacity') {
         return 'over-capacity';
@@ -1202,8 +1181,8 @@ function toExpectationAwareRtcRoomLaneWaitStatus(
         return waitStatus === 'open'
             ? 'open'
             : readyPeerIds.length > 0
-                ? 'partial'
-                : 'empty';
+            ? 'partial'
+            : 'empty';
     }
 
     if (!preferUnsatisfiedTerminalStatus) {
@@ -1236,7 +1215,7 @@ function toRoomTransportState(
         failedPeerCount: number;
         minReadyPeers: number;
         waitStatus?: RallarRtcRoomLaneWaitStatus;
-    }>,
+    }>
 ): RallarRoomTransportState {
     if (input.mode === 'off') {
         return 'off';
@@ -1278,7 +1257,7 @@ function toRoomTransportState(
 
 function toRoomTransportReason(
     state: RallarRoomTransportState,
-    readiness?: RallarRtcRoomLaneWaitResult,
+    readiness?: RallarRtcRoomLaneWaitResult
 ): string | undefined {
     if (readiness?.status === 'empty') {
         return 'Room has no RTC peer targets.';
@@ -1309,13 +1288,13 @@ function toRoomTransportReason(
 }
 
 function toPeerLaneOpenReason(
-    result: WebRtcPeerLaneOpenResult,
+    result: WebRtcPeerLaneOpenResult
 ): string | undefined {
     if (result.status === 'open' || !result.error) {
         return undefined;
     }
 
-    const cause = (result.error as Error & { cause?: unknown }).cause;
+    const cause = (result.error as Error & { cause?: unknown; }).cause;
     return cause !== undefined
         ? toErrorMessage(cause)
         : result.error.message;

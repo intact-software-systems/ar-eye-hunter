@@ -1,10 +1,12 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import styles from './primitives.module.css';
 
-export type SelectableRowProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> & Readonly<{
-    selected: boolean;
-    children: ReactNode;
-}>;
+export type SelectableRowProps =
+    & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'>
+    & Readonly<{
+        selected: boolean;
+        children: ReactNode;
+    }>;
 
 export function SelectableRow({ selected, children, type = 'button', ...props }: SelectableRowProps) {
     return (

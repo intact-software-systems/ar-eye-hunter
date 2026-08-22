@@ -103,27 +103,27 @@ docker compose exec -T postgres psql -U app -d appdb < tmp/perf/scripts/seed-per
 
 ## Results Summary
 
-| Area | Measurement | Result | Status |
-| --- | ---: | --- | --- |
-| Legacy events, in-process parse/list | 100k rows | 38.8 ms median, 40.3 ms max | Confirmed |
-| Paged events, in-process parse/list | 100k-row source, 100 parsed rows | 0.056 ms median | Confirmed fix direction |
-| Legacy event SQL | 100k rows | 31.7 ms execution time | Confirmed |
-| Exact event page SQL | 101 rows | 0.082 ms execution time | Confirmed fix direction |
-| Runtime state broad prefix SQL | 100k rows | 41.3 ms execution time | Confirmed |
-| App-data broad prefix SQL | 50k rows | 9.36 ms execution time | Confirmed, lower severity |
-| Observable cache expiry | 100k expired entries | 100k retained entries, 0 live values | Confirmed |
-| Observable cache cleanup | 100k expired entries | 75.6 ms median | Confirmed |
-| Cache churn | 10k to 100k cumulative keys | post-GC heap grew 14.5 MB to 91.2 MB | Confirmed leak-like retention |
-| Direct WS stringify | 500 recipients, 256 KB payload | 36.3 ms median | Confirmed |
-| Broadcast encode once | 500 recipients, 256 KB payload | 0.089 ms median | Confirmed contrast |
-| Rate limiter read | 100 reads at 5k cached keys | 15.6 ms median | Confirmed small but real |
-| State-sync recipient resolution | 10 to 500 clients | 0.095 ms to 0.313 ms median | Inconclusive for production scale |
-| Queue dense runnable SQL | 100 returned rows | 0.157 ms execution time | Dense case refuted |
-| Queue sparse runnable SQL | 100 returned rows | scanned 200,328 rows, 19.9 ms | Worst-case confirmed |
-| CRDT quota byte sum | 100k updates | 12.2 ms execution time | Confirmed, workload-dependent |
-| CRDT catch-up page | 500 rows after sequence 90k | 0.14 ms execution time | Refuted for tested page shape |
-| Memory traffic black-box | seeded traffic recipe | 10/10 success, 165 ms | Smoke passed |
-| Memory parallel black-box | parallel groups recipe | 19/19 success, 59 ms | Smoke passed |
+| Area                                 |                      Measurement | Result                               | Status                            |
+| ------------------------------------ | -------------------------------: | ------------------------------------ | --------------------------------- |
+| Legacy events, in-process parse/list |                        100k rows | 38.8 ms median, 40.3 ms max          | Confirmed                         |
+| Paged events, in-process parse/list  | 100k-row source, 100 parsed rows | 0.056 ms median                      | Confirmed fix direction           |
+| Legacy event SQL                     |                        100k rows | 31.7 ms execution time               | Confirmed                         |
+| Exact event page SQL                 |                         101 rows | 0.082 ms execution time              | Confirmed fix direction           |
+| Runtime state broad prefix SQL       |                        100k rows | 41.3 ms execution time               | Confirmed                         |
+| App-data broad prefix SQL            |                         50k rows | 9.36 ms execution time               | Confirmed, lower severity         |
+| Observable cache expiry              |             100k expired entries | 100k retained entries, 0 live values | Confirmed                         |
+| Observable cache cleanup             |             100k expired entries | 75.6 ms median                       | Confirmed                         |
+| Cache churn                          |      10k to 100k cumulative keys | post-GC heap grew 14.5 MB to 91.2 MB | Confirmed leak-like retention     |
+| Direct WS stringify                  |   500 recipients, 256 KB payload | 36.3 ms median                       | Confirmed                         |
+| Broadcast encode once                |   500 recipients, 256 KB payload | 0.089 ms median                      | Confirmed contrast                |
+| Rate limiter read                    |      100 reads at 5k cached keys | 15.6 ms median                       | Confirmed small but real          |
+| State-sync recipient resolution      |                10 to 500 clients | 0.095 ms to 0.313 ms median          | Inconclusive for production scale |
+| Queue dense runnable SQL             |                100 returned rows | 0.157 ms execution time              | Dense case refuted                |
+| Queue sparse runnable SQL            |                100 returned rows | scanned 200,328 rows, 19.9 ms        | Worst-case confirmed              |
+| CRDT quota byte sum                  |                     100k updates | 12.2 ms execution time               | Confirmed, workload-dependent     |
+| CRDT catch-up page                   |      500 rows after sequence 90k | 0.14 ms execution time               | Refuted for tested page shape     |
+| Memory traffic black-box             |            seeded traffic recipe | 10/10 success, 165 ms                | Smoke passed                      |
+| Memory parallel black-box            |           parallel groups recipe | 19/19 success, 59 ms                 | Smoke passed                      |
 
 ## CPU Profile Interpretation
 
@@ -157,10 +157,10 @@ workload, heap rose into the tens of MB before forced GC returned it.
 The strongest memory result is the cache churn artifact:
 
 | Cumulative expired keys | Retained entries | Live values | Post-GC heap |
-| ---: | ---: | ---: | ---: |
-| 10k | 10k | 0 | 14.5 MB |
-| 50k | 50k | 0 | 48.6 MB |
-| 100k | 100k | 0 | 91.2 MB |
+| ----------------------: | ---------------: | ----------: | -----------: |
+|                     10k |              10k |           0 |      14.5 MB |
+|                     50k |              50k |           0 |      48.6 MB |
+|                    100k |             100k |           0 |      91.2 MB |
 
 After explicit `deleteExpired()`, retained entry count dropped to zero. RSS did
 not immediately return to baseline, which is expected allocator behavior and not
@@ -174,18 +174,18 @@ Memory conclusion:
 
 ## Hypotheses
 
-| Hypothesis | Evidence | Status | Notes |
-| --- | --- | --- | --- |
-| Legacy `/events` loads and parses full history before slicing. | 100k-row in-process path: 38.8 ms median; SQL full list: 31.7 ms. Exact page SQL: 0.082 ms. | Confirmed | Strongest and cleanest result. |
-| Runtime/app-data prefix scans materialize broad row sets. | Runtime 100k rows: 41.3 ms. App-data 50k rows: 9.36 ms. | Confirmed | App-data lower in this fixture, but still unbounded. |
-| Snapshot/latest caches retain expired entries. | 100k expired entries retained with 0 live values; churn heap grows with historical keys. | Confirmed | Requires missing/insufficient eviction to become production issue. |
-| Direct multi-recipient sends repeatedly serialize large payloads. | 500 recipients, 256 KB direct: 36.3 ms median. Broadcast encode-once: 0.089 ms. | Confirmed | Fake sockets isolate serialization cost from network cost. |
-| Rate limiter cleanup scans all cached keys per read. | 100 reads at 5k cached keys: 15.6 ms median; CPU profile highlights `deleteExpired`. | Confirmed | Impact depends on distinct client cardinality. |
-| Queue runnable selection is index-unfriendly. | Dense runnable rows are fast; sparse runnable distribution scans 200,328 rows for 100 results. | Partially confirmed | Risk is distribution-dependent. |
-| CRDT quota byte sum scales with hot document update count. | 100k updates byte sum: 12.2 ms. | Confirmed | Could matter on hot append paths with quota enabled. |
-| CRDT catch-up pages are slow. | 500-row catch-up after sequence 90k: 0.14 ms. | Refuted for tested shape | Full export/integrity paths still need separate validation. |
-| State-sync recipient scans dominate at moderate scale. | 500-client synthetic resolution: 0.313 ms median. | Inconclusive | Did not test real topic traffic, topology RTT, or 10k+ snapshots. |
-| Full `/clients` and `/groups` REST fanout is a measured bottleneck. | Related primitives measured, but exact route query-count fixture was not built. | Inconclusive | Still plausible from static audit. |
+| Hypothesis                                                          | Evidence                                                                                       | Status                   | Notes                                                              |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------ |
+| Legacy `/events` loads and parses full history before slicing.      | 100k-row in-process path: 38.8 ms median; SQL full list: 31.7 ms. Exact page SQL: 0.082 ms.    | Confirmed                | Strongest and cleanest result.                                     |
+| Runtime/app-data prefix scans materialize broad row sets.           | Runtime 100k rows: 41.3 ms. App-data 50k rows: 9.36 ms.                                        | Confirmed                | App-data lower in this fixture, but still unbounded.               |
+| Snapshot/latest caches retain expired entries.                      | 100k expired entries retained with 0 live values; churn heap grows with historical keys.       | Confirmed                | Requires missing/insufficient eviction to become production issue. |
+| Direct multi-recipient sends repeatedly serialize large payloads.   | 500 recipients, 256 KB direct: 36.3 ms median. Broadcast encode-once: 0.089 ms.                | Confirmed                | Fake sockets isolate serialization cost from network cost.         |
+| Rate limiter cleanup scans all cached keys per read.                | 100 reads at 5k cached keys: 15.6 ms median; CPU profile highlights `deleteExpired`.           | Confirmed                | Impact depends on distinct client cardinality.                     |
+| Queue runnable selection is index-unfriendly.                       | Dense runnable rows are fast; sparse runnable distribution scans 200,328 rows for 100 results. | Partially confirmed      | Risk is distribution-dependent.                                    |
+| CRDT quota byte sum scales with hot document update count.          | 100k updates byte sum: 12.2 ms.                                                                | Confirmed                | Could matter on hot append paths with quota enabled.               |
+| CRDT catch-up pages are slow.                                       | 500-row catch-up after sequence 90k: 0.14 ms.                                                  | Refuted for tested shape | Full export/integrity paths still need separate validation.        |
+| State-sync recipient scans dominate at moderate scale.              | 500-client synthetic resolution: 0.313 ms median.                                              | Inconclusive             | Did not test real topic traffic, topology RTT, or 10k+ snapshots.  |
+| Full `/clients` and `/groups` REST fanout is a measured bottleneck. | Related primitives measured, but exact route query-count fixture was not built.                | Inconclusive             | Still plausible from static audit.                                 |
 
 ## Ranked Bottlenecks
 
@@ -234,15 +234,15 @@ Memory conclusion:
 
 ## Recommended Fixes
 
-| Rank | Fix | Expected impact | Confidence | Risk | Validation |
-| ---: | --- | --- | --- | --- | --- |
-| 1 | Route legacy `/events` through SQL-limited paging or equivalent DESC-limit query. | High | High | Low-medium | Re-run focused events harness and route-level tests. |
-| 2 | Add scheduled or bounded eviction for state snapshot/latest caches. | High | High | Medium | Re-run cache churn and long-lived black-box memory tests. |
-| 3 | Add an encoded/pre-serialized send path for repeated direct WS sends. | High for fanout | High | Low-medium | Re-run serialization benchmark and WS send tests. |
-| 4 | Add pagination/projection for runtime/app-data broad list paths. | Medium-high | Medium-high | Medium | Re-run prefix EXPLAIN and endpoint benchmarks. |
-| 5 | Revisit queue runnable query/index strategy for sparse runnable rows. | Medium-high | Medium | Medium | Re-run dense and sparse queue EXPLAINs. |
-| 6 | Store rolling CRDT document byte totals for quota checks. | Medium | Medium | Medium | Re-run CRDT quota append benchmark. |
-| 7 | Move rate-limiter expiry cleanup off the per-read path or bucket it. | Low-medium | Medium-high | Low | Re-run rate-limiter benchmark. |
+| Rank | Fix                                                                               | Expected impact | Confidence  | Risk       | Validation                                                |
+| ---: | --------------------------------------------------------------------------------- | --------------- | ----------- | ---------- | --------------------------------------------------------- |
+|    1 | Route legacy `/events` through SQL-limited paging or equivalent DESC-limit query. | High            | High        | Low-medium | Re-run focused events harness and route-level tests.      |
+|    2 | Add scheduled or bounded eviction for state snapshot/latest caches.               | High            | High        | Medium     | Re-run cache churn and long-lived black-box memory tests. |
+|    3 | Add an encoded/pre-serialized send path for repeated direct WS sends.             | High for fanout | High        | Low-medium | Re-run serialization benchmark and WS send tests.         |
+|    4 | Add pagination/projection for runtime/app-data broad list paths.                  | Medium-high     | Medium-high | Medium     | Re-run prefix EXPLAIN and endpoint benchmarks.            |
+|    5 | Revisit queue runnable query/index strategy for sparse runnable rows.             | Medium-high     | Medium      | Medium     | Re-run dense and sparse queue EXPLAINs.                   |
+|    6 | Store rolling CRDT document byte totals for quota checks.                         | Medium          | Medium      | Medium     | Re-run CRDT quota append benchmark.                       |
+|    7 | Move rate-limiter expiry cleanup off the per-read path or bucket it.              | Low-medium      | Medium-high | Low        | Re-run rate-limiter benchmark.                            |
 
 ## Measurement Limits
 
@@ -262,4 +262,3 @@ Attempt one small optimization first: replace the legacy `/events` route
 implementation with the existing paged repository path, preserving API response
 shape where possible. This has the best evidence, clear before/after
 measurement, and the lowest risk among the confirmed bottlenecks.
-

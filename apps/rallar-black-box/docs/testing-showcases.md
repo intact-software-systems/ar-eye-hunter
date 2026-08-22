@@ -467,21 +467,21 @@ Test helpers can convert the same parity recipe to runner interactions:
 ```ts
 import { executeBlackBox } from './packages/shared-test/black-box-runner/execute-black-box.ts';
 import {
-  createRallarBlackBoxProviderParityRecipe,
-  toRallarBlackBoxRunnerParityInteractions,
+    createRallarBlackBoxProviderParityRecipe,
+    toRallarBlackBoxRunnerParityInteractions
 } from './packages/shared-test/rallar-bb-test/mod.ts';
 
 const recipe = createRallarBlackBoxProviderParityRecipe({ providerMode: 'browser-rallar' });
 const { interactions } = toRallarBlackBoxRunnerParityInteractions(recipe, {
-  provider: 'rallar-remote-browser',
+    provider: 'rallar-remote-browser'
 });
 
 const report = await executeBlackBox(interactions, 0, {
-  rallarRemoteBrowser: {
-    controlBaseUrl: 'http://localhost:5180',
-    runId: 'parity-run',
-    agentId: 'agent-alice',
-  },
+    rallarRemoteBrowser: {
+        controlBaseUrl: 'http://localhost:5180',
+        runId: 'parity-run',
+        agentId: 'agent-alice'
+    }
 });
 ```
 

@@ -1,10 +1,10 @@
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
     BlackBoxRallarConnectionConfig,
     BlackBoxRallarRoomRef,
     BlackBoxRallarSendInput,
-    ResolvedBlackBoxRallarScope,
+    ResolvedBlackBoxRallarScope
 } from './contracts.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
 
 export type BlackBoxRallarSessionIdentity = Readonly<{
     clientId: string;
@@ -38,8 +38,9 @@ type AuthenticationConfig = Readonly<{
 type ConnectionConfig = Readonly<{
     roomId?: string;
     roomRef?: BlackBoxRallarConnectionTarget['roomRef'];
-    rallar: AuthenticationConfig &
-        Readonly<{
+    rallar:
+        & AuthenticationConfig
+        & Readonly<{
             applicationId?: string;
             workspaceId?: string;
             scope?: Readonly<{
@@ -55,16 +56,16 @@ const DEFAULT_WORKSPACE_ID = 'default';
 function normalizedRoomRef(roomRef: BlackBoxRallarRoomRef | undefined): GroupRef | undefined {
     return roomRef
         ? {
-              applicationId: roomRef.applicationId,
-              workspaceId: roomRef.workspaceId ?? DEFAULT_WORKSPACE_ID,
-              groupId: roomRef.groupId,
-          }
+            applicationId: roomRef.applicationId,
+            workspaceId: roomRef.workspaceId ?? DEFAULT_WORKSPACE_ID,
+            groupId: roomRef.groupId
+        }
         : undefined;
 }
 
 export function blackBoxRallarRoomRefOf(
     config: ConnectionConfig,
-    input?: BlackBoxRallarSendInput,
+    input?: BlackBoxRallarSendInput
 ): GroupRef | undefined {
     const explicit = input?.roomRef ?? config.rallar.roomRef ?? config.roomRef;
     if (explicit?.applicationId && explicit.groupId) {
@@ -76,8 +77,7 @@ export function blackBoxRallarRoomRefOf(
         return undefined;
     }
 
-    const applicationId =
-        input?.applicationId ??
+    const applicationId = input?.applicationId ??
         input?.scope?.applicationId ??
         config.rallar.applicationId ??
         config.rallar.scope?.applicationId;
@@ -85,8 +85,7 @@ export function blackBoxRallarRoomRefOf(
         return undefined;
     }
 
-    const workspaceId =
-        input?.workspaceId ??
+    const workspaceId = input?.workspaceId ??
         input?.scope?.workspaceId ??
         config.rallar.workspaceId ??
         config.rallar.scope?.workspaceId;
@@ -94,48 +93,48 @@ export function blackBoxRallarRoomRefOf(
     return {
         applicationId: String(applicationId),
         workspaceId: String(workspaceId ?? DEFAULT_WORKSPACE_ID),
-        groupId: String(roomId),
+        groupId: String(roomId)
     };
 }
 
 function normalizedMessageSelector(
-    selector: BlackBoxRallarConnectionConfig['rallar']['messageSelector'],
+    selector: BlackBoxRallarConnectionConfig['rallar']['messageSelector']
 ): unknown {
     return typeof selector === 'string'
         ? selector
         : selector
-          ? {
-                topicId: selector.topicId,
-                typeId: selector.typeId,
-            }
-          : undefined;
+        ? {
+            topicId: selector.topicId,
+            typeId: selector.typeId
+        }
+        : undefined;
 }
 
 function normalizedDataChannelLanes(
-    lanes: BlackBoxRallarConnectionConfig['rallar']['dataChannelLanes'],
+    lanes: BlackBoxRallarConnectionConfig['rallar']['dataChannelLanes']
 ): unknown {
-    return lanes?.map(lane => ({
+    return lanes?.map((lane) => ({
         id: lane.id,
         label: lane.label,
         binaryType: lane.binaryType,
         init: lane.init
             ? {
-                  id: lane.init.id,
-                  maxPacketLifeTime: lane.init.maxPacketLifeTime,
-                  maxRetransmits: lane.init.maxRetransmits,
-                  negotiated: lane.init.negotiated,
-                  ordered: lane.init.ordered,
-                  protocol: lane.init.protocol,
-              }
+                id: lane.init.id,
+                maxPacketLifeTime: lane.init.maxPacketLifeTime,
+                maxRetransmits: lane.init.maxRetransmits,
+                negotiated: lane.init.negotiated,
+                ordered: lane.init.ordered,
+                protocol: lane.init.protocol
+            }
             : undefined,
         flowControl: lane.flowControl
             ? {
-                  highWatermarkBytes: lane.flowControl.highWatermarkBytes,
-                  lowWatermarkBytes: lane.flowControl.lowWatermarkBytes,
-                  overflow: lane.flowControl.overflow,
-                  maxQueueItems: lane.flowControl.maxQueueItems,
-              }
-            : undefined,
+                highWatermarkBytes: lane.flowControl.highWatermarkBytes,
+                lowWatermarkBytes: lane.flowControl.lowWatermarkBytes,
+                overflow: lane.flowControl.overflow,
+                maxQueueItems: lane.flowControl.maxQueueItems
+            }
+            : undefined
     }));
 }
 
@@ -150,9 +149,9 @@ export type BlackBoxRallarLifecycleRequest = Readonly<{
 }>;
 
 export type BlackBoxRallarLifecycleDecision =
-    | Readonly<{ kind: 'allow' }>
-    | Readonly<{ kind: 'reuse' }>
-    | Readonly<{ kind: 'reject'; reason: string }>;
+    | Readonly<{ kind: 'allow'; }>
+    | Readonly<{ kind: 'reuse'; }>
+    | Readonly<{ kind: 'reject'; reason: string; }>;
 
 export function normalizeBlackBoxRallarApiBaseUrl(value: string): string {
     return value.trim().replace(/\/+$/, '');
@@ -160,17 +159,17 @@ export function normalizeBlackBoxRallarApiBaseUrl(value: string): string {
 
 export function blackBoxRallarAuthenticationIdentityOf(
     config: AuthenticationConfig,
-    restoredSession?: Pick<BlackBoxRallarSessionIdentity, 'username'>,
+    restoredSession?: Pick<BlackBoxRallarSessionIdentity, 'username'>
 ): BlackBoxRallarAuthenticationIdentity {
     return {
         apiBaseUrl: normalizeBlackBoxRallarApiBaseUrl(config.apiBaseUrl),
-        username: config.username ?? restoredSession?.username ?? '',
+        username: config.username ?? restoredSession?.username ?? ''
     };
 }
 
 export function blackBoxRallarConnectionTargetOf(
     config: ConnectionConfig,
-    restoredSession?: Pick<BlackBoxRallarSessionIdentity, 'username'>,
+    restoredSession?: Pick<BlackBoxRallarSessionIdentity, 'username'>
 ): BlackBoxRallarConnectionTarget {
     const identity = blackBoxRallarAuthenticationIdentityOf(config.rallar, restoredSession);
     const roomRef = blackBoxRallarRoomRefOf(config);
@@ -183,12 +182,12 @@ export function blackBoxRallarConnectionTargetOf(
         ...(applicationId ? { applicationId } : {}),
         ...(workspaceId ? { workspaceId } : {}),
         ...(config.roomId ? { roomId: config.roomId } : {}),
-        ...(roomRef ? { roomRef } : {}),
+        ...(roomRef ? { roomRef } : {})
     };
 }
 
 export function blackBoxRallarConnectionOperationKeyOf(
-    config: BlackBoxRallarConnectionConfig,
+    config: BlackBoxRallarConnectionConfig
 ): string {
     const rallar = config.rallar;
     return JSON.stringify({
@@ -204,9 +203,9 @@ export function blackBoxRallarConnectionOperationKeyOf(
             workspaceId: rallar.workspaceId,
             scope: rallar.scope
                 ? {
-                      applicationId: rallar.scope.applicationId,
-                      workspaceId: rallar.scope.workspaceId,
-                  }
+                    applicationId: rallar.scope.applicationId,
+                    workspaceId: rallar.scope.workspaceId
+                }
                 : undefined,
             roomRef: normalizedRoomRef(rallar.roomRef),
             username: rallar.username,
@@ -238,34 +237,34 @@ export function blackBoxRallarConnectionOperationKeyOf(
             dataChannelLanes: normalizedDataChannelLanes(rallar.dataChannelLanes),
             expectedSessionId: rallar.expectedSessionId,
             leaveRoomOnClose: rallar.leaveRoomOnClose,
-            logoutOnClose: rallar.logoutOnClose,
-        },
+            logoutOnClose: rallar.logoutOnClose
+        }
     });
 }
 
 export function mergeBlackBoxRallarAuthenticationConfig(
     active: BlackBoxRallarConnectionConfig,
-    next: BlackBoxRallarConnectionConfig,
+    next: BlackBoxRallarConnectionConfig
 ): BlackBoxRallarConnectionConfig {
     return {
         ...next,
         rallar: {
             ...next.rallar,
-            logoutOnClose: active.rallar.logoutOnClose === true || next.rallar.logoutOnClose === true,
-        },
+            logoutOnClose: active.rallar.logoutOnClose === true || next.rallar.logoutOnClose === true
+        }
     };
 }
 
 export function isSameBlackBoxRallarSession(
     left: BlackBoxRallarSessionIdentity,
-    right: BlackBoxRallarSessionIdentity,
+    right: BlackBoxRallarSessionIdentity
 ): boolean {
     return left.clientId === right.clientId && left.sessionId === right.sessionId && left.username === right.username;
 }
 
 function isSameConnectionTarget(
     left: BlackBoxRallarConnectionTarget | undefined,
-    right: BlackBoxRallarConnectionTarget,
+    right: BlackBoxRallarConnectionTarget
 ): boolean {
     if (!left) {
         return false;
@@ -275,12 +274,12 @@ function isSameConnectionTarget(
 
 export function decideBlackBoxRallarLifecycleRequest(
     state: BlackBoxRallarLifecyclePolicyState,
-    request: BlackBoxRallarLifecycleRequest,
+    request: BlackBoxRallarLifecycleRequest
 ): BlackBoxRallarLifecycleDecision {
     if (state.status === 'closing' || state.status === 'faulted') {
         return {
             kind: 'reject',
-            reason: 'Rallar lifecycle cleanup must complete before starting a new operation.',
+            reason: 'Rallar lifecycle cleanup must complete before starting a new operation.'
         };
     }
     if (
@@ -292,7 +291,7 @@ export function decideBlackBoxRallarLifecycleRequest(
     if (state.status === 'connected' && !isSameConnectionTarget(state.activeTarget, request.target)) {
         return {
             kind: 'reject',
-            reason: 'Connected Rallar identity, scope, or room changes require close first.',
+            reason: 'Connected Rallar identity, scope, or room changes require close first.'
         };
     }
     return { kind: 'allow' };
@@ -307,23 +306,22 @@ export type BlackBoxRallarScopeDiagnostics = Readonly<{
 
 export function blackBoxRallarScopeOf(
     config: ConnectionConfig,
-    input?: BlackBoxRallarSendInput,
+    input?: BlackBoxRallarSendInput
 ): ResolvedBlackBoxRallarScope | undefined {
     const scope = input?.scope ?? config.rallar.scope;
     const roomRef = blackBoxRallarRoomRefOf(config, input);
     const applicationId = String(
         input?.applicationId ??
-        scope?.applicationId ??
-        roomRef?.applicationId ??
-        config.rallar.applicationId ??
-        '',
+            scope?.applicationId ??
+            roomRef?.applicationId ??
+            config.rallar.applicationId ??
+            ''
     ).trim();
     if (!applicationId) {
         return undefined;
     }
 
-    const workspaceId =
-        input?.workspaceId ??
+    const workspaceId = input?.workspaceId ??
         scope?.workspaceId ??
         roomRef?.workspaceId ??
         config.rallar.workspaceId ??
@@ -331,13 +329,13 @@ export function blackBoxRallarScopeOf(
 
     return {
         applicationId,
-        workspaceId: String(workspaceId),
+        workspaceId: String(workspaceId)
     };
 }
 
 export function blackBoxRallarScopeDiagnosticsOf(
     config: ConnectionConfig,
-    input?: BlackBoxRallarSendInput,
+    input?: BlackBoxRallarSendInput
 ): BlackBoxRallarScopeDiagnostics {
     const scope = blackBoxRallarScopeOf(config, input);
     const roomRef = blackBoxRallarRoomRefOf(config, input);
@@ -346,6 +344,6 @@ export function blackBoxRallarScopeDiagnosticsOf(
         ...(scope?.applicationId ? { applicationId: scope.applicationId } : {}),
         ...(scope?.workspaceId !== undefined ? { workspaceId: scope.workspaceId } : {}),
         ...(scope ? { scope } : {}),
-        ...(roomRef ? { roomRef } : {}),
+        ...(roomRef ? { roomRef } : {})
     };
 }

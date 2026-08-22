@@ -55,7 +55,7 @@ for (let i = 0; i < activeSessionIds.length; i++) {
         graph.addEdge(from, to, {
             from,
             to,
-            weight: readRttWeight(rttBySessionId, from, to) ?? fallbackWeight(i, j),
+            weight: readRttWeight(rttBySessionId, from, to) ?? fallbackWeight(i, j)
         });
     }
 }
@@ -132,19 +132,19 @@ it('builds a complete predicted graph among Vivaldi-known nodes after sparse obs
         sessionIdTo: 'peer-b',
         rttMs: 10,
         createdAtEpochMs: 1,
-        version: 1,
+        version: 1
     });
     observeRtt({
         sessionIdFrom: 'peer-b',
         sessionIdTo: 'peer-c',
         rttMs: 20,
         createdAtEpochMs: 2,
-        version: 2,
+        version: 2
     });
 
     const graph = toPredictedGraphFromIds(
         ['peer-a', 'peer-b', 'peer-c'],
-        DEFAULT_GRAPH_PROP,
+        DEFAULT_GRAPH_PROP
     );
 
     expect(graph.order).toBe(3);
@@ -169,8 +169,8 @@ it('documents complete weighted room graph materialization with partial RTT inpu
             sessionIdTo: 'peer-2',
             rttMs: 5,
             createdAtEpochMs: 1,
-            version: 1,
-        },
+            version: 1
+        }
     ]);
 
     expect(graph.order).toBe(8);
@@ -209,12 +209,12 @@ Expected: PASS. These tests document current behavior before the degree-limit wo
 Create `packages/tests/shared/rtc-rtt-reporting-policy.test.ts`:
 
 ```ts
-import { describe, expect, it } from 'vitest';
 import {
     DEFAULT_RTT_REPORTING_DEGREE_LIMIT,
     normalizeRttReportingDegreeLimit,
-    selectRttReportingPeers,
+    selectRttReportingPeers
 } from '@shared/rtc/rtt-reporting-policy.ts';
+import { describe, expect, it } from 'vitest';
 
 describe('RTT reporting policy', () => {
     it('defaults to the topology degree limit fallback', () => {
@@ -231,7 +231,7 @@ describe('RTT reporting policy', () => {
             degreeLimit: 3,
             overlayNextHopSessionIds: ['peer-c', 'peer-a', 'self'],
             activePeerSessionIds: ['peer-a', 'peer-b', 'peer-c', 'peer-d'],
-            groupKey: 'app:workspace:room',
+            groupKey: 'app:workspace:room'
         });
 
         expect(result.selectedPeerIds).toEqual(['peer-a', 'peer-c', 'peer-d']);
@@ -243,7 +243,7 @@ describe('RTT reporting policy', () => {
             localSessionId: 'self',
             degreeLimit: 2,
             activePeerSessionIds: ['peer-d', 'peer-a', 'peer-c', 'self', 'peer-b'],
-            groupKey: 'app:workspace:room',
+            groupKey: 'app:workspace:room'
         };
 
         expect(selectRttReportingPeers(input).selectedPeerIds)
@@ -277,7 +277,7 @@ export type RttReportingPeerSelection = Readonly<{
 
 export function normalizeRttReportingDegreeLimit(
     value: number | undefined,
-    fallback = DEFAULT_RTT_REPORTING_DEGREE_LIMIT,
+    fallback = DEFAULT_RTT_REPORTING_DEGREE_LIMIT
 ): number {
     const candidate = value ?? fallback;
     return Number.isInteger(candidate) && candidate > 0
@@ -286,17 +286,19 @@ export function normalizeRttReportingDegreeLimit(
 }
 
 export function selectRttReportingPeers(
-    input: RttReportingPeerSelectionInput,
+    input: RttReportingPeerSelectionInput
 ): RttReportingPeerSelection {
     const degreeLimit = normalizeRttReportingDegreeLimit(
         input.degreeLimit,
-        input.fallbackDegreeLimit,
+        input.fallbackDegreeLimit
     );
     const selected: string[] = [];
     const seen = new Set<string>([input.localSessionId]);
 
     const add = (peerId: string): void => {
-        if (selected.length >= degreeLimit || seen.has(peerId)) return;
+        if (selected.length >= degreeLimit || seen.has(peerId)) {
+            return;
+        }
         seen.add(peerId);
         selected.push(peerId);
     };
@@ -326,7 +328,7 @@ function stableUnique(values: readonly string[]): string[] {
 function rendezvousScore(
     localSessionId: string,
     peerSessionId: string,
-    groupKey = '',
+    groupKey = ''
 ): string {
     return `${hashString(`${groupKey}:${localSessionId}:${peerSessionId}`)}`.padStart(10, '0');
 }
@@ -398,7 +400,7 @@ it('selects at most the configured RTT reporting peers from bootstrap room peers
         groupCache,
         clientCache,
         undefined,
-        { maxPeerConnections: 10 },
+        { maxPeerConnections: 10 }
     );
     for (const peerId of ['peer-a', 'peer-b', 'peer-c', 'peer-d']) {
         clientCache.set(peerId, createClientInfo(peerId, true));
@@ -408,8 +410,8 @@ it('selects at most the configured RTT reporting peers from bootstrap room peers
         createGroupSnapshot(
             'group-1',
             1,
-            ['self', 'peer-a', 'peer-b', 'peer-c', 'peer-d'],
-        ),
+            ['self', 'peer-a', 'peer-b', 'peer-c', 'peer-d']
+        )
     );
 
     const selected = manager.rttReportingPeerIds({ degreeLimit: 2 });
@@ -428,13 +430,13 @@ it('prefers overlay next hops for RTT reporting selection', async () => {
         groupCache,
         clientCache,
         overlayCache,
-        { maxPeerConnections: 10 },
+        { maxPeerConnections: 10 }
     );
     const group = createGroupSnapshot('group-1', 1, [
         'self',
         'peer-a',
         'peer-b',
-        'peer-c',
+        'peer-c'
     ]);
     for (const peerId of ['peer-a', 'peer-b', 'peer-c']) {
         clientCache.set(peerId, createClientInfo(peerId, true));
@@ -461,13 +463,13 @@ it('uses overlay degree limit as RTT reporting fallback', async () => {
         rtcQBox.service as never,
         groupCache,
         clientCache,
-        overlayCache,
+        overlayCache
     );
     const group = createGroupSnapshot('group-1', 1, [
         'self',
         'peer-a',
         'peer-b',
-        'peer-c',
+        'peer-c'
     ]);
     for (const peerId of ['peer-a', 'peer-b', 'peer-c']) {
         clientCache.set(peerId, createClientInfo(peerId, true));
@@ -477,8 +479,8 @@ it('uses overlay degree limit as RTT reporting fallback', async () => {
         toScopedOverlayId(group.group),
         {
             ...createOverlayInfo(group, ['peer-a', 'peer-b', 'peer-c']),
-            degreeLimit: 2,
-        },
+            degreeLimit: 2
+        }
     );
     await manager.acceptGroupUpdate(group);
 
@@ -495,7 +497,7 @@ it('does not start RTT heartbeats for peers outside the reporting set', async ()
     const service = new WebRtcRxStreamerService(
         new InMemoryQueueBox(new Map()),
         createFakeMulticastManager() as never,
-        { sessionId: 'self' },
+        { sessionId: 'self' }
     );
     service.setRttReportingPeerIds(['peer-1']);
 
@@ -510,7 +512,7 @@ it('does not start RTT heartbeats for peers outside the reporting set', async ()
         .get('self-peer-2-rtc-datachannel-lifecycle')?.onOpen?.();
 
     expect(mockState.heartbeats).toHaveLength(1);
-    expect((mockState.heartbeats[0].input as { peerSessionId: string }).peerSessionId)
+    expect((mockState.heartbeats[0].input as { peerSessionId: string; }).peerSessionId)
         .toBe('peer-1');
 });
 
@@ -518,7 +520,7 @@ it('stops RTT heartbeats when a peer leaves the reporting set', async () => {
     const service = new WebRtcRxStreamerService(
         new InMemoryQueueBox(new Map()),
         createFakeMulticastManager() as never,
-        { sessionId: 'self' },
+        { sessionId: 'self' }
     );
     service.setRttReportingPeerIds(['peer-1']);
 
@@ -540,7 +542,7 @@ it('starts RTT heartbeat for an already-open peer when it enters the reporting s
     const service = new WebRtcRxStreamerService(
         new InMemoryQueueBox(new Map()),
         createFakeMulticastManager() as never,
-        { sessionId: 'self' },
+        { sessionId: 'self' }
     );
     service.setRttReportingPeerIds([]);
 
@@ -567,19 +569,19 @@ context.setDefaults({
     rtc: {
         dataChannelLanes: lanes,
         maxPeerConnections: 12,
-        rttReportingDegreeLimit: 3,
-    },
+        rttReportingDegreeLimit: 3
+    }
 });
 
 expect(context.defaults()?.rtc).toEqual({
     dataChannelLanes: lanes,
     maxPeerConnections: 12,
-    rttReportingDegreeLimit: 3,
+    rttReportingDegreeLimit: 3
 });
 expect(context.resolveOperationOptions({})).toMatchObject({
     dataChannelLanes: lanes,
     maxPeerConnections: 12,
-    rttReportingDegreeLimit: 3,
+    rttReportingDegreeLimit: 3
 });
 ```
 
@@ -588,10 +590,10 @@ Extend `packages/tests/shared-web/rallar-operation-options.test.ts` so normaliza
 ```ts
 expect(
     toRallarOperationOptions({
-        rttReportingDegreeLimit: 3,
-    }),
+        rttReportingDegreeLimit: 3
+    })
 ).toEqual({
-    rttReportingDegreeLimit: 3,
+    rttReportingDegreeLimit: 3
 });
 ```
 
@@ -619,7 +621,7 @@ Copy it in `packages/shared/api/overlay-topology.ts`:
 ```ts
 export function toOverlayInfoForSession(
     snapshot: RallarOverlayTopologySnapshot,
-    sessionId: string,
+    sessionId: string
 ): OverlayInfo {
     return {
         overlayId: snapshot.overlayId,
@@ -631,7 +633,7 @@ export function toOverlayInfoForSession(
         nextHopSessionIds: snapshot.nextHopsBySessionId[sessionId] ?? [],
         degreeLimit: snapshot.degreeLimit,
         overlayVersion: snapshot.version,
-        updatedAtEpochMs: snapshot.updatedAtEpochMs,
+        updatedAtEpochMs: snapshot.updatedAtEpochMs
     };
 }
 ```
@@ -797,8 +799,8 @@ After `WebRtcGroupManager` is created in `packages/shared-web/browser/middleware
 const refreshRttReportingPeers = () => {
     rtcRxStreamer.setRttReportingPeerIds(
         webRtcGroupManager.rttReportingPeerIds({
-            degreeLimit: options.rttReportingDegreeLimit,
-        }),
+            degreeLimit: options.rttReportingDegreeLimit
+        })
     );
 };
 ```
@@ -838,13 +840,13 @@ Extend `apps/api-v1/test/rtc-topology-config.test.ts`:
 
 ```ts
 Deno.test('API RTC topology options read RTT reporting degree from environment', () => {
-  const env = fakeEnv({
-    RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT: '3',
-  });
+    const env = fakeEnv({
+        RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT: '3'
+    });
 
-  assert.deepEqual(getApiRtcTopologyServiceOptions(env), {
-    rttReportingDegreeLimit: 3,
-  });
+    assert.deepEqual(getApiRtcTopologyServiceOptions(env), {
+        rttReportingDegreeLimit: 3
+    });
 });
 ```
 
@@ -866,7 +868,7 @@ it('rejects RTT measurements from a mismatched AL sender', async () => {
         new InMemoryQueueBox(new Map()),
         new InMemoryQueueBox(new Map()),
         server,
-        'server-1',
+        'server-1'
     );
     initRallarSystemWsTopics(service);
 
@@ -882,9 +884,9 @@ it('rejects RTT measurements from a mismatched AL sender', async () => {
                 sessionIdTo: 'session-a',
                 rttMs: 12,
                 createdAtEpochMs: 1,
-                version: 1,
-            },
-        ),
+                version: 1
+            }
+        )
     );
 
     expect(latestRttById().read('session-a::session-b')).toBeUndefined();
@@ -967,7 +969,7 @@ export function evaluateRtcRttMeasurement(input: {
     readonly overlaySnapshotsByGroupKey: ReadonlyMap<string, RallarOverlayTopologySnapshot>;
     readonly existingMeasurements: readonly RttMeasurementInfo[];
     readonly degreeLimit: number;
-}): RtcRttAcceptanceResult
+}): RtcRttAcceptanceResult;
 ```
 
 Behavior:
@@ -990,7 +992,7 @@ In `initRttTopic(...)`, replace direct storage with:
 ```ts
 const candidateGroups = findGroupsAffectedByRtt(rtt);
 const candidateSessionIds = uniqueStrings(
-    candidateGroups.flatMap((group) => readGroupMemberSessionIds(group)),
+    candidateGroups.flatMap((group) => readGroupMemberSessionIds(group))
 );
 const existingMeasurements = runtimeState
     ? await runtimeState.rtts.listMeasurementsForSessionIds(candidateSessionIds)
@@ -998,7 +1000,7 @@ const existingMeasurements = runtimeState
 const overlaySnapshotsByGroupKey = await readOverlaySnapshotsForGroups(
     candidateGroups,
     rtcTopologyService,
-    runtimeState,
+    runtimeState
 );
 const acceptance = evaluateRtcRttMeasurement({
     rtt,
@@ -1006,7 +1008,7 @@ const acceptance = evaluateRtcRttMeasurement({
     candidateGroups,
     overlaySnapshotsByGroupKey,
     existingMeasurements,
-    degreeLimit: rtcTopologyService.readRttReportingDegreeLimit(),
+    degreeLimit: rtcTopologyService.readRttReportingDegreeLimit()
 });
 if (!acceptance.accepted) {
     console.warn(`Rejected RTC RTT measurement: ${acceptance.reason}`);
@@ -1022,7 +1024,7 @@ Use this helper shape for overlay snapshot lookup:
 async function readOverlaySnapshotsForGroups(
     groups: readonly GroupSnapshot[],
     rtcTopologyService: RallarRtcTopologyService,
-    runtimeState?: RtcTopologyRuntimeState,
+    runtimeState?: RtcTopologyRuntimeState
 ): Promise<ReadonlyMap<string, RallarOverlayTopologySnapshot>> {
     const snapshots = new Map<string, RallarOverlayTopologySnapshot>();
     for (const group of groups) {
@@ -1130,13 +1132,11 @@ it('builds a sparse weighted candidate graph when RTT reporting is degree bounde
     const service = new RallarRtcTopologyService({
         now: () => 100,
         degreeLimit: 5,
-        rttReportingDegreeLimit: 5,
+        rttReportingDegreeLimit: 5
     });
 
     const measurements = createCentralRttMeasurements(memberSessionIds, 'peer-1')
-        .filter((rtt) =>
-            rtt.sessionIdFrom === 'peer-1' || rtt.sessionIdTo === 'peer-1'
-        )
+        .filter((rtt) => rtt.sessionIdFrom === 'peer-1' || rtt.sessionIdTo === 'peer-1')
         .slice(0, 5);
 
     const graph = service.createRoomGraph(group, measurements);
@@ -1157,12 +1157,10 @@ it('keeps RTT-weighted candidate graph edge count linear in room size', () => {
     const service = new RallarRtcTopologyService({
         now: () => 100,
         degreeLimit: 5,
-        rttReportingDegreeLimit: 5,
+        rttReportingDegreeLimit: 5
     });
     const measurements = createCentralRttMeasurements(memberSessionIds, 'peer-1')
-        .filter((rtt) =>
-            rtt.sessionIdFrom === 'peer-1' || rtt.sessionIdTo === 'peer-1'
-        )
+        .filter((rtt) => rtt.sessionIdFrom === 'peer-1' || rtt.sessionIdTo === 'peer-1')
         .slice(0, 5);
 
     const graph = service.createRoomGraph(group, measurements);
@@ -1236,11 +1234,11 @@ it('can build a degree-capped predicted graph for Vivaldi-known nodes', () => {
         Array.from({ length: 10 }, (_value, index) => {
             const id = `peer-${index + 1}`;
             return [id, { id, coords: [index, 0], err: 0.1, rttMs: 0 }];
-        }),
+        })
     );
 
     const graph = createDegreeCappedPredictedGraph(nodeDataById, DEFAULT_GRAPH_PROP, {
-        degreeLimit: 3,
+        degreeLimit: 3
     });
 
     expect(graph.order).toBe(10);
@@ -1258,8 +1256,8 @@ Add:
 export function createDegreeCappedPredictedGraph(
     nodeDataById: ReadonlyMap<string, VivaldiNodeData>,
     graphProp: GraphProp,
-    options: Readonly<{ degreeLimit: number }> & Partial<VivaldiConfig>,
-): UndirectedGraph<VertexProp, EdgeProp, GraphProp>
+    options: Readonly<{ degreeLimit: number; }> & Partial<VivaldiConfig>
+): UndirectedGraph<VertexProp, EdgeProp, GraphProp>;
 ```
 
 Initial implementation should scan all pairs to choose low predicted RTT candidates, because the immediate goal is output size and API separation. Add a performance note in code comments that true large-N CPU improvement needs spatial indexing or candidate sampling.
@@ -1272,7 +1270,9 @@ In `ws-system-topics.ts`, replace unconditional `computeGlobalGraphAndCacheItIfP
 let globalGraphRttRecomputeTimer: ReturnType<typeof setTimeout> | undefined;
 
 function scheduleGlobalGraphRttRecompute(delayMs: number): void {
-    if (globalGraphRttRecomputeTimer) return;
+    if (globalGraphRttRecomputeTimer) {
+        return;
+    }
     globalGraphRttRecomputeTimer = setTimeout(() => {
         globalGraphRttRecomputeTimer = undefined;
         computeGlobalGraphAndCacheItIfPossible();
@@ -1284,7 +1284,7 @@ Call it from accepted RTT handling:
 
 ```ts
 scheduleGlobalGraphRttRecompute(
-    rtcTopologyService.readRttRebuildDebounceMs(),
+    rtcTopologyService.readRttRebuildDebounceMs()
 );
 ```
 
@@ -1293,9 +1293,10 @@ For tests with `rttRebuildDebounceMs: 0`, run the compute immediately:
 ```ts
 if (rtcTopologyService.readRttRebuildDebounceMs() === 0) {
     computeGlobalGraphAndCacheItIfPossible();
-} else {
+}
+else {
     scheduleGlobalGraphRttRecompute(
-        rtcTopologyService.readRttRebuildDebounceMs(),
+        rtcTopologyService.readRttRebuildDebounceMs()
     );
 }
 ```

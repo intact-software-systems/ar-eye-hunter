@@ -1,20 +1,15 @@
 import { expect, request, test } from '@playwright/test';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import {
-    createServer,
-    type IncomingMessage,
-    type Server,
-    type ServerResponse,
-} from 'node:http';
-import {
-    RELIC_PROTOCOL_VERSION,
     applyRelicCommand,
     createRelicGame,
     isRelicCommand,
+    RELIC_PROTOCOL_VERSION,
     toPublicRelicSnapshot,
     type RelicActionInput,
     type RelicCharacterId,
     type RelicCommand,
-    type RelicGameState,
+    type RelicGameState
 } from '../../../packages/relic-hunters/mod.ts';
 
 let server: Server;
@@ -42,7 +37,8 @@ test.beforeAll(async () => {
     server = createServer(async (req, res) => {
         try {
             await handleRelicRequest(req, res, games);
-        } catch (error) {
+        }
+        catch (error) {
             res.writeHead(500, { 'content-type': 'application/json' });
             res.end(JSON.stringify({ error: String(error) }));
         }
@@ -72,11 +68,11 @@ test('serves and mutates relic game state through HTTP API calls', async () => {
     await expect(initial.json()).resolves.toMatchObject({
         gameId: 'room-1',
         phase: 'lobby',
-        players: [],
+        players: []
     });
 
     const joined = await api.post('/api/relic/games/room-1/commands', {
-        data: joinCommand('room-1'),
+        data: joinCommand('room-1')
     });
     expect(joined.ok()).toBe(true);
     await expect(joined.json()).resolves.toMatchObject({
@@ -85,16 +81,16 @@ test('serves and mutates relic game state through HTTP API calls', async () => {
             {
                 playerId: 'alice-session',
                 username: 'Alice',
-                characterId: 'kael-ironstride',
-            },
-        ],
+                characterId: 'kael-ironstride'
+            }
+        ]
     });
 
     const reset = await api.post('/api/relic/games/room-1/reset');
     expect(reset.ok()).toBe(true);
     await expect(reset.json()).resolves.toMatchObject({
         gameId: 'room-1',
-        players: [],
+        players: []
     });
 
     await api.dispose();
@@ -105,30 +101,30 @@ test('uses the URL game id instead of trusting command body room ids', async () 
     const alice: TestPlayer = {
         sessionId: 'alice-session',
         username: 'Alice',
-        characterId: 'kael-ironstride',
+        characterId: 'kael-ironstride'
     };
 
     const joined = await api.post('/api/relic/games/url-room/commands', {
         headers: playerHeader(alice),
-        data: joinCommand('body-room', alice),
+        data: joinCommand('body-room', alice)
     });
     expect(joined.ok()).toBe(true);
     await expect(joined.json()).resolves.toMatchObject({
         gameId: 'url-room',
         roomId: 'url-room',
-        players: [{ playerId: 'alice-session' }],
+        players: [{ playerId: 'alice-session' }]
     });
 
     const urlRoom = await api.get('/api/relic/games/url-room');
     await expect(urlRoom.json()).resolves.toMatchObject({
         gameId: 'url-room',
-        players: [{ playerId: 'alice-session' }],
+        players: [{ playerId: 'alice-session' }]
     });
 
     const bodyRoom = await api.get('/api/relic/games/body-room');
     await expect(bodyRoom.json()).resolves.toMatchObject({
         gameId: 'body-room',
-        players: [],
+        players: []
     });
 
     await api.dispose();
@@ -141,20 +137,20 @@ test('happy path: four hunters can move through the castle and finish by escapin
         { sessionId: 'alice-session', username: 'Alice', characterId: 'kael-ironstride' },
         { sessionId: 'bob-session', username: 'Bob', characterId: 'nyra-vale' },
         { sessionId: 'cara-session', username: 'Cara', characterId: 'oryn-starcoil' },
-        { sessionId: 'dane-session', username: 'Dane', characterId: 'vessa-thornlock' },
+        { sessionId: 'dane-session', username: 'Dane', characterId: 'vessa-thornlock' }
     ];
 
     for (const player of players) {
         const response = await api.post(`/api/relic/games/${roomId}/commands`, {
             headers: playerHeader(player),
-            data: joinCommand(roomId, player),
+            data: joinCommand(roomId, player)
         });
         expect(response.ok()).toBe(true);
     }
 
     const started = await api.post(`/api/relic/games/${roomId}/commands`, {
         headers: playerHeader(players[0]),
-        data: startCommand(roomId, players[0]),
+        data: startCommand(roomId, players[0])
     });
     expect(started.ok()).toBe(true);
     await expect(started.json()).resolves.toMatchObject({
@@ -162,8 +158,8 @@ test('happy path: four hunters can move through the castle and finish by escapin
         players: players.map((player) => ({
             playerId: player.sessionId,
             username: player.username,
-            roomId: 'entrance',
-        })),
+            roomId: 'entrance'
+        }))
     });
 
     let snapshot = await submitRound(api, roomId, players, { kind: 'move', targetRoomId: 'hallway' });
@@ -172,7 +168,7 @@ test('happy path: four hunters can move through the castle and finish by escapin
         'hallway',
         'hallway',
         'hallway',
-        'hallway',
+        'hallway'
     ]);
 
     snapshot = await submitRound(api, roomId, players, { kind: 'move', targetRoomId: 'trap' });
@@ -199,29 +195,29 @@ test('not so happy path: an absent active hunter blocks round resolution until r
     const alice: TestPlayer = {
         sessionId: 'alice-session',
         username: 'Alice',
-        characterId: 'kael-ironstride',
+        characterId: 'kael-ironstride'
     };
     const bob: TestPlayer = {
         sessionId: 'bob-session',
         username: 'Bob',
-        characterId: 'nyra-vale',
+        characterId: 'nyra-vale'
     };
 
     for (const player of [alice, bob]) {
         const response = await api.post(`/api/relic/games/${roomId}/commands`, {
             headers: playerHeader(player),
-            data: joinCommand(roomId, player),
+            data: joinCommand(roomId, player)
         });
         expect(response.ok()).toBe(true);
     }
     await api.post(`/api/relic/games/${roomId}/commands`, {
         headers: playerHeader(alice),
-        data: startCommand(roomId, alice),
+        data: startCommand(roomId, alice)
     });
 
     const afterAlice = await api.post(`/api/relic/games/${roomId}/commands`, {
         headers: playerHeader(alice),
-        data: submitCommand(roomId, alice, { kind: 'search' }),
+        data: submitCommand(roomId, alice, { kind: 'search' })
     });
     expect(afterAlice.ok()).toBe(true);
     await expect(afterAlice.json()).resolves.toMatchObject({
@@ -230,8 +226,8 @@ test('not so happy path: an absent active hunter blocks round resolution until r
         submittedPlayerIds: ['alice-session'],
         players: [
             { playerId: 'alice-session', escaped: false, defeated: false },
-            { playerId: 'bob-session', escaped: false, defeated: false },
-        ],
+            { playerId: 'bob-session', escaped: false, defeated: false }
+        ]
     });
 
     const reset = await api.post(`/api/relic/games/${roomId}/reset`);
@@ -239,7 +235,7 @@ test('not so happy path: an absent active hunter blocks round resolution until r
     await expect(reset.json()).resolves.toMatchObject({
         phase: 'lobby',
         players: [],
-        submittedPlayerIds: [],
+        submittedPlayerIds: []
     });
 
     await api.dispose();
@@ -253,8 +249,8 @@ test('rejects invalid relic commands', async () => {
             protocolVersion: RELIC_PROTOCOL_VERSION,
             kind: 'dance',
             gameId: 'room-1',
-            username: 'Alice',
-        },
+            username: 'Alice'
+        }
     });
 
     expect(response.status()).toBe(400);
@@ -265,7 +261,7 @@ test('rejects invalid relic commands', async () => {
 async function handleRelicRequest(
     req: IncomingMessage,
     res: ServerResponse,
-    games: Map<string, RelicGameState>,
+    games: Map<string, RelicGameState>
 ): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     const gameMatch = /^\/api\/relic\/games\/([^/]+)(?:\/(commands|reset))?$/.exec(url.pathname);
@@ -294,7 +290,7 @@ async function handleRelicRequest(
         const body = await readJson(req);
         const command = {
             ...(typeof body === 'object' && body !== null ? body : {}),
-            gameId,
+            gameId
         } as RelicCommand;
         if (!isRelicCommand(command)) {
             writeJson(res, { error: 'Invalid relic command' }, 400);
@@ -304,7 +300,7 @@ async function handleRelicRequest(
         const previous = games.get(gameId);
         const result = applyRelicCommand(previous, command, {
             senderId: readSenderId(req),
-            now: () => Date.now(),
+            now: () => Date.now()
         });
         games.set(gameId, result.state);
         writeJson(res, toPublicRelicSnapshot(result.state));
@@ -329,7 +325,7 @@ function readJson(req: IncomingMessage): Promise<unknown> {
 function writeJson(
     res: ServerResponse,
     body: unknown,
-    status = 200,
+    status = 200
 ): void {
     res.writeHead(status, { 'content-type': 'application/json' });
     res.end(JSON.stringify(body));
@@ -344,13 +340,13 @@ async function submitRound(
     api: Awaited<ReturnType<typeof request.newContext>>,
     roomId: string,
     players: readonly TestPlayer[],
-    action: RelicActionInput,
+    action: RelicActionInput
 ): Promise<RelicApiSnapshot> {
     let snapshot: unknown;
     for (const player of players) {
         const response = await api.post(`/api/relic/games/${roomId}/commands`, {
             headers: playerHeader(player),
-            data: submitCommand(roomId, player, action),
+            data: submitCommand(roomId, player, action)
         });
         expect(response.ok()).toBe(true);
         snapshot = await response.json();
@@ -359,7 +355,7 @@ async function submitRound(
     if ((snapshot as RelicApiSnapshot | undefined)?.phase === 'review') {
         const response = await api.post(`/api/relic/games/${roomId}/commands`, {
             headers: playerHeader(players[0]),
-            data: continueReviewCommand(roomId, players[0]),
+            data: continueReviewCommand(roomId, players[0])
         });
         expect(response.ok()).toBe(true);
         snapshot = await response.json();
@@ -370,7 +366,7 @@ async function submitRound(
 
 function playerHeader(player: TestPlayer): Record<string, string> {
     return {
-        'x-player-id': player.sessionId,
+        'x-player-id': player.sessionId
     };
 }
 
@@ -379,15 +375,15 @@ function joinCommand(
     player: TestPlayer = {
         sessionId: 'alice-session',
         username: 'Alice',
-        characterId: 'kael-ironstride',
-    },
+        characterId: 'kael-ironstride'
+    }
 ): RelicCommand {
     return {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'join-expedition',
         gameId,
         username: player.username,
-        characterId: player.characterId,
+        characterId: player.characterId
     };
 }
 
@@ -396,21 +392,21 @@ function startCommand(gameId: string, player: TestPlayer): RelicCommand {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'start-expedition',
         gameId,
-        username: player.username,
+        username: player.username
     };
 }
 
 function submitCommand(
     gameId: string,
     player: TestPlayer,
-    action: RelicActionInput,
+    action: RelicActionInput
 ): RelicCommand {
     return {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'submit-action',
         gameId,
         username: player.username,
-        action,
+        action
     };
 }
 
@@ -419,6 +415,6 @@ function continueReviewCommand(gameId: string, player: TestPlayer): RelicCommand
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'continue-review',
         gameId,
-        username: player.username,
+        username: player.username
     };
 }

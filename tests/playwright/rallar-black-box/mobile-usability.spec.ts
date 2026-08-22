@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 async function expectNoDocumentHorizontalOverflow(page: Page): Promise<void> {
     const dimensions = await page.evaluate(() => ({
         clientWidth: document.documentElement.clientWidth,
-        scrollWidth: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth),
+        scrollWidth: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth)
     }));
 
     expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth + 1);
@@ -13,7 +13,7 @@ test.describe('iPhone Max layout', () => {
     test.use({
         viewport: { width: 430, height: 932 },
         isMobile: true,
-        hasTouch: true,
+        hasTouch: true
     });
 
     test('keeps direct Rallar command-center tabs usable without page-wide overflow', async ({ page }) => {
@@ -40,7 +40,7 @@ test.describe('iPhone Max layout', () => {
 
         const quickTestTabHeight = await page
             .getByRole('tab', { name: 'Quick Test' })
-            .evaluate(element => element.getBoundingClientRect().height);
+            .evaluate((element) => element.getBoundingClientRect().height);
         expect(quickTestTabHeight).toBeGreaterThanOrEqual(44);
 
         await expect(page.getByLabel('Global Room')).toBeHidden();
@@ -48,7 +48,7 @@ test.describe('iPhone Max layout', () => {
         await expect(page.getByLabel('Global Room')).toBeVisible();
         const globalRoomFontSize = await page
             .getByLabel('Global Room')
-            .evaluate(element => Number.parseFloat(window.getComputedStyle(element).fontSize));
+            .evaluate((element) => Number.parseFloat(window.getComputedStyle(element).fontSize));
         expect(globalRoomFontSize).toBeGreaterThanOrEqual(16);
         await page.getByRole('button', { name: 'Hide values' }).click();
         await expect(page.getByLabel('Global Room')).toBeHidden();
@@ -57,28 +57,28 @@ test.describe('iPhone Max layout', () => {
             {
                 tab: 'Groups/Clients',
                 panel: '#panel-rooms-clients',
-                text: 'Groups/Clients',
+                text: 'Groups/Clients'
             },
             {
                 tab: 'WebSocket',
                 panel: '#panel-websocket',
-                text: 'WS subscribed',
+                text: 'WS subscribed'
             },
             {
                 tab: 'RTC/Realtimes',
                 panel: '#panel-rtc-realtime',
-                text: 'RTC message sub',
+                text: 'RTC message sub'
             },
             {
                 tab: 'RTC Diagnostics',
                 panel: '#panel-rtc-diagnostics',
-                text: 'Time Series',
+                text: 'Time Series'
             },
             {
                 tab: 'Rallar Server',
                 panel: '#panel-rallar-server',
-                text: 'Rallar Server',
-            },
+                text: 'Rallar Server'
+            }
         ] as const;
 
         for (const check of tabChecks) {

@@ -1,11 +1,4 @@
-import type {
-    ActorId,
-    ApplicationId,
-    GroupRef,
-    PrincipalId,
-    SessionId,
-    WorkspaceId,
-} from '../api/group-types.ts';
+import type { ActorId, ApplicationId, GroupRef, PrincipalId, SessionId, WorkspaceId } from '../api/group-types.ts';
 
 export const RALLAR_CRDT_PROTOCOL_VERSION = 1;
 export const RALLAR_CRDT_OPERATION_VERSION = 1;
@@ -25,7 +18,7 @@ export type RallarCrdtJsonPrimitive = string | number | boolean | null;
 export type RallarCrdtJsonValue =
     | RallarCrdtJsonPrimitive
     | readonly RallarCrdtJsonValue[]
-    | { readonly [key: string]: RallarCrdtJsonValue };
+    | { readonly [key: string]: RallarCrdtJsonValue; };
 
 export type RallarCrdtDocumentScope = 'app' | 'principal' | 'room' | 'custom';
 
@@ -200,23 +193,22 @@ export type RallarCrdtCausalFrontier = Readonly<{
     replicaClocks?: Readonly<Record<string, number>>;
 }>;
 
-export type RallarCrdtUpdateEnvelope<TPayload = RallarCrdtOperationBatch> =
-    Readonly<{
-        protocolVersion: 1;
-        document: RallarCrdtDocumentRef;
-        updateId: string;
-        replicaId: string;
-        actorId?: ActorId;
-        sessionId?: SessionId;
-        lamport: number;
-        parents: readonly string[];
-        schemaVersion: number;
-        operationVersion: number;
-        createdAtEpochMs: number;
-        causalFrontier?: RallarCrdtCausalFrontier;
-        payload: TPayload;
-        hash?: string;
-    }>;
+export type RallarCrdtUpdateEnvelope<TPayload = RallarCrdtOperationBatch> = Readonly<{
+    protocolVersion: 1;
+    document: RallarCrdtDocumentRef;
+    updateId: string;
+    replicaId: string;
+    actorId?: ActorId;
+    sessionId?: SessionId;
+    lamport: number;
+    parents: readonly string[];
+    schemaVersion: number;
+    operationVersion: number;
+    createdAtEpochMs: number;
+    causalFrontier?: RallarCrdtCausalFrontier;
+    payload: TPayload;
+    hash?: string;
+}>;
 
 export type RallarCrdtCrdtStateWrite = Readonly<{
     updateId: string;
@@ -226,31 +218,36 @@ export type RallarCrdtCrdtStateWrite = Readonly<{
     parents: readonly string[];
 }>;
 
-export type RallarCrdtRegisterSnapshotWrite = RallarCrdtCrdtStateWrite &
-    Readonly<{
+export type RallarCrdtRegisterSnapshotWrite =
+    & RallarCrdtCrdtStateWrite
+    & Readonly<{
         policy: RallarCrdtRegisterPolicy;
         value: RallarCrdtJsonValue;
     }>;
 
-export type RallarCrdtSetSnapshotAdd = RallarCrdtCrdtStateWrite &
-    Readonly<{
+export type RallarCrdtSetSnapshotAdd =
+    & RallarCrdtCrdtStateWrite
+    & Readonly<{
         elementId: string;
         value: RallarCrdtJsonValue;
     }>;
 
-export type RallarCrdtMapSnapshotSet = RallarCrdtCrdtStateWrite &
-    Readonly<{
+export type RallarCrdtMapSnapshotSet =
+    & RallarCrdtCrdtStateWrite
+    & Readonly<{
         key: string;
         value: RallarCrdtJsonValue;
     }>;
 
-export type RallarCrdtCounterSnapshotAdd = RallarCrdtCrdtStateWrite &
-    Readonly<{
+export type RallarCrdtCounterSnapshotAdd =
+    & RallarCrdtCrdtStateWrite
+    & Readonly<{
         delta: number;
     }>;
 
-export type RallarCrdtNumberSnapshotWrite = RallarCrdtCrdtStateWrite &
-    Readonly<{
+export type RallarCrdtNumberSnapshotWrite =
+    & RallarCrdtCrdtStateWrite
+    & Readonly<{
         merge: RallarCrdtNumberMergePolicy;
         value: number;
     }>;
@@ -324,9 +321,7 @@ export type RallarCrdtSnapshotMetadata = Readonly<{
     unsafeLegacyCollectionCompaction?: boolean;
 }>;
 
-export type RallarCrdtSequenceSnapshotState = Readonly<
-    Record<string, RallarCrdtSequenceSnapshotPathState>
->;
+export type RallarCrdtSequenceSnapshotState = Readonly<Record<string, RallarCrdtSequenceSnapshotPathState>>;
 
 export type RallarCrdtSequenceSnapshotPathState = Readonly<{
     path: RallarCrdtPath;
@@ -370,10 +365,7 @@ export type RallarCrdtSyncRequestEnvelope = Readonly<{
     maxUpdateCount?: number;
 }>;
 
-export type RallarCrdtSyncResponseEnvelope<
-    TValue = unknown,
-    TPayload = RallarCrdtOperationBatch,
-> = Readonly<{
+export type RallarCrdtSyncResponseEnvelope<TValue = unknown, TPayload = RallarCrdtOperationBatch> = Readonly<{
     protocolVersion: 1;
     document: RallarCrdtDocumentRef;
     requestId: string;
@@ -434,17 +426,14 @@ export type RallarCrdtConflict = Readonly<{
     values: readonly RallarCrdtConflictValue[];
 }>;
 
-export type RallarCrdtFailedPendingUpdate<TPayload = RallarCrdtOperationBatch> =
-    Readonly<{
-        update: RallarCrdtUpdateEnvelope<TPayload>;
-        failedAtEpochMs: number;
-        retryable: boolean;
-        reason: string;
-    }>;
+export type RallarCrdtFailedPendingUpdate<TPayload = RallarCrdtOperationBatch> = Readonly<{
+    update: RallarCrdtUpdateEnvelope<TPayload>;
+    failedAtEpochMs: number;
+    retryable: boolean;
+    reason: string;
+}>;
 
-export type RallarCrdtDependencyBlockedUpdate<
-    TPayload = RallarCrdtOperationBatch,
-> = Readonly<{
+export type RallarCrdtDependencyBlockedUpdate<TPayload = RallarCrdtOperationBatch> = Readonly<{
     update: RallarCrdtUpdateEnvelope<TPayload>;
     blockedAtEpochMs: number;
     missingDependencyIds: readonly string[];

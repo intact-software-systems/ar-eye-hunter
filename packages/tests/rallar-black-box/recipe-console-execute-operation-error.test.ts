@@ -10,7 +10,7 @@ describe('Recipe Console Execute operation errors', () => {
             controlStatusText: 'Unauthorized',
             brokerStatus: 403,
             brokerStatusText: 'Forbidden',
-            reachable: true,
+            reachable: true
         });
 
         expect(projectExecuteOperationError(error)).toEqual({
@@ -23,24 +23,26 @@ describe('Recipe Console Execute operation errors', () => {
             controlStatusText: 'Unauthorized',
             brokerStatus: 403,
             brokerStatusText: 'Forbidden',
-            reachable: true,
+            reachable: true
         });
     });
 
     it('distinguishes protocol, HTTP, network, and unknown failures', () => {
-        expect(projectExecuteOperationError(Object.assign(
-            new Error('Malformed control response.'),
-            { name: 'RecipeConsoleControlProtocolError', reachable: true },
-        )).kind).toBe('protocol');
+        expect(
+            projectExecuteOperationError(Object.assign(
+                new Error('Malformed control response.'),
+                { name: 'RecipeConsoleControlProtocolError', reachable: true }
+            )).kind
+        ).toBe('protocol');
         expect(projectExecuteOperationError(Object.assign(
             new Error('Conflict'),
-            { status: 409, statusText: 'Conflict' },
+            { status: 409, statusText: 'Conflict' }
         ))).toMatchObject({ kind: 'http', status: 409, statusText: 'Conflict' });
         expect(projectExecuteOperationError(new TypeError('Failed to fetch')).kind)
             .toBe('network');
         expect(projectExecuteOperationError('opaque failure')).toMatchObject({
             kind: 'unknown',
-            message: 'opaque failure',
+            message: 'opaque failure'
         });
     });
 });

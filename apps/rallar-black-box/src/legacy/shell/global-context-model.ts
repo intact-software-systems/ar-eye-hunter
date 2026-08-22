@@ -1,12 +1,11 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
 import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { DEFAULT_MANUAL_WORKBENCH_VALUES } from '../../manual-workbench.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../runtime-store.ts';
+import type { LegacyDiagnosticContext } from '../diagnostics/context/legacy-diagnostic-context.ts';
 import { recordValue as optionalRecord } from '../shared/record-value.ts';
 import { stringValue } from '../shared/string-value.ts';
-import type { LegacyDiagnosticContext } from
-    '../diagnostics/context/legacy-diagnostic-context.ts';
 
 export type CommandCenterGlobalValues = Readonly<{
     apiBaseUrl: string;
@@ -21,39 +20,34 @@ export function commandCenterGlobalValuesFromState(
     state: RallarBlackBoxTestState,
     bootstrap: RallarBlackBoxBootstrapConfig,
     authSession?: AuthSession,
-    diagnosticContext?: LegacyDiagnosticContext,
+    diagnosticContext?: LegacyDiagnosticContext
 ): CommandCenterGlobalValues {
     const config = selectRallarBlackBoxCurrentConfig(state);
     const configRallar = optionalRecord(config?.rallar);
     return {
         apiBaseUrl: config?.apiBaseUrl ?? bootstrap.apiBaseUrl,
-        applicationId:
-            diagnosticContext?.contextApplicationId ??
+        applicationId: diagnosticContext?.contextApplicationId ??
             stringValue(
-                config?.defaults?.applicationId ?? configRallar.applicationId,
+                config?.defaults?.applicationId ?? configRallar.applicationId
             ) ?? DEFAULT_MANUAL_WORKBENCH_VALUES.applicationId,
-        workspaceId:
-            diagnosticContext?.contextWorkspaceId ??
+        workspaceId: diagnosticContext?.contextWorkspaceId ??
             stringValue(
-                config?.defaults?.workspaceId ?? configRallar.workspaceId,
+                config?.defaults?.workspaceId ?? configRallar.workspaceId
             ) ?? DEFAULT_MANUAL_WORKBENCH_VALUES.workspaceId,
-        clientId:
-            authSession?.clientId ??
+        clientId: authSession?.clientId ??
             authSession?.username ??
             config?.actor ??
             bootstrap.actor,
-        sessionId:
-            authSession?.sessionId ?? config?.sessionId ?? bootstrap.sessionId,
-        roomId:
-            diagnosticContext?.contextGroupId ??
+        sessionId: authSession?.sessionId ?? config?.sessionId ?? bootstrap.sessionId,
+        roomId: diagnosticContext?.contextGroupId ??
             config?.roomId ??
-            bootstrap.roomId,
+            bootstrap.roomId
     };
 }
 
 export function sameCommandCenterGlobalValues(
     left: CommandCenterGlobalValues,
-    right: CommandCenterGlobalValues,
+    right: CommandCenterGlobalValues
 ): boolean {
     return (
         left.apiBaseUrl === right.apiBaseUrl &&
@@ -68,7 +62,7 @@ export function sameCommandCenterGlobalValues(
 export function reconcileDiagnosticGlobalScope(
     current: CommandCenterGlobalValues,
     defaults: CommandCenterGlobalValues,
-    diagnosticContextChanged: boolean,
+    diagnosticContextChanged: boolean
 ): CommandCenterGlobalValues {
     if (!diagnosticContextChanged) {
         return current;
@@ -77,17 +71,17 @@ export function reconcileDiagnosticGlobalScope(
         ...current,
         applicationId: defaults.applicationId,
         workspaceId: defaults.workspaceId,
-        roomId: defaults.roomId,
+        roomId: defaults.roomId
     };
 }
 
 export function bootstrapPatchFromGlobalValues(
-    values: CommandCenterGlobalValues,
+    values: CommandCenterGlobalValues
 ): Partial<RallarBlackBoxBootstrapConfig> {
     return {
         apiBaseUrl: values.apiBaseUrl,
         actor: values.clientId,
         sessionId: values.sessionId,
-        roomId: values.roomId,
+        roomId: values.roomId
     };
 }

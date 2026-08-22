@@ -1,11 +1,5 @@
-import type {
-    RallarBlackBoxTestCommand,
-    RallarBlackBoxTestRecipe,
-} from '@shared-test/rallar-bb-test/types.ts';
-import {
-    DEFAULT_MANUAL_WORKBENCH_VALUES,
-    manualRtcDeliveryMatrixCommands,
-} from './manual-workbench.ts';
+import type { RallarBlackBoxTestCommand, RallarBlackBoxTestRecipe } from '@shared-test/rallar-bb-test/types.ts';
+import { DEFAULT_MANUAL_WORKBENCH_VALUES, manualRtcDeliveryMatrixCommands } from './manual-workbench.ts';
 
 export type FlowBuilderStepKind =
     | 'set'
@@ -47,8 +41,8 @@ export type FlowBuilderTemplate = Readonly<{
 }>;
 
 export type FlowBuilderParseResult =
-    | Readonly<{ ok: true; flow: FlowBuilderDefinition }>
-    | Readonly<{ ok: false; error: string }>;
+    | Readonly<{ ok: true; flow: FlowBuilderDefinition; }>
+    | Readonly<{ ok: false; error: string; }>;
 
 const DEFAULT_FLOW_VARIABLES = {
     providerMode: 'simulated',
@@ -72,8 +66,8 @@ const DEFAULT_FLOW_VARIABLES = {
     timeoutMs: 5000,
     payload: {
         topic: 'flow.message',
-        text: 'hello from flow builder',
-    },
+        text: 'hello from flow builder'
+    }
 } as const;
 
 function createGroupCommand(commandId: string): RallarBlackBoxTestCommand {
@@ -87,7 +81,7 @@ function createGroupCommand(commandId: string): RallarBlackBoxTestCommand {
                 '/requests/{{apiMutationRequestId}}',
             headers: {
                 authorization: 'Bearer {auth.accessToken}',
-                'x-client-id': '{auth.clientId}',
+                'x-client-id': '{auth.clientId}'
             },
             body: {
                 groupId: '{{groupId}}',
@@ -96,13 +90,13 @@ function createGroupCommand(commandId: string): RallarBlackBoxTestCommand {
                 joinMode: 'open',
                 metadata: {
                     source: 'rallar-black-box',
-                    surface: 'flow-builder',
-                },
-            },
+                    surface: 'flow-builder'
+                }
+            }
         },
         response: {
-            body: 'json',
-        },
+            body: 'json'
+        }
     };
 }
 
@@ -134,7 +128,7 @@ function defaultFlow(): FlowBuilderDefinition {
                             mode: 'flow-builder',
                             providerMode: '{{providerMode}}',
                             protocolVersion: 1,
-                            connected: false,
+                            connected: false
                         },
                         defaults: {
                             timeoutMs: '{{timeoutMs}}',
@@ -143,11 +137,11 @@ function defaultFlow(): FlowBuilderDefinition {
                             applicationId: '{{applicationId}}',
                             workspaceId: '{{workspaceId}}',
                             roomRef: {
-                                groupId: '{{groupId}}',
-                            },
-                        },
-                    },
-                }],
+                                groupId: '{{groupId}}'
+                            }
+                        }
+                    }
+                }]
             },
             {
                 stepId: 'login',
@@ -162,21 +156,21 @@ function defaultFlow(): FlowBuilderDefinition {
                         path: '/api/auth/login/requests/{{apiMutationRequestId}}',
                         body: {
                             username: '{{username}}',
-                            password: '{{password}}',
-                        },
+                            password: '{{password}}'
+                        }
                     },
                     response: {
-                        body: 'json',
-                    },
+                        body: 'json'
+                    }
                 }],
                 expect: {
-                    status: 200,
+                    status: 200
                 },
                 extract: {
                     clientId: 'body.clientId',
                     accessToken: 'body.accessToken',
-                    sessionId: 'body.sessionId',
-                },
+                    sessionId: 'body.sessionId'
+                }
             },
             {
                 stepId: 'create-group',
@@ -184,8 +178,8 @@ function defaultFlow(): FlowBuilderDefinition {
                 kind: 'rest.request',
                 commands: [createGroupCommand('flow-create-group')],
                 expect: {
-                    statusCode: [201, 409],
-                },
+                    statusCode: [201, 409]
+                }
             },
             {
                 stepId: 'open-ws',
@@ -197,8 +191,8 @@ function defaultFlow(): FlowBuilderDefinition {
                     label: 'Flow open WebSocket',
                     connection: '{{wsConnection}}',
                     url: '{{wsUrl}}',
-                    timeoutMs: 5000,
-                }],
+                    timeoutMs: 5000
+                }]
             },
             {
                 stepId: 'send-ws',
@@ -214,10 +208,10 @@ function defaultFlow(): FlowBuilderDefinition {
                         topic: '{{topic}}',
                         deliveryMode: 'broadcast',
                         targets: [],
-                        payload: '{{payload}}',
+                        payload: '{{payload}}'
                     },
-                    timeoutMs: 5000,
-                }],
+                    timeoutMs: 5000
+                }]
             },
             {
                 stepId: 'connect-rtc',
@@ -233,20 +227,20 @@ function defaultFlow(): FlowBuilderDefinition {
                     applicationId: '{{applicationId}}',
                     workspaceId: '{{workspaceId}}',
                     roomRef: {
-                        groupId: '{{groupId}}',
+                        groupId: '{{groupId}}'
                     },
                     transport: 'realtime',
                     timeoutMs: 5000,
                     rallar: {
-                        sessionId: '{{sessionId}}',
+                        sessionId: '{{sessionId}}'
                     },
                     metadata: {
                         manual: {
                             deliveryMode: 'direct',
-                            expectedClients: ['{{targetClient}}'],
-                        },
-                    },
-                }],
+                            expectedClients: ['{{targetClient}}']
+                        }
+                    }
+                }]
             },
             {
                 stepId: 'send-rtc',
@@ -261,21 +255,21 @@ function defaultFlow(): FlowBuilderDefinition {
                     applicationId: '{{applicationId}}',
                     workspaceId: '{{workspaceId}}',
                     roomRef: {
-                        groupId: '{{groupId}}',
+                        groupId: '{{groupId}}'
                     },
                     send: {
                         data: '{{payload}}',
                         roomId: '{{groupId}}',
-                        peerIds: ['{{targetClient}}'],
+                        peerIds: ['{{targetClient}}']
                     },
                     timeoutMs: 5000,
                     metadata: {
                         manual: {
                             deliveryMode: 'direct',
-                            targets: ['{{targetClient}}'],
-                        },
-                    },
-                }],
+                            targets: ['{{targetClient}}']
+                        }
+                    }
+                }]
             },
             {
                 stepId: 'wait',
@@ -287,12 +281,12 @@ function defaultFlow(): FlowBuilderDefinition {
                     label: 'Flow wait for evidence',
                     timeoutMs: 5000,
                     metadata: {
-                        localDelayMs: 250,
-                    },
+                        localDelayMs: 250
+                    }
                 }],
                 expect: {
-                    event: 'message',
-                },
+                    event: 'message'
+                }
             },
             {
                 stepId: 'cleanup',
@@ -304,14 +298,14 @@ function defaultFlow(): FlowBuilderDefinition {
                     label: 'Flow close WebSocket',
                     connection: '{{wsConnection}}',
                     code: 1000,
-                    reason: 'flow builder cleanup',
+                    reason: 'flow builder cleanup'
                 }, {
                     kind: 'close',
                     commandId: 'flow-close',
-                    label: 'Flow close runtime',
-                }],
-            },
-        ],
+                    label: 'Flow close runtime'
+                }]
+            }
+        ]
     };
 }
 
@@ -321,8 +315,8 @@ function rtcMatrixFlow(): FlowBuilderDefinition {
         flowId: 'flow-rtc-matrix',
         payload: {
             topic: 'flow.rtc.matrix',
-            text: 'hello from RTC matrix flow',
-        },
+            text: 'hello from RTC matrix flow'
+        }
     };
     const manualValues = {
         ...DEFAULT_MANUAL_WORKBENCH_VALUES,
@@ -337,7 +331,7 @@ function rtcMatrixFlow(): FlowBuilderDefinition {
         topic: '{{topic}}',
         typeId: '{{typeId}}',
         topicId: '{{topicId}}',
-        timeoutMs: 5000,
+        timeoutMs: 5000
     };
 
     return {
@@ -355,8 +349,8 @@ function rtcMatrixFlow(): FlowBuilderDefinition {
                     manualValues,
                     '{{payload}}',
                     1,
-                    'realtime',
-                ),
+                    'realtime'
+                )
             },
             {
                 stepId: 'messages-matrix',
@@ -366,10 +360,10 @@ function rtcMatrixFlow(): FlowBuilderDefinition {
                     manualValues,
                     '{{payload}}',
                     20,
-                    'messages.rtc',
-                ),
-            },
-        ],
+                    'messages.rtc'
+                )
+            }
+        ]
     };
 }
 
@@ -378,14 +372,14 @@ export const FLOW_BUILDER_TEMPLATES: readonly FlowBuilderTemplate[] = [
         templateId: 'auth-rest-ws-rtc',
         label: 'Auth REST WS RTC',
         description: 'Login-shaped REST, group setup, WebSocket, RTC, wait, and cleanup.',
-        flow: defaultFlow(),
+        flow: defaultFlow()
     },
     {
         templateId: 'rtc-matrix',
         label: 'RTC Matrix',
         description: 'Direct, multicast, and broadcast over realtime and messages.rtc.',
-        flow: rtcMatrixFlow(),
-    },
+        flow: rtcMatrixFlow()
+    }
 ];
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -430,22 +424,22 @@ function substituteString(value: string, variables: Readonly<Record<string, unkn
 
 export function applyFlowBuilderVariables(
     value: unknown,
-    variables: Readonly<Record<string, unknown>>,
+    variables: Readonly<Record<string, unknown>>
 ): unknown {
     if (typeof value === 'string') {
         return substituteString(value, variables);
     }
 
     if (Array.isArray(value)) {
-        return value.map(entry => applyFlowBuilderVariables(entry, variables));
+        return value.map((entry) => applyFlowBuilderVariables(entry, variables));
     }
 
     if (value && typeof value === 'object') {
         return Object.fromEntries(
             Object.entries(value).map(([key, entry]) => [
                 key,
-                applyFlowBuilderVariables(entry, variables),
-            ]),
+                applyFlowBuilderVariables(entry, variables)
+            ])
         );
     }
 
@@ -456,7 +450,7 @@ function commandWithFlowMetadata(
     flow: FlowBuilderDefinition,
     step: FlowBuilderStep,
     command: RallarBlackBoxTestCommand,
-    index: number,
+    index: number
 ): RallarBlackBoxTestCommand {
     return {
         ...command,
@@ -469,14 +463,14 @@ function commandWithFlowMetadata(
                 stepId: step.stepId,
                 stepKind: step.kind,
                 expect: step.expect,
-                extract: step.extract,
-            },
-        },
+                extract: step.extract
+            }
+        }
     } as RallarBlackBoxTestCommand;
 }
 
 function withFlowMutationRequestId(
-    command: RallarBlackBoxTestCommand,
+    command: RallarBlackBoxTestCommand
 ): RallarBlackBoxTestCommand {
     if (command.kind !== 'http.request' || !command.request.path) {
         return command;
@@ -487,19 +481,19 @@ function withFlowMutationRequestId(
             ...command.request,
             path: command.request.path.replace(
                 '{{apiMutationRequestId}}',
-                crypto.randomUUID(),
-            ),
-        },
+                crypto.randomUUID()
+            )
+        }
     };
 }
 
 export function flowBuilderVariables(
     flow: FlowBuilderDefinition,
-    overrides: Readonly<Record<string, unknown>> = {},
+    overrides: Readonly<Record<string, unknown>> = {}
 ): Readonly<Record<string, unknown>> {
     const variables: Record<string, unknown> = {
         ...flow.variables,
-        ...overrides,
+        ...overrides
     };
 
     for (const step of flow.steps) {
@@ -515,7 +509,7 @@ export function flowBuilderVariables(
 
 export function buildFlowBuilderRecipe(
     flow: FlowBuilderDefinition,
-    overrides: Readonly<Record<string, unknown>> = {},
+    overrides: Readonly<Record<string, unknown>> = {}
 ): RallarBlackBoxTestRecipe {
     const variables = flowBuilderVariables(flow, overrides);
     const commands = flow.steps.flatMap((step): readonly RallarBlackBoxTestCommand[] => {
@@ -526,7 +520,7 @@ export function buildFlowBuilderRecipe(
         return (step.commands ?? []).map((command, index) =>
             withFlowMutationRequestId(applyFlowBuilderVariables(
                 commandWithFlowMetadata(flow, step, command, index),
-                variables,
+                variables
             ) as RallarBlackBoxTestCommand)
         );
     });
@@ -538,9 +532,9 @@ export function buildFlowBuilderRecipe(
         continueOnFailure: flow.continueOnFailure ?? false,
         metadata: {
             surface: 'flow-builder',
-            variableNames: Object.keys(variables).sort(),
+            variableNames: Object.keys(variables).sort()
         },
-        commands,
+        commands
     };
 }
 
@@ -553,21 +547,23 @@ function secretLike(name: string): boolean {
 }
 
 function runnerVariables(variables: Readonly<Record<string, unknown>>): Record<string, unknown> {
-    return Object.fromEntries(Object.entries(variables).map(([key, value]) => [
-        key,
-        secretLike(key)
-            ? { default: value, secret: true }
-            : { default: value },
-    ]));
+    return Object.fromEntries(
+        Object.entries(variables).map(([key, value]) => [
+            key,
+            secretLike(key)
+                ? { default: value, secret: true }
+                : { default: value }
+        ])
+    );
 }
 
 function runnerStepForCommand(
     step: FlowBuilderStep,
-    command: RallarBlackBoxTestCommand,
+    command: RallarBlackBoxTestCommand
 ): Record<string, unknown> {
     const base = {
         name: command.commandId ?? step.stepId,
-        expect: step.expect,
+        expect: step.expect
     };
 
     switch (command.kind) {
@@ -576,7 +572,7 @@ function runnerStepForCommand(
                 ...base,
                 type: 'http',
                 connection: 'api',
-                request: command.request,
+                request: command.request
             };
         case 'ws.open':
             return {
@@ -587,8 +583,8 @@ function runnerStepForCommand(
                     url: command.url,
                     protocols: command.protocols,
                     headers: command.headers,
-                    timeoutMs: command.timeoutMs,
-                },
+                    timeoutMs: command.timeoutMs
+                }
             };
         case 'ws.send':
             return {
@@ -597,8 +593,8 @@ function runnerStepForCommand(
                 connection: command.connection ?? 'flowWs',
                 request: {
                     send: command.data,
-                    timeoutMs: command.timeoutMs,
-                },
+                    timeoutMs: command.timeoutMs
+                }
             };
         case 'ws.close':
             return {
@@ -607,8 +603,8 @@ function runnerStepForCommand(
                 connection: command.connection ?? 'flowWs',
                 request: {
                     code: command.code,
-                    reason: command.reason,
-                },
+                    reason: command.reason
+                }
             };
         case 'rtc.connect':
             return {
@@ -625,8 +621,8 @@ function runnerStepForCommand(
                     minSnapshotVersion: command.minSnapshotVersion,
                     transport: command.transport,
                     rallar: command.rallar,
-                    timeoutMs: command.timeoutMs,
-                },
+                    timeoutMs: command.timeoutMs
+                }
             };
         case 'rtc.send':
             return {
@@ -642,8 +638,8 @@ function runnerStepForCommand(
                     roomRef: command.roomRef,
                     minSnapshotVersion: command.minSnapshotVersion,
                     transport: command.transport,
-                    timeoutMs: command.timeoutMs,
-                },
+                    timeoutMs: command.timeoutMs
+                }
             };
         case 'rtc.stream':
             return {
@@ -670,8 +666,8 @@ function runnerStepForCommand(
                     progressEveryMs: command.progressEveryMs,
                     sampleEvery: command.sampleEvery,
                     thresholds: command.thresholds,
-                    timeoutMs: command.timeoutMs,
-                },
+                    timeoutMs: command.timeoutMs
+                }
             };
         case 'health':
             return {
@@ -679,8 +675,8 @@ function runnerStepForCommand(
                 type: step.kind === 'wait' ? 'wait' : 'health',
                 request: {
                     timeoutMs: command.timeoutMs,
-                    delayMs: asRecord(command.metadata).localDelayMs,
-                },
+                    delayMs: asRecord(command.metadata).localDelayMs
+                }
             };
         case 'wait':
             return {
@@ -689,8 +685,8 @@ function runnerStepForCommand(
                 request: {
                     match: command.match,
                     timeoutMs: command.timeoutMs,
-                    deadlineEpochMs: command.deadlineEpochMs,
-                },
+                    deadlineEpochMs: command.deadlineEpochMs
+                }
             };
         case 'assert':
             return {
@@ -699,8 +695,8 @@ function runnerStepForCommand(
                 request: {
                     source: command.source,
                     operator: command.operator,
-                    expected: command.expected,
-                },
+                    expected: command.expected
+                }
             };
         case 'close':
         case 'reset':
@@ -731,14 +727,14 @@ function runnerStepForCommand(
             return {
                 ...base,
                 type: command.kind,
-                request: command,
+                request: command
             };
     }
 }
 
 export function buildFlowBuilderRunnerScenario(
     flow: FlowBuilderDefinition,
-    overrides: Readonly<Record<string, unknown>> = {},
+    overrides: Readonly<Record<string, unknown>> = {}
 ): Record<string, unknown> {
     const variables = flowBuilderVariables(flow, overrides);
     const recipe = buildFlowBuilderRecipe(flow, overrides);
@@ -749,13 +745,13 @@ export function buildFlowBuilderRunnerScenario(
                 type: 'http',
                 baseUrl: '{apiBaseUrl}',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Content-Type': 'application/json'
                 },
-                timeoutMs: '{timeoutMs}',
+                timeoutMs: '{timeoutMs}'
             },
             flowWs: {
                 type: 'ws',
-                timeoutMs: '{timeoutMs}',
+                timeoutMs: '{timeoutMs}'
             },
             flowRtc: {
                 type: 'rtc',
@@ -765,22 +761,24 @@ export function buildFlowBuilderRunnerScenario(
                 roomRef: {
                     applicationId: '{applicationId}',
                     workspaceId: '{workspaceId}',
-                    groupId: '{groupId}',
+                    groupId: '{groupId}'
                 },
                 rallar: {
                     apiBaseUrl: '{apiBaseUrl}',
-                    transport: 'realtime',
-                },
-            },
+                    transport: 'realtime'
+                }
+            }
         },
-        steps: flow.steps.flatMap(step =>
+        steps: flow.steps.flatMap((step) =>
             step.enabled === false
                 ? []
                 : recipe.commands
-                    .filter(command => asRecord(command.metadata).flow &&
-                        asRecord(asRecord(command.metadata).flow).stepId === step.stepId)
-                    .map(command => runnerStepForCommand(step, command))
-        ),
+                    .filter((command) =>
+                        asRecord(command.metadata).flow &&
+                        asRecord(asRecord(command.metadata).flow).stepId === step.stepId
+                    )
+                    .map((command) => runnerStepForCommand(step, command))
+        )
     };
 }
 
@@ -798,7 +796,7 @@ export function parseFlowBuilderDefinition(text: string): FlowBuilderParseResult
         if (!flowId || !name || !steps) {
             return {
                 ok: false,
-                error: 'Flow JSON requires flowId, name, and steps.',
+                error: 'Flow JSON requires flowId, name, and steps.'
             };
         }
 
@@ -829,15 +827,16 @@ export function parseFlowBuilderDefinition(text: string): FlowBuilderParseResult
                         set: asRecord(stepRecord.set),
                         expect: stepRecord.expect,
                         extract: stepRecord.extract,
-                        notes: typeof stepRecord.notes === 'string' ? stepRecord.notes : undefined,
+                        notes: typeof stepRecord.notes === 'string' ? stepRecord.notes : undefined
                     };
-                }),
-            },
+                })
+            }
         };
-    } catch (error) {
+    }
+    catch (error) {
         return {
             ok: false,
-            error: error instanceof Error ? error.message : String(error),
+            error: error instanceof Error ? error.message : String(error)
         };
     }
 }
@@ -847,7 +846,7 @@ export function flowBuilderText(flow: FlowBuilderDefinition): string {
 }
 
 export function templateFlowBuilderText(templateId: string): string {
-    const template = FLOW_BUILDER_TEMPLATES.find(entry => entry.templateId === templateId) ??
+    const template = FLOW_BUILDER_TEMPLATES.find((entry) => entry.templateId === templateId) ??
         FLOW_BUILDER_TEMPLATES[0];
     return flowBuilderText(template.flow);
 }
@@ -868,17 +867,17 @@ function newStepCommand(kind: FlowBuilderStepKind, index: number): FlowBuilderSt
                         path: '/api/auth/login/requests/{{apiMutationRequestId}}',
                         body: {
                             username: '{{username}}',
-                            password: '{{password}}',
-                        },
+                            password: '{{password}}'
+                        }
                     },
-                    response: { body: 'json' },
+                    response: { body: 'json' }
                 }],
                 expect: { status: 200 },
                 extract: {
                     clientId: 'body.clientId',
                     accessToken: 'body.accessToken',
-                    sessionId: 'body.sessionId',
-                },
+                    sessionId: 'body.sessionId'
+                }
             };
         case 'rest.request':
             return {
@@ -886,7 +885,7 @@ function newStepCommand(kind: FlowBuilderStepKind, index: number): FlowBuilderSt
                 label: 'REST request',
                 kind,
                 commands: [createGroupCommand(`flow-rest-${suffix}`)],
-                expect: { statusCode: [200, 201, 409] },
+                expect: { statusCode: [200, 201, 409] }
             };
         case 'ws.open':
             return {
@@ -898,8 +897,8 @@ function newStepCommand(kind: FlowBuilderStepKind, index: number): FlowBuilderSt
                     commandId: `flow-ws-open-${suffix}`,
                     connection: '{{wsConnection}}',
                     url: '{{wsUrl}}',
-                    timeoutMs: 5000,
-                }],
+                    timeoutMs: 5000
+                }]
             };
         case 'ws.send':
             return {
@@ -911,8 +910,8 @@ function newStepCommand(kind: FlowBuilderStepKind, index: number): FlowBuilderSt
                     commandId: `flow-ws-send-${suffix}`,
                     connection: '{{wsConnection}}',
                     data: '{{payload}}',
-                    timeoutMs: 5000,
-                }],
+                    timeoutMs: 5000
+                }]
             };
         case 'rtc.connect':
             return {
@@ -930,8 +929,8 @@ function newStepCommand(kind: FlowBuilderStepKind, index: number): FlowBuilderSt
                     roomRef: { groupId: '{{groupId}}' },
                     transport: 'realtime',
                     timeoutMs: 5000,
-                    rallar: { sessionId: '{{sessionId}}' },
-                }],
+                    rallar: { sessionId: '{{sessionId}}' }
+                }]
             };
         case 'rtc.send':
             return {
@@ -949,16 +948,16 @@ function newStepCommand(kind: FlowBuilderStepKind, index: number): FlowBuilderSt
                     send: {
                         data: '{{payload}}',
                         roomId: '{{groupId}}',
-                        peerIds: ['{{targetClient}}'],
+                        peerIds: ['{{targetClient}}']
                     },
                     timeoutMs: 5000,
                     metadata: {
                         manual: {
                             deliveryMode: 'direct',
-                            targets: ['{{targetClient}}'],
-                        },
-                    },
-                }],
+                            targets: ['{{targetClient}}']
+                        }
+                    }
+                }]
             };
         case 'wait':
             return {
@@ -969,10 +968,10 @@ function newStepCommand(kind: FlowBuilderStepKind, index: number): FlowBuilderSt
                     kind: 'health',
                     commandId: `flow-wait-${suffix}`,
                     metadata: {
-                        localDelayMs: 250,
-                    },
+                        localDelayMs: 250
+                    }
                 }],
-                expect: { event: 'message' },
+                expect: { event: 'message' }
             };
         case 'cleanup':
             return {
@@ -981,8 +980,8 @@ function newStepCommand(kind: FlowBuilderStepKind, index: number): FlowBuilderSt
                 kind,
                 commands: [{
                     kind: 'close',
-                    commandId: `flow-close-${suffix}`,
-                }],
+                    commandId: `flow-close-${suffix}`
+                }]
             };
         case 'set':
             return {
@@ -990,21 +989,21 @@ function newStepCommand(kind: FlowBuilderStepKind, index: number): FlowBuilderSt
                 label: 'Set variables',
                 kind,
                 set: {
-                    nextValue: 'example',
-                },
+                    nextValue: 'example'
+                }
             };
     }
 }
 
 export function addFlowBuilderStep(
     flow: FlowBuilderDefinition,
-    kind: FlowBuilderStepKind,
+    kind: FlowBuilderStepKind
 ): FlowBuilderDefinition {
     return {
         ...flow,
         steps: [
             ...flow.steps,
-            newStepCommand(kind, flow.steps.length),
-        ],
+            newStepCommand(kind, flow.steps.length)
+        ]
     };
 }

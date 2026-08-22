@@ -64,5 +64,5 @@ export interface StateSnapshotReadDiagnosticEvent {
 }
 
 export type StateSnapshotReadDiagnosticsSink = (
-    event: StateSnapshotReadDiagnosticEvent,
+    event: StateSnapshotReadDiagnosticEvent
 ) => void;

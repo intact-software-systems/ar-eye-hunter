@@ -8,7 +8,7 @@ const forbiddenPathParts = [
     '/artifacts',
     '/run-manager',
     '/analysis',
-    '/reports',
+    '/reports'
 ];
 const agentId = '<rendered-smoke-agent>';
 
@@ -25,7 +25,7 @@ function headlessUrl(): string {
 
 async function verifyViewport(
     page: Page,
-    viewport: Readonly<{ width: number; height: number }>,
+    viewport: Readonly<{ width: number; height: number; }>
 ): Promise<void> {
     await page.setViewportSize(viewport);
     await page.goto(headlessUrl(), { waitUntil: 'networkidle' });
@@ -60,7 +60,7 @@ async function verifyViewport(
             clientWidth: document.documentElement.clientWidth,
             scrollWidth: document.documentElement.scrollWidth,
             rootVisible: root instanceof HTMLElement && root.getBoundingClientRect().height > 0,
-            renderedRows: document.querySelectorAll('dl dd').length,
+            renderedRows: document.querySelectorAll('dl dd').length
         };
     });
     if (!layout.rootVisible) {
@@ -107,6 +107,7 @@ try {
     if (forbiddenRequests.length > 0) {
         throw new Error(`Headless app requested operator endpoints:\n${forbiddenRequests.join('\n')}`);
     }
-} finally {
+}
+finally {
     await browser.close();
 }

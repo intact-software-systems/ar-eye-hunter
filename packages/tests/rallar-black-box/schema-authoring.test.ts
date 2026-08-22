@@ -4,18 +4,21 @@ import {
     schemaAuthoringSummary,
     schemaAuthoringTone,
     validateSchemaAuthoringText,
-    validateSchemaAuthoringValue,
+    validateSchemaAuthoringValue
 } from '../../../apps/rallar-black-box/src/schema-authoring.ts';
 
 describe('schema authoring helpers', () => {
     it('validates command JSON and exposes capability hints', () => {
-        const validation = validateSchemaAuthoringText('command', JSON.stringify({
-            kind: 'http.request',
-            request: {
-                method: 'GET',
-                path: '/api/config',
-            },
-        }));
+        const validation = validateSchemaAuthoringText(
+            'command',
+            JSON.stringify({
+                kind: 'http.request',
+                request: {
+                    method: 'GET',
+                    path: '/api/config'
+                }
+            })
+        );
 
         expect(validation.ok).toBe(true);
         expect(validation.commandKinds).toEqual(['http.request']);
@@ -34,7 +37,7 @@ describe('schema authoring helpers', () => {
         expect(parseValidation.errorText).toContain('$:');
 
         const schemaValidation = validateSchemaAuthoringValue('command', {
-            kind: 'http.request',
+            kind: 'http.request'
         });
         expect(schemaValidation.ok).toBe(false);
         expect(schemaValidation.parseOk).toBe(true);
@@ -46,8 +49,8 @@ describe('schema authoring helpers', () => {
             recipeId: 'authoring-recipe',
             commands: [
                 { kind: 'health' },
-                { kind: 'rtc.connect', connection: 'aliceRtc' },
-            ],
+                { kind: 'rtc.connect', connection: 'aliceRtc' }
+            ]
         };
         const recipeValidation = validateSchemaAuthoringValue('recipe', recipe);
         expect(recipeValidation.ok).toBe(true);
@@ -59,13 +62,13 @@ describe('schema authoring helpers', () => {
             group: {
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
-                groupId: 'bb-group',
+                groupId: 'bb-group'
             },
             recipes: [{ recipeId: recipe.recipeId, recipe }],
             targetPolicy: {
                 mode: 'selected-agents',
-                agentIds: ['agent-a'],
-            },
+                agentIds: ['agent-a']
+            }
         });
 
         expect(manifestValidation.ok).toBe(true);
@@ -85,9 +88,9 @@ describe('schema authoring helpers', () => {
                         {
                             kind: 'rtc.send',
                             commandId: 'send-loop-frame',
-                            connection: 'rtc',
-                        },
-                    ],
+                            connection: 'rtc'
+                        }
+                    ]
                 },
                 {
                     kind: 'parallel',
@@ -99,9 +102,9 @@ describe('schema authoring helpers', () => {
                                 {
                                     kind: 'ws.send',
                                     commandId: 'send-ws',
-                                    connection: 'apiWs',
-                                },
-                            ],
+                                    connection: 'apiWs'
+                                }
+                            ]
                         },
                         {
                             groupId: 'evidence',
@@ -111,21 +114,21 @@ describe('schema authoring helpers', () => {
                                     commandId: 'wait-result',
                                     match: {
                                         kind: 'result',
-                                        commandId: 'send-ws',
-                                    },
+                                        commandId: 'send-ws'
+                                    }
                                 },
                                 {
                                     kind: 'assert',
                                     commandId: 'assert-last-ok',
                                     source: 'lastResult.ok',
                                     operator: 'equals',
-                                    expected: true,
-                                },
-                            ],
-                        },
-                    ],
-                },
-            ],
+                                    expected: true
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
         };
 
         const validation = validateSchemaAuthoringValue('recipe', recipe);
@@ -137,7 +140,7 @@ describe('schema authoring helpers', () => {
             'parallel',
             'rtc.send',
             'wait',
-            'ws.send',
+            'ws.send'
         ]);
         expect(validation.liveServiceRequirements).toContain('active RTC connection');
         expect(validation.liveServiceRequirements).toContain('open WebSocket connection');
@@ -149,7 +152,7 @@ describe('schema authoring helpers', () => {
     it('generates one example snippet for each command capability', () => {
         const snippets = commandExampleSnippets();
         expect(snippets.length).toBeGreaterThan(10);
-        expect(snippets.map(snippet => snippet.kind)).toContain('ws.send');
-        expect(snippets.find(snippet => snippet.kind === 'ws.send')?.commandText).toContain('"kind": "ws.send"');
+        expect(snippets.map((snippet) => snippet.kind)).toContain('ws.send');
+        expect(snippets.find((snippet) => snippet.kind === 'ws.send')?.commandText).toContain('"kind": "ws.send"');
     });
 });

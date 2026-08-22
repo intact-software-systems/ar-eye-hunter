@@ -510,62 +510,62 @@ The exact internal entry and ownership contracts are:
 
 ```ts
 interface CreateBrowserRallarRoomsInput {
-  readonly stateStore: RallarRoomStateStorePort;
-  readonly roomEvents: RallarRoomEventsPort;
-  readonly messages: RallarMessagesFacade;
-  readonly realtime: RallarRealtimeFacade;
-  readonly connect: (options?: RallarOperationOptions) => Promise<ApiMiddleware>;
-  readonly requireSession: () => AuthSession;
-  readonly resolveOperationOptions: <T extends RallarOperationOptions>(
-    options: T,
-  ) => T & RallarOperationOptions;
-  readonly resolveOperationScope: (scope?: StateScope) => StateScope | undefined;
-  readonly resolveDefaultRoom: () => string | GroupRef | undefined;
-  readonly resolveDefaultRoomRef: () => GroupRef | undefined;
-  readonly runAuthAwareOperation: <T>(operation: () => Promise<T>) => Promise<T>;
-  readonly acceptSnapshots: (
-    context: ApiMiddleware,
-    clients: readonly ClientSnapshot[],
-    groups: readonly GroupSnapshot[],
-    scope?: StateScope,
-  ) => Promise<void>;
+    readonly stateStore: RallarRoomStateStorePort;
+    readonly roomEvents: RallarRoomEventsPort;
+    readonly messages: RallarMessagesFacade;
+    readonly realtime: RallarRealtimeFacade;
+    readonly connect: (options?: RallarOperationOptions) => Promise<ApiMiddleware>;
+    readonly requireSession: () => AuthSession;
+    readonly resolveOperationOptions: <T extends RallarOperationOptions>(
+        options: T
+    ) => T & RallarOperationOptions;
+    readonly resolveOperationScope: (scope?: StateScope) => StateScope | undefined;
+    readonly resolveDefaultRoom: () => string | GroupRef | undefined;
+    readonly resolveDefaultRoomRef: () => GroupRef | undefined;
+    readonly runAuthAwareOperation: <T>(operation: () => Promise<T>) => Promise<T>;
+    readonly acceptSnapshots: (
+        context: ApiMiddleware,
+        clients: readonly ClientSnapshot[],
+        groups: readonly GroupSnapshot[],
+        scope?: StateScope
+    ) => Promise<void>;
 }
 
 function createBrowserRallarRooms(
-  input: CreateBrowserRallarRoomsInput,
+    input: CreateBrowserRallarRoomsInput
 ): CreateRallarRoomsFacadeOptions;
 
 interface RallarRoomStateStorePort {
-  state(): RallarRoomState;
-  emit(state: RallarRoomState): void;
-  onChange(
-    listener: RallarStateListener<RallarRoomState>,
-    options?: RallarOnChangeOptions,
-  ): RallarUnsubscribe;
-  onCacheChange(listener: () => void | Promise<void>): RallarUnsubscribe;
-  resolveCurrentRoomRef(): GroupRef | undefined;
-  readGroupSnapshots(): GroupSnapshot[];
-  findGroupSnapshot(room: string | GroupRef | undefined): GroupSnapshot | undefined;
-  resolveRoomMinSnapshotVersion(
-    room: string | GroupRef | undefined,
-    explicitMinSnapshotVersion?: number,
-  ): number | undefined;
-  setCurrentRoom(snapshot: GroupSnapshot): void;
-  clearCurrentRoomIfMatches(room: string | GroupRef, clearCurrent: boolean): void;
-  toRoomId(room: string | GroupRef | undefined): string | undefined;
-  resolveRoomRef(room: string | GroupRef | undefined): GroupRef | undefined;
-  resolveGroupRefFromRoomId(roomId: string, scope?: StateScope): GroupRef | undefined;
+    state(): RallarRoomState;
+    emit(state: RallarRoomState): void;
+    onChange(
+        listener: RallarStateListener<RallarRoomState>,
+        options?: RallarOnChangeOptions
+    ): RallarUnsubscribe;
+    onCacheChange(listener: () => void | Promise<void>): RallarUnsubscribe;
+    resolveCurrentRoomRef(): GroupRef | undefined;
+    readGroupSnapshots(): GroupSnapshot[];
+    findGroupSnapshot(room: string | GroupRef | undefined): GroupSnapshot | undefined;
+    resolveRoomMinSnapshotVersion(
+        room: string | GroupRef | undefined,
+        explicitMinSnapshotVersion?: number
+    ): number | undefined;
+    setCurrentRoom(snapshot: GroupSnapshot): void;
+    clearCurrentRoomIfMatches(room: string | GroupRef, clearCurrent: boolean): void;
+    toRoomId(room: string | GroupRef | undefined): string | undefined;
+    resolveRoomRef(room: string | GroupRef | undefined): GroupRef | undefined;
+    resolveGroupRefFromRoomId(roomId: string, scope?: StateScope): GroupRef | undefined;
 }
 
 interface RallarRoomEventsPort {
-  list(input: RallarListRoomEventsInput): Promise<readonly GroupEvent[]>;
-  listPage(input: RallarListRoomEventsInput): Promise<StateEventPage<GroupEvent>>;
-  replay(
-    input: RallarReplayRoomEventsInput,
-    listener?: RallarRoomEventListener,
-  ): Promise<RallarReplayEventsResult<GroupEvent>>;
-  onEvent(listener: RallarRoomEventListener, options: RallarRoomEventOptions): RallarUnsubscribe;
-  dispatch(message: RallarMessage<GroupEvent>): Promise<void>;
+    list(input: RallarListRoomEventsInput): Promise<readonly GroupEvent[]>;
+    listPage(input: RallarListRoomEventsInput): Promise<StateEventPage<GroupEvent>>;
+    replay(
+        input: RallarReplayRoomEventsInput,
+        listener?: RallarRoomEventListener
+    ): Promise<RallarReplayEventsResult<GroupEvent>>;
+    onEvent(listener: RallarRoomEventListener, options: RallarRoomEventOptions): RallarUnsubscribe;
+    dispatch(message: RallarMessage<GroupEvent>): Promise<void>;
 }
 ```
 
@@ -757,150 +757,153 @@ move unchanged.
 
 ```ts
 interface RoomGroupStateMutationActorInput {
-  readonly actorPrincipalId: string;
-  readonly actorSessionId: string;
-  readonly requestId: string;
+    readonly actorPrincipalId: string;
+    readonly actorSessionId: string;
+    readonly requestId: string;
 }
 
 interface RoomGroupStateRequestInput<TRequest> extends RoomGroupStateMutationActorInput {
-  readonly request: TRequest;
+    readonly request: TRequest;
 }
 
 type RoomCreateGroupStateFields = Pick<
-  RallarCreateRoomInput,
-  | 'displayName'
-  | 'description'
-  | 'joinMode'
-  | 'maxMembers'
-  | 'maxSessionsPerMember'
-  | 'metadata'
-  | 'expiresAtEpochMs'
-  | 'purgeAfterEpochMs'
+    RallarCreateRoomInput,
+    | 'displayName'
+    | 'description'
+    | 'joinMode'
+    | 'maxMembers'
+    | 'maxSessionsPerMember'
+    | 'metadata'
+    | 'expiresAtEpochMs'
+    | 'purgeAfterEpochMs'
 >;
 
 interface RoomJoinGroupStateFields {
-  readonly inviteToken?: string;
-  readonly joinCode?: string;
+    readonly inviteToken?: string;
+    readonly joinCode?: string;
 }
 
 interface ToCreateGroupStateRequestInput extends RoomGroupStateMutationActorInput {
-  readonly room: RoomCreateGroupStateFields;
-  readonly groupId: string;
+    readonly room: RoomCreateGroupStateFields;
+    readonly groupId: string;
 }
 
 function toCreateGroupStateRequest(input: ToCreateGroupStateRequestInput): CreateGroupRequest;
 
 interface ToUpdateGroupStateRequestInput extends RoomGroupStateMutationActorInput {
-  readonly request: UpdateGroupRequest;
+    readonly request: UpdateGroupRequest;
 }
 
 function toUpdateGroupStateRequest(input: ToUpdateGroupStateRequestInput): UpdateGroupRequest;
 
 interface ToJoinGroupStateRequestInput extends RoomGroupStateMutationActorInput {
-  readonly room: RoomJoinGroupStateFields;
+    readonly room: RoomJoinGroupStateFields;
 }
 
 function toJoinGroupStateRequest(input: ToJoinGroupStateRequestInput): JoinGroupRequest;
 
-interface ToRoomLifecycleGroupStateRequestInput extends RoomGroupStateRequestInput<
-  Omit<UpdateGroupRequest, 'status'>
-> {
-  readonly status: 'archived' | 'deleted';
+interface ToRoomLifecycleGroupStateRequestInput
+    extends RoomGroupStateRequestInput<Omit<UpdateGroupRequest, 'status'>> {
+    readonly status: 'archived' | 'deleted';
 }
 
 function toRoomLifecycleGroupStateRequest(
-  input: ToRoomLifecycleGroupStateRequestInput,
+    input: ToRoomLifecycleGroupStateRequestInput
 ): UpdateGroupRequest;
 
 interface ToRoomMetadataGroupStateRequestInput extends RoomGroupStateMutationActorInput {
-  readonly currentMetadata: Readonly<Record<string, unknown>>;
-  readonly patch: Readonly<Record<string, unknown>>;
+    readonly currentMetadata: Readonly<Record<string, unknown>>;
+    readonly patch: Readonly<Record<string, unknown>>;
 }
 
 function toRoomMetadataGroupStateRequest(
-  input: ToRoomMetadataGroupStateRequestInput,
+    input: ToRoomMetadataGroupStateRequestInput
 ): UpdateGroupRequest;
 
-type ToCreateRoomInviteGroupStateRequestInput =
-  RoomGroupStateRequestInput<CreateGroupInviteRequest>;
+type ToCreateRoomInviteGroupStateRequestInput = RoomGroupStateRequestInput<
+    CreateGroupInviteRequest
+>;
 
 function toCreateRoomInviteGroupStateRequest(
-  input: ToCreateRoomInviteGroupStateRequestInput,
+    input: ToCreateRoomInviteGroupStateRequestInput
 ): CreateGroupInviteRequest;
 
 function toAcceptRoomInviteGroupStateRequest(
-  input: RoomGroupStateMutationActorInput,
+    input: RoomGroupStateMutationActorInput
 ): AcceptGroupInviteRequest;
 
-type ToRemoveRoomMemberGroupStateRequestInput =
-  RoomGroupStateRequestInput<RemoveGroupMemberRequest>;
+type ToRemoveRoomMemberGroupStateRequestInput = RoomGroupStateRequestInput<
+    RemoveGroupMemberRequest
+>;
 
 function toRemoveRoomMemberGroupStateRequest(
-  input: ToRemoveRoomMemberGroupStateRequestInput,
+    input: ToRemoveRoomMemberGroupStateRequestInput
 ): RemoveGroupMemberRequest;
 
 type ToBanRoomMemberGroupStateRequestInput = RoomGroupStateRequestInput<BanGroupMemberRequest>;
 
 function toBanRoomMemberGroupStateRequest(
-  input: ToBanRoomMemberGroupStateRequestInput,
+    input: ToBanRoomMemberGroupStateRequestInput
 ): BanGroupMemberRequest;
 
 type ToUnbanRoomMemberGroupStateRequestInput = RoomGroupStateRequestInput<UnbanGroupMemberRequest>;
 
 function toUnbanRoomMemberGroupStateRequest(
-  input: ToUnbanRoomMemberGroupStateRequestInput,
+    input: ToUnbanRoomMemberGroupStateRequestInput
 ): UnbanGroupMemberRequest;
 
-type ToSetRoomMemberRoleGroupStateRequestInput =
-  RoomGroupStateRequestInput<SetGroupMemberRoleRequest>;
+type ToSetRoomMemberRoleGroupStateRequestInput = RoomGroupStateRequestInput<
+    SetGroupMemberRoleRequest
+>;
 
 function toSetRoomMemberRoleGroupStateRequest(
-  input: ToSetRoomMemberRoleGroupStateRequestInput,
+    input: ToSetRoomMemberRoleGroupStateRequestInput
 ): SetGroupMemberRoleRequest;
 
-type ToTransferRoomOwnershipGroupStateRequestInput =
-  RoomGroupStateRequestInput<TransferGroupOwnershipRequest>;
+type ToTransferRoomOwnershipGroupStateRequestInput = RoomGroupStateRequestInput<
+    TransferGroupOwnershipRequest
+>;
 
 function toTransferRoomOwnershipGroupStateRequest(
-  input: ToTransferRoomOwnershipGroupStateRequestInput,
+    input: ToTransferRoomOwnershipGroupStateRequestInput
 ): TransferGroupOwnershipRequest;
 
 function toLeaveRoomMemberGroupStateRequest(
-  input: RoomGroupStateMutationActorInput,
+    input: RoomGroupStateMutationActorInput
 ): UpsertGroupMemberRequest;
 
 interface ToConnectRoomPresenceGroupStateRequestInput extends RoomGroupStateMutationActorInput {
-  readonly principalId: string;
-  readonly generationId: string;
+    readonly principalId: string;
+    readonly generationId: string;
 }
 
 function toConnectRoomPresenceGroupStateRequest(
-  input: ToConnectRoomPresenceGroupStateRequestInput,
+    input: ToConnectRoomPresenceGroupStateRequestInput
 ): ConnectGroupPresenceSessionRequest;
 
 interface ToDisconnectRoomPresenceGroupStateRequestInput extends RoomGroupStateMutationActorInput {
-  readonly principalId: string;
-  readonly generationId: string;
+    readonly principalId: string;
+    readonly generationId: string;
 }
 
 function toDisconnectRoomPresenceGroupStateRequest(
-  input: ToDisconnectRoomPresenceGroupStateRequestInput,
+    input: ToDisconnectRoomPresenceGroupStateRequestInput
 ): DisconnectGroupPresenceSessionRequest;
 
 interface ToRallarRoomSummaryInput {
-  readonly snapshot: GroupSnapshot;
-  readonly currentRoomRef?: GroupRef;
-  readonly sessionId?: string;
+    readonly snapshot: GroupSnapshot;
+    readonly currentRoomRef?: GroupRef;
+    readonly sessionId?: string;
 }
 
 function toRallarRoomSummary(input: ToRallarRoomSummaryInput): RallarRoomSummary;
 
 interface ToRallarRoomStateInput {
-  readonly groupSnapshots: readonly GroupSnapshot[];
-  readonly clientSnapshots: readonly ClientSnapshot[];
-  readonly currentRoomRef?: GroupRef;
-  readonly currentRoom?: GroupSnapshot;
-  readonly sessionId?: string;
+    readonly groupSnapshots: readonly GroupSnapshot[];
+    readonly clientSnapshots: readonly ClientSnapshot[];
+    readonly currentRoomRef?: GroupRef;
+    readonly currentRoom?: GroupSnapshot;
+    readonly sessionId?: string;
 }
 
 function toRallarRoomState(input: ToRallarRoomStateInput): RallarRoomState;

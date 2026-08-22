@@ -10,20 +10,20 @@ export type RallarCrdtLamportClock = Readonly<{
 
 export function createRallarCrdtLamportClock(
     replicaId: string,
-    initialLamport = 0,
+    initialLamport = 0
 ): RallarCrdtLamportClock {
     if (!replicaId.trim()) {
         throw new Error('CRDT replicaId is required.');
     }
     if (!Number.isInteger(initialLamport) || initialLamport < 0) {
         throw new Error(
-            'CRDT initial Lamport value must be a non-negative integer.',
+            'CRDT initial Lamport value must be a non-negative integer.'
         );
     }
 
     let current = initialLamport;
     const replicaClocks: Record<string, number> = {
-        [replicaId]: initialLamport,
+        [replicaId]: initialLamport
     };
 
     const remember = (id: string, lamport: number): void => {
@@ -41,7 +41,7 @@ export function createRallarCrdtLamportClock(
         observe: (lamport: number): number => {
             if (!Number.isInteger(lamport) || lamport < 0) {
                 throw new Error(
-                    'Observed Lamport value must be a non-negative integer.',
+                    'Observed Lamport value must be a non-negative integer.'
                 );
             }
 
@@ -51,17 +51,15 @@ export function createRallarCrdtLamportClock(
         snapshot: (): RallarCrdtClockSummary => ({
             maxLamport: current,
             replicaClocks: Object.fromEntries(
-                Object.entries(replicaClocks).sort(([left], [right]) =>
-                    left.localeCompare(right),
-                ),
-            ),
-        }),
+                Object.entries(replicaClocks).sort(([left], [right]) => left.localeCompare(right))
+            )
+        })
     };
 }
 
 export function mergeRallarCrdtClockSummary(
     left: RallarCrdtClockSummary | undefined,
-    right: RallarCrdtClockSummary | undefined,
+    right: RallarCrdtClockSummary | undefined
 ): RallarCrdtClockSummary {
     const replicaClocks: Record<string, number> = {};
 
@@ -70,12 +68,14 @@ export function mergeRallarCrdtClockSummary(
             continue;
         }
 
-        for (const [replicaId, lamport] of Object.entries(
-            summary.replicaClocks,
-        )) {
+        for (
+            const [replicaId, lamport] of Object.entries(
+                summary.replicaClocks
+            )
+        ) {
             replicaClocks[replicaId] = Math.max(
                 replicaClocks[replicaId] ?? 0,
-                lamport,
+                lamport
             );
         }
     }
@@ -83,9 +83,7 @@ export function mergeRallarCrdtClockSummary(
     return {
         maxLamport: Math.max(left?.maxLamport ?? 0, right?.maxLamport ?? 0),
         replicaClocks: Object.fromEntries(
-            Object.entries(replicaClocks).sort(([leftId], [rightId]) =>
-                leftId.localeCompare(rightId),
-            ),
-        ),
+            Object.entries(replicaClocks).sort(([leftId], [rightId]) => leftId.localeCompare(rightId))
+        )
     };
 }

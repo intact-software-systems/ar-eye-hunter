@@ -1,12 +1,9 @@
-import { scrubRecipeConsoleHash } from '../recipe-console/routing/url-state-codec.ts';
-import {
-    deleteSensitiveUrlKeys,
-    toSearch,
-} from '../recipe-console/routing/url-state-helpers.ts';
 import {
     recipeConsoleControlCredentialPolicyFromSearch,
-    type RecipeConsoleControlCredentialPolicy,
+    type RecipeConsoleControlCredentialPolicy
 } from '../recipe-console/control/control-credential-policy.ts';
+import { scrubRecipeConsoleHash } from '../recipe-console/routing/url-state-codec.ts';
+import { deleteSensitiveUrlKeys, toSearch } from '../recipe-console/routing/url-state-helpers.ts';
 import { resolveAppExperience } from './experience-route.ts';
 
 export function scrubRecipeConsoleHrefBeforeLoad(href: string): string {
@@ -33,13 +30,13 @@ export function scrubCurrentRecipeConsoleUrlBeforeLoad(): void {
     window.history.replaceState(
         window.history.state,
         document.title,
-        nextHref,
+        nextHref
     );
 }
 
 export function captureInitialRecipeConsoleControlCredentialPolicy(): RecipeConsoleControlCredentialPolicy {
     const policy = recipeConsoleControlCredentialPolicyFromSearch(
-        typeof window === 'undefined' ? '' : window.location.search,
+        typeof window === 'undefined' ? '' : window.location.search
     );
     scrubCurrentRecipeConsoleUrlBeforeLoad();
     return policy;

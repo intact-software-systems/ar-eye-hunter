@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest';
 import {
     createRallarCrdtAdminDocumentStatus,
     createRallarCrdtBackupBundle,
@@ -23,13 +22,14 @@ import {
     type RallarCrdtDocumentMetadata,
     type RallarCrdtDocumentRef,
     type RallarCrdtDurableUpdateRecord,
-    type RallarCrdtUpdateEnvelope,
+    type RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
+import { describe, expect, it } from 'vitest';
 
 const roomRef = {
     applicationId: 'rallar-test',
     workspaceId: 'main',
-    groupId: 'room-1',
+    groupId: 'room-1'
 };
 
 const documentRef: RallarCrdtDocumentRef = {
@@ -38,7 +38,7 @@ const documentRef: RallarCrdtDocumentRef = {
     scope: 'room',
     documentType: 'checklist',
     documentId: 'room-1',
-    roomRef,
+    roomRef
 };
 
 describe('Rallar CRDT hardening contracts', () => {
@@ -52,15 +52,15 @@ describe('Rallar CRDT hardening contracts', () => {
                         documentType: 'checklist',
                         rollout: 'durable-beta',
                         flags: {
-                            rtc: false,
-                        },
-                    },
-                ],
-            }),
+                            rtc: false
+                        }
+                    }
+                ]
+            })
         ).toMatchObject({
             allowed: false,
             code: 'rtc-disabled',
-            rollout: 'durable-beta',
+            rollout: 'durable-beta'
         });
 
         expect(
@@ -72,11 +72,11 @@ describe('Rallar CRDT hardening contracts', () => {
                         documentType: 'checklist',
                         rollout: 'durable-beta',
                         flags: {
-                            rtc: false,
-                        },
-                    },
-                ],
-            }).allowed,
+                            rtc: false
+                        }
+                    }
+                ]
+            }).allowed
         ).toBe(true);
 
         expect(
@@ -88,15 +88,15 @@ describe('Rallar CRDT hardening contracts', () => {
                         documentType: '*',
                         rollout: 'disabled',
                         flags: {
-                            killSwitchReason: 'maintenance',
-                        },
-                    },
-                ],
-            }),
+                            killSwitchReason: 'maintenance'
+                        }
+                    }
+                ]
+            })
         ).toMatchObject({
             allowed: false,
             code: 'rollout-disabled',
-            reason: 'maintenance',
+            reason: 'maintenance'
         });
     });
 
@@ -106,22 +106,22 @@ describe('Rallar CRDT hardening contracts', () => {
             scope: 'principal',
             documentId: 'principal-a',
             roomRef: undefined,
-            principalId: 'principal-a',
+            principalId: 'principal-a'
         };
         const custom: RallarCrdtDocumentRef = {
             ...documentRef,
             scope: 'custom',
             documentId: 'room-1',
             roomRef: undefined,
-            customScope: 'report-section',
+            customScope: 'report-section'
         };
 
         expect(
             new Set([
                 toRallarCrdtDocumentKey(documentRef),
                 toRallarCrdtDocumentKey(principal),
-                toRallarCrdtDocumentKey(custom),
-            ]).size,
+                toRallarCrdtDocumentKey(custom)
+            ]).size
         ).toBe(3);
     });
 
@@ -136,14 +136,14 @@ describe('Rallar CRDT hardening contracts', () => {
             metadata,
             records: [record],
             redaction: {
-                payloadsRedacted: false,
-            },
+                payloadsRedacted: false
+            }
         });
         const backup = createRallarCrdtBackupBundle({
             exportedAtEpochMs: 3_000,
             document: documentRef,
             metadata,
-            records: [record],
+            records: [record]
         });
 
         expect(verifyRallarCrdtDebugBundle(bundle).valid).toBe(true);
@@ -160,19 +160,19 @@ describe('Rallar CRDT hardening contracts', () => {
                                 kind: 'map.set',
                                 path: [],
                                 key: 'title',
-                                value: 'Tampered',
-                            },
-                        ]),
+                                value: 'Tampered'
+                            }
+                        ])
                     },
-                    1,
-                ),
-            ],
+                    1
+                )
+            ]
         };
 
         expect(
             verifyRallarCrdtDebugBundle(tampered).issues.map(
-                (issue) => issue.code,
-            ),
+                (issue) => issue.code
+            )
         ).toEqual(expect.arrayContaining(['update-hash-mismatch']));
     });
 
@@ -184,8 +184,8 @@ describe('Rallar CRDT hardening contracts', () => {
             atEpochMs: 4_000,
             documentKey: toRallarCrdtDocumentKey(documentRef),
             tags: {
-                reason: 'quota-exceeded',
-            },
+                reason: 'quota-exceeded'
+            }
         });
 
         const report = verifyRallarCrdtDebugBundle(
@@ -196,38 +196,38 @@ describe('Rallar CRDT hardening contracts', () => {
                 metadata: createMetadata(),
                 records: [
                     createRecord(createUpdate('update-1'), 1),
-                    createRecord(createUpdate('update-3'), 3),
-                ],
-            }),
+                    createRecord(createUpdate('update-3'), 3)
+                ]
+            })
         );
 
         expect(metrics.count('crdt.server.append.rejected.count')).toBe(1);
         expect(report.sequenceGaps).toEqual([2]);
         expect(report.issues.map((issue) => issue.code)).toContain(
-            'append-sequence-gap',
+            'append-sequence-gap'
         );
         expect(toRallarCrdtAppendRejectionCategory('quota-exceeded')).toBe(
-            'permanent.quota',
+            'permanent.quota'
         );
         expect(
             createRallarCrdtAdminDocumentStatus({
                 metadata: createMetadata({
-                    lifecycle: 'quarantined',
+                    lifecycle: 'quarantined'
                 }),
                 rollout: 'durable-beta',
-                quarantineReason: 'integrity-check-failed',
-            }),
+                quarantineReason: 'integrity-check-failed'
+            })
         ).toMatchObject({
             lifecycle: 'quarantined',
             rollout: 'durable-beta',
-            quarantineReason: 'integrity-check-failed',
+            quarantineReason: 'integrity-check-failed'
         });
     });
 
     it('redacts debug payloads while keeping bundle integrity verifiable', async () => {
         const encryptedUpdate = await encryptRallarCrdtUpdateEnvelope(
             createUpdate('update-1'),
-            testKeyring(),
+            testKeyring()
         );
         const record = createRecord(encryptedUpdate, 1);
         const bundle = createRallarCrdtDebugBundle({
@@ -238,21 +238,21 @@ describe('Rallar CRDT hardening contracts', () => {
             records: [record],
             redaction: {
                 payloadsRedacted: true,
-                reason: 'privacy-review',
-            },
+                reason: 'privacy-review'
+            }
         });
 
         expect(bundle.records[0]?.update.payload.operations).toEqual([]);
         expect(bundle.records[0]?.update.payload.encryption).toBeUndefined();
         expect(JSON.stringify(bundle)).not.toContain(
-            encryptedUpdate.payload.encryption?.ciphertext ?? 'missing',
+            encryptedUpdate.payload.encryption?.ciphertext ?? 'missing'
         );
         expect(bundle.records[0]?.append.acceptedUpdateHash).not.toBe(
-            record.append.acceptedUpdateHash,
+            record.append.acceptedUpdateHash
         );
         expect(verifyRallarCrdtDebugBundle(bundle)).toMatchObject({
             valid: true,
-            checkedUpdateCount: 1,
+            checkedUpdateCount: 1
         });
     });
 
@@ -263,22 +263,22 @@ describe('Rallar CRDT hardening contracts', () => {
             document: documentRef,
             records: [
                 createRecord(createUpdate('update-1'), 1),
-                createRecord(createUpdate('update-2'), 2),
+                createRecord(createUpdate('update-2'), 2)
             ],
             now: () => 9_000,
-            createSnapshotId: () => 'snapshot-compact-1',
+            createSnapshotId: () => 'snapshot-compact-1'
         });
 
         expect(snapshot).toMatchObject({
             snapshotId: 'snapshot-compact-1',
             createdAtEpochMs: 9_000,
             value: {
-                title: 'update-2',
+                title: 'update-2'
             },
             metadata: {
                 updateCount: 2,
-                reason: 'non-destructive-compaction',
-            },
+                reason: 'non-destructive-compaction'
+            }
         });
     });
 
@@ -290,8 +290,8 @@ describe('Rallar CRDT hardening contracts', () => {
                 requestedAtEpochMs: 6_000,
                 requestedBy: 'principal-a',
                 reason: 'privacy-request',
-                mode: 'redact-payloads',
-            }),
+                mode: 'redact-payloads'
+            })
         );
 
         const retentionMetadata = createMetadata({
@@ -301,8 +301,8 @@ describe('Rallar CRDT hardening contracts', () => {
             retention: {
                 mode: 'redact-after',
                 ttlMs: 500,
-                reason: 'debug-window',
-            },
+                reason: 'debug-window'
+            }
         });
         const deleteMetadata = createMetadata({
             documentKey: `${toRallarCrdtDocumentKey(documentRef)}#delete`,
@@ -310,38 +310,38 @@ describe('Rallar CRDT hardening contracts', () => {
             updateCount: 0,
             retention: {
                 mode: 'delete-after',
-                ttlMs: 500,
-            },
+                ttlMs: 500
+            }
         });
         const summary = summarizeRallarCrdtScheduledHealth({
             documents: [retentionMetadata, deleteMetadata],
             nowEpochMs: 2_000,
-            staleSnapshotAfterMs: 250,
+            staleSnapshotAfterMs: 250
         });
 
         expect(audit.count('redact')).toBe(1);
         expect(
-            evaluateRallarCrdtRetentionStatus(retentionMetadata, 2_000),
+            evaluateRallarCrdtRetentionStatus(retentionMetadata, 2_000)
         ).toMatchObject({
             state: 'retention-due',
-            dueAtEpochMs: 1_500,
+            dueAtEpochMs: 1_500
         });
         expect(summary).toMatchObject({
             total: 2,
             unhealthy: 2,
             retentionDue: 1,
             expired: 1,
-            staleSnapshots: 1,
+            staleSnapshots: 1
         });
         expect(
             validateRallarCrdtEncryptionMetadata({
-                enabled: true,
-            }).issues.map((issue) => issue.code),
+                enabled: true
+            }).issues.map((issue) => issue.code)
         ).toEqual(
             expect.arrayContaining([
                 'invalid-non-empty-string',
-                'missing-encrypted-surface',
-            ]),
+                'missing-encrypted-surface'
+            ])
         );
         expect(
             validateRallarCrdtEncryptionMetadata({
@@ -349,8 +349,8 @@ describe('Rallar CRDT hardening contracts', () => {
                 algorithm: 'xchacha20-poly1305',
                 keyId: 'key-1',
                 payloadEncrypted: true,
-                visibleMetadataFields: ['documentKey', 'appendSequence'],
-            }).valid,
+                visibleMetadataFields: ['documentKey', 'appendSequence']
+            }).valid
         ).toBe(true);
     });
 
@@ -362,8 +362,8 @@ describe('Rallar CRDT hardening contracts', () => {
                 anchorRef: 'anchor-1',
                 calibrationVersion: 'calibration-v4',
                 confidence: 0.9,
-                accuracyMeters: 0.15,
-            }).valid,
+                accuracyMeters: 0.15
+            }).valid
         ).toBe(true);
 
         expect(
@@ -371,20 +371,20 @@ describe('Rallar CRDT hardening contracts', () => {
                 coordinateFrameId: '',
                 coordinateFrameVersion: 'frame-v2',
                 confidence: 2,
-                accuracyMeters: -1,
-            }).issues.map((issue) => issue.code),
+                accuracyMeters: -1
+            }).issues.map((issue) => issue.code)
         ).toEqual(
             expect.arrayContaining([
                 'invalid-non-empty-string',
                 'invalid-confidence',
-                'invalid-accuracy',
-            ]),
+                'invalid-accuracy'
+            ])
         );
     });
 });
 
 function createMetadata(
-    overrides: Partial<RallarCrdtDocumentMetadata> = {},
+    overrides: Partial<RallarCrdtDocumentMetadata> = {}
 ): RallarCrdtDocumentMetadata {
     return {
         document: documentRef,
@@ -402,13 +402,13 @@ function createMetadata(
         retention: null,
         quota: null,
         projectionIds: [],
-        ...overrides,
+        ...overrides
     };
 }
 
 function createRecord(
     update: RallarCrdtUpdateEnvelope,
-    appendSequence: number,
+    appendSequence: number
 ): RallarCrdtDurableUpdateRecord {
     return {
         document: documentRef,
@@ -422,8 +422,8 @@ function createRecord(
             sessionId: 'session-a',
             serverId: 'server-a',
             authorizationScope: 'room',
-            acceptedUpdateHash: hashRallarCrdtUpdateEnvelope(update),
-        },
+            acceptedUpdateHash: hashRallarCrdtUpdateEnvelope(update)
+        }
     };
 }
 
@@ -443,9 +443,9 @@ function createUpdate(updateId: string): RallarCrdtUpdateEnvelope {
                 kind: 'map.set',
                 path: [],
                 key: 'title',
-                value: updateId,
-            },
-        ]),
+                value: updateId
+            }
+        ])
     };
 }
 
@@ -455,10 +455,10 @@ function testKeyring() {
         keys: [
             {
                 keyId: 'hardening-test-key',
-                secret: 'hardening-rallar-crdt-encryption-secret',
-            },
+                secret: 'hardening-rallar-crdt-encryption-secret'
+            }
         ],
         now: () => 8_000,
-        randomBytes: (length: number) => new Uint8Array(length).fill(11),
+        randomBytes: (length: number) => new Uint8Array(length).fill(11)
     };
 }

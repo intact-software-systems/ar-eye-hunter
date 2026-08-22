@@ -1,33 +1,30 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
+import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import type { AppDataRepositoryLike } from '../app-data/AppDataRepository.ts';
 import {
     createRallarServerFacade,
-    type RallarServer as RallarServerFacadeCore,
     RallarServerDataFacade,
-    type RallarServerRuntime,
     RallarServerSystemFacade,
+    type RallarServer as RallarServerFacadeCore,
+    type RallarServerRuntime,
     type RallarServerSystemInstallers,
-    type RallarServerWebSocketFacade as RallarServerWebSocketFacadeCore,
+    type RallarServerWebSocketFacade as RallarServerWebSocketFacadeCore
 } from './RallarServer.ts';
 import type {
     RallarServerWsFacadeOptions,
     RallarServerWsFanout,
     RallarServerWsHandler,
-    RallarServerWsPublishResult,
     RallarServerWsProxyRule,
+    RallarServerWsPublishResult,
     RallarServerWsSelector,
     RallarServerWsStatus,
-    RallarServerWsTopicDefinition,
+    RallarServerWsTopicDefinition
 } from './ws-topic-router.ts';
 
 export type RallarServerRouteInstaller<TApp> = (app: TApp) => void;
 
-export type CreateRallarServerApplicationOptions<
-    TRuntime extends RallarServerRuntime,
-    TApp,
-> = Readonly<{
+export type CreateRallarServerApplicationOptions<TRuntime extends RallarServerRuntime, TApp> = Readonly<{
     runtime: TRuntime;
     repositories?: RepositoryManager;
     ws?: RallarServerWsFacadeOptions;
@@ -41,10 +38,7 @@ export type CreateRallarServerApplicationOptions<
     }>;
 }>;
 
-export class RallarServerApplication<
-    TRuntime extends RallarServerRuntime,
-    TApp,
-> {
+export class RallarServerApplication<TRuntime extends RallarServerRuntime, TApp> {
     readonly ws: RallarServerWebSocketApplicationFacade<TApp>;
     readonly rest: RallarServerRestApplicationFacade<TApp>;
     readonly system: RallarServerSystemFacade<TRuntime>;
@@ -54,7 +48,7 @@ export class RallarServerApplication<
 
     constructor(
         core: RallarServerFacadeCore<TRuntime>,
-        routes: CreateRallarServerApplicationOptions<TRuntime, TApp>['routes'] = {},
+        routes: CreateRallarServerApplicationOptions<TRuntime, TApp>['routes'] = {}
     ) {
         this.core = core;
         this.ws = new RallarServerWebSocketApplicationFacade(core.ws, routes.ws);
@@ -76,18 +70,15 @@ export class RallarServerApplication<
     }
 }
 
-export function createRallarServerApplication<
-    TRuntime extends RallarServerRuntime,
-    TApp,
->(
-    options: CreateRallarServerApplicationOptions<TRuntime, TApp>,
+export function createRallarServerApplication<TRuntime extends RallarServerRuntime, TApp>(
+    options: CreateRallarServerApplicationOptions<TRuntime, TApp>
 ): RallarServerApplication<TRuntime, TApp> {
     const core = createRallarServerFacade({
         runtime: options.runtime,
         repositories: options.repositories ?? defaultRepositoryManager,
         ws: options.ws,
         system: options.system,
-        appData: options.appData,
+        appData: options.appData
     });
 
     return new RallarServerApplication(core, options.routes);
@@ -101,7 +92,7 @@ export class RallarServerWebSocketApplicationFacade<TApp> {
 
     constructor(
         core: RallarServerWebSocketFacadeCore,
-        routeInstaller?: RallarServerRouteInstaller<TApp>,
+        routeInstaller?: RallarServerRouteInstaller<TApp>
     ) {
         this.core = core;
         this.routeInstaller = routeInstaller;
@@ -142,7 +133,7 @@ export class RallarServerWebSocketApplicationFacade<TApp> {
 
     publish(
         message: ALMessage,
-        fanout?: RallarServerWsFanout,
+        fanout?: RallarServerWsFanout
     ): Promise<RallarServerWsPublishResult> {
         return this.core.publish(message, fanout);
     }
@@ -158,7 +149,7 @@ export class RallarServerRestApplicationFacade<TApp> {
     private readonly routeInstallers: readonly RallarServerRouteInstaller<TApp>[];
 
     constructor(
-        routeInstallers: readonly RallarServerRouteInstaller<TApp>[],
+        routeInstallers: readonly RallarServerRouteInstaller<TApp>[]
     ) {
         this.routeInstallers = routeInstallers;
     }

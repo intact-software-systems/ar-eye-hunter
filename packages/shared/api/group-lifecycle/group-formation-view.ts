@@ -1,6 +1,6 @@
 import type { GroupRef } from '../group-types.ts';
-import type { GroupFormationOutcome, GroupLifecycleState } from './group-lifecycle-policy.ts';
 import type { GroupFormationReadiness } from './compute-group-formation-readiness.ts';
+import type { GroupFormationOutcome, GroupLifecycleState } from './group-lifecycle-policy.ts';
 
 /**
  * The formation read surface: enough for an application to explain the group
@@ -9,17 +9,17 @@ import type { GroupFormationReadiness } from './compute-group-formation-readines
  * is the recorded decision from the criterion's last evaluation.
  */
 export type GroupFormationView = Readonly<{
-  groupRef: GroupRef;
-  lifecycleState: GroupLifecycleState;
-  formationEpoch: number;
-  formationAttemptCount: number;
-  lastFormationOutcome: GroupFormationOutcome | null;
-  establishmentStartedAtEpochMs: number | null;
-  readiness: GroupFormationReadiness;
-  /**
-   * The managers resolved from the policy and the epoch-pinned electorate at
-   * read time -- who may command manager-gated actions right now. Empty when
-   * the policy selects none or no candidate survives the liveness filter.
-   */
-  managerPrincipalIds: readonly string[];
+    groupRef: GroupRef;
+    lifecycleState: GroupLifecycleState;
+    formationEpoch: number;
+    formationAttemptCount: number;
+    lastFormationOutcome: GroupFormationOutcome | null;
+    establishmentStartedAtEpochMs: number | null;
+    readiness: GroupFormationReadiness;
+    /**
+     * The managers resolved from the policy and the epoch-pinned electorate at
+     * read time -- who may command manager-gated actions right now. Empty when
+     * the policy selects none or no candidate survives the liveness filter.
+     */
+    managerPrincipalIds: readonly string[];
 }>;

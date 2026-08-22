@@ -83,15 +83,12 @@ export type RallarGameAuthoritySequenceAcceptResult = Readonly<
 export type RallarGameAuthoritySequenceTracker = Readonly<{
     accept(
         envelope: RallarGameAuthorityEnvelope<unknown>,
-        constraints?: RallarGameAuthoritySequenceAcceptConstraints,
+        constraints?: RallarGameAuthoritySequenceAcceptConstraints
     ): RallarGameAuthoritySequenceAcceptResult;
     last(
         envelope:
             | RallarGameAuthorityEnvelope<unknown>
-            | Pick<
-                RallarGameAuthorityEnvelope<unknown>,
-                'roomId' | 'authority' | 'senderId' | 'kind'
-            >,
+            | Pick<RallarGameAuthorityEnvelope<unknown>, 'roomId' | 'authority' | 'senderId' | 'kind'>
     ): number | undefined;
     reset(): void;
 }>;
@@ -183,9 +180,9 @@ export type RallarGameAuthorityDiagnostics = Readonly<{
 }>;
 
 export type RallarGameAuthorityEnvelopeHandler<T> = (
-    envelope: RallarGameAuthorityEnvelope<T>,
+    envelope: RallarGameAuthorityEnvelope<T>
 ) => void | Promise<void>;
 
 export type RallarGameAuthorityStatusHandler = (
-    status: RallarGameAuthorityClientStatus,
+    status: RallarGameAuthorityClientStatus
 ) => void | Promise<void>;

@@ -2,65 +2,65 @@ import type {
     RallarMotionQuantizedVec3,
     RallarMotionQuantizeVec3Options,
     RallarMotionRotationWrap,
-    RallarMotionVec3,
+    RallarMotionVec3
 } from './types.ts';
 
 export function addRallarMotionVec3(
     source: RallarMotionVec3,
-    delta: RallarMotionVec3,
+    delta: RallarMotionVec3
 ): RallarMotionVec3 {
     return [
         source[0] + delta[0],
         source[1] + delta[1],
-        source[2] + delta[2],
+        source[2] + delta[2]
     ];
 }
 
 export function subtractRallarMotionVec3(
     source: RallarMotionVec3,
-    target: RallarMotionVec3,
+    target: RallarMotionVec3
 ): RallarMotionVec3 {
     return [
         source[0] - target[0],
         source[1] - target[1],
-        source[2] - target[2],
+        source[2] - target[2]
     ];
 }
 
 export function scaleRallarMotionVec3(
     source: RallarMotionVec3,
-    scalar: number,
+    scalar: number
 ): RallarMotionVec3 {
     return [
         source[0] * scalar,
         source[1] * scalar,
-        source[2] * scalar,
+        source[2] * scalar
     ];
 }
 
 export function lerpRallarMotionVec3(
     source: RallarMotionVec3,
     target: RallarMotionVec3,
-    t: number,
+    t: number
 ): RallarMotionVec3 {
     return [
         lerpRallarMotionNumber(source[0], target[0], t),
         lerpRallarMotionNumber(source[1], target[1], t),
-        lerpRallarMotionNumber(source[2], target[2], t),
+        lerpRallarMotionNumber(source[2], target[2], t)
     ];
 }
 
 export function smoothRallarMotionVec3(
     previous: RallarMotionVec3,
     next: RallarMotionVec3,
-    alpha: number,
+    alpha: number
 ): RallarMotionVec3 {
     return lerpRallarMotionVec3(previous, next, clampRallarMotion01(alpha));
 }
 
 export function distanceRallarMotionVec3(
     source: RallarMotionVec3,
-    target: RallarMotionVec3,
+    target: RallarMotionVec3
 ): number {
     const dx = target[0] - source[0];
     const dy = target[1] - source[1];
@@ -71,7 +71,7 @@ export function distanceRallarMotionVec3(
 export function distanceRallarMotionWrappedVec3(
     source: RallarMotionVec3,
     target: RallarMotionVec3,
-    wrap?: RallarMotionRotationWrap,
+    wrap?: RallarMotionRotationWrap
 ): number {
     if (!wrap) {
         return distanceRallarMotionVec3(source, target);
@@ -79,7 +79,7 @@ export function distanceRallarMotionWrappedVec3(
 
     const delta = shortestRallarMotionWrappedVec3Delta(source, target, wrap);
     return Math.sqrt(
-        delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2],
+        delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2]
     );
 }
 
@@ -94,7 +94,7 @@ export function wrapRallarMotionAngle(value: number, period: number): number {
 export function shortestRallarMotionAngleDelta(
     source: number,
     target: number,
-    period: number,
+    period: number
 ): number {
     if (!Number.isFinite(period) || period <= 0) {
         return target - source;
@@ -108,24 +108,24 @@ export function shortestRallarMotionAngleDelta(
 export function shortestRallarMotionWrappedVec3Delta(
     source: RallarMotionVec3,
     target: RallarMotionVec3,
-    wrap: RallarMotionRotationWrap,
+    wrap: RallarMotionRotationWrap
 ): RallarMotionVec3 {
     return [
         shortestRallarMotionAngleDelta(
             source[0],
             target[0],
-            periodAt(wrap.period, 0),
+            periodAt(wrap.period, 0)
         ),
         shortestRallarMotionAngleDelta(
             source[1],
             target[1],
-            periodAt(wrap.period, 1),
+            periodAt(wrap.period, 1)
         ),
         shortestRallarMotionAngleDelta(
             source[2],
             target[2],
-            periodAt(wrap.period, 2),
-        ),
+            periodAt(wrap.period, 2)
+        )
     ];
 }
 
@@ -133,56 +133,56 @@ export function interpolateRallarMotionWrappedEuler(
     source: RallarMotionVec3,
     target: RallarMotionVec3,
     t: number,
-    wrap: RallarMotionRotationWrap,
+    wrap: RallarMotionRotationWrap
 ): RallarMotionVec3 {
     const delta = shortestRallarMotionWrappedVec3Delta(source, target, wrap);
     return [
         wrapRallarMotionAngle(source[0] + delta[0] * t, periodAt(wrap.period, 0)),
         wrapRallarMotionAngle(source[1] + delta[1] * t, periodAt(wrap.period, 1)),
-        wrapRallarMotionAngle(source[2] + delta[2] * t, periodAt(wrap.period, 2)),
+        wrapRallarMotionAngle(source[2] + delta[2] * t, periodAt(wrap.period, 2))
     ];
 }
 
 export function roundRallarMotionVec3(
     source: RallarMotionVec3,
-    precision = 3,
+    precision = 3
 ): RallarMotionVec3 {
     const scale = 10 ** Math.max(0, Math.floor(precision));
     return [
         Math.round(source[0] * scale) / scale,
         Math.round(source[1] * scale) / scale,
-        Math.round(source[2] * scale) / scale,
+        Math.round(source[2] * scale) / scale
     ];
 }
 
 export function quantizeRallarMotionVec3(
     source: RallarMotionVec3,
-    options: RallarMotionQuantizeVec3Options,
+    options: RallarMotionQuantizeVec3Options
 ): RallarMotionQuantizedVec3 {
     const steps = normalizedQuantizeSteps(options);
     return [
         quantizeComponent(source[0], componentAt(options.min, 0), componentAt(options.max, 0), steps),
         quantizeComponent(source[1], componentAt(options.min, 1), componentAt(options.max, 1), steps),
-        quantizeComponent(source[2], componentAt(options.min, 2), componentAt(options.max, 2), steps),
+        quantizeComponent(source[2], componentAt(options.min, 2), componentAt(options.max, 2), steps)
     ];
 }
 
 export function dequantizeRallarMotionVec3(
     source: RallarMotionQuantizedVec3,
-    options: RallarMotionQuantizeVec3Options,
+    options: RallarMotionQuantizeVec3Options
 ): RallarMotionVec3 {
     const steps = normalizedQuantizeSteps(options);
     return [
         dequantizeComponent(source[0], componentAt(options.min, 0), componentAt(options.max, 0), steps),
         dequantizeComponent(source[1], componentAt(options.min, 1), componentAt(options.max, 1), steps),
-        dequantizeComponent(source[2], componentAt(options.min, 2), componentAt(options.max, 2), steps),
+        dequantizeComponent(source[2], componentAt(options.min, 2), componentAt(options.max, 2), steps)
     ];
 }
 
 export function lerpRallarMotionNumber(
     source: number,
     target: number,
-    t: number,
+    t: number
 ): number {
     return source + (target - source) * t;
 }
@@ -194,14 +194,14 @@ export function clampRallarMotion01(value: number): number {
 export function clampRallarMotionNumber(
     value: number,
     min: number,
-    max: number,
+    max: number
 ): number {
     return Math.max(min, Math.min(max, value));
 }
 
 export function sanitizeRallarMotionNonNegative(
     value: number | undefined,
-    fallback: number,
+    fallback: number
 ): number {
     if (!Number.isFinite(value)) {
         return fallback;
@@ -228,7 +228,7 @@ function quantizeComponent(
     value: number,
     min: number,
     max: number,
-    steps: number,
+    steps: number
 ): number {
     if (max <= min) {
         return 0;
@@ -242,7 +242,7 @@ function dequantizeComponent(
     value: number,
     min: number,
     max: number,
-    steps: number,
+    steps: number
 ): number {
     if (max <= min) {
         return min;

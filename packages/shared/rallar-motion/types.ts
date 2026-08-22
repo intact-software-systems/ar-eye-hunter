@@ -112,7 +112,7 @@ export type RallarMotionBuffer<TMetadata = unknown> = Readonly<{
     push(sample: RallarMotionSample<TMetadata>): RallarMotionPushResult;
     sample(
         entityId: string,
-        nowEpochMs: number,
+        nowEpochMs: number
     ): RallarMotionEstimate<TMetadata> | undefined;
     sampleAll(nowEpochMs: number): ReadonlyMap<string, RallarMotionEstimate<TMetadata>>;
     prune(nowEpochMs: number): number;
@@ -217,7 +217,7 @@ export type RallarMotionSendUpdateDecision = Readonly<{
 export type RallarMotionSendGate = Readonly<{
     check(
         sample: RallarMotionSendSampleLike,
-        nowEpochMs: number,
+        nowEpochMs: number
     ): RallarMotionSendUpdateDecision;
     recordSent(sample: RallarMotionSendSampleLike, nowEpochMs: number): void;
     reset(): void;
@@ -237,10 +237,9 @@ export type RallarMotionKinematicsEstimate = Readonly<{
 }>;
 
 export type RallarMotionKinematicsEstimator = Readonly<{
-    push(sample: Pick<
-        RallarMotionSample,
-        'entityId' | 'observedAtEpochMs' | 'position' | 'rotation'
-    >): RallarMotionKinematicsEstimate;
+    push(
+        sample: Pick<RallarMotionSample, 'entityId' | 'observedAtEpochMs' | 'position' | 'rotation'>
+    ): RallarMotionKinematicsEstimate;
     remove(entityId: string): boolean;
     reset(): void;
 }>;
@@ -263,10 +262,10 @@ export type RallarMotionDiagnosticsTrackerOptions = Readonly<Record<string, neve
 export type RallarMotionDiagnosticsTracker = Readonly<{
     recordPush(
         result: RallarMotionPushResult,
-        sample?: Pick<RallarMotionSample, 'entityId' | 'observedAtEpochMs'>,
+        sample?: Pick<RallarMotionSample, 'entityId' | 'observedAtEpochMs'>
     ): RallarMotionDiagnosticsSummary;
     recordSample(
-        sample: Pick<RallarMotionSample, 'entityId' | 'observedAtEpochMs'>,
+        sample: Pick<RallarMotionSample, 'entityId' | 'observedAtEpochMs'>
     ): RallarMotionDiagnosticsSummary;
     summary(): RallarMotionDiagnosticsSummary;
     reset(): void;

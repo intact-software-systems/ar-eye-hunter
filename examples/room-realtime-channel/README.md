@@ -7,9 +7,9 @@ callback remains a lane listener, so a shared lane payload must carry and
 validate the full room identity.
 
 ```ts
+import { rallar } from '@shared-web/browser/rallar.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { rallar } from '@shared-web/browser/rallar.ts';
 
 type PlayerInput = {
     roomRef: GroupRef;
@@ -25,7 +25,7 @@ const inputLane = room.realtime<PlayerInput>({
     laneId: 'game-input',
     waitTimeoutMs: 500,
     maxAgeMs: 120,
-    key: localPlayerId,
+    key: localPlayerId
 });
 
 inputLane.on((message) => {
@@ -39,14 +39,14 @@ const sendResult = await inputLane.send({
     seq: 1,
     moveX: 0,
     moveY: 1,
-    sprint: false,
+    sprint: false
 });
 
 if (sendResult.status !== 'sent') {
     console.warn(
         'Realtime input delivery degraded',
         sendResult.status,
-        sendResult.reason,
+        sendResult.reason
     );
 }
 ```

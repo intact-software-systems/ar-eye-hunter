@@ -1,7 +1,7 @@
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import {
     isRuntimeStatePrefixPageRepositoryLike,
-    type RuntimeStateTransactionalRepositoryLike,
+    type RuntimeStateTransactionalRepositoryLike
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
 export const RUNTIME_STATE_PREFIX_READ_PAGE_SIZE = 1_000;
@@ -10,7 +10,7 @@ export async function* readRuntimeStateEntriesByPrefix(
     repository: RuntimeStateTransactionalRepositoryLike,
     namespace: string,
     prefix: string,
-    pageSize: number = RUNTIME_STATE_PREFIX_READ_PAGE_SIZE,
+    pageSize: number = RUNTIME_STATE_PREFIX_READ_PAGE_SIZE
 ): AsyncGenerator<RuntimeStateEntry> {
     if (!isRuntimeStatePrefixPageRepositoryLike(repository)) {
         for (const entry of await repository.findEntriesByPrefix(namespace, prefix)) {
@@ -28,8 +28,8 @@ export async function* readRuntimeStateEntriesByPrefix(
             prefix,
             {
                 afterKey,
-                limit,
-            },
+                limit
+            }
         );
         if (page.length === 0) {
             return;

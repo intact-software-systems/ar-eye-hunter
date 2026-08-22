@@ -1,13 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import { createRallarBrowserFacadeRuntimeContext, type RallarBrowserRuntimeDefaults } from '@shared-web/browser/rallar-runtime-context.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
-import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
-import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import {
-    createRallarBrowserFacadeRuntimeContext,
-    type RallarBrowserRuntimeDefaults,
-} from '@shared-web/browser/rallar-runtime-context.ts';
+import { describe, expect, it, vi } from 'vitest';
 import { createApiMiddlewareTestDouble } from './api-middleware-test-double.ts';
+import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 
 type RoomDefaults = NonNullable<RallarBrowserRuntimeDefaults['room']>;
 
@@ -20,7 +17,7 @@ describe('Rallar browser facade runtime context', () => {
         const shouldRetry = vi.fn(() => true);
         const signal = new AbortController().signal;
         const lanes: readonly RtcDataChannelLaneConfig[] = [
-            { id: 'motion', label: 'rtc-motion' },
+            { id: 'motion', label: 'rtc-motion' }
         ];
         const context = createRallarBrowserFacadeRuntimeContext();
 
@@ -28,21 +25,21 @@ describe('Rallar browser facade runtime context', () => {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             room: {
-                roomId: 'room-1',
+                roomId: 'room-1'
             },
             rtc: {
                 dataChannelLanes: lanes,
                 maxPeerConnections: 12,
-                rttReportingDegreeLimit: 3,
+                rttReportingDegreeLimit: 3
             },
             messages: {
-                maxPayloadBytes: 2048,
+                maxPayloadBytes: 2048
             },
             operations: {
                 timeoutMs: 500,
                 maxAttempts: 3,
-                shouldRetry,
-            },
+                shouldRetry
+            }
         });
 
         const defaults = context.defaults();
@@ -50,21 +47,21 @@ describe('Rallar browser facade runtime context', () => {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
             room: {
-                roomId: 'room-1',
+                roomId: 'room-1'
             },
             rtc: {
                 dataChannelLanes: lanes,
                 maxPeerConnections: 12,
-                rttReportingDegreeLimit: 3,
+                rttReportingDegreeLimit: 3
             },
             messages: {
-                maxPayloadBytes: 2048,
+                maxPayloadBytes: 2048
             },
             operations: {
                 timeoutMs: 500,
                 maxAttempts: 3,
-                shouldRetry,
-            },
+                shouldRetry
+            }
         });
         expect(defaults?.room).not.toBe(context.readDefaults()?.room);
 
@@ -74,13 +71,13 @@ describe('Rallar browser facade runtime context', () => {
         expect(context.defaults()?.room?.roomId).toBe('room-1');
         expect(context.resolveOperationScope()).toEqual({
             applicationId: 'app-1',
-            workspaceId: 'workspace-1',
+            workspaceId: 'workspace-1'
         });
         expect(
             context.resolveOperationOptions({
                 signal,
-                timeoutMs: 100,
-            }),
+                timeoutMs: 100
+            })
         ).toEqual({
             signal,
             timeoutMs: 100,
@@ -88,7 +85,7 @@ describe('Rallar browser facade runtime context', () => {
             shouldRetry,
             dataChannelLanes: lanes,
             maxPeerConnections: 12,
-            rttReportingDegreeLimit: 3,
+            rttReportingDegreeLimit: 3
         });
     });
 
@@ -103,7 +100,7 @@ describe('Rallar browser facade runtime context', () => {
         expect(first.currentRoomRef()).toMatchObject({
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
-            groupId: 'room-1',
+            groupId: 'room-1'
         });
         expect(first.readConnectState()).toBe('connected');
 
@@ -117,12 +114,12 @@ describe('Rallar browser facade runtime context', () => {
         let ready = false;
         const context = createRallarBrowserFacadeRuntimeContext({
             isMiddlewareReady: () => ready,
-            getMiddleware: () => middleware,
+            getMiddleware: () => middleware
         });
 
         expect(context.readMiddleware()).toBeUndefined();
         expect(() => context.requireMiddleware()).toThrow(
-            'Rallar is not connected. Call rallar.connect() first.',
+            'Rallar is not connected. Call rallar.connect() first.'
         );
 
         ready = true;
@@ -137,15 +134,15 @@ function createGroupSnapshot(groupId: string): GroupSnapshot {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
         groupId,
-        sessionIds: [],
+        sessionIds: []
     });
     return {
         ...snapshot,
         group: {
             ...snapshot.group,
             displayName: 'Room',
-            metadataVersion: 1,
-        },
+            metadataVersion: 1
+        }
     };
 }
 
@@ -156,7 +153,7 @@ function createMiddleware(sessionId: string): ApiMiddleware {
             sessionId,
             username: 'user-1',
             accessToken: 'token-1',
-            expiresAtEpochMs: Date.now() + 60_000,
-        },
+            expiresAtEpochMs: Date.now() + 60_000
+        }
     });
 }

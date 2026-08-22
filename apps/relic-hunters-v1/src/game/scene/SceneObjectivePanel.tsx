@@ -3,7 +3,7 @@ import type { SceneObjective } from './objectives.ts';
 
 export function SceneObjectivePanel({
     objective,
-    onPrimeAction,
+    onPrimeAction
 }: Readonly<{
     objective: SceneObjective;
     onPrimeAction(action: RelicActionInput): void;
@@ -14,7 +14,7 @@ export function SceneObjectivePanel({
                 'scene-objective-panel',
                 `tone-${objective.tone}`,
                 objective.urgent ? 'urgent' : '',
-                objective.investigated ? 'investigated' : '',
+                objective.investigated ? 'investigated' : ''
             ].filter(Boolean).join(' ')}
             aria-label="Room objective"
         >

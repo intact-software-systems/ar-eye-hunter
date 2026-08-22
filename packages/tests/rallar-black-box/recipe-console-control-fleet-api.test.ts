@@ -1,25 +1,21 @@
 // @vitest-environment happy-dom
-import type { AuthSession } from '@shared/api/api-config.ts';
 import {
     RALLAR_BLACK_BOX_FLEET_REPORT_BUNDLE_MAX_BYTES,
-    RALLAR_BLACK_BOX_FLEET_REPORT_FILE_MAX_BYTES,
+    RALLAR_BLACK_BOX_FLEET_REPORT_FILE_MAX_BYTES
 } from '@shared-test/rallar-bb-test/fleet-report-validation.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-    createRecipeConsoleControlApi,
-} from '../../../apps/rallar-black-box/src/recipe-console/control/control-api.ts';
+import { createRecipeConsoleControlApi } from '../../../apps/rallar-black-box/src/recipe-console/control/control-api.ts';
+import { TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY } from '../../../apps/rallar-black-box/src/recipe-console/control/control-credential-policy.ts';
 import {
     ControlConnectionProvider,
-    type RecipeConsoleControlConnection,
     useControlConnection,
+    type RecipeConsoleControlConnection
 } from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
-import {
-    TRUSTED_RECIPE_CONSOLE_CONTROL_CREDENTIAL_POLICY,
-} from '../../../apps/rallar-black-box/src/recipe-console/control/control-credential-policy.ts';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const BOOTSTRAP = {
     controlUrl: 'https://control.test/control',
@@ -29,8 +25,8 @@ const BOOTSTRAP = {
     bootstrapGroup: {
         applicationId: 'rallar-server',
         workspaceId: 'default',
-        groupId: 'fleet-room',
-    },
+        groupId: 'fleet-room'
+    }
 } as const;
 
 type Deferred<Value> = Readonly<{
@@ -40,7 +36,7 @@ type Deferred<Value> = Readonly<{
 
 function deferred<Value>(): Deferred<Value> {
     let resolve!: (value: Value) => void;
-    const promise = new Promise<Value>(onResolve => {
+    const promise = new Promise<Value>((onResolve) => {
         resolve = onResolve;
     });
     return { promise, resolve };
@@ -52,7 +48,7 @@ function authSession(): AuthSession {
         sessionId: 'session-operator-a',
         username: 'operator-a',
         accessToken: 'access-operator-a',
-        expiresAtEpochMs: 4_000_000_000_000,
+        expiresAtEpochMs: 4_000_000_000_000
     };
 }
 
@@ -66,14 +62,14 @@ function bundle(
         'fleet-report.json': JSON.stringify({ distributedRunId }),
         'summary.md': `# ${distributedRunId}`,
         'agent-results.csv': 'agentId,state\nagent-a,passed\n',
-        'failure-signatures.csv': 'signatureId,count\n',
-    },
+        'failure-signatures.csv': 'signatureId,count\n'
+    }
 ): Record<string, unknown> {
     return {
         fleetReportSchemaVersion: 1,
         distributedRunId,
         generatedAtEpochMs: 2_000,
-        files,
+        files
     };
 }
 
@@ -82,15 +78,15 @@ function bundleResponse(value: unknown): Response {
     return new Response(text, {
         headers: {
             'content-type': 'application/json',
-            'content-length': String(new TextEncoder().encode(text).byteLength),
-        },
+            'content-length': String(new TextEncoder().encode(text).byteLength)
+        }
     });
 }
 
 function createApi(fetchFn: typeof fetch) {
     return createRecipeConsoleControlApi({
         ...BOOTSTRAP,
-        fetchFn,
+        fetchFn
     });
 }
 
@@ -104,7 +100,7 @@ describe('Recipe Console Fleet lazy control capability', () => {
     it('loads the feature lazily and sends no request before explicit selection', async () => {
         vi.useFakeTimers();
         const requests: URL[] = [];
-        const api = createApi(async input => {
+        const api = createApi(async (input) => {
             requests.push(new URL(String(input)));
             return bundleResponse(bundle('distributed / one'));
         });
@@ -115,12 +111,12 @@ describe('Recipe Console Fleet lazy control capability', () => {
         expect(fleet.getSelectedReportBundle()).toBeUndefined();
 
         const selected = await fleet.selectReportBundle({
-            distributedRunId: 'distributed / one',
+            distributedRunId: 'distributed / one'
         });
         await vi.advanceTimersByTimeAsync(60_000);
 
-        expect(requests.map(url => url.pathname)).toEqual([
-            '/fleet/reports/distributed%20%2F%20one/artifacts',
+        expect(requests.map((url) => url.pathname)).toEqual([
+            '/fleet/reports/distributed%20%2F%20one/artifacts'
         ]);
         expect(selected.distributedRunId).toBe('distributed / one');
         expect(fleet.getSelectedReportBundle()).toBe(selected);
@@ -128,7 +124,7 @@ describe('Recipe Console Fleet lazy control capability', () => {
     });
 
     it('uses the existing authorized endpoint retry without exposing credentials', async () => {
-        const requests: Array<{ path: string; auth: string | null }> = [];
+        const requests: Array<{ path: string; auth: string | null; }> = [];
         const api = createRecipeConsoleControlApi({
             ...BOOTSTRAP,
             authSession: authSession(),
@@ -142,21 +138,21 @@ describe('Recipe Console Fleet lazy control capability', () => {
                         token: 'brokered-fleet-secret',
                         issuedAtEpochMs: 3_000_000_000_000,
                         expiresAtEpochMs: 4_000_000_000_000,
-                        ttlMs: 1_000_000_000_000,
+                        ttlMs: 1_000_000_000_000
                     });
                 }
                 if (!auth) {
                     return Response.json(
                         { error: 'Operator token required.' },
-                        { status: 401, statusText: 'Unauthorized' },
+                        { status: 401, statusText: 'Unauthorized' }
                     );
                 }
                 return bundleResponse(bundle('distributed-auth'));
-            },
+            }
         });
 
         const selected = await (await api.fleet.load()).selectReportBundle({
-            distributedRunId: 'distributed-auth',
+            distributedRunId: 'distributed-auth'
         });
 
         expect(selected.distributedRunId).toBe('distributed-auth');
@@ -164,12 +160,12 @@ describe('Recipe Console Fleet lazy control capability', () => {
             { path: '/fleet/reports/distributed-auth/artifacts', auth: null },
             {
                 path: '/api/black-box/control-token',
-                auth: 'Bearer access-operator-a',
+                auth: 'Bearer access-operator-a'
             },
             {
                 path: '/fleet/reports/distributed-auth/artifacts',
-                auth: 'Bearer brokered-fleet-secret',
-            },
+                auth: 'Bearer brokered-fleet-secret'
+            }
         ]);
         api.close();
     });
@@ -180,10 +176,13 @@ describe('Recipe Console Fleet lazy control capability', () => {
         const container = document.createElement('div');
         document.body.append(container);
         const root = createRoot(container);
-        vi.stubGlobal('fetch', vi.fn(async input => {
-            requests.push(new URL(String(input)));
-            return Response.json({ runs: [], distributedRuns: [] });
-        }));
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async (input) => {
+                requests.push(new URL(String(input)));
+                return Response.json({ runs: [], distributedRuns: [] });
+            })
+        );
 
         function Harness() {
             observed = useControlConnection();
@@ -191,27 +190,29 @@ describe('Recipe Console Fleet lazy control capability', () => {
         }
 
         try {
-            await act(async () => root.render(createElement(
-                ControlConnectionProvider,
-                { bootstrap: BOOTSTRAP, children: createElement(Harness) },
-            )));
+            await act(async () =>
+                root.render(createElement(
+                    ControlConnectionProvider,
+                    { bootstrap: BOOTSTRAP, children: createElement(Harness) }
+                ))
+            );
             await vi.waitFor(() => expect(observed?.query.status).toBe('live'));
             const requestCount = requests.length;
 
             expect(observed?.fleet).toBeDefined();
-            expect(requests.some(url =>
-                url.pathname.startsWith('/fleet/reports/')
-                && url.pathname.endsWith('/artifacts')
+            expect(requests.some((url) =>
+                url.pathname.startsWith('/fleet/reports/') &&
+                url.pathname.endsWith('/artifacts')
             )).toBe(false);
             await observed!.fleet!.load();
             expect(requests).toHaveLength(requestCount);
-        } finally {
+        }
+        finally {
             await act(async () => root.unmount());
             container.remove();
         }
     });
-
-    });
+});
 
 describe('Recipe Console Fleet selection authority', () => {
     it('rejects superseded, caller-aborted, and closed-context work without replacing current evidence', async () => {
@@ -219,9 +220,9 @@ describe('Recipe Console Fleet selection authority', () => {
         const callerResponse = deferred<Response>();
         const contextResponse = deferred<Response>();
         const requests: string[] = [];
-        const api = createApi(async input => {
+        const api = createApi(async (input) => {
             const distributedRunId = decodeURIComponent(
-                new URL(String(input)).pathname.split('/').at(-2) ?? '',
+                new URL(String(input)).pathname.split('/').at(-2) ?? ''
             );
             requests.push(distributedRunId);
             if (distributedRunId === 'distributed-first') {
@@ -238,11 +239,11 @@ describe('Recipe Console Fleet selection authority', () => {
         const fleet = await api.fleet.load();
 
         const first = fleet.selectReportBundle({
-            distributedRunId: 'distributed-first',
+            distributedRunId: 'distributed-first'
         });
         await vi.waitFor(() => expect(requests).toContain('distributed-first'));
         const current = await fleet.selectReportBundle({
-            distributedRunId: 'distributed-current',
+            distributedRunId: 'distributed-current'
         });
         await expect(first).rejects.toMatchObject({ name: 'AbortError' });
         expect(fleet.getSelectedReportBundle()).toBe(current);
@@ -251,7 +252,7 @@ describe('Recipe Console Fleet selection authority', () => {
         const controller = new AbortController();
         const callerAborted = fleet.selectReportBundle({
             distributedRunId: 'distributed-caller',
-            signal: controller.signal,
+            signal: controller.signal
         });
         await vi.waitFor(() => expect(requests).toContain('distributed-caller'));
         controller.abort();
@@ -260,14 +261,14 @@ describe('Recipe Console Fleet selection authority', () => {
         callerResponse.resolve(bundleResponse(bundle('distributed-caller')));
 
         const contextAborted = fleet.selectReportBundle({
-            distributedRunId: 'distributed-context',
+            distributedRunId: 'distributed-context'
         });
         await vi.waitFor(() => expect(requests).toContain('distributed-context'));
         api.close();
         await expect(contextAborted).rejects.toMatchObject({ name: 'AbortError' });
         contextResponse.resolve(bundleResponse(bundle('distributed-context')));
         await expect(fleet.selectReportBundle({
-            distributedRunId: 'distributed-after-close',
+            distributedRunId: 'distributed-after-close'
         })).rejects.toMatchObject({ name: 'AbortError' });
         expect(requests).not.toContain('distributed-after-close');
         expect(fleet.getSelectedReportBundle()).toBe(current);
@@ -278,43 +279,45 @@ describe('Recipe Console Fleet selection authority', () => {
         const api = createApi(async () => nextResponse());
         const fleet = await api.fleet.load();
         const retained = await fleet.selectReportBundle({
-            distributedRunId: 'distributed-a',
+            distributedRunId: 'distributed-a'
         });
 
         nextResponse = () => bundleResponse(bundle('wrong-id'));
         await expect(fleet.selectReportBundle({
-            distributedRunId: 'distributed-b',
+            distributedRunId: 'distributed-b'
         })).rejects.toMatchObject({
             name: 'RecipeConsoleControlProtocolError',
-            message: expect.stringContaining('bundle-run-id-mismatch'),
+            message: expect.stringContaining('bundle-run-id-mismatch')
         });
         expect(fleet.getSelectedReportBundle()).toBe(retained);
 
-        nextResponse = () => bundleResponse(bundle('distributed-b', {
-            ...(bundle('distributed-b').files as Record<string, unknown>),
-            'unexpected.txt': 'not allowed',
-        }));
+        nextResponse = () =>
+            bundleResponse(bundle('distributed-b', {
+                ...(bundle('distributed-b').files as Record<string, unknown>),
+                'unexpected.txt': 'not allowed'
+            }));
         await expect(fleet.selectReportBundle({
-            distributedRunId: 'distributed-b',
+            distributedRunId: 'distributed-b'
         })).rejects.toMatchObject({
             name: 'RecipeConsoleControlProtocolError',
-            message: expect.stringContaining('unexpected-bundle-file'),
+            message: expect.stringContaining('unexpected-bundle-file')
         });
         expect(fleet.getSelectedReportBundle()).toBe(retained);
 
-        nextResponse = () => new Response('{not-json', {
-            headers: { 'content-type': 'application/json' },
-        });
+        nextResponse = () =>
+            new Response('{not-json', {
+                headers: { 'content-type': 'application/json' }
+            });
         await expect(fleet.selectReportBundle({
-            distributedRunId: 'distributed-b',
+            distributedRunId: 'distributed-b'
         })).rejects.toMatchObject({
-            name: 'RecipeConsoleControlProtocolError',
+            name: 'RecipeConsoleControlProtocolError'
         });
         expect(fleet.getSelectedReportBundle()).toBe(retained);
 
         nextResponse = () => bundleResponse(bundle('distributed-c'));
         const replacement = await fleet.selectReportBundle({
-            distributedRunId: 'distributed-c',
+            distributedRunId: 'distributed-c'
         });
         expect(fleet.getSelectedReportBundle()).toBe(replacement);
         expect(replacement).not.toBe(retained);
@@ -329,40 +332,42 @@ describe('Recipe Console Fleet selection authority', () => {
         const api = createApi(async () => nextResponse());
         const fleet = await api.fleet.load();
         const retained = await fleet.selectReportBundle({
-            distributedRunId: 'distributed-retained',
+            distributedRunId: 'distributed-retained'
         });
 
         const oversizedFile = 'x'.repeat(
-            RALLAR_BLACK_BOX_FLEET_REPORT_FILE_MAX_BYTES + 1,
+            RALLAR_BLACK_BOX_FLEET_REPORT_FILE_MAX_BYTES + 1
         );
-        nextResponse = () => bundleResponse(bundle('distributed-file', {
-            'fleet-report.json': oversizedFile,
-            'summary.md': '',
-            'agent-results.csv': '',
-            'failure-signatures.csv': '',
-        }));
+        nextResponse = () =>
+            bundleResponse(bundle('distributed-file', {
+                'fleet-report.json': oversizedFile,
+                'summary.md': '',
+                'agent-results.csv': '',
+                'failure-signatures.csv': ''
+            }));
         await expect(fleet.selectReportBundle({
-            distributedRunId: 'distributed-file',
+            distributedRunId: 'distributed-file'
         })).rejects.toMatchObject({
             name: 'RecipeConsoleControlProtocolError',
-            message: expect.stringContaining('bundle-file-too-large'),
+            message: expect.stringContaining('bundle-file-too-large')
         });
         expect(fleet.getSelectedReportBundle()).toBe(retained);
 
         const aggregateQuarter = 'x'.repeat(
-            RALLAR_BLACK_BOX_FLEET_REPORT_BUNDLE_MAX_BYTES / 4,
+            RALLAR_BLACK_BOX_FLEET_REPORT_BUNDLE_MAX_BYTES / 4
         );
-        nextResponse = () => bundleResponse(bundle('distributed-aggregate', {
-            'fleet-report.json': aggregateQuarter,
-            'summary.md': `${aggregateQuarter}x`,
-            'agent-results.csv': aggregateQuarter,
-            'failure-signatures.csv': aggregateQuarter,
-        }));
+        nextResponse = () =>
+            bundleResponse(bundle('distributed-aggregate', {
+                'fleet-report.json': aggregateQuarter,
+                'summary.md': `${aggregateQuarter}x`,
+                'agent-results.csv': aggregateQuarter,
+                'failure-signatures.csv': aggregateQuarter
+            }));
         await expect(fleet.selectReportBundle({
-            distributedRunId: 'distributed-aggregate',
+            distributedRunId: 'distributed-aggregate'
         })).rejects.toMatchObject({
             name: 'RecipeConsoleControlProtocolError',
-            message: expect.stringContaining('bundle-too-large'),
+            message: expect.stringContaining('bundle-too-large')
         });
         expect(fleet.getSelectedReportBundle()).toBe(retained);
         api.close();

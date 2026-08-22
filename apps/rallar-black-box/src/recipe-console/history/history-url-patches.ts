@@ -1,9 +1,6 @@
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import type { TuneRunOption } from '../tune/tune-run-catalog.ts';
-import {
-    tuneLeftSelectionPatch,
-    tuneRightSelectionPatch,
-} from '../tune/tune-url-patches.ts';
+import { tuneLeftSelectionPatch, tuneRightSelectionPatch } from '../tune/tune-url-patches.ts';
 
 export type HistoryRowSelectionActions = Readonly<{
     eligible: boolean;
@@ -17,7 +14,7 @@ export type HistoryRowSelectionActions = Readonly<{
 }>;
 
 export function historyBaselineSelectionPatch(
-    option: TuneRunOption | undefined,
+    option: TuneRunOption | undefined
 ): Partial<RecipeConsoleUrlState> {
     return option?.pairStatus === 'paired'
         ? tuneLeftSelectionPatch(option)
@@ -25,7 +22,7 @@ export function historyBaselineSelectionPatch(
 }
 
 export function historyCandidateSelectionPatch(
-    option: TuneRunOption | undefined,
+    option: TuneRunOption | undefined
 ): Partial<RecipeConsoleUrlState> {
     return option?.pairStatus === 'paired'
         ? tuneRightSelectionPatch(option)
@@ -33,14 +30,14 @@ export function historyCandidateSelectionPatch(
 }
 
 export function historyRowSelectionActions(
-    option: TuneRunOption | undefined,
+    option: TuneRunOption | undefined
 ): HistoryRowSelectionActions {
     if (!option) {
         return {
             eligible: false,
             reason: 'quarantined',
             baselinePatch: {},
-            candidatePatch: {},
+            candidatePatch: {}
         };
     }
     if (option.pairStatus !== 'paired') {
@@ -50,7 +47,7 @@ export function historyRowSelectionActions(
                 ? 'missing-control'
                 : 'ambiguous-control',
             baselinePatch: {},
-            candidatePatch: {},
+            candidatePatch: {}
         };
     }
     const baselinePatch = historyBaselineSelectionPatch(option);
@@ -60,16 +57,16 @@ export function historyRowSelectionActions(
             eligible: false,
             reason: 'quarantined',
             baselinePatch: {},
-            candidatePatch: {},
+            candidatePatch: {}
         };
     }
     return {
         eligible: true,
         identity: {
             distributedRunId: option.distributedRunId,
-            controlRunId: option.controlRunId,
+            controlRunId: option.controlRunId
         },
         baselinePatch,
-        candidatePatch,
+        candidatePatch
     };
 }

@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
-import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
+import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import { describe, expect, it } from 'vitest';
 import { createPostgresClientPhaseDriver } from './client-state/postgres-client-mutation-test-driver.ts';
+import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('Postgres client phase driver', () => {
     it('runs mutation reads through the supplied barrier-capable repository', async () => {
@@ -14,7 +14,7 @@ describe('Postgres client phase driver', () => {
             atEpochMs,
             serviceId: 'postgres-client-phase-driver-unit',
             createClientStateEventStore: () => new InMemoryClientStateEventStore(),
-            writeComputed: () => Promise.resolve(),
+            writeComputed: () => Promise.resolve()
         });
 
         await driver.connectSession(
@@ -28,8 +28,8 @@ describe('Postgres client phase driver', () => {
                 expiresAtEpochMs: atEpochMs + 60_000,
                 actorPrincipalId: 'alice',
                 actorSessionId: 'session-1',
-                requestId: 'phase-driver-read',
-            },
+                requestId: 'phase-driver-read'
+            }
         );
 
         expect(runtimeRepository.phaseOperations).toContain('client-state:principals');
@@ -41,7 +41,7 @@ class PhaseRecordingBarrierRepository extends FakeRuntimeStateRepository {
 
     override async findEntry(
         namespace: string,
-        key: string,
+        key: string
     ): Promise<RuntimeStateEntry | undefined> {
         this.phaseOperations.push(namespace);
         return await super.findEntry(namespace, key);

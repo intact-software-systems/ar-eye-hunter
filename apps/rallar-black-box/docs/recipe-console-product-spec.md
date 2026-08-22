@@ -125,32 +125,32 @@ Preview IDs, tokens, authorization material, and artifacts are never persisted.
 
 All new Recipe Console URLs use the typed, validated schema version `v=1`.
 
-| Field | Allowed value or meaning |
-| --- | --- |
-| `v` | `1` |
-| `experience` | `recipe-console` or `legacy` |
-| `view` | `execute`, `monitor`, `analyze`, `tune`, `fleet`, or `advanced` |
-| `controlRunId` | Selected control-run identifier |
-| `distributedRunId` | Selected distributed-run identifier |
-| `agentId` | Selected agent identifier |
-| `recipeId` | Selected recipe identifier |
-| `commandId` | Selected command identifier |
-| `diagnosticSeverity` | Diagnostic severity filter |
-| `transport` | Transport filter |
-| `historyQuery` | History text query |
-| `historyGroup` | History group substring filter |
-| `historyRecipeId` | History recipe substring filter; distinct from operational `recipeId` |
-| `historyProfile` | History recipe-profile substring filter |
-| `failureCategory` | Semantic failure category filter |
-| `status` | Run/status filter |
-| `from` | Inclusive time-range start |
-| `to` | Inclusive time-range end |
-| `compareLeft` | Left/baseline run identifier |
-| `compareRight` | Right/candidate run identifier |
-| `timingMetric` | Selected timing metric |
-| `fleetRegion` | Fleet region filter |
-| `fleetMapLayers` | Selected fleet-map layer set |
-| `legacySurface` | Present only while an advanced legacy route is active |
+| Field                | Allowed value or meaning                                              |
+| -------------------- | --------------------------------------------------------------------- |
+| `v`                  | `1`                                                                   |
+| `experience`         | `recipe-console` or `legacy`                                          |
+| `view`               | `execute`, `monitor`, `analyze`, `tune`, `fleet`, or `advanced`       |
+| `controlRunId`       | Selected control-run identifier                                       |
+| `distributedRunId`   | Selected distributed-run identifier                                   |
+| `agentId`            | Selected agent identifier                                             |
+| `recipeId`           | Selected recipe identifier                                            |
+| `commandId`          | Selected command identifier                                           |
+| `diagnosticSeverity` | Diagnostic severity filter                                            |
+| `transport`          | Transport filter                                                      |
+| `historyQuery`       | History text query                                                    |
+| `historyGroup`       | History group substring filter                                        |
+| `historyRecipeId`    | History recipe substring filter; distinct from operational `recipeId` |
+| `historyProfile`     | History recipe-profile substring filter                               |
+| `failureCategory`    | Semantic failure category filter                                      |
+| `status`             | Run/status filter                                                     |
+| `from`               | Inclusive time-range start                                            |
+| `to`                 | Inclusive time-range end                                              |
+| `compareLeft`        | Left/baseline run identifier                                          |
+| `compareRight`       | Right/candidate run identifier                                        |
+| `timingMetric`       | Selected timing metric                                                |
+| `fleetRegion`        | Fleet region filter                                                   |
+| `fleetMapLayers`     | Selected fleet-map layer set                                          |
+| `legacySurface`      | Present only while an advanced legacy route is active                 |
 
 ### Precedence and canonicalization
 
@@ -173,14 +173,14 @@ Never persist secrets, raw credentials, session tickets, large artifact payloads
 
 Artifact validation is profile- and schema-version-aware. These product profiles describe acceptance behavior; they do not introduce a new wire-contract enum.
 
-| Profile | Files and behavior |
-| --- | --- |
-| Core distributed bundle | `distributed-run.json`, `manifest.json`, and `control-run.json` form the core distributed bundle and support run identity, orchestration state, and manifest analysis. |
-| Evidence-enriched bundle | `report.json`, `results.jsonl`, `events.jsonl`, `failures.json`, and `metadata.json` add report, result, event, failure, and provenance evidence. Any of these may be optional according to bundle kind and schema version. |
-| Partial/offline bundle | Any parseable supported subset remains analysable. The UI preserves usable evidence and emits visible, file-specific missing/incompatible warnings; absence of an optional evidence file does not invalidate all other evidence. |
-| Control-server schema v2 | Core files plus `report.json`, `failures.json`, and `metadata.json` identify v2. Linked/absent `results.jsonl` and `events.jsonl` are explicit optional evidence rather than a v1 downgrade. |
+| Profile                           | Files and behavior                                                                                                                                                                                                                          |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core distributed bundle           | `distributed-run.json`, `manifest.json`, and `control-run.json` form the core distributed bundle and support run identity, orchestration state, and manifest analysis.                                                                      |
+| Evidence-enriched bundle          | `report.json`, `results.jsonl`, `events.jsonl`, `failures.json`, and `metadata.json` add report, result, event, failure, and provenance evidence. Any of these may be optional according to bundle kind and schema version.                 |
+| Partial/offline bundle            | Any parseable supported subset remains analysable. The UI preserves usable evidence and emits visible, file-specific missing/incompatible warnings; absence of an optional evidence file does not invalidate all other evidence.            |
+| Control-server schema v2          | Core files plus `report.json`, `failures.json`, and `metadata.json` identify v2. Linked/absent `results.jsonl` and `events.jsonl` are explicit optional evidence rather than a v1 downgrade.                                                |
 | Export envelope and future schema | The existing `{ artifactSchemaVersion, distributedRunId, generatedAtEpochMs, files }` envelope round-trips without contract changes. A future claimed version retains usable evidence with an explicit unsupported/unknown-version warning. |
-| Generic black-box-runner artifact | Remains a separate public profile and is handed to the legacy Shared Test importer; it is never reinterpreted as a distributed-run bundle. |
+| Generic black-box-runner artifact | Remains a separate public profile and is handed to the legacy Shared Test importer; it is never reinterpreted as a distributed-run bundle.                                                                                                  |
 
 Browser intake is limited to 24 files, 16 MiB per file, and 48 MiB total.
 Duplicate basenames, unsafe paths, unsafe/unbounded URL identities, and malformed
@@ -192,22 +192,22 @@ The product must not present all eight files as universally required. Unknown ve
 
 The quoted test names below are the canonical acceptance evidence. A row is not complete until its named artifact exists and passes; naming it here is not pass evidence. An unavailable configured-service test would remain open even when its wrapper and discovery checks pass. Iteration 12 executed the configured owner, so no row below remains open.
 
-| # | Ready-State condition | Owning iteration | Exact expected evidence |
-| --- | --- | --- | --- |
-| 1 | The default first screen is distributed recipe execution, not a general command center. | 12 | `tests/playwright/rallar-black-box/recipe-console-shell.spec.ts` — `blank URL opens Recipe Console Execute after the final ready-state flip` |
-| 2 | A simulated distributed ACK run can launch three agents and reach Monitor from visible controls without Refresh or legacy navigation. | 4 + launch migration | `tests/playwright/rallar-black-box/recipe-console-execute.spec.ts` — `launches agents and runs a simulated distributed ACK recipe through visible controls` |
-| 3 | A live distributed run can be staged, started, monitored, cancelled, and exported when services are configured. | 3-5 | `tests/playwright/rallar-black-box/full-stack-recipe-console-monitor.spec.ts` — `completes the configured live distributed run lifecycle and exports its artifact` |
-| 4 | Failures are listed before raw event streams. | 5 | `tests/playwright/rallar-black-box/recipe-console-monitor.spec.ts` — `places the failure verdict and failure list before raw event evidence` |
-| 5 | Every failure row links to agent, command, recipe, diagnostic, timeline, and artifact evidence when available. | 5-6 | `tests/playwright/rallar-black-box/recipe-console-monitor.spec.ts` — `opens all available correlated evidence from a failure row` |
-| 6 | Artifact import works without a control server connection. | 6 | `tests/playwright/rallar-black-box/recipe-console-analyze.spec.ts` — `imports a partial bundle offline and focuses the first actionable failure` |
-| 7 | Timing analysis surfaces command percentiles and RTC stream-specific health. | 7 | `tests/playwright/rallar-black-box/recipe-console-tune.spec.ts` — `shows command percentiles cadence drift drops and backpressure for an RTC stream` |
-| 8 | Compare mode shows changed recipes, participants, failures, timings, and received-message deltas. | 7-8 | `tests/playwright/rallar-black-box/recipe-console-tune.spec.ts` — `compares two runs across recipe participant failure timing and receive deltas` |
-| 9 | URL state restores selected view, run, filters, comparison, and timing metric. | 2, 8 | `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `restores versioned view selection filters comparison and timing metric from a copied URL` |
-| 10 | Large event/result lists are bounded or virtualized. | 9 | `tests/playwright/rallar-black-box/recipe-console-scale.spec.ts` — `keeps synthetic large event and result lists bounded responsive and searchable` |
-| 11 | Direct Rallar tools exist as advanced diagnostics, not primary navigation. | 11 | `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `keeps direct Rallar diagnostics out of primary navigation and opens them from Advanced` |
-| 12 | Existing legacy UI elements remain reachable through advanced/contextual routes, even when hidden from the main flow. | 11 | `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `opens every registered legacy surface from its alias and contextual route` |
-| 13 | Hidden legacy routes are not mounted or loaded on the default path unless a documented state-preservation exception requires it. | 1, 11 | `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `default Recipe Console does not load or poll inactive legacy routes except registered stateful exceptions`; `packages/tests/rallar-black-box/legacy-boundaries.test.ts` — `loads every registered legacy experience route dynamically` |
-| 14 | Desktop and mobile views are usable without hidden hover-only evidence. | 12 | `tests/playwright/rallar-black-box/recipe-console-accessibility.spec.ts` — `exposes equivalent keyboard touch and persistent evidence at desktop portrait and landscape viewports` |
+| #  | Ready-State condition                                                                                                                 | Owning iteration     | Exact expected evidence                                                                                                                                                                                                                                                                                       |
+| -- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1  | The default first screen is distributed recipe execution, not a general command center.                                               | 12                   | `tests/playwright/rallar-black-box/recipe-console-shell.spec.ts` — `blank URL opens Recipe Console Execute after the final ready-state flip`                                                                                                                                                                  |
+| 2  | A simulated distributed ACK run can launch three agents and reach Monitor from visible controls without Refresh or legacy navigation. | 4 + launch migration | `tests/playwright/rallar-black-box/recipe-console-execute.spec.ts` — `launches agents and runs a simulated distributed ACK recipe through visible controls`                                                                                                                                                   |
+| 3  | A live distributed run can be staged, started, monitored, cancelled, and exported when services are configured.                       | 3-5                  | `tests/playwright/rallar-black-box/full-stack-recipe-console-monitor.spec.ts` — `completes the configured live distributed run lifecycle and exports its artifact`                                                                                                                                            |
+| 4  | Failures are listed before raw event streams.                                                                                         | 5                    | `tests/playwright/rallar-black-box/recipe-console-monitor.spec.ts` — `places the failure verdict and failure list before raw event evidence`                                                                                                                                                                  |
+| 5  | Every failure row links to agent, command, recipe, diagnostic, timeline, and artifact evidence when available.                        | 5-6                  | `tests/playwright/rallar-black-box/recipe-console-monitor.spec.ts` — `opens all available correlated evidence from a failure row`                                                                                                                                                                             |
+| 6  | Artifact import works without a control server connection.                                                                            | 6                    | `tests/playwright/rallar-black-box/recipe-console-analyze.spec.ts` — `imports a partial bundle offline and focuses the first actionable failure`                                                                                                                                                              |
+| 7  | Timing analysis surfaces command percentiles and RTC stream-specific health.                                                          | 7                    | `tests/playwright/rallar-black-box/recipe-console-tune.spec.ts` — `shows command percentiles cadence drift drops and backpressure for an RTC stream`                                                                                                                                                          |
+| 8  | Compare mode shows changed recipes, participants, failures, timings, and received-message deltas.                                     | 7-8                  | `tests/playwright/rallar-black-box/recipe-console-tune.spec.ts` — `compares two runs across recipe participant failure timing and receive deltas`                                                                                                                                                             |
+| 9  | URL state restores selected view, run, filters, comparison, and timing metric.                                                        | 2, 8                 | `tests/playwright/rallar-black-box/recipe-console-history.spec.ts` — `restores versioned view selection filters comparison and timing metric from a copied URL`                                                                                                                                               |
+| 10 | Large event/result lists are bounded or virtualized.                                                                                  | 9                    | `tests/playwright/rallar-black-box/recipe-console-scale.spec.ts` — `keeps synthetic large event and result lists bounded responsive and searchable`                                                                                                                                                           |
+| 11 | Direct Rallar tools exist as advanced diagnostics, not primary navigation.                                                            | 11                   | `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `keeps direct Rallar diagnostics out of primary navigation and opens them from Advanced`                                                                                                                                                |
+| 12 | Existing legacy UI elements remain reachable through advanced/contextual routes, even when hidden from the main flow.                 | 11                   | `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `opens every registered legacy surface from its alias and contextual route`                                                                                                                                                             |
+| 13 | Hidden legacy routes are not mounted or loaded on the default path unless a documented state-preservation exception requires it.      | 1, 11                | `tests/playwright/rallar-black-box/recipe-console-advanced.spec.ts` — `default Recipe Console does not load or poll inactive legacy routes except registered stateful exceptions`; `packages/tests/rallar-black-box/legacy-boundaries.test.ts` — `loads every registered legacy experience route dynamically` |
+| 14 | Desktop and mobile views are usable without hidden hover-only evidence.                                                               | 12                   | `tests/playwright/rallar-black-box/recipe-console-accessibility.spec.ts` — `exposes equivalent keyboard touch and persistent evidence at desktop portrait and landscape viewports`                                                                                                                            |
 
 ### Iteration 12 final Ready-State checkpoint — `4f04228`, `aec6e57`
 

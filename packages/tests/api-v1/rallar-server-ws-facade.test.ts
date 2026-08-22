@@ -1,23 +1,18 @@
-import { describe, expect, it, vi } from 'vitest';
+import { createRallarServerFacade } from '@shared-server/rallar-facade/RallarServer.ts';
+import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
+import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/services/ws-topic-room-authorizer.ts';
+import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     AL_CONTROL_NACK_TYPE_ID,
-    type ALNackPayload,
     ALMessage,
     InMemoryQueueBox,
     newALBroadcastMessage,
     newALRoute,
     WsQueueBoxServerService,
-    type WsServerTargetResolver,
+    type ALNackPayload,
+    type WsServerTargetResolver
 } from '@shared/mod.ts';
-import type {
-    AuditStamp,
-    GroupMember,
-    GroupPresenceSession,
-    GroupSnapshot,
-} from '@shared/api/group-types.ts';
-import { createRallarServerFacade } from '@shared-server/rallar-facade/RallarServer.ts';
-import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
-import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/services/ws-topic-room-authorizer.ts';
+import { describe, expect, it, vi } from 'vitest';
 import { createTestGroup } from '../create-test-group.ts';
 
 describe('RallarServerWsFacade', () => {
@@ -30,18 +25,18 @@ describe('RallarServerWsFacade', () => {
             'cursor.position.v1',
             { x: 1, y: 2 },
             {
-                exceptPeerIds: ['peer-1'],
-            },
+                exceptPeerIds: ['peer-1']
+            }
         );
 
         await facade.handle(message);
 
         expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual([
             'conn-2',
-            'conn-3',
+            'conn-3'
         ]);
         expect(
-            socket.sent.every((entry) => entry.data.id.msgId === message.id.msgId),
+            socket.sent.every((entry) => entry.data.id.msgId === message.id.msgId)
         ).toBe(true);
     });
 
@@ -52,7 +47,7 @@ describe('RallarServerWsFacade', () => {
             newALRoute('rallar.internal', 'all', 'secret-1'),
             'all',
             'internal.message.v1',
-            { ok: false },
+            { ok: false }
         );
 
         await facade.handle(message);
@@ -67,15 +62,14 @@ describe('RallarServerWsFacade', () => {
         facade.defineTopic({
             topicId: 'app.todo',
             typeId: 'todo.item.updated.v1',
-            validate: (value) =>
-                typeof value === 'object' && value !== null && 'title' in value,
+            validate: (value) => typeof value === 'object' && value !== null && 'title' in value
         });
         const message = newALBroadcastMessage(
             'peer-1',
             newALRoute('app.todo', 'all', 'todo-1'),
             'all',
             'todo.item.updated.v1',
-            { done: true },
+            { done: true }
         );
 
         await facade.handle(message);
@@ -92,7 +86,7 @@ describe('RallarServerWsFacade', () => {
             topicId: 'app.todo',
             typeId: 'todo.item.updated.v1',
             fanout: 'none',
-            validate: () => true,
+            validate: () => true
         });
         facade.on({ topicId: 'app.todo', typeId: 'todo.item.updated.v1' }, handler);
         const message = newALBroadcastMessage(
@@ -100,7 +94,7 @@ describe('RallarServerWsFacade', () => {
             newALRoute('app.todo', 'all', 'todo-1'),
             'all',
             'todo.item.updated.v1',
-            { title: 'Ship facade', done: false },
+            { title: 'Ship facade', done: false }
         );
 
         await facade.handle(message);
@@ -108,7 +102,7 @@ describe('RallarServerWsFacade', () => {
         expect(handler).toHaveBeenCalledTimes(1);
         expect(handler.mock.calls[0][0].payload).toEqual({
             title: 'Ship facade',
-            done: false,
+            done: false
         });
         expect(socket.sent).toHaveLength(0);
     });
@@ -120,7 +114,7 @@ describe('RallarServerWsFacade', () => {
         facade.defineTopic({
             topicId: 'app.todo',
             typeId: 'todo.item.updated.v1',
-            fanout: 'outbox',
+            fanout: 'outbox'
         });
         const message = newALBroadcastMessage(
             'peer-1',
@@ -130,8 +124,8 @@ describe('RallarServerWsFacade', () => {
             { title: 'Durable fanout', done: false },
             {
                 reliability: 'at-least-once',
-                ack: 'receiver',
-            },
+                ack: 'receiver'
+            }
         );
 
         await facade.handle(message);
@@ -145,13 +139,13 @@ describe('RallarServerWsFacade', () => {
 
         facade.defineTopic({
             topicId: 'app.todo',
-            typeId: 'todo.item.updated.v1',
+            typeId: 'todo.item.updated.v1'
         });
 
         expect(() =>
             facade.defineTopic({
                 topicId: 'custom.todo',
-                typeId: 'todo.item.updated.v1',
+                typeId: 'todo.item.updated.v1'
             })
         ).toThrow('Rallar user WS topic must start with app. or room.');
     });
@@ -159,7 +153,7 @@ describe('RallarServerWsFacade', () => {
     it('passes room broadcast target groupRef into room authorization context', async () => {
         const authorizeRoomMessage = vi.fn(() => true);
         const { facade } = createFacade({
-            authorizeRoomMessage,
+            authorizeRoomMessage
         });
         const group = createGroupSnapshot('room-1', ['peer-1'], 4).group;
         const message = newALBroadcastMessage(
@@ -170,8 +164,8 @@ describe('RallarServerWsFacade', () => {
             { text: 'after join' },
             {
                 groupRef: group,
-                minSnapshotVersion: 4,
-            },
+                minSnapshotVersion: 4
+            }
         );
 
         await facade.handle(message);
@@ -182,10 +176,10 @@ describe('RallarServerWsFacade', () => {
                 roomRef: {
                     applicationId: 'app-1',
                     workspaceId: 'workspace-1',
-                    groupId: 'room-1',
+                    groupId: 'room-1'
                 },
-                minSnapshotVersion: 4,
-            }),
+                minSnapshotVersion: 4
+            })
         );
     });
 
@@ -194,9 +188,8 @@ describe('RallarServerWsFacade', () => {
         try {
             const { facade, socket } = createFacade({
                 authorizeRoomMessage: createGroupRoomWsAuthorizer({
-                    findGroupSnapshotById: () =>
-                        createGroupSnapshot('room-1', ['peer-1'], 3),
-                }),
+                    findGroupSnapshotById: () => createGroupSnapshot('room-1', ['peer-1'], 3)
+                })
             });
             const message = newALBroadcastMessage(
                 'peer-1',
@@ -205,8 +198,8 @@ describe('RallarServerWsFacade', () => {
                 'chat.message.v1',
                 { text: 'after join' },
                 {
-                    minSnapshotVersion: 4,
-                },
+                    minSnapshotVersion: 4
+                }
             );
 
             await facade.handle(message);
@@ -215,17 +208,18 @@ describe('RallarServerWsFacade', () => {
             expect(socket.sent[0].connectionId).toBe('conn-1');
             expect(socket.sent[0].data.payload.typeId).toBe(AL_CONTROL_NACK_TYPE_ID);
             const nack = JSON.parse(
-                socket.sent[0].data.payload.resource,
+                socket.sent[0].data.payload.resource
             ) as ALNackPayload;
             expect(nack).toMatchObject({
                 msgId: message.id.msgId,
                 reason: 'not-yet-in-sync',
-                serverSnapshotVersion: 3,
+                serverSnapshotVersion: 3
             });
             expect(nack).not.toHaveProperty('groupId');
             expect(nack).not.toHaveProperty('minSnapshotVersion');
             expect(nack).not.toHaveProperty('retryAfterMs');
-        } finally {
+        }
+        finally {
             warn.mockRestore();
         }
     });
@@ -241,8 +235,8 @@ describe('RallarServer.ws.publish current behavior', () => {
             'cursor.position.v1',
             { x: 1, y: 2 },
             {
-                exceptPeerIds: ['peer-1'],
-            },
+                exceptPeerIds: ['peer-1']
+            }
         );
 
         const result = await server.ws.publish(message, 'live-only');
@@ -253,14 +247,14 @@ describe('RallarServer.ws.publish current behavior', () => {
             sentCount: 2,
             recipientCount: 2,
             failedCount: 0,
-            entries: [],
+            entries: []
         });
         expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual([
             'conn-2',
-            'conn-3',
+            'conn-3'
         ]);
         expect(
-            socket.sent.every((entry) => entry.data.id.msgId === message.id.msgId),
+            socket.sent.every((entry) => entry.data.id.msgId === message.id.msgId)
         ).toBe(true);
     });
 
@@ -270,15 +264,15 @@ describe('RallarServer.ws.publish current behavior', () => {
             const { server, socket } = createServerFacade({
                 targetResolver: {
                     ...createTargetResolver(),
-                    resolveBroadcastRecipients: () => [],
-                },
+                    resolveBroadcastRecipients: () => []
+                }
             });
             const message = newALBroadcastMessage(
                 'server-1',
                 newALRoute('app.cursor', 'all', 'cursor-1'),
                 'all',
                 'cursor.position.v1',
-                { x: 1, y: 2 },
+                { x: 1, y: 2 }
             );
 
             const result = await server.ws.publish(message, 'live-only');
@@ -289,13 +283,14 @@ describe('RallarServer.ws.publish current behavior', () => {
                 sentCount: 0,
                 recipientCount: 0,
                 failedCount: 0,
-                entries: [],
+                entries: []
             });
             expect(socket.sent).toHaveLength(0);
             expect(warn).toHaveBeenCalledWith(
-                'Dynamic WS topic had no recipients: app.cursor',
+                'Dynamic WS topic had no recipients: app.cursor'
             );
-        } finally {
+        }
+        finally {
             warn.mockRestore();
         }
     });
@@ -304,14 +299,14 @@ describe('RallarServer.ws.publish current behavior', () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         try {
             const { server, socket } = createServerFacade({
-                failingConnectionIds: ['conn-2'],
+                failingConnectionIds: ['conn-2']
             });
             const message = newALBroadcastMessage(
                 'server-1',
                 newALRoute('app.cursor', 'all', 'cursor-1'),
                 'all',
                 'cursor.position.v1',
-                { x: 1, y: 2 },
+                { x: 1, y: 2 }
             );
 
             const result = await server.ws.publish(message, 'live-only');
@@ -327,15 +322,16 @@ describe('RallarServer.ws.publish current behavior', () => {
                     {
                         peerId: 'peer-2',
                         connectionId: 'conn-2',
-                        reason: 'send failed',
-                    },
-                ],
+                        reason: 'send failed'
+                    }
+                ]
             });
             expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual([
                 'conn-1',
-                'conn-3',
+                'conn-3'
             ]);
-        } finally {
+        }
+        finally {
             error.mockRestore();
         }
     });
@@ -353,8 +349,8 @@ describe('RallarServer.ws.publish current behavior', () => {
             {
                 groupRef,
                 reliability: 'at-least-once',
-                ack: 'receiver',
-            },
+                ack: 'receiver'
+            }
         );
 
         const result = await server.ws.publish(message, 'outbox');
@@ -363,7 +359,7 @@ describe('RallarServer.ws.publish current behavior', () => {
         expect(result).toMatchObject({
             fanout: 'outbox',
             status: 'queued-outbox',
-            enqueueStatus: 'enqueued',
+            enqueueStatus: 'enqueued'
         });
         expect(enqueue).toHaveBeenCalledWith(message);
         expect(lowerResult.status).toBe('enqueued');
@@ -384,12 +380,12 @@ describe('RallarServer.ws.publish current behavior', () => {
             { title: 'Invalid durable fanout', done: false },
             {
                 reliability: 'at-least-once',
-                ack: 'receiver',
-            },
+                ack: 'receiver'
+            }
         );
 
         await expect(server.ws.publish(message, 'outbox')).rejects.toThrow(
-            /room broadcast group ref/i,
+            /room broadcast group ref/i
         );
 
         expect(await outbox.getItem(message.route)).toBeUndefined();
@@ -406,7 +402,7 @@ describe('RallarServer.ws.publish current behavior', () => {
             newALRoute('app.todo', 'room-1', 'todo-1'),
             'room',
             'todo.item.updated.v1',
-            { title: 'No fanout', done: false },
+            { title: 'No fanout', done: false }
         );
 
         const result = await server.ws.publish(message, 'none');
@@ -415,7 +411,7 @@ describe('RallarServer.ws.publish current behavior', () => {
             fanout: 'none',
             status: 'none',
             sentCount: 0,
-            entries: [],
+            entries: []
         });
         expect(enqueue).not.toHaveBeenCalled();
         expect(sendToTargets).not.toHaveBeenCalled();
@@ -427,11 +423,11 @@ describe('RallarServer.ws.publish current behavior', () => {
         const { server, socket } = createServerFacade();
         socket.connections.set('conn-1', {
             id: 'conn-1',
-            isOpen: true,
+            isOpen: true
         });
         socket.connections.set('conn-2', {
             id: 'conn-2',
-            isOpen: false,
+            isOpen: false
         });
 
         expect(server.ws.status()).toEqual({
@@ -443,19 +439,19 @@ describe('RallarServer.ws.publish current behavior', () => {
             connections: [
                 {
                     connectionId: 'conn-1',
-                    isOpen: true,
+                    isOpen: true
                 },
                 {
                     connectionId: 'conn-2',
-                    isOpen: false,
-                },
-            ],
+                    isOpen: false
+                }
+            ]
         });
     });
 });
 
 function createFacade(
-    options?: ConstructorParameters<typeof RallarServerWsFacade>[1],
+    options?: ConstructorParameters<typeof RallarServerWsFacade>[1]
 ) {
     const socket = createFakeWsServer();
     const service = new WsQueueBoxServerService(
@@ -464,15 +460,15 @@ function createFacade(
         socket as never,
         'server-1',
         {
-            targetResolver: createTargetResolver(),
-        },
+            targetResolver: createTargetResolver()
+        }
     );
     const facade = new RallarServerWsFacade(service, options);
 
     return {
         facade,
         service,
-        socket,
+        socket
     };
 }
 
@@ -480,10 +476,10 @@ function createServerFacade(
     options: Readonly<{
         targetResolver?: WsServerTargetResolver;
         failingConnectionIds?: readonly string[];
-    }> = {},
+    }> = {}
 ) {
     const socket = createFakeWsServer({
-        failingConnectionIds: options.failingConnectionIds,
+        failingConnectionIds: options.failingConnectionIds
     });
     const inbox = new InMemoryQueueBox(new Map());
     const outbox = new InMemoryQueueBox(new Map());
@@ -493,18 +489,18 @@ function createServerFacade(
         socket as never,
         'server-1',
         {
-            targetResolver: options.targetResolver ?? createTargetResolver(),
-        },
+            targetResolver: options.targetResolver ?? createTargetResolver()
+        }
     );
     const qboxEngine = {
         start: vi.fn(),
-        wake: vi.fn(),
+        wake: vi.fn()
     };
     const server = createRallarServerFacade({
         runtime: {
             wsQBoxServerService: service,
-            qboxEngine,
-        },
+            qboxEngine
+        }
     });
 
     return {
@@ -513,17 +509,17 @@ function createServerFacade(
         socket,
         inbox,
         outbox,
-        qboxEngine,
+        qboxEngine
     };
 }
 
 function createFakeWsServer(
     options: Readonly<{
         failingConnectionIds?: readonly string[];
-    }> = {},
+    }> = {}
 ) {
-    const sent: Array<{ connectionId: string; data: ALMessage }> = [];
-    const connections = new Map<string, { id: string; isOpen: boolean }>();
+    const sent: Array<{ connectionId: string; data: ALMessage; }> = [];
+    const connections = new Map<string, { id: string; isOpen: boolean; }>();
     const failingConnectionIds = new Set(options.failingConnectionIds ?? []);
 
     return {
@@ -538,21 +534,21 @@ function createFakeWsServer(
         encode(data: ALMessage) {
             return {
                 text: JSON.stringify(data),
-                data,
+                data
             };
         },
         sendEncoded(
             connectionId: string,
-            encoded: Readonly<{ text: string; data?: ALMessage }>,
+            encoded: Readonly<{ text: string; data?: ALMessage; }>
         ) {
             if (failingConnectionIds.has(connectionId)) {
                 throw new Error('send failed');
             }
             sent.push({
                 connectionId,
-                data: encoded.data ?? JSON.parse(encoded.text) as ALMessage,
+                data: encoded.data ?? JSON.parse(encoded.text) as ALMessage
             });
-        },
+        }
     };
 }
 
@@ -560,7 +556,7 @@ function createTargetResolver(): WsServerTargetResolver {
     const connectionIdByPeerId: Record<string, string> = {
         'peer-1': 'conn-1',
         'peer-2': 'conn-2',
-        'peer-3': 'conn-3',
+        'peer-3': 'conn-3'
     };
 
     return {
@@ -570,23 +566,23 @@ function createTargetResolver(): WsServerTargetResolver {
                 ? [
                     {
                         peerId,
-                        connectionId,
-                    },
+                        connectionId
+                    }
                 ]
                 : [];
         },
         resolveBroadcastRecipients: () =>
             Object.entries(connectionIdByPeerId).map(([peerId, connectionId]) => ({
                 peerId,
-                connectionId,
-            })),
+                connectionId
+            }))
     };
 }
 
 function createGroupSnapshot(
     groupId: string,
     sessionIds: readonly string[],
-    snapshotVersion: number,
+    snapshotVersion: number
 ): GroupSnapshot {
     const ownerPrincipalId = sessionIds[0];
     if (ownerPrincipalId === undefined) {
@@ -596,7 +592,7 @@ function createGroupSnapshot(
         stateRevision: snapshotVersion,
         causalRevision: {
             groupRevision: snapshotVersion,
-            presenceRevision: snapshotVersion,
+            presenceRevision: snapshotVersion
         },
         group: createTestGroup({
             applicationId: 'app-1',
@@ -611,7 +607,7 @@ function createGroupSnapshot(
             rosterVersion: 1,
             presenceVersion: snapshotVersion,
             created: createAuditStamp(1, ownerPrincipalId),
-            updated: createAuditStamp(snapshotVersion, ownerPrincipalId),
+            updated: createAuditStamp(snapshotVersion, ownerPrincipalId)
         }),
         members: sessionIds.map((sessionId): GroupMember => ({
             applicationId: 'app-1',
@@ -626,7 +622,7 @@ function createGroupSnapshot(
             invitationExpiresAtEpochMs: null,
             left: null,
             removed: null,
-            banned: null,
+            banned: null
         })),
         activeSessions: sessionIds.map((sessionId): GroupPresenceSession => ({
             applicationId: 'app-1',
@@ -641,10 +637,10 @@ function createGroupSnapshot(
             lastHeartbeatAtEpochMs: snapshotVersion,
             expiresAtEpochMs: 60_000,
             disconnectedAtEpochMs: null,
-            disconnectReason: null,
+            disconnectReason: null
         })),
         memberCount: sessionIds.length,
-        onlineMemberCount: sessionIds.length,
+        onlineMemberCount: sessionIds.length
     };
 }
 
@@ -654,6 +650,6 @@ function createAuditStamp(atEpochMs: number, principalId: string): AuditStamp {
         actor: { kind: 'principal', principalId },
         reason: null,
         traceId: null,
-        requestId: null,
+        requestId: null
     };
 }

@@ -1,21 +1,22 @@
+import { blocksShot, FALLBACK_ARENA_LAYOUT, pickPickupAnchor, pickSpawnPoint } from './arenaLayout.ts';
 import {
     GAME_PROTOCOL,
-    type ArenaLayoutSpec,
-    type ArenaPickupState,
     type ArenaEvent,
+    type ArenaLayoutSpec,
     type ArenaMatchDurationMs,
     type ArenaMatchPlayerBaseline,
     type ArenaMatchStanding,
     type ArenaMatchState,
+    type ArenaPickupState,
     type ArenaSnapshot,
     type EyeAttackAccepted,
     type EyeAttackCue,
     type EyeTargetState,
     type EyeThreatState,
+    type MatchStartedAccepted,
+    type MatchStartIntent,
     type PickupAccepted,
     type PickupIntent,
-    type MatchStartIntent,
-    type MatchStartedAccepted,
     type PlayerArenaState,
     type PlayerCombatState,
     type PlayerHitAccepted,
@@ -28,14 +29,8 @@ import {
     type Vec3Tuple,
     type WaveState,
     type WeaponKind,
-    type WeaponStats,
+    type WeaponStats
 } from './types.ts';
-import {
-    FALLBACK_ARENA_LAYOUT,
-    blocksShot,
-    pickPickupAnchor,
-    pickSpawnPoint,
-} from './arenaLayout.ts';
 
 export type LocalPlayerState = Readonly<{
     position: Vec3Tuple;
@@ -112,7 +107,7 @@ export const WEAPON_STATS: Record<WeaponKind, WeaponStats> = {
         spreadRadians: 0.012,
         rays: 1,
         knockback: 0.4,
-        flavor: 'honest work, suspiciously glowing',
+        flavor: 'honest work, suspiciously glowing'
     },
     'spread-shot': {
         kind: 'spread-shot',
@@ -124,7 +119,7 @@ export const WEAPON_STATS: Record<WeaponKind, WeaponStats> = {
         spreadRadians: 0.095,
         rays: 5,
         knockback: 0.65,
-        flavor: 'performance review in cone form',
+        flavor: 'performance review in cone form'
     },
     'rail-lance': {
         kind: 'rail-lance',
@@ -136,7 +131,7 @@ export const WEAPON_STATS: Record<WeaponKind, WeaponStats> = {
         spreadRadians: 0.002,
         rays: 1,
         knockback: 1.1,
-        flavor: 'one line item, many regrets',
+        flavor: 'one line item, many regrets'
     },
     'glitch-blaster': {
         kind: 'glitch-blaster',
@@ -148,7 +143,7 @@ export const WEAPON_STATS: Record<WeaponKind, WeaponStats> = {
         spreadRadians: 0.045,
         rays: 2,
         knockback: 0.9,
-        flavor: 'undefined behavior, but marketable',
+        flavor: 'undefined behavior, but marketable'
     },
     'audit-pea-shooter': {
         kind: 'audit-pea-shooter',
@@ -160,7 +155,7 @@ export const WEAPON_STATS: Record<WeaponKind, WeaponStats> = {
         spreadRadians: 0.08,
         rays: 1,
         knockback: 0.12,
-        flavor: 'downgrade complete, morale retained',
+        flavor: 'downgrade complete, morale retained'
     },
     'confetti-cannon': {
         kind: 'confetti-cannon',
@@ -172,8 +167,8 @@ export const WEAPON_STATS: Record<WeaponKind, WeaponStats> = {
         spreadRadians: 0.14,
         rays: 7,
         knockback: 0.35,
-        flavor: 'mandatory fun, ballistic edition',
-    },
+        flavor: 'mandatory fun, ballistic edition'
+    }
 };
 
 export const EMPTY_INPUT: PlayerInputState = {
@@ -186,7 +181,7 @@ export const EMPTY_INPUT: PlayerInputState = {
     fire: false,
     altFire: false,
     overdrive: false,
-    pause: false,
+    pause: false
 };
 
 export function createInitialCombatState(): PlayerCombatState {
@@ -198,7 +193,7 @@ export function createInitialCombatState(): PlayerCombatState {
         overdrive: 0,
         dashReadyAtEpochMs: 0,
         slideReadyAtEpochMs: 0,
-        shotReadyAtEpochMs: 0,
+        shotReadyAtEpochMs: 0
     };
 }
 
@@ -207,14 +202,14 @@ export function createInitialVitalsState(): PlayerArenaState['vitals'] {
         health: PLAYER_MAX_HEALTH,
         maxHealth: PLAYER_MAX_HEALTH,
         kills: 0,
-        deaths: 0,
+        deaths: 0
     };
 }
 
 export function createInitialLoadoutState(): PlayerLoadoutState {
     return {
         weaponKind: DEFAULT_WEAPON_KIND,
-        tier: WEAPON_STATS[DEFAULT_WEAPON_KIND].tier,
+        tier: WEAPON_STATS[DEFAULT_WEAPON_KIND].tier
     };
 }
 
@@ -226,7 +221,7 @@ export function createInitialWaveState(nowEpochMs = Date.now()): WaveState {
         nextPhaseAtEpochMs: nowEpochMs + WAVE_WARMUP_MS,
         targetBudget: TARGET_COUNT,
         hostileBudget: 2,
-        pickupRewardBudget: 1,
+        pickupRewardBudget: 1
     };
 }
 
@@ -241,23 +236,24 @@ export function createInitialPlayerState(nowEpochMs = Date.now()): LocalPlayerSt
             ...createInitialCombatState(),
             dashReadyAtEpochMs: nowEpochMs,
             slideReadyAtEpochMs: nowEpochMs,
-            shotReadyAtEpochMs: nowEpochMs,
+            shotReadyAtEpochMs: nowEpochMs
         },
         vitals: createInitialVitalsState(),
-        loadout: createInitialLoadoutState(),
+        loadout: createInitialLoadoutState()
     };
 }
 
 export function createInitialArenaState(
     seed = 0x5eed_2026,
-    nowEpochMs = Date.now(),
+    nowEpochMs = Date.now()
 ): ArenaSimulationState {
     return {
         revision: 1,
         seed,
         layout: FALLBACK_ARENA_LAYOUT,
-        targets: Array.from({ length: TARGET_COUNT }, (_, index) =>
-            createTarget(`eye-${index}`, index, seed, nowEpochMs)
+        targets: Array.from(
+            { length: TARGET_COUNT },
+            (_, index) => createTarget(`eye-${index}`, index, seed, nowEpochMs)
         ),
         pickups: [],
         players: [],
@@ -266,7 +262,7 @@ export function createInitialArenaState(
         match: undefined,
         events: [],
         nextPickupSeq: 0,
-        nextPickupAtEpochMs: nowEpochMs + pickupIntervalMs(seed, 0),
+        nextPickupAtEpochMs: nowEpochMs + pickupIntervalMs(seed, 0)
     };
 }
 
@@ -275,7 +271,7 @@ export function stepLocalPlayer(
     input: PlayerInputState,
     dtMs: number,
     nowEpochMs: number,
-    arenaHalfSize = FALLBACK_ARENA_LAYOUT.halfSize,
+    arenaHalfSize = FALLBACK_ARENA_LAYOUT.halfSize
 ): LocalPlayerState {
     if (input.pause) {
         return player;
@@ -284,7 +280,7 @@ export function stepLocalPlayer(
     if (player.vitals.deadUntilEpochMs && player.vitals.deadUntilEpochMs > nowEpochMs) {
         return {
             ...player,
-            velocity: [0, 0, 0],
+            velocity: [0, 0, 0]
         };
     }
 
@@ -297,9 +293,9 @@ export function stepLocalPlayer(
                 ...player.vitals,
                 health: player.vitals.maxHealth,
                 deadUntilEpochMs: undefined,
-                respawnedAtEpochMs: nowEpochMs,
+                respawnedAtEpochMs: nowEpochMs
             },
-            loadout: createInitialLoadoutState(),
+            loadout: createInitialLoadoutState()
         }
         : player;
 
@@ -312,7 +308,7 @@ export function stepLocalPlayer(
     const right: Vec3Tuple = [Math.cos(revivedPlayer.yaw), 0, -Math.sin(revivedPlayer.yaw)];
     const worldMove = normalize3(add3(
         scale3(right, localMove[0]),
-        scale3(forward, localMove[1]),
+        scale3(forward, localMove[1])
     ));
     const startedDash = input.dash && nowEpochMs >= revivedPlayer.combat.dashReadyAtEpochMs;
     const startedSlide = input.slide &&
@@ -341,7 +337,7 @@ export function stepLocalPlayer(
     let velocity: Vec3Tuple = [
         lerp(revivedPlayer.velocity[0], desiredHorizontal[0], control),
         revivedPlayer.velocity[1] + GRAVITY * dt,
-        lerp(revivedPlayer.velocity[2], desiredHorizontal[2], control),
+        lerp(revivedPlayer.velocity[2], desiredHorizontal[2], control)
     ];
 
     if (startedDash) {
@@ -368,7 +364,7 @@ export function stepLocalPlayer(
     position = [
         clamp(position[0], -arenaHalfSize, arenaHalfSize),
         position[1],
-        clamp(position[2], -arenaHalfSize, arenaHalfSize),
+        clamp(position[2], -arenaHalfSize, arenaHalfSize)
     ];
 
     const energy = clamp(
@@ -376,7 +372,7 @@ export function stepLocalPlayer(
             (input.sprint ? -18 : 24) * dt +
             (slideUntil ? -10 * dt : 0),
         0,
-        100,
+        100
     );
 
     return {
@@ -394,14 +390,14 @@ export function stepLocalPlayer(
                 : revivedPlayer.combat.dashReadyAtEpochMs,
             slideReadyAtEpochMs: startedSlide
                 ? nowEpochMs + SLIDE_COOLDOWN_MS
-                : revivedPlayer.combat.slideReadyAtEpochMs,
-        },
+                : revivedPlayer.combat.slideReadyAtEpochMs
+        }
     };
 }
 
 export function applyArenaEvent(
     state: ArenaSimulationState,
-    event: ArenaEvent,
+    event: ArenaEvent
 ): ArenaSimulationState {
     const events = [...state.events.filter((item) => item.expiresAtEpochMs > event.startsAtEpochMs), event]
         .slice(-24);
@@ -418,17 +414,17 @@ export function applyArenaEvent(
         activeEvent: event,
         nextPickupSeq: event.kind === 'weapon-drop'
             ? state.nextPickupSeq + 1
-            : state.nextPickupSeq,
+            : state.nextPickupSeq
     };
 }
 
 export function stepArenaDirectorState(
     state: ArenaSimulationState,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): ArenaSimulationState {
     let next = advanceWaveState(
         respawnDuePlayers(expirePickups(state, nowEpochMs), nowEpochMs),
-        nowEpochMs,
+        nowEpochMs
     );
     next = resolveDueEyeAttacks(next, nowEpochMs);
     next = scheduleHostileEyeAttacks(next, nowEpochMs);
@@ -442,13 +438,13 @@ export function stepArenaDirectorState(
 }
 
 export type ArenaMatchStartResolution =
-    | Readonly<{ accepted: false; state: ArenaSimulationState; reason: string }>
-    | Readonly<{ accepted: true; state: ArenaSimulationState; acceptedMatch: MatchStartedAccepted }>;
+    | Readonly<{ accepted: false; state: ArenaSimulationState; reason: string; }>
+    | Readonly<{ accepted: true; state: ArenaSimulationState; acceptedMatch: MatchStartedAccepted; }>;
 
 export function startArenaMatch(
     state: ArenaSimulationState,
     intent: MatchStartIntent,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): ArenaMatchStartResolution {
     if (!isArenaMatchDuration(intent.durationMs)) {
         return { accepted: false, state, reason: 'invalid-duration' };
@@ -469,21 +465,23 @@ export function startArenaMatch(
         directorSessionId: intent.directorSessionId,
         startedAtEpochMs: nowEpochMs,
         endsAtEpochMs: nowEpochMs + intent.durationMs,
-        baseline,
+        baseline
     };
     const event = createSystemEvent(
         'match-started',
         revision,
         nowEpochMs,
         [0, 1.2, 0],
-        `Arena match armed for ${Math.round(intent.durationMs / 60_000)} minute${intent.durationMs === 60_000 ? '' : 's'}`,
+        `Arena match armed for ${Math.round(intent.durationMs / 60_000)} minute${
+            intent.durationMs === 60_000 ? '' : 's'
+        }`
     );
     const nextState: ArenaSimulationState = {
         ...state,
         revision,
         match,
         events: [...state.events.slice(-23), event],
-        activeEvent: event,
+        activeEvent: event
     };
     return {
         accepted: true,
@@ -492,14 +490,14 @@ export function startArenaMatch(
             intent,
             match,
             revision,
-            acceptedAtEpochMs: nowEpochMs,
-        },
+            acceptedAtEpochMs: nowEpochMs
+        }
     };
 }
 
 export function finishArenaMatchIfDue(
     state: ArenaSimulationState,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): ArenaSimulationState {
     const match = state.match;
     if (!match || match.status !== 'active' || nowEpochMs < match.endsAtEpochMs) {
@@ -513,7 +511,7 @@ export function finishArenaMatchIfDue(
         ...match,
         status: 'complete',
         completedAtEpochMs: nowEpochMs,
-        results,
+        results
     };
     const event = createSystemEvent(
         'match-ended',
@@ -524,25 +522,25 @@ export function finishArenaMatchIfDue(
             : [0, 1.2, 0],
         winner
             ? `${winner.username} wins the audit sprint`
-            : 'Arena match ended with nobody pleasing the metrics',
+            : 'Arena match ended with nobody pleasing the metrics'
     );
     return {
         ...state,
         revision,
         match: completed,
         events: [...state.events.slice(-23), event],
-        activeEvent: event,
+        activeEvent: event
     };
 }
 
 export type EyeAttackResolution =
-    | Readonly<{ accepted: false; state: ArenaSimulationState; reason: string }>
-    | Readonly<{ accepted: true; state: ArenaSimulationState; acceptedAttack: EyeAttackAccepted }>;
+    | Readonly<{ accepted: false; state: ArenaSimulationState; reason: string; }>
+    | Readonly<{ accepted: true; state: ArenaSimulationState; acceptedAttack: EyeAttackAccepted; }>;
 
 export function resolveEyeAttackCue(
     state: ArenaSimulationState,
     cue: EyeAttackCue,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): EyeAttackResolution {
     if (nowEpochMs < cue.firesAtEpochMs) {
         return { accepted: false, state, reason: 'windup-active' };
@@ -568,9 +566,9 @@ export function resolveEyeAttackCue(
                 health: healthAfterHit,
                 deaths: target.vitals.deaths + (eliminated ? 1 : 0),
                 deadUntilEpochMs: eliminated ? nowEpochMs + PLAYER_RESPAWN_MS : target.vitals.deadUntilEpochMs,
-                lastDamagedAtEpochMs: nowEpochMs,
+                lastDamagedAtEpochMs: nowEpochMs
             },
-            updatedAtEpochMs: nowEpochMs,
+            updatedAtEpochMs: nowEpochMs
         }
         : target;
     const reason: EyeAttackAccepted['reason'] = hit
@@ -589,19 +587,17 @@ export function resolveEyeAttackCue(
         hitCheck?.point ?? cue.aimPoint,
         hit
             ? `${target?.username ?? 'avatar'} received mandatory laser feedback`
-            : 'Laser audit filed under not today',
+            : 'Laser audit filed under not today'
     );
     const nextState: ArenaSimulationState = {
         ...state,
         revision,
         players: nextTarget
-            ? state.players.map((player) =>
-                player.sessionId === nextTarget.sessionId ? nextTarget : player
-            )
+            ? state.players.map((player) => player.sessionId === nextTarget.sessionId ? nextTarget : player)
             : state.players,
         attacks: state.attacks.filter((attack) => attack.id !== cue.id),
         events: [...state.events.slice(-23), event],
-        activeEvent: event,
+        activeEvent: event
     };
     return {
         accepted: true,
@@ -615,14 +611,14 @@ export function resolveEyeAttackCue(
             eliminated,
             revision,
             acceptedAtEpochMs: nowEpochMs,
-            reason,
-        },
+            reason
+        }
     };
 }
 
 export function applyEyeAttackAccepted(
     state: ArenaSimulationState,
-    accepted: EyeAttackAccepted,
+    accepted: EyeAttackAccepted
 ): ArenaSimulationState {
     if (accepted.revision <= state.revision) {
         const activeCue = state.attacks.find((attack) => attack.id === accepted.cue.id);
@@ -634,9 +630,7 @@ export function applyEyeAttackAccepted(
     const acceptedTarget = accepted.target;
     const players = acceptedTarget
         ? state.players.some((player) => player.sessionId === acceptedTarget.sessionId)
-            ? state.players.map((player) =>
-                player.sessionId === acceptedTarget.sessionId ? acceptedTarget : player
-            )
+            ? state.players.map((player) => player.sessionId === acceptedTarget.sessionId ? acceptedTarget : player)
             : [...state.players, acceptedTarget]
         : state.players;
     const event = createSystemEvent(
@@ -646,7 +640,7 @@ export function applyEyeAttackAccepted(
         accepted.impact,
         accepted.hit
             ? 'Laser audit landed'
-            : `Laser audit ${accepted.reason ?? 'missed'}`,
+            : `Laser audit ${accepted.reason ?? 'missed'}`
     );
     return {
         ...state,
@@ -654,7 +648,7 @@ export function applyEyeAttackAccepted(
         players: players.slice(-16),
         attacks: state.attacks.filter((attack) => attack.id !== accepted.cue.id),
         events: [...state.events.filter((item) => item.id !== event.id).slice(-23), event],
-        activeEvent: event,
+        activeEvent: event
     };
 }
 
@@ -672,7 +666,7 @@ export function upsertPlayerPose(
         seq: number;
         sentAtEpochMs: number;
     }>,
-    nowEpochMs = Date.now(),
+    nowEpochMs = Date.now()
 ): ArenaSimulationState {
     const existing = state.players.find((player) => player.sessionId === pose.sessionId);
     if (existing && existing.seq > pose.seq) {
@@ -688,21 +682,21 @@ export function upsertPlayerPose(
         vitals: pose.vitals ?? existing?.vitals ?? createInitialVitalsState(),
         loadout: pose.loadout ?? existing?.loadout ?? createInitialLoadoutState(),
         seq: pose.seq,
-        updatedAtEpochMs: nowEpochMs,
+        updatedAtEpochMs: nowEpochMs
     };
     return {
         ...state,
         players: [
             ...state.players.filter((candidate) => candidate.sessionId !== pose.sessionId),
-            player,
-        ].slice(-16),
+            player
+        ].slice(-16)
     };
 }
 
 export function spawnWeaponPickup(
     state: ArenaSimulationState,
     nowEpochMs: number,
-    weaponKind = chooseWeaponKind(state.seed, state.nextPickupSeq),
+    weaponKind = chooseWeaponKind(state.seed, state.nextPickupSeq)
 ): ArenaSimulationState {
     const anchor = pickPickupAnchor(state.layout, state.nextPickupSeq);
     const stats = getWeaponStats(weaponKind);
@@ -714,7 +708,7 @@ export function spawnWeaponPickup(
         anchorId: anchor.id,
         spawnedAtEpochMs: nowEpochMs,
         expiresAtEpochMs: nowEpochMs + PICKUP_TTL_MS,
-        label: stats.label,
+        label: stats.label
     };
     const revision = state.revision + 1;
     const event = createSystemEvent('weapon-drop', revision, nowEpochMs, pickup.position, `${stats.label} dropped`);
@@ -725,18 +719,18 @@ export function spawnWeaponPickup(
         events: [...state.events.slice(-11), event],
         activeEvent: event,
         nextPickupSeq: state.nextPickupSeq + 1,
-        nextPickupAtEpochMs: nowEpochMs + pickupIntervalMs(state.seed, state.nextPickupSeq + 1),
+        nextPickupAtEpochMs: nowEpochMs + pickupIntervalMs(state.seed, state.nextPickupSeq + 1)
     };
 }
 
 export type PickupResolution =
-    | Readonly<{ accepted: false; state: ArenaSimulationState; reason: string }>
-    | Readonly<{ accepted: true; state: ArenaSimulationState; acceptedPickup: PickupAccepted }>;
+    | Readonly<{ accepted: false; state: ArenaSimulationState; reason: string; }>
+    | Readonly<{ accepted: true; state: ArenaSimulationState; acceptedPickup: PickupAccepted; }>;
 
 export function resolvePickupIntent(
     state: ArenaSimulationState,
     intent: PickupIntent,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): PickupResolution {
     const pickup = state.pickups.find((item) => item.id === intent.pickupId);
     if (!pickup) {
@@ -762,14 +756,14 @@ export function resolvePickupIntent(
         loadout: {
             weaponKind: pickup.weaponKind,
             tier: stats.tier,
-            pickedAtEpochMs: nowEpochMs,
+            pickedAtEpochMs: nowEpochMs
         },
-        updatedAtEpochMs: nowEpochMs,
+        updatedAtEpochMs: nowEpochMs
     };
     const nextPickup: ArenaPickupState = {
         ...pickup,
         pickedBySessionId: intent.sessionId,
-        pickedAtEpochMs: nowEpochMs,
+        pickedAtEpochMs: nowEpochMs
     };
     const revision = state.revision + 1;
     const event = createSystemEvent(
@@ -777,7 +771,7 @@ export function resolvePickupIntent(
         revision,
         nowEpochMs,
         pickup.position,
-        `${player.username} got ${stats.label}`,
+        `${player.username} got ${stats.label}`
     );
     const nextState: ArenaSimulationState = {
         ...state,
@@ -785,7 +779,7 @@ export function resolvePickupIntent(
         pickups: state.pickups.map((item) => item.id === pickup.id ? nextPickup : item),
         players: state.players.map((item) => item.sessionId === player.sessionId ? nextPlayer : item),
         events: [...state.events.slice(-11), event],
-        activeEvent: event,
+        activeEvent: event
     };
     return {
         accepted: true,
@@ -795,19 +789,19 @@ export function resolvePickupIntent(
             pickup: nextPickup,
             player: nextPlayer,
             revision,
-            acceptedAtEpochMs: nowEpochMs,
-        },
+            acceptedAtEpochMs: nowEpochMs
+        }
     };
 }
 
 export type PlayerHitResolution =
-    | Readonly<{ accepted: false; state: ArenaSimulationState; reason: string }>
-    | Readonly<{ accepted: true; state: ArenaSimulationState; acceptedHit: PlayerHitAccepted }>;
+    | Readonly<{ accepted: false; state: ArenaSimulationState; reason: string; }>
+    | Readonly<{ accepted: true; state: ArenaSimulationState; acceptedHit: PlayerHitAccepted; }>;
 
 export function resolvePlayerHitIntent(
     state: ArenaSimulationState,
     intent: PlayerHitIntent,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): PlayerHitResolution {
     const attacker = state.players.find((player) => player.sessionId === intent.shot.sessionId);
     const target = state.players.find((player) => player.sessionId === intent.targetSessionId);
@@ -842,17 +836,17 @@ export function resolvePlayerHitIntent(
             health,
             deaths: target.vitals.deaths + (eliminated ? 1 : 0),
             deadUntilEpochMs: eliminated ? nowEpochMs + PLAYER_RESPAWN_MS : target.vitals.deadUntilEpochMs,
-            lastDamagedAtEpochMs: nowEpochMs,
+            lastDamagedAtEpochMs: nowEpochMs
         },
-        updatedAtEpochMs: nowEpochMs,
+        updatedAtEpochMs: nowEpochMs
     };
     const nextAttacker: PlayerArenaState = {
         ...attacker,
         vitals: {
             ...attacker.vitals,
-            kills: attacker.vitals.kills + (eliminated ? 1 : 0),
+            kills: attacker.vitals.kills + (eliminated ? 1 : 0)
         },
-        updatedAtEpochMs: nowEpochMs,
+        updatedAtEpochMs: nowEpochMs
     };
     const event = createSystemEvent(
         eliminated ? 'player-eliminated' : 'player-hit',
@@ -861,7 +855,7 @@ export function resolvePlayerHitIntent(
         hit.point,
         eliminated
             ? `${target.username} decompiled`
-            : `${target.username} audited`,
+            : `${target.username} audited`
     );
     const nextState: ArenaSimulationState = {
         ...state,
@@ -874,7 +868,7 @@ export function resolvePlayerHitIntent(
                 : player
         ),
         events: [...state.events.slice(-11), event],
-        activeEvent: event,
+        activeEvent: event
     };
     return {
         accepted: true,
@@ -889,19 +883,17 @@ export function resolvePlayerHitIntent(
             attacker: nextAttacker,
             eliminated,
             revision,
-            acceptedAtEpochMs: nowEpochMs,
-        },
+            acceptedAtEpochMs: nowEpochMs
+        }
     };
 }
 
 export function applyPlayerHitAccepted(
     state: ArenaSimulationState,
-    accepted: PlayerHitAccepted,
+    accepted: PlayerHitAccepted
 ): ArenaSimulationState {
     if (accepted.revision <= state.revision) {
-        const target = state.players.find((player) =>
-            player.sessionId === accepted.target.sessionId
-        );
+        const target = state.players.find((player) => player.sessionId === accepted.target.sessionId);
         if (
             target &&
             target.vitals.health === accepted.target.vitals.health &&
@@ -934,20 +926,20 @@ export function applyPlayerHitAccepted(
         accepted.impact,
         accepted.eliminated
             ? `${accepted.target.username} decompiled`
-            : `${accepted.target.username} audited`,
+            : `${accepted.target.username} audited`
     );
     return {
         ...state,
         revision: Math.max(state.revision, accepted.revision),
         players: players.slice(-16),
         events: [...state.events.filter((item) => item.id !== event.id).slice(-23), event],
-        activeEvent: event,
+        activeEvent: event
     };
 }
 
 export function applyPickupAccepted(
     state: ArenaSimulationState,
-    accepted: PickupAccepted,
+    accepted: PickupAccepted
 ): ArenaSimulationState {
     if (accepted.revision <= state.revision) {
         const pickup = state.pickups.find((item) => item.id === accepted.pickup.id);
@@ -957,23 +949,17 @@ export function applyPickupAccepted(
     }
 
     const pickups = state.pickups.some((pickup) => pickup.id === accepted.pickup.id)
-        ? state.pickups.map((pickup) =>
-            pickup.id === accepted.pickup.id ? accepted.pickup : pickup
-        )
+        ? state.pickups.map((pickup) => pickup.id === accepted.pickup.id ? accepted.pickup : pickup)
         : [...state.pickups, accepted.pickup];
-    const players = state.players.some((player) =>
-        player.sessionId === accepted.player.sessionId
-    )
-        ? state.players.map((player) =>
-            player.sessionId === accepted.player.sessionId ? accepted.player : player
-        )
+    const players = state.players.some((player) => player.sessionId === accepted.player.sessionId)
+        ? state.players.map((player) => player.sessionId === accepted.player.sessionId ? accepted.player : player)
         : [...state.players, accepted.player];
     const event = createSystemEvent(
         'weapon-picked-up',
         accepted.revision,
         accepted.acceptedAtEpochMs,
         accepted.pickup.position,
-        `${accepted.player.username} got ${accepted.pickup.label}`,
+        `${accepted.player.username} got ${accepted.pickup.label}`
     );
     return {
         ...state,
@@ -981,7 +967,7 @@ export function applyPickupAccepted(
         pickups: pickups.slice(-8),
         players: players.slice(-16),
         events: [...state.events.filter((item) => item.id !== event.id).slice(-23), event],
-        activeEvent: event,
+        activeEvent: event
     };
 }
 
@@ -989,7 +975,7 @@ export function resolveShot(
     state: ArenaSimulationState,
     combat: PlayerCombatState,
     shot: ShotIntent,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): ShotResolution {
     if (nowEpochMs < combat.shotReadyAtEpochMs) {
         return missResolution(state, combat, shot, nowEpochMs);
@@ -998,18 +984,24 @@ export function resolveShot(
     const weapon = getWeaponStats(shot.weaponKind ?? DEFAULT_WEAPON_KIND);
     const hit = findClosestTargetHit(state.targets, shot.origin, shot.direction, weapon.range);
     if (!hit || blocksShot(state.layout, shot.origin, hit.point)) {
-        return missResolution(state, {
-            ...decayCombo(combat, nowEpochMs),
-            shotReadyAtEpochMs: nowEpochMs + weapon.cooldownMs,
-        }, shot, nowEpochMs);
+        return missResolution(
+            state,
+            {
+                ...decayCombo(combat, nowEpochMs),
+                shotReadyAtEpochMs: nowEpochMs + weapon.cooldownMs
+            },
+            shot,
+            nowEpochMs
+        );
     }
 
     const target = hit.target;
-    const damage = shot.overdrive || combat.overdriveActiveUntilEpochMs && combat.overdriveActiveUntilEpochMs > nowEpochMs
-        ? weapon.damage / 18 * 2
-        : shot.charged
-        ? weapon.damage / 18 * 1.5
-        : weapon.damage / 18;
+    const damage =
+        shot.overdrive || combat.overdriveActiveUntilEpochMs && combat.overdriveActiveUntilEpochMs > nowEpochMs
+            ? weapon.damage / 18 * 2
+            : shot.charged
+            ? weapon.damage / 18 * 1.5
+            : weapon.damage / 18;
     const nextHealth = Math.max(0, target.health - damage);
     const killed = nextHealth <= 0;
     const combo = combat.lastHitAtEpochMs && nowEpochMs - combat.lastHitAtEpochMs <= COMBO_TIMEOUT_MS
@@ -1033,7 +1025,7 @@ export function resolveShot(
         energy: clamp(combat.energy + (killed ? 10 : 3), 0, 100),
         overdrive,
         lastHitAtEpochMs: nowEpochMs,
-        shotReadyAtEpochMs: nowEpochMs + weapon.cooldownMs,
+        shotReadyAtEpochMs: nowEpochMs + weapon.cooldownMs
     };
     const replacement = killed
         ? respawnTarget(target, state.revision + scoreDelta, state.seed, nowEpochMs)
@@ -1041,9 +1033,7 @@ export function resolveShot(
     const nextState = {
         ...state,
         revision: state.revision + 1,
-        targets: state.targets.map((candidate) =>
-            candidate.id === target.id ? replacement : candidate
-        ),
+        targets: state.targets.map((candidate) => candidate.id === target.id ? replacement : candidate)
     };
     const accepted: ShotAccepted = {
         shot,
@@ -1055,7 +1045,7 @@ export function resolveShot(
         multiplier,
         overdrive,
         revision: nextState.revision,
-        acceptedAtEpochMs: nowEpochMs,
+        acceptedAtEpochMs: nowEpochMs
     };
     return { state: nextState, combat: nextCombat, accepted };
 }
@@ -1063,7 +1053,7 @@ export function resolveShot(
 export function toArenaSnapshot(
     state: ArenaSimulationState,
     roomId: string | undefined,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): ArenaSnapshot {
     return {
         protocol: GAME_PROTOCOL,
@@ -1079,7 +1069,7 @@ export function toArenaSnapshot(
         match: state.match,
         events: state.events,
         activeEvent: state.activeEvent,
-        sentAtEpochMs: nowEpochMs,
+        sentAtEpochMs: nowEpochMs
     };
 }
 
@@ -1097,12 +1087,14 @@ export function hydrateArenaSnapshot(snapshot: ArenaSnapshot): ArenaSimulationSt
         events: snapshot.events,
         activeEvent: snapshot.activeEvent,
         nextPickupSeq: snapshot.pickups?.length ?? 0,
-        nextPickupAtEpochMs: snapshot.sentAtEpochMs + PICKUP_MIN_INTERVAL_MS,
+        nextPickupAtEpochMs: snapshot.sentAtEpochMs + PICKUP_MIN_INTERVAL_MS
     };
 }
 
 export function arenaRevisionKey(state: ArenaSimulationState): string {
-    return `ar-eye-hunter|${state.seed}|${state.revision}|${state.targets.length}|${state.players.length}|${state.pickups.length}|${state.attacks.length}|${state.wave.number}:${state.wave.phase}|${state.match?.matchId ?? 'no-match'}:${state.match?.status ?? 'idle'}|${state.layout.id}`;
+    return `ar-eye-hunter|${state.seed}|${state.revision}|${state.targets.length}|${state.players.length}|${state.pickups.length}|${state.attacks.length}|${state.wave.number}:${state.wave.phase}|${
+        state.match?.matchId ?? 'no-match'
+    }:${state.match?.status ?? 'idle'}|${state.layout.id}`;
 }
 
 export function getWeaponStats(kind: WeaponKind): WeaponStats {
@@ -1117,7 +1109,7 @@ export function isPlayerDead(player: PlayerArenaState, nowEpochMs: number): bool
 export function findPickupNearPlayer(
     state: ArenaSimulationState,
     sessionId: string,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): ArenaPickupState | undefined {
     const player = state.players.find((candidate) => candidate.sessionId === sessionId);
     if (!player || isPlayerDead(player, nowEpochMs)) {
@@ -1132,17 +1124,16 @@ export function findPickupNearPlayer(
 
 function expirePickups(
     state: ArenaSimulationState,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): ArenaSimulationState {
-    const pickups = state.pickups.filter((pickup) =>
-        pickup.pickedBySessionId || pickup.expiresAtEpochMs > nowEpochMs
-    ).slice(-8);
+    const pickups = state.pickups.filter((pickup) => pickup.pickedBySessionId || pickup.expiresAtEpochMs > nowEpochMs)
+        .slice(-8);
     return pickups.length === state.pickups.length ? state : { ...state, pickups };
 }
 
 function respawnDuePlayers(
     state: ArenaSimulationState,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): ArenaSimulationState {
     let changed = false;
     const players = state.players.map((player) => {
@@ -1161,29 +1152,35 @@ function respawnDuePlayers(
                 ...player.vitals,
                 health: player.vitals.maxHealth,
                 deadUntilEpochMs: undefined,
-                respawnedAtEpochMs: nowEpochMs,
+                respawnedAtEpochMs: nowEpochMs
             },
             loadout: createInitialLoadoutState(),
-            updatedAtEpochMs: nowEpochMs,
+            updatedAtEpochMs: nowEpochMs
         };
     });
     if (!changed) {
         return state;
     }
     const revision = state.revision + 1;
-    const event = createSystemEvent('player-respawned', revision, nowEpochMs, undefined, 'Respawn paperwork auto-approved');
+    const event = createSystemEvent(
+        'player-respawned',
+        revision,
+        nowEpochMs,
+        undefined,
+        'Respawn paperwork auto-approved'
+    );
     return {
         ...state,
         revision,
         players,
         events: [...state.events.slice(-11), event],
-        activeEvent: event,
+        activeEvent: event
     };
 }
 
 function materializeEventPickup(
     state: ArenaSimulationState,
-    event: ArenaEvent,
+    event: ArenaEvent
 ): readonly ArenaPickupState[] {
     const weaponKind = chooseWeaponKind(state.seed + event.revision, state.nextPickupSeq);
     const stats = getWeaponStats(weaponKind);
@@ -1196,17 +1193,17 @@ function materializeEventPickup(
         anchorId: anchor.id,
         spawnedAtEpochMs: event.startsAtEpochMs,
         expiresAtEpochMs: event.expiresAtEpochMs,
-        label: stats.label,
+        label: stats.label
     };
     return [
         ...state.pickups.filter((item) => item.id !== pickup.id && !item.pickedBySessionId),
-        pickup,
+        pickup
     ].slice(-8);
 }
 
 function advanceWaveState(
     state: ArenaSimulationState,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): ArenaSimulationState {
     if (nowEpochMs < state.wave.nextPhaseAtEpochMs) {
         return state;
@@ -1217,14 +1214,14 @@ function advanceWaveState(
             ...state.wave,
             phase: 'active',
             startedAtEpochMs: nowEpochMs,
-            nextPhaseAtEpochMs: nowEpochMs + WAVE_ACTIVE_MS + state.wave.number * 1_500,
+            nextPhaseAtEpochMs: nowEpochMs + WAVE_ACTIVE_MS + state.wave.number * 1_500
         };
         const event = createSystemEvent(
             'wave-start',
             state.revision + 1,
             nowEpochMs,
             undefined,
-            `Wave ${wave.number}: compliance lasers armed`,
+            `Wave ${wave.number}: compliance lasers armed`
         );
         return {
             ...state,
@@ -1232,7 +1229,7 @@ function advanceWaveState(
             wave,
             targets: applyWaveThreatBudget(state.targets, wave, nowEpochMs),
             events: [...state.events.slice(-23), event],
-            activeEvent: event,
+            activeEvent: event
         };
     }
 
@@ -1241,14 +1238,14 @@ function advanceWaveState(
             ...state.wave,
             phase: 'reward',
             startedAtEpochMs: nowEpochMs,
-            nextPhaseAtEpochMs: nowEpochMs + WAVE_REWARD_MS,
+            nextPhaseAtEpochMs: nowEpochMs + WAVE_REWARD_MS
         };
         const event = createSystemEvent(
             'wave-complete',
             state.revision + 1,
             nowEpochMs,
             [0, 1.05, 0],
-            `Wave ${wave.number} survived; HR is disappointed`,
+            `Wave ${wave.number} survived; HR is disappointed`
         );
         return spawnWeaponPickup({
             ...state,
@@ -1256,7 +1253,7 @@ function advanceWaveState(
             wave,
             attacks: [],
             events: [...state.events.slice(-23), event],
-            activeEvent: event,
+            activeEvent: event
         }, nowEpochMs);
     }
 
@@ -1271,18 +1268,18 @@ function advanceWaveState(
         pickupRewardBudget: 1 + Math.floor(nextNumber / 4),
         activeModifierId: state.activeEvent?.kind === 'chaos-modifier'
             ? state.activeEvent.id
-            : undefined,
+            : undefined
     };
     return {
         ...state,
         wave,
-        targets: ensureTargetBudget(state.targets, state.seed + nextNumber * 1337, wave, nowEpochMs),
+        targets: ensureTargetBudget(state.targets, state.seed + nextNumber * 1337, wave, nowEpochMs)
     };
 }
 
 function scheduleHostileEyeAttacks(
     state: ArenaSimulationState,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): ArenaSimulationState {
     if (state.wave.phase !== 'active' || state.players.length === 0) {
         return state;
@@ -1313,14 +1310,14 @@ function scheduleHostileEyeAttacks(
             startsAtEpochMs: nowEpochMs,
             firesAtEpochMs: nowEpochMs + threat.windupMs,
             expiresAtEpochMs: nowEpochMs + threat.windupMs + 420,
-            revision: next.revision + 1,
+            revision: next.revision + 1
         };
         const event = createSystemEvent(
             'eye-attack-windup',
             cue.revision,
             nowEpochMs,
             player.position,
-            'Compliance Laser Auditor is charging',
+            'Compliance Laser Auditor is charging'
         );
         next = {
             ...next,
@@ -1333,13 +1330,13 @@ function scheduleHostileEyeAttacks(
                         threat: {
                             ...candidate.threat,
                             targetSessionId: player.sessionId,
-                            nextAttackAtEpochMs: nowEpochMs + candidate.threat.cooldownMs,
-                        },
+                            nextAttackAtEpochMs: nowEpochMs + candidate.threat.cooldownMs
+                        }
                     }
                     : candidate
             ),
             events: [...next.events.slice(-23), event],
-            activeEvent: event,
+            activeEvent: event
         };
     }
     return next;
@@ -1347,7 +1344,7 @@ function scheduleHostileEyeAttacks(
 
 function resolveDueEyeAttacks(
     state: ArenaSimulationState,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): ArenaSimulationState {
     let next = state;
     for (const cue of state.attacks) {
@@ -1366,9 +1363,9 @@ function pickEyeAttackTarget(
     state: ArenaSimulationState,
     eye: EyeTargetState,
     threat: EyeThreatState,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): PlayerArenaState | undefined {
-    let best: Readonly<{ player: PlayerArenaState; distance: number }> | undefined;
+    let best: Readonly<{ player: PlayerArenaState; distance: number; }> | undefined;
     for (const player of state.players) {
         if (isPlayerDead(player, nowEpochMs)) {
             continue;
@@ -1386,8 +1383,8 @@ function pickEyeAttackTarget(
 
 function beamHitsPlayer(
     cue: EyeAttackCue,
-    player: PlayerArenaState,
-): Readonly<{ point: Vec3Tuple }> | undefined {
+    player: PlayerArenaState
+): Readonly<{ point: Vec3Tuple; }> | undefined {
     const ray = normalize3(sub3(cue.aimPoint, cue.origin));
     const toPlayer = sub3(player.position, cue.origin);
     const along = dot3(toPlayer, ray);
@@ -1406,7 +1403,7 @@ function beamHitsPlayer(
 function applyWaveThreatBudget(
     targets: readonly EyeTargetState[],
     wave: WaveState,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): readonly EyeTargetState[] {
     return targets.map((target, index) => {
         if (index >= wave.hostileBudget) {
@@ -1414,7 +1411,7 @@ function applyWaveThreatBudget(
                 ...target,
                 threat: target.threat?.kind === 'boss'
                     ? createEyeThreat('beam-sentry', wave.number, index, nowEpochMs)
-                    : target.threat,
+                    : target.threat
             };
         }
         const boss = wave.number > 0 && wave.number % 5 === 0 && index === 0;
@@ -1422,7 +1419,7 @@ function applyWaveThreatBudget(
             ...target,
             rarity: boss ? 'rift' : target.rarity,
             color: boss ? rarityColor('rift') : target.color,
-            threat: createEyeThreat(boss ? 'boss' : 'beam-sentry', wave.number, index, nowEpochMs),
+            threat: createEyeThreat(boss ? 'boss' : 'beam-sentry', wave.number, index, nowEpochMs)
         };
     });
 }
@@ -1431,7 +1428,7 @@ function ensureTargetBudget(
     targets: readonly EyeTargetState[],
     seed: number,
     wave: WaveState,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): readonly EyeTargetState[] {
     const next = [...targets];
     for (let index = next.length; index < wave.targetBudget; index += 1) {
@@ -1445,7 +1442,7 @@ function isArenaMatchDuration(value: number): value is ArenaMatchDurationMs {
 }
 
 function createArenaMatchBaseline(
-    players: readonly PlayerArenaState[],
+    players: readonly PlayerArenaState[]
 ): Readonly<Record<string, ArenaMatchPlayerBaseline>> {
     return Object.fromEntries(players.map((player, index) => [
         player.sessionId,
@@ -1455,14 +1452,14 @@ function createArenaMatchBaseline(
             score: round2(player.score ?? 0),
             kills: player.vitals.kills,
             deaths: player.vitals.deaths,
-            joinedOrder: index,
-        },
+            joinedOrder: index
+        }
     ]));
 }
 
 function rankArenaMatchPlayers(
     match: ArenaMatchState,
-    players: readonly PlayerArenaState[],
+    players: readonly PlayerArenaState[]
 ): readonly ArenaMatchStanding[] {
     const active = players.map((player, index) => {
         const baseline = match.baseline[player.sessionId] ?? {
@@ -1471,7 +1468,7 @@ function rankArenaMatchPlayers(
             score: 0,
             kills: 0,
             deaths: 0,
-            joinedOrder: index,
+            joinedOrder: index
         };
         return {
             sessionId: player.sessionId,
@@ -1479,7 +1476,7 @@ function rankArenaMatchPlayers(
             scoreDelta: round2((player.score ?? 0) - baseline.score),
             killsDelta: player.vitals.kills - baseline.kills,
             deathsDelta: player.vitals.deaths - baseline.deaths,
-            joinedOrder: baseline.joinedOrder,
+            joinedOrder: baseline.joinedOrder
         };
     });
     const historical = Object.values(match.baseline)
@@ -1490,7 +1487,7 @@ function rankArenaMatchPlayers(
             scoreDelta: 0,
             killsDelta: 0,
             deathsDelta: 0,
-            joinedOrder: baseline.joinedOrder,
+            joinedOrder: baseline.joinedOrder
         }));
     return [...active, ...historical]
         .sort((a, b) =>
@@ -1502,7 +1499,7 @@ function rankArenaMatchPlayers(
         )
         .map(({ joinedOrder: _joinedOrder, ...standing }, index) => ({
             ...standing,
-            rank: index + 1,
+            rank: index + 1
         }));
 }
 
@@ -1510,7 +1507,7 @@ function createEyeThreat(
     kind: Exclude<EyeThreatState['kind'], 'passive'>,
     waveNumber: number,
     index: number,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): EyeThreatState {
     const boss = kind === 'boss';
     const baseDamage = boss ? 38 : 16 + Math.min(14, waveNumber * 2);
@@ -1521,7 +1518,7 @@ function createEyeThreat(
         coneRadians: boss ? 0.12 : 0.085,
         windupMs: Math.max(620, EYE_ATTACK_DEFAULT_WINDUP_MS - waveNumber * 35),
         cooldownMs: Math.max(1_900, EYE_ATTACK_DEFAULT_COOLDOWN_MS - waveNumber * 130 + index * 90),
-        nextAttackAtEpochMs: nowEpochMs + 900 + index * 240,
+        nextAttackAtEpochMs: nowEpochMs + 900 + index * 240
     };
 }
 
@@ -1529,8 +1526,8 @@ function findPlayerHit(
     target: PlayerArenaState,
     origin: Vec3Tuple,
     direction: Vec3Tuple,
-    weapon: WeaponStats,
-): Readonly<{ distance: number; point: Vec3Tuple }> | undefined {
+    weapon: WeaponStats
+): Readonly<{ distance: number; point: Vec3Tuple; }> | undefined {
     const ray = normalize3(direction);
     const toTarget = sub3(target.position, origin);
     const along = dot3(toTarget, ray);
@@ -1553,7 +1550,7 @@ function chooseWeaponKind(seed: number, sequence: number): WeaponKind {
         'rail-lance',
         'glitch-blaster',
         'audit-pea-shooter',
-        'confetti-cannon',
+        'confetti-cannon'
     ];
     return weapons[Math.abs(hashNumber(seed + sequence * 911)) % weapons.length];
 }
@@ -1568,7 +1565,7 @@ function createSystemEvent(
     revision: number,
     nowEpochMs: number,
     position: Vec3Tuple | undefined,
-    headline: string,
+    headline: string
 ): ArenaEvent {
     return {
         id: `${kind}:${revision}:${nowEpochMs}`,
@@ -1581,7 +1578,7 @@ function createSystemEvent(
         expiresAtEpochMs: nowEpochMs + 2_800,
         revision,
         source: 'director',
-        headline,
+        headline
     };
 }
 
@@ -1589,7 +1586,7 @@ function createTarget(
     id: string,
     index: number,
     seed: number,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): EyeTargetState {
     const rng = mulberry32(seed + index * 991);
     const ring = index % 4;
@@ -1602,12 +1599,12 @@ function createTarget(
         position: roundVec3([
             Math.cos(angle) * orbitRadius,
             2.2 + rng() * 3.6,
-            Math.sin(angle) * orbitRadius,
+            Math.sin(angle) * orbitRadius
         ]),
         velocity: roundVec3([
             Math.sin(angle) * (0.4 + rng() * 0.8),
             0.25 + rng() * 0.65,
-            -Math.cos(angle) * (0.4 + rng() * 0.8),
+            -Math.cos(angle) * (0.4 + rng() * 0.8)
         ]),
         radius: rarity === 'rift' ? 0.86 : rarity === 'bounty' ? 0.72 : 0.62,
         health: rarity === 'rift' ? 3 : rarity === 'bounty' ? 2 : 1,
@@ -1616,13 +1613,13 @@ function createTarget(
         phase: rng() * Math.PI * 2,
         color: threat?.kind === 'beam-sentry' ? '#ff3df2' : rarityColor(rarity),
         threat,
-        bountyUntilEpochMs: rarity === 'bounty' ? nowEpochMs + 15_000 : undefined,
+        bountyUntilEpochMs: rarity === 'bounty' ? nowEpochMs + 15_000 : undefined
     };
 }
 
 function defaultThreatForTarget(
     index: number,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): EyeThreatState | undefined {
     if (index !== 0 && index !== 7) {
         return undefined;
@@ -1634,7 +1631,7 @@ function respawnTarget(
     target: EyeTargetState,
     salt: number,
     seed: number,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): EyeTargetState {
     return createTarget(target.id, salt % 997, seed + salt * 17, nowEpochMs);
 }
@@ -1642,7 +1639,7 @@ function respawnTarget(
 function applyEventToTargets(
     targets: readonly EyeTargetState[],
     event: ArenaEvent,
-    seed: number,
+    seed: number
 ): readonly EyeTargetState[] {
     if (event.kind === 'spawn-eye') {
         const id = event.targetId ?? `eye-${targets.length}-${event.revision}`;
@@ -1652,8 +1649,8 @@ function applyEventToTargets(
                 ...createTarget(id, targets.length + event.revision, seed, event.startsAtEpochMs),
                 position: event.position ?? createTarget(id, targets.length, seed, event.startsAtEpochMs).position,
                 rarity: event.rarity ?? 'volatile',
-                color: rarityColor(event.rarity ?? 'volatile'),
-            },
+                color: rarityColor(event.rarity ?? 'volatile')
+            }
         ].slice(-18);
     }
 
@@ -1674,7 +1671,7 @@ function applyEventToTargets(
                 color: rarityColor(rarity),
                 maxHealth: Math.max(target.maxHealth, rarity === 'bounty' ? 2 : 1),
                 health: Math.max(target.health, rarity === 'bounty' ? 2 : 1),
-                bountyUntilEpochMs: event.expiresAtEpochMs,
+                bountyUntilEpochMs: event.expiresAtEpochMs
             };
         });
     }
@@ -1687,8 +1684,8 @@ function applyEventToTargets(
                 velocity: roundVec3([
                     Math.cos(angle) * (event.intensity ?? 1.2),
                     target.velocity[1],
-                    Math.sin(angle) * (event.intensity ?? 1.2),
-                ]),
+                    Math.sin(angle) * (event.intensity ?? 1.2)
+                ])
             };
         });
     }
@@ -1700,10 +1697,10 @@ function findClosestTargetHit(
     targets: readonly EyeTargetState[],
     origin: Vec3Tuple,
     direction: Vec3Tuple,
-    range = 120,
-): Readonly<{ target: EyeTargetState; distance: number; point: Vec3Tuple }> | undefined {
+    range = 120
+): Readonly<{ target: EyeTargetState; distance: number; point: Vec3Tuple; }> | undefined {
     const ray = normalize3(direction);
-    let best: Readonly<{ target: EyeTargetState; distance: number; point: Vec3Tuple }> | undefined;
+    let best: Readonly<{ target: EyeTargetState; distance: number; point: Vec3Tuple; }> | undefined;
     for (const target of targets) {
         const toTarget = sub3(target.position, origin);
         const along = dot3(toTarget, ray);
@@ -1719,7 +1716,7 @@ function findClosestTargetHit(
             best = {
                 target,
                 distance: along,
-                point: closestPoint,
+                point: closestPoint
             };
         }
     }
@@ -1730,7 +1727,7 @@ function missResolution(
     state: ArenaSimulationState,
     combat: PlayerCombatState,
     shot: ShotIntent,
-    nowEpochMs: number,
+    nowEpochMs: number
 ): ShotResolution {
     const weapon = getWeaponStats(shot.weaponKind ?? DEFAULT_WEAPON_KIND);
     const accepted: ShotAccepted = {
@@ -1742,7 +1739,7 @@ function missResolution(
         multiplier: combat.multiplier,
         overdrive: combat.overdrive,
         revision: state.revision,
-        acceptedAtEpochMs: nowEpochMs,
+        acceptedAtEpochMs: nowEpochMs
     };
     return { state, combat, accepted };
 }
@@ -1754,7 +1751,7 @@ function decayCombo(combat: PlayerCombatState, nowEpochMs: number): PlayerCombat
     return {
         ...combat,
         combo: 0,
-        multiplier: 1,
+        multiplier: 1
     };
 }
 
@@ -1846,6 +1843,6 @@ function roundVec3(value: Vec3Tuple): Vec3Tuple {
     return [
         Math.round(value[0] * 1000) / 1000,
         Math.round(value[1] * 1000) / 1000,
-        Math.round(value[2] * 1000) / 1000,
+        Math.round(value[2] * 1000) / 1000
     ];
 }

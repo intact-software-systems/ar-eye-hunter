@@ -4,12 +4,7 @@ import type { ALMessage } from '../al-contracts/al-contract.ts';
 import { validatePersistedALMessage } from '../al-contracts/al-message-persistence-validation.ts';
 import { EnqueuedType } from '../api/api-config.ts';
 import { toAppQueueKey } from './AppQueueIdentity.ts';
-import {
-    EntityStatus,
-    isKeysEqual,
-    NEVER_EXPIRE_TS,
-    type ResourceEntry,
-} from './ResourceEntry.ts';
+import { EntityStatus, isKeysEqual, NEVER_EXPIRE_TS, type ResourceEntry } from './ResourceEntry.ts';
 
 export const RTC_TOPOLOGY_OUTBOX_TOPIC = 'app-outbox.rtc-topology';
 export const RTC_TOPOLOGY_OUTBOX_TYPE = 'RTC_TOPOLOGY_RECOMPUTE';
@@ -21,11 +16,11 @@ const ENVELOPE_KEYS = [
     'resourceId',
     'contextId',
     'senderId',
-    'data',
+    'data'
 ] as const;
 
 export function isCanonicalRtcTopologyWorkEntry(
-    entry: ResourceEntry,
+    entry: ResourceEntry
 ): boolean {
     try {
         requireResourceEntryShape(entry);
@@ -39,7 +34,7 @@ export function isCanonicalRtcTopologyWorkEntry(
         const expectedKey = toAppQueueKey({
             topicId: nonEmptyString(envelope.topicId),
             resourceId: nonEmptyString(envelope.resourceId),
-            contextId: nonEmptyString(envelope.contextId),
+            contextId: nonEmptyString(envelope.contextId)
         });
         const data = record(envelope.data);
         if (
@@ -67,7 +62,7 @@ export function isCanonicalRtcTopologyWorkEntry(
         const expectedExpiryTs = message.constraints?.expiresAtMs === undefined
             ? NEVER_EXPIRE_TS
             : Temporal.Instant.fromEpochMilliseconds(
-                message.constraints.expiresAtMs,
+                message.constraints.expiresAtMs
             );
         if (
             !entry.audit.createdTs.equals(expectedCreatedTs) ||
@@ -77,7 +72,8 @@ export function isCanonicalRtcTopologyWorkEntry(
             throw new TypeError('RTC topology work audit is invalid');
         }
         return true;
-    } catch {
+    }
+    catch {
         return false;
     }
 }
@@ -87,7 +83,7 @@ function requireResourceEntryShape(entry: ResourceEntry): void {
     exactKeys(
         value,
         ['key', 'resource', 'typeId', 'audit', 'status', 'dequeueAudit'],
-        ['db'],
+        ['db']
     );
     exactKeys(record(entry.key), ['topicId', 'resourceId', 'contextId']);
     nonEmptyString(entry.key.topicId);
@@ -103,7 +99,7 @@ function requireResourceEntryShape(entry: ResourceEntry): void {
         'date',
         'createdBy',
         'createdTs',
-        'expiryTs',
+        'expiryTs'
     ]);
     nonEmptyString(entry.audit.createdBy);
     requireTemporal(entry.audit.date, Temporal.PlainTime);
@@ -113,7 +109,7 @@ function requireResourceEntryShape(entry: ResourceEntry): void {
     exactKeys(
         record(entry.dequeueAudit),
         ['attempts'],
-        ['startTs', 'endTs', 'nextTs'],
+        ['startTs', 'endTs', 'nextTs']
     );
     if (
         !Number.isSafeInteger(entry.dequeueAudit.attempts) ||
@@ -121,11 +117,13 @@ function requireResourceEntryShape(entry: ResourceEntry): void {
     ) {
         throw new TypeError('RTC topology work attempts are invalid');
     }
-    for (const timestamp of [
-        entry.dequeueAudit.startTs,
-        entry.dequeueAudit.endTs,
-        entry.dequeueAudit.nextTs,
-    ]) {
+    for (
+        const timestamp of [
+            entry.dequeueAudit.startTs,
+            entry.dequeueAudit.endTs,
+            entry.dequeueAudit.nextTs
+        ]
+    ) {
         if (timestamp !== undefined) {
             requireTemporal(timestamp, Temporal.Instant);
         }
@@ -146,12 +144,12 @@ function record(value: unknown): Record<string, unknown> {
 function exactKeys(
     value: Record<string, unknown>,
     required: readonly string[],
-    optional: readonly string[] = [],
+    optional: readonly string[] = []
 ): void {
     const keys = Object.keys(value);
     if (
-        required.some(key => !Object.hasOwn(value, key)) ||
-        keys.some(key => !required.includes(key) && !optional.includes(key))
+        required.some((key) => !Object.hasOwn(value, key)) ||
+        keys.some((key) => !required.includes(key) && !optional.includes(key))
     ) {
         throw new TypeError('RTC topology work keys are invalid');
     }
@@ -166,7 +164,7 @@ function nonEmptyString(value: unknown): string {
 
 function requireTemporal<T>(
     value: unknown,
-    constructor: abstract new (...args: never[]) => T,
+    constructor: abstract new(...args: never[]) => T
 ): asserts value is T {
     if (!(value instanceof constructor)) {
         throw new TypeError('RTC topology work temporal value is invalid');

@@ -1,8 +1,5 @@
+import type { RallarBlackBoxTestEvent, RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
 import { MultiDirectedGraph } from 'graphology';
-import type {
-    RallarBlackBoxTestEvent,
-    RallarBlackBoxTestState,
-} from '@shared-test/rallar-bb-test/types.ts';
 
 export type RallarTopologyNodeKind =
     | 'run'
@@ -85,13 +82,13 @@ const NODE_COLORS: Record<RallarTopologyNodeKind, string> = {
     session: '#0c6f7b',
     actor: '#7a4ea3',
     connection: '#4d5b65',
-    message: '#b24b3b',
+    message: '#b24b3b'
 };
 
 const STATUS_COLORS: Record<RallarTopologyStatus, string> = {
     active: '#226a44',
     degraded: '#96610d',
-    failed: '#a83232',
+    failed: '#a83232'
 };
 
 const NODE_KIND_ORDER: Record<RallarTopologyNodeKind, number> = {
@@ -101,7 +98,7 @@ const NODE_KIND_ORDER: Record<RallarTopologyNodeKind, number> = {
     connection: 3,
     room: 4,
     session: 5,
-    message: 6,
+    message: 6
 };
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -122,7 +119,7 @@ function stringValue(value: unknown): string | undefined {
 
 function stringArray(value: unknown): readonly string[] {
     return asArray(value)
-        .map(entry => stringValue(entry))
+        .map((entry) => stringValue(entry))
         .filter((entry): entry is string => Boolean(entry));
 }
 
@@ -152,10 +149,14 @@ function statusFromEvent(event: RallarBlackBoxTestEvent): RallarTopologyStatus {
 
 function mergeStatus(
     left: RallarTopologyStatus,
-    right: RallarTopologyStatus,
+    right: RallarTopologyStatus
 ): RallarTopologyStatus {
-    if (left === 'failed' || right === 'failed') return 'failed';
-    if (left === 'degraded' || right === 'degraded') return 'degraded';
+    if (left === 'failed' || right === 'failed') {
+        return 'failed';
+    }
+    if (left === 'degraded' || right === 'degraded') {
+        return 'degraded';
+    }
     return 'active';
 }
 
@@ -177,7 +178,7 @@ function nestedDataOf(event: RallarBlackBoxTestEvent): Record<string, unknown> {
 
 function roomIdFrom(
     state: RallarBlackBoxTestState,
-    event?: RallarBlackBoxTestEvent,
+    event?: RallarBlackBoxTestEvent
 ): string | undefined {
     const payload = event ? payloadOf(event) : {};
     const data = event ? nestedDataOf(event) : {};
@@ -189,13 +190,13 @@ function roomIdFrom(
 function addOrUpdateNode(
     graph: RallarTopologyGraph,
     id: string,
-    attrs: Omit<RallarTopologyNodeAttributes, 'x' | 'y'>,
+    attrs: Omit<RallarTopologyNodeAttributes, 'x' | 'y'>
 ): void {
     if (!graph.hasNode(id)) {
         graph.addNode(id, {
             ...attrs,
             x: 0,
-            y: 0,
+            y: 0
         });
         return;
     }
@@ -209,8 +210,8 @@ function addOrUpdateNode(
         eventCount: current.eventCount + attrs.eventCount,
         lastEventAtEpochMs: Math.max(
             current.lastEventAtEpochMs ?? 0,
-            attrs.lastEventAtEpochMs ?? 0,
-        ) || undefined,
+            attrs.lastEventAtEpochMs ?? 0
+        ) || undefined
     });
 }
 
@@ -223,7 +224,7 @@ function addNode(
         status?: RallarTopologyStatus;
         eventAtEpochMs?: number;
         eventCount?: number;
-    }> = {},
+    }> = {}
 ): string | undefined {
     if (!id) {
         return undefined;
@@ -238,7 +239,7 @@ function addNode(
         color: status === 'active' ? NODE_COLORS[kind] : STATUS_COLORS[status],
         size: kind === 'room' || kind === 'run' ? 12 : kind === 'message' ? 7 : 9,
         eventCount: options.eventCount ?? 1,
-        lastEventAtEpochMs: options.eventAtEpochMs,
+        lastEventAtEpochMs: options.eventAtEpochMs
     });
     return key;
 }
@@ -252,7 +253,7 @@ function addEdge(
     options: Readonly<{
         status?: RallarTopologyStatus;
         eventAtEpochMs?: number;
-    }> = {},
+    }> = {}
 ): void {
     if (!source || !target || source === target) {
         return;
@@ -267,7 +268,7 @@ function addEdge(
         color: STATUS_COLORS[status],
         size: kind === 'route' ? 2.4 : 1.4,
         eventCount: 1,
-        lastEventAtEpochMs: options.eventAtEpochMs,
+        lastEventAtEpochMs: options.eventAtEpochMs
     };
 
     if (!graph.hasEdge(key)) {
@@ -284,8 +285,8 @@ function addEdge(
         eventCount: current.eventCount + 1,
         lastEventAtEpochMs: Math.max(
             current.lastEventAtEpochMs ?? 0,
-            options.eventAtEpochMs ?? 0,
-        ) || undefined,
+            options.eventAtEpochMs ?? 0
+        ) || undefined
     });
 }
 
@@ -310,7 +311,7 @@ function messageTargets(event: RallarBlackBoxTestEvent): readonly string[] {
         ...stringArray(data.targets),
         ...stringArray(data.peerIds),
         ...stringArray(data.nextHopPeerIds),
-        stringValue(payload.remotePeerId),
+        stringValue(payload.remotePeerId)
     ]);
 }
 
@@ -346,7 +347,7 @@ function collectSessionIds(event: RallarBlackBoxTestEvent): readonly string[] {
         ...stringArray(payload.nextHopPeerIds),
         ...stringArray(payload.expectedClients),
         ...stringArray(payload.observedClients),
-        ...stringArray(payload.connectedClients),
+        ...stringArray(payload.connectedClients)
     ]);
 }
 
@@ -378,11 +379,21 @@ function summarize(graph: RallarTopologyGraph): RallarTopologySummary {
     let rooms = 0;
     let sessions = 0;
     graph.forEachNode((_key, attrs) => {
-        if (attrs.status === 'failed') failedNodes += 1;
-        else if (attrs.status === 'degraded') degradedNodes += 1;
-        else activeNodes += 1;
-        if (attrs.kind === 'room') rooms += 1;
-        if (attrs.kind === 'session') sessions += 1;
+        if (attrs.status === 'failed') {
+            failedNodes += 1;
+        }
+        else if (attrs.status === 'degraded') {
+            degradedNodes += 1;
+        }
+        else {
+            activeNodes += 1;
+        }
+        if (attrs.kind === 'room') {
+            rooms += 1;
+        }
+        if (attrs.kind === 'session') {
+            sessions += 1;
+        }
     });
 
     let activeEdges = 0;
@@ -390,10 +401,18 @@ function summarize(graph: RallarTopologyGraph): RallarTopologySummary {
     let failedEdges = 0;
     let routes = 0;
     graph.forEachEdge((_key, attrs) => {
-        if (attrs.status === 'failed') failedEdges += 1;
-        else if (attrs.status === 'degraded') degradedEdges += 1;
-        else activeEdges += 1;
-        if (attrs.kind === 'route') routes += 1;
+        if (attrs.status === 'failed') {
+            failedEdges += 1;
+        }
+        else if (attrs.status === 'degraded') {
+            degradedEdges += 1;
+        }
+        else {
+            activeEdges += 1;
+        }
+        if (attrs.kind === 'route') {
+            routes += 1;
+        }
     });
 
     return {
@@ -407,19 +426,19 @@ function summarize(graph: RallarTopologyGraph): RallarTopologySummary {
         failedEdges,
         rooms,
         sessions,
-        routes,
+        routes
     };
 }
 
 export function deriveRallarTopologyGraph(
-    state: RallarBlackBoxTestState,
+    state: RallarBlackBoxTestState
 ): RallarTopologySnapshot {
     const graph: RallarTopologyGraph = new MultiDirectedGraph();
     const config = state.currentConfig;
     graph.replaceAttributes({
         generatedAtEpochMs: Date.now(),
         runId: config?.runId,
-        agentId: config?.agentId,
+        agentId: config?.agentId
     });
 
     const run = addNode(graph, 'run', config?.runId, { label: config?.runId });
@@ -430,7 +449,7 @@ export function deriveRallarTopologyGraph(
     const connection = addNode(
         graph,
         'connection',
-        String(config?.defaults?.connection ?? '') || undefined,
+        String(config?.defaults?.connection ?? '') || undefined
     );
     addEdge(graph, run, agent, 'control', 'agent');
     addEdge(graph, agent, actor, 'identity', 'actor');
@@ -442,70 +461,72 @@ export function deriveRallarTopologyGraph(
         const status = statusFromEvent(event);
         const eventRoom = addNode(graph, 'room', roomIdFrom(state, event), {
             status,
-            eventAtEpochMs: event.atEpochMs,
+            eventAtEpochMs: event.atEpochMs
         });
         const eventActor = addNode(graph, 'actor', event.actor, {
             status,
-            eventAtEpochMs: event.atEpochMs,
+            eventAtEpochMs: event.atEpochMs
         });
         const eventConnection = addNode(graph, 'connection', event.connection, {
             status,
-            eventAtEpochMs: event.atEpochMs,
+            eventAtEpochMs: event.atEpochMs
         });
         if (eventActor && eventConnection) {
             addEdge(graph, eventActor, eventConnection, 'connection', 'opens', {
                 status,
-                eventAtEpochMs: event.atEpochMs,
+                eventAtEpochMs: event.atEpochMs
             });
         }
 
         for (const sessionId of collectSessionIds(event)) {
             const eventSession = addNode(graph, 'session', sessionId, {
                 status,
-                eventAtEpochMs: event.atEpochMs,
+                eventAtEpochMs: event.atEpochMs
             });
             addEdge(graph, eventSession, eventRoom, 'membership', 'member', {
                 status,
-                eventAtEpochMs: event.atEpochMs,
+                eventAtEpochMs: event.atEpochMs
             });
             addEdge(graph, eventConnection, eventSession, 'connection', 'observed', {
                 status,
-                eventAtEpochMs: event.atEpochMs,
+                eventAtEpochMs: event.atEpochMs
             });
         }
 
         if (event.kind === 'message') {
             const sourceSession = addNode(graph, 'session', senderId(event), {
                 status,
-                eventAtEpochMs: event.atEpochMs,
+                eventAtEpochMs: event.atEpochMs
             });
             const targets = messageTargets(event);
             if (targets.length === 0) {
                 addEdge(graph, sourceSession, eventRoom, 'route', 'broadcast', {
                     status,
-                    eventAtEpochMs: event.atEpochMs,
+                    eventAtEpochMs: event.atEpochMs
                 });
-            } else {
+            }
+            else {
                 for (const target of targets) {
                     const targetSession = addNode(graph, 'session', target, {
                         status,
-                        eventAtEpochMs: event.atEpochMs,
+                        eventAtEpochMs: event.atEpochMs
                     });
                     addEdge(graph, sourceSession, targetSession, 'route', 'message', {
                         status,
-                        eventAtEpochMs: event.atEpochMs,
+                        eventAtEpochMs: event.atEpochMs
                     });
                 }
             }
-        } else if (status !== 'active') {
+        }
+        else if (status !== 'active') {
             const diagnostic = addNode(graph, 'message', event.eventId, {
                 label: event.topic,
                 status,
-                eventAtEpochMs: event.atEpochMs,
+                eventAtEpochMs: event.atEpochMs
             });
             addEdge(graph, eventConnection ?? eventRoom, diagnostic, 'diagnostic', event.kind, {
                 status,
-                eventAtEpochMs: event.atEpochMs,
+                eventAtEpochMs: event.atEpochMs
             });
         }
     }
@@ -513,28 +534,32 @@ export function deriveRallarTopologyGraph(
     assignLayout(graph);
     return {
         graph,
-        summary: summarize(graph),
+        summary: summarize(graph)
     };
 }
 
 export function visibleTopologyCounts(
     graph: RallarTopologyGraph,
-    filter: RallarTopologyFilter,
-): Readonly<{ nodes: number; edges: number }> {
+    filter: RallarTopologyFilter
+): Readonly<{ nodes: number; edges: number; }> {
     if (filter === 'all') {
         return {
             nodes: graph.order,
-            edges: graph.size,
+            edges: graph.size
         };
     }
 
     let nodes = 0;
     let edges = 0;
     graph.forEachNode((_key, attrs) => {
-        if (attrs.status === filter) nodes += 1;
+        if (attrs.status === filter) {
+            nodes += 1;
+        }
     });
     graph.forEachEdge((_key, attrs) => {
-        if (attrs.status === filter) edges += 1;
+        if (attrs.status === filter) {
+            edges += 1;
+        }
     });
     return { nodes, edges };
 }

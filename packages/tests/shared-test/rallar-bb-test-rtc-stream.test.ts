@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     planRallarBlackBoxRtcStreamFrames,
     replaceRallarBlackBoxRtcStreamPlaceholders,
-    summarizeRallarBlackBoxRtcStreamObservations,
+    summarizeRallarBlackBoxRtcStreamObservations
 } from '../../shared-test/rallar-bb-test/rtc-stream.ts';
 
 describe('rallar-bb-test rtc stream helpers', () => {
@@ -13,14 +13,14 @@ describe('rallar-bb-test rtc stream helpers', () => {
             frames: [
                 { index: 0, iteration: 1, scheduledElapsedMs: 0 },
                 { index: 1, iteration: 2, scheduledElapsedMs: 50 },
-                { index: 2, iteration: 3, scheduledElapsedMs: 100 },
-            ],
+                { index: 2, iteration: 3, scheduledElapsedMs: 100 }
+            ]
         });
 
         expect(planRallarBlackBoxRtcStreamFrames({ durationMs: 125, intervalMs: 50 }).frames).toEqual([
             { index: 0, iteration: 1, scheduledElapsedMs: 0 },
             { index: 1, iteration: 2, scheduledElapsedMs: 50 },
-            { index: 2, iteration: 3, scheduledElapsedMs: 100 },
+            { index: 2, iteration: 3, scheduledElapsedMs: 100 }
         ]);
 
         const twentyHz = planRallarBlackBoxRtcStreamFrames({ durationMs: 5_000, rateHz: 20 });
@@ -30,7 +30,7 @@ describe('rallar-bb-test rtc stream helpers', () => {
         expect(twentyHz.frames.at(-1)).toEqual({
             index: 99,
             iteration: 100,
-            scheduledElapsedMs: 4_950,
+            scheduledElapsedMs: 4_950
         });
     });
 
@@ -42,14 +42,14 @@ describe('rallar-bb-test rtc stream helpers', () => {
                 iteration: '{stream.iteration}',
                 elapsedMs: '{stream.elapsedMs}',
                 scheduledElapsedMs: '{stream.scheduledElapsedMs}',
-                label: 'frame-{stream.iteration}-at-{stream.scheduledElapsedMs}',
-            },
+                label: 'frame-{stream.iteration}-at-{stream.scheduledElapsedMs}'
+            }
         }, {
             commandId: 'stream-position',
             index: 4,
             iteration: 5,
             elapsedMs: 213,
-            scheduledElapsedMs: 200,
+            scheduledElapsedMs: 200
         });
 
         expect(resolved).toEqual({
@@ -59,8 +59,8 @@ describe('rallar-bb-test rtc stream helpers', () => {
                 iteration: 5,
                 elapsedMs: 213,
                 scheduledElapsedMs: 200,
-                label: 'frame-5-at-200',
-            },
+                label: 'frame-5-at-200'
+            }
         });
     });
 
@@ -83,7 +83,7 @@ describe('rallar-bb-test rtc stream helpers', () => {
                     completedAtEpochMs: 1_024,
                     startDriftMs: 0,
                     durationMs: 24,
-                    ok: true,
+                    ok: true
                 },
                 {
                     commandId: 'stream-position:f2',
@@ -94,7 +94,7 @@ describe('rallar-bb-test rtc stream helpers', () => {
                     completedAtEpochMs: 1_085,
                     startDriftMs: 5,
                     durationMs: 30,
-                    ok: true,
+                    ok: true
                 },
                 {
                     commandId: 'stream-position:f3',
@@ -105,7 +105,7 @@ describe('rallar-bb-test rtc stream helpers', () => {
                     completedAtEpochMs: 1_147,
                     startDriftMs: 12,
                     durationMs: 35,
-                    ok: true,
+                    ok: true
                 },
                 {
                     commandId: 'stream-position:f4',
@@ -117,7 +117,7 @@ describe('rallar-bb-test rtc stream helpers', () => {
                     startDriftMs: 20,
                     durationMs: 45,
                     ok: true,
-                    backpressured: true,
+                    backpressured: true
                 },
                 {
                     commandId: 'stream-position:f5',
@@ -130,13 +130,13 @@ describe('rallar-bb-test rtc stream helpers', () => {
                     durationMs: 60,
                     ok: false,
                     dropped: true,
-                    errorCode: 'STREAM_DROPPED',
-                },
+                    errorCode: 'STREAM_DROPPED'
+                }
             ],
             thresholds: {
                 maxP95SendDurationMs: 40,
-                maxDroppedFrames: 0,
-            },
+                maxDroppedFrames: 0
+            }
         });
 
         expect(summary).toMatchObject({
@@ -158,7 +158,7 @@ describe('rallar-bb-test rtc stream helpers', () => {
                 maxStartDriftMs: 60,
                 averageStartDriftMs: 19.4,
                 maxJitterMs: 40,
-                lateFrameCount: 1,
+                lateFrameCount: 1
             },
             duration: {
                 minMs: 24,
@@ -166,12 +166,12 @@ describe('rallar-bb-test rtc stream helpers', () => {
                 p95Ms: 45,
                 p99Ms: 45,
                 maxMs: 45,
-                averageMs: 33.5,
-            },
+                averageMs: 33.5
+            }
         });
-        expect(summary.thresholdFailures.map(failure => failure.name)).toEqual([
+        expect(summary.thresholdFailures.map((failure) => failure.name)).toEqual([
             'maxDroppedFrames',
-            'maxP95SendDurationMs',
+            'maxP95SendDurationMs'
         ]);
     });
 });

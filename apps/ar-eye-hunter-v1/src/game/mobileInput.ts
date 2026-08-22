@@ -69,7 +69,7 @@ const DEFAULT_SETTINGS: MobileControlSettings = {
     invertY: false,
     buttonScale: 1,
     gyroEnabled: false,
-    hapticsEnabled: true,
+    hapticsEnabled: true
 };
 
 const STICK_DEADZONE = 0.16;
@@ -78,7 +78,7 @@ const TOUCH_YAW_SCALE = 0.0027;
 const TOUCH_PITCH_SCALE = 0.00225;
 const DEFAULT_TOUCH_AIM_ASSIST: TouchAimAssistSettings = {
     eyeRadiusPx: 48,
-    playerRadiusPx: 28,
+    playerRadiusPx: 28
 };
 
 export function createDefaultMobileControlSettings(): MobileControlSettings {
@@ -88,14 +88,14 @@ export function createDefaultMobileControlSettings(): MobileControlSettings {
 export function createInitialTouchControlState(): TouchControlState {
     return {
         lookActive: false,
-        lastInputMode: 'keyboard-mouse',
+        lastInputMode: 'keyboard-mouse'
     };
 }
 
 export function calculateVirtualStick(
     origin: Point2,
     current: Point2,
-    radius: number,
+    radius: number
 ): VirtualStickResult {
     const safeRadius = Math.max(1, radius);
     const rawX = current.x - origin.x;
@@ -117,7 +117,7 @@ export function calculateVirtualStick(
         knobX: cleanZero(round3(directionX * clampedDistance)),
         knobY: cleanZero(round3(directionY * clampedDistance)),
         magnitude: cleanZero(round3(magnitude)),
-        sprint: normalized >= SPRINT_THRESHOLD,
+        sprint: normalized >= SPRINT_THRESHOLD
     };
 }
 
@@ -125,7 +125,7 @@ export function updateTouchPointer(
     state: TouchControlState,
     role: 'move' | 'look',
     pointerId: number,
-    point: Point2,
+    point: Point2
 ): TouchControlState {
     if (role === 'move') {
         const samePointer = state.movePointerId === pointerId;
@@ -134,7 +134,7 @@ export function updateTouchPointer(
             movePointerId: pointerId,
             moveOrigin: samePointer ? state.moveOrigin ?? point : point,
             moveCurrent: point,
-            lastInputMode: 'touch',
+            lastInputMode: 'touch'
         };
     }
 
@@ -143,13 +143,13 @@ export function updateTouchPointer(
         lookPointerId: pointerId,
         lookLast: point,
         lookActive: true,
-        lastInputMode: state.lastInputMode === 'gyro-touch' ? 'gyro-touch' : 'touch',
+        lastInputMode: state.lastInputMode === 'gyro-touch' ? 'gyro-touch' : 'touch'
     };
 }
 
 export function resetTouchPointer(
     state: TouchControlState,
-    pointerId: number,
+    pointerId: number
 ): TouchControlState {
     let next = state;
     if (state.movePointerId === pointerId) {
@@ -157,7 +157,7 @@ export function resetTouchPointer(
             ...next,
             movePointerId: undefined,
             moveOrigin: undefined,
-            moveCurrent: undefined,
+            moveCurrent: undefined
         };
     }
     if (state.lookPointerId === pointerId) {
@@ -165,7 +165,7 @@ export function resetTouchPointer(
             ...next,
             lookPointerId: undefined,
             lookLast: undefined,
-            lookActive: false,
+            lookActive: false
         };
     }
     return next;
@@ -174,31 +174,31 @@ export function resetTouchPointer(
 export function mapTouchLookDelta(
     deltaX: number,
     deltaY: number,
-    settings: MobileControlSettings,
-): Readonly<{ yawDelta: number; pitchDelta: number }> {
+    settings: MobileControlSettings
+): Readonly<{ yawDelta: number; pitchDelta: number; }> {
     const sensitivity = clamp(settings.touchSensitivity, 0.35, 2.4);
     return {
         yawDelta: round6(deltaX * TOUCH_YAW_SCALE * sensitivity),
-        pitchDelta: round6(deltaY * TOUCH_PITCH_SCALE * sensitivity * (settings.invertY ? -1 : 1)),
+        pitchDelta: round6(deltaY * TOUCH_PITCH_SCALE * sensitivity * (settings.invertY ? -1 : 1))
     };
 }
 
 export function shouldFireHeldWeapon(
     fireHeld: boolean,
     nowEpochMs: number,
-    shotReadyAtEpochMs: number,
+    shotReadyAtEpochMs: number
 ): boolean {
     return fireHeld && nowEpochMs >= shotReadyAtEpochMs;
 }
 
 export function chooseTouchAimCandidate(
-    intent: TouchShotIntent,
+    intent: TouchShotIntent
 ): TouchAimCandidate | undefined {
     const settings = {
         ...DEFAULT_TOUCH_AIM_ASSIST,
-        ...intent.settings,
+        ...intent.settings
     };
-    let best: Readonly<{ candidate: TouchAimCandidate; score: number }> | undefined;
+    let best: Readonly<{ candidate: TouchAimCandidate; score: number; }> | undefined;
     for (const candidate of intent.candidates) {
         if (candidate.blocked) {
             continue;
@@ -208,7 +208,7 @@ export function chooseTouchAimCandidate(
             : settings.playerRadiusPx;
         const pixelDistance = Math.hypot(
             candidate.screen.x - intent.point.x,
-            candidate.screen.y - intent.point.y,
+            candidate.screen.y - intent.point.y
         );
         if (pixelDistance > radius) {
             continue;
@@ -223,7 +223,7 @@ export function chooseTouchAimCandidate(
 }
 
 export function loadMobileControlSettings(
-    read: (key: string) => string | null,
+    read: (key: string) => string | null
 ): MobileControlSettings {
     const raw = read(MOBILE_SETTINGS_STORAGE_KEY);
     if (!raw) {
@@ -232,50 +232,51 @@ export function loadMobileControlSettings(
     try {
         const value = JSON.parse(raw) as Partial<MobileControlSettings>;
         return normalizeMobileControlSettings(value);
-    } catch {
+    }
+    catch {
         return createDefaultMobileControlSettings();
     }
 }
 
 export function saveMobileControlSettings(
     settings: MobileControlSettings,
-    write: (key: string, value: string) => void,
+    write: (key: string, value: string) => void
 ): void {
     write(MOBILE_SETTINGS_STORAGE_KEY, JSON.stringify(normalizeMobileControlSettings(settings)));
 }
 
 export function normalizeMobileControlSettings(
-    value: Partial<MobileControlSettings>,
+    value: Partial<MobileControlSettings>
 ): MobileControlSettings {
     return {
         touchSensitivity: round2(clamp(
             typeof value.touchSensitivity === 'number' ? value.touchSensitivity : DEFAULT_SETTINGS.touchSensitivity,
             0.35,
-            2.4,
+            2.4
         )),
         invertY: Boolean(value.invertY),
         buttonScale: round2(clamp(
             typeof value.buttonScale === 'number' ? value.buttonScale : DEFAULT_SETTINGS.buttonScale,
             0.72,
-            1.35,
+            1.35
         )),
         gyroEnabled: Boolean(value.gyroEnabled),
         hapticsEnabled: value.hapticsEnabled === undefined
             ? DEFAULT_SETTINGS.hapticsEnabled
-            : Boolean(value.hapticsEnabled),
+            : Boolean(value.hapticsEnabled)
     };
 }
 
 export function createTouchControlDiagnostics(
     state: TouchControlState,
-    stick: VirtualStickResult,
+    stick: VirtualStickResult
 ): TouchControlDiagnostics {
     return {
         movePointerId: state.movePointerId,
         lookPointerId: state.lookPointerId,
         moveVector: [stick.moveX, 0, stick.moveZ],
         lookActive: state.lookActive,
-        lastInputMode: state.lastInputMode,
+        lastInputMode: state.lastInputMode
     };
 }
 

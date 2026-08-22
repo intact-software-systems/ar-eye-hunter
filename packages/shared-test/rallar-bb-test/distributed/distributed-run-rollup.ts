@@ -3,21 +3,18 @@ import type {
     RallarBlackBoxDistributedRecipeResult,
     RallarBlackBoxDistributedRunError,
     RallarBlackBoxDistributedRunItemState,
-    RallarBlackBoxDistributedRunState,
+    RallarBlackBoxDistributedRunState
 } from '../distributed-run.ts';
-import type {
-    RallarBlackBoxDistributedGroupAssertionResult,
-} from './group-assertions.ts';
+import type { RallarBlackBoxDistributedGroupAssertionResult } from './group-assertions.ts';
 
 export const RALLAR_BLACK_BOX_DISTRIBUTED_RUN_TERMINAL_STATES = [
     'passed',
     'failed',
     'cancelled',
-    'timed-out',
+    'timed-out'
 ] as const;
 
-export type RallarBlackBoxDistributedRunTerminalState =
-    typeof RALLAR_BLACK_BOX_DISTRIBUTED_RUN_TERMINAL_STATES[number];
+export type RallarBlackBoxDistributedRunTerminalState = typeof RALLAR_BLACK_BOX_DISTRIBUTED_RUN_TERMINAL_STATES[number];
 
 export type RallarBlackBoxDistributedRunRollupInput = Readonly<{
     stateHint?: RallarBlackBoxDistributedRunState;
@@ -57,28 +54,28 @@ export type RallarBlackBoxDistributedRunRollup = Readonly<{
 }>;
 
 export function isDistributedRunTerminalState(
-    state: RallarBlackBoxDistributedRunState,
+    state: RallarBlackBoxDistributedRunState
 ): state is RallarBlackBoxDistributedRunTerminalState {
     return RALLAR_BLACK_BOX_DISTRIBUTED_RUN_TERMINAL_STATES.includes(
-        state as RallarBlackBoxDistributedRunTerminalState,
+        state as RallarBlackBoxDistributedRunTerminalState
     );
 }
 
 export function rollupDistributedRunResult(
-    input: RallarBlackBoxDistributedRunRollupInput,
+    input: RallarBlackBoxDistributedRunRollupInput
 ): RallarBlackBoxDistributedRunRollup {
     const participants = input.participants ?? [];
     const recipes = input.recipes ?? [];
     const groupAssertions = input.groupAssertions ?? [];
-    const requiredParticipants = participants.filter(item => item.required !== false);
-    const requiredRecipes = recipes.filter(item => item.required !== false);
+    const requiredParticipants = participants.filter((item) => item.required !== false);
+    const requiredRecipes = recipes.filter((item) => item.required !== false);
     const requiredItems = [
-        ...requiredParticipants.map(item => ({
+        ...requiredParticipants.map((item) => ({
             kind: 'participant' as const,
             key: item.agentId,
-            item,
+            item
         })),
-        ...requiredRecipes.map(item => ({ kind: 'recipe' as const, key: itemKey(item), item })),
+        ...requiredRecipes.map((item) => ({ kind: 'recipe' as const, key: itemKey(item), item }))
     ];
     const failures: RallarBlackBoxDistributedRunRollupFailure[] = [
         ...requiredItems
@@ -88,24 +85,24 @@ export function rollupDistributedRunResult(
                 key,
                 state: item.state,
                 required: item.required !== false,
-                error: item.error,
+                error: item.error
             })),
         ...groupAssertions
-            .filter(result => !result.ok)
-            .map(result => ({
+            .filter((result) => !result.ok)
+            .map((result) => ({
                 kind: 'group-assertion' as const,
                 key: result.groupAssertionId,
                 state: 'failed' as const,
                 required: true,
-                error: result.error,
-            })),
+                error: result.error
+            }))
     ];
 
     const state = deriveRollupState({
         stateHint: input.stateHint,
         participants: requiredParticipants,
         recipes: requiredRecipes,
-        failures,
+        failures
     });
 
     return {
@@ -114,24 +111,23 @@ export function rollupDistributedRunResult(
         summary: {
             participants: participants.length,
             requiredParticipants: requiredParticipants.length,
-            readyParticipants: requiredParticipants.filter(item =>
-                item.state === 'ready' || item.state === 'running' || item.state === 'passed'
-            ).length,
-            passedParticipants: requiredParticipants.filter(item => item.state === 'passed').length,
+            readyParticipants:
+                requiredParticipants.filter((item) =>
+                    item.state === 'ready' || item.state === 'running' || item.state === 'passed'
+                ).length,
+            passedParticipants: requiredParticipants.filter((item) => item.state === 'passed').length,
             failedParticipants: requiredParticipants.filter(isBlockingItemFailure).length,
             recipes: recipes.length,
             requiredRecipes: requiredRecipes.length,
-            passedRecipes: requiredRecipes.filter(item =>
-                item.state === 'passed' && item.ok !== false
-            ).length,
+            passedRecipes: requiredRecipes.filter((item) => item.state === 'passed' && item.ok !== false).length,
             failedRecipes: requiredRecipes.filter(isBlockingItemFailure).length,
             groupAssertions: groupAssertions.length,
-            passedGroupAssertions: groupAssertions.filter(result => result.ok).length,
-            failedGroupAssertions: groupAssertions.filter(result => !result.ok).length,
-            blockingFailures: failures.length,
+            passedGroupAssertions: groupAssertions.filter((result) => result.ok).length,
+            failedGroupAssertions: groupAssertions.filter((result) => !result.ok).length,
+            blockingFailures: failures.length
         },
         groupAssertions: input.groupAssertions,
-        failures,
+        failures
     };
 }
 
@@ -139,7 +135,7 @@ interface DeriveRollupStateInput {
     readonly stateHint: RallarBlackBoxDistributedRunState | undefined;
     readonly participants: readonly RallarBlackBoxDistributedParticipantResult[];
     readonly recipes: readonly RallarBlackBoxDistributedRecipeResult[];
-    readonly failures: readonly { state: RallarBlackBoxDistributedRunItemState }[];
+    readonly failures: readonly { state: RallarBlackBoxDistributedRunItemState; }[];
 }
 
 function deriveRollupState(input: DeriveRollupStateInput): RallarBlackBoxDistributedRunState {
@@ -148,11 +144,11 @@ function deriveRollupState(input: DeriveRollupStateInput): RallarBlackBoxDistrib
         return stateHint;
     }
 
-    if (failures.some(failure => failure.state === 'timed-out')) {
+    if (failures.some((failure) => failure.state === 'timed-out')) {
         return 'timed-out';
     }
 
-    if (failures.some(failure => failure.state === 'cancelled')) {
+    if (failures.some((failure) => failure.state === 'cancelled')) {
         return 'cancelled';
     }
 
@@ -160,26 +156,28 @@ function deriveRollupState(input: DeriveRollupStateInput): RallarBlackBoxDistrib
         return 'failed';
     }
 
-    if (recipes.length > 0 && recipes.every(item => item.state === 'passed' && item.ok !== false)) {
+    if (recipes.length > 0 && recipes.every((item) => item.state === 'passed' && item.ok !== false)) {
         return 'passed';
     }
 
     if (
-        recipes.some(item => item.state === 'running') ||
-        participants.some(item => item.state === 'running')
+        recipes.some((item) => item.state === 'running') ||
+        participants.some((item) => item.state === 'running')
     ) {
         return 'running';
     }
 
-    if (participants.length > 0 && participants.every(item =>
-        item.state === 'ready' ||
-        item.state === 'running' ||
-        item.state === 'passed'
-    )) {
+    if (
+        participants.length > 0 && participants.every((item) =>
+            item.state === 'ready' ||
+            item.state === 'running' ||
+            item.state === 'passed'
+        )
+    ) {
         return 'ready';
     }
 
-    if (participants.some(item => item.state === 'acknowledged')) {
+    if (participants.some((item) => item.state === 'acknowledged')) {
         if (stateHint === 'waiting-for-barrier') {
             return 'waiting-for-barrier';
         }
@@ -189,10 +187,12 @@ function deriveRollupState(input: DeriveRollupStateInput): RallarBlackBoxDistrib
     return stateHint ?? 'draft';
 }
 
-function isBlockingItemFailure(item: Readonly<{
-    state: RallarBlackBoxDistributedRunItemState;
-    ok?: boolean;
-}>): boolean {
+function isBlockingItemFailure(
+    item: Readonly<{
+        state: RallarBlackBoxDistributedRunItemState;
+        ok?: boolean;
+    }>
+): boolean {
     return item.ok === false ||
         item.state === 'failed' ||
         item.state === 'timed-out' ||

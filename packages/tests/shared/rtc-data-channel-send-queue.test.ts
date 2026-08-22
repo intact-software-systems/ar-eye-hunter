@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { RtcDataChannelSendQueue } from '@shared/webrtc/RtcDataChannelSendQueue.ts';
+import { describe, expect, it } from 'vitest';
 
 type TestPayload = Readonly<{
     seq: number;
@@ -11,11 +11,11 @@ describe('RtcDataChannelSendQueue', () => {
 
         expect(queue.offer(queued(1), queuePolicy(2))).toMatchObject({
             status: 'queued',
-            reason: 'Queued payload',
+            reason: 'Queued payload'
         });
         expect(queue.offer(queued(2), queuePolicy(2))).toMatchObject({
             status: 'queued',
-            reason: 'Queued payload',
+            reason: 'Queued payload'
         });
 
         expect(queue.size).toBe(2);
@@ -36,7 +36,7 @@ describe('RtcDataChannelSendQueue', () => {
         expect(queue.offer(queued(4, 'b'), policy)).toMatchObject({
             status: 'replaced',
             reason: 'Replaced queued payload',
-            key: 'b',
+            key: 'b'
         });
 
         expect(queue.shift()?.payload.seq).toBe(1);
@@ -52,12 +52,12 @@ describe('RtcDataChannelSendQueue', () => {
         expect(queue.offer(queued(1), policy)).toMatchObject({
             status: 'queued',
             reason: 'Queued payload after dropping oldest',
-            droppedOldest: false,
+            droppedOldest: false
         });
         expect(queue.offer(queued(2), policy)).toMatchObject({
             status: 'queued',
             reason: 'Queued payload after dropping oldest',
-            droppedOldest: true,
+            droppedOldest: true
         });
 
         expect(queue.size).toBe(1);
@@ -73,7 +73,7 @@ describe('RtcDataChannelSendQueue', () => {
 
         expect(queue.offer(queued(2), policy)).toMatchObject({
             status: 'dropped',
-            reason: 'Queue full',
+            reason: 'Queue full'
         });
 
         expect(queue.size).toBe(1);
@@ -92,7 +92,7 @@ describe('RtcDataChannelSendQueue', () => {
         expect(queue.offer(queued(3, 'b'), policy)).toMatchObject({
             status: 'replaced',
             reason: 'Replaced queued payload',
-            key: 'b',
+            key: 'b'
         });
 
         expect(queue.size).toBe(1);
@@ -103,32 +103,32 @@ describe('RtcDataChannelSendQueue', () => {
 
 function queued(
     seq: number,
-    key?: string,
+    key?: string
 ) {
     return {
         payload: { seq },
         key,
-        createdAtEpochMs: seq,
+        createdAtEpochMs: seq
     };
 }
 
 function queuePolicy(maxQueueItems: number) {
     return {
         overflow: 'queue' as const,
-        maxQueueItems,
+        maxQueueItems
     };
 }
 
 function replaceByKeyPolicy(maxQueueItems: number) {
     return {
         overflow: 'replace-by-key' as const,
-        maxQueueItems,
+        maxQueueItems
     };
 }
 
 function dropOldPolicy(maxQueueItems: number) {
     return {
         overflow: 'drop-old' as const,
-        maxQueueItems,
+        maxQueueItems
     };
 }

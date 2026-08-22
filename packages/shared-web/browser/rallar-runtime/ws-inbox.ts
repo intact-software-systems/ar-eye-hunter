@@ -22,15 +22,13 @@ export type CreateRallarWsInboxOptions = Readonly<{
 }>;
 
 export function createRallarWsInbox(
-    options: CreateRallarWsInboxOptions,
+    options: CreateRallarWsInboxOptions
 ): RallarWsInbox {
     const handlers = new Map<string, RallarWsInboxHandler>();
     let attachedContext: ApiMiddleware | undefined;
 
     const dispatch = async (message: ALMessage): Promise<void> => {
-        const ordered = [...handlers.values()].sort((left, right) =>
-            left.order - right.order
-        );
+        const ordered = [...handlers.values()].sort((left, right) => left.order - right.order);
         for (const handler of ordered) {
             await handler.onMessage(message);
         }
@@ -42,7 +40,7 @@ export function createRallarWsInbox(
         }
         ctx.middleware.webSocketQueueBox.onAnyInboxMessageDo(
             RALLAR_WS_ANY_MESSAGE_CALLBACK_ID,
-            { onMessage: dispatch },
+            { onMessage: dispatch }
         );
         attachedContext = ctx;
     };
@@ -52,7 +50,7 @@ export function createRallarWsInbox(
             return;
         }
         ctx?.middleware.webSocketQueueBox.removeAnyInboxMessageCallback(
-            RALLAR_WS_ANY_MESSAGE_CALLBACK_ID,
+            RALLAR_WS_ANY_MESSAGE_CALLBACK_ID
         );
         attachedContext = undefined;
     };
@@ -73,6 +71,6 @@ export function createRallarWsInbox(
         },
         attach,
         detach,
-        isAttached: (): boolean => attachedContext !== undefined,
+        isAttached: (): boolean => attachedContext !== undefined
     };
 }

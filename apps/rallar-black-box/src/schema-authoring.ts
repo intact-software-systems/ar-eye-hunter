@@ -1,22 +1,22 @@
 import {
+    validateDistributedRunManifestContract,
+    type RallarBlackBoxDistributedRunManifest
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
+import {
+    formatJsonSchemaValidationErrors,
     RALLAR_BLACK_BOX_COMMAND_CAPABILITIES,
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
     RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
     RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
-    formatJsonSchemaValidationErrors,
     validateJsonSchema,
     type JsonSchema,
     type JsonSchemaValidationIssue,
-    type RallarBlackBoxCommandCapability,
+    type RallarBlackBoxCommandCapability
 } from '@shared-test/rallar-bb-test/schema.ts';
-import {
-    validateDistributedRunManifestContract,
-    type RallarBlackBoxDistributedRunManifest,
-} from '@shared-test/rallar-bb-test/distributed-run.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestCommandKind,
-    RallarBlackBoxTestRecipe,
+    RallarBlackBoxTestRecipe
 } from '@shared-test/rallar-bb-test/types.ts';
 import { RALLAR_BLACK_BOX_SHARED_TEST_RUNNER_SCENARIO_SCHEMA } from './shared-test-handoff-fixtures.ts';
 
@@ -59,37 +59,38 @@ const TARGET_TITLES: Readonly<Record<SchemaAuthoringTarget, string>> = {
     command: 'Command JSON',
     recipe: 'Recipe JSON',
     'distributed-run-manifest': 'Distributed Manifest',
-    'runner-scenario': 'Runner Scenario',
+    'runner-scenario': 'Runner Scenario'
 };
 
 const SCHEMAS: Readonly<Record<SchemaAuthoringTarget, JsonSchema>> = {
     command: RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
     recipe: RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
     'distributed-run-manifest': RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
-    'runner-scenario': RALLAR_BLACK_BOX_SHARED_TEST_RUNNER_SCENARIO_SCHEMA,
+    'runner-scenario': RALLAR_BLACK_BOX_SHARED_TEST_RUNNER_SCENARIO_SCHEMA
 };
 
 const CAPABILITY_BY_KIND = new Map(
-    RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map(capability => [capability.kind, capability]),
+    RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map((capability) => [capability.kind, capability])
 );
 
 export function validateSchemaAuthoringText(
     target: SchemaAuthoringTarget,
-    text: string,
+    text: string
 ): SchemaAuthoringValidation {
     try {
         return validateSchemaAuthoringValue(target, JSON.parse(text) as unknown);
-    } catch (caught) {
+    }
+    catch (caught) {
         return validationFromErrors(target, false, [{
             path: '$',
-            message: caught instanceof Error ? caught.message : String(caught),
+            message: caught instanceof Error ? caught.message : String(caught)
         }], undefined);
     }
 }
 
 export function validateSchemaAuthoringValue(
     target: SchemaAuthoringTarget,
-    value: unknown,
+    value: unknown
 ): SchemaAuthoringValidation {
     const schemaResult = validateJsonSchema(SCHEMAS[target], value);
     const errors: JsonSchemaValidationIssue[] = schemaResult.ok ? [] : [...schemaResult.errors];
@@ -105,7 +106,7 @@ export function validateSchemaAuthoringValue(
 }
 
 export function commandExampleSnippets(): readonly CommandExampleSnippet[] {
-    return RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map(capability => ({
+    return RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map((capability) => ({
         kind: capability.kind,
         title: capability.title,
         description: capability.description,
@@ -114,7 +115,7 @@ export function commandExampleSnippets(): readonly CommandExampleSnippet[] {
         runtimeSurfaces: capability.runtimeSurfaces,
         liveServiceRequirements: capability.liveServiceRequirements,
         artifactExpectations: capability.artifactExpectations,
-        distributedCompatible: capability.runtimeSurfaces.includes('control-agent'),
+        distributedCompatible: capability.runtimeSurfaces.includes('control-agent')
     }));
 }
 
@@ -147,11 +148,11 @@ function validationFromErrors(
     target: SchemaAuthoringTarget,
     parseOk: boolean,
     errors: readonly JsonSchemaValidationIssue[],
-    parsed: unknown,
+    parsed: unknown
 ): SchemaAuthoringValidation {
     const commandKinds = parseOk ? commandKindsForValue(target, parsed) : [];
     const capabilities = commandKinds
-        .map(kind => CAPABILITY_BY_KIND.get(kind))
+        .map((kind) => CAPABILITY_BY_KIND.get(kind))
         .filter((capability): capability is RallarBlackBoxCommandCapability => Boolean(capability));
 
     return {
@@ -163,19 +164,19 @@ function validationFromErrors(
         errorText: errors.length > 0 ? formatJsonSchemaValidationErrors(errors) : undefined,
         commandKinds,
         capabilities,
-        liveServiceRequirements: uniqueValues(capabilities.flatMap(capability => capability.liveServiceRequirements)),
-        artifactExpectations: uniqueValues(capabilities.flatMap(capability => capability.artifactExpectations)),
-        providerModes: uniqueValues(capabilities.flatMap(capability => capability.supportedProviderModes)),
-        runtimeSurfaces: uniqueValues(capabilities.flatMap(capability => capability.runtimeSurfaces)),
+        liveServiceRequirements: uniqueValues(capabilities.flatMap((capability) => capability.liveServiceRequirements)),
+        artifactExpectations: uniqueValues(capabilities.flatMap((capability) => capability.artifactExpectations)),
+        providerModes: uniqueValues(capabilities.flatMap((capability) => capability.supportedProviderModes)),
+        runtimeSurfaces: uniqueValues(capabilities.flatMap((capability) => capability.runtimeSurfaces)),
         distributedCompatible: capabilities.length > 0 &&
-            capabilities.every(capability => capability.runtimeSurfaces.includes('control-agent')),
-        parsed,
+            capabilities.every((capability) => capability.runtimeSurfaces.includes('control-agent')),
+        parsed
     };
 }
 
 function commandKindsForValue(
     target: SchemaAuthoringTarget,
-    value: unknown,
+    value: unknown
 ): readonly RallarBlackBoxTestCommandKind[] {
     if (target === 'command') {
         return isCommand(value) ? commandKindsForCommand(value) : [];
@@ -189,9 +190,9 @@ function commandKindsForValue(
         if (!isDistributedManifest(value)) {
             return [];
         }
-        return uniqueValues(value.recipes.flatMap(selection =>
-            selection.recipe?.commands.flatMap(commandKindsForCommand) ?? []
-        ));
+        return uniqueValues(
+            value.recipes.flatMap((selection) => selection.recipe?.commands.flatMap(commandKindsForCommand) ?? [])
+        );
     }
     return [];
 }
@@ -202,7 +203,7 @@ function commandKindsForCommand(command: RallarBlackBoxTestCommand): readonly Ra
             case 'loop':
                 return command.commands.flatMap(commandKindsForCommand);
             case 'parallel':
-                return command.groups.flatMap(group => group.commands.flatMap(commandKindsForCommand));
+                return command.groups.flatMap((group) => group.commands.flatMap(commandKindsForCommand));
             case 'recipe.load':
             case 'recipe.run':
                 return command.recipe?.commands.flatMap(commandKindsForCommand) ?? [];

@@ -1,11 +1,31 @@
+import {
+    createRallarCrdtLocalStore,
+    DEFAULT_RALLAR_CRDT_DB_NAME,
+    type RallarCrdtLocalStore
+} from '@shared-web/browser/rallar-crdt-local-store.ts';
+import { createRallarCrdtTabSync, type RallarCrdtTabSync } from '@shared-web/browser/rallar-crdt-tab-sync.ts';
+import {
+    sendRallarCrdtCatchUpRequest,
+    sendRallarCrdtLiveUpdate,
+    sendRallarCrdtSyncRequest,
+    sendRallarCrdtSyncResponse,
+    subscribeRallarCrdtLiveTransport,
+    type RallarCrdtMessageTransport,
+    type RallarCrdtTransportKind
+} from '@shared-web/browser/rallar-crdt-transport.ts';
+import type { RallarDataFacade, RallarUnsubscribe } from '@shared-web/browser/rallar-data.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     createRallarCrdtDocument,
-    RALLAR_CRDT_PROTOCOL_VERSION,
     decryptRallarCrdtSnapshotEnvelope,
     decryptRallarCrdtUpdateEnvelope,
     encryptRallarCrdtSnapshotEnvelope,
     encryptRallarCrdtUpdateEnvelope,
+    isRallarCrdtEncryptedJsonEnvelope,
+    isRallarCrdtEncryptedOperationBatch,
+    RALLAR_CRDT_PROTOCOL_VERSION,
+    rallarCrdtBatch,
+    toRallarCrdtDocumentKey,
     type RallarCrdtAppendResponseEnvelope,
     type RallarCrdtApplyResult,
     type RallarCrdtCatchUpRequestEnvelope,
@@ -23,50 +43,24 @@ import {
     type RallarCrdtOperationBatch,
     type RallarCrdtPath,
     type RallarCrdtSnapshotEnvelope,
+    type RallarCrdtSyncOptions,
     type RallarCrdtSyncRequestEnvelope,
     type RallarCrdtSyncResponseEnvelope,
-    type RallarCrdtSyncOptions,
     type RallarCrdtSyncResult,
     type RallarCrdtTransportStrategy,
     type RallarCrdtUpdateEnvelope,
-    type RallarCrdtValidationOptions,
-    isRallarCrdtEncryptedJsonEnvelope,
-    isRallarCrdtEncryptedOperationBatch,
-    rallarCrdtBatch,
-    toRallarCrdtDocumentKey,
+    type RallarCrdtValidationOptions
 } from '@shared/crdt/mod.ts';
-import type {
-    RallarDataFacade,
-    RallarUnsubscribe,
-} from '@shared-web/browser/rallar-data.ts';
-import {
-    createRallarCrdtLocalStore,
-    DEFAULT_RALLAR_CRDT_DB_NAME,
-    type RallarCrdtLocalStore,
-} from '@shared-web/browser/rallar-crdt-local-store.ts';
-import {
-    createRallarCrdtTabSync,
-    type RallarCrdtTabSync,
-} from '@shared-web/browser/rallar-crdt-tab-sync.ts';
-import {
-    sendRallarCrdtLiveUpdate,
-    sendRallarCrdtCatchUpRequest,
-    sendRallarCrdtSyncRequest,
-    sendRallarCrdtSyncResponse,
-    subscribeRallarCrdtLiveTransport,
-    type RallarCrdtMessageTransport,
-    type RallarCrdtTransportKind,
-} from '@shared-web/browser/rallar-crdt-transport.ts';
 
 export type RallarCrdtSnapshotListener<TValue> = (
-    snapshot: RallarCrdtSnapshotEnvelope<TValue>,
+    snapshot: RallarCrdtSnapshotEnvelope<TValue>
 ) => void | Promise<void>;
 
 export type RallarCrdtOpenScope =
-    | Readonly<{ kind: 'app' }>
-    | Readonly<{ kind: 'principal'; principalId: string }>
-    | Readonly<{ kind: 'room'; roomRef: GroupRef }>
-    | Readonly<{ kind: 'custom'; customScope: string }>;
+    | Readonly<{ kind: 'app'; }>
+    | Readonly<{ kind: 'principal'; principalId: string; }>
+    | Readonly<{ kind: 'room'; roomRef: GroupRef; }>
+    | Readonly<{ kind: 'custom'; customScope: string; }>;
 
 export type RallarCrdtOpenOptions<
     TValue = unknown,
@@ -111,69 +105,66 @@ export type RallarCrdtFacadeOptions = Readonly<{
     createReplicaId?: () => string;
 }>;
 
-export type RallarCrdtHttpCatchUpClient<
-    TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
-> = (
-    request: RallarCrdtCatchUpRequestEnvelope,
+export type RallarCrdtHttpCatchUpClient<TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch> = (
+    request: RallarCrdtCatchUpRequestEnvelope
 ) => Promise<RallarCrdtCatchUpResponseEnvelope<unknown, TPayload>>;
 
-export type RallarCrdtDocument<
-    TValue,
-    TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
-> = Readonly<{
-    ref: RallarCrdtDocumentRef;
-    read(): TValue;
-    subscribe(listener: RallarCrdtSnapshotListener<TValue>): RallarUnsubscribe;
-    applyLocal(payload: TPayload): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
-    sequenceInsert(
-        input: RallarCrdtSequenceInsertInput,
-        options?: RallarCrdtSequenceMutationOptions,
-    ): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
-    sequenceMove(
-        input: RallarCrdtSequenceMoveInput,
-        options?: RallarCrdtSequenceMutationOptions,
-    ): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
-    sequenceDelete(
-        input: RallarCrdtSequenceDeleteInput,
-        options?: RallarCrdtSequenceMutationOptions,
-    ): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
-    counterAdd(
-        input: RallarCrdtCounterAddInput,
-        options?: RallarCrdtNumericMutationOptions,
-    ): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
-    counterIncrement(
-        path: RallarCrdtPath,
-        options?: RallarCrdtNumericMutationOptions,
-    ): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
-    counterDecrement(
-        path: RallarCrdtPath,
-        options?: RallarCrdtNumericMutationOptions,
-    ): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
-    numberMin(
-        input: RallarCrdtNumberMergeInput,
-        options?: RallarCrdtNumericMutationOptions,
-    ): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
-    numberMax(
-        input: RallarCrdtNumberMergeInput,
-        options?: RallarCrdtNumericMutationOptions,
-    ): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
-    operationGroupUpdateIds(operationGroupId: string): readonly string[];
-    undoOperationGroup(
-        input: RallarCrdtUndoRedoGroupInput,
-    ): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
-    redoOperationGroup(
-        input: RallarCrdtUndoRedoGroupInput,
-    ): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
-    pendingUpdates(): readonly RallarCrdtUpdateEnvelope<TPayload>[];
-    failedPendingUpdates(): readonly RallarCrdtFailedPendingUpdate<TPayload>[];
-    dependencyBlockedUpdates(): readonly RallarCrdtDependencyBlockedUpdate<TPayload>[];
-    snapshot(): RallarCrdtSnapshotEnvelope<TValue>;
-    flush(): Promise<void>;
-    sync(options?: RallarCrdtSyncOptions): Promise<RallarCrdtSyncResult>;
-    close(): Promise<void>;
-    destroy(): Promise<void>;
-    health(): RallarCrdtDocumentHealth;
-}>;
+export type RallarCrdtDocument<TValue, TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch> = Readonly<
+    {
+        ref: RallarCrdtDocumentRef;
+        read(): TValue;
+        subscribe(listener: RallarCrdtSnapshotListener<TValue>): RallarUnsubscribe;
+        applyLocal(payload: TPayload): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
+        sequenceInsert(
+            input: RallarCrdtSequenceInsertInput,
+            options?: RallarCrdtSequenceMutationOptions
+        ): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
+        sequenceMove(
+            input: RallarCrdtSequenceMoveInput,
+            options?: RallarCrdtSequenceMutationOptions
+        ): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
+        sequenceDelete(
+            input: RallarCrdtSequenceDeleteInput,
+            options?: RallarCrdtSequenceMutationOptions
+        ): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
+        counterAdd(
+            input: RallarCrdtCounterAddInput,
+            options?: RallarCrdtNumericMutationOptions
+        ): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
+        counterIncrement(
+            path: RallarCrdtPath,
+            options?: RallarCrdtNumericMutationOptions
+        ): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
+        counterDecrement(
+            path: RallarCrdtPath,
+            options?: RallarCrdtNumericMutationOptions
+        ): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
+        numberMin(
+            input: RallarCrdtNumberMergeInput,
+            options?: RallarCrdtNumericMutationOptions
+        ): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
+        numberMax(
+            input: RallarCrdtNumberMergeInput,
+            options?: RallarCrdtNumericMutationOptions
+        ): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
+        operationGroupUpdateIds(operationGroupId: string): readonly string[];
+        undoOperationGroup(
+            input: RallarCrdtUndoRedoGroupInput
+        ): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
+        redoOperationGroup(
+            input: RallarCrdtUndoRedoGroupInput
+        ): Promise<RallarCrdtUpdateEnvelope<TPayload>>;
+        pendingUpdates(): readonly RallarCrdtUpdateEnvelope<TPayload>[];
+        failedPendingUpdates(): readonly RallarCrdtFailedPendingUpdate<TPayload>[];
+        dependencyBlockedUpdates(): readonly RallarCrdtDependencyBlockedUpdate<TPayload>[];
+        snapshot(): RallarCrdtSnapshotEnvelope<TValue>;
+        flush(): Promise<void>;
+        sync(options?: RallarCrdtSyncOptions): Promise<RallarCrdtSyncResult>;
+        close(): Promise<void>;
+        destroy(): Promise<void>;
+        health(): RallarCrdtDocumentHealth;
+    }
+>;
 
 export type RallarCrdtSequenceMutationOptions = Readonly<{
     operationGroupId?: string;
@@ -220,19 +211,13 @@ export type RallarCrdtUndoRedoGroupInput = Readonly<{
 }>;
 
 export type RallarCrdtFacade = Readonly<{
-    open<
-        TValue = unknown,
-        TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
-    >(
+    open<TValue = unknown, TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch>(
         name: string,
-        options?: RallarCrdtOpenOptions<TValue, TPayload>,
+        options?: RallarCrdtOpenOptions<TValue, TPayload>
     ): Promise<RallarCrdtDocument<TValue, TPayload>>;
 }>;
 
-type BrowserCrdtDocumentOptions<
-    TValue,
-    TPayload extends RallarCrdtOperationBatch,
-> = Readonly<{
+type BrowserCrdtDocumentOptions<TValue, TPayload extends RallarCrdtOperationBatch> = Readonly<{
     ref: RallarCrdtDocumentRef;
     documentKey: string;
     replicaId: string;
@@ -255,24 +240,20 @@ type BrowserCrdtDocumentOptions<
 }>;
 
 export function createRallarCrdtFacade(
-    options: RallarCrdtFacadeOptions,
+    options: RallarCrdtFacadeOptions
 ): RallarCrdtFacade {
     const openDocuments = new Map<string, RallarCrdtDocument<unknown>>();
     const now = options.now ?? Date.now;
 
     return {
-        open: async <
-            TValue = unknown,
-            TPayload extends RallarCrdtOperationBatch =
-                RallarCrdtOperationBatch,
-        >(
+        open: async <TValue = unknown, TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch>(
             name: string,
-            openOptions: RallarCrdtOpenOptions<TValue, TPayload> = {},
+            openOptions: RallarCrdtOpenOptions<TValue, TPayload> = {}
         ): Promise<RallarCrdtDocument<TValue, TPayload>> => {
             const ref = toDocumentRef(
                 name,
                 openOptions,
-                options.readDefaults?.(),
+                options.readDefaults?.()
             );
             const documentKey = toRallarCrdtDocumentKey(ref);
             const existing = openDocuments.get(documentKey);
@@ -283,8 +264,7 @@ export function createRallarCrdtFacade(
             const document = new BrowserRallarCrdtDocument<TValue, TPayload>({
                 ref,
                 documentKey,
-                replicaId:
-                    openOptions.replicaId ??
+                replicaId: openOptions.replicaId ??
                     options.createReplicaId?.() ??
                     createRandomId('replica'),
                 actorId: openOptions.actorId,
@@ -300,18 +280,18 @@ export function createRallarCrdtFacade(
                 validation: openOptions.validation,
                 durableCatchUp: (openOptions.durableCatchUp ??
                     options.readDurableCatchUp?.()) as
-                    | RallarCrdtHttpCatchUpClient<TPayload>
-                    | undefined,
+                        | RallarCrdtHttpCatchUpClient<TPayload>
+                        | undefined,
                 data: options.data,
                 dbName: openOptions.dbName ?? DEFAULT_RALLAR_CRDT_DB_NAME,
                 readTransport: options.readTransport,
-                now,
+                now
             });
 
             await document.hydrate();
             openDocuments.set(
                 documentKey,
-                document as RallarCrdtDocument<unknown>,
+                document as RallarCrdtDocument<unknown>
             );
             document.onClosed(() => {
                 if (openDocuments.get(documentKey) === document) {
@@ -319,30 +299,19 @@ export function createRallarCrdtFacade(
                 }
             });
             return document;
-        },
+        }
     };
 }
 
-class BrowserRallarCrdtDocument<
-    TValue,
-    TPayload extends RallarCrdtOperationBatch,
-> implements RallarCrdtDocument<TValue, TPayload> {
+class BrowserRallarCrdtDocument<TValue, TPayload extends RallarCrdtOperationBatch>
+    implements RallarCrdtDocument<TValue, TPayload> {
     public readonly ref: RallarCrdtDocumentRef;
 
     private readonly engine: RallarCrdtEngineDocument<TValue, TPayload>;
     private readonly listeners = new Set<RallarCrdtSnapshotListener<TValue>>();
-    private readonly pending = new Map<
-        string,
-        RallarCrdtUpdateEnvelope<TPayload>
-    >();
-    private readonly failed = new Map<
-        string,
-        RallarCrdtFailedPendingUpdate<TPayload>
-    >();
-    private readonly dependencyBlocked = new Map<
-        string,
-        RallarCrdtDependencyBlockedUpdate<TPayload>
-    >();
+    private readonly pending = new Map<string, RallarCrdtUpdateEnvelope<TPayload>>();
+    private readonly failed = new Map<string, RallarCrdtFailedPendingUpdate<TPayload>>();
+    private readonly dependencyBlocked = new Map<string, RallarCrdtDependencyBlockedUpdate<TPayload>>();
     private readonly closeListeners = new Set<() => void>();
     private readonly now: () => number;
     private readonly actorId: string | undefined;
@@ -407,7 +376,7 @@ class BrowserRallarCrdtDocument<
             schemaVersion: options.schemaVersion,
             initialValue: options.initialValue,
             now: options.now,
-            validation: options.validation,
+            validation: options.validation
         });
     }
 
@@ -416,16 +385,16 @@ class BrowserRallarCrdtDocument<
         if (this.persist) {
             this.localStore = await createRallarCrdtLocalStore({
                 data: this.data,
-                dbName: this.dbName,
+                dbName: this.dbName
             });
             const state = await this.localStore.loadDocument<TValue, TPayload>(
-                this.ref,
+                this.ref
             );
             this.corruptLocalArtifactCount = state.corruptArtifacts.length;
 
             if (state.snapshot) {
                 this.engine.importSnapshot(
-                    await this.revealSnapshotForMerge(state.snapshot),
+                    await this.revealSnapshotForMerge(state.snapshot)
                 );
                 this.lastSnapshotAtEpochMs = state.snapshot.createdAtEpochMs;
             }
@@ -448,7 +417,7 @@ class BrowserRallarCrdtDocument<
                 ref: this.ref,
                 replicaId: this.engine.replicaId,
                 schemaVersion: state.metadata?.schemaVersion ?? 1,
-                updatedAtEpochMs: this.now(),
+                updatedAtEpochMs: this.now()
             });
         }
 
@@ -457,7 +426,7 @@ class BrowserRallarCrdtDocument<
         this.recordMetric('crdt.pending.failed.count', this.failed.size);
         this.recordMetric(
             'crdt.dependency.blocked.count',
-            this.dependencyBlocked.size,
+            this.dependencyBlocked.size
         );
         if (this.tabSyncEnabled) {
             this.tabSync = createRallarCrdtTabSync<TPayload>({
@@ -465,7 +434,7 @@ class BrowserRallarCrdtDocument<
                 instanceId: this.engine.replicaId,
                 onUpdate: async (update) => {
                     await this.applyRemoteUpdate(update);
-                },
+                }
             });
         }
         this.subscribeLiveTransport();
@@ -484,7 +453,7 @@ class BrowserRallarCrdtDocument<
     }
 
     public subscribe(
-        listener: RallarCrdtSnapshotListener<TValue>,
+        listener: RallarCrdtSnapshotListener<TValue>
     ): RallarUnsubscribe {
         this.listeners.add(listener);
         notifyListener(listener, this.snapshot());
@@ -494,13 +463,13 @@ class BrowserRallarCrdtDocument<
     }
 
     public async applyLocal(
-        payload: TPayload,
+        payload: TPayload
     ): Promise<RallarCrdtUpdateEnvelope<TPayload>> {
         this.assertOpen();
         const startedAt = this.now();
         const engineUpdate = this.engine.applyLocal(payload);
         const update = (await this.protectUpdateForStorage(
-            engineUpdate,
+            engineUpdate
         )) as RallarCrdtUpdateEnvelope<TPayload>;
         this.rememberOperationGroup(engineUpdate);
         this.pending.set(update.updateId, update);
@@ -514,18 +483,19 @@ class BrowserRallarCrdtDocument<
             this.emitSnapshot();
             this.recordMetric(
                 'crdt.local.apply.ms',
-                Math.max(0, this.now() - startedAt),
+                Math.max(0, this.now() - startedAt)
             );
             this.recordMetric('crdt.pending.age.ms', 0, {
-                updateId: update.updateId,
+                updateId: update.updateId
             });
             return update;
-        } catch (error) {
+        }
+        catch (error) {
             const failed: RallarCrdtFailedPendingUpdate<TPayload> = {
                 update,
                 failedAtEpochMs: this.now(),
                 retryable: true,
-                reason: toErrorMessage(error),
+                reason: toErrorMessage(error)
             };
             this.failed.set(update.updateId, failed);
             await this.localStore?.writeFailedPendingUpdate(failed);
@@ -536,7 +506,7 @@ class BrowserRallarCrdtDocument<
 
     public async sequenceInsert(
         input: RallarCrdtSequenceInsertInput,
-        options: RallarCrdtSequenceMutationOptions = {},
+        options: RallarCrdtSequenceMutationOptions = {}
     ): Promise<RallarCrdtUpdateEnvelope<TPayload>> {
         return await this.applyLocal(
             rallarCrdtBatch(
@@ -546,19 +516,19 @@ class BrowserRallarCrdtDocument<
                         path: input.path,
                         elementId: input.elementId,
                         positionId: input.positionId,
-                        value: input.value,
-                    },
+                        value: input.value
+                    }
                 ],
                 {
-                    operationGroupId: options.operationGroupId,
-                },
-            ) as TPayload,
+                    operationGroupId: options.operationGroupId
+                }
+            ) as TPayload
         );
     }
 
     public async sequenceMove(
         input: RallarCrdtSequenceMoveInput,
-        options: RallarCrdtSequenceMutationOptions = {},
+        options: RallarCrdtSequenceMutationOptions = {}
     ): Promise<RallarCrdtUpdateEnvelope<TPayload>> {
         return await this.applyLocal(
             rallarCrdtBatch(
@@ -568,19 +538,19 @@ class BrowserRallarCrdtDocument<
                         path: input.path,
                         elementId: input.elementId,
                         positionId: input.positionId,
-                        observedUpdateIds: input.observedUpdateIds,
-                    },
+                        observedUpdateIds: input.observedUpdateIds
+                    }
                 ],
                 {
-                    operationGroupId: options.operationGroupId,
-                },
-            ) as TPayload,
+                    operationGroupId: options.operationGroupId
+                }
+            ) as TPayload
         );
     }
 
     public async sequenceDelete(
         input: RallarCrdtSequenceDeleteInput,
-        options: RallarCrdtSequenceMutationOptions = {},
+        options: RallarCrdtSequenceMutationOptions = {}
     ): Promise<RallarCrdtUpdateEnvelope<TPayload>> {
         return await this.applyLocal(
             rallarCrdtBatch(
@@ -589,19 +559,19 @@ class BrowserRallarCrdtDocument<
                         kind: 'sequence.delete',
                         path: input.path,
                         elementId: input.elementId,
-                        observedUpdateIds: input.observedUpdateIds,
-                    },
+                        observedUpdateIds: input.observedUpdateIds
+                    }
                 ],
                 {
-                    operationGroupId: options.operationGroupId,
-                },
-            ) as TPayload,
+                    operationGroupId: options.operationGroupId
+                }
+            ) as TPayload
         );
     }
 
     public async counterAdd(
         input: RallarCrdtCounterAddInput,
-        options: RallarCrdtNumericMutationOptions = {},
+        options: RallarCrdtNumericMutationOptions = {}
     ): Promise<RallarCrdtUpdateEnvelope<TPayload>> {
         return await this.applyLocal(
             rallarCrdtBatch(
@@ -609,45 +579,45 @@ class BrowserRallarCrdtDocument<
                     {
                         kind: 'counter.add',
                         path: input.path,
-                        delta: input.delta,
-                    },
+                        delta: input.delta
+                    }
                 ],
                 {
-                    operationGroupId: options.operationGroupId,
-                },
-            ) as TPayload,
+                    operationGroupId: options.operationGroupId
+                }
+            ) as TPayload
         );
     }
 
     public async counterIncrement(
         path: RallarCrdtPath,
-        options: RallarCrdtNumericMutationOptions = {},
+        options: RallarCrdtNumericMutationOptions = {}
     ): Promise<RallarCrdtUpdateEnvelope<TPayload>> {
         return await this.counterAdd(
             {
                 path,
-                delta: 1,
+                delta: 1
             },
-            options,
+            options
         );
     }
 
     public async counterDecrement(
         path: RallarCrdtPath,
-        options: RallarCrdtNumericMutationOptions = {},
+        options: RallarCrdtNumericMutationOptions = {}
     ): Promise<RallarCrdtUpdateEnvelope<TPayload>> {
         return await this.counterAdd(
             {
                 path,
-                delta: -1,
+                delta: -1
             },
-            options,
+            options
         );
     }
 
     public async numberMin(
         input: RallarCrdtNumberMergeInput,
-        options: RallarCrdtNumericMutationOptions = {},
+        options: RallarCrdtNumericMutationOptions = {}
     ): Promise<RallarCrdtUpdateEnvelope<TPayload>> {
         return await this.applyLocal(
             rallarCrdtBatch(
@@ -655,19 +625,19 @@ class BrowserRallarCrdtDocument<
                     {
                         kind: 'number.min',
                         path: input.path,
-                        value: input.value,
-                    },
+                        value: input.value
+                    }
                 ],
                 {
-                    operationGroupId: options.operationGroupId,
-                },
-            ) as TPayload,
+                    operationGroupId: options.operationGroupId
+                }
+            ) as TPayload
         );
     }
 
     public async numberMax(
         input: RallarCrdtNumberMergeInput,
-        options: RallarCrdtNumericMutationOptions = {},
+        options: RallarCrdtNumericMutationOptions = {}
     ): Promise<RallarCrdtUpdateEnvelope<TPayload>> {
         return await this.applyLocal(
             rallarCrdtBatch(
@@ -675,71 +645,69 @@ class BrowserRallarCrdtDocument<
                     {
                         kind: 'number.max',
                         path: input.path,
-                        value: input.value,
-                    },
+                        value: input.value
+                    }
                 ],
                 {
-                    operationGroupId: options.operationGroupId,
-                },
-            ) as TPayload,
+                    operationGroupId: options.operationGroupId
+                }
+            ) as TPayload
         );
     }
 
     public operationGroupUpdateIds(
-        operationGroupId: string,
+        operationGroupId: string
     ): readonly string[] {
         return Array.from(
-            this.operationGroups.get(operationGroupId) ?? [],
+            this.operationGroups.get(operationGroupId) ?? []
         ).sort();
     }
 
     public async undoOperationGroup(
-        input: RallarCrdtUndoRedoGroupInput,
+        input: RallarCrdtUndoRedoGroupInput
     ): Promise<RallarCrdtUpdateEnvelope<TPayload>> {
         const targetUpdateIds = this.operationGroupUpdateIds(
-            input.targetOperationGroupId,
+            input.targetOperationGroupId
         );
         if (targetUpdateIds.length === 0) {
             throw new Error(
-                `Cannot undo unknown CRDT operation group: ${input.targetOperationGroupId}.`,
+                `Cannot undo unknown CRDT operation group: ${input.targetOperationGroupId}.`
             );
         }
         return await this.applyLocal(
             rallarCrdtBatch(input.operations, {
-                operationGroupId:
-                    input.operationGroupId ??
+                operationGroupId: input.operationGroupId ??
                     `undo:${input.targetOperationGroupId}`,
                 undo: {
                     actorId: this.actorId ?? this.engine.replicaId,
                     targetOperationGroupId: input.targetOperationGroupId,
-                    targetUpdateIds,
-                },
-            }) as TPayload,
+                    targetUpdateIds
+                }
+            }) as TPayload
         );
     }
 
     public async redoOperationGroup(
-        input: RallarCrdtUndoRedoGroupInput,
+        input: RallarCrdtUndoRedoGroupInput
     ): Promise<RallarCrdtUpdateEnvelope<TPayload>> {
         const targetUpdateIds = this.operationGroupUpdateIds(
-            input.targetOperationGroupId,
+            input.targetOperationGroupId
         );
         if (targetUpdateIds.length === 0) {
             throw new Error(
-                `Cannot redo unknown CRDT operation group: ${input.targetOperationGroupId}.`,
+                `Cannot redo unknown CRDT operation group: ${input.targetOperationGroupId}.`
             );
         }
         return await this.applyLocal(
             rallarCrdtBatch(input.operations, {
-                operationGroupId:
-                    input.operationGroupId ??
+                operationGroupId: input.operationGroupId ??
                     `redo:${input.targetOperationGroupId}`,
                 redo: {
                     actorId: this.actorId ?? this.engine.replicaId,
                     targetOperationGroupId: input.targetOperationGroupId,
-                    targetUpdateIds,
-                },
-            }) as TPayload,
+                    targetUpdateIds
+                }
+            }) as TPayload
         );
     }
 
@@ -749,13 +717,13 @@ class BrowserRallarCrdtDocument<
 
     public failedPendingUpdates(): readonly RallarCrdtFailedPendingUpdate<TPayload>[] {
         return Array.from(this.failed.values()).sort((left, right) =>
-            left.update.updateId.localeCompare(right.update.updateId),
+            left.update.updateId.localeCompare(right.update.updateId)
         );
     }
 
     public dependencyBlockedUpdates(): readonly RallarCrdtDependencyBlockedUpdate<TPayload>[] {
         return Array.from(this.dependencyBlocked.values()).sort((left, right) =>
-            left.update.updateId.localeCompare(right.update.updateId),
+            left.update.updateId.localeCompare(right.update.updateId)
         );
     }
 
@@ -770,7 +738,7 @@ class BrowserRallarCrdtDocument<
         }
 
         const snapshot = await this.protectSnapshotForStorage(
-            this.engine.snapshot('flush'),
+            this.engine.snapshot('flush')
         );
         await this.localStore.writeSnapshot(snapshot);
         await this.localStore.flush();
@@ -778,7 +746,7 @@ class BrowserRallarCrdtDocument<
     }
 
     public async sync(
-        options: RallarCrdtSyncOptions = {},
+        options: RallarCrdtSyncOptions = {}
     ): Promise<RallarCrdtSyncResult> {
         const transport = options.transport ?? this.transport;
         if (transport === 'local-only') {
@@ -789,8 +757,7 @@ class BrowserRallarCrdtDocument<
                 receivedUpdateCount: 0,
                 pendingUpdateCount: this.pending.size,
                 dependencyBlockedUpdateCount: this.dependencyBlocked.size,
-                reason:
-                    options.reason ?? 'Document is opened in local-only mode.',
+                reason: options.reason ?? 'Document is opened in local-only mode.'
             };
             this.lastSyncError = undefined;
             this.recordSyncMetrics(result);
@@ -799,7 +766,7 @@ class BrowserRallarCrdtDocument<
         const liveTransport = this.readTransport?.();
         if (!liveTransport) {
             const receivedHttpCatchUp = await this.requestHttpCatchUp(
-                options.reason ?? 'manual-sync',
+                options.reason ?? 'manual-sync'
             );
             const result: RallarCrdtSyncResult = {
                 status: receivedHttpCatchUp ? 'synced' : 'deferred',
@@ -810,7 +777,7 @@ class BrowserRallarCrdtDocument<
                 dependencyBlockedUpdateCount: this.dependencyBlocked.size,
                 reason: receivedHttpCatchUp
                     ? undefined
-                    : 'No CRDT live transport is configured.',
+                    : 'No CRDT live transport is configured.'
             };
             this.lastSyncError = receivedHttpCatchUp
                 ? undefined
@@ -829,7 +796,7 @@ class BrowserRallarCrdtDocument<
                 update,
                 transport: liveTransport,
                 strategy: transport,
-                policies: this.policies,
+                policies: this.policies
             });
             sentUpdateCount += outcome.sentCount;
             failedCount += outcome.failedCount;
@@ -839,24 +806,23 @@ class BrowserRallarCrdtDocument<
         if (
             !(await this.requestDurableCatchUp(
                 options.reason ?? 'manual-sync',
-                transport,
+                transport
             ))
         ) {
             await this.requestHttpCatchUp(options.reason ?? 'manual-sync');
         }
         await this.requestLiveCatchUp(
             options.reason ?? 'manual-sync',
-            transport,
+            transport
         );
 
-        const status =
-            sentUpdateCount > 0
-                ? 'synced'
-                : deferredReason
-                  ? 'deferred'
-                  : failedCount > 0
-                    ? 'failed'
-                    : 'synced';
+        const status = sentUpdateCount > 0
+            ? 'synced'
+            : deferredReason
+            ? 'deferred'
+            : failedCount > 0
+            ? 'failed'
+            : 'synced';
         const result: RallarCrdtSyncResult = {
             status,
             transport,
@@ -865,14 +831,12 @@ class BrowserRallarCrdtDocument<
             pendingUpdateCount: this.pending.size,
             dependencyBlockedUpdateCount: this.dependencyBlocked.size,
             reason: deferredReason,
-            error:
-                status === 'failed'
-                    ? (deferredReason ?? 'CRDT live sync failed.')
-                    : undefined,
+            error: status === 'failed'
+                ? (deferredReason ?? 'CRDT live sync failed.')
+                : undefined
         };
 
-        this.lastSyncError =
-            result.status === 'failed' ? result.error : undefined;
+        this.lastSyncError = result.status === 'failed' ? result.error : undefined;
         this.recordSyncMetrics(result);
         return result;
     }
@@ -923,10 +887,9 @@ class BrowserRallarCrdtDocument<
             lastServerAppendSequence: this.lastServerAppendSequence,
             lastServerAckAtEpochMs: this.lastServerAckAtEpochMs,
             lastSyncError: this.lastSyncError,
-            snapshotAgeMs:
-                this.lastSnapshotAtEpochMs === undefined
-                    ? undefined
-                    : Math.max(0, this.now() - this.lastSnapshotAtEpochMs),
+            snapshotAgeMs: this.lastSnapshotAtEpochMs === undefined
+                ? undefined
+                : Math.max(0, this.now() - this.lastSnapshotAtEpochMs),
             updateLogLag: this.pending.size,
             replayDurationMs: this.replayDurationMs,
             corruptLocalArtifactCount: this.corruptLocalArtifactCount,
@@ -937,17 +900,16 @@ class BrowserRallarCrdtDocument<
             liveReceivedUpdateCount: this.liveReceivedUpdateCount,
             liveDuplicateUpdateCount: this.liveDuplicateUpdateCount,
             liveRejectedUpdateCount: this.liveRejectedUpdateCount,
-            liveDependencyBlockedUpdateCount:
-                this.liveDependencyBlockedUpdateCount,
+            liveDependencyBlockedUpdateCount: this.liveDependencyBlockedUpdateCount,
             liveRetriedUpdateCount: this.liveRetriedUpdateCount,
             liveSyncRequestCount: this.liveSyncRequestCount,
-            liveSyncResponseCount: this.liveSyncResponseCount,
+            liveSyncResponseCount: this.liveSyncResponseCount
         };
     }
 
     private async applyRemoteUpdate(
         update: RallarCrdtUpdateEnvelope<TPayload>,
-        transport?: RallarCrdtTransportKind,
+        transport?: RallarCrdtTransportKind
     ): Promise<void> {
         if (this.closed) {
             return;
@@ -969,7 +931,7 @@ class BrowserRallarCrdtDocument<
     }
 
     private rememberOperationGroup(
-        update: RallarCrdtUpdateEnvelope<TPayload>,
+        update: RallarCrdtUpdateEnvelope<TPayload>
     ): void {
         const operationGroupId = update.payload.operationGroupId;
         if (!operationGroupId) {
@@ -982,7 +944,7 @@ class BrowserRallarCrdtDocument<
 
     private async persistApplyResult(
         update: RallarCrdtUpdateEnvelope<TPayload>,
-        result: RallarCrdtApplyResult,
+        result: RallarCrdtApplyResult
     ): Promise<void> {
         if (!this.localStore) {
             return;
@@ -998,7 +960,7 @@ class BrowserRallarCrdtDocument<
                 update,
                 blockedAtEpochMs: this.now(),
                 missingDependencyIds: result.missingDependencyIds,
-                reason: 'Missing CRDT update dependencies.',
+                reason: 'Missing CRDT update dependencies.'
             };
             this.dependencyBlocked.set(update.updateId, blocked);
             await this.localStore.writeDependencyBlockedUpdate(blocked);
@@ -1007,14 +969,14 @@ class BrowserRallarCrdtDocument<
 
     private async persistAppliedState(
         update: RallarCrdtUpdateEnvelope<TPayload>,
-        releasedUpdateIds: readonly string[] = [],
+        releasedUpdateIds: readonly string[] = []
     ): Promise<void> {
         if (!this.localStore) {
             return;
         }
 
         const appliedUpdateIds = [
-            ...new Set([update.updateId, ...releasedUpdateIds]),
+            ...new Set([update.updateId, ...releasedUpdateIds])
         ];
         await Promise.all(
             appliedUpdateIds.flatMap((updateId) => {
@@ -1023,21 +985,21 @@ class BrowserRallarCrdtDocument<
                     this.localStore?.markSeen(this.ref, updateId, this.now()),
                     this.localStore?.removeDependencyBlockedUpdate(
                         this.ref,
-                        updateId,
-                    ),
+                        updateId
+                    )
                 ];
-            }),
+            })
         );
 
         const snapshot = await this.protectSnapshotForStorage(
-            this.engine.snapshot('applied-update'),
+            this.engine.snapshot('applied-update')
         );
         await this.localStore.writeSnapshot(snapshot);
         this.lastSnapshotAtEpochMs = snapshot.createdAtEpochMs;
     }
 
     private async protectUpdateForStorage(
-        update: RallarCrdtUpdateEnvelope<TPayload>,
+        update: RallarCrdtUpdateEnvelope<TPayload>
     ): Promise<RallarCrdtUpdateEnvelope<RallarCrdtOperationBatch>> {
         return this.encryption
             ? await encryptRallarCrdtUpdateEnvelope(update, this.encryption)
@@ -1045,47 +1007,47 @@ class BrowserRallarCrdtDocument<
     }
 
     private async revealUpdateForMerge(
-        update: RallarCrdtUpdateEnvelope<TPayload>,
+        update: RallarCrdtUpdateEnvelope<TPayload>
     ): Promise<RallarCrdtUpdateEnvelope<TPayload>> {
         if (!isRallarCrdtEncryptedOperationBatch(update.payload)) {
             return update;
         }
         if (!this.encryption) {
             throw new Error(
-                'Cannot apply encrypted CRDT update without document encryption keys.',
+                'Cannot apply encrypted CRDT update without document encryption keys.'
             );
         }
         return await decryptRallarCrdtUpdateEnvelope<TPayload>(
             update as RallarCrdtUpdateEnvelope<RallarCrdtOperationBatch>,
-            this.encryption,
+            this.encryption
         );
     }
 
     private async protectSnapshotForStorage(
-        snapshot: RallarCrdtSnapshotEnvelope<TValue>,
+        snapshot: RallarCrdtSnapshotEnvelope<TValue>
     ): Promise<RallarCrdtSnapshotEnvelope<TValue>> {
         return this.encryption
             ? ((await encryptRallarCrdtSnapshotEnvelope(
-                  snapshot,
-                  this.encryption,
-              )) as RallarCrdtSnapshotEnvelope<TValue>)
+                snapshot,
+                this.encryption
+            )) as RallarCrdtSnapshotEnvelope<TValue>)
             : snapshot;
     }
 
     private async revealSnapshotForMerge(
-        snapshot: RallarCrdtSnapshotEnvelope<TValue>,
+        snapshot: RallarCrdtSnapshotEnvelope<TValue>
     ): Promise<RallarCrdtSnapshotEnvelope<TValue>> {
         if (!isRallarCrdtEncryptedJsonEnvelope(snapshot.value)) {
             return snapshot;
         }
         if (!this.encryption) {
             throw new Error(
-                'Cannot import encrypted CRDT snapshot without document encryption keys.',
+                'Cannot import encrypted CRDT snapshot without document encryption keys.'
             );
         }
         return await decryptRallarCrdtSnapshotEnvelope<TValue>(
             snapshot,
-            this.encryption,
+            this.encryption
         );
     }
 
@@ -1111,8 +1073,8 @@ class BrowserRallarCrdtDocument<
                 },
                 onCatchUpResponse: async (response, transport) => {
                     await this.handleCatchUpResponse(response, transport);
-                },
-            }),
+                }
+            })
         ];
     }
 
@@ -1124,24 +1086,23 @@ class BrowserRallarCrdtDocument<
     }
 
     private async sendLiveUpdate(
-        update: RallarCrdtUpdateEnvelope<TPayload>,
+        update: RallarCrdtUpdateEnvelope<TPayload>
     ): Promise<void> {
         const outcome = await sendRallarCrdtLiveUpdate({
             update,
             transport: this.readTransport?.(),
             strategy: this.transport,
-            policies: this.policies,
+            policies: this.policies
         });
         this.rememberLiveSendOutcome(outcome);
         if (outcome.status === 'failed') {
-            this.lastSyncError =
-                outcome.reason ?? 'CRDT live update send failed.';
+            this.lastSyncError = outcome.reason ?? 'CRDT live update send failed.';
         }
     }
 
     private async requestLiveCatchUp(
         reason: string,
-        strategy: RallarCrdtTransportStrategy = this.transport,
+        strategy: RallarCrdtTransportStrategy = this.transport
     ): Promise<void> {
         if (strategy === 'local-only') {
             return;
@@ -1155,27 +1116,27 @@ class BrowserRallarCrdtDocument<
             createdAtEpochMs: this.now(),
             knownUpdateIds: Array.from(this.engine.seenUpdateIds()).sort(),
             missingUpdateIds: this.engine.dependencyState().missingUpdateIds,
-            maxUpdateCount: 100,
+            maxUpdateCount: 100
         };
         const outcome = await sendRallarCrdtSyncRequest({
             request,
             transport: this.readTransport?.(),
             strategy,
-            policies: this.policies,
+            policies: this.policies
         });
         this.rememberLiveSendOutcome(outcome);
         if (outcome.status === 'sent') {
             this.liveSyncRequestCount += 1;
-        } else if (outcome.status === 'failed') {
-            this.lastSyncError =
-                outcome.reason ??
+        }
+        else if (outcome.status === 'failed') {
+            this.lastSyncError = outcome.reason ??
                 `CRDT live catch-up request failed: ${reason}.`;
         }
     }
 
     private async requestDurableCatchUp(
         reason: string,
-        strategy: RallarCrdtTransportStrategy = this.transport,
+        strategy: RallarCrdtTransportStrategy = this.transport
     ): Promise<boolean> {
         if (!strategyUsesWs(strategy)) {
             return false;
@@ -1189,17 +1150,16 @@ class BrowserRallarCrdtDocument<
             createdAtEpochMs: this.now(),
             afterSequence: this.lastServerAppendSequence,
             maxUpdateCount: 100,
-            includeSnapshot: this.lastServerAppendSequence === undefined,
+            includeSnapshot: this.lastServerAppendSequence === undefined
         };
         const outcome = await sendRallarCrdtCatchUpRequest({
             request,
             transport: this.readTransport?.(),
-            policies: this.policies,
+            policies: this.policies
         });
         this.rememberLiveSendOutcome(outcome);
         if (outcome.status === 'failed') {
-            this.lastSyncError =
-                outcome.reason ??
+            this.lastSyncError = outcome.reason ??
                 `CRDT durable catch-up request failed: ${reason}.`;
         }
         return outcome.status === 'sent';
@@ -1218,17 +1178,18 @@ class BrowserRallarCrdtDocument<
             createdAtEpochMs: this.now(),
             afterSequence: this.lastServerAppendSequence,
             maxUpdateCount: 100,
-            includeSnapshot: this.lastServerAppendSequence === undefined,
+            includeSnapshot: this.lastServerAppendSequence === undefined
         };
 
         try {
             await this.handleCatchUpResponse(
                 await this.durableCatchUp(request),
-                undefined,
+                undefined
             );
             this.lastSyncError = undefined;
             return true;
-        } catch (error) {
+        }
+        catch (error) {
             this.lastSyncError = `CRDT HTTP catch-up failed: ${reason}: ${toErrorMessage(error)}`;
             return false;
         }
@@ -1236,7 +1197,7 @@ class BrowserRallarCrdtDocument<
 
     private async handleSyncRequest(
         request: RallarCrdtSyncRequestEnvelope,
-        transport: RallarCrdtTransportKind,
+        transport: RallarCrdtTransportKind
     ): Promise<void> {
         if (toRallarCrdtDocumentKey(request.document) !== this.documentKey) {
             return;
@@ -1251,9 +1212,7 @@ class BrowserRallarCrdtDocument<
             : undefined;
         const updates = this.pendingUpdates()
             .filter((update) => !known.has(update.updateId))
-            .filter((update) =>
-                missingFilter ? missingFilter.has(update.updateId) : true,
-            )
+            .filter((update) => missingFilter ? missingFilter.has(update.updateId) : true)
             .slice(0, request.maxUpdateCount ?? 100);
         const response: RallarCrdtSyncResponseEnvelope<unknown, TPayload> = {
             protocolVersion: RALLAR_CRDT_PROTOCOL_VERSION,
@@ -1264,13 +1223,13 @@ class BrowserRallarCrdtDocument<
             createdAtEpochMs: this.now(),
             updates,
             hasMore: updates.length >= (request.maxUpdateCount ?? 100),
-            reason: 'peer-catch-up-development-only',
+            reason: 'peer-catch-up-development-only'
         };
         const outcome = await sendRallarCrdtSyncResponse({
             response,
             transport: this.readTransport?.(),
             replyTransport: transport,
-            policies: this.policies,
+            policies: this.policies
         });
         this.rememberLiveSendOutcome(outcome);
         if (outcome.status === 'sent') {
@@ -1280,7 +1239,7 @@ class BrowserRallarCrdtDocument<
 
     private async handleSyncResponse(
         response: RallarCrdtSyncResponseEnvelope<unknown, TPayload>,
-        transport: RallarCrdtTransportKind,
+        transport: RallarCrdtTransportKind
     ): Promise<void> {
         if (toRallarCrdtDocumentKey(response.document) !== this.documentKey) {
             return;
@@ -1293,8 +1252,8 @@ class BrowserRallarCrdtDocument<
         if (response.snapshot) {
             this.engine.importSnapshot(
                 await this.revealSnapshotForMerge(
-                    response.snapshot as RallarCrdtSnapshotEnvelope<TValue>,
-                ),
+                    response.snapshot as RallarCrdtSnapshotEnvelope<TValue>
+                )
             );
         }
         for (const update of response.updates) {
@@ -1304,7 +1263,7 @@ class BrowserRallarCrdtDocument<
 
     private async handleCatchUpResponse(
         response: RallarCrdtCatchUpResponseEnvelope<unknown, TPayload>,
-        transport: RallarCrdtTransportKind | undefined,
+        transport: RallarCrdtTransportKind | undefined
     ): Promise<void> {
         if (toRallarCrdtDocumentKey(response.document) !== this.documentKey) {
             return;
@@ -1313,8 +1272,8 @@ class BrowserRallarCrdtDocument<
         if (response.snapshot) {
             this.engine.importSnapshot(
                 await this.revealSnapshotForMerge(
-                    response.snapshot as RallarCrdtSnapshotEnvelope<TValue>,
-                ),
+                    response.snapshot as RallarCrdtSnapshotEnvelope<TValue>
+                )
             );
             this.lastSnapshotAtEpochMs = response.snapshot.createdAtEpochMs;
         }
@@ -1322,19 +1281,19 @@ class BrowserRallarCrdtDocument<
             await this.applyRemoteUpdate(record.update, transport);
             this.lastServerAppendSequence = Math.max(
                 this.lastServerAppendSequence ?? 0,
-                record.append.appendSequence,
+                record.append.appendSequence
             );
         }
         if (response.page.lastSequence !== undefined) {
             this.lastServerAppendSequence = Math.max(
                 this.lastServerAppendSequence ?? 0,
-                response.page.lastSequence,
+                response.page.lastSequence
             );
         }
     }
 
     private async handleAppendResponse(
-        response: RallarCrdtAppendResponseEnvelope<TPayload>,
+        response: RallarCrdtAppendResponseEnvelope<TPayload>
     ): Promise<void> {
         if (toRallarCrdtDocumentKey(response.document) !== this.documentKey) {
             return;
@@ -1345,12 +1304,12 @@ class BrowserRallarCrdtDocument<
             if (result.status === 'accepted' || result.status === 'duplicate') {
                 this.lastServerAppendSequence = Math.max(
                     this.lastServerAppendSequence ?? 0,
-                    result.append.appendSequence,
+                    result.append.appendSequence
                 );
                 this.pending.delete(result.update.updateId);
                 await this.localStore?.removePendingUpdate(
                     this.ref,
-                    result.update.updateId,
+                    result.update.updateId
                 );
                 continue;
             }
@@ -1362,13 +1321,13 @@ class BrowserRallarCrdtDocument<
             this.pending.delete(result.update.updateId);
             await this.localStore?.removePendingUpdate(
                 this.ref,
-                result.update.updateId,
+                result.update.updateId
             );
             const failed: RallarCrdtFailedPendingUpdate<TPayload> = {
                 update: result.update,
                 failedAtEpochMs: this.now(),
                 retryable: result.retryable,
-                reason: result.reason,
+                reason: result.reason
             };
             this.failed.set(result.update.updateId, failed);
             await this.localStore?.writeFailedPendingUpdate(failed);
@@ -1376,7 +1335,7 @@ class BrowserRallarCrdtDocument<
     }
 
     private rememberLiveSendOutcome(
-        outcome: Awaited<ReturnType<typeof sendRallarCrdtLiveUpdate<TPayload>>>,
+        outcome: Awaited<ReturnType<typeof sendRallarCrdtLiveUpdate<TPayload>>>
     ): void {
         this.liveSentUpdateCount += outcome.sentCount;
         const lastResult = outcome.results[outcome.results.length - 1];
@@ -1389,41 +1348,44 @@ class BrowserRallarCrdtDocument<
     private recordMetric(
         name: Parameters<RallarCrdtMetricsSink['record']>[0]['name'],
         value: number,
-        tags?: Readonly<Record<string, string>>,
+        tags?: Readonly<Record<string, string>>
     ): void {
         void this.metrics?.record({
             name,
             value,
             atEpochMs: this.now(),
             documentKey: this.documentKey,
-            tags,
+            tags
         });
     }
 
     private recordSyncMetrics(result: RallarCrdtSyncResult): void {
         this.recordMetric('crdt.sync.bytes', byteLengthOfJson(result), {
-            status: result.status,
+            status: result.status
         });
         this.recordMetric(
             'crdt.dependency.blocked.count',
-            result.dependencyBlockedUpdateCount,
+            result.dependencyBlockedUpdateCount
         );
     }
 
     private rememberLiveApplyResult(
         result: RallarCrdtApplyResult,
-        transport: RallarCrdtTransportKind | undefined,
+        transport: RallarCrdtTransportKind | undefined
     ): void {
         if (transport) {
             this.lastLiveTransport = transport;
         }
         if (result.status === 'applied') {
             this.liveReceivedUpdateCount += 1;
-        } else if (result.status === 'duplicate') {
+        }
+        else if (result.status === 'duplicate') {
             this.liveDuplicateUpdateCount += 1;
-        } else if (result.status === 'dependency-blocked') {
+        }
+        else if (result.status === 'dependency-blocked') {
             this.liveDependencyBlockedUpdateCount += 1;
-        } else if (result.status === 'rejected') {
+        }
+        else if (result.status === 'rejected') {
             this.liveRejectedUpdateCount += 1;
         }
     }
@@ -1445,27 +1407,24 @@ class BrowserRallarCrdtDocument<
 function toDocumentRef(
     name: string,
     options: RallarCrdtOpenOptions,
-    defaults: RallarCrdtFacadeDefaults | undefined,
+    defaults: RallarCrdtFacadeDefaults | undefined
 ): RallarCrdtDocumentRef {
     const scope = options.scope ?? toDefaultScope(defaults);
-    const applicationId =
-        options.applicationId ??
+    const applicationId = options.applicationId ??
         (scope.kind === 'room' ? scope.roomRef.applicationId : undefined) ??
         defaults?.applicationId;
-    const workspaceId =
-        options.workspaceId ??
+    const workspaceId = options.workspaceId ??
         (scope.kind === 'room' ? scope.roomRef.workspaceId : undefined) ??
         defaults?.workspaceId;
 
     if (!applicationId) {
         throw new Error(
-            'Cannot open CRDT document: applicationId is required.',
+            'Cannot open CRDT document: applicationId is required.'
         );
     }
 
     const documentType = options.documentType ?? name;
-    const documentId =
-        options.documentId ??
+    const documentId = options.documentId ??
         (scope.kind === 'room' ? scope.roomRef.groupId : name);
 
     switch (scope.kind) {
@@ -1475,7 +1434,7 @@ function toDocumentRef(
                 workspaceId,
                 scope: 'app',
                 documentType,
-                documentId,
+                documentId
             };
         case 'principal':
             return {
@@ -1484,7 +1443,7 @@ function toDocumentRef(
                 scope: 'principal',
                 documentType,
                 documentId,
-                principalId: scope.principalId,
+                principalId: scope.principalId
             };
         case 'room':
             return {
@@ -1493,7 +1452,7 @@ function toDocumentRef(
                 scope: 'room',
                 documentType,
                 documentId,
-                roomRef: scope.roomRef,
+                roomRef: scope.roomRef
             };
         case 'custom':
             return {
@@ -1502,18 +1461,18 @@ function toDocumentRef(
                 scope: 'custom',
                 documentType,
                 documentId,
-                customScope: scope.customScope,
+                customScope: scope.customScope
             };
     }
 }
 
 function toDefaultScope(
-    defaults: RallarCrdtFacadeDefaults | undefined,
+    defaults: RallarCrdtFacadeDefaults | undefined
 ): RallarCrdtOpenScope {
     if (defaults?.room?.roomRef) {
         return {
             kind: 'room',
-            roomRef: defaults.room.roomRef,
+            roomRef: defaults.room.roomRef
         };
     }
 
@@ -1521,20 +1480,20 @@ function toDefaultScope(
 }
 
 function sortUpdates<TPayload extends RallarCrdtOperationBatch>(
-    updates: readonly RallarCrdtUpdateEnvelope<TPayload>[],
+    updates: readonly RallarCrdtUpdateEnvelope<TPayload>[]
 ): RallarCrdtUpdateEnvelope<TPayload>[] {
     return [...updates].sort(
         (left, right) =>
             left.lamport - right.lamport ||
             left.createdAtEpochMs - right.createdAtEpochMs ||
             left.replicaId.localeCompare(right.replicaId) ||
-            left.updateId.localeCompare(right.updateId),
+            left.updateId.localeCompare(right.updateId)
     );
 }
 
 function notifyListener<TValue>(
     listener: RallarCrdtSnapshotListener<TValue>,
-    snapshot: RallarCrdtSnapshotEnvelope<TValue>,
+    snapshot: RallarCrdtSnapshotEnvelope<TValue>
 ): void {
     void Promise.resolve(listener(snapshot)).catch((error) => {
         console.error('Error notifying CRDT snapshot listener', error);

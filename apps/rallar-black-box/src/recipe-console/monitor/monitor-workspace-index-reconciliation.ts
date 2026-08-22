@@ -1,19 +1,15 @@
-import type {
-    ControlDistributedRunSnapshot,
-    ControlRunSnapshot,
-    ControlServerSnapshot,
-} from '@shared-test/rallar-bb-test/control-snapshots.ts';
 import {
     rebindControlRunFromSelectionIndex,
     rebindDistributedRunPairFromSelectionIndex,
-    type ControlSnapshotSelectionIndex,
+    type ControlSnapshotSelectionIndex
 } from '@shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
-import { isControlSelectionIndexBoundToSnapshot } from
-    '../../control-selection-index-binding.ts';
 import type {
-    MonitorWorkspaceContext,
-    MonitorWorkspaceState,
-} from './monitor-workspace-state.ts';
+    ControlDistributedRunSnapshot,
+    ControlRunSnapshot,
+    ControlServerSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import { isControlSelectionIndexBoundToSnapshot } from '../../control-selection-index-binding.ts';
+import type { MonitorWorkspaceContext, MonitorWorkspaceState } from './monitor-workspace-state.ts';
 
 export type MonitorWorkspaceReconciliationWork = Readonly<{
     indexed: boolean;
@@ -32,18 +28,20 @@ const workByState = new WeakMap<object, MonitorWorkspaceReconciliationWork>();
 export function resolveMonitorContextRuns(
     snapshot: ControlServerSnapshot | undefined,
     context: MonitorWorkspaceContext,
-    selectionIndex: ControlSnapshotSelectionIndex | undefined,
+    selectionIndex: ControlSnapshotSelectionIndex | undefined
 ): ResolvedMonitorContextRuns {
     const legacy = (fallback: boolean): ResolvedMonitorContextRuns => ({
-        controlRun: snapshot?.runs.find(run => run.runId === context.controlRunId),
-        distributedRun: snapshot?.distributedRuns?.find(run =>
+        controlRun: snapshot?.runs.find((run) => run.runId === context.controlRunId),
+        distributedRun: snapshot?.distributedRuns?.find((run) =>
             run.distributedRunId === context.distributedRunId &&
             run.controlRunId === context.controlRunId
         ),
         indexed: false,
-        fallback,
+        fallback
     });
-    if (!snapshot || !selectionIndex) return legacy(false);
+    if (!snapshot || !selectionIndex) {
+        return legacy(false);
+    }
     if (
         !isControlSelectionIndexBoundToSnapshot(snapshot, selectionIndex) ||
         selectionIndex.controlRunIdsByOrdinal.length !== snapshot.runs.length ||
@@ -51,19 +49,23 @@ export function resolveMonitorContextRuns(
             (snapshot.distributedRuns?.length ?? 0) ||
         selectionIndex.hasDistributedRunCollection !==
             (snapshot.distributedRuns !== undefined)
-    ) return legacy(true);
+    ) {
+        return legacy(true);
+    }
 
     const hasControlRun = selectionIndex.firstControlRunOrdinalById.has(
-        context.controlRunId,
+        context.controlRunId
     );
     const controlRun = hasControlRun
         ? rebindControlRunFromSelectionIndex(
             selectionIndex,
             snapshot,
-            context.controlRunId,
+            context.controlRunId
         )
         : undefined;
-    if (hasControlRun && !controlRun) return legacy(true);
+    if (hasControlRun && !controlRun) {
+        return legacy(true);
+    }
 
     const hasDistributedRun = selectionIndex
         .firstDistributedRunOrdinalByIdAndControlRunId
@@ -73,29 +75,31 @@ export function resolveMonitorContextRuns(
             selectionIndex,
             snapshot,
             context.distributedRunId,
-            context.controlRunId,
+            context.controlRunId
         )
         : undefined;
-    if (hasDistributedRun && !distributedRun) return legacy(true);
+    if (hasDistributedRun && !distributedRun) {
+        return legacy(true);
+    }
     return {
         controlRun,
         distributedRun,
         indexed: true,
-        fallback: false,
+        fallback: false
     };
 }
 
 export function publishMonitorReconciliationWork(
     state: MonitorWorkspaceState,
     indexed: boolean,
-    fallback: boolean,
+    fallback: boolean
 ): MonitorWorkspaceState {
     workByState.set(state, Object.freeze({ indexed, fallback }));
     return state;
 }
 
 export function monitorReconciliationWork(
-    state: MonitorWorkspaceState,
+    state: MonitorWorkspaceState
 ): MonitorWorkspaceReconciliationWork | undefined {
     return workByState.get(state);
 }

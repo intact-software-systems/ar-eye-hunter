@@ -1,6 +1,5 @@
 // deno-lint-ignore-file no-explicit-any
 import {
-    type RtcProvider,
     rememberRtcCloseEvent,
     rememberRtcMessage,
     toRtcConnectionName,
@@ -14,7 +13,8 @@ import {
     waitForRtcMessage,
     waitForRtcMessageAbsence,
     waitForRtcMessages,
-} from './rtc-provider.ts'
+    type RtcProvider
+} from './rtc-provider.ts';
 
 export function createRallarStubRtcProvider(): RtcProvider {
     return {
@@ -26,7 +26,7 @@ export function createRallarStubRtcProvider(): RtcProvider {
                 actor: interaction.request.actor,
                 roomId: interaction.request.roomId,
                 connectedAtEpochMs: Date.now(),
-                stub: true,
+                stub: true
             };
 
             context.rtcMessages[connectionName] = context.rtcMessages[connectionName] || [];
@@ -35,7 +35,7 @@ export function createRallarStubRtcProvider(): RtcProvider {
             return Promise.resolve(toRtcSuccessStatus(config, interaction, {
                 connection: connectionName,
                 connected: true,
-                stub: true,
+                stub: true
             }));
         },
 
@@ -48,7 +48,7 @@ export function createRallarStubRtcProvider(): RtcProvider {
             if (!context.rtcConnections[connectionName]) {
                 return Promise.resolve(toRtcFailureStatus(config, interaction, 'RTC connection is not open', {
                     connection: connectionName,
-                    stub: true,
+                    stub: true
                 }));
             }
 
@@ -60,16 +60,16 @@ export function createRallarStubRtcProvider(): RtcProvider {
                     sentBy: connectionName,
                     sentAtEpochMs,
                     messageIndex,
-                    stub: true,
+                    stub: true
                 };
 
                 rememberRtcMessage(connectionName, sentMessage, context);
 
-                deliverTargets.forEach(target => {
+                deliverTargets.forEach((target) => {
                     rememberRtcMessage(target, {
                         ...sentMessage,
                         deliveredTo: target,
-                        deliveredAtEpochMs: Date.now(),
+                        deliveredAtEpochMs: Date.now()
                     }, context);
                 });
             });
@@ -80,7 +80,7 @@ export function createRallarStubRtcProvider(): RtcProvider {
                     sent: payload,
                     deliveredMessages,
                     deliverTargets,
-                    stub: true,
+                    stub: true
                 });
             }
 
@@ -90,7 +90,7 @@ export function createRallarStubRtcProvider(): RtcProvider {
                     sent: payload,
                     deliveredMessages,
                     deliverTargets,
-                    stub: true,
+                    stub: true
                 });
             }
 
@@ -99,14 +99,14 @@ export function createRallarStubRtcProvider(): RtcProvider {
                 sent: payload,
                 deliveredMessages,
                 deliverTargets,
-                stub: true,
+                stub: true
             }));
         },
 
         wait: (interaction: any, config: any, context: any): Promise<any> => {
             if (interaction.response?.close !== undefined) {
                 return waitForRtcClose(interaction, config, context, {
-                    stub: true,
+                    stub: true
                 });
             }
 
@@ -115,19 +115,19 @@ export function createRallarStubRtcProvider(): RtcProvider {
                     interaction,
                     config,
                     context,
-                    details: { stub: true },
+                    details: { stub: true }
                 });
             }
 
             if (interaction.response?.messages) {
                 return waitForRtcMessages(interaction, config, context, {
-                    stub: true,
+                    stub: true
                 });
             }
 
             if (interaction.response?.message) {
                 return waitForRtcMessage(interaction, config, context, {
-                    stub: true,
+                    stub: true
                 });
             }
 
@@ -137,8 +137,8 @@ export function createRallarStubRtcProvider(): RtcProvider {
                 'RTC wait expects expect.message, expect.messages, expect.absent, or expect.close',
                 {
                     stub: true,
-                    connection: toRtcExpectedConnectionName(interaction),
-                },
+                    connection: toRtcExpectedConnectionName(interaction)
+                }
             ));
         },
 
@@ -151,15 +151,15 @@ export function createRallarStubRtcProvider(): RtcProvider {
             rememberRtcCloseEvent(connectionName, {
                 closedAtEpochMs: Date.now(),
                 closeRequested: true,
-                stub: true,
+                stub: true
             }, context);
 
             return Promise.resolve(toRtcSuccessStatus(config, interaction, {
                 connection: connectionName,
                 closeRequested: true,
                 closed: wasOpen,
-                stub: true,
+                stub: true
             }));
-        },
+        }
     };
 }

@@ -10,4 +10,3 @@ For example:
 - Elect a leader
 - Join/leave group
 - Change group configuration
-

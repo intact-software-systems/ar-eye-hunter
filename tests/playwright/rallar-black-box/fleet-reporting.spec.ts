@@ -64,8 +64,12 @@ type FleetRunReport = Readonly<{
         failureGroups: number;
     }>;
     timing: Readonly<{
-        run: Readonly<{ count: number; minMs?: number; p50Ms?: number; p90Ms?: number; p95Ms?: number; maxMs?: number }>;
-        commands: Readonly<{ count: number; minMs?: number; p50Ms?: number; p90Ms?: number; p95Ms?: number; maxMs?: number }>;
+        run: Readonly<
+            { count: number; minMs?: number; p50Ms?: number; p90Ms?: number; p95Ms?: number; maxMs?: number; }
+        >;
+        commands: Readonly<
+            { count: number; minMs?: number; p50Ms?: number; p90Ms?: number; p95Ms?: number; maxMs?: number; }
+        >;
     }>;
     agents: readonly FleetAgentOutcome[];
     regions: readonly unknown[];
@@ -101,7 +105,7 @@ const REGIONS = [
     ['eu-north', 'hetzner', 'fsn1'],
     ['us-east', 'hetzner', 'ash'],
     ['ap-south', 'fly', 'bom'],
-    ['sa-east', 'fly', 'gru'],
+    ['sa-east', 'fly', 'gru']
 ] as const;
 
 test('Fleet tab renders 20-agent heatmap, regional patterns, failures, timings, and exports', async ({ page }) => {
@@ -152,7 +156,7 @@ test('Fleet world map restores layer state from the share URL', async ({ page })
     await mockFleetApi(page, fleetFixture(), []);
 
     await page.goto(
-        '/?provider=simulated&workspace=black-box-runner&tab=fleet&roomId=bb-group&fleetMapLayers=live-agents,failures',
+        '/?provider=simulated&workspace=black-box-runner&tab=fleet&roomId=bb-group&fleetMapLayers=live-agents,failures'
     );
 
     const panel = page.locator('#panel-fleet');
@@ -180,18 +184,18 @@ test('Fleet tab remains usable on mobile with the same 20-agent data', async ({ 
     await expect(panel.getByRole('button', { name: /RTC lane mismatch/ })).toBeVisible();
 });
 
-for (const legacyFleetAlias of [
-    'fleet',
-    'fleet-report',
-    'fleet-reports',
-] as const) {
-    test(`keeps legacy tab=${legacyFleetAlias} on the active Fleet mount`, async ({
-        page,
-    }) => {
+for (
+    const legacyFleetAlias of [
+        'fleet',
+        'fleet-report',
+        'fleet-reports'
+    ] as const
+) {
+    test(`keeps legacy tab=${legacyFleetAlias} on the active Fleet mount`, async ({ page }) => {
         await mockFleetApi(page, fleetFixture(), []);
         await page.goto(
             '/?provider=simulated&workspace=black-box-runner' +
-            `&tab=${legacyFleetAlias}&roomId=bb-group`,
+                `&tab=${legacyFleetAlias}&roomId=bb-group`
         );
 
         await expect(page.locator('.app-shell')).toBeVisible();
@@ -214,7 +218,7 @@ for (const legacyFleetAlias of [
 async function mockFleetApi(
     page: Page,
     fixture: ReturnType<typeof fleetFixture>,
-    requestedUrls: string[],
+    requestedUrls: string[]
 ): Promise<void> {
     await page.route(/\/runs(?:\?.*)?$/, async (route: Route) => {
         const url = new URL(route.request().url());
@@ -222,14 +226,14 @@ async function mockFleetApi(
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify({ runs: [] }),
+                body: JSON.stringify({ runs: [] })
             });
             return;
         }
         await route.fulfill({
             status: 404,
             contentType: 'application/json',
-            body: JSON.stringify({ error: 'not mocked' }),
+            body: JSON.stringify({ error: 'not mocked' })
         });
     });
     await page.route('**/fleet/reports**', async (route: Route) => {
@@ -240,7 +244,7 @@ async function mockFleetApi(
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify(fixture.response),
+                body: JSON.stringify(fixture.response)
             });
             return;
         }
@@ -248,7 +252,7 @@ async function mockFleetApi(
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify(fixture.bundle),
+                body: JSON.stringify(fixture.bundle)
             });
             return;
         }
@@ -257,14 +261,14 @@ async function mockFleetApi(
             await route.fulfill({
                 status: 200,
                 contentType: 'application/json',
-                body: JSON.stringify(fixture.reports[0]),
+                body: JSON.stringify(fixture.reports[0])
             });
             return;
         }
         await route.fulfill({
             status: 200,
             contentType: 'application/json',
-            body: JSON.stringify(fixture.response),
+            body: JSON.stringify(fixture.response)
         });
     });
 }
@@ -288,11 +292,11 @@ function fleetFixture() {
             failureGroupCount: 2,
             timing: {
                 runs: { count: reports.length, minMs: 1_600, p50Ms: 1_900, p90Ms: 2_300, p95Ms: 2_300, maxMs: 2_300 },
-                commands: { count: 60, minMs: 80, p50Ms: 140, p90Ms: 260, p95Ms: 320, maxMs: 420 },
+                commands: { count: 60, minMs: 80, p50Ms: 140, p90Ms: 260, p95Ms: 320, maxMs: 420 }
             },
             regions: [],
-            failureSignatures: reports[0].failureSignatures,
-        },
+            failureSignatures: reports[0].failureSignatures
+        }
     };
     const bundle = {
         fleetReportSchemaVersion: 1,
@@ -302,8 +306,8 @@ function fleetFixture() {
             'fleet-report.json': JSON.stringify(reports[0]),
             'summary.md': '# Fleet Run Report\n\nState: failed',
             'agent-results.csv': 'agentId,region,provider,state',
-            'failure-signatures.csv': 'signatureId,category,count',
-        },
+            'failure-signatures.csv': 'signatureId,category,count'
+        }
     };
     return { reports, response, bundle };
 }
@@ -319,7 +323,7 @@ function createFleetReport(index: number): FleetRunReport {
             ? ['agent-09']
             : index === 3
             ? ['agent-18']
-            : [],
+            : []
     );
     const missingAgents = new Set(index === 2 ? ['agent-17'] : []);
     const agents = Array.from({ length: 20 }, (_, agentIndex) => {
@@ -346,7 +350,7 @@ function createFleetReport(index: number): FleetRunReport {
                 browserName: 'chromium',
                 browserVersion: '126',
                 os: 'linux',
-                tags: [region, provider],
+                tags: [region, provider]
             },
             state: missing ? 'missing' : failed ? 'failed' : 'passed',
             ok: !failed && !missing,
@@ -361,7 +365,7 @@ function createFleetReport(index: number): FleetRunReport {
             reconnectCount: agentId === 'agent-09' ? index + 1 : 0,
             durationMs: 120 + agentIndex * 8 + index * 20,
             lastHeartbeatAtEpochMs: Date.now() - (agentId === 'agent-17' ? 90_000 : 5_000),
-            failureSignatureIds,
+            failureSignatureIds
         } satisfies FleetAgentOutcome;
     });
     const failed = agents.filter((agent) => agent.state === 'failed').length;
@@ -377,7 +381,7 @@ function createFleetReport(index: number): FleetRunReport {
         group: {
             applicationId: 'rallar-server',
             workspaceId: 'default',
-            groupId: 'bb-group',
+            groupId: 'bb-group'
         },
         recipeIds: ['composite-evidence', 'rtc-lane-check'],
         runDurationMs: 1_700 + index * 150,
@@ -390,11 +394,11 @@ function createFleetReport(index: number): FleetRunReport {
             flaky: agents.filter((agent) => agent.flaky).length,
             stale: agents.filter((agent) => agent.stale).length,
             passRate: (agents.length - failed - missing) / agents.length,
-            failureGroups: signatures.length,
+            failureGroups: signatures.length
         },
         timing: {
             run: { count: 1, minMs: 1_700, p50Ms: 1_700, p90Ms: 1_700, p95Ms: 1_700, maxMs: 1_700 },
-            commands: { count: 60, minMs: 80, p50Ms: 140, p90Ms: 260, p95Ms: 320, maxMs: 420 },
+            commands: { count: 60, minMs: 80, p50Ms: 140, p90Ms: 260, p95Ms: 320, maxMs: 420 }
         },
         agents,
         regions: [],
@@ -402,15 +406,15 @@ function createFleetReport(index: number): FleetRunReport {
         artifactRefs: {
             distributedRun: `distributed-run:${runId}`,
             controlRun: `control-run:${runId}`,
-            fleetReport: `fleet-report:${runId}`,
-        },
+            fleetReport: `fleet-report:${runId}`
+        }
     };
 }
 
 function failureSignatures(
     runId: string,
     agents: readonly FleetAgentOutcome[],
-    index: number,
+    index: number
 ): readonly FailureSignature[] {
     const failedAgents = agents.filter((agent) => agent.state === 'failed');
     const missingAgents = agents.filter((agent) => agent.missing);
@@ -431,7 +435,7 @@ function failureSignatures(
             affectedRegions: failedRegions,
             affectedRuns: [runId],
             likelyCause: 'Runtime transport diagnostics correlated with the distributed run.',
-            nextAction: 'Inspect RTC lane, peer, group, and topic evidence for affected agents.',
+            nextAction: 'Inspect RTC lane, peer, group, and topic evidence for affected agents.'
         });
         signatures.push({
             signatureId: 'sig-assert-command',
@@ -448,7 +452,7 @@ function failureSignatures(
             affectedRegions: failedRegions,
             affectedRuns: [runId],
             likelyCause: 'A recipe command failed on at least one agent.',
-            nextAction: 'Open the failing command result and compare expected vs observed payload evidence.',
+            nextAction: 'Open the failing command result and compare expected vs observed payload evidence.'
         });
     }
     if (missingAgents.length > 0) {
@@ -465,7 +469,8 @@ function failureSignatures(
             affectedRegions: [...new Set(missingAgents.map((agent) => agent.label.region ?? 'unknown'))],
             affectedRuns: [runId],
             likelyCause: 'One or more agents did not complete the distributed command.',
-            nextAction: 'Inspect missing ACK agents and confirm they are logged in, connected, and not blocked on recipe load.',
+            nextAction:
+                'Inspect missing ACK agents and confirm they are logged in, connected, and not blocked on recipe load.'
         });
     }
     return signatures;

@@ -1,9 +1,8 @@
-import { LatestMementoOptions, LatestMementoValue, } from './LatestMementoValue.ts';
+import { LatestMementoOptions, LatestMementoValue } from './LatestMementoValue.ts';
 import { LatestValue, LatestValueOptions } from './LatestValue.ts';
 import { PushMementoKeyedValues } from './RepositoryInterfaces.ts';
 
-export interface LatestMementoRepositoryOptions<V>
-    extends LatestMementoOptions<V> {
+export interface LatestMementoRepositoryOptions<V> extends LatestMementoOptions<V> {
 }
 
 export class LatestMementoRepository<K, V> implements PushMementoKeyedValues<K, V> {
@@ -11,13 +10,13 @@ export class LatestMementoRepository<K, V> implements PushMementoKeyedValues<K, 
     private readonly defaultOptions: LatestMementoOptions<V>;
 
     public constructor(
-        options: LatestMementoRepositoryOptions<V> = {},
+        options: LatestMementoRepositoryOptions<V> = {}
     ) {
         this.defaultOptions = {
             ttlMs: options.ttlMs,
             isValid: options.isValid,
             undoDepth: options.undoDepth,
-            redoDepth: options.redoDepth,
+            redoDepth: options.redoDepth
         };
     }
 
@@ -44,7 +43,7 @@ export class LatestMementoRepository<K, V> implements PushMementoKeyedValues<K, 
     public commitValue(
         key: K,
         value: V,
-        options: LatestValueOptions<V> = this.defaultOptions,
+        options: LatestValueOptions<V> = this.defaultOptions
     ): this {
         this.getOrCreate(key).commitValue(value, options);
         return this;
@@ -55,7 +54,7 @@ export class LatestMementoRepository<K, V> implements PushMementoKeyedValues<K, 
      */
     public commitLatest(
         key: K,
-        latest: LatestValue<V> | undefined,
+        latest: LatestValue<V> | undefined
     ): this {
         this.getOrCreate(key).commitLatest(latest);
         return this;
@@ -149,7 +148,7 @@ export class LatestMementoRepository<K, V> implements PushMementoKeyedValues<K, 
 
     public updateIfPresent(
         key: K,
-        updater: (current: V) => V,
+        updater: (current: V) => V
     ): boolean {
         const entry = this.entries.get(key);
         if (!entry) {
@@ -167,7 +166,7 @@ export class LatestMementoRepository<K, V> implements PushMementoKeyedValues<K, 
 
     public updateOrCreate(
         key: K,
-        updater: (current: V | undefined) => V,
+        updater: (current: V | undefined) => V
     ): boolean {
         const entry = this.getOrCreate(key);
         entry.set(updater(entry.peek() ?? undefined));

@@ -6,7 +6,7 @@ export function RunnerReadinessPanel({
     message,
     refreshing,
     onRefresh,
-    onOpenAgentTabs,
+    onOpenAgentTabs
 }: {
     checks: readonly RunnerReadinessCheck[];
     message: string;

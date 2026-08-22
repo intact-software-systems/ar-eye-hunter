@@ -8,7 +8,7 @@ export function InspectorHost({
     onClose,
     restoreFocusTo,
     restoreFocusFallbacks,
-    children,
+    children
 }: Readonly<{
     mode: RecipeConsolePresentation['inspector'];
     open: boolean;

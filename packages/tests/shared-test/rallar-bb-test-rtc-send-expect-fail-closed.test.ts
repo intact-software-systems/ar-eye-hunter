@@ -2,11 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createRallarBlackBoxRtcClient } from '../../shared-test/rallar-bb-test/black-box-runner-adapter.ts';
 import { validateRallarBlackBoxTestCommand } from '../../shared-test/rallar-bb-test/control-protocol.ts';
 import { createRallarBlackBoxTestRuntime } from '../../shared-test/rallar-bb-test/runtime.ts';
-import {
-    RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
-    formatJsonSchemaValidationErrors,
-    validateJsonSchema,
-} from '../../shared-test/rallar-bb-test/schema.ts';
+import { formatJsonSchemaValidationErrors, RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, validateJsonSchema } from '../../shared-test/rallar-bb-test/schema.ts';
 import type { RallarBlackBoxTestRtcSendCommand } from '../../shared-test/rallar-bb-test/types.ts';
 
 const rtcSendWithExpect = {
@@ -17,20 +13,20 @@ const rtcSendWithExpect = {
     send: {
         roomId: 'bb-group',
         data: {
-            topic: 'room.negative.expect',
-        },
+            topic: 'room.negative.expect'
+        }
     },
     expect: {
-        outcome: 'ack',
-    },
-} as const satisfies RallarBlackBoxTestRtcSendCommand & Readonly<{ commandId: string }>;
+        outcome: 'ack'
+    }
+} as const satisfies RallarBlackBoxTestRtcSendCommand & Readonly<{ commandId: string; }>;
 
 function createDeterministicRuntime() {
     let now = 1_000;
     let sequence = 1;
     return createRallarBlackBoxTestRuntime({
         now: () => now++,
-        idFactory: (prefix) => `${prefix}-${sequence++}`,
+        idFactory: (prefix) => `${prefix}-${sequence++}`
     });
 }
 
@@ -38,7 +34,7 @@ describe('rtc.send expect fail-closed boundary', () => {
     it('rejects a control-dispatched rtc.send carrying expect', () => {
         expect(validateRallarBlackBoxTestCommand(rtcSendWithExpect)).toEqual({
             ok: false,
-            error: 'rtc.send has unsupported field: expect.',
+            error: 'rtc.send has unsupported field: expect.'
         });
     });
 
@@ -53,7 +49,7 @@ describe('rtc.send expect fail-closed boundary', () => {
         expect(result.ok).toBe(false);
         if (!result.ok) {
             expect(formatJsonSchemaValidationErrors(result.errors)).toContain(
-                '$.expect: Unexpected property.',
+                '$.expect: Unexpected property.'
             );
         }
     });
@@ -63,24 +59,24 @@ describe('rtc.send expect fail-closed boundary', () => {
         const client = createRallarBlackBoxRtcClient(runtime, {
             name: 'adapterRtc',
             roomId: 'bb-group',
-            applicationId: 'rallar-server',
+            applicationId: 'rallar-server'
         });
 
         await client.send(
             { topic: 'room.adapter.parity', text: 'hello' },
-            { response: { outcome: 'ack' } },
+            { response: { outcome: 'ack' } }
         );
 
-        const sendResult = runtime.state().commandHistory.find(result => result.kind === 'rtc.send');
+        const sendResult = runtime.state().commandHistory.find((result) => result.kind === 'rtc.send');
         expect(sendResult?.ok).toBe(true);
 
         const sendDiagnostic = runtime.state().events
-            .find(event => event.topic === 'rallar.bb.fake.rtc.send');
+            .find((event) => event.topic === 'rallar.bb.fake.rtc.send');
         expect(sendDiagnostic?.payload).toMatchObject({
             command: {
                 kind: 'rtc.send',
-                expect: { outcome: 'ack' },
-            },
+                expect: { outcome: 'ack' }
+            }
         });
     });
 });

@@ -1,17 +1,16 @@
 import {
-    RALLAR_BLACK_BOX_DISTRIBUTED_FAILURE_CATEGORIES,
+    RALLAR_BLACK_BOX_DISTRIBUTED_FAILURE_CATEGORIES
 } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
 import {
     DIAGNOSTIC_BRIDGE_SOURCE_VIEWS,
     DIAGNOSTIC_BRIDGE_TRANSPORTS,
     DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES,
     type DiagnosticBridgeSourceView,
-    type DiagnosticBridgeTransport,
+    type DiagnosticBridgeTransport
 } from '../../app/diagnostic-bridge-url-contract.ts';
 
 export const RECIPE_CONSOLE_URL_VERSION = 1 as const;
-export const RECIPE_CONSOLE_URL_STRING_MAX_BYTES =
-    DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES;
+export const RECIPE_CONSOLE_URL_STRING_MAX_BYTES = DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES;
 
 export const RECIPE_CONSOLE_VIEWS = DIAGNOSTIC_BRIDGE_SOURCE_VIEWS;
 
@@ -19,7 +18,7 @@ export const RECIPE_CONSOLE_DIAGNOSTIC_SEVERITIES = [
     'debug',
     'info',
     'warning',
-    'error',
+    'error'
 ] as const;
 
 export const RECIPE_CONSOLE_TRANSPORTS = DIAGNOSTIC_BRIDGE_TRANSPORTS;
@@ -35,26 +34,25 @@ export const RECIPE_CONSOLE_RUN_STATUSES = [
     'passed',
     'failed',
     'cancelled',
-    'timed-out',
+    'timed-out'
 ] as const;
 
 // Every category the analyzer can emit must stay filterable, so the console
 // reuses the analyzer's own vocabulary instead of transcribing it.
-export const RECIPE_CONSOLE_FAILURE_CATEGORIES =
-    RALLAR_BLACK_BOX_DISTRIBUTED_FAILURE_CATEGORIES;
+export const RECIPE_CONSOLE_FAILURE_CATEGORIES = RALLAR_BLACK_BOX_DISTRIBUTED_FAILURE_CATEGORIES;
 
 export const RECIPE_CONSOLE_TIMING_METRICS = [
     'command-duration',
     'stream-send-duration',
     'stream-drift',
-    'stream-cadence',
+    'stream-cadence'
 ] as const;
 
 export const RECIPE_CONSOLE_FLEET_MAP_LAYERS = [
     'live-agents',
     'historical-regions',
     'failures',
-    'observed-routes',
+    'observed-routes'
 ] as const;
 
 export const RECIPE_CONSOLE_OWNED_URL_KEYS = [
@@ -81,7 +79,7 @@ export const RECIPE_CONSOLE_OWNED_URL_KEYS = [
     'timingMetric',
     'fleetRegion',
     'fleetMapLayers',
-    'legacySurface',
+    'legacySurface'
 ] as const;
 
 export const LEGACY_APP_URL_ALIAS_KEYS = [
@@ -90,7 +88,7 @@ export const LEGACY_APP_URL_ALIAS_KEYS = [
     'appMode',
     'tab',
     'advancedSurface',
-    'advanced',
+    'advanced'
 ] as const;
 
 export const RECIPE_CONSOLE_SENSITIVE_URL_KEYS = [
@@ -101,23 +99,20 @@ export const RECIPE_CONSOLE_SENSITIVE_URL_KEYS = [
     'accessToken',
     'refreshToken',
     'password',
-    'token',
+    'token'
 ] as const;
 
 export const RECIPE_CONSOLE_NON_SHAREABLE_URL_KEYS = [
-    'controlUrl',
+    'controlUrl'
 ] as const;
 
 export type RecipeConsoleView = DiagnosticBridgeSourceView;
-export type RecipeConsoleDiagnosticSeverity =
-    typeof RECIPE_CONSOLE_DIAGNOSTIC_SEVERITIES[number];
+export type RecipeConsoleDiagnosticSeverity = typeof RECIPE_CONSOLE_DIAGNOSTIC_SEVERITIES[number];
 export type RecipeConsoleTransport = DiagnosticBridgeTransport;
 export type RecipeConsoleRunStatus = typeof RECIPE_CONSOLE_RUN_STATUSES[number];
-export type RecipeConsoleFailureCategory =
-    typeof RECIPE_CONSOLE_FAILURE_CATEGORIES[number];
+export type RecipeConsoleFailureCategory = typeof RECIPE_CONSOLE_FAILURE_CATEGORIES[number];
 export type RecipeConsoleTimingMetric = typeof RECIPE_CONSOLE_TIMING_METRICS[number];
-export type RecipeConsoleFleetMapLayer =
-    typeof RECIPE_CONSOLE_FLEET_MAP_LAYERS[number];
+export type RecipeConsoleFleetMapLayer = typeof RECIPE_CONSOLE_FLEET_MAP_LAYERS[number];
 
 export type RecipeConsoleUrlState = Readonly<{
     v: 1;

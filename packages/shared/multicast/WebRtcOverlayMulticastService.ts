@@ -1,13 +1,13 @@
 import { ALMessage } from '../al-contracts/al-contract.ts';
 import { ALQosNormalizationInput, planALMessageHandling } from '../al-contracts/al-policy.ts';
+import { PeerId } from '../api/api-config.ts';
 import { readGroupMemberSessionIds } from '../api/group-client-views.ts';
+import { WebRtcConnectionService } from '../services/WebRtcConnectionService.ts';
 import {
     OverlayMulticastDispatchPlan,
     OverlayMulticasterContext,
-    WebRtcOverlayMulticaster,
+    WebRtcOverlayMulticaster
 } from './OverlayMulticastContracts.ts';
-import { PeerId } from '../api/api-config.ts';
-import { WebRtcConnectionService } from '../services/WebRtcConnectionService.ts';
 
 export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {
     public readonly overlayId: string;
@@ -15,7 +15,7 @@ export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {
 
     constructor(
         overlayId: string,
-        connectionService: WebRtcConnectionService,
+        connectionService: WebRtcConnectionService
     ) {
         this.overlayId = overlayId;
         this.connectionService = connectionService;
@@ -24,7 +24,7 @@ export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {
     createOriginatingPlan(
         msg: ALMessage,
         context: OverlayMulticasterContext,
-        input?: Omit<ALQosNormalizationInput, 'nowMs' | 'live'>,
+        input?: Omit<ALQosNormalizationInput, 'nowMs' | 'live'>
     ): OverlayMulticastDispatchPlan {
         const handlingPlan = this.buildHandlingPlan(msg, context, undefined, input);
 
@@ -33,8 +33,8 @@ export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {
             transportMessages: this.prepareTransportReadyCopies(
                 msg,
                 handlingPlan.forwarding.nextHopPeerIds,
-                false,
-            ),
+                false
+            )
         };
     }
 
@@ -42,7 +42,7 @@ export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {
         msg: ALMessage,
         context: OverlayMulticasterContext,
         fromPeerId?: PeerId,
-        input?: Omit<ALQosNormalizationInput, 'nowMs' | 'live'>,
+        input?: Omit<ALQosNormalizationInput, 'nowMs' | 'live'>
     ): OverlayMulticastDispatchPlan {
         const handlingPlan = this.buildHandlingPlan(msg, context, fromPeerId, input);
 
@@ -51,8 +51,8 @@ export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {
             transportMessages: this.prepareTransportReadyCopies(
                 msg,
                 handlingPlan.forwarding.nextHopPeerIds,
-                true,
-            ),
+                true
+            )
         };
     }
 
@@ -60,7 +60,7 @@ export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {
         msg: ALMessage,
         context: OverlayMulticasterContext,
         fromPeerId?: PeerId,
-        input?: Omit<ALQosNormalizationInput, 'nowMs' | 'live'>,
+        input?: Omit<ALQosNormalizationInput, 'nowMs' | 'live'>
     ) {
         return planALMessageHandling(
             msg,
@@ -69,21 +69,21 @@ export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {
                 fromPeerId,
                 connectedPeerIds: this.connectionService.readyPeerIdsForLane(),
                 groupMemberPeerIds: readGroupMemberSessionIds(context.room),
-                overlayNeighborPeerIds: context.overlay.nextHopSessionIds,
+                overlayNeighborPeerIds: context.overlay.nextHopSessionIds
             },
-            input,
+            input
         );
     }
 
     private prepareTransportReadyCopies(
         msg: ALMessage,
         nextHopPeerIds: readonly PeerId[],
-        isForward: boolean,
+        isForward: boolean
     ): readonly ALMessage[] {
         const nextVisitedPeerIds = isForward
             ? this.appendVisitedPeerId(
                 msg.diagnostics?.visitedPeerIds ?? [],
-                this.connectionService.input.sessionId,
+                this.connectionService.input.sessionId
             )
             : (msg.diagnostics?.visitedPeerIds ?? []);
 
@@ -96,24 +96,24 @@ export class WebRtcOverlayMulticastService implements WebRtcOverlayMulticaster {
             forwarding: {
                 ...msg.forwarding,
                 overlayId: msg.forwarding?.overlayId ?? this.overlayId,
-                nextHopPeerIds: [peerId],
+                nextHopPeerIds: [peerId]
             },
             constraints: msg.constraints
                 ? {
                     ...msg.constraints,
-                    ttlHops: nextTtlHops,
+                    ttlHops: nextTtlHops
                 }
                 : msg.constraints,
             diagnostics: {
                 ...msg.diagnostics,
-                visitedPeerIds: nextVisitedPeerIds,
-            },
+                visitedPeerIds: nextVisitedPeerIds
+            }
         }));
     }
 
     private appendVisitedPeerId(
         visitedPeerIds: readonly PeerId[],
-        selfPeerId: PeerId,
+        selfPeerId: PeerId
     ): readonly PeerId[] {
         if (visitedPeerIds.includes(selfPeerId)) {
             return visitedPeerIds;

@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
 import { LoanedMementoRepository } from '@shared/cache/LoanedMementoRepository.ts';
 import { LoanedValue } from '@shared/cache/LoanedValue.ts';
+import { describe, expect, it } from 'vitest';
 
 // #248: setValue stored the value in the refresher closure rather than in the
 // entry, so every synchronous reader reported the key as absent until someone

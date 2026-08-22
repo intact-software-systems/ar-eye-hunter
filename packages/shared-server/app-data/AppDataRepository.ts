@@ -18,8 +18,9 @@ export type AppDataUpsertInput<V = unknown> = Readonly<{
     expireAtTimestamp: number;
 }>;
 
-export type AppDataUpsertIfRevisionInput<V = unknown> = AppDataUpsertInput<V> &
-    Readonly<{
+export type AppDataUpsertIfRevisionInput<V = unknown> =
+    & AppDataUpsertInput<V>
+    & Readonly<{
         expectedRevision: number;
     }>;
 
@@ -63,31 +64,32 @@ export type AppDataRepositoryLike = Readonly<{
     findEntry(
         namespace: string,
         storeName: string,
-        key: string,
+        key: string
     ): Promise<AppDataEntry | undefined>;
     findEntries(
         namespace: string,
         storeName: string,
-        keyPrefix?: string,
+        keyPrefix?: string
     ): Promise<readonly AppDataEntry[]>;
     upsert(input: AppDataUpsertInput): Promise<void>;
     deleteByKey(namespace: string, storeName: string, key: string): Promise<boolean>;
     deleteExpired(namespace: string, storeName?: string): Promise<number>;
 }>;
 
-export type AppDataConditionalRepositoryLike = AppDataRepositoryLike &
-    Readonly<{
+export type AppDataConditionalRepositoryLike =
+    & AppDataRepositoryLike
+    & Readonly<{
         insertIfAbsent<V = unknown>(
-            input: AppDataUpsertInput<V>,
+            input: AppDataUpsertInput<V>
         ): Promise<AppDataConditionalInsertResult<V>>;
         upsertIfRevision<V = unknown>(
-            input: AppDataUpsertIfRevisionInput<V>,
+            input: AppDataUpsertIfRevisionInput<V>
         ): Promise<AppDataConditionalWriteResult<V>>;
         deleteIfRevision(
             namespace: string,
             storeName: string,
             key: string,
-            expectedRevision: number,
+            expectedRevision: number
         ): Promise<AppDataConditionalDeleteResult>;
     }>;
 
@@ -95,12 +97,12 @@ export type AppDataPageRepositoryLike = Readonly<{
     findEntriesPage(
         namespace: string,
         storeName: string,
-        options: AppDataEntryPageOptions,
+        options: AppDataEntryPageOptions
     ): Promise<readonly AppDataEntry[]>;
 }>;
 
 export function isAppDataConditionalRepository(
-    repository: AppDataRepositoryLike,
+    repository: AppDataRepositoryLike
 ): repository is AppDataConditionalRepositoryLike {
     const candidate = repository as Partial<AppDataConditionalRepositoryLike>;
     return typeof candidate.insertIfAbsent === 'function' &&
@@ -109,7 +111,7 @@ export function isAppDataConditionalRepository(
 }
 
 export function isAppDataPageRepository(
-    repository: AppDataRepositoryLike,
+    repository: AppDataRepositoryLike
 ): repository is AppDataRepositoryLike & AppDataPageRepositoryLike {
     const candidate = repository as Partial<AppDataPageRepositoryLike>;
     return typeof candidate.findEntriesPage === 'function';

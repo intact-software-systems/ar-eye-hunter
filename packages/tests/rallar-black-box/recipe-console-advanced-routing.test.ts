@@ -1,25 +1,21 @@
 import { describe, expect, it } from 'vitest';
+import { DIAGNOSTIC_BRIDGE_LEGACY_SURFACE_IDS } from '../../../apps/rallar-black-box/src/app/diagnostic-bridge-url-contract.ts';
 import {
-    ADVANCED_SURFACE_CATALOG,
-    resolveAdvancedSurface,
-    resolveAdvancedSurfaceFromLegacySearch,
-} from '../../../apps/rallar-black-box/src/recipe-console/advanced/advanced-surface-catalog.ts';
+    buildLegacyDiagnosticReturnHref,
+    parseLegacyDiagnosticContext
+} from '../../../apps/rallar-black-box/src/legacy/diagnostics/context/legacy-diagnostic-context.ts';
 import {
     ADVANCED_DIAGNOSTIC_CONTEXT_MAX_BYTES,
     ADVANCED_DIAGNOSTIC_QUERY_MAX_BYTES,
     createAdvancedLegacyHref,
-    createAdvancedRecipeConsoleReturnHref,
+    createAdvancedRecipeConsoleReturnHref
 } from '../../../apps/rallar-black-box/src/recipe-console/advanced/advanced-legacy-href.ts';
-import type {
-    RecipeConsoleUrlState,
-} from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 import {
-    buildLegacyDiagnosticReturnHref,
-    parseLegacyDiagnosticContext,
-} from '../../../apps/rallar-black-box/src/legacy/diagnostics/context/legacy-diagnostic-context.ts';
-import {
-    DIAGNOSTIC_BRIDGE_LEGACY_SURFACE_IDS,
-} from '../../../apps/rallar-black-box/src/app/diagnostic-bridge-url-contract.ts';
+    ADVANCED_SURFACE_CATALOG,
+    resolveAdvancedSurface,
+    resolveAdvancedSurfaceFromLegacySearch
+} from '../../../apps/rallar-black-box/src/recipe-console/advanced/advanced-surface-catalog.ts';
+import type { RecipeConsoleUrlState } from '../../../apps/rallar-black-box/src/recipe-console/routing/url-state-contract.ts';
 
 const EXPECTED_SURFACES = {
     'direct.quick-test': direct('rallar', 'quick-test'),
@@ -43,7 +39,7 @@ const EXPECTED_SURFACES = {
     'legacy.local-workbench': advancedChild('workbench'),
     'legacy.run-manager': advancedChild('run-manager'),
     'legacy.distributed-recipes': advancedChild('distributed'),
-    'legacy.shared-test-catalog': advancedChild('shared-test'),
+    'legacy.shared-test-catalog': advancedChild('shared-test')
 } as const;
 
 const EXPECTED_ALIASES: Readonly<Record<string, keyof typeof EXPECTED_SURFACES>> = {
@@ -94,7 +90,7 @@ const EXPECTED_ALIASES: Readonly<Record<string, keyof typeof EXPECTED_SURFACES>>
     artifacts: 'legacy.shared-test-catalog',
     shared: 'legacy.shared-test-catalog',
     'shared-test-runner': 'legacy.shared-test-catalog',
-    'shared-test': 'legacy.shared-test-catalog',
+    'shared-test': 'legacy.shared-test-catalog'
 };
 
 const MONITOR_STATE: RecipeConsoleUrlState = {
@@ -106,17 +102,17 @@ const MONITOR_STATE: RecipeConsoleUrlState = {
     agentId: 'agent-a',
     recipeId: 'recipe-a',
     commandId: 'command-a',
-    transport: 'rtc',
+    transport: 'rtc'
 };
 
 describe('Recipe Console Advanced surface catalog', () => {
     it('enumerates every actionable direct and Advanced Legacy leaf exactly once', () => {
         expect(ADVANCED_SURFACE_CATALOG).toHaveLength(22);
-        expect(new Set(ADVANCED_SURFACE_CATALOG.map(surface => surface.id)).size)
+        expect(new Set(ADVANCED_SURFACE_CATALOG.map((surface) => surface.id)).size)
             .toBe(22);
-        expect(ADVANCED_SURFACE_CATALOG.map(surface => surface.id))
+        expect(ADVANCED_SURFACE_CATALOG.map((surface) => surface.id))
             .toEqual(DIAGNOSTIC_BRIDGE_LEGACY_SURFACE_IDS);
-        expect(Object.fromEntries(ADVANCED_SURFACE_CATALOG.map(surface => [
+        expect(Object.fromEntries(ADVANCED_SURFACE_CATALOG.map((surface) => [
             surface.id,
             {
                 kind: surface.kind,
@@ -124,12 +120,10 @@ describe('Recipe Console Advanced surface catalog', () => {
                 tab: surface.route.tab,
                 ...('advancedSurface' in surface.route
                     ? { advancedSurface: surface.route.advancedSurface }
-                    : {}),
-            },
+                    : {})
+            }
         ]))).toEqual(EXPECTED_SURFACES);
-        expect(ADVANCED_SURFACE_CATALOG.every(surface =>
-            surface.label.trim().length > 0 && surface.aliases.length > 0
-        )).toBe(true);
+        expect(ADVANCED_SURFACE_CATALOG.every((surface) => surface.label.trim().length > 0 && surface.aliases.length > 0)).toBe(true);
     });
 
     it('preserves every current app-tab and Advanced child alias', () => {
@@ -149,23 +143,33 @@ describe('Recipe Console Advanced surface catalog', () => {
     });
 
     it('resolves old workspace tab advancedSurface and legacySurface deep links', () => {
+        expect(
+            resolveAdvancedSurfaceFromLegacySearch(
+                '?workspace=direct&tab=diagnostics'
+            )?.id
+        ).toBe('direct.rtc-diagnostics');
+        expect(
+            resolveAdvancedSurfaceFromLegacySearch(
+                '?appMode=blackbox&tab=debug&advanced=distributed'
+            )?.id
+        ).toBe('legacy.distributed-recipes');
+        expect(
+            resolveAdvancedSurfaceFromLegacySearch(
+                '?workspace=runner&tab=manual-rallar'
+            )?.id
+        ).toBe('legacy.manual-rallar');
+        expect(
+            resolveAdvancedSurfaceFromLegacySearch(
+                '?workspace=rallar&tab=event'
+            )?.id
+        ).toBe('diagnostic.event-stream');
+        expect(
+            resolveAdvancedSurfaceFromLegacySearch(
+                '?legacySurface=rtc-diagnostics'
+            )?.id
+        ).toBe('direct.rtc-diagnostics');
         expect(resolveAdvancedSurfaceFromLegacySearch(
-            '?workspace=direct&tab=diagnostics',
-        )?.id).toBe('direct.rtc-diagnostics');
-        expect(resolveAdvancedSurfaceFromLegacySearch(
-            '?appMode=blackbox&tab=debug&advanced=distributed',
-        )?.id).toBe('legacy.distributed-recipes');
-        expect(resolveAdvancedSurfaceFromLegacySearch(
-            '?workspace=runner&tab=manual-rallar',
-        )?.id).toBe('legacy.manual-rallar');
-        expect(resolveAdvancedSurfaceFromLegacySearch(
-            '?workspace=rallar&tab=event',
-        )?.id).toBe('diagnostic.event-stream');
-        expect(resolveAdvancedSurfaceFromLegacySearch(
-            '?legacySurface=rtc-diagnostics',
-        )?.id).toBe('direct.rtc-diagnostics');
-        expect(resolveAdvancedSurfaceFromLegacySearch(
-            '?tab=advanced',
+            '?tab=advanced'
         )).toBeUndefined();
     });
 });
@@ -186,8 +190,8 @@ describe('Recipe Console Advanced legacy href contract', () => {
                 apiKey: 'api-key-secret',
                 controlUrl: 'wss://control.test/?token=nested-secret',
                 returnTo: 'https://attacker.test/steal',
-                futureField: 'arbitrary-value',
-            }),
+                futureField: 'arbitrary-value'
+            })
         });
         const url = legacyUrl(href);
 
@@ -207,17 +211,17 @@ describe('Recipe Console Advanced legacy href contract', () => {
             agentId: 'agent-a',
             recipeId: 'recipe-a',
             commandId: 'command-a',
-            transport: 'rtc',
+            transport: 'rtc'
         });
         expect(href).not.toMatch(
-            /control-secret|ticket-secret|password-secret|api-key-secret|nested-secret|attacker|arbitrary-value|returnTo/i,
+            /control-secret|ticket-secret|password-secret|api-key-secret|nested-secret|attacker|arbitrary-value|returnTo/i
         );
     });
 
     it('canonicalizes old Advanced and Flow Builder aliases without forcing a provider', () => {
         const distributed = legacyUrl(createAdvancedLegacyHref({
             surface: 'dist',
-            state: MONITOR_STATE,
+            state: MONITOR_STATE
         }));
         expect(Object.fromEntries(distributed.searchParams)).toMatchObject({
             experience: 'legacy',
@@ -225,14 +229,14 @@ describe('Recipe Console Advanced legacy href contract', () => {
             tab: 'advanced',
             advancedSurface: 'distributed',
             legacySurface: 'legacy.distributed-recipes',
-            diagnosticContext: '1',
+            diagnosticContext: '1'
         });
         expect(distributed.searchParams.has('provider')).toBe(false);
 
         const builder = legacyUrl(createAdvancedLegacyHref({
             surface: 'flow-builder',
             state: MONITOR_STATE,
-            sourceSearch: '?provider=https%3A%2F%2Fevil.test',
+            sourceSearch: '?provider=https%3A%2F%2Fevil.test'
         }));
         expect(builder.searchParams.get('workspace')).toBe('black-box-runner');
         expect(builder.searchParams.get('tab')).toBe('builder');
@@ -240,7 +244,7 @@ describe('Recipe Console Advanced legacy href contract', () => {
         expect(builder.searchParams.has('provider')).toBe(false);
         expect(createAdvancedLegacyHref({
             surface: 'unknown',
-            state: MONITOR_STATE,
+            state: MONITOR_STATE
         })).toBeUndefined();
     });
 
@@ -249,7 +253,7 @@ describe('Recipe Console Advanced legacy href contract', () => {
             surface: 'rtc-diagnostics',
             state: MONITOR_STATE,
             sourceSearch: '?provider=browser-rallar' +
-                '&applicationId=application-a&workspaceId=workspace-a&groupId=group-a',
+                '&applicationId=application-a&workspaceId=workspace-a&groupId=group-a'
         }));
         outbound.searchParams.set('returnTo', 'https://attacker.test/steal');
         outbound.searchParams.set('token', 'return-secret');
@@ -269,10 +273,10 @@ describe('Recipe Console Advanced legacy href contract', () => {
             agentId: 'agent-a',
             recipeId: 'recipe-a',
             commandId: 'command-a',
-            transport: 'rtc',
+            transport: 'rtc'
         });
         expect(href).not.toMatch(
-            /returnTo|attacker|return-secret|password-secret|control\.test|api-secret/i,
+            /returnTo|attacker|return-secret|password-secret|control\.test|api-secret/i
         );
     });
 
@@ -280,25 +284,25 @@ describe('Recipe Console Advanced legacy href contract', () => {
         const outbound = legacyUrl(createAdvancedLegacyHref({
             surface: 'rtc-diagnostics',
             state: MONITOR_STATE,
-            sourceSearch: '?provider=browser-rallar'
-                + '&applicationId=application-a&workspaceId=workspace-a'
-                + '&groupId=group-a',
+            sourceSearch: '?provider=browser-rallar' +
+                '&applicationId=application-a&workspaceId=workspace-a' +
+                '&groupId=group-a'
         }));
         const parsed = parseLegacyDiagnosticContext(outbound.search);
 
         expect(parsed.status).toBe('ready');
         expect(createAdvancedRecipeConsoleReturnHref(outbound.search)).toBe(
-            buildLegacyDiagnosticReturnHref(parsed.context),
+            buildLegacyDiagnosticReturnHref(parsed.context)
         );
     });
 
     it('keeps canonical legacySurface only for an Advanced return', () => {
         const source = new URLSearchParams({
-                diagnosticContext: '1',
-                view: 'advanced',
-                legacySurface: 'diagnostics',
-                provider: 'simulated',
-            });
+            diagnosticContext: '1',
+            view: 'advanced',
+            legacySurface: 'diagnostics',
+            provider: 'simulated'
+        });
         const href = createAdvancedRecipeConsoleReturnHref(`?${source}`);
         const url = legacyUrl(href);
 
@@ -307,28 +311,32 @@ describe('Recipe Console Advanced legacy href contract', () => {
             experience: 'recipe-console',
             view: 'advanced',
             provider: 'simulated',
-            legacySurface: 'direct.rtc-diagnostics',
+            legacySurface: 'direct.rtc-diagnostics'
         });
 
         source.set('legacySurface', 'direct.rtc-diagnostics');
         const parsed = parseLegacyDiagnosticContext(`?${source}`);
         expect(parsed.status).toBe('ready');
         expect(buildLegacyDiagnosticReturnHref(parsed.context)).toBe(href);
-        expect(new TextEncoder().encode(
-            new URL(href, 'https://app.example').search.slice(1),
-        ).byteLength).toBeLessThanOrEqual(
-            ADVANCED_DIAGNOSTIC_QUERY_MAX_BYTES,
+        expect(
+            new TextEncoder().encode(
+                new URL(href, 'https://app.example').search.slice(1)
+            ).byteLength
+        ).toBeLessThanOrEqual(
+            ADVANCED_DIAGNOSTIC_QUERY_MAX_BYTES
         );
     });
 
     it('prioritizes the canonical Advanced surface at the return URL budget', () => {
-        const href = createAdvancedRecipeConsoleReturnHref('?' +
-            new URLSearchParams({
-                diagnosticContext: '1',
-                view: 'advanced',
-                legacySurface: 'direct.rtc-diagnostics',
-                controlRunId: 'r'.repeat(4_003),
-            }));
+        const href = createAdvancedRecipeConsoleReturnHref(
+            '?' +
+                new URLSearchParams({
+                    diagnosticContext: '1',
+                    view: 'advanced',
+                    legacySurface: 'direct.rtc-diagnostics',
+                    controlRunId: 'r'.repeat(4_003)
+                })
+        );
         const url = legacyUrl(href);
 
         expect(url.searchParams.get('legacySurface'))
@@ -339,23 +347,25 @@ describe('Recipe Console Advanced legacy href contract', () => {
     });
 
     it('drops unversioned context invalid values and oversized output', () => {
-        const unversioned = legacyUrl(createAdvancedRecipeConsoleReturnHref('?' +
-            new URLSearchParams({
-                diagnosticContext: '2',
-                view: 'monitor',
-                legacySurface: 'rtc-diagnostics',
-                provider: 'browser-rallar',
-                controlRunId: 'must-not-survive',
-                returnTo: '/?token=secret',
-            })));
+        const unversioned = legacyUrl(createAdvancedRecipeConsoleReturnHref(
+            '?' +
+                new URLSearchParams({
+                    diagnosticContext: '2',
+                    view: 'monitor',
+                    legacySurface: 'rtc-diagnostics',
+                    provider: 'browser-rallar',
+                    controlRunId: 'must-not-survive',
+                    returnTo: '/?token=secret'
+                })
+        ));
         expect(Object.fromEntries(unversioned.searchParams)).toEqual({
             v: '1',
             experience: 'recipe-console',
-            view: 'advanced',
+            view: 'advanced'
         });
 
         const overlong = '界'.repeat(
-            Math.floor(ADVANCED_DIAGNOSTIC_CONTEXT_MAX_BYTES / 3) + 1,
+            Math.floor(ADVANCED_DIAGNOSTIC_CONTEXT_MAX_BYTES / 3) + 1
         );
         const largeState = {
             ...MONITOR_STATE,
@@ -364,7 +374,7 @@ describe('Recipe Console Advanced legacy href contract', () => {
             distributedRunId: 'd'.repeat(ADVANCED_DIAGNOSTIC_CONTEXT_MAX_BYTES),
             agentId: 'a'.repeat(ADVANCED_DIAGNOSTIC_CONTEXT_MAX_BYTES),
             recipeId: 'r'.repeat(ADVANCED_DIAGNOSTIC_CONTEXT_MAX_BYTES),
-            commandId: 'c'.repeat(ADVANCED_DIAGNOSTIC_CONTEXT_MAX_BYTES),
+            commandId: 'c'.repeat(ADVANCED_DIAGNOSTIC_CONTEXT_MAX_BYTES)
         } as RecipeConsoleUrlState;
         const href = createAdvancedLegacyHref({
             surface: 'rtc-diagnostics',
@@ -372,15 +382,15 @@ describe('Recipe Console Advanced legacy href contract', () => {
             sourceSearch: '?' + new URLSearchParams({
                 applicationId: 'p'.repeat(ADVANCED_DIAGNOSTIC_CONTEXT_MAX_BYTES),
                 workspaceId: 'w'.repeat(ADVANCED_DIAGNOSTIC_CONTEXT_MAX_BYTES),
-                groupId: 'g'.repeat(ADVANCED_DIAGNOSTIC_CONTEXT_MAX_BYTES),
-            }),
+                groupId: 'g'.repeat(ADVANCED_DIAGNOSTIC_CONTEXT_MAX_BYTES)
+            })
         });
         const largeUrl = legacyUrl(href);
         expect(largeUrl.searchParams.has('controlRunId')).toBe(false);
         expect(utf8Bytes(largeUrl.search.slice(1)))
             .toBeLessThanOrEqual(ADVANCED_DIAGNOSTIC_QUERY_MAX_BYTES);
         const returnUrl = legacyUrl(
-            createAdvancedRecipeConsoleReturnHref(largeUrl.search),
+            createAdvancedRecipeConsoleReturnHref(largeUrl.search)
         );
         expect(returnUrl.searchParams.get('legacySurface'))
             .toBe('direct.rtc-diagnostics');
@@ -402,7 +412,7 @@ function advancedChild(advancedSurface: string) {
         kind: 'advanced-legacy',
         workspace: 'black-box-runner',
         tab: 'advanced',
-        advancedSurface,
+        advancedSurface
     } as const;
 }
 

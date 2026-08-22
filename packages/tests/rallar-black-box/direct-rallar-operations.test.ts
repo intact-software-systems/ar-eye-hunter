@@ -5,7 +5,7 @@ import {
     runDirectRallarStatusCheck,
     runDirectRallarWsSend,
     runDirectRallarWsSubscribe,
-    type DirectRallarFacade,
+    type DirectRallarFacade
 } from '../../../apps/rallar-black-box/src/direct-rallar-operations.ts';
 import type { AuthSession } from '../../../packages/shared/api/api-config.ts';
 
@@ -14,7 +14,7 @@ const session: AuthSession = {
     accessToken: 'secret-token',
     username: 'alice',
     sessionId: 'alice-session',
-    expiresAtEpochMs: Date.now() + 60_000,
+    expiresAtEpochMs: Date.now() + 60_000
 };
 
 describe('direct Rallar operations', () => {
@@ -26,7 +26,7 @@ describe('direct Rallar operations', () => {
             apiBaseUrl: 'https://api.example.invalid',
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
-            actor: 'alice',
+            actor: 'alice'
         }, async () => {
             loadCalled = true;
             throw new Error('should not load facade');
@@ -35,9 +35,9 @@ describe('direct Rallar operations', () => {
         expect(loadCalled).toBe(false);
         expect(result.status).toBe('failed');
         expect(result.error?.code).toBe('RALLAR_DIRECT_BACKEND_REQUIRED');
-        expect(result.events.map(event => event.topic)).toEqual([
+        expect(result.events.map((event) => event.topic)).toEqual([
             'rallar.direct.status.started',
-            'rallar.direct.status.failed',
+            'rallar.direct.status.failed'
         ]);
         expect(result.events.at(-1)?.severity).toBe('error');
     });
@@ -53,20 +53,20 @@ describe('direct Rallar operations', () => {
                 workspaceId: 'workspace-1',
                 roomId: 'bb-group',
                 actor: 'alice',
-                authSession: session,
+                authSession: session
             },
             {
                 scope: 'room',
                 typeId: 'manual.message',
                 topicId: 'manual.message',
                 payload: {
-                    text: 'hello',
-                },
+                    text: 'hello'
+                }
             },
             async () => {
                 loadCalled = true;
                 throw new Error('should not load facade');
-            },
+            }
         );
 
         expect(loadCalled).toBe(false);
@@ -86,12 +86,12 @@ describe('direct Rallar operations', () => {
                 workspaceId: 'workspace-1',
                 roomId: 'bad room',
                 actor: 'alice',
-                authSession: session,
+                authSession: session
             },
             async () => {
                 loadCalled = true;
                 throw new Error('should not load facade');
-            },
+            }
         );
 
         expect(loadCalled).toBe(false);
@@ -111,14 +111,14 @@ describe('direct Rallar operations', () => {
             defaults() {
                 return {
                     applicationId: 'app-1',
-                    workspaceId: 'workspace-1',
+                    workspaceId: 'workspace-1'
                 };
             },
             async start(options) {
                 calls.push(`start:${String(options?.connect)}`);
                 return {
                     session,
-                    connected: true,
+                    connected: true
                 };
             },
             status() {
@@ -133,12 +133,12 @@ describe('direct Rallar operations', () => {
             auth: {
                 restore() {
                     return session;
-                },
+                }
             },
             rooms: {
                 current() {
                     return {
-                        groupId: 'bb-group',
+                        groupId: 'bb-group'
                     };
                 },
                 list() {
@@ -149,12 +149,12 @@ describe('direct Rallar operations', () => {
                 },
                 async join() {
                     throw new Error('unused');
-                },
+                }
             },
             people: {
                 list() {
                     return [{ principalId: 'alice-client' }];
-                },
+                }
             },
             messages: {
                 ws: {
@@ -163,23 +163,23 @@ describe('direct Rallar operations', () => {
                     },
                     onMessage() {
                         throw new Error('unused');
-                    },
-                },
+                    }
+                }
             },
             ws: {
                 status() {
                     return {
-                        readyState: 'open',
+                        readyState: 'open'
                     };
-                },
+                }
             },
             rtc: {
                 status() {
                     return {
-                        readyPeerIds: ['bob-session'],
+                        readyPeerIds: ['bob-session']
                     };
-                },
-            },
+                }
+            }
         };
 
         const result = await runDirectRallarStatusCheck({
@@ -190,13 +190,13 @@ describe('direct Rallar operations', () => {
             roomId: 'bb-group',
             actor: 'alice',
             authSession: session,
-            timeoutMs: 5000,
+            timeoutMs: 5000
         }, async () => facade);
 
         expect(calls).toEqual([
             'configure:http://localhost:8080',
             'defaults:app-1',
-            'start:true',
+            'start:true'
         ]);
         expect(result.status).toBe('completed');
         expect(result.value).toMatchObject({
@@ -204,18 +204,18 @@ describe('direct Rallar operations', () => {
             connected: true,
             connectStatus: 'connected',
             roomCount: 1,
-            peopleCount: 1,
+            peopleCount: 1
         });
         expect(result.value?.session).toEqual({
             clientId: 'alice-client',
             username: 'alice',
             sessionId: 'alice-session',
-            expiresAtEpochMs: session.expiresAtEpochMs,
+            expiresAtEpochMs: session.expiresAtEpochMs
         });
         expect(JSON.stringify(result.value)).not.toContain('secret-token');
-        expect(result.events.map(event => event.topic)).toEqual([
+        expect(result.events.map((event) => event.topic)).toEqual([
             'rallar.direct.status.started',
-            'rallar.direct.status.completed',
+            'rallar.direct.status.completed'
         ]);
     });
 
@@ -232,7 +232,7 @@ describe('direct Rallar operations', () => {
                 calls.push('start');
                 return {
                     session,
-                    connected: true,
+                    connected: true
                 };
             },
             status() {
@@ -247,7 +247,7 @@ describe('direct Rallar operations', () => {
             auth: {
                 restore() {
                     return session;
-                },
+                }
             },
             rooms: {
                 current() {
@@ -262,23 +262,23 @@ describe('direct Rallar operations', () => {
                     return {
                         group: {
                             groupId: record.groupId,
-                            displayName: record.displayName,
-                        },
+                            displayName: record.displayName
+                        }
                     };
                 },
                 async join(roomId) {
                     calls.push(`join:${roomId}`);
                     return {
                         group: {
-                            groupId: roomId,
-                        },
+                            groupId: roomId
+                        }
                     };
-                },
+                }
             },
             people: {
                 list() {
                     return [];
-                },
+                }
             },
             messages: {
                 ws: {
@@ -287,21 +287,21 @@ describe('direct Rallar operations', () => {
                     },
                     onMessage() {
                         throw new Error('unused');
-                    },
-                },
+                    }
+                }
             },
             ws: {
                 status() {
                     return {
-                        readyState: 'open',
+                        readyState: 'open'
                     };
-                },
+                }
             },
             rtc: {
                 status() {
                     return {};
-                },
-            },
+                }
+            }
         };
 
         const createResult = await runDirectRallarGroupCreate({
@@ -312,7 +312,7 @@ describe('direct Rallar operations', () => {
             roomId: 'bb-group',
             actor: 'alice',
             authSession: session,
-            timeoutMs: 5000,
+            timeoutMs: 5000
         }, async () => facade);
 
         const joinResult = await runDirectRallarGroupJoin({
@@ -323,7 +323,7 @@ describe('direct Rallar operations', () => {
             roomId: 'created-group-id',
             actor: 'alice',
             authSession: session,
-            timeoutMs: 5000,
+            timeoutMs: 5000
         }, async () => facade);
 
         expect(calls).toEqual([
@@ -334,7 +334,7 @@ describe('direct Rallar operations', () => {
             'configure:http://localhost:8080',
             'defaults:app-1',
             'start',
-            'join:created-group-id',
+            'join:created-group-id'
         ]);
         expect(createResult.status).toBe('completed');
         expect(createResult.value?.groupId).toBe('bb-group');
@@ -356,7 +356,7 @@ describe('direct Rallar operations', () => {
                 calls.push('start');
                 return {
                     session,
-                    connected: true,
+                    connected: true
                 };
             },
             status() {
@@ -371,7 +371,7 @@ describe('direct Rallar operations', () => {
             auth: {
                 restore() {
                     return session;
-                },
+                }
             },
             rooms: {
                 current() {
@@ -387,15 +387,15 @@ describe('direct Rallar operations', () => {
                     calls.push(`join:${roomId}`);
                     return {
                         group: {
-                            groupId: roomId,
-                        },
+                            groupId: roomId
+                        }
                     };
-                },
+                }
             },
             people: {
                 list() {
                     return [];
-                },
+                }
             },
             messages: {
                 ws: {
@@ -403,28 +403,28 @@ describe('direct Rallar operations', () => {
                         calls.push(`send:${String(input.roomId)}:${String(input.typeId)}`);
                         return {
                             status: 'enqueued',
-                            message: input,
+                            message: input
                         };
                     },
                     onMessage(selector, handler) {
                         calls.push(`subscribe:${String(selector.topicId)}:${String(selector.typeId)}`);
                         subscribedHandler = handler;
                         return () => calls.push('unsubscribe');
-                    },
-                },
+                    }
+                }
             },
             ws: {
                 status() {
                     return {
-                        readyState: 'open',
+                        readyState: 'open'
                     };
-                },
+                }
             },
             rtc: {
                 status() {
                     return {};
-                },
-            },
+                }
+            }
         };
         const context = {
             providerMode: 'browser-rallar' as const,
@@ -434,24 +434,24 @@ describe('direct Rallar operations', () => {
             roomId: 'bb-group',
             actor: 'alice',
             authSession: session,
-            timeoutMs: 5000,
+            timeoutMs: 5000
         };
 
         const received: Record<string, unknown>[] = [];
         const subscribeResult = await runDirectRallarWsSubscribe(
             context,
             { typeId: 'room.manual.message', topicId: 'room.manual.message' },
-            message => {
+            (message) => {
                 received.push(message);
             },
-            async () => facade,
+            async () => facade
         );
         await subscribedHandler?.({
             typeId: 'room.manual.message',
             topicId: 'room.manual.message',
             payload: {
-                text: 'hello',
-            },
+                text: 'hello'
+            }
         });
         const sendResult = await runDirectRallarWsSend(
             context,
@@ -461,10 +461,10 @@ describe('direct Rallar operations', () => {
                 topicId: 'room.manual.message',
                 contextId: 'bb-group',
                 payload: {
-                    text: 'hello',
-                },
+                    text: 'hello'
+                }
             },
-            async () => facade,
+            async () => facade
         );
         subscribeResult.unsubscribe?.();
 
@@ -478,15 +478,15 @@ describe('direct Rallar operations', () => {
             'defaults:app-1',
             'start',
             'send:bb-group:room.manual.message',
-            'unsubscribe',
+            'unsubscribe'
         ]);
         expect(subscribeResult.status).toBe('completed');
         expect(sendResult.status).toBe('completed');
         expect(received).toHaveLength(1);
-        expect(sendResult.events.map(event => event.topic)).toEqual([
+        expect(sendResult.events.map((event) => event.topic)).toEqual([
             'rallar.direct.ws.send.started',
-            'rallar.direct.ws.send.completed',
+            'rallar.direct.ws.send.completed'
         ]);
-        expect(sendResult.events.every(event => event.transport === 'ws')).toBe(true);
+        expect(sendResult.events.every((event) => event.transport === 'ws')).toBe(true);
     });
 });

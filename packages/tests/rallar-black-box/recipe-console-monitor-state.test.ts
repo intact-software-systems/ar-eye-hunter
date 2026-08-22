@@ -1,63 +1,58 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import * as distributedRecipes from
-    '../../../apps/rallar-black-box/src/distributed-recipes.ts';
-import { distributedRunMonitorDerivationWorkForTest } from
-    '../../shared-test/rallar-bb-test/distributed-run-monitor-index.ts';
-import { createControlSnapshotSelectionIndex } from
-    '../../../packages/shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
-import { createControlSelectionIndexCache } from
-    '../../../apps/rallar-black-box/src/recipe-console/control/control-selection-index-cache.ts';
-import { bindControlSelectionIndexToSnapshot } from
-    '../../../apps/rallar-black-box/src/control-selection-index-binding.ts';
 import type {
     ControlDistributedRunArtifactBundle,
     ControlDistributedRunSnapshot,
     ControlRunSnapshot,
-    ControlServerSnapshot,
+    ControlServerSnapshot
 } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
+import { bindControlSelectionIndexToSnapshot } from '../../../apps/rallar-black-box/src/control-selection-index-binding.ts';
+import * as distributedRecipes from '../../../apps/rallar-black-box/src/distributed-recipes.ts';
 import type { ControlQuerySnapshot } from '../../../apps/rallar-black-box/src/recipe-console/control/control-query.ts';
+import { createControlSelectionIndexCache } from '../../../apps/rallar-black-box/src/recipe-console/control/control-selection-index-cache.ts';
 import {
     beginMonitorOperation,
     completeMonitorArtifactOperation,
-    failMonitorOperation,
+    failMonitorOperation
 } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-operation-state.ts';
 import {
-    createInitialMonitorWorkspaceState,
-    createMonitorWorkspaceContext,
-    projectMonitorMutation,
-    reconcileMonitorWorkspaceState,
-    monitorWorkspaceReconciliationWorkForTest,
-    setMonitorCancelArm,
-    setMonitorEvidenceSelection,
-} from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-state.ts';
-import { deriveMonitorWorkspaceModel } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-model.ts';
-import {
     createMonitorRecipeEvidenceSelectionId,
-    deriveMonitorRecipeEvidenceStatus,
     deriveMonitorDistributedRunSelection,
+    deriveMonitorRecipeEvidenceStatus,
     deriveMonitorRunOptions,
-    monitorDistributedRunSelectionWorkForTest,
-    monitorRunOptionsWorkForTest,
     deriveMonitorUrlEvidenceSelection,
     MONITOR_ARTIFACT_EVIDENCE_ID,
+    monitorDistributedRunSelectionWorkForTest,
     monitorEvidenceSelectionIdentifier,
+    monitorRunOptionsWorkForTest,
     monitorUrlEvidenceKey,
     parseMonitorRecipeEvidenceSelectionId,
     recipeConsoleMonitorControlRunSelectionPatch,
-    recipeConsoleMonitorDistributedRunSelectionPatch,
+    recipeConsoleMonitorDistributedRunSelectionPatch
 } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-selection.ts';
+import { deriveMonitorWorkspaceModel } from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-model.ts';
+import {
+    createInitialMonitorWorkspaceState,
+    createMonitorWorkspaceContext,
+    monitorWorkspaceReconciliationWorkForTest,
+    projectMonitorMutation,
+    reconcileMonitorWorkspaceState,
+    setMonitorCancelArm,
+    setMonitorEvidenceSelection
+} from '../../../apps/rallar-black-box/src/recipe-console/monitor/monitor-workspace-state.ts';
+import { createControlSnapshotSelectionIndex } from '../../../packages/shared-test/rallar-bb-test/control-snapshot-selection-index.ts';
+import { distributedRunMonitorDerivationWorkForTest } from '../../shared-test/rallar-bb-test/distributed-run-monitor-index.ts';
 
 const context = createMonitorWorkspaceContext({
     baseUrl: 'https://control.test/root///',
     controlRunId: 'run-a',
-    distributedRunId: 'distributed-a',
+    distributedRunId: 'distributed-a'
 });
 
 afterEach(() => vi.restoreAllMocks());
 
 function controlRun(
     runId = 'run-a',
-    updatedAtEpochMs = 10,
+    updatedAtEpochMs = 10
 ): ControlRunSnapshot {
     return {
         runId,
@@ -69,7 +64,7 @@ function controlRun(
         events: [],
         stats: [],
         reports: [],
-        heartbeats: [],
+        heartbeats: []
     };
 }
 
@@ -78,7 +73,7 @@ function distributedRun(
     controlRunId = 'run-a',
     state: ControlDistributedRunSnapshot['state'] = 'running',
     updatedAtEpochMs = 10,
-    overrides: Partial<ControlDistributedRunSnapshot> = {},
+    overrides: Partial<ControlDistributedRunSnapshot> = {}
 ): ControlDistributedRunSnapshot {
     return {
         distributedRunId,
@@ -94,14 +89,14 @@ function distributedRun(
             group: {
                 applicationId: 'app-a',
                 workspaceId: 'workspace-a',
-                groupId: 'group-a',
+                groupId: 'group-a'
             },
             recipes: [{ recipeId: 'health-only', required: true }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: ['agent-a'],
-                expectedParticipantCount: 1,
-            },
+                expectedParticipantCount: 1
+            }
         },
         commandLinks: [],
         rollup: {
@@ -120,18 +115,18 @@ function distributedRun(
                 groupAssertions: 0,
                 passedGroupAssertions: 0,
                 failedGroupAssertions: 0,
-                blockingFailures: state === 'failed' ? 1 : 0,
+                blockingFailures: state === 'failed' ? 1 : 0
             },
-            failures: [],
+            failures: []
         },
-        ...overrides,
+        ...overrides
     };
 }
 
 function query(
     status: ControlQuerySnapshot<ControlServerSnapshot>['status'],
     snapshot?: ControlServerSnapshot,
-    overrides: Partial<ControlQuerySnapshot<ControlServerSnapshot>> = {},
+    overrides: Partial<ControlQuerySnapshot<ControlServerSnapshot>> = {}
 ): ControlQuerySnapshot<ControlServerSnapshot> {
     return {
         status,
@@ -140,12 +135,12 @@ function query(
         snapshot,
         receivedAtEpochMs: snapshot ? 100 : undefined,
         isRefreshing: false,
-        ...overrides,
+        ...overrides
     };
 }
 
 function forbidGlobalTraversal<Value>(
-    values: readonly Value[],
+    values: readonly Value[]
 ): readonly Value[] {
     return new Proxy(values, {
         get(target, property, receiver) {
@@ -157,20 +152,20 @@ function forbidGlobalTraversal<Value>(
                 throw new Error('global collection traversal is forbidden');
             }
             return Reflect.get(target, property, receiver);
-        },
+        }
     });
 }
 
 function reconcile(
     state: ReturnType<typeof createInitialMonitorWorkspaceState>,
-    value: ControlQuerySnapshot<ControlServerSnapshot>,
+    value: ControlQuerySnapshot<ControlServerSnapshot>
 ) {
     return reconcileMonitorWorkspaceState(state, { context, query: value });
 }
 
 function artifact(
     distributedRunId = 'distributed-a',
-    generatedAtEpochMs = 100,
+    generatedAtEpochMs = 100
 ): ControlDistributedRunArtifactBundle {
     const run = distributedRun(distributedRunId);
     return {
@@ -180,76 +175,76 @@ function artifact(
         files: {
             'distributed-run.json': JSON.stringify(run),
             'manifest.json': JSON.stringify(run.manifest),
-            'control-run.json': JSON.stringify(controlRun()),
-        },
+            'control-run.json': JSON.stringify(controlRun())
+        }
     };
 }
 
 describe('Recipe Console Monitor selection', () => {
     it('does not traverse run options without a control selection and preserves last-known truth', () => {
         const distributedRuns = forbidGlobalTraversal([
-            distributedRun('distributed-a', 'run-a'),
+            distributedRun('distributed-a', 'run-a')
         ]);
         const lastKnown = distributedRun('last-known', 'run-last', 'passed', 40);
 
         expect(deriveMonitorRunOptions({
             controlRunId: undefined,
-            distributedRuns,
+            distributedRuns
         })).toEqual([]);
         expect(deriveMonitorRunOptions({
             controlRunId: undefined,
             distributedRuns,
-            lastKnown,
+            lastKnown
         })).toEqual([lastKnown]);
     });
 
     it.each([
         {
             label: 'empty topology',
-            stale: { runs: [], distributedRuns: [] } satisfies ControlServerSnapshot,
+            stale: { runs: [], distributedRuns: [] } satisfies ControlServerSnapshot
         },
         {
             label: 'same-length replacement topology',
             stale: {
                 runs: [controlRun('old-run')],
-                distributedRuns: [distributedRun('old-distributed', 'old-run')],
-            } satisfies ControlServerSnapshot,
-        },
+                distributedRuns: [distributedRun('old-distributed', 'old-run')]
+            } satisfies ControlServerSnapshot
+        }
     ])('falls back from $label for selection, options, and coherent state', ({ stale }) => {
         const current: ControlServerSnapshot = {
             runs: [controlRun('run-a')],
-            distributedRuns: [distributedRun('distributed-a', 'run-a')],
+            distributedRuns: [distributedRun('distributed-a', 'run-a')]
         };
         const selectionIndex = createControlSnapshotSelectionIndex(stale);
         const selectionInput = {
             controlRunId: 'run-a',
             requestedDistributedRunId: 'distributed-a',
             distributedRuns: current.distributedRuns!,
-            distributedRunsAuthoritative: true,
+            distributedRunsAuthoritative: true
         } as const;
         const legacySelection = deriveMonitorDistributedRunSelection(selectionInput);
         const indexedSelection = deriveMonitorDistributedRunSelection({
             ...selectionInput,
             snapshot: current,
-            selectionIndex,
+            selectionIndex
         });
         const legacyOptions = deriveMonitorRunOptions({
             controlRunId: 'run-a',
-            distributedRuns: current.distributedRuns!,
+            distributedRuns: current.distributedRuns!
         });
         const indexedOptions = deriveMonitorRunOptions({
             controlRunId: 'run-a',
             distributedRuns: current.distributedRuns!,
             snapshot: current,
-            selectionIndex,
+            selectionIndex
         });
         const legacyState = reconcileMonitorWorkspaceState(
             createInitialMonitorWorkspaceState(),
-            { context, query: query('live', current) },
+            { context, query: query('live', current) }
         );
         const indexedState = reconcileMonitorWorkspaceState(
             createInitialMonitorWorkspaceState(),
-            { context, query: query('live', current), selectionIndex },
+            { context, query: query('live', current), selectionIndex }
         );
 
         expect(indexedSelection).toEqual(legacySelection);
@@ -270,11 +265,11 @@ describe('Recipe Console Monitor selection', () => {
     it('keeps genuinely absent Monitor IDs unavailable without defensive fallback', () => {
         const current: ControlServerSnapshot = {
             runs: [controlRun('run-a')],
-            distributedRuns: [distributedRun('distributed-a', 'run-a')],
+            distributedRuns: [distributedRun('distributed-a', 'run-a')]
         };
         const selectionIndex = bindControlSelectionIndexToSnapshot(
             current,
-            createControlSnapshotSelectionIndex(current),
+            createControlSnapshotSelectionIndex(current)
         );
         const selection = deriveMonitorDistributedRunSelection({
             controlRunId: 'run-a',
@@ -282,7 +277,7 @@ describe('Recipe Console Monitor selection', () => {
             distributedRuns: current.distributedRuns!,
             distributedRunsAuthoritative: true,
             snapshot: current,
-            selectionIndex,
+            selectionIndex
         });
 
         expect(selection.run).toBeUndefined();
@@ -294,14 +289,14 @@ describe('Recipe Console Monitor selection', () => {
     it('keeps trusted absent Monitor selection, options, and reconciliation O(1)', () => {
         const current: ControlServerSnapshot = {
             runs: [controlRun('run-a')],
-            distributedRuns: [distributedRun('distributed-a', 'run-a')],
+            distributedRuns: [distributedRun('distributed-a', 'run-a')]
         };
         const selectionIndex = createControlSelectionIndexCache().get(current);
         Object.defineProperties(current, {
             runs: { value: forbidGlobalTraversal(current.runs) },
             distributedRuns: {
-                value: forbidGlobalTraversal(current.distributedRuns!),
-            },
+                value: forbidGlobalTraversal(current.distributedRuns!)
+            }
         });
 
         const selection = deriveMonitorDistributedRunSelection({
@@ -310,26 +305,26 @@ describe('Recipe Console Monitor selection', () => {
             distributedRuns: current.distributedRuns!,
             distributedRunsAuthoritative: true,
             snapshot: current,
-            selectionIndex,
+            selectionIndex
         });
         const options = deriveMonitorRunOptions({
             controlRunId: 'missing-run',
             distributedRuns: current.distributedRuns!,
             snapshot: current,
-            selectionIndex,
+            selectionIndex
         });
         const missingContext = createMonitorWorkspaceContext({
             baseUrl: 'https://control.test',
             controlRunId: 'missing-run',
-            distributedRunId: 'missing-distributed',
+            distributedRunId: 'missing-distributed'
         });
         const state = reconcileMonitorWorkspaceState(
             createInitialMonitorWorkspaceState(),
             {
                 context: missingContext,
                 query: query('live', current),
-                selectionIndex,
-            },
+                selectionIndex
+            }
         );
 
         expect(selection.issue?.code).toBe('unavailable');
@@ -348,17 +343,17 @@ describe('Recipe Console Monitor selection', () => {
             runs: [controlRun('run-a'), controlRun('run-b')],
             distributedRuns: [
                 distributedRun('duplicate\0\u202e', 'run-b'),
-                distributedRun('duplicate\0\u202e', 'run-a'),
-            ],
+                distributedRun('duplicate\0\u202e', 'run-a')
+            ]
         };
         const clone = structuredClone(first);
         const current: ControlServerSnapshot = {
             ...clone,
-            distributedRuns: forbidGlobalTraversal(clone.distributedRuns!),
+            distributedRuns: forbidGlobalTraversal(clone.distributedRuns!)
         };
         const selectionIndex = bindControlSelectionIndexToSnapshot(
             current,
-            createControlSnapshotSelectionIndex(first),
+            createControlSnapshotSelectionIndex(first)
         );
 
         const indexed = deriveMonitorDistributedRunSelection({
@@ -367,7 +362,7 @@ describe('Recipe Console Monitor selection', () => {
             distributedRuns: current.distributedRuns!,
             distributedRunsAuthoritative: true,
             snapshot: current,
-            selectionIndex,
+            selectionIndex
         });
 
         expect(indexed).toEqual({
@@ -376,8 +371,8 @@ describe('Recipe Console Monitor selection', () => {
             source: 'explicit',
             issue: {
                 code: 'incompatible',
-                message: 'Distributed run duplicate\0\u202e belongs to another control run.',
-            },
+                message: 'Distributed run duplicate\0\u202e belongs to another control run.'
+            }
         });
     });
 
@@ -387,29 +382,29 @@ describe('Recipe Console Monitor selection', () => {
             distributedRuns: [
                 distributedRun('older', 'run-a', 'running', 10),
                 distributedRun('other', 'run-b', 'running', 30),
-                distributedRun('newer', 'run-a', 'running', 20),
-            ],
+                distributedRun('newer', 'run-a', 'running', 20)
+            ]
         };
         const clone = structuredClone(first);
         const current: ControlServerSnapshot = {
             ...clone,
-            distributedRuns: forbidGlobalTraversal(clone.distributedRuns!),
+            distributedRuns: forbidGlobalTraversal(clone.distributedRuns!)
         };
         const selectionIndex = bindControlSelectionIndexToSnapshot(
             current,
-            createControlSnapshotSelectionIndex(first),
+            createControlSnapshotSelectionIndex(first)
         );
 
         const options = deriveMonitorRunOptions({
             controlRunId: 'run-a',
             distributedRuns: current.distributedRuns!,
             snapshot: current,
-            selectionIndex,
+            selectionIndex
         });
 
         expect(options).toEqual([
             current.distributedRuns![2],
-            current.distributedRuns![0],
+            current.distributedRuns![0]
         ]);
         expect(options[0]).toBe(current.distributedRuns![2]);
     });
@@ -419,39 +414,39 @@ describe('Recipe Console Monitor selection', () => {
             controlRunId: 'run-a',
             distributedRuns: [
                 distributedRun('other', 'run-b'),
-                distributedRun('sole', 'run-a'),
+                distributedRun('sole', 'run-a')
             ],
-            distributedRunsAuthoritative: true,
+            distributedRunsAuthoritative: true
         });
         const ambiguous = deriveMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             distributedRuns: [
                 distributedRun('first', 'run-a'),
-                distributedRun('second', 'run-a'),
+                distributedRun('second', 'run-a')
             ],
-            distributedRunsAuthoritative: true,
+            distributedRunsAuthoritative: true
         });
         const none = deriveMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             distributedRuns: [distributedRun('other', 'run-b')],
-            distributedRunsAuthoritative: true,
+            distributedRunsAuthoritative: true
         });
 
         expect(sole).toMatchObject({
             distributedRunId: 'sole',
             source: 'sole-compatible',
-            urlReplacePatch: { distributedRunId: 'sole' },
+            urlReplacePatch: { distributedRunId: 'sole' }
         });
         expect(ambiguous).toMatchObject({
             distributedRunId: undefined,
             run: undefined,
             source: 'none',
-            issue: { code: 'ambiguous' },
+            issue: { code: 'ambiguous' }
         });
         expect(none).toEqual({
             distributedRunId: undefined,
             run: undefined,
-            source: 'none',
+            source: 'none'
         });
     });
 
@@ -460,32 +455,32 @@ describe('Recipe Console Monitor selection', () => {
             controlRunId: 'run-a',
             requestedDistributedRunId: 'missing',
             distributedRuns: [distributedRun('first', 'run-a')],
-            distributedRunsAuthoritative: true,
+            distributedRunsAuthoritative: true
         });
         const incompatible = deriveMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             requestedDistributedRunId: 'other',
             distributedRuns: [distributedRun('other', 'run-b')],
-            distributedRunsAuthoritative: true,
+            distributedRunsAuthoritative: true
         });
         const pending = deriveMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             requestedDistributedRunId: 'missing',
             distributedRuns: [],
-            distributedRunsAuthoritative: false,
+            distributedRunsAuthoritative: false
         });
 
         expect(unavailable).toMatchObject({
             distributedRunId: 'missing',
             run: undefined,
             source: 'explicit',
-            issue: { code: 'unavailable' },
+            issue: { code: 'unavailable' }
         });
         expect(incompatible).toMatchObject({
             distributedRunId: 'other',
             run: undefined,
             source: 'explicit',
-            issue: { code: 'incompatible' },
+            issue: { code: 'incompatible' }
         });
         expect(pending.issue).toBeUndefined();
     });
@@ -494,11 +489,11 @@ describe('Recipe Console Monitor selection', () => {
         expect(deriveMonitorDistributedRunSelection({
             controlRunId: 'run-a',
             distributedRuns: [distributedRun('sole', 'run-a')],
-            distributedRunsAuthoritative: false,
+            distributedRunsAuthoritative: false
         })).toEqual({
             distributedRunId: undefined,
             run: undefined,
-            source: 'none',
+            source: 'none'
         });
     });
 
@@ -508,17 +503,17 @@ describe('Recipe Console Monitor selection', () => {
                 distributedRunId: 'distributed-b',
                 agentId: undefined,
                 recipeId: undefined,
-                commandId: undefined,
+                commandId: undefined
             });
         expect(context).toEqual({
             key: JSON.stringify({
                 baseUrl: 'https://control.test/root',
                 controlRunId: 'run-a',
-                distributedRunId: 'distributed-a',
+                distributedRunId: 'distributed-a'
             }),
             baseUrl: 'https://control.test/root',
             controlRunId: 'run-a',
-            distributedRunId: 'distributed-a',
+            distributedRunId: 'distributed-a'
         });
     });
 
@@ -532,16 +527,16 @@ describe('Recipe Console Monitor selection', () => {
                 distributedRunId: 'distributed-a',
                 agentId: 'agent-a',
                 recipeId: 'recipe-a',
-                commandId: 'command-a',
+                commandId: 'command-a'
             },
             controlRunId: 'run-b',
-            distributedRuns: [distributedRun('distributed-b', 'run-b')],
+            distributedRuns: [distributedRun('distributed-b', 'run-b')]
         })).toEqual({
             controlRunId: 'run-b',
             distributedRunId: undefined,
             agentId: undefined,
             recipeId: undefined,
-            commandId: undefined,
+            commandId: undefined
         });
     });
 
@@ -552,30 +547,30 @@ describe('Recipe Console Monitor selection', () => {
             view: 'monitor' as const,
             agentId: 'agent-a',
             recipeId: 'recipe-a',
-            commandId: 'command-a',
+            commandId: 'command-a'
         };
 
         expect(deriveMonitorUrlEvidenceSelection(state)).toEqual({
             kind: 'command',
-            id: 'command-a',
+            id: 'command-a'
         });
         expect(deriveMonitorUrlEvidenceSelection({
             ...state,
-            commandId: undefined,
+            commandId: undefined
         })).toEqual({ kind: 'recipe', id: 'recipe-a' });
         expect(deriveMonitorUrlEvidenceSelection({
             ...state,
             commandId: undefined,
-            recipeId: undefined,
+            recipeId: undefined
         })).toEqual({ kind: 'agent', id: 'agent-a' });
         expect(deriveMonitorUrlEvidenceSelection({
             ...state,
             commandId: undefined,
             recipeId: undefined,
-            agentId: undefined,
+            agentId: undefined
         })).toBeUndefined();
         expect(monitorUrlEvidenceKey(state)).toBe(
-            JSON.stringify(['agent-a', 'recipe-a', 'command-a']),
+            JSON.stringify(['agent-a', 'recipe-a', 'command-a'])
         );
     });
 
@@ -583,35 +578,49 @@ describe('Recipe Console Monitor selection', () => {
         const sender = createMonitorRecipeEvidenceSelectionId({
             recipeId: 'recipe-a',
             role: 'sender',
-            profile: 'rtc',
+            profile: 'rtc'
         });
         const receiver = createMonitorRecipeEvidenceSelectionId({
             recipeId: 'recipe-a',
             role: 'receiver',
-            profile: 'rtc',
+            profile: 'rtc'
         });
 
         expect(sender).not.toBe(receiver);
         expect(parseMonitorRecipeEvidenceSelectionId(sender)).toEqual({
             recipeId: 'recipe-a',
             role: 'sender',
-            profile: 'rtc',
+            profile: 'rtc'
         });
         expect(parseMonitorRecipeEvidenceSelectionId('recipe-a')).toBeUndefined();
         expect(monitorEvidenceSelectionIdentifier({
             kind: 'recipe',
-            id: sender,
+            id: sender
         })).toBe('recipe-a · sender · rtc');
         const roleRows = [{
-            recipeId: 'recipe-a', profile: 'rtc', role: 'sender', required: true,
-            targetCount: 1, queuedCount: 0, runningCount: 0,
-            passedCount: 1, failedCount: 0, missingCount: 0,
-            averageLatencyMs: 10,
+            recipeId: 'recipe-a',
+            profile: 'rtc',
+            role: 'sender',
+            required: true,
+            targetCount: 1,
+            queuedCount: 0,
+            runningCount: 0,
+            passedCount: 1,
+            failedCount: 0,
+            missingCount: 0,
+            averageLatencyMs: 10
         }, {
-            recipeId: 'recipe-a', profile: 'rtc', role: 'receiver', required: true,
-            targetCount: 1, queuedCount: 0, runningCount: 0,
-            passedCount: 0, failedCount: 1, missingCount: 0,
-            averageLatencyMs: 20,
+            recipeId: 'recipe-a',
+            profile: 'rtc',
+            role: 'receiver',
+            required: true,
+            targetCount: 1,
+            queuedCount: 0,
+            runningCount: 0,
+            passedCount: 0,
+            failedCount: 1,
+            missingCount: 0,
+            averageLatencyMs: 20
         }];
         expect(deriveMonitorRecipeEvidenceStatus(roleRows, 'recipe-a'))
             .toBe('failed');
@@ -628,18 +637,18 @@ describe('Recipe Console Monitor coherent state', () => {
             distributedRuns: [
                 distributedRun('distributed-a', 'run-b', 'failed', 30),
                 distributedRun('distributed-a', 'run-a', 'running', 20),
-                distributedRun('distributed-a', 'run-a', 'passed', 40),
-            ],
+                distributedRun('distributed-a', 'run-a', 'passed', 40)
+            ]
         };
         const clone = structuredClone(first);
         const current: ControlServerSnapshot = {
             ...clone,
             runs: forbidGlobalTraversal(clone.runs),
-            distributedRuns: forbidGlobalTraversal(clone.distributedRuns!),
+            distributedRuns: forbidGlobalTraversal(clone.distributedRuns!)
         };
         const selectionIndex = bindControlSelectionIndexToSnapshot(
             current,
-            createControlSnapshotSelectionIndex(first),
+            createControlSnapshotSelectionIndex(first)
         );
 
         const state = reconcileMonitorWorkspaceState(
@@ -647,8 +656,8 @@ describe('Recipe Console Monitor coherent state', () => {
             {
                 context,
                 query: query('live', current),
-                selectionIndex,
-            },
+                selectionIndex
+            }
         );
 
         expect(state.source?.controlRun).toBe(current.runs[0]);
@@ -658,11 +667,11 @@ describe('Recipe Console Monitor coherent state', () => {
     it('projects complete current truth and derives bounded monitor/report/verdict once', () => {
         const monitorDerivation = vi.spyOn(
             distributedRecipes,
-            'deriveDistributedRunMonitor',
+            'deriveDistributedRunMonitor'
         );
         const reportDerivation = vi.spyOn(
             distributedRecipes,
-            'deriveDistributedRunAnalysisReport',
+            'deriveDistributedRunAnalysisReport'
         );
         const commands = Array.from({ length: 120 }, (_, index) => ({
             envelope: {
@@ -671,16 +680,19 @@ describe('Recipe Console Monitor coherent state', () => {
                 runId: 'run-a',
                 agentId: 'agent-a',
                 commandId: `unlinked-${index}`,
-                command: { kind: 'health' as const },
+                command: { kind: 'health' as const }
             },
             queuedAtEpochMs: index,
-            dispatchCount: 0,
+            dispatchCount: 0
         }));
         const run = { ...controlRun(), commands };
-        const state = reconcile(createInitialMonitorWorkspaceState(), query(
-            'live',
-            { runs: [run], distributedRuns: [distributedRun()] },
-        ));
+        const state = reconcile(
+            createInitialMonitorWorkspaceState(),
+            query(
+                'live',
+                { runs: [run], distributedRuns: [distributedRun()] }
+            )
+        );
         const model = deriveMonitorWorkspaceModel(state);
 
         expect(state.source).toMatchObject({
@@ -688,18 +700,18 @@ describe('Recipe Console Monitor coherent state', () => {
             completeness: 'complete',
             queryStatus: 'live',
             controlRun: { runId: 'run-a' },
-            distributedRun: { distributedRunId: 'distributed-a' },
+            distributedRun: { distributedRunId: 'distributed-a' }
         });
         expect(model).toMatchObject({
             monitor: { distributedRunId: 'distributed-a' },
             report: {
                 distributedRunId: 'distributed-a',
-                summary: { snapshotMayBeTruncated: true },
+                summary: { snapshotMayBeTruncated: true }
             },
-            verdict: { runId: 'distributed-a' },
+            verdict: { runId: 'distributed-a' }
         });
         expect(model?.report.summary.snapshotWarnings).toContain(
-            'Loaded 120 commands; evidence may be truncated by the current snapshot bound.',
+            'Loaded 120 commands; evidence may be truncated by the current snapshot bound.'
         );
         expect(monitorDerivation).toHaveBeenCalledOnce();
         expect(reportDerivation).toHaveBeenCalledOnce();
@@ -710,150 +722,192 @@ describe('Recipe Console Monitor coherent state', () => {
             commandLinkVisitCount: 0,
             controlCommandVisitCount: 120,
             controlResultVisitCount: 0,
-            controlEventVisitCount: 0,
+            controlEventVisitCount: 0
         });
     });
 
     it.each(['stale', 'offline'] as const)(
         'retains a coherent pair as last-known on total %s failure',
         (status) => {
-            const current = reconcile(createInitialMonitorWorkspaceState(), query(
-                'live',
-                { runs: [controlRun()], distributedRuns: [distributedRun()] },
-            ));
-            const failed = reconcile(current, query(status, undefined, {
-                lastError: { kind: 'network', message: 'control unavailable' },
-            }));
+            const current = reconcile(
+                createInitialMonitorWorkspaceState(),
+                query(
+                    'live',
+                    { runs: [controlRun()], distributedRuns: [distributedRun()] }
+                )
+            );
+            const failed = reconcile(
+                current,
+                query(status, undefined, {
+                    lastError: { kind: 'network', message: 'control unavailable' }
+                })
+            );
 
             expect(failed.source?.controlRun).toBe(current.source?.controlRun);
             expect(failed.source?.distributedRun).toBe(current.source?.distributedRun);
             expect(failed.source).toMatchObject({
                 freshness: 'last-known',
-                queryStatus: status,
+                queryStatus: status
             });
-        },
+        }
     );
 
     it('retains the prior same-context pair for partial missing distributed evidence without mixing', () => {
         const oldControl = controlRun('run-a', 10);
         const oldDistributed = distributedRun('distributed-a', 'run-a', 'running', 10);
-        const current = reconcile(createInitialMonitorWorkspaceState(), query(
-            'live',
-            { runs: [oldControl], distributedRuns: [oldDistributed] },
-        ));
-        const partial = reconcile(current, query('partial', {
-            runs: [controlRun('run-a', 20)],
-        }));
-        const unrelated = reconcile(current, query('partial', {
-            runs: [controlRun('run-b', 20)],
-        }));
+        const current = reconcile(
+            createInitialMonitorWorkspaceState(),
+            query(
+                'live',
+                { runs: [oldControl], distributedRuns: [oldDistributed] }
+            )
+        );
+        const partial = reconcile(
+            current,
+            query('partial', {
+                runs: [controlRun('run-a', 20)]
+            })
+        );
+        const unrelated = reconcile(
+            current,
+            query('partial', {
+                runs: [controlRun('run-b', 20)]
+            })
+        );
 
         expect(partial.source?.controlRun).toBe(oldControl);
         expect(partial.source?.distributedRun).toBe(oldDistributed);
         expect(partial.source).toMatchObject({
             freshness: 'last-known',
-            completeness: 'partial',
+            completeness: 'partial'
         });
         expect(unrelated.source).toBeUndefined();
     });
 
     it('replaces with coherent partial truth, clears on complete omission, and recovers', () => {
-        const initial = reconcile(createInitialMonitorWorkspaceState(), query(
-            'live',
-            { runs: [controlRun()], distributedRuns: [distributedRun()] },
-        ));
+        const initial = reconcile(
+            createInitialMonitorWorkspaceState(),
+            query(
+                'live',
+                { runs: [controlRun()], distributedRuns: [distributedRun()] }
+            )
+        );
         const partialRun = distributedRun('distributed-a', 'run-a', 'failed', 20);
-        const partial = reconcile(initial, query('partial', {
-            runs: [controlRun('run-a', 20)],
-            distributedRuns: [partialRun],
-        }));
-        const deleted = reconcile(partial, query('live', {
-            runs: [controlRun('run-a', 30)],
-            distributedRuns: [],
-        }));
+        const partial = reconcile(
+            initial,
+            query('partial', {
+                runs: [controlRun('run-a', 20)],
+                distributedRuns: [partialRun]
+            })
+        );
+        const deleted = reconcile(
+            partial,
+            query('live', {
+                runs: [controlRun('run-a', 30)],
+                distributedRuns: []
+            })
+        );
         const recoveredRun = distributedRun('distributed-a', 'run-a', 'passed', 40);
-        const recovered = reconcile(deleted, query('live', {
-            runs: [controlRun('run-a', 40)],
-            distributedRuns: [recoveredRun],
-        }));
+        const recovered = reconcile(
+            deleted,
+            query('live', {
+                runs: [controlRun('run-a', 40)],
+                distributedRuns: [recoveredRun]
+            })
+        );
 
         expect(partial.source).toMatchObject({
             freshness: 'current',
             completeness: 'partial',
-            distributedRun: { state: 'failed' },
+            distributedRun: { state: 'failed' }
         });
         expect(deleted.source).toBeUndefined();
         expect(recovered.source?.distributedRun).toBe(recoveredRun);
     });
 
     it('treats a present partial distributed collection as authoritative for omission', () => {
-        const current = reconcile(createInitialMonitorWorkspaceState(), query(
-            'live',
-            { runs: [controlRun()], distributedRuns: [distributedRun()] },
-        ));
-        const omitted = reconcile(current, query('partial', {
-            runs: [controlRun('run-a', 20)],
-            distributedRuns: [],
-        }));
+        const current = reconcile(
+            createInitialMonitorWorkspaceState(),
+            query(
+                'live',
+                { runs: [controlRun()], distributedRuns: [distributedRun()] }
+            )
+        );
+        const omitted = reconcile(
+            current,
+            query('partial', {
+                runs: [controlRun('run-a', 20)],
+                distributedRuns: []
+            })
+        );
 
         expect(omitted.source).toBeUndefined();
         expect(omitted.mutationRun).toBeUndefined();
     });
 
     it('retains newer mutation truth over older queries and clears every dependency on context change', () => {
-        let state = reconcile(createInitialMonitorWorkspaceState(), query(
-            'live',
-            { runs: [controlRun()], distributedRuns: [distributedRun()] },
-        ));
+        let state = reconcile(
+            createInitialMonitorWorkspaceState(),
+            query(
+                'live',
+                { runs: [controlRun()], distributedRuns: [distributedRun()] }
+            )
+        );
         state = setMonitorEvidenceSelection(state, context.key, {
             kind: 'failure',
-            id: 'failure-a',
+            id: 'failure-a'
         });
         state = setMonitorCancelArm(state, context.key, 'cancel-arm-a');
         const pending = beginMonitorOperation(state, context.key, 'load-artifact');
         state = completeMonitorArtifactOperation(
             pending.state,
             pending.authority,
-            artifact(),
+            artifact()
         );
         state = projectMonitorMutation(
             state,
             context.key,
-            distributedRun('distributed-a', 'run-a', 'cancelled', 30),
+            distributedRun('distributed-a', 'run-a', 'cancelled', 30)
         );
-        state = reconcile(state, query('live', {
-            runs: [controlRun('run-a', 20)],
-            distributedRuns: [
-                distributedRun('distributed-a', 'run-a', 'running', 20),
-            ],
-        }));
+        state = reconcile(
+            state,
+            query('live', {
+                runs: [controlRun('run-a', 20)],
+                distributedRuns: [
+                    distributedRun('distributed-a', 'run-a', 'running', 20)
+                ]
+            })
+        );
 
         expect(state.source).toMatchObject({
             origin: 'mutation',
-            distributedRun: { state: 'cancelled', updatedAtEpochMs: 30 },
+            distributedRun: { state: 'cancelled', updatedAtEpochMs: 30 }
         });
         expect(state.artifact.bundle?.distributedRunId).toBe('distributed-a');
 
-        state = reconcile(state, query('live', {
-            runs: [controlRun('run-a', 40)],
-            distributedRuns: [
-                distributedRun('distributed-a', 'run-a', 'passed', 40),
-            ],
-        }));
+        state = reconcile(
+            state,
+            query('live', {
+                runs: [controlRun('run-a', 40)],
+                distributedRuns: [
+                    distributedRun('distributed-a', 'run-a', 'passed', 40)
+                ]
+            })
+        );
         expect(state.source).toMatchObject({
             origin: 'query',
-            distributedRun: { state: 'passed', updatedAtEpochMs: 40 },
+            distributedRun: { state: 'passed', updatedAtEpochMs: 40 }
         });
         expect(state.mutationRun).toBeUndefined();
 
         const nextContext = createMonitorWorkspaceContext({
             baseUrl: 'https://control.test/root',
             controlRunId: 'run-a',
-            distributedRunId: 'distributed-b',
+            distributedRunId: 'distributed-b'
         });
         const changed = reconcileMonitorWorkspaceState(state, {
             context: nextContext,
-            query: query('connecting'),
+            query: query('connecting')
         });
 
         expect(changed).toMatchObject({
@@ -864,82 +918,100 @@ describe('Recipe Console Monitor coherent state', () => {
             evidenceSelection: undefined,
             cancelArmKey: undefined,
             operationError: undefined,
-            activeOperation: undefined,
+            activeOperation: undefined
         });
         expect(changed.operationGeneration).toBeGreaterThan(state.operationGeneration);
     });
 
     it('resolves equal-timestamp mutation/query ties without terminal regression', () => {
-        const current = reconcile(createInitialMonitorWorkspaceState(), query(
-            'live',
-            { runs: [controlRun()], distributedRuns: [distributedRun()] },
-        ));
+        const current = reconcile(
+            createInitialMonitorWorkspaceState(),
+            query(
+                'live',
+                { runs: [controlRun()], distributedRuns: [distributedRun()] }
+            )
+        );
         const nonTerminalMutation = projectMonitorMutation(
             current,
             context.key,
-            distributedRun('distributed-a', 'run-a', 'running', 20),
+            distributedRun('distributed-a', 'run-a', 'running', 20)
         );
-        const terminalQuery = reconcile(nonTerminalMutation, query('live', {
-            runs: [controlRun('run-a', 20)],
-            distributedRuns: [
-                distributedRun('distributed-a', 'run-a', 'failed', 20),
-            ],
-        }));
+        const terminalQuery = reconcile(
+            nonTerminalMutation,
+            query('live', {
+                runs: [controlRun('run-a', 20)],
+                distributedRuns: [
+                    distributedRun('distributed-a', 'run-a', 'failed', 20)
+                ]
+            })
+        );
         const terminalMutation = projectMonitorMutation(
             current,
             context.key,
-            distributedRun('distributed-a', 'run-a', 'cancelled', 20),
+            distributedRun('distributed-a', 'run-a', 'cancelled', 20)
         );
-        const nonTerminalQuery = reconcile(terminalMutation, query('live', {
-            runs: [controlRun('run-a', 20)],
-            distributedRuns: [
-                distributedRun('distributed-a', 'run-a', 'running', 20),
-            ],
-        }));
+        const nonTerminalQuery = reconcile(
+            terminalMutation,
+            query('live', {
+                runs: [controlRun('run-a', 20)],
+                distributedRuns: [
+                    distributedRun('distributed-a', 'run-a', 'running', 20)
+                ]
+            })
+        );
 
         expect(terminalQuery.source).toMatchObject({
             origin: 'query',
-            distributedRun: { state: 'failed' },
+            distributedRun: { state: 'failed' }
         });
         expect(terminalQuery.mutationRun).toBeUndefined();
         expect(nonTerminalQuery.source).toMatchObject({
             origin: 'mutation',
-            distributedRun: { state: 'cancelled' },
+            distributedRun: { state: 'cancelled' }
         });
     });
 
     it('keeps equal non-terminal mutation truth and the error-rich terminal tie', () => {
-        const current = reconcile(createInitialMonitorWorkspaceState(), query(
-            'live',
-            { runs: [controlRun()], distributedRuns: [distributedRun()] },
-        ));
+        const current = reconcile(
+            createInitialMonitorWorkspaceState(),
+            query(
+                'live',
+                { runs: [controlRun()], distributedRuns: [distributedRun()] }
+            )
+        );
         const nonTerminalMutation = projectMonitorMutation(
             current,
             context.key,
-            distributedRun('distributed-a', 'run-a', 'ready', 20),
+            distributedRun('distributed-a', 'run-a', 'ready', 20)
         );
-        const nonTerminalTie = reconcile(nonTerminalMutation, query('live', {
-            runs: [controlRun('run-a', 20)],
-            distributedRuns: [
-                distributedRun('distributed-a', 'run-a', 'running', 20),
-            ],
-        }));
+        const nonTerminalTie = reconcile(
+            nonTerminalMutation,
+            query('live', {
+                runs: [controlRun('run-a', 20)],
+                distributedRuns: [
+                    distributedRun('distributed-a', 'run-a', 'running', 20)
+                ]
+            })
+        );
         const terminalMutation = projectMonitorMutation(
             current,
             context.key,
-            distributedRun('distributed-a', 'run-a', 'failed', 30),
+            distributedRun('distributed-a', 'run-a', 'failed', 30)
         );
         const errorRichQueryRun = distributedRun(
             'distributed-a',
             'run-a',
             'failed',
             30,
-            { error: { code: 'QUERY_FAILURE', message: 'Query has evidence.' } },
+            { error: { code: 'QUERY_FAILURE', message: 'Query has evidence.' } }
         );
-        const errorRichQuery = reconcile(terminalMutation, query('live', {
-            runs: [controlRun('run-a', 30)],
-            distributedRuns: [errorRichQueryRun],
-        }));
+        const errorRichQuery = reconcile(
+            terminalMutation,
+            query('live', {
+                runs: [controlRun('run-a', 30)],
+                distributedRuns: [errorRichQueryRun]
+            })
+        );
         const errorRichMutationRun = distributedRun(
             'distributed-a',
             'run-a',
@@ -948,36 +1020,39 @@ describe('Recipe Console Monitor coherent state', () => {
             {
                 error: {
                     code: 'MUTATION_FAILURE',
-                    message: 'Mutation has evidence.',
-                },
-            },
+                    message: 'Mutation has evidence.'
+                }
+            }
         );
         const errorRichMutation = reconcile(
             projectMonitorMutation(
                 current,
                 context.key,
-                errorRichMutationRun,
+                errorRichMutationRun
             ),
             query('live', {
                 runs: [controlRun('run-a', 30)],
                 distributedRuns: [
-                    distributedRun('distributed-a', 'run-a', 'failed', 30),
-                ],
-            }),
+                    distributedRun('distributed-a', 'run-a', 'failed', 30)
+                ]
+            })
         );
-        const richCurrent = reconcile(current, query('live', {
-            runs: [controlRun('run-a', 30)],
-            distributedRuns: [errorRichQueryRun],
-        }));
+        const richCurrent = reconcile(
+            current,
+            query('live', {
+                runs: [controlRun('run-a', 30)],
+                distributedRuns: [errorRichQueryRun]
+            })
+        );
         const plainMutationAgainstRichQuery = projectMonitorMutation(
             richCurrent,
             context.key,
-            distributedRun('distributed-a', 'run-a', 'failed', 30),
+            distributedRun('distributed-a', 'run-a', 'failed', 30)
         );
 
         expect(nonTerminalTie.source).toMatchObject({
             origin: 'mutation',
-            distributedRun: { state: 'ready' },
+            distributedRun: { state: 'ready' }
         });
         expect(errorRichQuery.source?.distributedRun).toBe(errorRichQueryRun);
         expect(errorRichQuery.source?.origin).toBe('query');
@@ -991,15 +1066,18 @@ describe('Recipe Console Monitor coherent state', () => {
 
 describe('Recipe Console Monitor artifact operation state', () => {
     function withCurrentArtifact() {
-        let state = reconcile(createInitialMonitorWorkspaceState(), query(
-            'live',
-            { runs: [controlRun()], distributedRuns: [distributedRun()] },
-        ));
+        let state = reconcile(
+            createInitialMonitorWorkspaceState(),
+            query(
+                'live',
+                { runs: [controlRun()], distributedRuns: [distributedRun()] }
+            )
+        );
         const loading = beginMonitorOperation(state, context.key, 'load-artifact');
         state = completeMonitorArtifactOperation(
             loading.state,
             loading.authority,
-            artifact('distributed-a', 100),
+            artifact('distributed-a', 100)
         );
         return state;
     }
@@ -1009,22 +1087,22 @@ describe('Recipe Console Monitor artifact operation state', () => {
         const pending = beginMonitorOperation(ready, context.key, 'load-artifact');
         const provenance = Object.assign(new Error('artifact endpoint failed'), {
             status: 403,
-            authorizationRequired: true,
+            authorizationRequired: true
         });
         const failed = failMonitorOperation(
             pending.state,
             pending.authority,
-            provenance,
+            provenance
         );
 
         expect(pending.state.artifact).toMatchObject({
             status: 'pending',
-            bundle: { generatedAtEpochMs: 100 },
+            bundle: { generatedAtEpochMs: 100 }
         });
         expect(failed.artifact).toMatchObject({
             status: 'error',
             bundle: { generatedAtEpochMs: 100 },
-            error: 'artifact endpoint failed',
+            error: 'artifact endpoint failed'
         });
         expect(failed.operationError).toBe(provenance);
     });
@@ -1035,12 +1113,12 @@ describe('Recipe Console Monitor artifact operation state', () => {
         const mismatched = completeMonitorArtifactOperation(
             pending.state,
             pending.authority,
-            artifact('distributed-other', 200),
+            artifact('distributed-other', 200)
         );
 
         expect(mismatched.artifact).toMatchObject({
             status: 'error',
-            bundle: { distributedRunId: 'distributed-a', generatedAtEpochMs: 100 },
+            bundle: { distributedRunId: 'distributed-a', generatedAtEpochMs: 100 }
         });
         expect(mismatched.artifact.error).toContain('different distributed run');
     });
@@ -1051,18 +1129,18 @@ describe('Recipe Console Monitor artifact operation state', () => {
             state,
             context.key,
             'load-artifact',
-            50,
+            50
         );
         const second = beginMonitorOperation(first.state, context.key, 'export-artifact');
         const afterLateFailure = failMonitorOperation(
             second.state,
             first.authority,
-            new Error('late failure'),
+            new Error('late failure')
         );
         const afterLateSuccess = completeMonitorArtifactOperation(
             second.state,
             first.authority,
-            artifact('distributed-a', 999),
+            artifact('distributed-a', 999)
         );
 
         expect(first.authority.generation).toBe(50);
@@ -1073,16 +1151,16 @@ describe('Recipe Console Monitor artifact operation state', () => {
         const nextContext = createMonitorWorkspaceContext({
             baseUrl: 'https://control.test/root',
             controlRunId: 'run-a',
-            distributedRunId: 'distributed-b',
+            distributedRunId: 'distributed-b'
         });
         const changed = reconcileMonitorWorkspaceState(second.state, {
             context: nextContext,
-            query: query('connecting'),
+            query: query('connecting')
         });
         expect(completeMonitorArtifactOperation(
             changed,
             second.authority,
-            artifact('distributed-a', 999),
+            artifact('distributed-a', 999)
         )).toBe(changed);
     });
 });

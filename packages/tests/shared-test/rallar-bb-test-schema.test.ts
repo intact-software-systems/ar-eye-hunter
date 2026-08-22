@@ -2,34 +2,25 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { controlOpenApiSpec } from '../../../apps/rallar-black-box-control-server/src/routes/swagger-routes.ts';
+import { buildFlowBuilderRecipe, buildFlowBuilderRunnerScenario, FLOW_BUILDER_TEMPLATES } from '../../../apps/rallar-black-box/src/flow-builder.ts';
+import { manualRecipeSnippet, type ManualActionHistoryEntry } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
+import { RUN_MANAGER_COMMAND_PRESETS } from '../../../apps/rallar-black-box/src/run-manager-presets.ts';
+import { BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA } from '../../shared-test/black-box-runner/schema.ts';
+import { projectDistributedRecipeCatalog } from '../../shared-test/rallar-bb-test/mod.ts';
+import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '../../shared-test/rallar-bb-test/recipe-fixtures.ts';
 import {
-    BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA,
-} from '../../shared-test/black-box-runner/schema.ts';
-import {
+    formatJsonSchemaValidationErrors,
     RALLAR_BLACK_BOX_COMMAND_CAPABILITIES,
     RALLAR_BLACK_BOX_CONTROL_COMMAND_ENVELOPE_SCHEMA,
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
     RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION,
     RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA,
     RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
-    formatJsonSchemaValidationErrors,
     validateJsonSchema,
-    validateRallarBlackBoxRecipeCompatibility,
+    validateRallarBlackBoxRecipeCompatibility
 } from '../../shared-test/rallar-bb-test/schema.ts';
-import {
-    RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
-    type RallarBlackBoxTestRecipe,
-} from '../../shared-test/rallar-bb-test/types.ts';
-import { controlOpenApiSpec } from '../../../apps/rallar-black-box-control-server/src/routes/swagger-routes.ts';
-import {
-    FLOW_BUILDER_TEMPLATES,
-    buildFlowBuilderRecipe,
-    buildFlowBuilderRunnerScenario,
-} from '../../../apps/rallar-black-box/src/flow-builder.ts';
-import { manualRecipeSnippet, type ManualActionHistoryEntry } from '../../../apps/rallar-black-box/src/manual-workbench.ts';
-import { RALLAR_BLACK_BOX_RECIPE_FIXTURES } from '../../shared-test/rallar-bb-test/recipe-fixtures.ts';
-import { RUN_MANAGER_COMMAND_PRESETS } from '../../../apps/rallar-black-box/src/run-manager-presets.ts';
-import { projectDistributedRecipeCatalog } from '../../shared-test/rallar-bb-test/mod.ts';
+import { RALLAR_BLACK_BOX_TEST_COMMAND_KINDS, type RallarBlackBoxTestRecipe } from '../../shared-test/rallar-bb-test/types.ts';
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const appExamplesRoot = path.join(repoRoot, 'apps/rallar-black-box/examples');
@@ -38,11 +29,11 @@ const runnerTestsRoot = path.join(repoRoot, 'packages/shared-test/black-box-runn
 const rallarBbTestRoot = path.join(repoRoot, 'packages/shared-test/rallar-bb-test');
 const goldenCompatibilityCorpusPath = path.join(
     rallarBbTestRoot,
-    'fixtures/schema/v1/golden-compatibility-corpus.json',
+    'fixtures/schema/v1/golden-compatibility-corpus.json'
 );
 const schemaCompatibilityGuidePath = path.join(
     rallarBbTestRoot,
-    'docs/schema-compatibility-guide.md',
+    'docs/schema-compatibility-guide.md'
 );
 
 function readJsonFile(filePath: string): unknown {
@@ -50,7 +41,7 @@ function readJsonFile(filePath: string): unknown {
 }
 
 function listJsonFiles(root: string): string[] {
-    return readdirSync(root, { withFileTypes: true }).flatMap(entry => {
+    return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
         const entryPath = path.join(root, entry.name);
 
         if (entry.isDirectory()) {
@@ -93,13 +84,13 @@ function commandKindsInCommand(command: RallarBlackBoxTestRecipe['commands'][num
     if (command.kind === 'parallel') {
         return [
             command.kind,
-            ...command.groups.flatMap(group => group.commands.flatMap(commandKindsInCommand)),
+            ...command.groups.flatMap((group) => group.commands.flatMap(commandKindsInCommand))
         ];
     }
     if ((command.kind === 'recipe.load' || command.kind === 'recipe.run') && command.recipe) {
         return [
             command.kind,
-            ...command.recipe.commands.flatMap(commandKindsInCommand),
+            ...command.recipe.commands.flatMap(commandKindsInCommand)
         ];
     }
     return [command.kind];
@@ -114,24 +105,24 @@ function inlineRecipesInManifest(manifest: unknown): readonly RallarBlackBoxTest
         return [];
     }
 
-    const manifestRecipes = (manifest as { recipes?: unknown }).recipes;
+    const manifestRecipes = (manifest as { recipes?: unknown; }).recipes;
     if (!Array.isArray(manifestRecipes)) {
         return [];
     }
 
-    return manifestRecipes.flatMap(entry => {
+    return manifestRecipes.flatMap((entry) => {
         if (!entry || typeof entry !== 'object' || !('recipe' in entry)) {
             return [];
         }
 
-        const recipe = (entry as { recipe?: unknown }).recipe;
+        const recipe = (entry as { recipe?: unknown; }).recipe;
         return recipe ? [recipe as RallarBlackBoxTestRecipe] : [];
     });
 }
 
 function jsonCodeBlocks(markdown: string): readonly unknown[] {
     return [...markdown.matchAll(/```json\n([\s\S]*?)\n```/g)]
-        .map(match => JSON.parse(match[1]));
+        .map((match) => JSON.parse(match[1]));
 }
 
 describe('rallar-bb-test capability and schema contract', () => {
@@ -149,23 +140,23 @@ describe('rallar-bb-test capability and schema contract', () => {
                 recipe: {
                     schemaVersion: 2,
                     recipeId: 'schema-invalid-preflight-clean',
-                    commands: [{ kind: 'health' }],
-                } as unknown as RallarBlackBoxTestRecipe,
-            }],
+                    commands: [{ kind: 'health' }]
+                } as unknown as RallarBlackBoxTestRecipe
+            }]
         });
 
         expect(projection.entries[0]?.preflight.errors).toEqual([]);
         expect(projection.entries[0]?.schema).toMatchObject({
             ok: false,
             status: 'invalid',
-            legacy: false,
+            legacy: false
         });
         expect(projection.entries[0]?.schema.errors.join('\n')).toContain('$.schemaVersion');
     });
 
     it('keeps command capability metadata in lockstep with command kinds', () => {
-        expect(RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map(capability => capability.kind)).toEqual(
-            RALLAR_BLACK_BOX_TEST_COMMAND_KINDS,
+        expect(RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map((capability) => capability.kind)).toEqual(
+            RALLAR_BLACK_BOX_TEST_COMMAND_KINDS
         );
 
         for (const capability of RALLAR_BLACK_BOX_COMMAND_CAPABILITIES) {
@@ -177,7 +168,7 @@ describe('rallar-bb-test capability and schema contract', () => {
 
         expectValid(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
             kind: 'health',
-            includeRtcDiagnostics: true,
+            includeRtcDiagnostics: true
         });
     });
 
@@ -185,7 +176,7 @@ describe('rallar-bb-test capability and schema contract', () => {
         const capabilityRecipe: RallarBlackBoxTestRecipe = {
             schemaVersion: RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION,
             recipeId: 'all-capability-examples',
-            commands: RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map(capability => capability.example),
+            commands: RALLAR_BLACK_BOX_COMMAND_CAPABILITIES.map((capability) => capability.example)
         };
         expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, capabilityRecipe);
 
@@ -193,7 +184,7 @@ describe('rallar-bb-test capability and schema contract', () => {
             expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, fixture.recipe);
         }
 
-        for (const fileName of readdirSync(appExamplesRoot).filter(name => name.endsWith('.recipe.json'))) {
+        for (const fileName of readdirSync(appExamplesRoot).filter((name) => name.endsWith('.recipe.json'))) {
             expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, readJsonFile(path.join(appExamplesRoot, fileName)));
         }
 
@@ -206,7 +197,7 @@ describe('rallar-bb-test capability and schema contract', () => {
             label: 'Health',
             atEpochMs: 123,
             commandIds: ['manual-health-1'],
-            commands: [{ kind: 'health', commandId: 'manual-health-1' }],
+            commands: [{ kind: 'health', commandId: 'manual-health-1' }]
         };
         expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, JSON.parse(manualRecipeSnippet([manualEntry])));
 
@@ -217,17 +208,17 @@ describe('rallar-bb-test capability and schema contract', () => {
 
     it('keeps the app-local RTC example self-contained for headless browser agents', () => {
         const recipe = readJsonFile(
-            path.join(appExamplesRoot, 'rallar-server-rtc-connect-send.recipe.json'),
+            path.join(appExamplesRoot, 'rallar-server-rtc-connect-send.recipe.json')
         ) as RallarBlackBoxTestRecipe;
 
         expect(recipe.metadata?.requires).not.toEqual(expect.arrayContaining([
-            expect.stringContaining('Run rallar-server-group-ws-setup first'),
+            expect.stringContaining('Run rallar-server-group-ws-setup first')
         ]));
-        expect(recipe.commands.slice(0, 4).map(command => command.kind)).toEqual([
+        expect(recipe.commands.slice(0, 4).map((command) => command.kind)).toEqual([
             'http.request',
             'http.request',
             'http.request',
-            'rtc.connect',
+            'rtc.connect'
         ]);
         expect(recipe.commands[0]).toMatchObject({
             kind: 'http.request',
@@ -237,9 +228,9 @@ describe('rallar-bb-test capability and schema contract', () => {
                     'rallar-black-box-bb-rtc-ensure-group',
                 body: {
                     groupId: 'bb-group',
-                    joinMode: 'open',
-                },
-            },
+                    joinMode: 'open'
+                }
+            }
         });
         expect(recipe.commands[1]).toMatchObject({
             kind: 'http.request',
@@ -248,9 +239,9 @@ describe('rallar-bb-test capability and schema contract', () => {
                 path: '/api/state/apps/ar-eye-hunter/workspaces/default/groups/bb-group/' +
                     'members/{auth.clientId}/requests/rallar-black-box-bb-rtc-ensure-member-scope',
                 body: {
-                    status: 'active',
-                },
-            },
+                    status: 'active'
+                }
+            }
         });
         expect(recipe.commands[2]).toMatchObject({
             kind: 'http.request',
@@ -259,9 +250,9 @@ describe('rallar-bb-test capability and schema contract', () => {
                 path: '/api/state/apps/ar-eye-hunter/workspaces/default/groups/bb-group/' +
                     'sessions/{auth.sessionId}/requests/rallar-black-box-bb-rtc-ensure-session-scope',
                 body: {
-                    principalId: '{auth.clientId}',
-                },
-            },
+                    principalId: '{auth.clientId}'
+                }
+            }
         });
         expect(recipe.commands[3]).toMatchObject({
             kind: 'rtc.connect',
@@ -271,8 +262,8 @@ describe('rallar-bb-test capability and schema contract', () => {
             roomRef: {
                 applicationId: 'ar-eye-hunter',
                 workspaceId: 'default',
-                groupId: 'bb-group',
-            },
+                groupId: 'bb-group'
+            }
         });
     });
 
@@ -281,7 +272,7 @@ describe('rallar-bb-test capability and schema contract', () => {
             kind: 'http.request',
             commandId: 'accepted-http-statuses',
             request: { url: 'https://api.example.test' },
-            response: { acceptedStatusCodes: [200, 201, 409] },
+            response: { acceptedStatusCodes: [200, 201, 409] }
         });
 
         for (const acceptedStatusCodes of [[], [99], [600], [200.5]]) {
@@ -289,7 +280,7 @@ describe('rallar-bb-test capability and schema contract', () => {
                 kind: 'http.request',
                 commandId: 'invalid-http-statuses',
                 request: { url: 'https://api.example.test' },
-                response: { acceptedStatusCodes },
+                response: { acceptedStatusCodes }
             });
             expect(result.ok).toBe(false);
         }
@@ -301,7 +292,7 @@ describe('rallar-bb-test capability and schema contract', () => {
 
         expect(corpus.schemaVersion).toBe(1);
         const allRecipeCommandKinds = new Set(
-            [...corpus.validRecipes, ...inlineRecipes].flatMap(commandKindsInRecipe),
+            [...corpus.validRecipes, ...inlineRecipes].flatMap(commandKindsInRecipe)
         );
         expect([...allRecipeCommandKinds].sort()).toEqual([...RALLAR_BLACK_BOX_TEST_COMMAND_KINDS].sort());
 
@@ -310,8 +301,9 @@ describe('rallar-bb-test capability and schema contract', () => {
             const compatibility = validateRallarBlackBoxRecipeCompatibility(recipe);
             expect(compatibility.ok, compatibility.ok ? undefined : formatJsonSchemaValidationErrors(compatibility.errors)).toBe(true);
             if (recipe.schemaVersion === undefined) {
-                expect(compatibility.warnings.map(warning => warning.path)).toContain('$.schemaVersion');
-            } else {
+                expect(compatibility.warnings.map((warning) => warning.path)).toContain('$.schemaVersion');
+            }
+            else {
                 expect(compatibility.warnings).toEqual([]);
                 expect(compatibility.schemaVersion).toBe(RALLAR_BLACK_BOX_RECIPE_SCHEMA_VERSION);
             }
@@ -326,7 +318,7 @@ describe('rallar-bb-test capability and schema contract', () => {
             expect(result.ok, invalid.caseId).toBe(false);
             if (!result.ok) {
                 const text = formatJsonSchemaValidationErrors(result.errors);
-                invalid.expectedErrors.forEach(expected => {
+                invalid.expectedErrors.forEach((expected) => {
                     expect(text, invalid.caseId).toContain(expected);
                 });
             }
@@ -337,7 +329,7 @@ describe('rallar-bb-test capability and schema contract', () => {
             expect(result.ok, invalid.caseId).toBe(false);
             if (!result.ok) {
                 const text = formatJsonSchemaValidationErrors(result.errors);
-                invalid.expectedErrors.forEach(expected => {
+                invalid.expectedErrors.forEach((expected) => {
                     expect(text, invalid.caseId).toContain(expected);
                 });
             }
@@ -356,7 +348,8 @@ describe('rallar-bb-test capability and schema contract', () => {
                     expect(compatibility.ok, compatibility.ok ? undefined : formatJsonSchemaValidationErrors(compatibility.errors)).toBe(true);
                     expect(compatibility.warnings).toEqual([]);
                 }
-            } else {
+            }
+            else {
                 expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, block);
                 const compatibility = validateRallarBlackBoxRecipeCompatibility(block);
                 expect(compatibility.ok, compatibility.ok ? undefined : formatJsonSchemaValidationErrors(compatibility.errors)).toBe(true);
@@ -381,14 +374,14 @@ describe('rallar-bb-test capability and schema contract', () => {
                         maxStartDriftMs: 50,
                         maxJitterMs: 30,
                         minSendSuccessRatio: 0.95,
-                        failOnBackpressure: true,
+                        failOnBackpressure: true
                     },
                     commands: [
                         {
                             kind: 'health',
-                            commandId: 'loop-child-health',
-                        },
-                    ],
+                            commandId: 'loop-child-health'
+                        }
+                    ]
                 },
                 {
                     kind: 'parallel',
@@ -397,13 +390,13 @@ describe('rallar-bb-test capability and schema contract', () => {
                     groups: [
                         {
                             groupId: 'left',
-                            commands: [{ kind: 'health', commandId: 'left-health' }],
+                            commands: [{ kind: 'health', commandId: 'left-health' }]
                         },
                         {
                             groupId: 'right',
-                            commands: [{ kind: 'stats', commandId: 'right-stats' }],
-                        },
-                    ],
+                            commands: [{ kind: 'stats', commandId: 'right-stats' }]
+                        }
+                    ]
                 },
                 {
                     kind: 'wait',
@@ -414,17 +407,17 @@ describe('rallar-bb-test capability and schema contract', () => {
                         topic: 'rallar.browser.realtime.message',
                         transport: 'realtime',
                         payloadPath: 'data.topic',
-                        equals: 'room.position',
-                    },
+                        equals: 'room.position'
+                    }
                 },
                 {
                     kind: 'assert',
                     commandId: 'assert-message-count',
                     source: 'state.messages.length',
                     operator: 'gte',
-                    expected: 1,
-                },
-            ],
+                    expected: 1
+                }
+            ]
         };
 
         expectValid(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, compositeRecipe);
@@ -435,9 +428,9 @@ describe('rallar-bb-test capability and schema contract', () => {
             commands: [
                 {
                     kind: 'http.request',
-                    commandId: 'missing-request',
-                },
-            ],
+                    commandId: 'missing-request'
+                }
+            ]
         });
         expect(invalidNested.ok).toBe(false);
         if (!invalidNested.ok) {
@@ -451,9 +444,9 @@ describe('rallar-bb-test capability and schema contract', () => {
             groups: [
                 {
                     groupId: 'only',
-                    commands: [{ kind: 'health' }],
-                },
-            ],
+                    commands: [{ kind: 'health' }]
+                }
+            ]
         });
         expect(invalidConcurrency.ok).toBe(false);
         if (!invalidConcurrency.ok) {
@@ -466,8 +459,8 @@ describe('rallar-bb-test capability and schema contract', () => {
             commands: [{ kind: 'health' }],
             thresholds: {
                 minSendSuccessRatio: 1.5,
-                unknownThreshold: true,
-            },
+                unknownThreshold: true
+            }
         });
         expect(invalidLoopThreshold.ok).toBe(false);
         if (!invalidLoopThreshold.ok) {
@@ -480,8 +473,8 @@ describe('rallar-bb-test capability and schema contract', () => {
             kind: 'wait',
             commandId: 'wait-invalid',
             match: {
-                kind: 'unknown-event-kind',
-            },
+                kind: 'unknown-event-kind'
+            }
         });
         expect(invalidWait.ok).toBe(false);
         if (!invalidWait.ok) {
@@ -492,7 +485,7 @@ describe('rallar-bb-test capability and schema contract', () => {
             kind: 'assert',
             commandId: 'assert-invalid',
             source: 'state.messages.length',
-            operator: 'greaterThan',
+            operator: 'greaterThan'
         });
         expect(invalidAssert.ok).toBe(false);
         if (!invalidAssert.ok) {
@@ -510,8 +503,8 @@ describe('rallar-bb-test capability and schema contract', () => {
             readiness: {
                 minReadyPeers: 2,
                 timeoutMs: 10_000,
-                intervalMs: 100,
-            },
+                intervalMs: 100
+            }
         });
 
         const invalidReadiness = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
@@ -521,8 +514,8 @@ describe('rallar-bb-test capability and schema contract', () => {
             readiness: {
                 minReadyPeers: 0,
                 timeoutMs: -1,
-                intervalMs: 1.5,
-            },
+                intervalMs: 1.5
+            }
         });
 
         expect(invalidReadiness.ok).toBe(false);
@@ -552,13 +545,13 @@ describe('rallar-bb-test capability and schema contract', () => {
                     topic: 'room.black-box.rtc-realtime.position',
                     seq: '{stream.index}',
                     frame: '{stream.iteration}',
-                    tMs: '{stream.elapsedMs}',
-                },
+                    tMs: '{stream.elapsedMs}'
+                }
             },
             thresholds: {
                 minSendSuccessRatio: 0.99,
-                maxDroppedFrames: 0,
-            },
+                maxDroppedFrames: 0
+            }
         });
 
         const invalidNumbers = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
@@ -571,8 +564,8 @@ describe('rallar-bb-test capability and schema contract', () => {
             maxInFlight: 0,
             send: {},
             thresholds: {
-                minSendSuccessRatio: 1.2,
-            },
+                minSendSuccessRatio: 1.2
+            }
         });
         expect(invalidNumbers.ok).toBe(false);
         if (!invalidNumbers.ok) {
@@ -585,7 +578,7 @@ describe('rallar-bb-test capability and schema contract', () => {
         const missingBounds = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
             kind: 'rtc.stream',
             commandId: 'stream-missing-bounds',
-            send: {},
+            send: {}
         });
         expect(missingBounds.ok).toBe(false);
         if (!missingBounds.ok) {
@@ -598,14 +591,14 @@ describe('rallar-bb-test capability and schema contract', () => {
     it('validates every shared-test black-box-runner example and test scenario', () => {
         const recipePaths = [
             ...listJsonFiles(runnerExamplesRoot),
-            ...listJsonFiles(runnerTestsRoot),
+            ...listJsonFiles(runnerTestsRoot)
         ];
         expect(recipePaths.length).toBeGreaterThan(0);
 
         for (const recipePath of recipePaths) {
             expectValid(
                 BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA,
-                readJsonFile(recipePath),
+                readJsonFile(recipePath)
             );
         }
     });
@@ -620,22 +613,22 @@ describe('rallar-bb-test capability and schema contract', () => {
             stableForMs: 100,
             sync: {
                 reason: 'schema-test',
-                transport: 'ws',
+                transport: 'ws'
             },
             conditions: [
                 {
                     source: 'value',
                     path: 'title',
                     operator: 'equals',
-                    expected: 'Ready',
+                    expected: 'Ready'
                 },
                 {
                     source: 'health',
                     path: 'pendingUpdateCount',
                     operator: 'equals',
-                    expected: 0,
-                },
-            ],
+                    expected: 0
+                }
+            ]
         });
 
         const missingRegisterPolicy = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
@@ -648,15 +641,15 @@ describe('rallar-bb-test capability and schema contract', () => {
                     {
                         kind: 'register.set',
                         path: ['title'],
-                        value: 'Ready',
-                    },
-                ],
-            },
+                        value: 'Ready'
+                    }
+                ]
+            }
         });
         expect(missingRegisterPolicy.ok).toBe(false);
         if (!missingRegisterPolicy.ok) {
             expect(formatJsonSchemaValidationErrors(missingRegisterPolicy.errors)).toContain(
-                'Missing required property policy',
+                'Missing required property policy'
             );
         }
 
@@ -670,10 +663,10 @@ describe('rallar-bb-test capability and schema contract', () => {
                     {
                         kind: 'number.max',
                         path: ['score'],
-                        value: '10',
-                    },
-                ],
-            },
+                        value: '10'
+                    }
+                ]
+            }
         });
         expect(wrongNumericValue.ok).toBe(false);
         if (!wrongNumericValue.ok) {
@@ -690,8 +683,8 @@ describe('rallar-bb-test capability and schema contract', () => {
             commandId: 'health-1',
             command: {
                 kind: 'health',
-                commandId: 'health-1',
-            },
+                commandId: 'health-1'
+            }
         });
 
         expectValid(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA, {
@@ -699,25 +692,25 @@ describe('rallar-bb-test capability and schema contract', () => {
             group: {
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
-                groupId: 'bb-group',
+                groupId: 'bb-group'
             },
             recipes: [
                 {
                     recipeId: 'health-only',
                     role: 'all-agents',
-                    required: true,
-                },
+                    required: true
+                }
             ],
             targetPolicy: {
                 mode: 'all-online-group-members',
-                expectedParticipantCount: 2,
+                expectedParticipantCount: 2
             },
             ackTimeoutMs: 5_000,
             barrier: {
                 enabled: true,
-                timeoutMs: 5_000,
+                timeoutMs: 5_000
             },
-            startMode: 'manual',
+            startMode: 'manual'
         });
 
         const spec = controlOpenApiSpec(new Request('http://localhost:5180/api/openapi.json')) as {
@@ -728,7 +721,7 @@ describe('rallar-bb-test capability and schema contract', () => {
                 post?: {
                     requestBody?: {
                         content?: Record<string, {
-                            examples?: Record<string, { value: unknown }>;
+                            examples?: Record<string, { value: unknown; }>;
                         }>;
                     };
                 };
@@ -738,11 +731,11 @@ describe('rallar-bb-test capability and schema contract', () => {
         const manifestSchema = spec.components?.schemas?.DistributedRunManifest;
         expect(commandSchema).toMatchObject({
             title: RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA.title,
-            oneOf: expect.any(Array),
+            oneOf: expect.any(Array)
         });
         expect(manifestSchema).toMatchObject({
             title: RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA.title,
-            type: 'object',
+            type: 'object'
         });
         expect(JSON.stringify(commandSchema)).toContain('#/components/schemas/RallarBlackBoxTestCommand');
         expect(JSON.stringify(manifestSchema)).toContain('Rallar black-box distributed run manifest');
@@ -752,7 +745,7 @@ describe('rallar-bb-test capability and schema contract', () => {
             ?.post?.requestBody?.content?.['application/json']?.examples ?? {};
         expect(Object.keys(commandExamples).length).toBeGreaterThan(0);
         for (const example of Object.values(commandExamples)) {
-            const value = example.value as { command?: unknown };
+            const value = example.value as { command?: unknown; };
             expectValid(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, value.command);
         }
     });
@@ -760,7 +753,7 @@ describe('rallar-bb-test capability and schema contract', () => {
     it('returns actionable schema errors for invalid JSON before dispatch', () => {
         const commandResult = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
             kind: 'http.request',
-            unexpected: true,
+            unexpected: true
         });
 
         expect(commandResult.ok).toBe(false);
@@ -771,7 +764,7 @@ describe('rallar-bb-test capability and schema contract', () => {
         }
 
         const recipeResult = validateJsonSchema(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, {
-            commands: [{ kind: 'health' }],
+            commands: [{ kind: 'health' }]
         });
         expect(recipeResult.ok).toBe(false);
         if (!recipeResult.ok) {
@@ -780,7 +773,7 @@ describe('rallar-bb-test capability and schema contract', () => {
 
         const healthDiagnosticsFlagResult = validateJsonSchema(RALLAR_BLACK_BOX_TEST_COMMAND_SCHEMA, {
             kind: 'health',
-            includeRtcDiagnostics: 'yes',
+            includeRtcDiagnostics: 'yes'
         });
         expect(healthDiagnosticsFlagResult.ok).toBe(false);
         if (!healthDiagnosticsFlagResult.ok) {

@@ -114,9 +114,9 @@ Goal: allow GitHub-hosted headless-worker jobs to terminate cleanly after a dist
 
 ```ts
 export type HeadlessWorkerExitMode =
-  | "signal"
-  | "after-target-distributed-run-terminal"
-  | "after-idle-ms";
+    | 'signal'
+    | 'after-target-distributed-run-terminal'
+    | 'after-idle-ms';
 ```
 
 - Produces config fields:
@@ -137,42 +137,48 @@ Add tests that assert:
 
 ```ts
 const config = readHeadlessWorkerConfig({
-  env: {
-    RALLAR_BLACK_BOX_SPA_URL: "https://blackbox.example.test",
-    RALLAR_BLACK_BOX_CONTROL_URL: "wss://control.example.test/control",
-    RALLAR_API_BASE_URL: "https://api.example.test",
-    RALLAR_BLACK_BOX_RUN_ID: "run-1",
-    RALLAR_BLACK_BOX_ROOM_ID: "room-1",
-    RALLAR_BLACK_BOX_USERNAME: "alice",
-    RALLAR_BLACK_BOX_PASSWORD: "secret",
-    RALLAR_BLACK_BOX_EXIT_MODE: "after-target-distributed-run-terminal",
-    RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID: "dist-run-1",
-    RALLAR_CONTROL_HTTP_URL: "https://control.example.test",
-    RALLAR_BLACK_BOX_DISTRIBUTED_POLL_INTERVAL_MS: "2500",
-  },
+    env: {
+        RALLAR_BLACK_BOX_SPA_URL: 'https://blackbox.example.test',
+        RALLAR_BLACK_BOX_CONTROL_URL: 'wss://control.example.test/control',
+        RALLAR_API_BASE_URL: 'https://api.example.test',
+        RALLAR_BLACK_BOX_RUN_ID: 'run-1',
+        RALLAR_BLACK_BOX_ROOM_ID: 'room-1',
+        RALLAR_BLACK_BOX_USERNAME: 'alice',
+        RALLAR_BLACK_BOX_PASSWORD: 'secret',
+        RALLAR_BLACK_BOX_EXIT_MODE: 'after-target-distributed-run-terminal',
+        RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID: 'dist-run-1',
+        RALLAR_CONTROL_HTTP_URL: 'https://control.example.test',
+        RALLAR_BLACK_BOX_DISTRIBUTED_POLL_INTERVAL_MS: '2500'
+    }
 });
 
-expect(config.exitMode).toBe("after-target-distributed-run-terminal");
-expect(config.targetDistributedRunId).toBe("dist-run-1");
-expect(config.controlHttpUrl).toBe("https://control.example.test");
+expect(config.exitMode).toBe('after-target-distributed-run-terminal');
+expect(config.targetDistributedRunId).toBe('dist-run-1');
+expect(config.controlHttpUrl).toBe('https://control.example.test');
 expect(config.distributedPollIntervalMs).toBe(2500);
 ```
 
 Also assert:
 
 ```ts
-expect(readHeadlessWorkerConfig({ env: baseEnv }).exitMode).toBe("signal");
-expect(() => readHeadlessWorkerConfig({
-  env: Object.assign({}, baseEnv, { RALLAR_BLACK_BOX_EXIT_MODE: "forever" }),
-}))
-  .toThrow("RALLAR_BLACK_BOX_EXIT_MODE must be signal, after-target-distributed-run-terminal, or after-idle-ms");
-expect(() => readHeadlessWorkerConfig({
-  env: Object.assign({}, baseEnv, {
-    RALLAR_BLACK_BOX_EXIT_MODE: "after-idle-ms",
-    RALLAR_BLACK_BOX_IDLE_EXIT_MS: "0",
-  }),
-}))
-  .toThrow("RALLAR_BLACK_BOX_IDLE_EXIT_MS must be a positive integer");
+expect(readHeadlessWorkerConfig({ env: baseEnv }).exitMode).toBe('signal');
+expect(() =>
+    readHeadlessWorkerConfig({
+        env: Object.assign({}, baseEnv, { RALLAR_BLACK_BOX_EXIT_MODE: 'forever' })
+    })
+)
+    .toThrow(
+        'RALLAR_BLACK_BOX_EXIT_MODE must be signal, after-target-distributed-run-terminal, or after-idle-ms'
+    );
+expect(() =>
+    readHeadlessWorkerConfig({
+        env: Object.assign({}, baseEnv, {
+            RALLAR_BLACK_BOX_EXIT_MODE: 'after-idle-ms',
+            RALLAR_BLACK_BOX_IDLE_EXIT_MS: '0'
+        })
+    })
+)
+    .toThrow('RALLAR_BLACK_BOX_IDLE_EXIT_MS must be a positive integer');
 ```
 
 - [x] **Step 2: Run config tests and verify failure**
@@ -190,7 +196,7 @@ Expected before implementation: FAIL because `exitMode` fields are missing.
 Add the type, defaults, parsing helpers, and config fields. Use:
 
 ```ts
-const DEFAULT_EXIT_MODE: HeadlessWorkerExitMode = "signal";
+const DEFAULT_EXIT_MODE: HeadlessWorkerExitMode = 'signal';
 const DEFAULT_DISTRIBUTED_POLL_INTERVAL_MS = 5_000;
 ```
 
@@ -246,7 +252,7 @@ git commit -m "feat: add headless worker exit config"
 Add assertions that `headless-worker.ts` contains:
 
 ```ts
-const TERMINAL_DISTRIBUTED_RUN_STATES = new Set(["passed", "failed", "cancelled", "timed-out"]);
+const TERMINAL_DISTRIBUTED_RUN_STATES = new Set(['passed', 'failed', 'cancelled', 'timed-out']);
 ```
 
 and calls a helper equivalent to:
@@ -260,8 +266,8 @@ Also assert URL redaction covers `controlToken`, `rallarPassword`, `rallarToken`
 Add one assertion that terminal polling treats a missing distributed run as a waiting state, because GitHub agents can start before the operator creates the run:
 
 ```ts
-expect(script).toContain("Distributed run dist-run-1 is not created yet");
-expect(script).toContain("response.status === 404");
+expect(script).toContain('Distributed run dist-run-1 is not created yet');
+expect(script).toContain('response.status === 404');
 ```
 
 - [x] **Step 2: Run worker script tests and verify failure**
@@ -280,17 +286,17 @@ Add helpers:
 
 ```ts
 async function waitForWorkerExit(
-  config: HeadlessWorkerConfig,
-  shutdown: Readonly<{ wait(): Promise<void> }>,
-): Promise<void>
+    config: HeadlessWorkerConfig,
+    shutdown: Readonly<{ wait(): Promise<void>; }>
+): Promise<void>;
 ```
 
 ```ts
-async function waitForDistributedRunTerminal(config: HeadlessWorkerConfig): Promise<void>
+async function waitForDistributedRunTerminal(config: HeadlessWorkerConfig): Promise<void>;
 ```
 
 ```ts
-function distributedRunUrl(config: HeadlessWorkerConfig): string
+function distributedRunUrl(config: HeadlessWorkerConfig): string;
 ```
 
 Use `Promise.race([shutdown.wait(), waitForDistributedRunTerminal(config)])` for terminal mode so SIGTERM still exits promptly. Log each observed distributed-run state change. If `/distributed-runs/{id}` returns `404`, log once per state transition as "not created yet" and keep polling until the idle timeout or a terminal state. Fail fast on `401` or `403` because those indicate bad GitHub/operator token configuration. Treat malformed JSON as retryable for three consecutive polls, then throw with a redacted URL.
@@ -345,11 +351,14 @@ RALLAR_HEADLESS_READY_TIMEOUT_SECONDS
 Extend `packages/tests/hetzner/distributed-recipe-workflow.test.ts` to assert:
 
 ```ts
-const script = await readFile(path.join(repoRoot, "scripts/hetzner/controller/16-wait-for-control-agents.sh"), "utf8");
-expect(script).toContain("RALLAR_BLACK_BOX_AGENT_START_INDEX");
-expect(script).toContain("control_run_snapshot_url");
-expect(script).toContain("Timed out waiting for external control agents");
-expect(script).not.toContain("systemctl is-active");
+const script = await readFile(
+    path.join(repoRoot, 'scripts/hetzner/controller/16-wait-for-control-agents.sh'),
+    'utf8'
+);
+expect(script).toContain('RALLAR_BLACK_BOX_AGENT_START_INDEX');
+expect(script).toContain('control_run_snapshot_url');
+expect(script).toContain('Timed out waiting for external control agents');
+expect(script).not.toContain('systemctl is-active');
 ```
 
 - [x] **Step 2: Run test and verify failure**
@@ -447,22 +456,22 @@ Allowed `operator_phase` values:
 Add assertions:
 
 ```ts
-expect(runnerWorkflow).toContain("agent_source:");
-expect(runnerWorkflow).toContain("operator_phase:");
-expect(runnerWorkflow).toContain("ref: ${{ inputs.ref }}");
-expect(runnerWorkflow).toContain("RALLAR_BLACK_BOX_AGENT_SOURCE");
-expect(runnerWorkflow).toContain("RALLAR_HETZNER_OPERATOR_PHASE");
-expect(runnerWorkflow).toContain("RALLAR_DISTRIBUTED_PREPARE_MARKER");
-expect(runnerWorkflow).toContain("./16-wait-for-control-agents.sh");
+expect(runnerWorkflow).toContain('agent_source:');
+expect(runnerWorkflow).toContain('operator_phase:');
+expect(runnerWorkflow).toContain('ref: ${{ inputs.ref }}');
+expect(runnerWorkflow).toContain('RALLAR_BLACK_BOX_AGENT_SOURCE');
+expect(runnerWorkflow).toContain('RALLAR_HETZNER_OPERATOR_PHASE');
+expect(runnerWorkflow).toContain('RALLAR_DISTRIBUTED_PREPARE_MARKER');
+expect(runnerWorkflow).toContain('./16-wait-for-control-agents.sh');
 expect(runnerWorkflow).toContain('case "${RALLAR_BLACK_BOX_AGENT_SOURCE}" in');
 expect(runnerWorkflow).toContain('case "${RALLAR_HETZNER_OPERATOR_PHASE}" in');
-expect(runnerWorkflow).toContain("inputs.operator_phase != 'prepare'");
+expect(runnerWorkflow).toContain('inputs.operator_phase != \'prepare\'');
 ```
 
 Assert that existing `hetzner` behavior still contains:
 
 ```ts
-expect(runnerWorkflow).toContain("RALLAR_WRITE_HEADLESS_ENV=1 ./09-start-headless-workers.sh");
+expect(runnerWorkflow).toContain('RALLAR_WRITE_HEADLESS_ENV=1 ./09-start-headless-workers.sh');
 ```
 
 - [x] **Step 2: Run tests and verify failure**
@@ -699,13 +708,13 @@ manifest_path: apps/rallar-black-box/manifests/hetzner/07-rtc-messages-principal
 target_agent_count: 50
 agents_per_job: 3
 max_parallel_jobs: 17
-run_id: ""
+run_id: ''
 room_id: hetzner-headless-room
 agent_prefix: controller
 application_id: rallar-server
 workspace_id: default
 ready_timeout_seconds: 300
-terminal_timeout_seconds: ""
+terminal_timeout_seconds: ''
 register_before_login: false
 browser_log_level: warning
 browser_engine: chromium
@@ -742,50 +751,53 @@ https://control.rallar.intactss.com
 Create tests that assert:
 
 ```ts
-const workflow = await readFile(path.join(repoRoot, ".github/workflows/github-free-distributed-recipe.yml"), "utf8");
-expect(workflow).toContain("name: Run GitHub Free Distributed Recipe");
-expect(workflow).toContain("target_agent_count:");
-expect(workflow).toContain("agents_per_job:");
-expect(workflow).toContain("max_parallel_jobs:");
-expect(workflow).toContain("agent_prefix:");
-expect(workflow).toContain("default: controller");
-expect(workflow).toContain("spa_url:");
-expect(workflow).toContain("control_url:");
-expect(workflow).toContain("api_base_url:");
-expect(workflow).toContain("prepare-hetzner:");
-expect(workflow).toContain("operator_phase: prepare");
-expect(workflow).toContain("operator_phase: run");
-expect(workflow).toContain("needs: [plan, prepare-hetzner]");
-expect(workflow).toContain("fromJSON(needs.plan.outputs.matrix)");
-expect(workflow).toContain("max-parallel: ${{ fromJSON(needs.plan.outputs.max_parallel_jobs) }}");
-expect(workflow).toContain("RALLAR_BLACK_BOX_AGENT_START_INDEX");
-expect(workflow).toContain("RALLAR_BLACK_BOX_EXIT_MODE: after-target-distributed-run-terminal");
-expect(workflow).toContain("npm --workspace rallar-black-box run worker:headless");
-expect(workflow).toContain("agent_source: external");
-expect(workflow).toContain("uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml");
+const workflow = await readFile(
+    path.join(repoRoot, '.github/workflows/github-free-distributed-recipe.yml'),
+    'utf8'
+);
+expect(workflow).toContain('name: Run GitHub Free Distributed Recipe');
+expect(workflow).toContain('target_agent_count:');
+expect(workflow).toContain('agents_per_job:');
+expect(workflow).toContain('max_parallel_jobs:');
+expect(workflow).toContain('agent_prefix:');
+expect(workflow).toContain('default: controller');
+expect(workflow).toContain('spa_url:');
+expect(workflow).toContain('control_url:');
+expect(workflow).toContain('api_base_url:');
+expect(workflow).toContain('prepare-hetzner:');
+expect(workflow).toContain('operator_phase: prepare');
+expect(workflow).toContain('operator_phase: run');
+expect(workflow).toContain('needs: [plan, prepare-hetzner]');
+expect(workflow).toContain('fromJSON(needs.plan.outputs.matrix)');
+expect(workflow).toContain('max-parallel: ${{ fromJSON(needs.plan.outputs.max_parallel_jobs) }}');
+expect(workflow).toContain('RALLAR_BLACK_BOX_AGENT_START_INDEX');
+expect(workflow).toContain('RALLAR_BLACK_BOX_EXIT_MODE: after-target-distributed-run-terminal');
+expect(workflow).toContain('npm --workspace rallar-black-box run worker:headless');
+expect(workflow).toContain('agent_source: external');
+expect(workflow).toContain('uses: ./.github/workflows/hetzner-distributed-recipe-runner.yml');
 ```
 
 Also assert it rejects Free-plan unsafe parallelism while reserving one hosted job for the operator:
 
 ```ts
-expect(workflow).toContain("max_parallel_jobs must be between 1 and 19 for GitHub Free");
+expect(workflow).toContain('max_parallel_jobs must be between 1 and 19 for GitHub Free');
 ```
 
 Create tests for `scripts/github-actions/plan-github-free-headless-matrix.mjs` that run the script with Node and assert exact output for the default sizing:
 
 ```ts
 const result = spawnSync(process.execPath, [
-  "scripts/github-actions/plan-github-free-headless-matrix.mjs",
-  "--target-agent-count=50",
-  "--agents-per-job=3",
-  "--max-parallel-jobs=17",
-  "--run-id=gh-free-test",
-], { cwd: repoRoot, encoding: "utf8" });
+    'scripts/github-actions/plan-github-free-headless-matrix.mjs',
+    '--target-agent-count=50',
+    '--agents-per-job=3',
+    '--max-parallel-jobs=17',
+    '--run-id=gh-free-test'
+], { cwd: repoRoot, encoding: 'utf8' });
 
 expect(result.status).toBe(0);
 const output = JSON.parse(result.stdout);
-expect(output.runId).toBe("gh-free-test");
-expect(output.distributedRunId).toBe("dist-gh-free-test");
+expect(output.runId).toBe('gh-free-test');
+expect(output.distributedRunId).toBe('dist-gh-free-test');
 expect(output.matrix).toHaveLength(17);
 expect(output.matrix[0]).toEqual({ shard_index: 1, agent_start_index: 1, agent_count: 3 });
 expect(output.matrix[16]).toEqual({ shard_index: 17, agent_start_index: 49, agent_count: 2 });
@@ -795,15 +807,15 @@ Also assert the script rejects an agent matrix that would occupy all 20 Free-pla
 
 ```ts
 const unsafe = spawnSync(process.execPath, [
-  "scripts/github-actions/plan-github-free-headless-matrix.mjs",
-  "--target-agent-count=20",
-  "--agents-per-job=1",
-  "--max-parallel-jobs=20",
-  "--run-id=gh-free-unsafe",
-], { cwd: repoRoot, encoding: "utf8" });
+    'scripts/github-actions/plan-github-free-headless-matrix.mjs',
+    '--target-agent-count=20',
+    '--agents-per-job=1',
+    '--max-parallel-jobs=20',
+    '--run-id=gh-free-unsafe'
+], { cwd: repoRoot, encoding: 'utf8' });
 
 expect(unsafe.status).not.toBe(0);
-expect(unsafe.stderr).toContain("max_parallel_jobs must be between 1 and 19 for GitHub Free");
+expect(unsafe.stderr).toContain('max_parallel_jobs must be between 1 and 19 for GitHub Free');
 ```
 
 - [x] **Step 2: Run tests and verify failure**
@@ -832,10 +844,10 @@ Use:
 ```js
 const matrix = [];
 for (let start = 1, shard = 1; start <= targetAgentCount; shard += 1) {
-  const remaining = targetAgentCount - start + 1;
-  const agentCount = Math.min(agentsPerJob, remaining);
-  matrix.push({ shard_index: shard, agent_start_index: start, agent_count: agentCount });
-  start += agentCount;
+    const remaining = targetAgentCount - start + 1;
+    const agentCount = Math.min(agentsPerJob, remaining);
+    matrix.push({ shard_index: shard, agent_start_index: start, agent_count: agentCount });
+    start += agentCount;
 }
 ```
 
@@ -921,7 +933,7 @@ Steps:
 Set env:
 
 ```yaml
-CI: "1"
+CI: '1'
 RALLAR_BLACK_BOX_SPA_URL: ${{ inputs.spa_url }}
 RALLAR_BLACK_BOX_CONTROL_URL: ${{ inputs.control_url }}
 RALLAR_CONTROL_HTTP_URL: ${{ inputs.control_http_url }}
@@ -929,7 +941,7 @@ RALLAR_API_BASE_URL: ${{ inputs.api_base_url }}
 RALLAR_BLACK_BOX_RUN_ID: ${{ needs.plan.outputs.run_id }}
 RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID: ${{ needs.plan.outputs.distributed_run_id }}
 RALLAR_BLACK_BOX_EXIT_MODE: after-target-distributed-run-terminal
-RALLAR_BLACK_BOX_IDLE_EXIT_MS: "4500000"
+RALLAR_BLACK_BOX_IDLE_EXIT_MS: '4500000'
 RALLAR_BLACK_BOX_ROOM_ID: ${{ inputs.room_id }}
 RALLAR_BLACK_BOX_AGENT_PREFIX: ${{ inputs.agent_prefix }}
 RALLAR_BLACK_BOX_AGENT_COUNT: ${{ matrix.shard.agent_count }}
@@ -1166,9 +1178,9 @@ git commit -m "feat: guard github free distributed manifests"
 Add assertions that manifest metadata or catalog documentation identifies:
 
 ```ts
-"github-free-smoke"
-"50-agent"
-"tree"
+'github-free-smoke';
+'50-agent';
+'tree';
 ```
 
 for the 30-second principal tree manifest.
@@ -1250,14 +1262,14 @@ terminal_timeout_seconds=900
 Assert the runbook contains:
 
 ```ts
-expect(runbook).toContain("GitHub Free");
-expect(runbook).toContain("17 shards with agents_per_job=3");
-expect(runbook).toContain("Do not set max_parallel_jobs above 19");
-expect(runbook).toContain("agent_prefix=controller");
-expect(runbook).toContain("prepare-hetzner");
-expect(runbook).toContain("agent_source=external");
-expect(runbook).toContain("RALLAR_BLACK_BOX_EXIT_MODE=after-target-distributed-run-terminal");
-expect(runbook).toContain("2,000 included minutes");
+expect(runbook).toContain('GitHub Free');
+expect(runbook).toContain('17 shards with agents_per_job=3');
+expect(runbook).toContain('Do not set max_parallel_jobs above 19');
+expect(runbook).toContain('agent_prefix=controller');
+expect(runbook).toContain('prepare-hetzner');
+expect(runbook).toContain('agent_source=external');
+expect(runbook).toContain('RALLAR_BLACK_BOX_EXIT_MODE=after-target-distributed-run-terminal');
+expect(runbook).toContain('2,000 included minutes');
 ```
 
 - [x] **Step 2: Run test and verify failure**

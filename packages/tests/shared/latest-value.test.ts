@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LatestValue } from '@shared/cache/LatestValue.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('LatestValue', () => {
     afterEach(() => {
@@ -12,7 +12,7 @@ describe('LatestValue', () => {
 
         const latest = new LatestValue<number>({
             ttlMs: 100,
-            isValid: (value) => value > 0,
+            isValid: (value) => value > 0
         });
 
         latest.accept(5);
@@ -51,7 +51,7 @@ describe('LatestValue', () => {
 
     it('validates ttl configuration', () => {
         expect(() => new LatestValue({ ttlMs: -1 })).toThrow(
-            'ttlMs must be a finite non-negative number',
+            'ttlMs must be a finite non-negative number'
         );
     });
 });

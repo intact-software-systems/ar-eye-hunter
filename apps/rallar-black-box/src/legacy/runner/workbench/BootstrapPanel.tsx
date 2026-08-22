@@ -1,7 +1,7 @@
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 
 export function BootstrapPanel({
-    bootstrap,
+    bootstrap
 }: {
     bootstrap: RallarBlackBoxBootstrapConfig;
 }) {

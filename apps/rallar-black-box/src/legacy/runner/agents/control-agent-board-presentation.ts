@@ -1,16 +1,13 @@
-import type {
-    ControlAgentBoardRow,
-    ControlAgentRunParticipation,
-} from '../../../control-agent-board.ts';
+import type { ControlAgentBoardRow, ControlAgentRunParticipation } from '../../../control-agent-board.ts';
 
 export function controlAgentVisibleParticipations(
-    row: ControlAgentBoardRow,
+    row: ControlAgentBoardRow
 ): readonly ControlAgentRunParticipation[] {
     const selected = row.selectedRun ? [row.selectedRun] : [];
     const selectedId = row.selectedRun?.distributedRunId;
     return [
         ...selected,
-        ...row.activeRuns.filter((run) => run.distributedRunId !== selectedId),
+        ...row.activeRuns.filter((run) => run.distributedRunId !== selectedId)
     ].slice(0, 3);
 }
 

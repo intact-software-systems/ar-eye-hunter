@@ -100,20 +100,20 @@ control-run manager/control-server REST contract, and deterministic helpers in
 - Test `packages/tests/shared-test/rallar-bb-test-schema.test.ts`
 
 - [x] RED-test canonical shared catalog projection, configured group-aware
-  recipes, search/profile facts, recipe compatibility badges, and preflight
-  service requirements. Schema badges must use
-  `validateRallarBlackBoxRecipeCompatibility(...)`; include a recipe that is
-  preflight-clean but fails shared JSON Schema.
+      recipes, search/profile facts, recipe compatibility badges, and preflight
+      service requirements. Schema badges must use
+      `validateRallarBlackBoxRecipeCompatibility(...)`; include a recipe that is
+      preflight-clean but fails shared JSON Schema.
 - [x] RED-test duplicate fresh identities becoming non-targetable while stale,
-  offline, wrong-group, missing-identity, and CRDT capability behavior remains
-  exact. Derive only explicitly requested CRDT transports; a CRDT command kind
-  must not require every transport implementation.
+      offline, wrong-group, missing-identity, and CRDT capability behavior remains
+      exact. Derive only explicitly requested CRDT transports; a CRDT command kind
+      must not require every transport implementation.
 - [x] Add a narrow combined manifest validation result beside shared manifest
-  contracts; do not import the legacy wrapper from Recipe Console.
+      contracts; do not import the legacy wrapper from Recipe Console.
 - [x] Make legacy catalog exports delegate to the shared deterministic owner
-  without changing their import paths or current values.
+      without changing their import paths or current values.
 - [x] Run the three focused tests, shared-test TypeScript check, and app
-  typecheck.
+      typecheck.
 - [x] Commit `feat: share recipe execution catalog and target truth`.
 
 **Actual evidence (2026-07-12):** commit `3fe2574`; 95/95 final focused
@@ -137,20 +137,20 @@ manual node-modules mode; the same seven entry points pass with
 - Test `packages/tests/rallar-black-box/recipe-console-structure.test.ts`
 
 - [x] Keep the complete Iteration 3 API suite green while extracting the token
-  cache, challenge state, broker retry, origin trust, response/protocol, and
-  abort behavior from the 482-line adapter.
+      cache, challenge state, broker retry, origin trust, response/protocol, and
+      abort behavior from the 482-line adapter.
 - [x] RED-test Resolve/Create/Stage/Start/Cancel/Export delegation through the
-  canonical control-run manager, including exact methods, paths, bodies,
-  response states, and abort signals.
+      canonical control-run manager, including exact methods, paths, bodies,
+      response states, and abort signals.
 - [x] RED-test separate read/write authorization challenges, broker-token reuse
-  and refresh, manual precedence, URL-origin credential withholding, broker
-  provenance, malformed successful responses, and artifact validation.
+      and refresh, manual precedence, URL-origin credential withholding, broker
+      provenance, malformed successful responses, and artifact validation.
 - [x] Validate schema-v2 artifact envelopes with the three required base files,
-  accept absent optional enriched files, and reject every malformed file that
-  is present.
+      accept absent optional enriched files, and reject every malformed file that
+      is present.
 - [x] Expose only the narrow execution operations through the root connection;
-  no token, raw fetch, or control-run-manager ownership enters Execute React
-  code.
+      no token, raw fetch, or control-run-manager ownership enters Execute React
+      code.
 - [x] Run API/structure tests and app typecheck.
 - [x] Commit `feat: add recipe console execution control API`.
 
@@ -171,14 +171,14 @@ protocol validation.
 - Modify/test `packages/tests/rallar-black-box/recipe-console-url-state.test.ts`
 
 - [x] RED-test URL recipe selection/restoration, invalid explicit IDs, default
-  selection without index fallback, profile/search projection, and dependent
-  distributed-run clearing.
+      selection without index fallback, profile/search projection, and dependent
+      distributed-run clearing.
 - [x] RED-test deterministic run ID generation, manifest construction, combined
-  validation, raw JSON, fingerprints, exact-resolution comparison, and
-  invalidation on every input field.
+      validation, raw JSON, fingerprints, exact-resolution comparison, and
+      invalidation on every input field.
 - [x] RED-test every action availability/reason across connecting, live,
-  partial, stale, offline, auth-required, invalid schema, zero/unsafe targets,
-  draft, waiting ACK, waiting barrier, ready, running, terminal, and busy state.
+      partial, stale, offline, auth-required, invalid schema, zero/unsafe targets,
+      draft, waiting ACK, waiting barrier, ready, running, terminal, and busy state.
 - [x] RED-test response reconciliation and 2xx terminal-failed truth.
 - [x] Run workflow/URL/shared distributed tests and app typecheck.
 - [x] Commit `feat: derive guided recipe execution state`.
@@ -214,23 +214,23 @@ terminal advancement can replace mutation truth.
 - Create `tests/playwright/rallar-black-box/recipe-console-execute.spec.ts`
 
 - [x] Add structure/browser RED assertions before React implementation: no
-  seeded agents or Preview actions, no legacy imports, no raw control ownership,
-  thin workspace/controller composition, TSX below 300 lines, scoped CSS.
+      seeded agents or Preview actions, no legacy imports, no raw control ownership,
+      thin workspace/controller composition, TSX below 300 lines, scoped CSS.
 - [x] Render searchable/profile-filtered catalog rows with provider,
-  live-service, schema, and preflight badges.
+      live-service, schema, and preflight badges.
 - [x] Render one recipe-aware target plane with every blocker reason, selection
-  controls only for current-safe rows, and explicit last-known/unavailable
-  states. Avoid a second generic agent board above it.
+      controls only for current-safe rows, and explicit last-known/unavailable
+      states. Avoid a second generic agent board above it.
 - [x] Render preflight tree/service requirements, read-only raw manifest
-  disclosure, authoritative run identity/state/error, and the state-specific
-  action band with associated disabled reasons.
+      disclosure, authoritative run identity/state/error, and the state-specific
+      action band with associated disabled reasons.
 - [x] Keep inspector selection, portrait dock, focus restoration, URL history,
-  keyboard selection, accessible Cancel confirmation, and reduced-motion
-  semantics coherent. Refresh authoritative Execute data without key-remounting
-  or discarding an uncreated draft; preserve the existing reset behavior for
-  other seeded views.
+      keyboard selection, accessible Cancel confirmation, and reduced-motion
+      semantics coherent. Refresh authoritative Execute data without key-remounting
+      or discarding an uncreated draft; preserve the existing reset behavior for
+      other seeded views.
 - [x] Run structure/workflow tests, focused browser RED/GREEN, typecheck, and
-  build.
+      build.
 - [x] Commit `feat: replace execute preview with guided workflow`.
 
 **Actual evidence (2026-07-12):** commit `8d44a99`; the seeded target/action
@@ -253,25 +253,25 @@ errors, credential-trust truth, and StrictMode-safe URL diagnostics.
 - Extend `tests/playwright/rallar-black-box/recipe-console-execute.spec.ts`
 
 - [x] RED-test visible Resolve → Create → Stage → wait-ready → Start against a
-  mocked simulated `Composite Evidence` distributed ACK lifecycle. Assert
-  brokered write auth, manifest content, URLs, no JSON editing, run identity,
-  progress, and terminal response truth.
+      mocked simulated `Composite Evidence` distributed ACK lifecycle. Assert
+      brokered write auth, manifest content, URLs, no JSON editing, run identity,
+      progress, and terminal response truth.
 - [x] RED-test duplicate submission suppression, mutation abort/cleanup,
-  revalidation drift, structured HTTP/protocol/trust errors, refresh after both
-  success and failure, and draft preservation across global Refresh. Include a
-  changed server resolution after the explicit Resolve and prove no Stage
-  request is sent.
+      revalidation drift, structured HTTP/protocol/trust errors, refresh after both
+      success and failure, and draft preservation across global Refresh. Include a
+      changed server resolution after the explicit Resolve and prove no Stage
+      request is sent.
 - [x] RED-test Cancel for a non-terminal run and an actual downloaded artifact
-  bundle with deterministic filename/content; keep terminal Cancel disabled.
+      bundle with deterministic filename/content; keep terminal Cancel disabled.
 - [x] Add the env-gated configured lifecycle test and preserve the exact
-  unavailable-service skip reason.
+      unavailable-service skip reason.
 - [x] Keep these canonical acceptance names exact:
-  `runs a simulated distributed ACK recipe through visible controls`;
-  `diagnoses non-targetable agents before staging`;
-  `restores an existing Execute run from a copied v1 URL`; and
-  `completes the configured live distributed run lifecycle and exports its artifact`.
+      `runs a simulated distributed ACK recipe through visible controls`;
+      `diagnoses non-targetable agents before staging`;
+      `restores an existing Execute run from a copied v1 URL`; and
+      `completes the configured live distributed run lifecycle and exports its artifact`.
 - [x] Run focused tests/browser spec, typecheck/build, chunk assertion, and
-  control-server check/test.
+      control-server check/test.
 - [x] Commit `test: prove guided recipe execution lifecycle`.
 
 **Actual evidence (2026-07-12):** commit `bddde71`; the focused Execute spec
@@ -292,27 +292,27 @@ cancellation remain explicit Iteration 5 work; Ready-State #3 stays open.
 ## Task 6: Browser QA, Review, Cutover Evidence, And Exit
 
 - [x] Update the Execute concept fixture/baseline to a mocked live two-agent
-  state while retaining the approved Signal Ledger hierarchy. Update the
-  fidelity ledger with the repository-truth change; no new visual direction is
-  introduced.
+      state while retaining the approved Signal Ledger hierarchy. Update the
+      fidelity ledger with the repository-truth change; no new visual direction is
+      introduced.
 - [x] Prove 1440×900 desktop, 900×900 tablet, 430×932 portrait, 932×430
-  landscape, keyboard-only operation, 44px touch targets, focus trap/restore,
-  reduced motion, contained scrolling, status announcements, and CSS isolation
-  in both load orders.
+      landscape, keyboard-only operation, 44px touch targets, focus trap/restore,
+      reduced motion, contained scrolling, status announcements, and CSS isolation
+      in both load orders.
 - [x] Prove ready, blocked, waiting ACK/barrier, running, cancelled, passed,
-  terminal-failed, mutation error, stale, offline, partial, authorization, and
-  credential-trust states.
+      terminal-failed, mutation error, stale, offline, partial, authorization, and
+      credential-trust states.
 - [x] Run exact focused tests, complete app tests, complete Recipe Console
-  Playwright config, exact legacy navigation/ticket pair, typecheck/build/chunk
-  proof, shared-test checks, and control-server check/test.
+      Playwright config, exact legacy navigation/ticket pair, typecheck/build/chunk
+      proof, shared-test checks, and control-server check/test.
 - [x] Dispatch independent code/contract and browser/cutover reviews; cover
-  every Critical/Important finding with RED/GREEN proof and rerun fresh exit
-  validation after the last fix.
+      every Critical/Important finding with RED/GREEN proof and rerun fresh exit
+      validation after the last fix.
 - [x] Update the parent plan, this implementation plan, fidelity ledger, and
-  migration register with actual commits, evidence, skipped live proof, and
-  remaining risks. Keep both legacy workflow rows uncut and visible.
+      migration register with actual commits, evidence, skipped live proof, and
+      remaining risks. Keep both legacy workflow rows uncut and visible.
 - [x] Commit `docs: record guided recipe execution exit` only after the
-  Iteration 4 exit criterion passes.
+      Iteration 4 exit criterion passes.
 
 **Exit evidence (2026-07-12):** 18 focused Vitest files pass 294/294; the
 complete app suite passes 656/656 across 67 files; shared-test and SPA

@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-    projectDistributedRunHistoryLabels,
-} from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
-import type { ControlDistributedRunSnapshot } from
-    '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
+import type { ControlDistributedRunSnapshot } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
+import { projectDistributedRunHistoryLabels } from '../../../packages/shared-test/rallar-bb-test/distributed-run-monitor.ts';
 
 function distributedRun(): ControlDistributedRunSnapshot {
     return {
@@ -22,10 +19,10 @@ function distributedRun(): ControlDistributedRunSnapshot {
             group: {
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
-                groupId: 'group-a',
+                groupId: 'group-a'
             },
             targetPolicy: { mode: 'selected-agents', agentIds: [] },
-            recipes: [{ recipeId: 'rtc-stream', profile: 'smoke', role: 'sender' }],
+            recipes: [{ recipeId: 'rtc-stream', profile: 'smoke', role: 'sender' }]
         },
         rollup: {
             state: 'failed',
@@ -43,7 +40,7 @@ function distributedRun(): ControlDistributedRunSnapshot {
                 groupAssertions: 0,
                 passedGroupAssertions: 0,
                 failedGroupAssertions: 0,
-                blockingFailures: 1,
+                blockingFailures: 1
             },
             failures: [{
                 kind: 'recipe',
@@ -52,10 +49,10 @@ function distributedRun(): ControlDistributedRunSnapshot {
                 required: true,
                 error: {
                     code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED',
-                    message: 'RTC stream pacing exceeded its threshold.',
-                },
-            }],
-        },
+                    message: 'RTC stream pacing exceeded its threshold.'
+                }
+            }]
+        }
     };
 }
 
@@ -67,20 +64,20 @@ describe('distributed-run History labels', () => {
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
                 groupId: 'group-a',
-                label: 'rallar-server / default / group-a',
+                label: 'rallar-server / default / group-a'
             },
             recipes: [{
                 recipeId: 'rtc-stream',
                 profile: 'smoke',
                 role: 'sender',
-                label: 'rtc-stream · smoke',
+                label: 'rtc-stream · smoke'
             }],
             failures: [{
                 category: 'rtc-stream-performance',
                 code: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED',
                 message: 'RTC stream pacing exceeded its threshold.',
-                label: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED: RTC stream pacing exceeded its threshold.',
-            }],
+                label: 'RALLAR_BLACK_BOX_RTC_STREAM_THRESHOLD_FAILED: RTC stream pacing exceeded its threshold.'
+            }]
         });
     });
 
@@ -90,25 +87,25 @@ describe('distributed-run History labels', () => {
         malformed.manifest.group = {
             applicationId: ['not-a-label'],
             workspaceId: 'default',
-            groupId: null,
+            groupId: null
         };
         malformed.manifest.recipes = [null, { profile: 'smoke' }];
 
         expect(projectDistributedRunHistoryLabels(
-            malformed as ControlDistributedRunSnapshot,
+            malformed as ControlDistributedRunSnapshot
         )).toMatchObject({
             displayName: undefined,
             group: {
                 applicationId: undefined,
                 workspaceId: 'default',
                 groupId: undefined,
-                label: 'default',
+                label: 'default'
             },
             recipes: [{
                 recipeId: 'recipe-2',
                 profile: 'smoke',
-                label: 'recipe-2 · smoke',
-            }],
+                label: 'recipe-2 · smoke'
+            }]
         });
     });
 
@@ -117,7 +114,7 @@ describe('distributed-run History labels', () => {
         const running: ControlDistributedRunSnapshot = {
             ...completed,
             state: 'running',
-            rollup: { ...completed.rollup, state: 'running', failures: [] },
+            rollup: { ...completed.rollup, state: 'running', failures: [] }
         };
 
         expect(projectDistributedRunHistoryLabels(running).failures).toEqual([]);
@@ -127,16 +124,18 @@ describe('distributed-run History labels', () => {
         const malformed = structuredClone(distributedRun()) as unknown as Record<string, any>;
         malformed.rollup.failures[0].error = {
             code: { secret: 'not-a-code' },
-            message: ['not-a-message'],
+            message: ['not-a-message']
         };
 
-        expect(projectDistributedRunHistoryLabels(
-            malformed as ControlDistributedRunSnapshot,
-        ).failures).toEqual([{
+        expect(
+            projectDistributedRunHistoryLabels(
+                malformed as ControlDistributedRunSnapshot
+            ).failures
+        ).toEqual([{
             category: 'unknown',
             code: undefined,
             message: 'Recorded failure',
-            label: 'Recorded failure',
+            label: 'Recorded failure'
         }]);
     });
 });

@@ -82,7 +82,7 @@ Use Rallar Server middleware/facade when the task involves:
    Prefer `GroupRef` over plain `roomId` when the app can operate in multiple application/workspace scopes.
 
 10. Store unsubscribe callbacks.
-   Use `rallar.subscriptions()` for UI component lifecycles.
+    Use `rallar.subscriptions()` for UI component lifecycles.
 
 11. Do not call `advanced.middleware()` unless the public facade is missing the needed operation.
 
@@ -98,17 +98,17 @@ Use Rallar Server middleware/facade when the task involves:
 
 ```ts
 await rallar.setup({
-  apiBaseUrl,
-  applicationId: 'app',
-  workspaceId: 'default',
-  start: {
-    refreshPeople: true,
-  },
+    apiBaseUrl,
+    applicationId: 'app',
+    workspaceId: 'default',
+    start: {
+        refreshPeople: true
+    }
 });
 ```
 
-   After login or for configured lifecycle continuation, call
-   `rallar.start(...)`.
+After login or for configured lifecycle continuation, call
+`rallar.start(...)`.
 
 3. Subscribe with cleanup:
 
@@ -123,15 +123,15 @@ return () => subs.unsubscribe();
 4. For room-scoped realtime sends, use the room helper:
 
 ```ts
-const roomLane = rallar.realtime.room<{ type: 'move'; x: number; y: number }>({
-  roomId: 'lobby',
-  laneId: 'realtime',
-  waitTimeoutMs: 1000,
+const roomLane = rallar.realtime.room<{ type: 'move'; x: number; y: number; }>({
+    roomId: 'lobby',
+    laneId: 'realtime',
+    waitTimeoutMs: 1000
 });
 
 const result = await roomLane.send({ type: 'move', x: 1, y: 2 });
 if (result.status === 'not-ready') {
-  console.warn(result.reason);
+    console.warn(result.reason);
 }
 ```
 
@@ -140,18 +140,18 @@ if (result.status === 'not-ready') {
 Use Rallar Data for local browser state that should survive reloads or coordinate across tabs.
 
 ```ts
-type Draft = { body: string; updatedAt: number };
+type Draft = { body: string; updatedAt: number; };
 
 const drafts = await rallar.data.open<Draft>('drafts', {
-  scope: 'principal',
-  durability: 'write-behind',
-  hydrate: 'lazy',
-  sync: true,
+    scope: 'principal',
+    durability: 'write-behind',
+    hydrate: 'lazy',
+    sync: true
 });
 
 await drafts.updateOrCreate('room:lobby', (current) => ({
-  body: current?.body ?? '',
-  updatedAt: Date.now(),
+    body: current?.body ?? '',
+    updatedAt: Date.now()
 }));
 ```
 
@@ -169,16 +169,16 @@ Prefer the server application facade:
 
 ```ts
 const rallar = createRallarServerApplication({
-  runtime,
-  routes: {
-    ws: installWsRoutes,
-    rest: [installAuthRoutes, installStateRoutes],
-  },
+    runtime,
+    routes: {
+        ws: installWsRoutes,
+        rest: [installAuthRoutes, installStateRoutes]
+    }
 });
 
 rallar.system
-  .useDefaultMiddlewareTopics()
-  .useWebSocketLifecycle();
+    .useDefaultMiddlewareTopics()
+    .useWebSocketLifecycle();
 
 rallar.ws.mount(app);
 rallar.rest.mount(app);

@@ -1,13 +1,13 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { ALMessage } from '../al-contracts/al-contract.ts';
+import { DequeueController } from '../queuebox/DequeueController.ts';
 import {
     DequeueResourceEntryController,
-    type DequeueResourceEntryOptions,
     ResilienceDto,
+    type DequeueResourceEntryOptions
 } from '../queuebox/DequeueResourceEntryController.ts';
-import { DequeueController } from '../queuebox/DequeueController.ts';
 import { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
-import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry, } from '../queuebox/ResourceEntry.ts';
-import { ALMessage } from '../al-contracts/al-contract.ts';
+import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry } from '../queuebox/ResourceEntry.ts';
 
 export class QueueBoxUtilities {
     static readonly RETRY_DISPOSITION_ERROR = 'Queue entry requested retry';
@@ -17,28 +17,27 @@ export class QueueBoxUtilities {
         typesToDequeue: Set<string>,
         resilience: ResilienceDto,
         onDequeuedDo: (entry: ResourceEntry) => Promise<void>,
-        options: DequeueResourceEntryOptions = {},
+        options: DequeueResourceEntryOptions = {}
     ): Promise<void> {
-
         if (resilience.isNotAllowedThroughToDequeue()) {
             console.warn('Dequeue blocked {}, circuit state {}', typesToDequeue, resilience.circuitBreaker.state.get());
             return;
         }
 
         await DequeueResourceEntryController.toDequeuer<Key>(
-                qbox,
-                () => typesToDequeue,
-                () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE,
-                resilience.retryPolicy.maxAttempts,
-                DequeueController.DEFAULT_MAX_NUM_TO_DEQUEUE,
-                resilience,
-                options,
-            )
+            qbox,
+            () => typesToDequeue,
+            () => DequeueController.DEFAULT_MAX_NUM_TO_RESERVE,
+            resilience.retryPolicy.maxAttempts,
+            DequeueController.DEFAULT_MAX_NUM_TO_DEQUEUE,
+            resilience,
+            options
+        )
             .onFailedEntries(
-                _ => resilience.failure()
+                (_) => resilience.failure()
             )
             .onCompletedEntries(
-                _ => resilience.success()
+                (_) => resilience.success()
             )
             .dequeueForCompute(
                 async (key, entry) => {
@@ -49,7 +48,7 @@ export class QueueBoxUtilities {
     }
 
     static withRetryDisposition(
-        onDequeuedDo: (entry: ResourceEntry) => Promise<'completed' | 'retry'>,
+        onDequeuedDo: (entry: ResourceEntry) => Promise<'completed' | 'retry'>
     ): (entry: ResourceEntry) => Promise<void> {
         return async (entry: ResourceEntry): Promise<void> => {
             const disposition = await onDequeuedDo(entry);
@@ -72,7 +71,7 @@ export class QueueBoxUtilities {
                 date: Temporal.Now.plainTimeISO(),
                 createdBy: 'test',
                 createdTs: Temporal.Now.plainDateTimeISO(),
-                expiryTs: NEVER_EXPIRE_TS,
+                expiryTs: NEVER_EXPIRE_TS
             },
             status: EntityStatus.NEW,
             dequeueAudit: {
@@ -100,7 +99,7 @@ export class QueueBoxUtilities {
                 date: Temporal.Now.plainTimeISO(),
                 createdBy: msg.audit?.createdBy ?? 'test',
                 createdTs: Temporal.Now.plainDateTimeISO(),
-                expiryTs,
+                expiryTs
             },
             status: EntityStatus.NEW,
             dequeueAudit: {

@@ -1,25 +1,22 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import {
-    type BlackBoxControlTokenSession,
     resolveBlackBoxControlToken,
     shouldRefreshBlackBoxControlToken,
+    type BlackBoxControlTokenSession
 } from '../../control-operator-token.ts';
-import {
-    type ControlRunManagerFetch,
-    ControlRunManagerHttpError,
-} from '../../control-run-manager.ts';
-import type { RecipeConsoleControlCredentialPolicy } from './control-credential-policy.ts';
+import { ControlRunManagerHttpError, type ControlRunManagerFetch } from '../../control-run-manager.ts';
 import {
     controlAuthorizationErrorMessage,
     RecipeConsoleControlAuthorizationError,
-    RecipeConsoleControlCredentialTrustError,
+    RecipeConsoleControlCredentialTrustError
 } from './control-authorization-errors.ts';
 import {
     controlFetchWithAuthorization,
     controlFetchWithSignal,
     isControlAbortError,
-    throwIfControlAborted,
+    throwIfControlAborted
 } from './control-authorized-fetch.ts';
+import type { RecipeConsoleControlCredentialPolicy } from './control-credential-policy.ts';
 
 export type RecipeConsoleControlAuthorization = 'anonymous' | 'manual' | 'brokered';
 export type AuthorizedControlResult<Value> = Readonly<{
@@ -35,7 +32,7 @@ export type ControlEndpointAuthorization = {
 export type ControlAuthorizedEndpoint = Readonly<{
     response<Value>(
         operation: (fetchFn: ControlRunManagerFetch) => Promise<Value>,
-        signal?: AbortSignal,
+        signal?: AbortSignal
     ): Promise<AuthorizedControlResult<Value>>;
 }>;
 
@@ -45,18 +42,18 @@ export type ControlAuthorizedTransport = Readonly<{
     request<Value>(
         operation: (
             token: string | undefined,
-            fetchFn: ControlRunManagerFetch,
+            fetchFn: ControlRunManagerFetch
         ) => Promise<Value>,
         endpoint: ControlEndpointAuthorization,
-        signal?: AbortSignal,
+        signal?: AbortSignal
     ): Promise<AuthorizedControlResult<Value>>;
     response<Value>(
         operation: (
             token: string | undefined,
-            fetchFn: ControlRunManagerFetch,
+            fetchFn: ControlRunManagerFetch
         ) => Promise<Value>,
         endpoint: ControlEndpointAuthorization,
-        signal?: AbortSignal,
+        signal?: AbortSignal
     ): Promise<AuthorizedControlResult<Value>>;
 }>;
 
@@ -71,7 +68,7 @@ export type ControlAuthorizedTransportConfig = Readonly<{
 }>;
 
 export function createControlAuthorizedTransport(
-    config: ControlAuthorizedTransportConfig,
+    config: ControlAuthorizedTransportConfig
 ): ControlAuthorizedTransport {
     const configuredManualToken = config.manualToken?.trim() || undefined;
     const manualToken = config.credentialPolicy.allowManualToken
@@ -93,10 +90,11 @@ export function createControlAuthorizedTransport(
                     const response = await request(input, init);
                     brokerResponse = response;
                     return response;
-                },
+                }
             });
             throwIfControlAborted(signal);
-        } catch (error) {
+        }
+        catch (error) {
             throwIfControlAborted(signal);
             if (
                 brokerResponse &&
@@ -106,7 +104,7 @@ export function createControlAuthorizedTransport(
                 throw new ControlRunManagerHttpError(
                     controlAuthorizationErrorMessage(error),
                     brokerResponse.status,
-                    brokerResponse.statusText,
+                    brokerResponse.statusText
                 );
             }
             throw error;
@@ -121,10 +119,10 @@ export function createControlAuthorizedTransport(
     async function request<Value>(
         operation: (
             token: string | undefined,
-            fetchFn: ControlRunManagerFetch,
+            fetchFn: ControlRunManagerFetch
         ) => Promise<Value>,
         endpoint: ControlEndpointAuthorization,
-        signal?: AbortSignal,
+        signal?: AbortSignal
     ): Promise<AuthorizedControlResult<Value>> {
         throwIfControlAborted(signal);
         const fetchFn = controlFetchWithSignal(config.fetchFn, signal);
@@ -146,14 +144,15 @@ export function createControlAuthorizedTransport(
             try {
                 token = await resolveBrokeredToken(signal);
                 throwIfControlAborted(signal);
-            } catch (brokerError) {
+            }
+            catch (brokerError) {
                 if (isControlAbortError(brokerError)) {
                     throw brokerError;
                 }
                 if (endpoint.challenge) {
                     throw new RecipeConsoleControlAuthorizationError(
                         endpoint.challenge,
-                        brokerError,
+                        brokerError
                     );
                 }
                 throw brokerError;
@@ -167,9 +166,10 @@ export function createControlAuthorizedTransport(
             throwIfControlAborted(signal);
             return {
                 value,
-                authorization,
+                authorization
             };
-        } catch (error) {
+        }
+        catch (error) {
             throwIfControlAborted(signal);
             if (manualToken || !isAuthorizationError(error)) {
                 throw error;
@@ -179,7 +179,7 @@ export function createControlAuthorizedTransport(
                     throw new RecipeConsoleControlCredentialTrustError(
                         error,
                         config.credentialPolicy.blockedMessage ??
-                            'Automatic control credentials are blocked for this endpoint source.',
+                            'Automatic control credentials are blocked for this endpoint source.'
                     );
                 }
                 throw error;
@@ -197,9 +197,10 @@ export function createControlAuthorizedTransport(
                     throwIfControlAborted(signal);
                     return {
                         value,
-                        authorization: 'brokered',
+                        authorization: 'brokered'
                     };
-                } catch (cachedTokenError) {
+                }
+                catch (cachedTokenError) {
                     throwIfControlAborted(signal);
                     if (
                         isControlAbortError(cachedTokenError) ||
@@ -214,13 +215,14 @@ export function createControlAuthorizedTransport(
             try {
                 token = await resolveBrokeredToken(signal);
                 throwIfControlAborted(signal);
-            } catch (brokerError) {
+            }
+            catch (brokerError) {
                 if (isControlAbortError(brokerError)) {
                     throw brokerError;
                 }
                 throw new RecipeConsoleControlAuthorizationError(
                     endpoint.challenge ?? error,
-                    brokerError,
+                    brokerError
                 );
             }
             throwIfControlAborted(signal);
@@ -228,7 +230,7 @@ export function createControlAuthorizedTransport(
             throwIfControlAborted(signal);
             return {
                 value,
-                authorization: 'brokered',
+                authorization: 'brokered'
             };
         }
     }
@@ -236,10 +238,10 @@ export function createControlAuthorizedTransport(
     async function response<Value>(
         operation: (
             token: string | undefined,
-            fetchFn: ControlRunManagerFetch,
+            fetchFn: ControlRunManagerFetch
         ) => Promise<Value>,
         endpoint: ControlEndpointAuthorization,
-        signal?: AbortSignal,
+        signal?: AbortSignal
     ): Promise<AuthorizedControlResult<Value>> {
         let receivedResponse = false;
         try {
@@ -251,14 +253,15 @@ export function createControlAuthorizedTransport(
                             const result = await fetchFn(input, init);
                             receivedResponse = true;
                             return result;
-                        },
+                        }
                     ),
                 endpoint,
-                signal,
+                signal
             );
             throwIfControlAborted(signal);
             return result;
-        } catch (error) {
+        }
+        catch (error) {
             throwIfControlAborted(signal);
             if (receivedResponse && config.isProtocolCandidate(error)) {
                 throw config.protocolError(error);
@@ -270,13 +273,15 @@ export function createControlAuthorizedTransport(
     function createAuthorizedEndpoint(): ControlAuthorizedEndpoint {
         const authorization = { requiresAuthorization: false };
         return {
-            response: (operation, signal) => response(
-                (token, fetchFn) => operation(
-                    controlFetchWithAuthorization(fetchFn, token),
-                ),
-                authorization,
-                signal,
-            ),
+            response: (operation, signal) =>
+                response(
+                    (token, fetchFn) =>
+                        operation(
+                            controlFetchWithAuthorization(fetchFn, token)
+                        ),
+                    authorization,
+                    signal
+                )
         };
     }
 
@@ -284,12 +289,12 @@ export function createControlAuthorizedTransport(
         createEndpointAuthorization: () => ({ requiresAuthorization: false }),
         createAuthorizedEndpoint,
         request,
-        response,
+        response
     };
 }
 
 function isAuthorizationError(
-    error: unknown,
+    error: unknown
 ): error is ControlRunManagerHttpError {
     return error instanceof ControlRunManagerHttpError &&
         (error.status === 401 || error.status === 403);

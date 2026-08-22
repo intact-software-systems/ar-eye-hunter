@@ -1,12 +1,5 @@
+import { RetryableConflictError, tryRunInIntervals, tryWith, TryWithExhaustedError, TryWithPolicy, tryWithPolicy } from '@shared/resilience/TryWith.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-    RetryableConflictError,
-    tryRunInIntervals,
-    tryWith,
-    TryWithExhaustedError,
-    TryWithPolicy,
-    tryWithPolicy,
-} from '@shared/resilience/TryWith.ts';
 
 describe('TryWith', () => {
     afterEach(() => {
@@ -30,7 +23,7 @@ describe('TryWith', () => {
                 return 'ok';
             },
             10,
-            5,
+            5
         );
 
         expect(attempts).toBe(1);
@@ -54,7 +47,7 @@ describe('TryWith', () => {
                 throw new Error('still failing');
             },
             10,
-            2,
+            2
         ).catch((error) => error);
 
         expect(attempts).toBe(1);
@@ -83,7 +76,7 @@ describe('TryWith', () => {
                 return 'ok';
             },
             10,
-            5,
+            5
         );
 
         expect(attempts).toBe(1);
@@ -114,7 +107,7 @@ describe('TryWith', () => {
                 .maxAttempts(5)
                 .initialDelayMsecs(10)
                 .jitterRatio(0)
-                .retryIf((error) => error instanceof RetryableConflictError),
+                .retryIf((error) => error instanceof RetryableConflictError)
         );
 
         expect(attempts).toBe(1);
@@ -139,7 +132,7 @@ describe('TryWith', () => {
             TryWithPolicy.defaults()
                 .maxAttempts(5)
                 .initialDelayMsecs(10)
-                .retryIf((error) => error instanceof RetryableConflictError),
+                .retryIf((error) => error instanceof RetryableConflictError)
         );
 
         await expect(promise).rejects.toThrow('fatal');
@@ -163,7 +156,7 @@ describe('TryWith', () => {
                 .maxAttempts(2)
                 .initialDelayMsecs(10)
                 .jitterRatio(0)
-                .retryIf((error) => error instanceof RetryableConflictError),
+                .retryIf((error) => error instanceof RetryableConflictError)
         ).catch((error) => error);
 
         expect(attempts).toBe(1);
@@ -174,7 +167,7 @@ describe('TryWith', () => {
         expect(error.context).toMatchObject({
             label: 'test-commit',
             attempt: 2,
-            maxAttempts: 2,
+            maxAttempts: 2
         });
         expect(attempts).toBe(2);
     });
@@ -212,7 +205,7 @@ describe('TryWith', () => {
             },
             50,
             10,
-            5,
+            5
         );
 
         expect(attempts).toBe(1);
@@ -242,7 +235,7 @@ describe('TryWith', () => {
             },
             50,
             10,
-            5,
+            5
         );
 
         await expect(promise).resolves.toBe('tick-1');

@@ -9,7 +9,7 @@ import type {
     RallarMediaSourceStatus,
     RallarMicrophoneSourceStartOptions,
     RallarRemoteStream,
-    RallarScreenSourceStartOptions,
+    RallarScreenSourceStartOptions
 } from '@shared-web/browser/rallar-media-facade.ts';
 import type { RallarMediaPort } from '@shared-web/browser/rallar-runtime/contracts.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
@@ -30,16 +30,14 @@ export type CreateRallarMediaControllerOptions = Readonly<{
 }>;
 
 export function createRallarMediaController(
-    options: CreateRallarMediaControllerOptions,
+    options: CreateRallarMediaControllerOptions
 ): RallarMediaPort {
     const sources = new Map<RallarMediaSourceKind, RallarMediaSourceRuntime>();
-    const remoteStreamListeners = new Set<
-        (remote: RallarRemoteStream) => void | Promise<void>
-    >();
+    const remoteStreamListeners = new Set<(remote: RallarRemoteStream) => void | Promise<void>>();
     let remoteStreamCallbackRegistered = false;
 
     const readSourceStatus = (
-        kind: RallarMediaSourceKind,
+        kind: RallarMediaSourceKind
     ): RallarMediaSourceStatus | undefined => {
         const runtime = sources.get(kind);
         return runtime ? toMediaSourceStatus(runtime) : undefined;
@@ -63,16 +61,16 @@ export function createRallarMediaController(
         const stream = toComposedMediaStream(runtimes, tracks);
         await ctx.middleware.rtcRxStreamer.setLocalMediaStream(stream);
         ctx.middleware.rtcRxStreamer.setLocalAudioEnabled(
-            tracks.some((track) => track.kind === 'audio' && track.enabled),
+            tracks.some((track) => track.kind === 'audio' && track.enabled)
         );
         ctx.middleware.rtcRxStreamer.setLocalVideoEnabled(
-            tracks.some((track) => track.kind === 'video' && track.enabled),
+            tracks.some((track) => track.kind === 'video' && track.enabled)
         );
     };
 
     const stopSource = async (
         kind: RallarMediaSourceKind,
-        attach = true,
+        attach = true
     ): Promise<RallarMediaSourceStatus | undefined> => {
         const runtime = sources.get(kind);
         if (!runtime) {
@@ -91,13 +89,13 @@ export function createRallarMediaController(
 
     const stopSourcesForKind = (
         kind: 'audio' | 'video' | 'all',
-        attach: boolean,
+        attach: boolean
     ): void => {
         const sourceKinds = kind === 'all'
             ? ['microphone', 'camera', 'screen'] as const
             : kind === 'audio'
-                ? ['microphone'] as const
-                : ['camera', 'screen'] as const;
+            ? ['microphone'] as const
+            : ['camera', 'screen'] as const;
         for (const sourceKind of sourceKinds) {
             const runtime = sources.get(sourceKind);
             if (!runtime) {
@@ -113,7 +111,7 @@ export function createRallarMediaController(
             attachLocalSources().catch((error) =>
                 console.error(
                     'Error attaching Rallar local media sources',
-                    error,
+                    error
                 )
             );
         }
@@ -125,9 +123,7 @@ export function createRallarMediaController(
                 if (sources.get(runtime.kind) !== runtime) {
                     return;
                 }
-                if (readMediaStreamTracks(runtime.stream).some((candidate) =>
-                    candidate.readyState !== 'ended'
-                )) {
+                if (readMediaStreamTracks(runtime.stream).some((candidate) => candidate.readyState !== 'ended')) {
                     return;
                 }
                 runtime.state = 'ended';
@@ -135,7 +131,7 @@ export function createRallarMediaController(
                 attachLocalSources().catch((error) =>
                     console.error(
                         'Error attaching Rallar local media sources',
-                        error,
+                        error
                     )
                 );
             }, { once: true });
@@ -167,10 +163,11 @@ export function createRallarMediaController(
                 await attachLocalSources();
                 return readSourceStatus(kind) ?? toMediaSourceStatus(runtime);
             },
-            stop: async () => await stopSource(kind) ?? toMediaSourceStatus({
-                ...runtime,
-                state: 'ended',
-            }),
+            stop: async () =>
+                await stopSource(kind) ?? toMediaSourceStatus({
+                    ...runtime,
+                    state: 'ended'
+                })
         };
     };
 
@@ -179,7 +176,7 @@ export function createRallarMediaController(
         sourceOptions:
             | RallarMicrophoneSourceStartOptions
             | RallarCameraSourceStartOptions
-            | RallarScreenSourceStartOptions,
+            | RallarScreenSourceStartOptions
     ): Promise<MediaStream> => {
         const mediaDevices = globalThis.navigator?.mediaDevices;
         if (!mediaDevices) {
@@ -189,14 +186,14 @@ export function createRallarMediaController(
             return await mediaDevices.getUserMedia({
                 audio: (sourceOptions as RallarMicrophoneSourceStartOptions)
                     .audio ?? true,
-                video: false,
+                video: false
             });
         }
         if (kind === 'camera') {
             return await mediaDevices.getUserMedia({
                 audio: false,
                 video: (sourceOptions as RallarCameraSourceStartOptions).video ??
-                    true,
+                    true
             });
         }
         const screenOptions = sourceOptions as RallarScreenSourceStartOptions;
@@ -206,7 +203,7 @@ export function createRallarMediaController(
         }
         return await getDisplayMedia({
             audio: screenOptions.audio ?? false,
-            video: screenOptions.video ?? true,
+            video: screenOptions.video ?? true
         });
     };
 
@@ -215,7 +212,7 @@ export function createRallarMediaController(
         sourceOptions:
             | RallarMicrophoneSourceStartOptions
             | RallarCameraSourceStartOptions
-            | RallarScreenSourceStartOptions = {},
+            | RallarScreenSourceStartOptions = {}
     ): Promise<RallarMediaSourceHandle> => {
         await stopSource(kind, false);
         let runtime: RallarMediaSourceRuntime;
@@ -225,12 +222,13 @@ export function createRallarMediaController(
             runtime = { kind, stream, state: 'open' };
             sources.set(kind, runtime);
             registerEndedCallbacks(runtime);
-        } catch (error) {
+        }
+        catch (error) {
             runtime = {
                 kind,
                 stream: toEmptyMediaStream(),
                 state: 'failed',
-                error: toErrorMessage(error),
+                error: toErrorMessage(error)
             };
             sources.set(kind, runtime);
             throw error;
@@ -243,17 +241,18 @@ export function createRallarMediaController(
     };
 
     const createSourceController = <TOptions>(
-        kind: RallarMediaSourceKind,
+        kind: RallarMediaSourceKind
     ): RallarMediaSourceController<TOptions> => ({
-        start: async (sourceOptions?: TOptions) => await startSource(
-            kind,
-            (sourceOptions ?? {}) as
-                | RallarMicrophoneSourceStartOptions
-                | RallarCameraSourceStartOptions
-                | RallarScreenSourceStartOptions,
-        ),
+        start: async (sourceOptions?: TOptions) =>
+            await startSource(
+                kind,
+                (sourceOptions ?? {}) as
+                    | RallarMicrophoneSourceStartOptions
+                    | RallarCameraSourceStartOptions
+                    | RallarScreenSourceStartOptions
+            ),
         status: () => readSourceStatus(kind),
-        stop: async () => await stopSource(kind),
+        stop: async () => await stopSource(kind)
     });
 
     const attachRemoteStreamCallback = (): void => {
@@ -271,27 +270,28 @@ export function createRallarMediaController(
                     [...remoteStreamListeners].map(async (listener) => {
                         try {
                             await listener({ peerId, stream, event });
-                        } catch (error) {
+                        }
+                        catch (error) {
                             console.error(
                                 'Error notifying Rallar remote stream listener',
-                                error,
+                                error
                             );
                         }
-                    }),
+                    })
                 );
-            },
+            }
         );
         remoteStreamCallbackRegistered = true;
     };
 
     const detachRemoteStreamCallback = (
-        ctx = options.readMiddleware(),
+        ctx = options.readMiddleware()
     ): void => {
         if (!ctx || !remoteStreamCallbackRegistered) {
             return;
         }
         ctx.middleware.rtcRxStreamer.removeOnRemoteStreamCallbackById(
-            RALLAR_REMOTE_STREAM_CALLBACK_ID,
+            RALLAR_REMOTE_STREAM_CALLBACK_ID
         );
         remoteStreamCallbackRegistered = false;
     };
@@ -330,7 +330,7 @@ export function createRallarMediaController(
                     detachRemoteStreamCallback();
                 }
             };
-        },
+        }
     };
 
     return {
@@ -343,7 +343,7 @@ export function createRallarMediaController(
             detachRemoteStreamCallback(ctx);
             stopSourcesForKind('all', false);
             remoteStreamCallbackRegistered = false;
-        },
+        }
     };
 }
 
@@ -353,7 +353,7 @@ function readMediaStreamTracks(stream: MediaStream): MediaStreamTrack[] {
 
 function readMediaSourceTracks(
     kind: RallarMediaSourceKind,
-    stream: MediaStream,
+    stream: MediaStream
 ): MediaStreamTrack[] {
     const tracks = readMediaStreamTracks(stream);
     if (kind === 'microphone') {
@@ -366,14 +366,14 @@ function readMediaSourceTracks(
 }
 
 function toMediaSourceStatus(
-    runtime: RallarMediaSourceRuntime,
+    runtime: RallarMediaSourceRuntime
 ): RallarMediaSourceStatus {
     const tracks = readMediaStreamTracks(runtime.stream);
     const endedTrackIds = tracks
         .filter((track) => track.readyState === 'ended')
         .map((track) => track.id);
     const state = runtime.state === 'open' && tracks.length > 0 &&
-        endedTrackIds.length === tracks.length
+            endedTrackIds.length === tracks.length
         ? 'ended'
         : runtime.state;
     return {
@@ -388,13 +388,13 @@ function toMediaSourceStatus(
         enabledTrackIds: tracks.filter((track) => track.enabled)
             .map((track) => track.id),
         endedTrackIds,
-        error: runtime.error,
+        error: runtime.error
     };
 }
 
 function toComposedMediaStream(
     runtimes: readonly RallarMediaSourceRuntime[],
-    tracks: readonly MediaStreamTrack[],
+    tracks: readonly MediaStreamTrack[]
 ): MediaStream {
     if (runtimes.length === 1) {
         const only = runtimes[0];
@@ -407,7 +407,7 @@ function toComposedMediaStream(
     }
     return toMediaStreamLike(
         `rallar-local-media:${tracks.map((track) => track.id).join(',')}`,
-        tracks,
+        tracks
     );
 }
 
@@ -420,14 +420,14 @@ function toEmptyMediaStream(): MediaStream {
 
 function toMediaStreamLike(
     id: string,
-    tracks: readonly MediaStreamTrack[],
+    tracks: readonly MediaStreamTrack[]
 ): MediaStream {
     return {
         id,
         active: tracks.some((track) => track.readyState !== 'ended'),
         getTracks: () => [...tracks],
         getAudioTracks: () => tracks.filter((track) => track.kind === 'audio'),
-        getVideoTracks: () => tracks.filter((track) => track.kind === 'video'),
+        getVideoTracks: () => tracks.filter((track) => track.kind === 'video')
     } as MediaStream;
 }
 

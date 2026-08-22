@@ -1,60 +1,46 @@
-import {
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-} from 'react';
-import type {
-    AuthSession,
-} from '@shared/api/api-config.ts';
 import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
 import type {
     RallarBlackBoxTestRuntimeEventInput,
-    RallarBlackBoxTestState,
+    RallarBlackBoxTestState
 } from '@shared-test/rallar-bb-test/types.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     createDirectRallarRuntimeEvent,
     runDirectRallarStatusCheck,
     runDirectRallarWsSend,
     runDirectRallarWsSubscribe,
-    type DirectRallarOperationResult,
+    type DirectRallarOperationResult
 } from '../../../direct-rallar-operations.ts';
-import { recordValue as optionalRecord } from '../../shared/record-value.ts';
 import {
-    type RallarBlackBoxBootstrapConfig,
     rallarBlackBoxProviderModeFromConfig,
     rallarBlackBoxRuntimeStore,
+    type RallarBlackBoxBootstrapConfig
 } from '../../../runtime-store.ts';
 import { loadBrowserRallarFacade } from '../../rallar/load-browser-rallar-facade.ts';
+import { recordValue as optionalRecord } from '../../shared/record-value.ts';
 import { redactedJson } from '../../shared/redaction-presentation.ts';
-import {
-    formatDuration,
-    formatTime,
-} from '../../shared/time-format.ts';
+import { formatDuration, formatTime } from '../../shared/time-format.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import type { RallarBrowserStatusSummary } from '../../shell/rallar-browser-status.ts';
 import {
-    type CommandCenterActionFeedback,
     completedActionFeedback,
     idleActionFeedback,
     runningActionFeedback,
+    type CommandCenterActionFeedback
 } from '../shared/action-feedback.ts';
 import type { AuthCommandCenterTicket } from '../shared/auth-command-center-ticket.ts';
-import type {
-    WebSocketCommandCenterValues,
-    WebSocketSubscriptionState,
-} from './websocket-contracts.ts';
-import type { WebSocketCommandCenterViewModel } from './websocket-view-contracts.ts';
-import { deriveWebSocketDiagnostics } from './websocket-diagnostics.ts';
 import { observeRawWebSocket } from './observe-raw-web-socket.ts';
+import { requestWebSocketTicket } from './request-web-socket-ticket.ts';
+import type { WebSocketCommandCenterValues, WebSocketSubscriptionState } from './websocket-contracts.ts';
+import { deriveWebSocketDiagnostics } from './websocket-diagnostics.ts';
 import {
     DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID,
     WEBSOCKET_PAYLOAD_PRESETS,
     webSocketPayloadPresetById,
-    webSocketPayloadPresetText,
+    webSocketPayloadPresetText
 } from './websocket-presets.ts';
 import { webSocketCommandCenterRecipe } from './websocket-recipes.ts';
-import { requestWebSocketTicket } from './request-web-socket-ticket.ts';
 import {
     defaultWebSocketApiUrl,
     defaultWebSocketScope,
@@ -62,8 +48,9 @@ import {
     defaultWebSocketTypeId,
     defaultWebSocketValuesFromContext,
     resolveWebSocketUrlTemplate,
-    webSocketRoutePreview,
+    webSocketRoutePreview
 } from './websocket-routing.ts';
+import type { WebSocketCommandCenterViewModel } from './websocket-view-contracts.ts';
 
 export type UseWebSocketCommandCenterControllerInput = Readonly<{
     state: RallarBlackBoxTestState;
@@ -78,7 +65,7 @@ export function useWebSocketCommandCenterController({
     bootstrap,
     authSession,
     globalValues,
-    browserStatus,
+    browserStatus
 }: UseWebSocketCommandCenterControllerInput): WebSocketCommandCenterViewModel {
     const config = selectRallarBlackBoxCurrentConfig(state);
     const providerMode = config
@@ -87,7 +74,7 @@ export function useWebSocketCommandCenterController({
     const defaultContext = defaultWebSocketValuesFromContext(
         globalValues,
         config,
-        bootstrap,
+        bootstrap
     );
     const [values, setValues] = useState<WebSocketCommandCenterValues>(() => ({
         apiBaseUrl: defaultContext.apiBaseUrl,
@@ -98,36 +85,31 @@ export function useWebSocketCommandCenterController({
         wsScope: defaultWebSocketScope(),
         typeId: defaultWebSocketTypeId(),
         topicId: defaultWebSocketTopicId(),
-        contextId:
-            webSocketPayloadPresetById(DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID)
-                .values?.contextId ?? defaultContext.contextId,
+        contextId: webSocketPayloadPresetById(DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID)
+            .values?.contextId ?? defaultContext.contextId,
         resourceId: '',
         wsUrl: defaultWebSocketApiUrl(defaultContext.apiBaseUrl),
         protocols: '',
-        payloadText:
-            webSocketPayloadPresetText(DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID) ??
+        payloadText: webSocketPayloadPresetText(DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID) ??
             '{}',
         timeoutMs: 5_000,
         closeCode: 1000,
-        closeReason: 'rallar-black-box cleanup',
+        closeReason: 'rallar-black-box cleanup'
     }));
     const [payloadPresetId, setPayloadPresetId] = useState(
-        DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID,
+        DEFAULT_WEBSOCKET_PAYLOAD_PRESET_ID
     );
     const [sequence, setSequence] = useState(1);
     const [localError, setLocalError] = useState<string | undefined>();
     const [busyAction, setBusyAction] = useState<string | undefined>();
-    const [actionFeedback, setActionFeedback] =
-        useState<CommandCenterActionFeedback>(() =>
-            idleActionFeedback(
-                'Run a WebSocket operation to see action status.',
-            ),
-        );
+    const [actionFeedback, setActionFeedback] = useState<CommandCenterActionFeedback>(() =>
+        idleActionFeedback(
+            'Run a WebSocket operation to see action status.'
+        )
+    );
     const [waitStatus, setWaitStatus] = useState<string>('idle');
     const [ticket, setTicket] = useState<AuthCommandCenterTicket | undefined>();
-    const [subscription, setSubscription] = useState<
-        WebSocketSubscriptionState | undefined
-    >();
+    const [subscription, setSubscription] = useState<WebSocketSubscriptionState | undefined>();
     const rawSocketRef = useRef<WebSocket | undefined>(undefined);
     const rawSocketAuthKey = authSession
         ? `${authSession.clientId}:${authSession.sessionId}`
@@ -136,11 +118,11 @@ export function useWebSocketCommandCenterController({
     const defaultContextRef = useRef(defaultContext);
     const diagnostics = useMemo(
         () => deriveWebSocketDiagnostics(state, values.connection),
-        [state, values.connection],
+        [state, values.connection]
     );
     const activePreset = useMemo(
         () => webSocketPayloadPresetById(payloadPresetId),
-        [payloadPresetId],
+        [payloadPresetId]
     );
     const canSendViaRallarSignaling = providerMode === 'browser-rallar';
     const routePreview = useMemo(
@@ -149,9 +131,9 @@ export function useWebSocketCommandCenterController({
                 values,
                 diagnostics,
                 providerMode,
-                browserStatus,
+                browserStatus
             }),
-        [browserStatus, diagnostics, providerMode, values],
+        [browserStatus, diagnostics, providerMode, values]
     );
     const subscriptionStatusLabel = subscription
         ? 'listening'
@@ -160,18 +142,19 @@ export function useWebSocketCommandCenterController({
     const receiveStatusText = subscription
         ? `Listening for ${subscription.label} at ${subscription.destination}.`
         : providerMode === 'browser-rallar'
-          ? 'Not listening. Click Subscribe WS to receive app messages in this browser.'
-          : 'Received messages appear here when WS message events are emitted.';
+        ? 'Not listening. Click Subscribe WS to receive app messages in this browser.'
+        : 'Received messages appear here when WS message events are emitted.';
     const payloadResult = useMemo(() => {
         try {
             return {
                 ok: true as const,
-                value: JSON.parse(values.payloadText) as unknown,
+                value: JSON.parse(values.payloadText) as unknown
             };
-        } catch (error) {
+        }
+        catch (error) {
             return {
                 ok: false as const,
-                error: error instanceof Error ? error.message : String(error),
+                error: error instanceof Error ? error.message : String(error)
             };
         }
     }, [values.payloadText]);
@@ -185,37 +168,31 @@ export function useWebSocketCommandCenterController({
         defaultContextRef.current = defaultContext;
         setValues((current) => {
             const previousDefaultWsUrl = defaultWebSocketApiUrl(
-                previousDefault.apiBaseUrl,
+                previousDefault.apiBaseUrl
             );
             const next = {
                 ...current,
-                apiBaseUrl:
-                    current.apiBaseUrl === previousDefault.apiBaseUrl
-                        ? defaultContext.apiBaseUrl
-                        : current.apiBaseUrl,
-                applicationId:
-                    current.applicationId === previousDefault.applicationId
-                        ? defaultContext.applicationId
-                        : current.applicationId,
-                workspaceId:
-                    current.workspaceId === previousDefault.workspaceId
-                        ? defaultContext.workspaceId
-                        : current.workspaceId,
-                groupId:
-                    current.groupId === previousDefault.groupId ||
-                    current.groupId === ''
-                        ? defaultContext.groupId
-                        : current.groupId,
-                contextId:
-                    current.contextId === previousDefault.contextId ||
-                    current.contextId === previousDefault.groupId ||
-                    current.contextId === ''
-                        ? defaultContext.contextId
-                        : current.contextId,
-                wsUrl:
-                    current.wsUrl === previousDefaultWsUrl
-                        ? defaultWebSocketApiUrl(defaultContext.apiBaseUrl)
-                        : current.wsUrl,
+                apiBaseUrl: current.apiBaseUrl === previousDefault.apiBaseUrl
+                    ? defaultContext.apiBaseUrl
+                    : current.apiBaseUrl,
+                applicationId: current.applicationId === previousDefault.applicationId
+                    ? defaultContext.applicationId
+                    : current.applicationId,
+                workspaceId: current.workspaceId === previousDefault.workspaceId
+                    ? defaultContext.workspaceId
+                    : current.workspaceId,
+                groupId: current.groupId === previousDefault.groupId ||
+                        current.groupId === ''
+                    ? defaultContext.groupId
+                    : current.groupId,
+                contextId: current.contextId === previousDefault.contextId ||
+                        current.contextId === previousDefault.groupId ||
+                        current.contextId === ''
+                    ? defaultContext.contextId
+                    : current.contextId,
+                wsUrl: current.wsUrl === previousDefaultWsUrl
+                    ? defaultWebSocketApiUrl(defaultContext.apiBaseUrl)
+                    : current.wsUrl
             };
 
             return JSON.stringify(next) === JSON.stringify(current)
@@ -227,7 +204,7 @@ export function useWebSocketCommandCenterController({
         defaultContext.applicationId,
         defaultContext.workspaceId,
         defaultContext.groupId,
-        defaultContext.contextId,
+        defaultContext.contextId
     ]);
 
     useEffect(() => () => subscription?.unsubscribe(), [subscription]);
@@ -248,11 +225,11 @@ export function useWebSocketCommandCenterController({
 
     const updateValue = <K extends keyof WebSocketCommandCenterValues>(
         key: K,
-        value: WebSocketCommandCenterValues[K],
+        value: WebSocketCommandCenterValues[K]
     ): void => {
         setValues((current) => ({
             ...current,
-            [key]: value,
+            [key]: value
         }));
     };
 
@@ -260,48 +237,45 @@ export function useWebSocketCommandCenterController({
         setValues((current) => ({
             ...current,
             groupId,
-            contextId:
-                current.contextId === current.groupId ||
-                current.contextId === '' ||
-                current.contextId === 'all' ||
-                current.contextId === current.wsScope
-                    ? groupId || current.wsScope
-                    : current.contextId,
+            contextId: current.contextId === current.groupId ||
+                    current.contextId === '' ||
+                    current.contextId === 'all' ||
+                    current.contextId === current.wsScope
+                ? groupId || current.wsScope
+                : current.contextId
         }));
     };
 
     const updateWsScope = (
-        wsScope: WebSocketCommandCenterValues['wsScope'],
+        wsScope: WebSocketCommandCenterValues['wsScope']
     ): void => {
         setValues((current) => ({
             ...current,
             wsScope,
-            contextId:
-                current.contextId === current.wsScope ||
-                current.contextId === current.groupId ||
-                current.contextId === 'all' ||
-                current.contextId === 'world' ||
-                current.contextId === 'room'
-                    ? wsScope === 'room'
-                        ? current.groupId || 'room'
-                        : wsScope
-                    : current.contextId,
+            contextId: current.contextId === current.wsScope ||
+                    current.contextId === current.groupId ||
+                    current.contextId === 'all' ||
+                    current.contextId === 'world' ||
+                    current.contextId === 'room'
+                ? wsScope === 'room'
+                    ? current.groupId || 'room'
+                    : wsScope
+                : current.contextId
         }));
     };
 
     const selectPayloadPreset = (presetId: string): void => {
         setPayloadPresetId(presetId);
         const preset = WEBSOCKET_PAYLOAD_PRESETS.find(
-            (entry) => entry.presetId === presetId,
+            (entry) => entry.presetId === presetId
         );
         if (preset?.values) {
             setValues((current) => ({
                 ...current,
                 ...preset.values,
-                contextId:
-                    preset.values?.contextId ??
+                contextId: preset.values?.contextId ??
                     current.groupId ??
-                    current.contextId,
+                    current.contextId
             }));
         }
         const text = webSocketPayloadPresetText(presetId);
@@ -310,19 +284,16 @@ export function useWebSocketCommandCenterController({
         }
     };
 
-    const directContext = (): Parameters<
-        typeof runDirectRallarStatusCheck
-    >[0] => ({
+    const directContext = (): Parameters<typeof runDirectRallarStatusCheck>[0] => ({
         providerMode,
         apiBaseUrl: values.apiBaseUrl,
         applicationId: values.applicationId,
         workspaceId: values.workspaceId,
         roomId: values.groupId.trim(),
-        actor:
-            authSession?.username ?? authSession?.clientId ?? bootstrap.actor,
+        actor: authSession?.username ?? authSession?.clientId ?? bootstrap.actor,
         connection: values.connection,
         authSession,
-        timeoutMs: values.timeoutMs,
+        timeoutMs: values.timeoutMs
     });
 
     const recordWebSocketEvent = (
@@ -330,7 +301,7 @@ export function useWebSocketCommandCenterController({
         payload: unknown,
         lastAction: string,
         severity: RallarBlackBoxTestRuntimeEventInput['severity'] = 'info',
-        kind: RallarBlackBoxTestRuntimeEventInput['kind'] = 'diagnostic',
+        kind: RallarBlackBoxTestRuntimeEventInput['kind'] = 'diagnostic'
     ): void => {
         rallarBlackBoxRuntimeStore.recordRuntimeEvent(
             createDirectRallarRuntimeEvent({
@@ -339,24 +310,23 @@ export function useWebSocketCommandCenterController({
                 kind,
                 transport: 'ws',
                 severity,
-                payload,
+                payload
             }),
-            lastAction,
+            lastAction
         );
     };
 
     const recordDirectResult = (
         result: DirectRallarOperationResult,
         completedAction: string,
-        failedAction: string,
+        failedAction: string
     ): void => {
-        result.events.forEach((event) =>
-            rallarBlackBoxRuntimeStore.recordRuntimeEvent(event),
-        );
+        result.events.forEach((event) => rallarBlackBoxRuntimeStore.recordRuntimeEvent(event));
         if (result.status === 'failed') {
             setLocalError(result.error?.message ?? failedAction);
             setWaitStatus('failed');
-        } else {
+        }
+        else {
             setWaitStatus('completed');
         }
         recordWebSocketEvent(
@@ -365,11 +335,11 @@ export function useWebSocketCommandCenterController({
                 status: result.status,
                 durationMs: result.durationMs,
                 value: result.value,
-                error: result.error,
+                error: result.error
             },
             result.status === 'failed' ? failedAction : completedAction,
             result.status === 'failed' ? 'error' : 'info',
-            'state',
+            'state'
         );
     };
 
@@ -382,8 +352,8 @@ export function useWebSocketCommandCenterController({
             runningActionFeedback(
                 label,
                 values.connection,
-                'Recording the current WebSocket configuration.',
-            ),
+                'Recording the current WebSocket configuration.'
+            )
         );
         try {
             setSequence((current) => current + 1);
@@ -396,10 +366,10 @@ export function useWebSocketCommandCenterController({
                     groupId: values.groupId,
                     selector: {
                         typeId: values.typeId,
-                        topicId: values.topicId,
-                    },
+                        topicId: values.topicId
+                    }
                 },
-                'Configure WebSocket',
+                'Configure WebSocket'
             );
             setWaitStatus('configured');
             setActionFeedback(
@@ -409,12 +379,12 @@ export function useWebSocketCommandCenterController({
                     target: values.connection,
                     ok: true,
                     status: 'configured',
-                    message: `Configured ${routePreview.destination}.`,
-                }),
+                    message: `Configured ${routePreview.destination}.`
+                })
             );
-        } catch (error) {
-            const message =
-                error instanceof Error ? error.message : String(error);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
             setLocalError(message);
             setActionFeedback(
                 completedActionFeedback({
@@ -423,22 +393,23 @@ export function useWebSocketCommandCenterController({
                     target: values.connection,
                     ok: false,
                     statusText: 'error',
-                    message,
-                }),
+                    message
+                })
             );
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
 
     const requestWsTicket = async (
-        requestId: string,
+        requestId: string
     ): Promise<AuthCommandCenterTicket> => {
         const nextTicket = await requestWebSocketTicket({
             apiBaseUrl: values.apiBaseUrl,
             authSession,
             requestId,
-            timeoutMs: values.timeoutMs,
+            timeoutMs: values.timeoutMs
         });
         setTicket(nextTicket);
         return nextTicket;
@@ -446,17 +417,16 @@ export function useWebSocketCommandCenterController({
 
     const open = async (
         url = values.wsUrl,
-        options: { useTicket?: boolean } = { useTicket: true },
+        options: { useTicket?: boolean; } = { useTicket: true }
     ): Promise<void> => {
         const ticketRequestId = options.useTicket === false
             ? undefined
             : crypto.randomUUID();
         setBusyAction('Open WebSocket');
         setLocalError(undefined);
-        const label =
-            options.useTicket === false
-                ? 'Open WebSocket without ticket'
-                : 'Open WebSocket';
+        const label = options.useTicket === false
+            ? 'Open WebSocket without ticket'
+            : 'Open WebSocket';
         const startedAtEpochMs = Date.now();
         setActionFeedback(
             runningActionFeedback(
@@ -464,26 +434,25 @@ export function useWebSocketCommandCenterController({
                 url,
                 options.useTicket === false
                     ? 'Opening raw WebSocket without acquiring a ticket.'
-                    : 'Creating a ticket and opening the raw WebSocket.',
-            ),
+                    : 'Creating a ticket and opening the raw WebSocket.'
+            )
         );
         try {
-            const nextTicket =
-                ticketRequestId === undefined
-                    ? undefined
-                    : await requestWsTicket(ticketRequestId);
+            const nextTicket = ticketRequestId === undefined
+                ? undefined
+                : await requestWsTicket(ticketRequestId);
             const resolvedUrl = resolveWebSocketUrlTemplate(
                 url,
                 values.apiBaseUrl,
                 authSession,
-                nextTicket,
+                nextTicket
             );
             setActionFeedback(
                 runningActionFeedback(
                     label,
                     resolvedUrl,
-                    'Opening raw WebSocket connection.',
-                ),
+                    'Opening raw WebSocket connection.'
+                )
             );
             const protocols = values.protocols
                 .split(',')
@@ -492,7 +461,7 @@ export function useWebSocketCommandCenterController({
             rawSocketRef.current?.close(values.closeCode, 'replace raw socket');
             const socket = new WebSocket(
                 resolvedUrl,
-                protocols.length > 0 ? protocols : undefined,
+                protocols.length > 0 ? protocols : undefined
             );
             rawSocketRef.current = socket;
             setSequence((current) => current + 1);
@@ -504,7 +473,7 @@ export function useWebSocketCommandCenterController({
                 startedAtEpochMs,
                 recordEvent: recordWebSocketEvent,
                 setWaitStatus,
-                setActionFeedback,
+                setActionFeedback
             });
             setActionFeedback(
                 completedActionFeedback({
@@ -513,12 +482,12 @@ export function useWebSocketCommandCenterController({
                     target: resolvedUrl,
                     ok: true,
                     status: 'requested',
-                    message: 'Raw WebSocket open was requested.',
-                }),
+                    message: 'Raw WebSocket open was requested.'
+                })
             );
-        } catch (error) {
-            const message =
-                error instanceof Error ? error.message : String(error);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
             setLocalError(message);
             setWaitStatus('raw ws open failed');
             setActionFeedback(
@@ -528,10 +497,11 @@ export function useWebSocketCommandCenterController({
                     target: url,
                     ok: false,
                     statusText: 'error',
-                    message,
-                }),
+                    message
+                })
             );
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -546,8 +516,8 @@ export function useWebSocketCommandCenterController({
                     target: routePreview.destination,
                     ok: false,
                     statusText: 'invalid payload',
-                    message: payloadResult.error,
-                }),
+                    message: payloadResult.error
+                })
             );
             return;
         }
@@ -561,8 +531,8 @@ export function useWebSocketCommandCenterController({
                     target: routePreview.destination,
                     ok: false,
                     statusText: 'invalid target',
-                    message,
-                }),
+                    message
+                })
             );
             return;
         }
@@ -574,8 +544,8 @@ export function useWebSocketCommandCenterController({
             runningActionFeedback(
                 label,
                 routePreview.destination,
-                `Sending ${routePreview.selector} through Rallar WS messages.`,
-            ),
+                `Sending ${routePreview.selector} through Rallar WS messages.`
+            )
         );
         try {
             const result = await runDirectRallarWsSend(
@@ -586,15 +556,15 @@ export function useWebSocketCommandCenterController({
                     topicId: values.topicId,
                     contextId: values.contextId,
                     resourceId: values.resourceId || undefined,
-                    payload: payloadResult.value,
+                    payload: payloadResult.value
                 },
-                loadBrowserRallarFacade,
+                loadBrowserRallarFacade
             );
             setSequence((current) => current + 1);
             recordDirectResult(
                 result,
                 'Rallar WS JSON sent',
-                'Rallar WS send failed',
+                'Rallar WS send failed'
             );
             setActionFeedback(
                 completedActionFeedback({
@@ -604,16 +574,15 @@ export function useWebSocketCommandCenterController({
                     ok: result.status === 'completed',
                     status: result.status,
                     durationMs: result.durationMs,
-                    message:
-                        result.status === 'completed'
-                            ? `Sent ${routePreview.selector}.`
-                            : (result.error?.message ??
-                              'Rallar WS send failed.'),
-                }),
+                    message: result.status === 'completed'
+                        ? `Sent ${routePreview.selector}.`
+                        : (result.error?.message ??
+                            'Rallar WS send failed.')
+                })
             );
-        } catch (error) {
-            const message =
-                error instanceof Error ? error.message : String(error);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
             setLocalError(message);
             setActionFeedback(
                 completedActionFeedback({
@@ -622,10 +591,11 @@ export function useWebSocketCommandCenterController({
                     target: routePreview.destination,
                     ok: false,
                     statusText: 'error',
-                    message,
-                }),
+                    message
+                })
             );
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -639,8 +609,8 @@ export function useWebSocketCommandCenterController({
             runningActionFeedback(
                 label,
                 values.wsUrl,
-                'Closing the raw WebSocket if one is open.',
-            ),
+                'Closing the raw WebSocket if one is open.'
+            )
         );
         try {
             const socket = rawSocketRef.current;
@@ -651,9 +621,9 @@ export function useWebSocketCommandCenterController({
                 {
                     connection: values.connection,
                     closeCode: values.closeCode,
-                    closeReason: reason,
+                    closeReason: reason
                 },
-                'Close WebSocket',
+                'Close WebSocket'
             );
             setSequence((current) => current + 1);
             setActionFeedback(
@@ -665,12 +635,12 @@ export function useWebSocketCommandCenterController({
                     status: socket ? 'close requested' : 'no socket',
                     message: socket
                         ? 'Raw WebSocket close was requested.'
-                        : 'No raw WebSocket was open.',
-                }),
+                        : 'No raw WebSocket was open.'
+                })
             );
-        } catch (error) {
-            const message =
-                error instanceof Error ? error.message : String(error);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
             setLocalError(message);
             setActionFeedback(
                 completedActionFeedback({
@@ -679,10 +649,11 @@ export function useWebSocketCommandCenterController({
                     target: values.wsUrl,
                     ok: false,
                     statusText: 'error',
-                    message,
-                }),
+                    message
+                })
             );
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -708,8 +679,8 @@ export function useWebSocketCommandCenterController({
                     target: routePreview.destination,
                     ok: false,
                     statusText: 'invalid selector',
-                    message,
-                }),
+                    message
+                })
             );
             return;
         }
@@ -723,8 +694,8 @@ export function useWebSocketCommandCenterController({
                     target: routePreview.destination,
                     ok: false,
                     statusText: 'invalid target',
-                    message,
-                }),
+                    message
+                })
             );
             return;
         }
@@ -736,14 +707,14 @@ export function useWebSocketCommandCenterController({
             runningActionFeedback(
                 label,
                 routePreview.destination,
-                `Subscribing to ${routePreview.selector}.`,
-            ),
+                `Subscribing to ${routePreview.selector}.`
+            )
         );
         try {
             subscription?.unsubscribe();
             const selector = {
                 typeId: values.typeId,
-                ...(values.topicId ? { topicId: values.topicId } : {}),
+                ...(values.topicId ? { topicId: values.topicId } : {})
             };
             const result = await runDirectRallarWsSubscribe(
                 directContext(),
@@ -753,8 +724,7 @@ export function useWebSocketCommandCenterController({
                     recordWebSocketEvent(
                         'rallar.direct.ws.message',
                         {
-                            roomId:
-                                record.roomId ??
+                            roomId: record.roomId ??
                                 record.groupId ??
                                 values.groupId,
                             applicationId: values.applicationId,
@@ -765,19 +735,19 @@ export function useWebSocketCommandCenterController({
                             resourceId: record.resourceId,
                             senderId: record.senderId,
                             data: record.payload ?? message,
-                            raw: message,
+                            raw: message
                         },
                         'Rallar WS message received',
                         'info',
-                        'message',
+                        'message'
                     );
                 },
-                loadBrowserRallarFacade,
+                loadBrowserRallarFacade
             );
             recordDirectResult(
                 result,
                 'Rallar WS subscribed',
-                'Rallar WS subscribe failed',
+                'Rallar WS subscribe failed'
             );
             if (result.status === 'completed' && result.unsubscribe) {
                 setSubscription({
@@ -785,7 +755,7 @@ export function useWebSocketCommandCenterController({
                     destination: routePreview.destination,
                     groupId: values.groupId,
                     subscribedAtEpochMs: Date.now(),
-                    unsubscribe: result.unsubscribe,
+                    unsubscribe: result.unsubscribe
                 });
                 setWaitStatus('subscribed');
             }
@@ -797,16 +767,15 @@ export function useWebSocketCommandCenterController({
                     ok: result.status === 'completed',
                     status: result.status,
                     durationMs: result.durationMs,
-                    message:
-                        result.status === 'completed'
-                            ? `Subscribed to ${selector.topicId ?? '*'} / ${selector.typeId}.`
-                            : (result.error?.message ??
-                              'Rallar WS subscribe failed.'),
-                }),
+                    message: result.status === 'completed'
+                        ? `Subscribed to ${selector.topicId ?? '*'} / ${selector.typeId}.`
+                        : (result.error?.message ??
+                            'Rallar WS subscribe failed.')
+                })
             );
-        } catch (error) {
-            const message =
-                error instanceof Error ? error.message : String(error);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
             setLocalError(message);
             setActionFeedback(
                 completedActionFeedback({
@@ -815,10 +784,11 @@ export function useWebSocketCommandCenterController({
                     target: routePreview.destination,
                     ok: false,
                     statusText: 'error',
-                    message,
-                }),
+                    message
+                })
             );
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -837,8 +807,8 @@ export function useWebSocketCommandCenterController({
                 status: subscription ? 'unsubscribed' : 'no subscription',
                 message: subscription
                     ? 'Rallar WS subscription cleared.'
-                    : 'No Rallar WS subscription was active.',
-            }),
+                    : 'No Rallar WS subscription was active.'
+            })
         );
     };
 
@@ -852,8 +822,8 @@ export function useWebSocketCommandCenterController({
             runningActionFeedback(
                 label,
                 '/api/auth/ws-ticket',
-                'Requesting a WebSocket ticket.',
-            ),
+                'Requesting a WebSocket ticket.'
+            )
         );
         try {
             const nextTicket = await requestWsTicket(requestId);
@@ -862,9 +832,9 @@ export function useWebSocketCommandCenterController({
                 {
                     sessionId: nextTicket.sessionId,
                     expiresAtEpochMs: nextTicket.expiresAtEpochMs,
-                    ticket: '<redacted:ws-ticket>',
+                    ticket: '<redacted:ws-ticket>'
                 },
-                'Create WS ticket',
+                'Create WS ticket'
             );
             setActionFeedback(
                 completedActionFeedback({
@@ -873,12 +843,12 @@ export function useWebSocketCommandCenterController({
                     target: '/api/auth/ws-ticket',
                     ok: true,
                     status: 'created',
-                    message: `Ticket expires at ${formatTime(nextTicket.expiresAtEpochMs)}.`,
-                }),
+                    message: `Ticket expires at ${formatTime(nextTicket.expiresAtEpochMs)}.`
+                })
             );
-        } catch (error) {
-            const message =
-                error instanceof Error ? error.message : String(error);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
             setLocalError(message);
             setActionFeedback(
                 completedActionFeedback({
@@ -887,10 +857,11 @@ export function useWebSocketCommandCenterController({
                     target: '/api/auth/ws-ticket',
                     ok: false,
                     statusText: 'error',
-                    message,
-                }),
+                    message
+                })
             );
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -906,15 +877,15 @@ export function useWebSocketCommandCenterController({
             runningActionFeedback(
                 label,
                 values.connection,
-                `Waiting up to ${formatDuration(values.timeoutMs)} for inbound WS traffic.`,
-            ),
+                `Waiting up to ${formatDuration(values.timeoutMs)} for inbound WS traffic.`
+            )
         );
         try {
             await new Promise<void>((resolve, reject) => {
                 const interval = window.setInterval(() => {
                     const latest = deriveWebSocketDiagnostics(
                         stateRef.current,
-                        values.connection,
+                        values.connection
                     );
                     if (latest.inboundCount > startCount) {
                         window.clearInterval(interval);
@@ -925,8 +896,8 @@ export function useWebSocketCommandCenterController({
                         window.clearInterval(interval);
                         reject(
                             new Error(
-                                'Timed out waiting for WebSocket message.',
-                            ),
+                                'Timed out waiting for WebSocket message.'
+                            )
                         );
                     }
                 }, 100);
@@ -939,13 +910,13 @@ export function useWebSocketCommandCenterController({
                     target: values.connection,
                     ok: true,
                     status: 'observed',
-                    message: 'A WebSocket message was observed.',
-                }),
+                    message: 'A WebSocket message was observed.'
+                })
             );
-        } catch (error) {
+        }
+        catch (error) {
             setWaitStatus('timeout');
-            const message =
-                error instanceof Error ? error.message : String(error);
+            const message = error instanceof Error ? error.message : String(error);
             setLocalError(message);
             setActionFeedback(
                 completedActionFeedback({
@@ -954,10 +925,11 @@ export function useWebSocketCommandCenterController({
                     target: values.connection,
                     ok: false,
                     statusText: 'timeout',
-                    message,
-                }),
+                    message
+                })
             );
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -971,18 +943,18 @@ export function useWebSocketCommandCenterController({
             runningActionFeedback(
                 label,
                 values.apiBaseUrl,
-                'Starting Rallar signaling and waiting for WS open.',
-            ),
+                'Starting Rallar signaling and waiting for WS open.'
+            )
         );
         try {
             if (providerMode !== 'browser-rallar') {
                 throw new Error(
-                    'Rallar WS wait requires provider=browser-rallar.',
+                    'Rallar WS wait requires provider=browser-rallar.'
                 );
             }
             if (!authSession) {
                 throw new Error(
-                    'Rallar WS wait requires a logged-in browser session.',
+                    'Rallar WS wait requires a logged-in browser session.'
                 );
             }
             const facade = await loadBrowserRallarFacade();
@@ -992,54 +964,52 @@ export function useWebSocketCommandCenterController({
                 workspaceId: values.workspaceId,
                 room: values.groupId
                     ? {
-                          roomId: values.groupId,
-                          roomRef: {
-                              applicationId: values.applicationId,
-                              workspaceId: values.workspaceId,
-                              groupId: values.groupId,
-                          },
-                      }
-                    : undefined,
+                        roomId: values.groupId,
+                        roomRef: {
+                            applicationId: values.applicationId,
+                            workspaceId: values.workspaceId,
+                            groupId: values.groupId
+                        }
+                    }
+                    : undefined
             });
             await facade.start({
                 connect: true,
                 refreshRooms: false,
                 refreshPeople: false,
-                timeoutMs: values.timeoutMs,
+                timeoutMs: values.timeoutMs
             });
             const result = await facade.ws.waitForOpen({
-                timeoutMs: values.timeoutMs,
+                timeoutMs: values.timeoutMs
             });
             rallarBlackBoxRuntimeStore.recordRuntimeEvent(
                 createDirectRallarRuntimeEvent({
-                    topic:
-                        result.status === 'open'
-                            ? 'rallar.direct.ws.wait_open.completed'
-                            : 'rallar.direct.ws.wait_open.failed',
+                    topic: result.status === 'open'
+                        ? 'rallar.direct.ws.wait_open.completed'
+                        : 'rallar.direct.ws.wait_open.failed',
                     context: {
                         providerMode,
                         apiBaseUrl: values.apiBaseUrl,
                         applicationId: values.applicationId,
                         workspaceId: values.workspaceId,
                         roomId: values.groupId,
-                        actor:
-                            authSession.username ??
+                        actor: authSession.username ??
                             authSession.clientId ??
                             bootstrap.actor,
                         connection: values.connection,
                         authSession,
-                        timeoutMs: values.timeoutMs,
+                        timeoutMs: values.timeoutMs
                     },
                     transport: 'ws',
                     severity: result.status === 'open' ? 'info' : 'error',
-                    payload: result,
+                    payload: result
                 }),
                 result.status === 'open'
                     ? 'Rallar WS open observed'
-                    : 'Rallar WS open wait failed',
+                    : 'Rallar WS open wait failed'
             );
             setWaitStatus(
-                result.status === 'open' ? 'rallar ws open' : result.status,
+                result.status === 'open' ? 'rallar ws open' : result.status
             );
             setActionFeedback(
                 completedActionFeedback({
@@ -1048,16 +1018,15 @@ export function useWebSocketCommandCenterController({
                     target: values.apiBaseUrl,
                     ok: result.status === 'open',
                     status: result.status,
-                    message:
-                        result.status === 'open'
-                            ? 'Rallar signaling WebSocket is open.'
-                            : 'Rallar signaling WebSocket did not open.',
-                }),
+                    message: result.status === 'open'
+                        ? 'Rallar signaling WebSocket is open.'
+                        : 'Rallar signaling WebSocket did not open.'
+                })
             );
-        } catch (error) {
+        }
+        catch (error) {
             setWaitStatus('rallar ws wait failed');
-            const message =
-                error instanceof Error ? error.message : String(error);
+            const message = error instanceof Error ? error.message : String(error);
             setLocalError(message);
             setActionFeedback(
                 completedActionFeedback({
@@ -1066,10 +1035,11 @@ export function useWebSocketCommandCenterController({
                     target: values.apiBaseUrl,
                     ok: false,
                     statusText: 'error',
-                    message,
-                }),
+                    message
+                })
             );
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -1082,25 +1052,24 @@ export function useWebSocketCommandCenterController({
                     diagnostics,
                     subscription: subscription
                         ? {
-                              label: subscription.label,
-                              destination: subscription.destination,
-                              groupId: subscription.groupId,
-                              subscribedAtEpochMs:
-                                  subscription.subscribedAtEpochMs,
-                          }
+                            label: subscription.label,
+                            destination: subscription.destination,
+                            groupId: subscription.groupId,
+                            subscribedAtEpochMs: subscription.subscribedAtEpochMs
+                        }
                         : undefined,
                     ticket: ticket
                         ? {
-                              ...ticket,
-                              ticket: '<redacted:ws-ticket>',
-                              expiresInMs: ticket.expiresAtEpochMs - Date.now(),
-                          }
+                            ...ticket,
+                            ticket: '<redacted:ws-ticket>',
+                            expiresInMs: ticket.expiresAtEpochMs - Date.now()
+                        }
                         : undefined,
-                    waitStatus,
+                    waitStatus
                 },
                 state,
-                authSession,
-            ),
+                authSession
+            )
         );
     };
 
@@ -1117,14 +1086,14 @@ export function useWebSocketCommandCenterController({
                 providerMode,
                 authSession,
                 sequence,
-                includeRtcParity,
-            }),
+                includeRtcParity
+            })
         );
     };
 
     const openMissingTicket = (): Promise<void> =>
         open('{config.wsBaseUrl}/api/ws/{auth.sessionId}', {
-            useTicket: false,
+            useTicket: false
         });
 
     return {
@@ -1162,10 +1131,8 @@ export function useWebSocketCommandCenterController({
         waitForRallarWsOpen,
         copyDiagnostics,
         copyRecipe,
-        openMissingTicket,
+        openMissingTicket
     };
 }
 
-export type WebSocketCommandCenterControllerModel = ReturnType<
-    typeof useWebSocketCommandCenterController
->;
+export type WebSocketCommandCenterControllerModel = ReturnType<typeof useWebSocketCommandCenterController>;

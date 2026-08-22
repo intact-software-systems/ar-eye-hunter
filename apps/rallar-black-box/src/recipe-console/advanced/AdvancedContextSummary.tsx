@@ -3,8 +3,8 @@ import type { AdvancedWorkspaceModel } from './advanced-workspace-contract.ts';
 import styles from './AdvancedWorkspace.module.css';
 
 export function AdvancedContextSummary({
-    model,
-}: Readonly<{ model: AdvancedWorkspaceModel }>) {
+    model
+}: Readonly<{ model: AdvancedWorkspaceModel; }>) {
     return (
         <section
             aria-labelledby="advanced-context-heading"
@@ -15,13 +15,13 @@ export function AdvancedContextSummary({
                 <div>
                     <h2 id="advanced-context-heading">Current diagnostic context</h2>
                     <p>
-                        {model.contextSourceLabel}. Links carry only bounded,
-                        allow-listed context into the selected legacy tool.
+                        {model.contextSourceLabel}. Links carry only bounded, allow-listed context into the selected
+                        legacy tool.
                     </p>
                 </div>
             </header>
             <dl className={styles.contextGrid}>
-                {model.contextRows.map(row => (
+                {model.contextRows.map((row) => (
                     <div
                         className={styles.contextRow}
                         data-context-field={row.field}
@@ -31,23 +31,27 @@ export function AdvancedContextSummary({
                         <dt>{row.label}</dt>
                         <dd>
                             {row.value ? <ExactIdentifier value={row.value} /> : null}
-                            {row.message ? (
-                                <span className={styles.contextMessage}>
-                                    {row.message}
-                                </span>
-                            ) : null}
+                            {row.message
+                                ? (
+                                    <span className={styles.contextMessage}>
+                                        {row.message}
+                                    </span>
+                                )
+                                : null}
                         </dd>
                     </div>
                 ))}
             </dl>
-            {model.notices.length > 0 ? (
-                <div className={styles.notices}>
-                    <h3>Context notices</h3>
-                    <ul>
-                        {model.notices.map(notice => <li key={notice}>{notice}</li>)}
-                    </ul>
-                </div>
-            ) : null}
+            {model.notices.length > 0
+                ? (
+                    <div className={styles.notices}>
+                        <h3>Context notices</h3>
+                        <ul>
+                            {model.notices.map((notice) => <li key={notice}>{notice}</li>)}
+                        </ul>
+                    </div>
+                )
+                : null}
         </section>
     );
 }

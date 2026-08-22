@@ -1,15 +1,14 @@
-import type { LoanedValue, LoanedValueOptions, LoanedValueRefresh } from './LoanedValue.ts';
 import type { LatestValue, LatestValueOptions } from './LatestValue.ts';
+import type { LoanedValue, LoanedValueOptions, LoanedValueRefresh } from './LoanedValue.ts';
 
 export const ObservableValueEventType = {
     Created: 'created',
     Updated: 'updated',
     Refreshed: 'refreshed',
-    Deleted: 'deleted',
+    Deleted: 'deleted'
 } as const;
 
-export type ObservableValueEventType =
-    (typeof ObservableValueEventType)[keyof typeof ObservableValueEventType];
+export type ObservableValueEventType = (typeof ObservableValueEventType)[keyof typeof ObservableValueEventType];
 
 export type ObservableValueEvent<T> = Readonly<{
     type: ObservableValueEventType;
@@ -19,12 +18,12 @@ export type ObservableValueEvent<T> = Readonly<{
 }>;
 
 export type ObservableValueListener<T> = (
-    event: ObservableValueEvent<T>,
+    event: ObservableValueEvent<T>
 ) => void | Promise<void>;
 
 export type ObservableValueErrorHandler<T> = (
     error: unknown,
-    event: ObservableValueEvent<T>,
+    event: ObservableValueEvent<T>
 ) => void | Promise<void>;
 
 export interface Unsubscribe {
@@ -49,16 +48,16 @@ export interface ObservableValue<T> {
 export type ObservableKeyedValueEvent<K, V> =
     & ObservableValueEvent<V>
     & Readonly<{
-    key: K;
-}>;
+        key: K;
+    }>;
 
 export type ObservableKeyedValueListener<K, V> = (
-    event: ObservableKeyedValueEvent<K, V>,
+    event: ObservableKeyedValueEvent<K, V>
 ) => void | Promise<void>;
 
 export type ObservableKeyedValueErrorHandler<K, V> = (
     error: unknown,
-    event: ObservableKeyedValueEvent<K, V>,
+    event: ObservableKeyedValueEvent<K, V>
 ) => void | Promise<void>;
 
 export interface ObservableKeyedValues<K, V> {
@@ -112,7 +111,7 @@ export type UpdateIfNewerOptions<V> = Readonly<{
 
 export type LoanedRepositoryRefresh<K, V> = (
     key: K,
-    current: V | undefined,
+    current: V | undefined
 ) => V | Promise<V>;
 
 export interface PullKeyedValues<K, V> extends ReadableKeyedValues<K, V> {
@@ -189,8 +188,7 @@ export interface KeyedValueHistory<K, V> {
     clearHistory(key: K): this;
 }
 
-export interface PullMementoKeyedValues<K, V>
-    extends PullKeyedValues<K, V>, KeyedValueHistory<K, V> {
+export interface PullMementoKeyedValues<K, V> extends PullKeyedValues<K, V>, KeyedValueHistory<K, V> {
     setLoan(key: K, loan: LoanedValue<V> | undefined): this;
 
     commitLoan(key: K, loan: LoanedValue<V> | undefined): this;
@@ -198,13 +196,13 @@ export interface PullMementoKeyedValues<K, V>
     setRefresher(
         key: K,
         refresher: LoanedValueRefresh<V>,
-        options?: LoanedValueOptions<V>,
+        options?: LoanedValueOptions<V>
     ): this;
 
     commitRefresher(
         key: K,
         refresher: LoanedValueRefresh<V>,
-        options?: LoanedValueOptions<V>,
+        options?: LoanedValueOptions<V>
     ): this;
 
     setValue(key: K, value: V, options?: LoanedValueOptions<V>): this;
@@ -212,8 +210,7 @@ export interface PullMementoKeyedValues<K, V>
     commitValue(key: K, value: V, options?: LoanedValueOptions<V>): this;
 }
 
-export interface PushMementoKeyedValues<K, V>
-    extends PushKeyedValues<K, V>, KeyedValueHistory<K, V> {
+export interface PushMementoKeyedValues<K, V> extends PushKeyedValues<K, V>, KeyedValueHistory<K, V> {
     commitLatest(key: K, latest: LatestValue<V> | undefined): this;
 
     commitValue(key: K, value: V, options?: LatestValueOptions<V>): this;

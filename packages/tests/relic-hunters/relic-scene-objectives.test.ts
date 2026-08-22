@@ -1,17 +1,13 @@
-import { describe, expect, it } from 'vitest';
 import {
-    RELIC_PROTOCOL_VERSION,
     applyRelicCommand,
     createRelicGame,
+    RELIC_PROTOCOL_VERSION,
     toPublicRelicSnapshot,
     type RelicGameState,
-    type RelicPublicSnapshot,
+    type RelicPublicSnapshot
 } from '@relic-hunters/mod.ts';
-import {
-    deriveSceneObjective,
-    roomHasResolvedClue,
-    shortestOpenRoomPath,
-} from '../../../apps/relic-hunters-v1/src/game/scene/objectives.ts';
+import { describe, expect, it } from 'vitest';
+import { deriveSceneObjective, roomHasResolvedClue, shortestOpenRoomPath } from '../../../apps/relic-hunters-v1/src/game/scene/objectives.ts';
 
 describe('Relic scene objective derivation', () => {
     it('recommends movement when the current room has no strong clue', () => {
@@ -19,7 +15,7 @@ describe('Relic scene objective derivation', () => {
 
         const objective = deriveSceneObjective({
             snapshot,
-            localPlayerId: 'alice-session',
+            localPlayerId: 'alice-session'
         });
 
         expect(objective).toMatchObject({
@@ -27,8 +23,8 @@ describe('Relic scene objective derivation', () => {
             title: 'Move to Hallway',
             recommendedAction: {
                 kind: 'move',
-                targetRoomId: 'hallway',
-            },
+                targetRoomId: 'hallway'
+            }
         });
     });
 
@@ -37,14 +33,14 @@ describe('Relic scene objective derivation', () => {
 
         const objective = deriveSceneObjective({
             snapshot,
-            localPlayerId: 'alice-session',
+            localPlayerId: 'alice-session'
         });
 
         expect(objective).toMatchObject({
             eyebrow: 'Storage',
             title: 'Search the crates',
             recommendedAction: { kind: 'search' },
-            clueHotspotId: 'storage-crates',
+            clueHotspotId: 'storage-crates'
         });
     });
 
@@ -53,14 +49,14 @@ describe('Relic scene objective derivation', () => {
 
         const objective = deriveSceneObjective({
             snapshot,
-            localPlayerId: 'alice-session',
+            localPlayerId: 'alice-session'
         });
 
         expect(objective).toMatchObject({
             eyebrow: 'Exit',
             title: 'Escape is available',
             recommendedAction: { kind: 'escape' },
-            tone: 'success',
+            tone: 'success'
         });
     });
 
@@ -72,32 +68,32 @@ describe('Relic scene objective derivation', () => {
             localPlayerId: 'alice-session',
             primedAction: {
                 kind: 'move',
-                targetRoomId: 'hallway',
-            },
+                targetRoomId: 'hallway'
+            }
         });
 
         expect(objective).toMatchObject({
             title: 'Move to Hallway',
             detail: 'Submit the plan to commit this turn-based move.',
-            targetRoomId: 'hallway',
+            targetRoomId: 'hallway'
         });
     });
 
     it('marks the objective as locked after the hunter submits a plan', () => {
         const snapshot = {
             ...planningSnapshot(),
-            submittedPlayerIds: ['alice-session'],
+            submittedPlayerIds: ['alice-session']
         };
 
         const objective = deriveSceneObjective({
             snapshot,
             localPlayerId: 'alice-session',
-            primedAction: { kind: 'search' },
+            primedAction: { kind: 'search' }
         });
 
         expect(objective).toMatchObject({
             title: 'Plan locked',
-            tone: 'success',
+            tone: 'success'
         });
         expect(objective.recommendedAction).toBeUndefined();
     });
@@ -116,14 +112,14 @@ describe('Relic scene objective derivation', () => {
                     summary: 'The crates held a torn supply map, but no relic.',
                     hint: 'The supply marks point back toward the Entrance and onward through the Trap Room.',
                     effect: 'map-fragment',
-                    revealedRoomId: 'trap',
-                },
-            ],
+                    revealedRoomId: 'trap'
+                }
+            ]
         }, 'storage');
 
         const objective = deriveSceneObjective({
             snapshot,
-            localPlayerId: 'alice-session',
+            localPlayerId: 'alice-session'
         });
 
         expect(objective).toMatchObject({
@@ -134,20 +130,18 @@ describe('Relic scene objective derivation', () => {
             routeTargetRoomId: 'trap',
             recommendedAction: {
                 kind: 'move',
-                targetRoomId: 'trap',
+                targetRoomId: 'trap'
             },
             investigationSummary: 'The crates held a torn supply map, but no relic.',
             investigationHint: 'The supply marks point back toward the Entrance and onward through the Trap Room.',
-            investigated: true,
+            investigated: true
         });
     });
 
     it('falls back when the revealed room is collapsed', () => {
         const snapshot = withPlayerRoom({
             ...planningSnapshot(),
-            map: planningSnapshot().map.map((room) =>
-                room.id === 'trap' ? { ...room, collapsed: true } : room
-            ),
+            map: planningSnapshot().map.map((room) => room.id === 'trap' ? { ...room, collapsed: true } : room),
             roomInvestigations: [
                 {
                     roomId: 'hallway',
@@ -159,33 +153,31 @@ describe('Relic scene objective derivation', () => {
                     summary: 'Hallway was searched clear.',
                     hint: 'The marked route no longer looks safe.',
                     effect: 'ordinary-search',
-                    revealedRoomId: 'trap',
-                },
-            ],
+                    revealedRoomId: 'trap'
+                }
+            ]
         }, 'hallway');
 
         const objective = deriveSceneObjective({
             snapshot,
-            localPlayerId: 'alice-session',
+            localPlayerId: 'alice-session'
         });
 
         expect(objective).toMatchObject({
             title: 'Move to Shrine',
             targetRoomId: 'shrine',
-            routeTargetRoomId: 'shrine',
+            routeTargetRoomId: 'shrine'
         });
     });
 
     it('finds shortest open room paths and avoids collapsed rooms', () => {
         const snapshot = planningSnapshot();
-        const collapsedTrap = snapshot.map.map((room) =>
-            room.id === 'trap' ? { ...room, collapsed: true } : room
-        );
+        const collapsedTrap = snapshot.map.map((room) => room.id === 'trap' ? { ...room, collapsed: true } : room);
 
         expect(shortestOpenRoomPath(snapshot.map, 'storage', 'monster')).toEqual([
             'storage',
             'trap',
-            'monster',
+            'monster'
         ]);
         expect(shortestOpenRoomPath(collapsedTrap, 'storage', 'monster')).toBeUndefined();
     });
@@ -201,10 +193,10 @@ describe('Relic scene objective derivation', () => {
                     value: 6,
                     roomId: 'storage',
                     foundBy: 'alice-session',
-                    carriedBy: 'alice-session',
+                    carriedBy: 'alice-session'
                 },
-                ...snapshot.relics.slice(1),
-            ],
+                ...snapshot.relics.slice(1)
+            ]
         };
         const investigatedSnapshot = {
             ...snapshot,
@@ -220,9 +212,9 @@ describe('Relic scene objective derivation', () => {
                     summary: 'The safe edges of the pressure plates were marked.',
                     hint: 'Move carefully from here; repeated noise can make the room punish the party.',
                     effect: 'safe-path' as const,
-                    danger: 'Pressure plates remain unstable.',
-                },
-            ],
+                    danger: 'Pressure plates remain unstable.'
+                }
+            ]
         };
 
         expect(roomHasResolvedClue(foundRelicSnapshot, 'storage')).toBe(true);
@@ -238,19 +230,19 @@ function planningSnapshot(): RelicPublicSnapshot {
         kind: 'join-expedition',
         gameId: 'room-1',
         username: 'Alice',
-        characterId: 'kael-ironstride',
+        characterId: 'kael-ironstride'
     }, {
         senderId: 'alice-session',
-        now: () => 2,
+        now: () => 2
     }).state;
     state = applyRelicCommand(state, {
         protocolVersion: RELIC_PROTOCOL_VERSION,
         kind: 'start-expedition',
         gameId: 'room-1',
-        username: 'Alice',
+        username: 'Alice'
     }, {
         senderId: 'alice-session',
-        now: () => 3,
+        now: () => 3
     }).state;
 
     return toPublicRelicSnapshot(state);
@@ -258,7 +250,7 @@ function planningSnapshot(): RelicPublicSnapshot {
 
 function withPlayerRoom(
     snapshot: RelicPublicSnapshot,
-    roomId: string,
+    roomId: string
 ): RelicPublicSnapshot {
     return {
         ...snapshot,
@@ -266,6 +258,6 @@ function withPlayerRoom(
             player.playerId === 'alice-session'
                 ? { ...player, roomId }
                 : player
-        ),
+        )
     };
 }

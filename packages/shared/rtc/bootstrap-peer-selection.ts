@@ -1,5 +1,5 @@
-import { rendezvousScore } from './rendezvous-score.ts';
 import { DEFAULT_WEBRTC_MAX_PEER_CONNECTIONS } from '../services/WebRtcGroupManager.ts';
+import { rendezvousScore } from './rendezvous-score.ts';
 
 export const DEFAULT_BOOTSTRAP_DEGREE = 5;
 
@@ -31,14 +31,14 @@ export function resolveBootstrapDegree(input: BootstrapDegreeInput): number {
  * correctness baseline when a bootstrap component is isolated.
  */
 export function selectBootstrapPeers(
-    input: BootstrapPeerSelectionInput,
+    input: BootstrapPeerSelectionInput
 ): readonly string[] {
     const candidates = [...new Set(input.memberSessionIds)]
         .filter((sessionId) => sessionId !== input.localSessionId)
         .sort((left, right) =>
             rendezvousScore(input.localSessionId, left, input.groupKey)
                 .localeCompare(
-                    rendezvousScore(input.localSessionId, right, input.groupKey),
+                    rendezvousScore(input.localSessionId, right, input.groupKey)
                 )
         );
 

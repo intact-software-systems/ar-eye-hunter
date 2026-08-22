@@ -28,6 +28,3 @@ Each server instance keeps a list of all clients.
 Whenever a client requests a WebSocket connection, this client is added to the local in memory
 list and broadcasted to the other server instances, which in
 turn updates their local in-memory list and sends updates to its connected clients.
-
-
-

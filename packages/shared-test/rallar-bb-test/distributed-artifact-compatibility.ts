@@ -3,7 +3,7 @@ import {
     distributedArtifactPipelineFile,
     distributedArtifactPipelineJsonRecord,
     parseDistributedArtifactPipeline,
-    type ParsedDistributedArtifactPipeline,
+    type ParsedDistributedArtifactPipeline
 } from './distributed-artifact-pipeline.ts';
 import {
     DISTRIBUTED_ARTIFACT_CORE_FILE_NAMES,
@@ -13,7 +13,7 @@ import {
     type DistributedArtifactFamily,
     type DistributedArtifactInventoryItem,
     type DistributedArtifactWorkspaceIssue,
-    type DistributedArtifactWorkspaceSupport,
+    type DistributedArtifactWorkspaceSupport
 } from './distributed-artifact-workspace-contracts.ts';
 
 const ADDITIONAL_RECOGNIZED_FILE_NAMES = new Set([
@@ -23,12 +23,12 @@ const ADDITIONAL_RECOGNIZED_FILE_NAMES = new Set([
     'control-post-stage-error.json',
     'control-post-start-error.json',
     'control-post-request-error.json',
-    'control-post-error-metadata.json',
+    'control-post-error-metadata.json'
 ]);
 const JSONL_FILE_NAMES = new Set(['results.jsonl', 'events.jsonl']);
 const NULLABLE_JSON_FILE_NAMES = new Set([
     'control-run.json',
-    'target-resolution.json',
+    'target-resolution.json'
 ]);
 
 type FileValidation = Readonly<{
@@ -38,27 +38,29 @@ type FileValidation = Readonly<{
 
 export function identifyDistributedArtifactFamily(
     files: DistributedRunArtifactFiles,
-    envelopeDistributedRunId?: string,
+    envelopeDistributedRunId?: string
 ): DistributedArtifactFamily {
     return identifyDistributedArtifactFamilyFromParsed(
         parseDistributedArtifactPipeline(files, {
-            projection: 'literal-loose-files',
+            projection: 'literal-loose-files'
         }),
-        envelopeDistributedRunId,
+        envelopeDistributedRunId
     );
 }
 
 export function identifyDistributedArtifactFamilyFromParsed(
     parsed: ParsedDistributedArtifactPipeline,
-    envelopeDistributedRunId?: string,
+    envelopeDistributedRunId?: string
 ): DistributedArtifactFamily {
     const files = parsed.projectedFiles;
     if (
         envelopeDistributedRunId ||
         DISTRIBUTED_ARTIFACT_CORE_FILE_NAMES.some(
-            fileName => files[fileName] !== undefined,
+            (fileName) => files[fileName] !== undefined
         )
-    ) return 'distributed-run';
+    ) {
+        return 'distributed-run';
+    }
     const report = distributedArtifactPipelineJsonRecord(parsed, 'report.json');
     const metadata = distributedArtifactPipelineJsonRecord(parsed, 'metadata.json');
     if (metadata.execution === 'distributed-run' || report.execution === 'distributed-run') {
@@ -68,10 +70,10 @@ export function identifyDistributedArtifactFamilyFromParsed(
         metadata.execution === 'run' ||
         Array.isArray(report.resultsList) ||
         stringValue(metadata.config)?.includes('black-box-runner') ||
-        stringArray(metadata.command).some(value =>
-            value.includes('scenario-black-box')
-        )
-    ) return 'black-box-runner';
+        stringArray(metadata.command).some((value) => value.includes('scenario-black-box'))
+    ) {
+        return 'black-box-runner';
+    }
     return 'unknown';
 }
 
@@ -79,15 +81,15 @@ export function createDistributedArtifactInventory(
     family: DistributedArtifactFamily,
     files: DistributedRunArtifactFiles,
     projection: DistributedArtifactEnvelopeProjection,
-    issues: DistributedArtifactWorkspaceIssue[],
+    issues: DistributedArtifactWorkspaceIssue[]
 ): DistributedArtifactInventoryItem[] {
     return createDistributedArtifactInventoryFromParsed(
         family,
         parseDistributedArtifactPipeline(files, {
-            projection: 'literal-loose-files',
+            projection: 'literal-loose-files'
         }),
         projection,
-        issues,
+        issues
     );
 }
 
@@ -95,7 +97,7 @@ export function createDistributedArtifactInventoryFromParsed(
     family: DistributedArtifactFamily,
     parsed: ParsedDistributedArtifactPipeline,
     projection: DistributedArtifactEnvelopeProjection,
-    issues: DistributedArtifactWorkspaceIssue[],
+    issues: DistributedArtifactWorkspaceIssue[]
 ): DistributedArtifactInventoryItem[] {
     const files = parsed.projectedFiles;
     const inventory: DistributedArtifactInventoryItem[] = [];
@@ -111,28 +113,35 @@ export function createDistributedArtifactInventoryFromParsed(
         }
     }
     for (const fileName of Object.keys(files).sort()) {
-        if (visited.has(fileName) || files[fileName] === undefined) continue;
+        if (visited.has(fileName) || files[fileName] === undefined) {
+            continue;
+        }
         if (isRecognizedFile(fileName)) {
             const validation = validateParsedFile(parsed, fileName);
             inventory.push({
                 fileName,
                 status: validation.status,
                 requirement: 'recognized',
-                message: validation.message,
+                message: validation.message
             });
             addValidationIssue(issues, fileName, validation);
-        } else {
+        }
+        else {
             addIgnored(inventory, issues, fileName);
         }
     }
     for (const [fileName, message] of Object.entries(projection.invalidFiles).sort()) {
-        const existing = inventory.findIndex(item => item.fileName === fileName);
+        const existing = inventory.findIndex((item) => item.fileName === fileName);
         const requirement = existing >= 0
             ? inventory[existing]?.requirement ?? 'recognized'
             : 'recognized';
         const item = { fileName, status: 'incompatible' as const, requirement, message };
-        if (existing >= 0) inventory[existing] = item;
-        else inventory.push(item);
+        if (existing >= 0) {
+            inventory[existing] = item;
+        }
+        else {
+            inventory.push(item);
+        }
         issues.push({ code: 'incompatible-file', severity: 'error', fileName, message });
     }
     for (const fileName of projection.outerIgnoredFiles) {
@@ -141,96 +150,104 @@ export function createDistributedArtifactInventoryFromParsed(
     return inventory;
 }
 
-export function distributedArtifactWorkspaceSupport(input: Readonly<{
-    family: DistributedArtifactFamily;
-    inventory: readonly DistributedArtifactInventoryItem[];
-    hasSchemaConflict: boolean;
-    hasInvalidEnvelopeSchema: boolean;
-    hasFatalEnvelopeIssue: boolean;
-    artifactSchemaVersion?: number;
-}>): DistributedArtifactWorkspaceSupport {
+export function distributedArtifactWorkspaceSupport(
+    input: Readonly<{
+        family: DistributedArtifactFamily;
+        inventory: readonly DistributedArtifactInventoryItem[];
+        hasSchemaConflict: boolean;
+        hasInvalidEnvelopeSchema: boolean;
+        hasFatalEnvelopeIssue: boolean;
+        artifactSchemaVersion?: number;
+    }>
+): DistributedArtifactWorkspaceSupport {
     if (
         input.hasSchemaConflict || input.hasInvalidEnvelopeSchema ||
-        input.hasFatalEnvelopeIssue || input.inventory.some(item =>
+        input.hasFatalEnvelopeIssue || input.inventory.some((item) =>
             item.requirement === 'core' &&
             (item.status === 'malformed' || item.status === 'incompatible')
         )
-    ) return 'incompatible';
+    ) {
+        return 'incompatible';
+    }
     if (
         input.family !== 'distributed-run' ||
         (input.artifactSchemaVersion !== undefined &&
             !DISTRIBUTED_ARTIFACT_KNOWN_SCHEMA_VERSIONS.has(input.artifactSchemaVersion))
-    ) return 'unsupported';
-    return input.inventory.some(item => item.status === 'missing-core')
+    ) {
+        return 'unsupported';
+    }
+    return input.inventory.some((item) => item.status === 'missing-core')
         ? 'incomplete'
         : 'supported';
 }
 
 export function inferredDistributedArtifactSchemaVersion(
     files: DistributedRunArtifactFiles,
-    family: DistributedArtifactFamily,
+    family: DistributedArtifactFamily
 ): number | undefined {
-    if (family !== 'distributed-run') return undefined;
+    if (family !== 'distributed-run') {
+        return undefined;
+    }
     return ['report.json', 'failures.json', 'metadata.json']
-            .every(fileName => files[fileName] !== undefined)
+            .every((fileName) => files[fileName] !== undefined)
         ? 2
         : 1;
 }
 
 export function inferredDistributedArtifactSchemaVersionFromParsed(
     parsed: ParsedDistributedArtifactPipeline,
-    family: DistributedArtifactFamily,
+    family: DistributedArtifactFamily
 ): number | undefined {
     return inferredDistributedArtifactSchemaVersion(parsed.projectedFiles, family);
 }
 
 export function declaredDistributedArtifactSchemaVersion(
-    files: DistributedRunArtifactFiles,
+    files: DistributedRunArtifactFiles
 ): number | undefined {
     return declaredDistributedArtifactSchemaVersionFromParsed(
         parseDistributedArtifactPipeline(files, {
-            projection: 'literal-loose-files',
-        }),
+            projection: 'literal-loose-files'
+        })
     );
 }
 
 export function declaredDistributedArtifactSchemaVersionFromParsed(
-    parsed: ParsedDistributedArtifactPipeline,
+    parsed: ParsedDistributedArtifactPipeline
 ): number | undefined {
     return finiteInteger(
-        distributedArtifactPipelineJsonRecord(parsed, 'metadata.json').artifactSchemaVersion,
+        distributedArtifactPipelineJsonRecord(parsed, 'metadata.json').artifactSchemaVersion
     ) ?? finiteInteger(
-        distributedArtifactPipelineJsonRecord(parsed, 'report.json').artifactSchemaVersion,
+        distributedArtifactPipelineJsonRecord(parsed, 'report.json').artifactSchemaVersion
     );
 }
 
 export function distributedArtifactGeneratedAt(
-    files: DistributedRunArtifactFiles,
+    files: DistributedRunArtifactFiles
 ): number | undefined {
     return distributedArtifactGeneratedAtFromParsed(
         parseDistributedArtifactPipeline(files, {
-            projection: 'literal-loose-files',
-        }),
+            projection: 'literal-loose-files'
+        })
     );
 }
 
 export function distributedArtifactGeneratedAtFromParsed(
-    parsed: ParsedDistributedArtifactPipeline,
+    parsed: ParsedDistributedArtifactPipeline
 ): number | undefined {
     return finiteNumber(
-        distributedArtifactPipelineJsonRecord(parsed, 'metadata.json').generatedAtEpochMs,
+        distributedArtifactPipelineJsonRecord(parsed, 'metadata.json').generatedAtEpochMs
     );
 }
 
 export function distributedArtifactSchemaInventory(
     status: 'incompatible' | 'unknown-version',
-    message: string,
+    message: string
 ): DistributedArtifactInventoryItem {
     return {
         fileName: '$artifactSchemaVersion',
         status,
         requirement: 'schema',
-        message,
+        message
     };
 }
 
@@ -241,7 +258,7 @@ function addExpected(
     projection: DistributedArtifactEnvelopeProjection,
     fileName: string,
     requirement: 'core' | 'optional',
-    parsed: ParsedDistributedArtifactPipeline,
+    parsed: ParsedDistributedArtifactPipeline
 ): void {
     const invalidMessage = projection.invalidFiles[fileName];
     if (invalidMessage) {
@@ -259,7 +276,7 @@ function addExpected(
             code: status,
             severity: requirement === 'core' ? 'error' : 'warning',
             fileName,
-            message,
+            message
         });
         return;
     }
@@ -270,7 +287,7 @@ function addExpected(
 
 function validateParsedFile(
     parsed: ParsedDistributedArtifactPipeline,
-    fileName: string,
+    fileName: string
 ): FileValidation {
     const file = distributedArtifactPipelineFile(parsed, fileName);
     if (JSONL_FILE_NAMES.has(fileName)) {
@@ -281,13 +298,13 @@ function validateParsedFile(
             if (row.status === 'malformed') {
                 return {
                     status: 'malformed',
-                    message: `${fileName}:${row.lineNumber} is not valid JSON.`,
+                    message: `${fileName}:${row.lineNumber} is not valid JSON.`
                 };
             }
             if (!isRecord(row.value)) {
                 return {
                     status: 'incompatible',
-                    message: `${fileName}:${row.lineNumber} must contain a JSON object.`,
+                    message: `${fileName}:${row.lineNumber} must contain a JSON object.`
                 };
             }
         }
@@ -299,7 +316,9 @@ function validateParsedFile(
     const value = file.format === 'json' && file.status === 'parsed'
         ? file.value
         : undefined;
-    if (value === null && NULLABLE_JSON_FILE_NAMES.has(fileName)) return { status: 'loaded' };
+    if (value === null && NULLABLE_JSON_FILE_NAMES.has(fileName)) {
+        return { status: 'loaded' };
+    }
     return isRecord(value)
         ? { status: 'loaded' }
         : { status: 'incompatible', message: `${fileName} must contain a JSON object.` };
@@ -308,20 +327,23 @@ function validateParsedFile(
 function addValidationIssue(
     issues: DistributedArtifactWorkspaceIssue[],
     fileName: string,
-    validation: FileValidation,
+    validation: FileValidation
 ): void {
-    if (validation.status === 'loaded') return;
+    if (validation.status === 'loaded') {
+        return;
+    }
     issues.push({
         code: validation.status === 'malformed' ? 'malformed-file' : 'incompatible-file',
-        severity: 'error', fileName,
-        message: validation.message ?? `${fileName} cannot be used.`,
+        severity: 'error',
+        fileName,
+        message: validation.message ?? `${fileName} cannot be used.`
     });
 }
 
 function addIgnored(
     inventory: DistributedArtifactInventoryItem[],
     issues: DistributedArtifactWorkspaceIssue[],
-    fileName: string,
+    fileName: string
 ): void {
     const message = `${fileName} is not part of the distributed-run artifact contract and was ignored.`;
     inventory.push({ fileName, status: 'ignored', requirement: 'unknown', message });

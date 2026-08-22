@@ -1,10 +1,10 @@
 import { createDeterministicAvatarProfile, validateAvatarProfile } from '../avatarProfile.ts';
+import type { PlayerPose } from '../types.ts';
 import type {
     DirectorAttemptSource,
     DirectorAttemptState,
-    HttpProbeDiagnostics,
+    HttpProbeDiagnostics
 } from './arena-connection-contracts.ts';
-import type { PlayerPose } from '../types.ts';
 
 interface HttpProbeValue {
     readonly apiBaseUrl?: string;
@@ -20,13 +20,13 @@ interface DirectorAttemptStateInput {
 }
 
 export function toErrorMessage(
-    error: Error | string | number | boolean | null | undefined,
+    error: Error | string | number | boolean | null | undefined
 ): string {
     return error instanceof Error ? error.message : String(error);
 }
 
 export function toDirectorAttemptState(
-    input: DirectorAttemptStateInput,
+    input: DirectorAttemptStateInput
 ): DirectorAttemptState {
     const finishedAtEpochMs = Date.now();
     return {
@@ -36,12 +36,12 @@ export function toDirectorAttemptState(
         reason: input.reason,
         startedAtEpochMs: input.startedAtEpochMs,
         finishedAtEpochMs,
-        durationMs: finishedAtEpochMs - input.startedAtEpochMs,
+        durationMs: finishedAtEpochMs - input.startedAtEpochMs
     };
 }
 
 function toDirectorAttemptStatus(
-    resultStatus: string,
+    resultStatus: string
 ): DirectorAttemptState['status'] {
     switch (resultStatus) {
         case 'appointed':
@@ -64,15 +64,17 @@ export function withValidatedAvatarProfile(pose: PlayerPose): PlayerPose {
         ...pose,
         avatarProfile: validation.ok
             ? validation.profile
-            : createDeterministicAvatarProfile(pose.sessionId, pose.username),
+            : createDeterministicAvatarProfile(pose.sessionId, pose.username)
     };
 }
 
 export async function probeHttp(
     operation: (signal: AbortSignal) => Promise<HttpProbeValue>,
-    parentSignal?: AbortSignal,
+    parentSignal?: AbortSignal
 ): Promise<HttpProbeDiagnostics> {
-    if (parentSignal?.aborted) return { status: 'idle' };
+    if (parentSignal?.aborted) {
+        return { status: 'idle' };
+    }
     const controller = new AbortController();
     const startedAtEpochMs = Date.now();
     const timeout = window.setTimeout(() => controller.abort(), 2_500);
@@ -80,30 +82,36 @@ export async function probeHttp(
     parentSignal?.addEventListener('abort', abort, { once: true });
     try {
         const value = await operation(controller.signal);
-        if (parentSignal?.aborted) return { status: 'idle' };
+        if (parentSignal?.aborted) {
+            return { status: 'idle' };
+        }
         return {
             status: 'ok',
             checkedAtEpochMs: Date.now(),
             durationMs: Date.now() - startedAtEpochMs,
-            detail: summarizeProbeValue(value),
+            detail: summarizeProbeValue(value)
         };
-    } catch (error) {
+    }
+    catch (error) {
         return {
             status: 'error',
             checkedAtEpochMs: Date.now(),
             durationMs: Date.now() - startedAtEpochMs,
             reason: toErrorMessage(
-                error instanceof Error ? error : new Error(String(error)),
-            ),
+                error instanceof Error ? error : new Error(String(error))
+            )
         };
-    } finally {
+    }
+    finally {
         parentSignal?.removeEventListener('abort', abort);
         window.clearTimeout(timeout);
     }
 }
 
 function summarizeProbeValue(value: HttpProbeValue): string | undefined {
-    if (value.iceServers) return `${value.iceServers.length} ICE servers`;
+    if (value.iceServers) {
+        return `${value.iceServers.length} ICE servers`;
+    }
     if (value.apiBaseUrl || value.wsBaseUrl) {
         return [value.apiBaseUrl, value.wsBaseUrl].filter(Boolean).join(' / ');
     }

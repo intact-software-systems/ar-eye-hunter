@@ -1,12 +1,8 @@
-import {
-    createContext,
-    type ReactNode,
-    useContext,
-} from 'react';
+import { createContext, useContext, type ReactNode } from 'react';
 import {
     buildLegacyDiagnosticReturnHref,
     type LegacyDiagnosticContext,
-    type ParsedLegacyDiagnosticContext,
+    type ParsedLegacyDiagnosticContext
 } from './legacy-diagnostic-context.ts';
 import styles from './LegacyDiagnosticContextBar.module.css';
 
@@ -26,7 +22,7 @@ const CONTEXT_FIELDS: readonly ContextField[] = [
     { key: 'recipeId', label: 'Recipe' },
     { key: 'commandId', label: 'Command' },
     { key: 'transport', label: 'Transport' },
-    { key: 'view', label: 'Source view' },
+    { key: 'view', label: 'Source view' }
 ] as const;
 
 export type LegacyDiagnosticContextBarProps = Readonly<{
@@ -36,17 +32,17 @@ export type LegacyDiagnosticContextBarProps = Readonly<{
 const ABSENT_CONTEXT: ParsedLegacyDiagnosticContext = {
     status: 'absent',
     issues: [],
-    omittedIssueCount: 0,
+    omittedIssueCount: 0
 };
 
 const LegacyDiagnosticContext = createContext<ParsedLegacyDiagnosticContext>(
-    ABSENT_CONTEXT,
+    ABSENT_CONTEXT
 );
 
 export function LegacyDiagnosticContextProvider({
     parsed,
-    children,
-}: LegacyDiagnosticContextBarProps & Readonly<{ children: ReactNode }>) {
+    children
+}: LegacyDiagnosticContextBarProps & Readonly<{ children: ReactNode; }>) {
     return (
         <LegacyDiagnosticContext.Provider value={parsed}>
             {children}
@@ -59,12 +55,12 @@ export function useLegacyDiagnosticContext(): ParsedLegacyDiagnosticContext {
 }
 
 export function LegacyDiagnosticContextBar({
-    parsed,
+    parsed
 }: LegacyDiagnosticContextBarProps) {
     const context = parsed.context;
     const returnHref = buildLegacyDiagnosticReturnHref(context);
     const entries = context
-        ? CONTEXT_FIELDS.flatMap(field => {
+        ? CONTEXT_FIELDS.flatMap((field) => {
             const value = context[field.key];
             return typeof value === 'string' ? [{ ...field, value }] : [];
         })
@@ -84,57 +80,69 @@ export function LegacyDiagnosticContextBar({
             <p className={styles.summary}>{contextSummary(parsed.status)}</p>
 
             {entries.length > 0
-                ? <dl className={styles.values}>
-                    {entries.map(entry => (
-                        <div
-                            className={styles.valueRow}
-                            data-context-field={entry.key}
-                            key={entry.key}
-                        >
-                            <dt>{entry.label}</dt>
-                            <dd>
-                                <ExactContextValue>{entry.value}</ExactContextValue>
-                                {entry.key === 'agentId'
-                                    ? <small className={styles.agentNote}>
-                                        Context only; not a client identity.
-                                    </small>
-                                    : null}
-                            </dd>
-                        </div>
-                    ))}
-                </dl>
+                ? (
+                    <dl className={styles.values}>
+                        {entries.map((entry) => (
+                            <div
+                                className={styles.valueRow}
+                                data-context-field={entry.key}
+                                key={entry.key}
+                            >
+                                <dt>{entry.label}</dt>
+                                <dd>
+                                    <ExactContextValue>{entry.value}</ExactContextValue>
+                                    {entry.key === 'agentId'
+                                        ? (
+                                            <small className={styles.agentNote}>
+                                                Context only; not a client identity.
+                                            </small>
+                                        )
+                                        : null}
+                                </dd>
+                            </div>
+                        ))}
+                    </dl>
+                )
                 : parsed.status === 'ready'
-                    ? <p className={styles.notice}>
+                ? (
+                    <p className={styles.notice}>
                         No safe diagnostic selections were supplied.
                     </p>
-                    : null}
+                )
+                : null}
 
             <div className={styles.actions}>
                 {returnHref && context?.view
-                    ? <a
-                        className={styles.returnLink}
-                        data-legacy-diagnostic-return
-                        href={returnHref}
-                    >
-                        Return to {viewLabel(context.view)}
-                    </a>
+                    ? (
+                        <a
+                            className={styles.returnLink}
+                            data-legacy-diagnostic-return
+                            href={returnHref}
+                        >
+                            Return to {viewLabel(context.view)}
+                        </a>
+                    )
                     : parsed.status === 'ready'
-                        ? <span className={styles.notice}>
+                    ? (
+                        <span className={styles.notice}>
                             Return link unavailable because the source view is missing.
                         </span>
-                        : null}
+                    )
+                    : null}
                 {parsed.issues.length > 0 || parsed.omittedIssueCount > 0
-                    ? <span className={styles.notice} role="status">
-                        {parsed.issues.length + parsed.omittedIssueCount}{' '}
-                        unsafe or unsupported context field(s) ignored.
-                    </span>
+                    ? (
+                        <span className={styles.notice} role="status">
+                            {parsed.issues.length + parsed.omittedIssueCount}{' '}
+                            unsafe or unsupported context field(s) ignored.
+                        </span>
+                    )
                     : null}
             </div>
         </section>
     );
 }
 
-function ExactContextValue({ children }: { children: ReactNode }) {
+function ExactContextValue({ children }: { children: ReactNode; }) {
     return (
         <bdi
             className={styles.identifier}
@@ -147,7 +155,7 @@ function ExactContextValue({ children }: { children: ReactNode }) {
 }
 
 function contextTitle(
-    status: ParsedLegacyDiagnosticContext['status'],
+    status: ParsedLegacyDiagnosticContext['status']
 ): string {
     if (status === 'absent') {
         return 'No Recipe Console diagnostic context';
@@ -159,7 +167,7 @@ function contextTitle(
 }
 
 function contextStatus(
-    status: ParsedLegacyDiagnosticContext['status'],
+    status: ParsedLegacyDiagnosticContext['status']
 ): string {
     switch (status) {
         case 'ready':
@@ -174,7 +182,7 @@ function contextStatus(
 }
 
 function contextSummary(
-    status: ParsedLegacyDiagnosticContext['status'],
+    status: ParsedLegacyDiagnosticContext['status']
 ): string {
     switch (status) {
         case 'ready':

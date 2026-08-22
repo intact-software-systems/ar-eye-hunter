@@ -26,7 +26,7 @@ on:
       run_id:
         description: Control run id; leave blank to derive one from this workflow run
         required: false
-        default: ""
+        default: ''
       room_id:
         description: Rallar room id for headless agents
         required: true
@@ -50,7 +50,7 @@ on:
       terminal_timeout_seconds:
         description: Distributed recipe terminal-state wait timeout in seconds; blank derives from manifest metadata
         required: false
-        default: ""
+        default: ''
       register_before_login:
         description: Register disposable test users before login
         type: boolean
@@ -128,8 +128,8 @@ jobs:
           MAX_PARALLEL_JOBS: ${{ inputs.max_parallel_jobs }}
           AGENT_PREFIX: ${{ inputs.agent_prefix }}
           MANIFEST_PATH: ${{ inputs.manifest_path }}
-          REGISTER_BEFORE_LOGIN: "${{ inputs.register_before_login }}"
-          ROLLOUT_CONTROL_PLANE: "${{ inputs.rollout_control_plane }}"
+          REGISTER_BEFORE_LOGIN: '${{ inputs.register_before_login }}'
+          ROLLOUT_CONTROL_PLANE: '${{ inputs.rollout_control_plane }}'
         run: |
           set -euo pipefail
           sanitize() {
@@ -365,7 +365,7 @@ jobs:
           set +a
           npm --workspace rallar-black-box run worker:headless
         env:
-          CI: "1"
+          CI: '1'
           RALLAR_BLACK_BOX_SPA_URL: ${{ inputs.spa_url }}
           RALLAR_BLACK_BOX_CONTROL_URL: ${{ inputs.control_url }}
           RALLAR_CONTROL_HTTP_URL: ${{ inputs.control_http_url }}
@@ -373,7 +373,7 @@ jobs:
           RALLAR_BLACK_BOX_RUN_ID: ${{ needs.plan.outputs.run_id }}
           RALLAR_BLACK_BOX_TARGET_DISTRIBUTED_RUN_ID: ${{ needs.plan.outputs.distributed_run_id }}
           RALLAR_BLACK_BOX_EXIT_MODE: after-target-distributed-run-terminal
-          RALLAR_BLACK_BOX_IDLE_EXIT_MS: "4500000"
+          RALLAR_BLACK_BOX_IDLE_EXIT_MS: '4500000'
           RALLAR_BLACK_BOX_ROOM_ID: ${{ inputs.room_id }}
           RALLAR_BLACK_BOX_AGENT_PREFIX: ${{ inputs.agent_prefix }}
           RALLAR_BLACK_BOX_AGENT_COUNT: ${{ matrix.shard.agent_count }}

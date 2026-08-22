@@ -45,7 +45,7 @@ export const RELIC_CHARACTERS: readonly RelicCharacter[] = [
         skillset: ['heavy armor', 'line breaking', 'shielded escapes'],
         silhouette: 'vanguard',
         colors: { primary: '#475569', secondary: '#0f766e', accent: '#f2c14e' },
-        healthBonus: 1,
+        healthBonus: 1
     },
     {
         id: 'nyra-vale',
@@ -58,7 +58,7 @@ export const RELIC_CHARACTERS: readonly RelicCharacter[] = [
         silhouette: 'scout',
         colors: { primary: '#14532d', secondary: '#65a30d', accent: '#fef08a' },
         priorityBonusByAction: { move: 1 },
-        noiseReductionByAction: { move: 1 },
+        noiseReductionByAction: { move: 1 }
     },
     {
         id: 'oryn-starcoil',
@@ -71,7 +71,7 @@ export const RELIC_CHARACTERS: readonly RelicCharacter[] = [
         silhouette: 'scholar',
         colors: { primary: '#1d4ed8', secondary: '#7c3aed', accent: '#93c5fd' },
         relicValueBonus: 1,
-        noiseReductionByAction: { search: 1 },
+        noiseReductionByAction: { search: 1 }
     },
     {
         id: 'vessa-thornlock',
@@ -84,7 +84,7 @@ export const RELIC_CHARACTERS: readonly RelicCharacter[] = [
         silhouette: 'trapbreaker',
         colors: { primary: '#7c2d12', secondary: '#334155', accent: '#fb923c' },
         priorityBonusByAction: { search: 1 },
-        noiseReductionByAction: { search: 1 },
+        noiseReductionByAction: { search: 1 }
     },
     {
         id: 'tarek-ashmantle',
@@ -96,7 +96,7 @@ export const RELIC_CHARACTERS: readonly RelicCharacter[] = [
         skillset: ['close duels', 'satchel cuts', 'pressure tactics'],
         silhouette: 'duelist',
         colors: { primary: '#991b1b', secondary: '#111827', accent: '#f97316' },
-        priorityBonusByAction: { steal: 1 },
+        priorityBonusByAction: { steal: 1 }
     },
     {
         id: 'sable-moonhook',
@@ -108,7 +108,7 @@ export const RELIC_CHARACTERS: readonly RelicCharacter[] = [
         skillset: ['misdirection', 'sleight of hand', 'ambush routes'],
         silhouette: 'trickster',
         colors: { primary: '#581c87', secondary: '#0f172a', accent: '#f0abfc' },
-        noiseReductionByAction: { steal: 1 },
+        noiseReductionByAction: { steal: 1 }
     },
     {
         id: 'bronn-flintward',
@@ -121,7 +121,7 @@ export const RELIC_CHARACTERS: readonly RelicCharacter[] = [
         silhouette: 'bulwark',
         colors: { primary: '#44403c', secondary: '#92400e', accent: '#fde68a' },
         healthBonus: 1,
-        escapeBonus: 1,
+        escapeBonus: 1
     },
     {
         id: 'ilyra-dawnshard',
@@ -134,7 +134,7 @@ export const RELIC_CHARACTERS: readonly RelicCharacter[] = [
         silhouette: 'seer',
         colors: { primary: '#b45309', secondary: '#1e3a8a', accent: '#fde047' },
         escapeBonus: 2,
-        noiseReductionByAction: { escape: 1 },
+        noiseReductionByAction: { escape: 1 }
     },
     {
         id: 'marek-gloomglass',
@@ -146,7 +146,7 @@ export const RELIC_CHARACTERS: readonly RelicCharacter[] = [
         skillset: ['curse handling', 'relic dueling', 'shadow reading'],
         silhouette: 'hexblade',
         colors: { primary: '#312e81', secondary: '#111827', accent: '#22d3ee' },
-        relicValueBonus: 1,
+        relicValueBonus: 1
     },
     {
         id: 'zaya-stormvein',
@@ -158,8 +158,8 @@ export const RELIC_CHARACTERS: readonly RelicCharacter[] = [
         skillset: ['rapid movement', 'danger sprints', 'exit runs'],
         silhouette: 'stormrunner',
         colors: { primary: '#0e7490', secondary: '#1f2937', accent: '#67e8f9' },
-        priorityBonusByAction: { move: 1, escape: 1 },
-    },
+        priorityBonusByAction: { move: 1, escape: 1 }
+    }
 ];
 
 export function defaultRelicCharacterId(index: number): RelicCharacterId {

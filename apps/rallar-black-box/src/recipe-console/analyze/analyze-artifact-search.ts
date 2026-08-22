@@ -1,13 +1,13 @@
 import {
     searchDistributedArtifactEvidence,
-    type DistributedArtifactEvidenceSearchResult,
+    type DistributedArtifactEvidenceSearchResult
 } from '@shared-test/rallar-bb-test/mod.ts';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
 import type { AnalyzeArtifactModel } from './analyze-artifact-model.ts';
 
 export function deriveAnalyzeArtifactSearchResult(
     model: AnalyzeArtifactModel,
-    urlState: RecipeConsoleUrlState,
+    urlState: RecipeConsoleUrlState
 ): DistributedArtifactEvidenceSearchResult {
     return searchDistributedArtifactEvidence(model.evidenceIndex, {
         query: urlState.historyQuery,
@@ -18,6 +18,6 @@ export function deriveAnalyzeArtifactSearchResult(
         severity: urlState.diagnosticSeverity,
         transport: urlState.transport,
         fromEpochMs: urlState.from,
-        toEpochMs: urlState.to,
+        toEpochMs: urlState.to
     });
 }

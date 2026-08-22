@@ -37,16 +37,18 @@ The black-box runner should only know how to:
 The current seam is already good:
 
 ```ts
-export function createRallarWebRtcRuntime(options: RallarWebRtcRuntimeOptions = {}): RallarRtcRuntime {
+export function createRallarWebRtcRuntime(
+    options: RallarWebRtcRuntimeOptions = {}
+): RallarRtcRuntime {
     return {
         connect: async (args, dispatcher) => {
             if (!options.createSession) {
-                throw toMissingRuntimeImplementationError(args)
+                throw toMissingRuntimeImplementationError(args);
             }
 
-            return await options.createSession(args, dispatcher)
-        },
-    }
+            return await options.createSession(args, dispatcher);
+        }
+    };
 }
 ```
 
@@ -101,8 +103,8 @@ function createRtcProviders(): Record<string, RtcProvider> {
         rallar: createRallarWebRtcWebSocketSignalingProvider(),
         'rallar-real': createRallarExistingWebRtcProvider(),
         'rallar-stub': createRallarStubRtcProvider(),
-        'rallar-memory': createRallarInMemoryProvider(),
-    }
+        'rallar-memory': createRallarInMemoryProvider()
+    };
 }
 ```
 
@@ -141,15 +143,15 @@ A small mapping table between black-box args and existing Rallar RTC API.
 
 Example:
 
-| Black-box field | Existing Rallar field |
-| --- | --- |
-| `args.connection` | local scenario connection name |
-| `args.peerId` | local peer id |
-| `args.remotePeerId` | remote peer id |
-| `args.roomId` | room id |
-| `args.groupId` | group id |
-| `args.overlayId` | overlay id |
-| `args.signalingUrl` | signaling server URL |
+| Black-box field     | Existing Rallar field          |
+| ------------------- | ------------------------------ |
+| `args.connection`   | local scenario connection name |
+| `args.peerId`       | local peer id                  |
+| `args.remotePeerId` | remote peer id                 |
+| `args.roomId`       | room id                        |
+| `args.groupId`      | group id                       |
+| `args.overlayId`    | overlay id                     |
+| `args.signalingUrl` | signaling server URL           |
 
 ## Iteration 2: Add an Adapter File
 
@@ -181,8 +183,8 @@ export function createRallarExistingWebRtcProvider(): RtcProvider {
                 roomId: args.roomId,
                 groupId: args.groupId,
                 overlayId: args.overlayId,
-                signalingUrl: args.signalingUrl,
-            })
+                signalingUrl: args.signalingUrl
+            });
 
             existingSession.onMessage?.((message: any) => {
                 dispatcher.emitMessage({
@@ -193,9 +195,9 @@ export function createRallarExistingWebRtcProvider(): RtcProvider {
                     roomId: args.roomId,
                     groupId: args.groupId,
                     overlayId: args.overlayId,
-                    message,
-                })
-            })
+                    message
+                });
+            });
 
             existingSession.onClose?.((event: any) => {
                 dispatcher.emitClose({
@@ -208,16 +210,16 @@ export function createRallarExistingWebRtcProvider(): RtcProvider {
                     roomId: args.roomId,
                     groupId: args.groupId,
                     overlayId: args.overlayId,
-                    event,
-                })
-            })
+                    event
+                });
+            });
 
             return {
-                send: message => existingSession.send(message),
-                close: () => existingSession.close(),
-            }
-        },
-    })
+                send: (message) => existingSession.send(message),
+                close: () => existingSession.close()
+            };
+        }
+    });
 }
 ```
 
@@ -239,8 +241,8 @@ function createRtcProviders(): Record<string, RtcProvider> {
         rallar: createRallarWebRtcWebSocketSignalingProvider(),
         'rallar-real': createRallarExistingWebRtcProvider(),
         'rallar-stub': createRallarStubRtcProvider(),
-        'rallar-memory': createRallarInMemoryProvider(),
-    }
+        'rallar-memory': createRallarInMemoryProvider()
+    };
 }
 ```
 
@@ -288,7 +290,7 @@ Deno.test('rallar-real adapter forwards incoming data messages', async () => {
     // adapter wraps it
     // executeBlackBox connect/send/wait
     // assert message diagnostics
-})
+});
 ```
 
 Expected output of this iteration:
@@ -417,7 +419,7 @@ The adapter should translate black-box config into the existing Rallar role mode
 Example:
 
 ```ts
-const role = args.rtcRole || args.role || (args.initiator ? 'offerer' : 'answerer')
+const role = args.rtcRole || args.role || (args.initiator ? 'offerer' : 'answerer');
 ```
 
 Expected output of this iteration:
@@ -521,7 +523,7 @@ rallar-real  = existing real Rallar RTC adapter
 Promote only after real RTC scenarios are stable:
 
 ```ts
-rallar: createRallarExistingWebRtcProvider()
+rallar: createRallarExistingWebRtcProvider();
 ```
 
 Then optionally keep signaling-only under a new explicit name:

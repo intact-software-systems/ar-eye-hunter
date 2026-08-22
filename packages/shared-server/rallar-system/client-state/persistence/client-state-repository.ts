@@ -1,190 +1,190 @@
 import type {
-  ClientEvent,
-  ClientInstance,
-  ClientInstanceRef,
-  ClientPrincipal,
-  ClientPrincipalRef,
-  ClientSession,
-  ClientSessionRef,
+    ClientEvent,
+    ClientInstance,
+    ClientInstanceRef,
+    ClientPrincipal,
+    ClientPrincipalRef,
+    ClientSession,
+    ClientSessionRef
 } from '@shared/api/client-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
-import { PSqlRuntimeStateRepository } from '../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { PSqlClientStateEventRepository } from '../../../postgres/rallar-system/PSqlStateEventRepository.ts';
+import { PSqlRuntimeStateRepository } from '../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import type {
-  RuntimeStateConditionalDeleteResult,
-  RuntimeStateConditionalWriteResult,
-  RuntimeStateRepositoryLike,
+    RuntimeStateConditionalDeleteResult,
+    RuntimeStateConditionalWriteResult,
+    RuntimeStateRepositoryLike
 } from '../../../runtime-state/RuntimeStateRepository.ts';
+import { toSessionPurgeAfterEpochMs } from '../../repositories/session-expiry.ts';
 import { defaultClientStateEventStoreFor } from '../../repositories/StateEventStore.ts';
 import {
-  type ClientMutationIdempotencyRecord,
-  type ClientStateRepositoryOptions,
+    type ClientMutationIdempotencyRecord,
+    type ClientStateRepositoryOptions
 } from './client-state-persistence-contracts.ts';
 import { assertCanonicalClientStateIdempotencyRecord } from './client-state-repository-reads.ts';
+import {
+    CLIENT_STATE_IDEMPOTENT_NAMESPACE,
+    CLIENT_STATE_INSTANCES_NAMESPACE,
+    CLIENT_STATE_PRINCIPALS_NAMESPACE,
+    CLIENT_STATE_SESSIONS_NAMESPACE
+} from './client-state-runtime-namespaces.ts';
 import { ClientStateSnapshotRepository } from './client-state-snapshot-repository.ts';
 import {
-  CLIENT_STATE_IDEMPOTENT_NAMESPACE,
-  CLIENT_STATE_INSTANCES_NAMESPACE,
-  CLIENT_STATE_PRINCIPALS_NAMESPACE,
-  CLIENT_STATE_SESSIONS_NAMESPACE,
-} from './client-state-runtime-namespaces.ts';
-import {
-  clientStateIdempotencyStorageKey,
-  clientStateInstanceStorageKey,
-  clientStatePrincipalStorageKey,
-  clientStateSessionStorageKey,
+    clientStateIdempotencyStorageKey,
+    clientStateInstanceStorageKey,
+    clientStatePrincipalStorageKey,
+    clientStateSessionStorageKey
 } from './client-state-storage-keys.ts';
 import {
-  validatePersistedClientEvent,
-  validatePersistedClientInstance,
-  validatePersistedClientPrincipal,
-  validatePersistedClientSession,
+    validatePersistedClientEvent,
+    validatePersistedClientInstance,
+    validatePersistedClientPrincipal,
+    validatePersistedClientSession
 } from './validate-persisted-client-state.ts';
-import { toSessionPurgeAfterEpochMs } from '../../repositories/session-expiry.ts';
 
 export type {
-  ClientMutationIdempotencyRecord,
-  ClientPrincipalSnapshotRead,
-  ClientStateRepositoryOptions,
+    ClientMutationIdempotencyRecord,
+    ClientPrincipalSnapshotRead,
+    ClientStateRepositoryOptions
 } from './client-state-persistence-contracts.ts';
 export { ClientStateRepositoryInvariantCorruptionError } from './client-state-persistence-contracts.ts';
 
 export function createTransactionBoundClientStateRepository(
-  transaction: PSqlTransactionSql,
+    transaction: PSqlTransactionSql
 ): ClientStateRepository {
-  const runtime = new PSqlRuntimeStateRepository(transaction);
-  return new ClientStateRepository(runtime, {
-    events: new PSqlClientStateEventRepository(transaction),
-  });
+    const runtime = new PSqlRuntimeStateRepository(transaction);
+    return new ClientStateRepository(runtime, {
+        events: new PSqlClientStateEventRepository(transaction)
+    });
 }
 
 export class ClientStateRepository extends ClientStateSnapshotRepository {
-  constructor(repository: RuntimeStateRepositoryLike, options: ClientStateRepositoryOptions = {}) {
-    super(repository, options.events ?? defaultClientStateEventStoreFor(repository));
-  }
+    constructor(repository: RuntimeStateRepositoryLike, options: ClientStateRepositoryOptions = {}) {
+        super(repository, options.events ?? defaultClientStateEventStoreFor(repository));
+    }
 
-  async insertIdempotentClientStateWritten(
-    ref: ClientPrincipalRef,
-    requestId: string,
-    record: ClientMutationIdempotencyRecord,
-    purgeAfterEpochMs: number = NEVER_EXPIRE_AT_TIMESTAMP,
-  ): Promise<RuntimeStateConditionalWriteResult> {
-    assertCanonicalClientStateIdempotencyRecord(record, ref, requestId);
-    return await this.putValueIfAbsent(
-      CLIENT_STATE_IDEMPOTENT_NAMESPACE,
-      clientStateIdempotencyStorageKey(ref, requestId),
-      record,
-      purgeAfterEpochMs,
-    );
-  }
+    async insertIdempotentClientStateWritten(
+        ref: ClientPrincipalRef,
+        requestId: string,
+        record: ClientMutationIdempotencyRecord,
+        purgeAfterEpochMs: number = NEVER_EXPIRE_AT_TIMESTAMP
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        assertCanonicalClientStateIdempotencyRecord(record, ref, requestId);
+        return await this.putValueIfAbsent(
+            CLIENT_STATE_IDEMPOTENT_NAMESPACE,
+            clientStateIdempotencyStorageKey(ref, requestId),
+            record,
+            purgeAfterEpochMs
+        );
+    }
 
-  async insertPrincipal(principal: ClientPrincipal): Promise<RuntimeStateConditionalWriteResult> {
-    validatePersistedClientPrincipal(principal, principal);
-    return await this.putValueIfAbsent(
-      CLIENT_STATE_PRINCIPALS_NAMESPACE,
-      clientStatePrincipalStorageKey(principal),
-      principal,
-    );
-  }
+    async insertPrincipal(principal: ClientPrincipal): Promise<RuntimeStateConditionalWriteResult> {
+        validatePersistedClientPrincipal(principal, principal);
+        return await this.putValueIfAbsent(
+            CLIENT_STATE_PRINCIPALS_NAMESPACE,
+            clientStatePrincipalStorageKey(principal),
+            principal
+        );
+    }
 
-  async updatePrincipal(
-    principal: ClientPrincipal,
-    expectedRevision: number,
-  ): Promise<RuntimeStateConditionalWriteResult> {
-    validatePersistedClientPrincipal(principal, principal);
-    return await this.putValueIfRevision(
-      CLIENT_STATE_PRINCIPALS_NAMESPACE,
-      clientStatePrincipalStorageKey(principal),
-      principal,
-      NEVER_EXPIRE_AT_TIMESTAMP,
-      expectedRevision,
-    );
-  }
+    async updatePrincipal(
+        principal: ClientPrincipal,
+        expectedRevision: number
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        validatePersistedClientPrincipal(principal, principal);
+        return await this.putValueIfRevision(
+            CLIENT_STATE_PRINCIPALS_NAMESPACE,
+            clientStatePrincipalStorageKey(principal),
+            principal,
+            NEVER_EXPIRE_AT_TIMESTAMP,
+            expectedRevision
+        );
+    }
 
-  async deletePrincipal(
-    ref: ClientPrincipalRef,
-    expectedRevision: number,
-  ): Promise<RuntimeStateConditionalDeleteResult> {
-    return await this.deleteValueIfRevision(
-      CLIENT_STATE_PRINCIPALS_NAMESPACE,
-      clientStatePrincipalStorageKey(ref),
-      expectedRevision,
-    );
-  }
+    async deletePrincipal(
+        ref: ClientPrincipalRef,
+        expectedRevision: number
+    ): Promise<RuntimeStateConditionalDeleteResult> {
+        return await this.deleteValueIfRevision(
+            CLIENT_STATE_PRINCIPALS_NAMESPACE,
+            clientStatePrincipalStorageKey(ref),
+            expectedRevision
+        );
+    }
 
-  async insertInstance(instance: ClientInstance): Promise<RuntimeStateConditionalWriteResult> {
-    validatePersistedClientInstance(instance, instance);
-    return await this.putValueIfAbsent(
-      CLIENT_STATE_INSTANCES_NAMESPACE,
-      clientStateInstanceStorageKey(instance),
-      instance,
-    );
-  }
+    async insertInstance(instance: ClientInstance): Promise<RuntimeStateConditionalWriteResult> {
+        validatePersistedClientInstance(instance, instance);
+        return await this.putValueIfAbsent(
+            CLIENT_STATE_INSTANCES_NAMESPACE,
+            clientStateInstanceStorageKey(instance),
+            instance
+        );
+    }
 
-  async updateInstance(
-    instance: ClientInstance,
-    expectedRevision: number,
-  ): Promise<RuntimeStateConditionalWriteResult> {
-    validatePersistedClientInstance(instance, instance);
-    return await this.putValueIfRevision(
-      CLIENT_STATE_INSTANCES_NAMESPACE,
-      clientStateInstanceStorageKey(instance),
-      instance,
-      NEVER_EXPIRE_AT_TIMESTAMP,
-      expectedRevision,
-    );
-  }
+    async updateInstance(
+        instance: ClientInstance,
+        expectedRevision: number
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        validatePersistedClientInstance(instance, instance);
+        return await this.putValueIfRevision(
+            CLIENT_STATE_INSTANCES_NAMESPACE,
+            clientStateInstanceStorageKey(instance),
+            instance,
+            NEVER_EXPIRE_AT_TIMESTAMP,
+            expectedRevision
+        );
+    }
 
-  async deleteInstance(
-    ref: ClientInstanceRef,
-    expectedRevision: number,
-  ): Promise<RuntimeStateConditionalDeleteResult> {
-    return await this.deleteValueIfRevision(
-      CLIENT_STATE_INSTANCES_NAMESPACE,
-      clientStateInstanceStorageKey(ref),
-      expectedRevision,
-    );
-  }
+    async deleteInstance(
+        ref: ClientInstanceRef,
+        expectedRevision: number
+    ): Promise<RuntimeStateConditionalDeleteResult> {
+        return await this.deleteValueIfRevision(
+            CLIENT_STATE_INSTANCES_NAMESPACE,
+            clientStateInstanceStorageKey(ref),
+            expectedRevision
+        );
+    }
 
-  async insertSession(session: ClientSession): Promise<RuntimeStateConditionalWriteResult> {
-    validatePersistedClientSession(session, session);
-    return await this.putValueIfAbsent(
-      CLIENT_STATE_SESSIONS_NAMESPACE,
-      clientStateSessionStorageKey(session),
-      session,
-      toSessionPurgeAfterEpochMs(session.expiresAtEpochMs, session.disconnectedAtEpochMs),
-    );
-  }
+    async insertSession(session: ClientSession): Promise<RuntimeStateConditionalWriteResult> {
+        validatePersistedClientSession(session, session);
+        return await this.putValueIfAbsent(
+            CLIENT_STATE_SESSIONS_NAMESPACE,
+            clientStateSessionStorageKey(session),
+            session,
+            toSessionPurgeAfterEpochMs(session.expiresAtEpochMs, session.disconnectedAtEpochMs)
+        );
+    }
 
-  async updateSession(
-    session: ClientSession,
-    expectedRevision: number,
-  ): Promise<RuntimeStateConditionalWriteResult> {
-    validatePersistedClientSession(session, session);
-    return await this.putValueIfRevision(
-      CLIENT_STATE_SESSIONS_NAMESPACE,
-      clientStateSessionStorageKey(session),
-      session,
-      toSessionPurgeAfterEpochMs(session.expiresAtEpochMs, session.disconnectedAtEpochMs),
-      expectedRevision,
-    );
-  }
+    async updateSession(
+        session: ClientSession,
+        expectedRevision: number
+    ): Promise<RuntimeStateConditionalWriteResult> {
+        validatePersistedClientSession(session, session);
+        return await this.putValueIfRevision(
+            CLIENT_STATE_SESSIONS_NAMESPACE,
+            clientStateSessionStorageKey(session),
+            session,
+            toSessionPurgeAfterEpochMs(session.expiresAtEpochMs, session.disconnectedAtEpochMs),
+            expectedRevision
+        );
+    }
 
-  async deleteSession(
-    ref: ClientSessionRef,
-    expectedRevision: number,
-  ): Promise<RuntimeStateConditionalDeleteResult> {
-    return await this.deleteValueIfRevision(
-      CLIENT_STATE_SESSIONS_NAMESPACE,
-      clientStateSessionStorageKey(ref),
-      expectedRevision,
-    );
-  }
+    async deleteSession(
+        ref: ClientSessionRef,
+        expectedRevision: number
+    ): Promise<RuntimeStateConditionalDeleteResult> {
+        return await this.deleteValueIfRevision(
+            CLIENT_STATE_SESSIONS_NAMESPACE,
+            clientStateSessionStorageKey(ref),
+            expectedRevision
+        );
+    }
 
-  async appendEvent(event: ClientEvent): Promise<void> {
-    validatePersistedClientEvent(event, event);
-    await this.events.appendClientEvent(event);
-  }
+    async appendEvent(event: ClientEvent): Promise<void> {
+        validatePersistedClientEvent(event, event);
+        await this.events.appendClientEvent(event);
+    }
 }

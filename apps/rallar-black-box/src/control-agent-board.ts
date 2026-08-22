@@ -1,37 +1,33 @@
-import { isControlSelectionIndexBoundToSnapshot } from
-    './control-selection-index-binding.ts';
-import {
-    controlRunAgentRows,
-    type ControlDistributedRunSnapshot,
-    type ControlRunAgentRow,
-} from './control-run-manager.ts';
-import {
-    distributedRecipeTargetRows,
-    type DistributedRecipeTargetRow,
-    type DistributedRunAgentProgressRow,
-} from './distributed-recipes.ts';
-import {
-    deriveIndexedControlAgentBoardRows,
-    type IndexedControlAgentBoardWork,
-} from './control-agent-board-index.ts';
-import {
-    controlAgentBoardRowFromParticipations,
-    controlAgentBoardRowSort,
-    controlAgentRunParticipation,
-    syntheticControlAgentRow,
-} from './control-agent-board-model.ts';
 import type {
     ControlAgentBoardRow,
     ControlAgentBoardSummary,
     ControlAgentRunParticipation,
-    DeriveControlAgentBoardRowsInput,
+    DeriveControlAgentBoardRowsInput
 } from './control-agent-board-contract.ts';
+import { deriveIndexedControlAgentBoardRows, type IndexedControlAgentBoardWork } from './control-agent-board-index.ts';
+import {
+    controlAgentBoardRowFromParticipations,
+    controlAgentBoardRowSort,
+    controlAgentRunParticipation,
+    syntheticControlAgentRow
+} from './control-agent-board-model.ts';
+import {
+    controlRunAgentRows,
+    type ControlDistributedRunSnapshot,
+    type ControlRunAgentRow
+} from './control-run-manager.ts';
+import { isControlSelectionIndexBoundToSnapshot } from './control-selection-index-binding.ts';
+import {
+    distributedRecipeTargetRows,
+    type DistributedRecipeTargetRow,
+    type DistributedRunAgentProgressRow
+} from './distributed-recipes.ts';
 export type {
     ControlAgentBoardRow,
     ControlAgentBoardSummary,
     ControlAgentBoardTargetStatus,
     ControlAgentRunParticipation,
-    DeriveControlAgentBoardRowsInput,
+    DeriveControlAgentBoardRowsInput
 } from './control-agent-board-contract.ts';
 
 export type ControlAgentBoardWork =
@@ -44,18 +40,23 @@ export type ControlAgentBoardWork =
 const workByRows = new WeakMap<object, ControlAgentBoardWork>();
 
 export function deriveControlAgentBoardRows(
-    input: DeriveControlAgentBoardRowsInput,
+    input: DeriveControlAgentBoardRowsInput
 ): readonly ControlAgentBoardRow[] {
     if (input.selectionIndex && input.snapshot) {
-        if (!isControlSelectionIndexBoundToSnapshot(
-            input.snapshot,
-            input.selectionIndex,
-        )) {
+        if (
+            !isControlSelectionIndexBoundToSnapshot(
+                input.snapshot,
+                input.selectionIndex
+            )
+        ) {
             const fallback = deriveLegacyControlAgentBoardRows(input);
-            workByRows.set(fallback, Object.freeze({
-                indexed: false,
-                fallback: true,
-            }));
+            workByRows.set(
+                fallback,
+                Object.freeze({
+                    indexed: false,
+                    fallback: true
+                })
+            );
             return fallback;
         }
         const indexed = deriveIndexedControlAgentBoardRows(input);
@@ -73,13 +74,13 @@ export function deriveControlAgentBoardRows(
 }
 
 export function controlAgentBoardWorkForTest(
-    rows: readonly ControlAgentBoardRow[],
+    rows: readonly ControlAgentBoardRow[]
 ): ControlAgentBoardWork | undefined {
     return workByRows.get(rows);
 }
 
 function deriveLegacyControlAgentBoardRows(
-    input: DeriveControlAgentBoardRowsInput,
+    input: DeriveControlAgentBoardRowsInput
 ): readonly ControlAgentBoardRow[] {
     const nowEpochMs = input.nowEpochMs ?? Date.now();
     const scopedAgentIds = input.agentIds
@@ -94,26 +95,24 @@ function deriveLegacyControlAgentBoardRows(
             requiredCommandKinds: input.requiredCommandKinds ?? [],
             requiredRecipes: input.requiredRecipes ?? [],
             nowEpochMs,
-            staleAfterMs: input.staleAfterMs,
+            staleAfterMs: input.staleAfterMs
         })
         : [];
     const targetRowsByAgentId = new Map(
-        targetRows.map((row) => [row.agentId, row]),
+        targetRows.map((row) => [row.agentId, row])
     );
     const progressByAgentId = new Map(
-        (input.monitorAgentProgress ?? []).map((row) => [row.agentId, row]),
+        (input.monitorAgentProgress ?? []).map((row) => [row.agentId, row])
     );
-    const currentControlRunId =
-        input.run?.runId ?? input.selectedDistributedRun?.controlRunId;
+    const currentControlRunId = input.run?.runId ?? input.selectedDistributedRun?.controlRunId;
     const distributedRuns = uniqueRuns([
         ...(input.distributedRuns ?? []),
-        ...(input.selectedDistributedRun ? [input.selectedDistributedRun] : []),
+        ...(input.selectedDistributedRun ? [input.selectedDistributedRun] : [])
     ]).filter((run) =>
         currentControlRunId === undefined ||
         run.controlRunId === currentControlRunId
     );
-    const selectedDistributedRunId =
-        input.selectedDistributedRun?.distributedRunId;
+    const selectedDistributedRunId = input.selectedDistributedRun?.distributedRunId;
 
     const rows = agentRows.map((agentRow) =>
         controlAgentBoardRow({
@@ -123,7 +122,7 @@ function deriveLegacyControlAgentBoardRows(
             runs: distributedRuns,
             selectedDistributedRunId,
             progressByAgentId,
-            synthetic: false,
+            synthetic: false
         })
     );
 
@@ -139,7 +138,7 @@ function deriveLegacyControlAgentBoardRows(
                 runs: distributedRuns,
                 selectedDistributedRunId,
                 progressByAgentId,
-                synthetic: true,
+                synthetic: true
             })
         );
 
@@ -147,7 +146,7 @@ function deriveLegacyControlAgentBoardRows(
 }
 
 export function summarizeControlAgentBoardRows(
-    rows: readonly ControlAgentBoardRow[],
+    rows: readonly ControlAgentBoardRow[]
 ): ControlAgentBoardSummary {
     return rows.reduce<ControlAgentBoardSummary>((summary, row) => ({
         total: summary.total + 1,
@@ -166,7 +165,7 @@ export function summarizeControlAgentBoardRows(
                     row.targetStatus === 'missing-crdt-transport'
                 ? 1
                 : 0),
-        synthetic: summary.synthetic + (row.synthetic ? 1 : 0),
+        synthetic: summary.synthetic + (row.synthetic ? 1 : 0)
     }), {
         total: 0,
         connected: 0,
@@ -178,19 +177,21 @@ export function summarizeControlAgentBoardRows(
         wrongGroup: 0,
         missingIdentity: 0,
         missingCapability: 0,
-        synthetic: 0,
+        synthetic: 0
     });
 }
 
-function controlAgentBoardRow(input: Readonly<{
-    agentRow: ControlRunAgentRow;
-    targetRow: DistributedRecipeTargetRow | undefined;
-    nowEpochMs: number;
-    runs: readonly ControlDistributedRunSnapshot[];
-    selectedDistributedRunId?: string;
-    progressByAgentId: ReadonlyMap<string, DistributedRunAgentProgressRow>;
-    synthetic: boolean;
-}>): ControlAgentBoardRow {
+function controlAgentBoardRow(
+    input: Readonly<{
+        agentRow: ControlRunAgentRow;
+        targetRow: DistributedRecipeTargetRow | undefined;
+        nowEpochMs: number;
+        runs: readonly ControlDistributedRunSnapshot[];
+        selectedDistributedRunId?: string;
+        progressByAgentId: ReadonlyMap<string, DistributedRunAgentProgressRow>;
+        synthetic: boolean;
+    }>
+): ControlAgentBoardRow {
     const participations = input.runs
         .filter((run) => run.targetAgentIds.includes(input.agentRow.agentId))
         .map((run) =>
@@ -199,7 +200,7 @@ function controlAgentBoardRow(input: Readonly<{
                 agentId: input.agentRow.agentId,
                 selected: run.distributedRunId ===
                     input.selectedDistributedRunId,
-                progress: input.progressByAgentId.get(input.agentRow.agentId),
+                progress: input.progressByAgentId.get(input.agentRow.agentId)
             })
         );
     return controlAgentBoardRowFromParticipations({
@@ -207,12 +208,12 @@ function controlAgentBoardRow(input: Readonly<{
         targetRow: input.targetRow,
         nowEpochMs: input.nowEpochMs,
         participations,
-        synthetic: input.synthetic,
+        synthetic: input.synthetic
     });
 }
 
 function uniqueRuns(
-    runs: readonly ControlDistributedRunSnapshot[],
+    runs: readonly ControlDistributedRunSnapshot[]
 ): readonly ControlDistributedRunSnapshot[] {
     const byId = new Map<string, ControlDistributedRunSnapshot>();
     runs.forEach((run) => {

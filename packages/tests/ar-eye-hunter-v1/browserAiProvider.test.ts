@@ -1,18 +1,8 @@
+import { createRallarAiJsonResult, createRallarAiMockProvider, type RallarAiJsonProvider, type RallarAiJsonRequest } from '@shared/rallar-ai/mod.ts';
 import { describe, expect, it, vi } from 'vitest';
-import {
-    createRallarAiJsonResult,
-    createRallarAiMockProvider,
-    type RallarAiJsonProvider,
-    type RallarAiJsonRequest,
-} from '@shared/rallar-ai/mod.ts';
 
-import {
-    DEFAULT_ARENA_WEBLLM_MODEL_ID,
-    type ArenaBrowserAiConfig,
-} from '../../../apps/ar-eye-hunter-v1/src/game/browserAiConfig.ts';
-import {
-    createArenaBrowserAiProvider,
-} from '../../../apps/ar-eye-hunter-v1/src/game/browserAiProvider.ts';
+import { DEFAULT_ARENA_WEBLLM_MODEL_ID, type ArenaBrowserAiConfig } from '../../../apps/ar-eye-hunter-v1/src/game/browserAiConfig.ts';
+import { createArenaBrowserAiProvider } from '../../../apps/ar-eye-hunter-v1/src/game/browserAiProvider.ts';
 
 describe('AR Eye Hunter browser AI provider selection', () => {
     it('selects WebLLM when configured and WebGPU is available', () => {
@@ -21,7 +11,7 @@ describe('AR Eye Hunter browser AI provider selection', () => {
             config: webLlmConfig('mock'),
             createMockProvider: () => fakeProvider('mock-provider'),
             createWebLlmProvider: vi.fn(() => webLlmProvider),
-            hasWebGpu: () => true,
+            hasWebGpu: () => true
         });
 
         expect(selection.status).toBe('ready');
@@ -37,17 +27,18 @@ describe('AR Eye Hunter browser AI provider selection', () => {
             schemaId: 'ar-eye-hunter.selection-test',
             schemaVersion: '1',
             schema: { type: 'object' },
-            prompt: 'Return JSON.',
+            prompt: 'Return JSON.'
         };
         const selection = createArenaBrowserAiProvider({
             config: webLlmConfig('mock'),
-            createMockProvider: () => createRallarAiMockProvider({
-                providerId: 'mock-provider',
-                value: { fallback: true },
-            }),
+            createMockProvider: () =>
+                createRallarAiMockProvider({
+                    providerId: 'mock-provider',
+                    value: { fallback: true }
+                }),
             createWebLlmProvider: vi.fn(() => throwingProvider('webllm-provider')),
             hasWebGpu: () => true,
-            onFallback: fallbackSpy,
+            onFallback: fallbackSpy
         });
 
         expect(selection.status).toBe('ready');
@@ -67,7 +58,7 @@ describe('AR Eye Hunter browser AI provider selection', () => {
             config: webLlmConfig('mock'),
             createMockProvider: () => mockProvider,
             createWebLlmProvider: vi.fn(() => fakeProvider('webllm-provider')),
-            hasWebGpu: () => false,
+            hasWebGpu: () => false
         });
 
         expect(selection.status).toBe('ready');
@@ -82,7 +73,7 @@ describe('AR Eye Hunter browser AI provider selection', () => {
             config: webLlmConfig('off'),
             createMockProvider: () => fakeProvider('mock-provider'),
             createWebLlmProvider: vi.fn(() => fakeProvider('webllm-provider')),
-            hasWebGpu: () => false,
+            hasWebGpu: () => false
         });
 
         expect(selection).toEqual({
@@ -90,7 +81,7 @@ describe('AR Eye Hunter browser AI provider selection', () => {
             mode: 'webllm',
             provider: undefined,
             fallback: false,
-            reason: 'WebGPU is unavailable in this browser.',
+            reason: 'WebGPU is unavailable in this browser.'
         });
     });
 });
@@ -100,14 +91,14 @@ function webLlmConfig(fallbackMode: 'mock' | 'off'): ArenaBrowserAiConfig {
         enabled: true,
         mode: 'webllm',
         modelId: DEFAULT_ARENA_WEBLLM_MODEL_ID,
-        fallbackMode,
+        fallbackMode
     };
 }
 
 function fakeProvider(providerId: string): RallarAiJsonProvider {
     return {
         ...createRallarAiMockProvider({ providerId }),
-        providerId,
+        providerId
     };
 }
 
@@ -120,15 +111,15 @@ function throwingProvider(providerId: string): RallarAiJsonProvider {
             supportsJsonSchema: true,
             supportsStreaming: false,
             supportsCancellation: true,
-            target: 'browser',
+            target: 'browser'
         },
         async generateJson(request) {
             void createRallarAiJsonResult({
                 request,
                 provider: this,
-                value: {},
+                value: {}
             });
             throw new Error('model failed');
-        },
+        }
     };
 }

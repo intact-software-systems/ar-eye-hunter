@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
+import { describe, expect, it } from 'vitest';
 
 describe('Rallar flow', () => {
     it('creates independent command orchestrator flows from the facade', async () => {
@@ -13,18 +13,18 @@ describe('Rallar flow', () => {
                 first.supplierStep('initial', () => 1),
                 first.dynamicStep((existing) => [
                     'derived',
-                    (existing.get('initial') ?? 0) + 1,
-                ]),
+                    (existing.get('initial') ?? 0) + 1
+                ])
             )
             .parallel(
-                first.supplierStep('parallel', () => 3),
+                first.supplierStep('parallel', () => 3)
             )
             .run();
 
         expect(Array.from(results.entries())).toEqual([
             ['initial', 1],
             ['derived', 2],
-            ['parallel', 3],
+            ['parallel', 3]
         ]);
     });
 
@@ -32,15 +32,15 @@ describe('Rallar flow', () => {
         const flow = createRallarFacade().flow<string, number>({
             command: {
                 maxAttempts: 1,
-                fallback: () => 42,
-            },
+                fallback: () => 42
+            }
         });
 
         const results = await flow
             .sequential(
                 flow.commandStep('fallback', () => {
                     throw new Error('command failed');
-                }),
+                })
             )
             .run();
 

@@ -1,29 +1,29 @@
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { readGroupMemberSessionIds } from '@shared/api/group-client-views.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { DynamicMeshAlgo } from './mesh/group-dynamics-mesh-types.ts';
+import { UndirectedGraph } from 'graphology';
 import { DEFAULT_GRAPH_PROP, MessageType, ReconfigAlgo } from './algo-props.ts';
-import type { DynamicTreeAlgo } from './remove/remove-dynamics-types.ts';
-import {
-    compareVertexIds,
-    type EdgeProp,
-    type GraphProp,
-    TreeGraph,
-    VertexId,
-    type VertexProp,
-    WeightedGraph,
-} from './graph-props.ts';
-import { InsertToMeshComputedDto, InsertToMeshInputDto, } from './mesh/insert-mesh-algs.ts';
-import { CoreSelectionAlgo, findWCNodes, } from './graph/steiner-core-algorithms.ts';
-import { removeVertexFromTree } from './remove/remove-dynamics-facade.ts';
 import { compGraph } from './complete-graph/complete-graph-service.ts';
 import { GraphAlgo } from './complete-graph/complete-graph-types.ts';
+import {
+    compareVertexIds,
+    TreeGraph,
+    VertexId,
+    WeightedGraph,
+    type EdgeProp,
+    type GraphProp,
+    type VertexProp
+} from './graph-props.ts';
+import { diameterDistance } from './graph/graph-algs.ts';
 import { generateSizeOfSteinerSet } from './graph/graph-size-algorithms.ts';
 import { PruneGraphAlgo } from './graph/prune-graph.ts';
+import { CoreSelectionAlgo, findWCNodes } from './graph/steiner-core-algorithms.ts';
+import { validateGroupTopology, type GroupTopologyValidationResult } from './group-topology-validation.ts';
+import { DynamicMeshAlgo } from './mesh/group-dynamics-mesh-types.ts';
+import { InsertToMeshComputedDto, InsertToMeshInputDto } from './mesh/insert-mesh-algs.ts';
 import { kMDDLOTTCTree } from './mesh/k-mddl-ottc.ts';
-import { diameterDistance } from './graph/graph-algs.ts';
-import { type GroupTopologyValidationResult, validateGroupTopology, } from './group-topology-validation.ts';
-import { UndirectedGraph } from 'graphology';
+import { removeVertexFromTree } from './remove/remove-dynamics-facade.ts';
+import type { DynamicTreeAlgo } from './remove/remove-dynamics-types.ts';
 
 export type GlobalMeshArgs = {
     meshParamK: number;
@@ -34,7 +34,7 @@ export type GlobalMeshArgs = {
 };
 
 export type MeshAlgorithmRunner = (
-    input: InsertToMeshInputDto,
+    input: InsertToMeshInputDto
 ) => InsertToMeshComputedDto;
 
 export type ProcessGroupUpdateMeshDeps = {
@@ -60,7 +60,7 @@ export type CreateGroupMeshInputDto = {
     maxDegree?: number;
     orderMemberSessionIds?: (
         memberSessionIds: readonly VertexId[],
-        globalGraph: WeightedGraph,
+        globalGraph: WeightedGraph
     ) => readonly VertexId[];
 };
 
@@ -85,7 +85,7 @@ export type ProcessGroupUpdateMeshResult = {
 };
 
 export function createGroupMesh(
-    input: CreateGroupMeshInputDto,
+    input: CreateGroupMeshInputDto
 ): CreateGroupMeshComputedDto {
     const started = performance.now();
     const memberSessionIds = uniqueSessionIds(readGroupMemberSessionIds(input.group));
@@ -93,7 +93,7 @@ export function createGroupMesh(
     // vertex order so identical member sets build identical meshes.
     const orderedMembers = input.orderMemberSessionIds?.(
         memberSessionIds,
-        input.globalGraph,
+        input.globalGraph
     ) ?? [...memberSessionIds].sort(compareVertexIds);
     let mesh = createEmptyGroupGraphLike(input.globalGraph);
 
@@ -101,7 +101,7 @@ export function createGroupMesh(
         const validation = validateGroupTopology({
             graph: mesh,
             activeSessionIds: new Set(memberSessionIds),
-            maxDegree: input.maxDegree,
+            maxDegree: input.maxDegree
         });
 
         return {
@@ -109,7 +109,7 @@ export function createGroupMesh(
             elapsedMs: performance.now() - started,
             success: validation.valid,
             mesh,
-            validation,
+            validation
         };
     }
 
@@ -118,7 +118,7 @@ export function createGroupMesh(
             const validation = validateGroupTopology({
                 graph: mesh,
                 activeSessionIds: new Set(memberSessionIds),
-                maxDegree: input.maxDegree,
+                maxDegree: input.maxDegree
             });
 
             return {
@@ -128,7 +128,7 @@ export function createGroupMesh(
                 mesh,
                 validation,
                 failedAtMemberId: memberId,
-                reason: `Missing member ${memberId} in global graph`,
+                reason: `Missing member ${memberId} in global graph`
             };
         }
 
@@ -139,15 +139,16 @@ export function createGroupMesh(
                 actionVertexId: memberId,
                 numberOfMembers: mesh.nodes().length + 1,
                 k: input.globalArgs.meshParamK,
-                algo: input.globalArgs.insertAlgo,
+                algo: input.globalArgs.insertAlgo
             });
 
             mesh = result.groupGraph;
-        } catch (error) {
+        }
+        catch (error) {
             const validation = validateGroupTopology({
                 graph: mesh,
                 activeSessionIds: new Set(memberSessionIds),
-                maxDegree: input.maxDegree,
+                maxDegree: input.maxDegree
             });
 
             return {
@@ -157,7 +158,7 @@ export function createGroupMesh(
                 mesh,
                 validation,
                 failedAtMemberId: memberId,
-                reason: error instanceof Error ? error.message : 'Mesh rebuild failed',
+                reason: error instanceof Error ? error.message : 'Mesh rebuild failed'
             };
         }
     }
@@ -165,7 +166,7 @@ export function createGroupMesh(
     const validation = validateGroupTopology({
         graph: mesh,
         activeSessionIds: new Set(memberSessionIds),
-        maxDegree: input.maxDegree,
+        maxDegree: input.maxDegree
     });
 
     return {
@@ -174,12 +175,12 @@ export function createGroupMesh(
         success: validation.valid,
         mesh,
         validation,
-        reason: validation.valid ? undefined : 'Mesh validation failed',
+        reason: validation.valid ? undefined : 'Mesh validation failed'
     };
 }
 
 export function updateGroupMesh(
-    input: UpdateGroupMeshInputDto,
+    input: UpdateGroupMeshInputDto
 ): ProcessGroupUpdateMeshResult {
     const started = performance.now();
     const memberSessionIds = readGroupMemberSessionIds(input.group);
@@ -197,8 +198,8 @@ export function updateGroupMesh(
                     actionVertexId: input.fromNode,
                     numberOfMembers: memberSessionIds.length,
                     k: input.globalArgs.meshParamK,
-                    algo: input.globalArgs.insertAlgo,
-                },
+                    algo: input.globalArgs.insertAlgo
+                }
             );
 
             updatedMesh = result.groupGraph;
@@ -222,11 +223,11 @@ export function updateGroupMesh(
                         adjacent,
                         new Set(ctx.groupGraph.nodes() as string[]),
                         1,
-                        CoreSelectionAlgo.CENTER_SELECTION,
+                        CoreSelectionAlgo.CENTER_SELECTION
                     );
 
                     return candidates[0];
-                },
+                }
             });
 
             updatedMesh = result.graph;
@@ -241,7 +242,7 @@ export function updateGroupMesh(
 
     const reconfigured = doReconfigMesh({
         ...input,
-        groupGraph: updatedMesh,
+        groupGraph: updatedMesh
     });
 
     return {
@@ -251,12 +252,12 @@ export function updateGroupMesh(
         mesh: reconfigured.right !== undefined ? reconfigured.right : updatedMesh,
         removeAttemptedAlgo,
         removeUsedFallback,
-        reconfigReason: reconfigured.right !== undefined ? undefined : 'not-needed-or-failed',
+        reconfigReason: reconfigured.right !== undefined ? undefined : 'not-needed-or-failed'
     };
 }
 
 export function doReconfigMesh(
-    input: UpdateGroupMeshInputDto,
+    input: UpdateGroupMeshInputDto
 ): Either<boolean, WeightedGraph> {
     const memberSessionIds = readGroupMemberSessionIds(input.group);
 
@@ -294,11 +295,11 @@ export function doReconfigMesh(
                                 degreeConstraintSP: DEFAULT_GRAPH_PROP.degreeLimitSteiner,
                                 simPruneAlgo: PruneGraphAlgo.ADD_CORE_LINKS_OPTIMIZED,
                                 simGraphAlgo: GraphAlgo.COMPLETE_MEMBER_GRAPH_KEEP_STEINER,
-                                isSteinerAlgo: true,
-                            },
+                                isSteinerAlgo: true
+                            }
                         );
-                    },
-                },
+                    }
+                }
             });
 
             // TODO: Add option to prune completeGraph
@@ -309,7 +310,7 @@ export function doReconfigMesh(
                 groupMembers,
                 new Set(),
                 1,
-                CoreSelectionAlgo.CENTER_SELECTION,
+                CoreSelectionAlgo.CENTER_SELECTION
             ).at(0);
 
             if (src === undefined) {
@@ -320,7 +321,7 @@ export function doReconfigMesh(
             const undirectedGraph = kMDDLOTTCTree(
                 completeGraphResult.graph,
                 input.globalArgs.meshParamK,
-                src,
+                src
             );
 
             return Either.ofRight(undirectedGraph);

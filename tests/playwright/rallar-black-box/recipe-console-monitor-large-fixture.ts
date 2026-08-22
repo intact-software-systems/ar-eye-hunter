@@ -1,19 +1,19 @@
 import type { BrowserContext, Route } from '@playwright/test';
 import type {
+    ControlEventEnvelope,
+    ControlResultEnvelope
+} from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
+import type {
     ControlAgentSnapshot,
     ControlDistributedRunArtifactBundle,
     ControlDistributedRunSnapshot,
     ControlQueuedCommandSnapshot,
     ControlRunSnapshot,
-    ControlServerSnapshot,
+    ControlServerSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
 import type {
-    ControlEventEnvelope,
-    ControlResultEnvelope,
-} from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
-import type {
     RallarBlackBoxTestRecipe,
-    RallarBlackBoxTestResult,
+    RallarBlackBoxTestResult
 } from '../../../packages/shared-test/rallar-bb-test/types.ts';
 
 const LARGE_MONITOR_CONTROL_RUN_ID = 'monitor-large-control-live';
@@ -28,14 +28,12 @@ const LARGE_MONITOR_DIAGNOSTIC_COUNT = 55;
 const LARGE_MONITOR_EVENT_COUNT = 55;
 const LARGE_MONITOR_COMPOSITE_COUNT = 45;
 
-export const LARGE_MONITOR_FIRST_FAILURE_COMMAND_ID =
-    'monitor-large-failure-command-069';
-export const LARGE_MONITOR_LAST_FAILURE_COMMAND_ID =
-    'monitor-large-failure-command-000';
-export const LARGE_MONITOR_LONG_AGENT_ID =
-    `zz-monitor-agent-late-\u202e-مرحبا-משתתף-${'exact-segment-'.repeat(12)}tail`;
-export const LARGE_MONITOR_ROUTE =
-    '/?provider=simulated&v=1&experience=recipe-console&view=monitor' +
+export const LARGE_MONITOR_FIRST_FAILURE_COMMAND_ID = 'monitor-large-failure-command-069';
+export const LARGE_MONITOR_LAST_FAILURE_COMMAND_ID = 'monitor-large-failure-command-000';
+export const LARGE_MONITOR_LONG_AGENT_ID = `zz-monitor-agent-late-\u202e-مرحبا-משתתף-${
+    'exact-segment-'.repeat(12)
+}tail`;
+export const LARGE_MONITOR_ROUTE = '/?provider=simulated&v=1&experience=recipe-console&view=monitor' +
     `&controlRunId=${LARGE_MONITOR_CONTROL_RUN_ID}` +
     `&distributedRunId=${LARGE_MONITOR_DISTRIBUTED_RUN_ID}` +
     '&applicationId=rallar-server&workspaceId=default&roomId=monitor-group';
@@ -56,7 +54,7 @@ export const LARGE_MONITOR_COUNTS = {
     failureDestinations: 283,
     commandEvidence: 336,
     diagnosticFailureLinks: LARGE_MONITOR_FAILURE_COUNT,
-    roleChoices: LARGE_MONITOR_ROLE_CHOICE_COUNT,
+    roleChoices: LARGE_MONITOR_ROLE_CHOICE_COUNT
 } as const;
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
@@ -64,7 +62,7 @@ const BASE_EPOCH_MS = 2_000_000_000_000;
 const GROUP = {
     applicationId: 'rallar-server',
     workspaceId: 'default',
-    groupId: 'monitor-group',
+    groupId: 'monitor-group'
 } as const;
 
 export type RecipeConsoleLargeMonitorFixture = Readonly<{
@@ -79,7 +77,7 @@ export type RecipeConsoleLargeMonitorFixture = Readonly<{
 }>;
 
 export async function installRecipeConsoleLargeMonitorFixture(
-    context: BrowserContext,
+    context: BrowserContext
 ): Promise<RecipeConsoleLargeMonitorFixture> {
     let agentCount = LARGE_MONITOR_AGENT_COUNT;
     let revision = 0;
@@ -91,22 +89,24 @@ export async function installRecipeConsoleLargeMonitorFixture(
     const initialDistributedRun = createLargeDistributedRun(agentCount, revision);
     const snapshot: ControlServerSnapshot = {
         runs: [initialControlRun],
-        distributedRuns: [initialDistributedRun],
+        distributedRuns: [initialDistributedRun]
     };
     const artifact = createLargeArtifact(initialDistributedRun, initialControlRun);
 
-    await context.route(CONTROL_ROUTE, async route => {
+    await context.route(CONTROL_ROUTE, async (route) => {
         const request = route.request();
         const url = new URL(request.url());
         if (request.method() === 'OPTIONS') {
             await route.fulfill({ status: 204, headers: corsHeaders() });
             return;
         }
-        if (request.method() !== 'GET') mutationWrites += 1;
+        if (request.method() !== 'GET') {
+            mutationWrites += 1;
+        }
         if (request.method() === 'GET' && url.pathname === '/runs') {
             runReads += 1;
             await fulfillJson(route, {
-                runs: [createLargeControlRun(agentCount, revision)],
+                runs: [createLargeControlRun(agentCount, revision)]
             });
             return;
         }
@@ -116,7 +116,7 @@ export async function installRecipeConsoleLargeMonitorFixture(
         ) {
             await fulfillJson(
                 route,
-                createLargeControlRun(agentCount, revision),
+                createLargeControlRun(agentCount, revision)
             );
             return;
         }
@@ -127,7 +127,7 @@ export async function installRecipeConsoleLargeMonitorFixture(
                 return;
             }
             await fulfillJson(route, {
-                distributedRuns: [createLargeDistributedRun(agentCount, revision)],
+                distributedRuns: [createLargeDistributedRun(agentCount, revision)]
             });
             return;
         }
@@ -142,25 +142,32 @@ export async function installRecipeConsoleLargeMonitorFixture(
             return;
         }
         await fulfillJson(route, {
-            error: `Unhandled ${request.method()} ${url.pathname}`,
+            error: `Unhandled ${request.method()} ${url.pathname}`
         }, 404);
     });
 
     return {
         artifact,
         snapshot,
-        failDistributedRunReads: () => { distributedRunReadsOffline = true; },
-        recoverDistributedRunReads: () => { distributedRunReadsOffline = false; },
+        failDistributedRunReads: () => {
+            distributedRunReadsOffline = true;
+        },
+        recoverDistributedRunReads: () => {
+            distributedRunReadsOffline = false;
+        },
         setAgentCount: (count) => {
-            agentCount = Math.max(1, Math.min(
-                LARGE_MONITOR_AGENT_COUNT,
-                Math.floor(count),
-            ));
+            agentCount = Math.max(
+                1,
+                Math.min(
+                    LARGE_MONITOR_AGENT_COUNT,
+                    Math.floor(count)
+                )
+            );
             revision += 1;
         },
         runRequestCount: () => runReads,
         distributedRunRequestCount: () => distributedRunReads,
-        mutationRequestCount: () => mutationWrites,
+        mutationRequestCount: () => mutationWrites
     };
 }
 
@@ -168,38 +175,36 @@ const LARGE_MONITOR_RECIPE: RallarBlackBoxTestRecipe = {
     schemaVersion: 1,
     recipeId: LARGE_MONITOR_COMMON_RECIPE_ID,
     name: 'Large Monitor shared recipe',
-    commands: [{ kind: 'health', commandId: 'monitor-large-health' }],
+    commands: [{ kind: 'health', commandId: 'monitor-large-health' }]
 };
 
 function createLargeControlRun(
     agentCount: number,
-    revision: number,
+    revision: number
 ): ControlRunSnapshot {
     const agentIds = largeMonitorAgentIds(agentCount);
     const failureCommands = Array.from(
         { length: LARGE_MONITOR_FAILURE_COUNT },
-        (_, index) => largeFailureCommand(index),
+        (_, index) => largeFailureCommand(index)
     );
     const compositeCount = Math.min(
         LARGE_MONITOR_COMPOSITE_COUNT,
-        Math.max(0, agentIds.length - 1),
+        Math.max(0, agentIds.length - 1)
     );
     const compositeCommands = Array.from(
         { length: compositeCount },
-        (_, index) => largeCompositeCommand(index, agentIds[index + 1]!),
+        (_, index) => largeCompositeCommand(index, agentIds[index + 1]!)
     );
     const commands = [...failureCommands, ...compositeCommands];
     const results = [
-        ...failureCommands.map((command, index) =>
-            largeFailureResult(command.envelope.commandId, index)
-        ),
+        ...failureCommands.map((command, index) => largeFailureResult(command.envelope.commandId, index)),
         ...compositeCommands.map((command, index) =>
             largeCompositeResult(
                 command.envelope.commandId,
                 command.envelope.agentId!,
-                index,
+                index
             )
-        ),
+        )
     ];
     const events = largeMonitorEvents();
     return {
@@ -208,7 +213,7 @@ function createLargeControlRun(
         updatedAtEpochMs: BASE_EPOCH_MS + 8_000 + revision,
         agents: agentIds.map((agentId, index) => {
             const failureIds = index === 0
-                ? failureCommands.map(command => command.envelope.commandId)
+                ? failureCommands.map((command) => command.envelope.commandId)
                 : [];
             const compositeId = index > 0 && index <= compositeCount
                 ? [compositeCommands[index - 1]!.envelope.commandId]
@@ -216,7 +221,7 @@ function createLargeControlRun(
             const completedCommandIds = [
                 largeStageCommandId(index),
                 ...failureIds,
-                ...compositeId,
+                ...compositeId
             ];
             return {
                 runId: LARGE_MONITOR_CONTROL_RUN_ID,
@@ -233,14 +238,14 @@ function createLargeControlRun(
                     providerMode: 'browser-rallar',
                     browserName: 'chromium',
                     region: 'eu-north',
-                    tags: [largeMonitorRole(index)],
+                    tags: [largeMonitorRole(index)]
                 },
                 connectionSequence: 1,
                 reconnectCount: 0,
                 receivedResultCount: failureIds.length + compositeId.length,
                 receivedEventCount: index === 0 ? events.length : 0,
                 completedCommandIds,
-                resumeCompletedCommandIds: completedCommandIds,
+                resumeCompletedCommandIds: completedCommandIds
             } satisfies ControlAgentSnapshot;
         }),
         commands,
@@ -248,18 +253,18 @@ function createLargeControlRun(
         events,
         stats: [],
         reports: [],
-        heartbeats: [],
+        heartbeats: []
     };
 }
 
 function createLargeDistributedRun(
     agentCount: number,
-    revision: number,
+    revision: number
 ): ControlDistributedRunSnapshot {
     const agentIds = largeMonitorAgentIds(agentCount);
     const compositeCount = Math.min(
         LARGE_MONITOR_COMPOSITE_COUNT,
-        Math.max(0, agentIds.length - 1),
+        Math.max(0, agentIds.length - 1)
     );
     const stageLinks = agentIds.map((agentId, index) => ({
         phase: 'stage' as const,
@@ -267,7 +272,7 @@ function createLargeDistributedRun(
         commandId: largeStageCommandId(index),
         recipeId: LARGE_MONITOR_COMMON_RECIPE_ID,
         role: largeMonitorRole(index),
-        queuedAtEpochMs: BASE_EPOCH_MS + 100 + index,
+        queuedAtEpochMs: BASE_EPOCH_MS + 100 + index
     }));
     const failureLinks = Array.from(
         { length: LARGE_MONITOR_FAILURE_COUNT },
@@ -277,8 +282,8 @@ function createLargeDistributedRun(
             commandId: largeFailureCommandId(index),
             recipeId: LARGE_MONITOR_COMMON_RECIPE_ID,
             role: largeMonitorRole(0),
-            queuedAtEpochMs: BASE_EPOCH_MS + 1_000 + index,
-        }),
+            queuedAtEpochMs: BASE_EPOCH_MS + 1_000 + index
+        })
     );
     const compositeLinks = Array.from(
         { length: compositeCount },
@@ -288,8 +293,8 @@ function createLargeDistributedRun(
             commandId: largeCompositeCommandId(index),
             recipeId: LARGE_MONITOR_COMMON_RECIPE_ID,
             role: largeMonitorRole(index + 1),
-            queuedAtEpochMs: BASE_EPOCH_MS + 2_000 + index,
-        }),
+            queuedAtEpochMs: BASE_EPOCH_MS + 2_000 + index
+        })
     );
     return {
         distributedRunId: LARGE_MONITOR_DISTRIBUTED_RUN_ID,
@@ -311,14 +316,14 @@ function createLargeDistributedRun(
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds,
-                expectedParticipantCount: agentIds.length,
+                expectedParticipantCount: agentIds.length
             },
             roleAssignments: agentIds.map((agentId, index) => ({
                 agentId,
                 role: largeMonitorRole(index),
                 recipeIds: [LARGE_MONITOR_COMMON_RECIPE_ID],
-                required: true,
-            })),
+                required: true
+            }))
         },
         commandLinks: [...stageLinks, ...failureLinks, ...compositeLinks],
         rollup: {
@@ -334,10 +339,10 @@ function createLargeDistributedRun(
                 requiredRecipes: LARGE_MONITOR_COUNTS.recipes,
                 passedRecipes: LARGE_MONITOR_COUNTS.recipes - 1,
                 failedRecipes: 1,
-                blockingFailures: LARGE_MONITOR_FAILURE_COUNT,
+                blockingFailures: LARGE_MONITOR_FAILURE_COUNT
             },
-            failures: [],
-        },
+            failures: []
+        }
     };
 }
 
@@ -349,8 +354,8 @@ function largeMonitorRecipeSelections() {
             recipe: LARGE_MONITOR_RECIPE,
             role: largeMonitorRole(index),
             profile: `large-profile-${String(index).padStart(3, '0')}`,
-            required: true,
-        }),
+            required: true
+        })
     );
     const unique = Array.from(
         { length: LARGE_MONITOR_UNIQUE_RECIPE_COUNT },
@@ -364,11 +369,11 @@ function largeMonitorRecipeSelections() {
                     schemaVersion: 1 as const,
                     recipeId,
                     name: `Large unique recipe ${index + 1}`,
-                    commands: [{ kind: 'health' as const }],
+                    commands: [{ kind: 'health' as const }]
                 },
-                required: true,
+                required: true
             };
-        },
+        }
     );
     return [...shared, ...unique];
 }
@@ -382,18 +387,18 @@ function largeFailureCommand(index: number): ControlQueuedCommandSnapshot {
             runId: LARGE_MONITOR_CONTROL_RUN_ID,
             agentId: LARGE_MONITOR_FAILURE_AGENT_ID,
             commandId,
-            command: { kind: 'recipe.run', recipe: LARGE_MONITOR_RECIPE },
+            command: { kind: 'recipe.run', recipe: LARGE_MONITOR_RECIPE }
         },
         queuedAtEpochMs: BASE_EPOCH_MS + 1_000 + index,
         dispatchedAtEpochMs: BASE_EPOCH_MS + 1_100 + index,
         completedAtEpochMs: BASE_EPOCH_MS + 6_000 + index,
-        dispatchCount: 1,
+        dispatchCount: 1
     };
 }
 
 function largeCompositeCommand(
     index: number,
-    agentId: string,
+    agentId: string
 ): ControlQueuedCommandSnapshot {
     return {
         envelope: {
@@ -402,22 +407,22 @@ function largeCompositeCommand(
             runId: LARGE_MONITOR_CONTROL_RUN_ID,
             agentId,
             commandId: largeCompositeCommandId(index),
-            command: { kind: 'recipe.run', recipe: LARGE_MONITOR_RECIPE },
+            command: { kind: 'recipe.run', recipe: LARGE_MONITOR_RECIPE }
         },
         queuedAtEpochMs: BASE_EPOCH_MS + 2_000 + index,
         dispatchedAtEpochMs: BASE_EPOCH_MS + 2_100 + index,
         completedAtEpochMs: BASE_EPOCH_MS + 4_000 + index,
-        dispatchCount: 1,
+        dispatchCount: 1
     };
 }
 
 function largeFailureResult(
     commandId: string,
-    index: number,
+    index: number
 ): ControlResultEnvelope {
     const error = {
         code: `MONITOR_LARGE_FAILURE_${String(index).padStart(3, '0')}`,
-        message: `Large Monitor failure ${String(index + 1).padStart(3, '0')}.`,
+        message: `Large Monitor failure ${String(index + 1).padStart(3, '0')}.`
     };
     return {
         kind: 'result',
@@ -435,15 +440,15 @@ function largeFailureResult(
             startedAtEpochMs: BASE_EPOCH_MS + 1_100 + index,
             endedAtEpochMs: BASE_EPOCH_MS + 6_000 + index,
             durationMs: 4_900,
-            error,
-        },
+            error
+        }
     };
 }
 
 function largeCompositeResult(
     commandId: string,
     agentId: string,
-    index: number,
+    index: number
 ): ControlResultEnvelope {
     const child: RallarBlackBoxTestResult = {
         commandId: `${commandId}:assert-ready`,
@@ -459,8 +464,8 @@ function largeCompositeResult(
             operator: 'exists',
             actual: true,
             exists: true,
-            passed: true,
-        },
+            passed: true
+        }
     };
     return {
         kind: 'result',
@@ -479,9 +484,9 @@ function largeCompositeResult(
             durationMs: 1_900,
             value: {
                 recipeId: LARGE_MONITOR_COMMON_RECIPE_ID,
-                results: [child],
-            },
-        },
+                results: [child]
+            }
+        }
     };
 }
 
@@ -507,9 +512,9 @@ function largeMonitorEvents(): readonly ControlEventEnvelope[] {
                 message: `Large Monitor diagnostic ${index + 1}.`,
                 commandId: LARGE_MONITOR_FIRST_FAILURE_COMMAND_ID,
                 agentId,
-                roomId: GROUP.groupId,
-            },
-        }),
+                roomId: GROUP.groupId
+            }
+        })
     );
     const events = Array.from(
         { length: LARGE_MONITOR_EVENT_COUNT },
@@ -524,16 +529,16 @@ function largeMonitorEvents(): readonly ControlEventEnvelope[] {
             payload: {
                 distributedRunId: LARGE_MONITOR_DISTRIBUTED_RUN_ID,
                 topic: 'monitor.large.evidence',
-                message: `Large Monitor event ${index + 1}.`,
-            },
-        }),
+                message: `Large Monitor event ${index + 1}.`
+            }
+        })
     );
     return [...diagnostics, ...events];
 }
 
 function createLargeArtifact(
     distributedRun: ControlDistributedRunSnapshot,
-    controlRun: ControlRunSnapshot,
+    controlRun: ControlRunSnapshot
 ): ControlDistributedRunArtifactBundle {
     return {
         artifactSchemaVersion: 2,
@@ -544,9 +549,9 @@ function createLargeArtifact(
             'manifest.json': JSON.stringify(distributedRun.manifest),
             'control-run.json': JSON.stringify(controlRun),
             'metadata.json': JSON.stringify({
-                generatedBy: 'recipe-console-large-monitor-fixture',
-            }),
-        },
+                generatedBy: 'recipe-console-large-monitor-fixture'
+            })
+        }
     };
 }
 
@@ -554,8 +559,7 @@ function largeMonitorAgentIds(count: number): readonly string[] {
     return Array.from({ length: count }, (_, index) =>
         index === LARGE_MONITOR_AGENT_COUNT - 1
             ? LARGE_MONITOR_LONG_AGENT_ID
-            : `monitor-large-agent-${String(index).padStart(3, '0')}`
-    );
+            : `monitor-large-agent-${String(index).padStart(3, '0')}`);
 }
 
 function largeMonitorRole(index: number): string {
@@ -576,8 +580,10 @@ function largeCompositeCommandId(index: number): string {
 
 async function fulfillJson(route: Route, body: unknown, status = 200): Promise<void> {
     await route.fulfill({
-        status, contentType: 'application/json', headers: corsHeaders(),
-        body: JSON.stringify(body),
+        status,
+        contentType: 'application/json',
+        headers: corsHeaders(),
+        body: JSON.stringify(body)
     });
 }
 
@@ -585,6 +591,6 @@ function corsHeaders(): Record<string, string> {
     return {
         'access-control-allow-origin': '*',
         'access-control-allow-methods': 'GET, POST, OPTIONS',
-        'access-control-allow-headers': 'authorization, content-type, x-client-id',
+        'access-control-allow-headers': 'authorization, content-type, x-client-id'
     };
 }

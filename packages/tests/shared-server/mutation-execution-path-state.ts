@@ -2,233 +2,247 @@ import type { MutationBoundaryLexicalValues } from './mutation-boundary-lexical-
 import { evaluateStaticTruth } from './mutation-static-semantics.ts';
 
 export type MutationExecutionAstNode = {
-  readonly type: string;
-  readonly [key: string]: unknown;
+    readonly type: string;
+    readonly [key: string]: unknown;
 };
 
 export type ExecutionCompletion =
-  | Readonly<{ kind: 'normal' }>
-  | Readonly<{ kind: 'diverge' }>
-  | Readonly<{ kind: 'break'; label: string | undefined }>
-  | Readonly<{ kind: 'continue'; label: string | undefined }>
-  | Readonly<{ kind: 'return' }>
-  | Readonly<{ kind: 'throw' }>;
+    | Readonly<{ kind: 'normal'; }>
+    | Readonly<{ kind: 'diverge'; }>
+    | Readonly<{ kind: 'break'; label: string | undefined; }>
+    | Readonly<{ kind: 'continue'; label: string | undefined; }>
+    | Readonly<{ kind: 'return'; }>
+    | Readonly<{ kind: 'throw'; }>;
 
 export interface ExecutionBranch {
-  readonly alternativeCount: number;
-  readonly alternativeIndex: number;
-  readonly group: object;
-  readonly optional: boolean;
+    readonly alternativeCount: number;
+    readonly alternativeIndex: number;
+    readonly group: object;
+    readonly optional: boolean;
 }
 
 export interface MutationExecutionPath<State> {
-  readonly branches: readonly ExecutionBranch[];
-  readonly completion: ExecutionCompletion;
-  readonly conditional: boolean;
-  readonly state: State;
+    readonly branches: readonly ExecutionBranch[];
+    readonly completion: ExecutionCompletion;
+    readonly conditional: boolean;
+    readonly state: State;
 }
 
 export interface MutationExecutionAdapter<State> {
-  readonly lexical: (state: State) => MutationBoundaryLexicalValues | undefined;
-  readonly nestedFunctions: 'include' | 'skip';
-  readonly visit: (
-    node: MutationExecutionAstNode,
-    state: State,
-    context: Readonly<{
-      branches: readonly ExecutionBranch[];
-      conditional: boolean;
-    }>,
-  ) => State;
-  readonly bindLoopValue?: (
-    state: State,
-    left: unknown,
-    values: readonly (MutationExecutionAstNode | undefined)[],
-    unknown: boolean,
-  ) => State;
-  readonly writeLexical?: (node: MutationExecutionAstNode, state: State) => State;
-  readonly statesEqual?: (left: State, right: State) => boolean;
+    readonly lexical: (state: State) => MutationBoundaryLexicalValues | undefined;
+    readonly nestedFunctions: 'include' | 'skip';
+    readonly visit: (
+        node: MutationExecutionAstNode,
+        state: State,
+        context: Readonly<{
+            branches: readonly ExecutionBranch[];
+            conditional: boolean;
+        }>
+    ) => State;
+    readonly bindLoopValue?: (
+        state: State,
+        left: unknown,
+        values: readonly (MutationExecutionAstNode | undefined)[],
+        unknown: boolean
+    ) => State;
+    readonly writeLexical?: (node: MutationExecutionAstNode, state: State) => State;
+    readonly statesEqual?: (left: State, right: State) => boolean;
 }
 
 export const NORMAL_COMPLETION: ExecutionCompletion = { kind: 'normal' };
 export const DIVERGE_COMPLETION: ExecutionCompletion = { kind: 'diverge' };
 
 export function completeExecutionPaths<State>(
-  paths: readonly MutationExecutionPath<State>[],
-  completion: ExecutionCompletion,
+    paths: readonly MutationExecutionPath<State>[],
+    completion: ExecutionCompletion
 ): readonly MutationExecutionPath<State>[] {
-  return paths.map((path) => path.completion.kind === 'normal' ? { ...path, completion } : path);
+    return paths.map((path) => path.completion.kind === 'normal' ? { ...path, completion } : path);
 }
 
 export function consumesLoopCompletion<State>(
-  path: MutationExecutionPath<State>,
-  kind: 'break' | 'continue',
-  label: string | undefined,
+    path: MutationExecutionPath<State>,
+    kind: 'break' | 'continue',
+    label: string | undefined
 ): boolean {
-  return path.completion.kind === kind &&
-    (path.completion.label === undefined || path.completion.label === label);
+    return path.completion.kind === kind &&
+        (path.completion.label === undefined || path.completion.label === label);
 }
 
 export function visitExecutionPaths<State>(
-  node: MutationExecutionAstNode,
-  paths: readonly MutationExecutionPath<State>[],
-  adapter: MutationExecutionAdapter<State>,
+    node: MutationExecutionAstNode,
+    paths: readonly MutationExecutionPath<State>[],
+    adapter: MutationExecutionAdapter<State>
 ): readonly MutationExecutionPath<State>[] {
-  return paths.map((path) => ({
-    ...path,
-    state: adapter.visit(node, path.state, {
-      branches: path.branches,
-      conditional: path.conditional,
-    }),
-  }));
+    return paths.map((path) => ({
+        ...path,
+        state: adapter.visit(node, path.state, {
+            branches: path.branches,
+            conditional: path.conditional
+        })
+    }));
 }
 
 export function writeExecutionLexicalPaths<State>(
-  node: MutationExecutionAstNode,
-  paths: readonly MutationExecutionPath<State>[],
-  adapter: MutationExecutionAdapter<State>,
+    node: MutationExecutionAstNode,
+    paths: readonly MutationExecutionPath<State>[],
+    adapter: MutationExecutionAdapter<State>
 ): readonly MutationExecutionPath<State>[] {
-  if (
-    !adapter.writeLexical ||
-    !['AssignmentExpression', 'UpdateExpression', 'VariableDeclarator'].includes(node.type)
-  ) return paths;
-  return paths.map((path) =>
-    path.completion.kind === 'normal'
-      ? { ...path, state: adapter.writeLexical!(node, path.state) }
-      : path
-  );
+    if (
+        !adapter.writeLexical ||
+        !['AssignmentExpression', 'UpdateExpression', 'VariableDeclarator'].includes(node.type)
+    ) {
+        return paths;
+    }
+    return paths.map((path) =>
+        path.completion.kind === 'normal'
+            ? { ...path, state: adapter.writeLexical!(node, path.state) }
+            : path
+    );
 }
 
 export function classifyExecutionLoopTest<State>(
-  paths: readonly MutationExecutionPath<State>[],
-  test: unknown,
-  adapter: MutationExecutionAdapter<State>,
+    paths: readonly MutationExecutionPath<State>[],
+    test: unknown,
+    adapter: MutationExecutionAdapter<State>
 ): readonly MutationExecutionPath<State>[] {
-  return paths.flatMap((path) => {
-    if (path.completion.kind !== 'normal') return [path];
-    const truth = test ? evaluateStaticTruth(test, adapter.lexical(path.state)) : true;
-    if (truth === false) return [path];
-    const divergent = { ...path, completion: DIVERGE_COMPLETION };
-    return truth === true ? [divergent] : [path, divergent];
-  });
+    return paths.flatMap((path) => {
+        if (path.completion.kind !== 'normal') {
+            return [path];
+        }
+        const truth = test ? evaluateStaticTruth(test, adapter.lexical(path.state)) : true;
+        if (truth === false) {
+            return [path];
+        }
+        const divergent = { ...path, completion: DIVERGE_COMPLETION };
+        return truth === true ? [divergent] : [path, divergent];
+    });
 }
 
 export function classifyLoopBodyOutcomes<State>(
-  paths: readonly MutationExecutionPath<State>[],
-  label: string | undefined,
+    paths: readonly MutationExecutionPath<State>[],
+    label: string | undefined
 ): Readonly<{
-  continuing: readonly MutationExecutionPath<State>[];
-  escaped: readonly MutationExecutionPath<State>[];
-  exited: readonly MutationExecutionPath<State>[];
+    continuing: readonly MutationExecutionPath<State>[];
+    escaped: readonly MutationExecutionPath<State>[];
+    exited: readonly MutationExecutionPath<State>[];
 }> {
-  const continuing: MutationExecutionPath<State>[] = [];
-  const escaped: MutationExecutionPath<State>[] = [];
-  const exited: MutationExecutionPath<State>[] = [];
-  for (const path of paths) {
-    if (path.completion.kind === 'normal' || consumesLoopCompletion(path, 'continue', label)) {
-      continuing.push(
-        path.completion.kind === 'normal' ? path : consumeExecutionCompletion(path),
-      );
-    } else if (consumesLoopCompletion(path, 'break', label)) {
-      exited.push(consumeExecutionCompletion(path));
-    } else {
-      escaped.push(path);
+    const continuing: MutationExecutionPath<State>[] = [];
+    const escaped: MutationExecutionPath<State>[] = [];
+    const exited: MutationExecutionPath<State>[] = [];
+    for (const path of paths) {
+        if (path.completion.kind === 'normal' || consumesLoopCompletion(path, 'continue', label)) {
+            continuing.push(
+                path.completion.kind === 'normal' ? path : consumeExecutionCompletion(path)
+            );
+        }
+        else if (consumesLoopCompletion(path, 'break', label)) {
+            exited.push(consumeExecutionCompletion(path));
+        }
+        else {
+            escaped.push(path);
+        }
     }
-  }
-  return { continuing, escaped, exited };
+    return { continuing, escaped, exited };
 }
 
 export function consumeExecutionCompletion<State>(
-  path: MutationExecutionPath<State>,
+    path: MutationExecutionPath<State>
 ): MutationExecutionPath<State> {
-  return { ...path, completion: NORMAL_COMPLETION };
+    return { ...path, completion: NORMAL_COMPLETION };
 }
 
 export function consumeUnlabeledBreak<State>(
-  path: MutationExecutionPath<State>,
+    path: MutationExecutionPath<State>
 ): MutationExecutionPath<State> {
-  return path.completion.kind === 'break' && path.completion.label === undefined
-    ? consumeExecutionCompletion(path)
-    : path;
+    return path.completion.kind === 'break' && path.completion.label === undefined
+        ? consumeExecutionCompletion(path)
+        : path;
 }
 
 export function withExecutionBranch<State>(
-  path: MutationExecutionPath<State>,
-  group: object,
-  alternativeIndex: number,
-  alternativeCount: number,
-  optional: boolean,
+    path: MutationExecutionPath<State>,
+    group: object,
+    alternativeIndex: number,
+    alternativeCount: number,
+    optional: boolean
 ): MutationExecutionPath<State> {
-  return {
-    ...path,
-    branches: [...path.branches, { alternativeCount, alternativeIndex, group, optional }],
-    conditional: true,
-  };
+    return {
+        ...path,
+        branches: [...path.branches, { alternativeCount, alternativeIndex, group, optional }],
+        conditional: true
+    };
 }
 
 export function restoreExecutionContext<State>(
-  paths: readonly MutationExecutionPath<State>[],
-  parent: MutationExecutionPath<State>,
+    paths: readonly MutationExecutionPath<State>[],
+    parent: MutationExecutionPath<State>
 ): readonly MutationExecutionPath<State>[] {
-  return paths.map((path) => ({
-    ...path,
-    branches: parent.branches,
-    conditional: parent.conditional,
-  }));
+    return paths.map((path) => ({
+        ...path,
+        branches: parent.branches,
+        conditional: parent.conditional
+    }));
 }
 
 export function bindExecutionLoopPath<State>(
-  path: MutationExecutionPath<State>,
-  left: unknown,
-  values: readonly (MutationExecutionAstNode | undefined)[],
-  unknown: boolean,
-  adapter: MutationExecutionAdapter<State>,
+    path: MutationExecutionPath<State>,
+    left: unknown,
+    values: readonly (MutationExecutionAstNode | undefined)[],
+    unknown: boolean,
+    adapter: MutationExecutionAdapter<State>
 ): MutationExecutionPath<State> {
-  return adapter.bindLoopValue
-    ? { ...path, state: adapter.bindLoopValue(path.state, left, values, unknown) }
-    : path;
+    return adapter.bindLoopValue
+        ? { ...path, state: adapter.bindLoopValue(path.state, left, values, unknown) }
+        : path;
 }
 
 export function coalesceExecutionPaths<State>(
-  paths: readonly MutationExecutionPath<State>[],
-  adapter: MutationExecutionAdapter<State>,
+    paths: readonly MutationExecutionPath<State>[],
+    adapter: MutationExecutionAdapter<State>
 ): readonly MutationExecutionPath<State>[] {
-  if (!adapter.statesEqual) return paths;
-  const coalesced: MutationExecutionPath<State>[] = [];
-  for (const path of paths) {
-    const duplicate = coalesced.some((candidate) =>
-      pathsEqual(candidate, path, adapter.statesEqual!)
-    );
-    if (!duplicate) coalesced.push(path);
-  }
-  return coalesced;
+    if (!adapter.statesEqual) {
+        return paths;
+    }
+    const coalesced: MutationExecutionPath<State>[] = [];
+    for (const path of paths) {
+        const duplicate = coalesced.some((candidate) => pathsEqual(candidate, path, adapter.statesEqual!));
+        if (!duplicate) {
+            coalesced.push(path);
+        }
+    }
+    return coalesced;
 }
 
 function pathsEqual<State>(
-  left: MutationExecutionPath<State>,
-  right: MutationExecutionPath<State>,
-  statesEqual: (left: State, right: State) => boolean,
+    left: MutationExecutionPath<State>,
+    right: MutationExecutionPath<State>,
+    statesEqual: (left: State, right: State) => boolean
 ): boolean {
-  return completionsEqual(left.completion, right.completion) &&
-    left.conditional === right.conditional &&
-    branchesEqual(left.branches, right.branches) &&
-    statesEqual(left.state, right.state);
+    return completionsEqual(left.completion, right.completion) &&
+        left.conditional === right.conditional &&
+        branchesEqual(left.branches, right.branches) &&
+        statesEqual(left.state, right.state);
 }
 
 function completionsEqual(left: ExecutionCompletion, right: ExecutionCompletion): boolean {
-  if (left.kind !== right.kind) return false;
-  if (left.kind !== 'break' && left.kind !== 'continue') return true;
-  return right.kind === left.kind && left.label === right.label;
+    if (left.kind !== right.kind) {
+        return false;
+    }
+    if (left.kind !== 'break' && left.kind !== 'continue') {
+        return true;
+    }
+    return right.kind === left.kind && left.label === right.label;
 }
 
 function branchesEqual(
-  left: readonly ExecutionBranch[],
-  right: readonly ExecutionBranch[],
+    left: readonly ExecutionBranch[],
+    right: readonly ExecutionBranch[]
 ): boolean {
-  return left.length === right.length && left.every((branch, index) => {
-    const candidate = right[index];
-    return candidate?.group === branch.group &&
-      candidate.alternativeIndex === branch.alternativeIndex &&
-      candidate.alternativeCount === branch.alternativeCount &&
-      candidate.optional === branch.optional;
-  });
+    return left.length === right.length && left.every((branch, index) => {
+        const candidate = right[index];
+        return candidate?.group === branch.group &&
+            candidate.alternativeIndex === branch.alternativeIndex &&
+            candidate.alternativeCount === branch.alternativeCount &&
+            candidate.optional === branch.optional;
+    });
 }

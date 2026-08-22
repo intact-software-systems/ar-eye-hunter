@@ -1,12 +1,9 @@
 import { useEffect, useState } from 'react';
-import {
-    resolveAppExperience,
-    type AppExperience,
-} from './experience-route.ts';
+import { resolveAppExperience, type AppExperience } from './experience-route.ts';
 
 function readExperience(): AppExperience {
     return resolveAppExperience(
-        typeof window === 'undefined' ? '' : window.location.search,
+        typeof window === 'undefined' ? '' : window.location.search
     );
 }
 

@@ -1,4 +1,3 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_GRAPH_PROP } from '@shared-graph/algo-props.ts';
 import {
     createDegreeCappedPredictedGraph,
@@ -6,22 +5,11 @@ import {
     predictedRttMs,
     upsertPredictedEdge,
     VivaldiNode,
-    type VivaldiNodeData,
+    type VivaldiNodeData
 } from '@shared-graph/graph/vivaldi.ts';
-import {
-    clearAllNodes,
-    getAllNodeData,
-    getAllNodeIds,
-    getNodeDataById,
-    getOrCreateNode,
-    hasNode,
-} from '@shared-graph/repository/vivaldi-repository.ts';
-import {
-    observeRtt,
-    readablePredictedNodeData,
-    toPredictedGraphFromIds,
-    toPredictedGraphSnapshot,
-} from '@shared-graph/vivaldi-service.ts';
+import { clearAllNodes, getAllNodeData, getAllNodeIds, getNodeDataById, getOrCreateNode, hasNode } from '@shared-graph/repository/vivaldi-repository.ts';
+import { observeRtt, readablePredictedNodeData, toPredictedGraphFromIds, toPredictedGraphSnapshot } from '@shared-graph/vivaldi-service.ts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 
 describe('shared-graph vivaldi and predicted graph behavior', () => {
@@ -50,16 +38,16 @@ describe('shared-graph vivaldi and predicted graph behavior', () => {
         const nodeDataById = new Map<string, VivaldiNodeData>([
             [
                 'peer-a',
-                { id: 'peer-a', coords: [0, 0], err: 0.1, rttMs: 0 },
+                { id: 'peer-a', coords: [0, 0], err: 0.1, rttMs: 0 }
             ],
             [
                 'peer-b',
-                { id: 'peer-b', coords: [3, 4], err: 0.1, rttMs: 0 },
+                { id: 'peer-b', coords: [3, 4], err: 0.1, rttMs: 0 }
             ],
             [
                 'peer-c',
-                { id: 'peer-c', coords: [6, 8], err: 0.1, rttMs: 0 },
-            ],
+                { id: 'peer-c', coords: [6, 8], err: 0.1, rttMs: 0 }
+            ]
         ]);
 
         const graph = createPredictedGraph(nodeDataById, DEFAULT_GRAPH_PROP);
@@ -76,7 +64,7 @@ describe('shared-graph vivaldi and predicted graph behavior', () => {
         expect(graph.getEdgeAttributes(edgeKey!)).toEqual({
             from: 'peer-a',
             to: 'peer-b',
-            weight: 9,
+            weight: 9
         });
     });
 
@@ -89,8 +77,8 @@ describe('shared-graph vivaldi and predicted graph behavior', () => {
                 sessionIdTo: 'peer-b',
                 rttMs: 25,
                 createdAtEpochMs: 1,
-                version: 1,
-            }),
+                version: 1
+            })
         ).toBe(true);
         expect(
             observeRtt({
@@ -98,8 +86,8 @@ describe('shared-graph vivaldi and predicted graph behavior', () => {
                 sessionIdTo: 'peer-c',
                 rttMs: 0,
                 createdAtEpochMs: 2,
-                version: 2,
-            }),
+                version: 2
+            })
         ).toBe(false);
 
         const readable = readablePredictedNodeData();
@@ -107,7 +95,7 @@ describe('shared-graph vivaldi and predicted graph behavior', () => {
 
         const graphFromIds = toPredictedGraphFromIds(
             ['peer-a', 'peer-b', 'missing'],
-            DEFAULT_GRAPH_PROP,
+            DEFAULT_GRAPH_PROP
         );
         const fullGraph = toPredictedGraphSnapshot(DEFAULT_GRAPH_PROP);
 
@@ -119,7 +107,7 @@ describe('shared-graph vivaldi and predicted graph behavior', () => {
         const edgeKey = graphFromIds.edge('peer-a', 'peer-b');
         expect(edgeKey).toBeDefined();
         expect(graphFromIds.getEdgeAttribute(edgeKey!, 'weight')).toSatisfy(
-            (weight: number) => Number.isFinite(weight) && weight > 0,
+            (weight: number) => Number.isFinite(weight) && weight > 0
         );
     });
 
@@ -129,19 +117,19 @@ describe('shared-graph vivaldi and predicted graph behavior', () => {
             sessionIdTo: 'peer-b',
             rttMs: 10,
             createdAtEpochMs: 1,
-            version: 1,
+            version: 1
         });
         observeRtt({
             sessionIdFrom: 'peer-b',
             sessionIdTo: 'peer-c',
             rttMs: 20,
             createdAtEpochMs: 2,
-            version: 2,
+            version: 2
         });
 
         const graph = toPredictedGraphFromIds(
             ['peer-a', 'peer-b', 'peer-c'],
-            DEFAULT_GRAPH_PROP,
+            DEFAULT_GRAPH_PROP
         );
 
         expect(graph.order).toBe(3);
@@ -154,15 +142,15 @@ describe('shared-graph vivaldi and predicted graph behavior', () => {
             Array.from({ length: 10 }, (_value, index) => {
                 const id = `peer-${index + 1}`;
                 return [id, { id, coords: [index, 0], err: 0.1, rttMs: 0 }];
-            }),
+            })
         );
 
         const graph = createDegreeCappedPredictedGraph(
             nodeDataById,
             DEFAULT_GRAPH_PROP,
             {
-                degreeLimit: 3,
-            },
+                degreeLimit: 3
+            }
         );
 
         expect(graph.order).toBe(10);
@@ -181,7 +169,7 @@ describe('shared-graph vivaldi and predicted graph behavior', () => {
     it('builds the same degree-capped graph regardless of node insertion order', () => {
         const ids = Array.from({ length: 16 }, (_value, index) => `peer-${index + 1}`);
         const shuffled = [4, 12, 0, 7, 15, 2, 9, 1, 13, 5, 10, 3, 14, 6, 11, 8].map(
-            (index) => ids[index],
+            (index) => ids[index]
         );
         expect(toDegreeCappedEdgeKeys(shuffled)).toEqual(toDegreeCappedEdgeKeys(ids));
     });
@@ -194,13 +182,13 @@ describe('shared-graph vivaldi and predicted graph behavior', () => {
             id: 'peer-b',
             coords: [Number.NaN, 1],
             err: 0.4,
-            rttMs: 20,
+            rttMs: 20
         });
         node.update({
             id: 'peer-b',
             coords: [1, 1],
             err: 0.4,
-            rttMs: -1,
+            rttMs: -1
         });
 
         expect(node.toNodeData('peer-a')).toEqual(before);
@@ -212,10 +200,10 @@ function toDegreeCappedEdgeKeys(order: readonly string[]): string[] {
         order.map((id) => {
             const index = Number(id.split('-')[1]) - 1;
             return [id, { id, coords: [index % 4, Math.floor(index / 4)], err: 0.1, rttMs: 0 }];
-        }),
+        })
     );
     const graph = createDegreeCappedPredictedGraph(nodeDataById, DEFAULT_GRAPH_PROP, {
-        degreeLimit: 3,
+        degreeLimit: 3
     });
     const edges: string[] = [];
     graph.forEachEdge((_edge, _attributes, source, target) => {

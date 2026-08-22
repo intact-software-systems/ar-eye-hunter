@@ -1,16 +1,3 @@
-import { describe, expect, it, vi } from 'vitest';
-import {
-    createRallarGameAuthorityClient,
-    type RallarGameAuthorityClientConfig,
-    type RallarGameAuthorityClientRallarFacade,
-} from '@shared-web/game/mod.ts';
-import {
-    createRallarGameAuthorityEnvelope,
-    type RallarGameAuthorityCommandResult,
-    type RallarGameAuthorityEnvelope,
-    type RallarGameAuthorityRef,
-} from '@shared/rallar-game/mod.ts';
-import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
     RallarMessage,
     RallarMessageSelectorInput,
@@ -20,24 +7,33 @@ import type {
     RallarTypedMessageSendOptions,
     RallarTypedRtcSendOptions,
     RallarTypedWsSendOptions,
-    RallarWsSendInput,
+    RallarWsSendInput
 } from '@shared-web/browser/rallar.ts';
+import { createRallarGameAuthorityClient, type RallarGameAuthorityClientConfig, type RallarGameAuthorityClientRallarFacade } from '@shared-web/game/mod.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
+import {
+    createRallarGameAuthorityEnvelope,
+    type RallarGameAuthorityCommandResult,
+    type RallarGameAuthorityEnvelope,
+    type RallarGameAuthorityRef
+} from '@shared/rallar-game/mod.ts';
+import { describe, expect, it, vi } from 'vitest';
 
-type Command = Readonly<{ action: string }>;
-type Snapshot = Readonly<{ tick: number }>;
-type Event = Readonly<{ kind: string }>;
-type Presence = Readonly<{ x: number }>;
+type Command = Readonly<{ action: string; }>;
+type Snapshot = Readonly<{ tick: number; }>;
+type Event = Readonly<{ kind: string; }>;
+type Presence = Readonly<{ x: number; }>;
 
 const roomRef: GroupRef = {
     applicationId: 'app-1',
     workspaceId: 'workspace-1',
-    groupId: 'room-1',
+    groupId: 'room-1'
 };
 
 const authority: RallarGameAuthorityRef = {
     kind: 'server',
     id: 'server-1',
-    epoch: 1,
+    epoch: 1
 };
 
 describe('Rallar Game Authority browser client', () => {
@@ -52,11 +48,11 @@ describe('Rallar Game Authority browser client', () => {
         expect(fake.wsMessageHandlers.map((sub) => sub.selector)).toEqual([
             { topicId: 'game.authority', typeId: 'game.authority.command-result.v1' },
             { topicId: 'game.authority', typeId: 'game.authority.snapshot.v1' },
-            { topicId: 'game.authority', typeId: 'game.authority.event.v1' },
+            { topicId: 'game.authority', typeId: 'game.authority.event.v1' }
         ]);
         expect(fake.rtcMessageHandlers.map((sub) => sub.selector)).toEqual([
             { topicId: 'game.authority', typeId: 'game.authority.snapshot.v1' },
-            { topicId: 'game.authority', typeId: 'game.authority.presence.v1' },
+            { topicId: 'game.authority', typeId: 'game.authority.presence.v1' }
         ]);
     });
 
@@ -66,13 +62,13 @@ describe('Rallar Game Authority browser client', () => {
         await client.start();
 
         const result = await client.sendCommand({ action: 'dash' }, {
-            key: 'command:peer-a',
+            key: 'command:peer-a'
         });
 
         expect(result).toMatchObject({
             status: 'sent',
             transport: 'ws',
-            seq: 1,
+            seq: 1
         });
         expect(client.status().pendingCommandCount).toBe(1);
         expect(fake.wsSend).toHaveBeenCalledWith(
@@ -83,8 +79,8 @@ describe('Rallar Game Authority browser client', () => {
                 roomRef,
                 reliability: 'at-least-once',
                 ack: 'receiver',
-                resourceId: 'command:peer-a',
-            }),
+                resourceId: 'command:peer-a'
+            })
         );
         expect(fake.wsSend.mock.calls[0][0].payload).toMatchObject({
             protocol: 'test.authority.v1',
@@ -92,7 +88,7 @@ describe('Rallar Game Authority browser client', () => {
             roomId: 'room-1',
             senderId: 'peer-a',
             authority,
-            payload: { action: 'dash' },
+            payload: { action: 'dash' }
         });
     });
 
@@ -108,18 +104,18 @@ describe('Rallar Game Authority browser client', () => {
             'server-1',
             {
                 ...envelope('snapshot', 'server-1', { tick: 1 }, 1),
-                protocol: 'wrong.protocol',
-            },
+                protocol: 'wrong.protocol'
+            }
         );
         await fake.emitWs(
             'game.authority.snapshot.v1',
             'server-1',
-            envelope('snapshot', 'server-1', { tick: 2 }, 2),
+            envelope('snapshot', 'server-1', { tick: 2 }, 2)
         );
         await fake.emitWs(
             'game.authority.event.v1',
             'server-1',
-            envelope('event', 'server-1', { kind: 'cash-picked' }, 1),
+            envelope('event', 'server-1', { kind: 'cash-picked' }, 1)
         );
 
         expect(onSnapshot).toHaveBeenCalledTimes(1);
@@ -140,23 +136,23 @@ describe('Rallar Game Authority browser client', () => {
             'server-2',
             {
                 ...envelope('snapshot', 'server-2', { tick: 1 }, 1),
-                authority: { ...authority, id: 'server-2' },
-            },
+                authority: { ...authority, id: 'server-2' }
+            }
         );
         await fake.emitWs(
             'game.authority.snapshot.v1',
             'peer-b',
-            envelope('snapshot', 'peer-b', { tick: 1 }, 1),
+            envelope('snapshot', 'peer-b', { tick: 1 }, 1)
         );
         await fake.emitWs(
             'game.authority.snapshot.v1',
             'server-1',
-            envelope('snapshot', 'server-1', { tick: 2 }, 2),
+            envelope('snapshot', 'server-1', { tick: 2 }, 2)
         );
         await fake.emitWs(
             'game.authority.snapshot.v1',
             'server-1',
-            envelope('snapshot', 'server-1', { tick: 3 }, 2),
+            envelope('snapshot', 'server-1', { tick: 3 }, 2)
         );
 
         expect(onSnapshot).toHaveBeenCalledTimes(1);
@@ -179,8 +175,8 @@ describe('Rallar Game Authority browser client', () => {
                 'command-result',
                 'server-1',
                 { commandSeq: command.seq ?? 0, status: 'accepted' },
-                1,
-            ),
+                1
+            )
         );
 
         expect(client.status().pendingCommandCount).toBe(0);
@@ -197,7 +193,7 @@ describe('Rallar Game Authority browser client', () => {
         await fake.emitRtc(
             'game.authority.snapshot.v1',
             'peer-b',
-            envelope('snapshot', 'peer-b', { tick: 1 }, 1),
+            envelope('snapshot', 'peer-b', { tick: 1 }, 1)
         );
 
         expect(onSnapshot).not.toHaveBeenCalled();
@@ -211,15 +207,15 @@ describe('Rallar Game Authority browser client', () => {
             onSnapshot,
             peerAssist: {
                 snapshotRepair: true,
-                acceptSnapshotRepair,
-            },
+                acceptSnapshotRepair
+            }
         });
         await client.start();
 
         await fake.emitRtc(
             'game.authority.snapshot.v1',
             'peer-b',
-            envelope('snapshot', 'peer-b', { tick: 5 }, 1),
+            envelope('snapshot', 'peer-b', { tick: 5 }, 1)
         );
 
         expect(acceptSnapshotRepair).toHaveBeenCalledTimes(1);
@@ -238,12 +234,12 @@ describe('Rallar Game Authority browser client', () => {
         await fake.emitWs(
             'game.authority.event.v1',
             'server-1',
-            envelope('event', 'server-1', { kind: 'late' }, 1),
+            envelope('event', 'server-1', { kind: 'late' }, 1)
         );
 
         expect(client.status()).toMatchObject({
             phase: 'stopped',
-            stopped: true,
+            stopped: true
         });
         expect(onEvent).not.toHaveBeenCalled();
         expect(fake.wsMessageHandlers).toHaveLength(0);
@@ -253,16 +249,14 @@ describe('Rallar Game Authority browser client', () => {
 
 function createClient(
     fake: ReturnType<typeof createFakeRallar>,
-    overrides: Partial<
-        RallarGameAuthorityClientConfig<Command, Snapshot, Event, Presence>
-    > = {},
+    overrides: Partial<RallarGameAuthorityClientConfig<Command, Snapshot, Event, Presence>> = {}
 ) {
     return createRallarGameAuthorityClient<Command, Snapshot, Event, Presence>({
         rallar: fake.rallar,
         protocol: 'test.authority.v1',
         topicId: 'game.authority',
         authority,
-        ...overrides,
+        ...overrides
     });
 }
 
@@ -270,7 +264,7 @@ function envelope<T>(
     kind: RallarGameAuthorityEnvelope<T>['kind'],
     senderId: string,
     payload: T,
-    seq: number,
+    seq: number
 ): RallarGameAuthorityEnvelope<T> {
     return createRallarGameAuthorityEnvelope({
         protocol: 'test.authority.v1',
@@ -280,15 +274,13 @@ function envelope<T>(
         seq,
         sentAtEpochMs: 1_000 + seq,
         authority,
-        payload,
+        payload
     });
 }
 
 function createFakeRallar() {
     const roomChangeHandlers: Array<(state: unknown) => void | Promise<void>> = [];
-    const rtcStatusHandlers: Array<
-        (status: RallarRtcStatus) => void | Promise<void>
-    > = [];
+    const rtcStatusHandlers: Array<(status: RallarRtcStatus) => void | Promise<void>> = [];
     const wsMessageHandlers: Array<MessageSubscription> = [];
     const rtcMessageHandlers: Array<MessageSubscription> = [];
     const session = {
@@ -296,13 +288,13 @@ function createFakeRallar() {
         sessionId: 'peer-a',
         username: 'alice',
         accessToken: 'token',
-        expiresAtEpochMs: Date.now() + 60_000,
+        expiresAtEpochMs: Date.now() + 60_000
     };
     const roomState = {
         rooms: [],
         currentRoomId: 'room-1',
         currentRoomRef: roomRef,
-        members: [],
+        members: []
     };
     const rtcStatus: RallarRtcStatus = {
         sessionId: 'peer-a',
@@ -311,19 +303,19 @@ function createFakeRallar() {
         activePeerIds: ['peer-b'],
         peerIdsWithNoReconnectableLanes: [],
         readyPeerIds: ['peer-b'],
-        peers: [],
+        peers: []
     };
     const wsSend = vi.fn(async (input: RallarWsSendInput<unknown>) => ({
         transport: 'ws' as const,
         status: 'enqueued' as const,
         message: input,
-        entries: [],
+        entries: []
     }));
     const rtcSend = vi.fn(async (input: RallarRtcSendInput<unknown>) => ({
         transport: 'rtc' as const,
         status: 'enqueued' as const,
         message: input,
-        entries: [],
+        entries: []
     }));
 
     const fake = {
@@ -341,102 +333,100 @@ function createFakeRallar() {
                 onChange: (handler: (state: unknown) => void | Promise<void>) => {
                     roomChangeHandlers.push(handler);
                     return () => remove(roomChangeHandlers, handler);
-                },
+                }
             },
             rtc: {
                 status: () => rtcStatus,
                 onStatus: (handler: (status: RallarRtcStatus) => void | Promise<void>) => {
                     rtcStatusHandlers.push(handler);
                     return () => remove(rtcStatusHandlers, handler);
-                },
+                }
             },
             messages: {
                 ws: {
                     send: wsSend,
                     onMessage: (
                         selector: RallarMessageSelectorInput,
-                        handler: (message: RallarMessage<unknown>) => void | Promise<void>,
+                        handler: (message: RallarMessage<unknown>) => void | Promise<void>
                     ) => {
                         const subscription = { selector, handler };
                         wsMessageHandlers.push(subscription);
                         return () => remove(wsMessageHandlers, subscription);
-                    },
+                    }
                 },
                 rtc: {
                     send: rtcSend,
                     onMessage: (
                         selector: RallarMessageSelectorInput,
-                        handler: (message: RallarMessage<unknown>) => void | Promise<void>,
+                        handler: (message: RallarMessage<unknown>) => void | Promise<void>
                     ) => {
                         const subscription = { selector, handler };
                         rtcMessageHandlers.push(subscription);
                         return () => remove(rtcMessageHandlers, subscription);
-                    },
+                    }
                 },
                 room: (definition: RallarRoomMessageChannelDefinition) => ({
                     send: async (
                         payload: unknown,
-                        options: RallarTypedMessageSendOptions<unknown> = {},
+                        options: RallarTypedMessageSendOptions<unknown> = {}
                     ) => {
                         const input = { ...definition, ...options, payload };
                         return await rtcSend(input);
                     },
                     sendRtc: async (
                         payload: unknown,
-                        options: RallarTypedRtcSendOptions<unknown> = {},
+                        options: RallarTypedRtcSendOptions<unknown> = {}
                     ) => await rtcSend({
                         ...definition,
                         ...options,
-                        payload,
+                        payload
                     }),
                     sendWs: async (
                         payload: unknown,
-                        options: RallarTypedWsSendOptions<unknown> = {},
+                        options: RallarTypedWsSendOptions<unknown> = {}
                     ) => await wsSend({
                         ...definition,
                         ...options,
                         payload,
-                        scope: options.scope ?? 'room',
+                        scope: options.scope ?? 'room'
                     }),
                     onRtc: (
-                        handler: (payload: unknown, message: RallarMessage<unknown>) => void | Promise<void>,
+                        handler: (payload: unknown, message: RallarMessage<unknown>) => void | Promise<void>
                     ) => {
                         const subscription = {
                             selector: definition,
-                            handler: async (message: RallarMessage<unknown>) =>
-                                await handler(message.payload, message),
+                            handler: async (message: RallarMessage<unknown>) => await handler(message.payload, message)
                         };
                         rtcMessageHandlers.push(subscription);
                         return () => remove(rtcMessageHandlers, subscription);
                     },
                     onWs: (
-                        handler: (payload: unknown, message: RallarMessage<unknown>) => void | Promise<void>,
+                        handler: (payload: unknown, message: RallarMessage<unknown>) => void | Promise<void>
                     ) => {
                         const subscription = {
                             selector: definition,
-                            handler: async (message: RallarMessage<unknown>) =>
-                                await handler(message.payload, message),
+                            handler: async (message: RallarMessage<unknown>) => await handler(message.payload, message)
                         };
                         wsMessageHandlers.push(subscription);
                         return () => remove(wsMessageHandlers, subscription);
-                    },
-                }),
-            },
+                    }
+                })
+            }
         } as unknown as RallarGameAuthorityClientRallarFacade,
         async emitWs<T>(
             typeId: string,
             senderId: string,
-            payload: RallarGameAuthorityEnvelope<T>,
+            payload: RallarGameAuthorityEnvelope<T>
         ) {
             await emit(wsMessageHandlers, message('ws', typeId, senderId, payload));
         },
         async emitRtc<T>(
             typeId: string,
             senderId: string,
-            payload: RallarGameAuthorityEnvelope<T>,
+            payload: RallarGameAuthorityEnvelope<T>
         ) {
             await emit(rtcMessageHandlers, message('rtc', typeId, senderId, payload));
-        },
+        }
     };
 
     return fake;
@@ -449,20 +439,18 @@ type MessageSubscription = Readonly<{
 
 async function emit<T>(
     subscriptions: readonly MessageSubscription[],
-    message: RallarMessage<T>,
+    message: RallarMessage<T>
 ): Promise<void> {
     await Promise.all(
         subscriptions
-            .filter((subscription) =>
-                selectorMatches(subscription.selector, message.typeId)
-            )
-            .map((subscription) => subscription.handler(message)),
+            .filter((subscription) => selectorMatches(subscription.selector, message.typeId))
+            .map((subscription) => subscription.handler(message))
     );
 }
 
 function selectorMatches(
     selector: RallarMessageSelectorInput,
-    typeId: string,
+    typeId: string
 ): boolean {
     return typeof selector === 'string' ? selector === typeId : selector.typeId === typeId;
 }
@@ -471,7 +459,7 @@ function message<T>(
     transport: RallarMessage<T>['transport'],
     typeId: string,
     senderId: string,
-    payload: T,
+    payload: T
 ): RallarMessage<T> {
     return {
         transport,
@@ -483,7 +471,7 @@ function message<T>(
         senderId,
         payload,
         raw: {} as RallarMessage<T>['raw'],
-        receivedAtEpochMs: Date.now(),
+        receivedAtEpochMs: Date.now()
     };
 }
 
@@ -503,7 +491,7 @@ function createSubscriptionScope() {
         },
         size() {
             return unsubscribes.length;
-        },
+        }
     };
 }
 

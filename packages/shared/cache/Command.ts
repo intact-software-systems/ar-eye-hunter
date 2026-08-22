@@ -2,7 +2,7 @@ import { CircuitBreaker } from '../resilience/circuit-breaker.ts';
 import { RateLimiter } from '../resilience/Resilience.ts';
 
 export type LoanedValueSupplier<T> = (
-    signal?: AbortSignal,
+    signal?: AbortSignal
 ) => T | Promise<T>;
 export type FallbackSupplier<T> = (error: unknown) => T | Promise<T>;
 
@@ -71,7 +71,7 @@ export class Command<T> {
 
     public constructor(
         supplier: LoanedValueSupplier<T>,
-        options: CommandOptions<T> = {},
+        options: CommandOptions<T> = {}
     ) {
         this.supplier = supplier;
         this.options = options;
@@ -99,7 +99,7 @@ export class Command<T> {
             circuitBreaker,
             rateLimiter,
             shouldRetry = () => true,
-            hooks,
+            hooks
         } = this.options;
 
         if (this.cancelled) {
@@ -141,13 +141,14 @@ export class Command<T> {
                     const value = await this.executeOnce(
                         signal,
                         timeoutMs,
-                        errorOnNull,
+                        errorOnNull
                     );
                     hooks?.onSuccess?.(value);
                     circuitBreaker?.success();
                     hooks?.onComplete?.();
                     return value;
-                } catch (error) {
+                }
+                catch (error) {
                     if (error instanceof CommandCancelledError) {
                         throw error;
                     }
@@ -181,7 +182,8 @@ export class Command<T> {
             }
 
             throw lastError;
-        } catch (error) {
+        }
+        catch (error) {
             if (
                 !(error instanceof CircuitBreakerOpenError) &&
                 !(error instanceof RateLimitExceededError) &&
@@ -197,7 +199,7 @@ export class Command<T> {
     private async executeOnce(
         parentSignal: AbortSignal | undefined,
         timeoutMs: number | undefined,
-        errorOnNull: boolean,
+        errorOnNull: boolean
     ): Promise<T> {
         const attempt = this.createAttemptSignal(parentSignal);
         let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
@@ -220,7 +222,8 @@ export class Command<T> {
                 }
 
                 return result as T;
-            } catch (error) {
+            }
+            catch (error) {
                 if (attempt.signal.aborted && Command.isAbortError(error)) {
                     throw Command.toCommandAbortError(attempt.signal.reason);
                 }
@@ -230,8 +233,7 @@ export class Command<T> {
         })();
 
         const abort = new Promise<T>((_, reject) => {
-            abortListener = () =>
-                reject(Command.toCommandAbortError(attempt.signal.reason));
+            abortListener = () => reject(Command.toCommandAbortError(attempt.signal.reason));
 
             if (attempt.signal.aborted) {
                 abortListener();
@@ -243,7 +245,8 @@ export class Command<T> {
 
         try {
             return await Promise.race([operation, abort]);
-        } finally {
+        }
+        finally {
             if (timeoutHandle !== undefined) {
                 clearTimeout(timeoutHandle);
             }
@@ -258,7 +261,7 @@ export class Command<T> {
     }
 
     private createAttemptSignal(
-        parentSignal: AbortSignal | undefined,
+        parentSignal: AbortSignal | undefined
     ): {
         controller: AbortController;
         signal: AbortSignal;
@@ -271,17 +274,18 @@ export class Command<T> {
 
         if (this.cancelled) {
             controller.abort(new CommandCancelledError());
-        } else if (parentSignal?.aborted) {
+        }
+        else if (parentSignal?.aborted) {
             abortFromParent();
-        } else {
+        }
+        else {
             parentSignal?.addEventListener('abort', abortFromParent, { once: true });
         }
 
         return {
             controller,
             signal: controller.signal,
-            cleanup: () =>
-                parentSignal?.removeEventListener('abort', abortFromParent),
+            cleanup: () => parentSignal?.removeEventListener('abort', abortFromParent)
         };
     }
 
@@ -297,7 +301,7 @@ export class Command<T> {
     }
 
     private static toCommandCancelledError(
-        reason: unknown,
+        reason: unknown
     ): CommandCancelledError {
         if (reason instanceof CommandCancelledError) {
             return reason;

@@ -1,10 +1,10 @@
+import {
+    analyzeDistributedRunArtifactFiles,
+    type DistributedRunArtifactFiles
+} from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import {
-    analyzeDistributedRunArtifactFiles,
-    type DistributedRunArtifactFiles,
-} from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
 
 async function main(): Promise<void> {
     const args = parseArgs(process.argv.slice(2));
@@ -18,7 +18,7 @@ async function main(): Promise<void> {
 
 export async function analyzeDistributedRunArtifactDirectory(
     artifactDir: string,
-    outDir = join(artifactDir, 'analysis'),
+    outDir = join(artifactDir, 'analysis')
 ): Promise<void> {
     const files = await readArtifactFiles(artifactDir);
     const analysis = analyzeDistributedRunArtifactFiles({ files });
@@ -37,11 +37,13 @@ export async function analyzeDistributedRunArtifactDirectory(
 async function readArtifactFiles(artifactDir: string): Promise<DistributedRunArtifactFiles> {
     const entries = await readdir(artifactDir, { withFileTypes: true });
     const files: Record<string, string> = {};
-    await Promise.all(entries
-        .filter((entry) => entry.isFile())
-        .map(async (entry) => {
-            files[entry.name] = await readFile(join(artifactDir, entry.name), 'utf8');
-        }));
+    await Promise.all(
+        entries
+            .filter((entry) => entry.isFile())
+            .map(async (entry) => {
+                files[entry.name] = await readFile(join(artifactDir, entry.name), 'utf8');
+            })
+    );
     return files;
 }
 
@@ -57,7 +59,8 @@ function parseArgs(args: readonly string[]): Record<string, string | undefined> 
         if (next && !next.startsWith('--')) {
             parsed[key] = next;
             index += 1;
-        } else {
+        }
+        else {
             parsed[key] = '1';
         }
     }

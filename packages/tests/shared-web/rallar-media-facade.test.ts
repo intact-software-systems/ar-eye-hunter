@@ -1,13 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
-import type { QRtcMediaPolicy } from '@shared/webrtc/QRtcPeerConnection.ts';
 import { createRallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
 import type {
     RallarCameraSourceStartOptions,
     RallarMediaSourceController,
     RallarMicrophoneSourceStartOptions,
     RallarRemoteStream,
-    RallarScreenSourceStartOptions,
+    RallarScreenSourceStartOptions
 } from '@shared-web/browser/rallar.ts';
+import type { QRtcMediaPolicy } from '@shared/webrtc/QRtcPeerConnection.ts';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('Rallar media facade factory', () => {
     it('delegates media methods through injected operations', async () => {
@@ -18,7 +18,7 @@ describe('Rallar media facade factory', () => {
         const policy = {} as QRtcMediaPolicy;
         const unsubscribe = vi.fn();
         const remoteStreamHandler = vi.fn(
-            (_remote: RallarRemoteStream): void => {},
+            (_remote: RallarRemoteStream): void => {}
         );
         const operations = {
             microphone,
@@ -29,7 +29,7 @@ describe('Rallar media facade factory', () => {
             setVideoEnabled: vi.fn(async () => {}),
             stopLocal: vi.fn(async () => {}),
             setPolicy: vi.fn(async () => {}),
-            onRemoteStream: vi.fn(() => unsubscribe),
+            onRemoteStream: vi.fn(() => unsubscribe)
         };
 
         const facade = createRallarMediaFacade(operations);
@@ -50,7 +50,7 @@ describe('Rallar media facade factory', () => {
         expect(operations.stopLocal).toHaveBeenCalledWith('all');
         expect(operations.setPolicy).toHaveBeenCalledWith(policy);
         expect(operations.onRemoteStream).toHaveBeenCalledWith(
-            remoteStreamHandler,
+            remoteStreamHandler
         );
     });
 });
@@ -59,6 +59,6 @@ function createController<TOptions>(): RallarMediaSourceController<TOptions> {
     return {
         start: vi.fn(),
         status: vi.fn(),
-        stop: vi.fn(),
+        stop: vi.fn()
     };
 }

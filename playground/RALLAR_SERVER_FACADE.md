@@ -46,10 +46,10 @@ The browser facade exposes this through `rallar.messages.ws.send()`:
 
 ```ts
 await rallar.messages.ws.send({
-  topicId: "room.cursor",
-  typeId: "cursor.position.v1",
-  roomId,
-  payload: { x, y },
+    topicId: 'room.cursor',
+    typeId: 'cursor.position.v1',
+    roomId,
+    payload: { x, y }
 });
 ```
 
@@ -57,10 +57,10 @@ Subscriptions can filter by `topicId`, `typeId`, or both:
 
 ```ts
 const unsubscribe = rallar.messages.ws.onMessage(
-  { topicId: "room.cursor", typeId: "cursor.position.v1" },
-  (message) => {
-    console.log(message.payload);
-  },
+    { topicId: 'room.cursor', typeId: 'cursor.position.v1' },
+    (message) => {
+        console.log(message.payload);
+    }
 );
 ```
 
@@ -104,31 +104,31 @@ them and make their roles explicit.
 
 ```ts
 const server = createRallarServer({
-  repositories,
-  auth,
-  websocket,
-  rest,
+    repositories,
+    auth,
+    websocket,
+    rest
 });
 
 server.system.useDefaultMiddlewareTopics();
 
 server.ws.defineTopic({
-  topicId: "room.cursor",
-  typeId: "cursor.position.v1",
-  scope: "room",
-  validate: isCursorPosition,
-  authorize: isRoomMember,
+    topicId: 'room.cursor',
+    typeId: 'cursor.position.v1',
+    scope: 'room',
+    validate: isCursorPosition,
+    authorize: isRoomMember
 });
 
 server.ws.on(
-  { topicId: "room.cursor", typeId: "cursor.position.v1" },
-  async (message, context) => {
-    await context.proxy.toRoom(message.route.contextId, message);
-  },
+    { topicId: 'room.cursor', typeId: 'cursor.position.v1' },
+    async (message, context) => {
+        await context.proxy.toRoom(message.route.contextId, message);
+    }
 );
 
-server.rest.mount(app, { prefix: "/api" });
-server.ws.mount(app, { path: "/api/ws/:sessionId" });
+server.rest.mount(app, { prefix: '/api' });
+server.ws.mount(app, { path: '/api/ws/:sessionId' });
 ```
 
 ## Facade Shape
@@ -250,15 +250,15 @@ RallarServer
 REST routes should become thin adapters:
 
 ```ts
-app.put("/api/state/clients/:id", async (c) => {
-  const context = await server.auth.requireRequestContext(c.req);
-  const body = await c.req.json();
+app.put('/api/state/clients/:id', async (c) => {
+    const context = await server.auth.requireRequestContext(c.req);
+    const body = await c.req.json();
 
-  const snapshot = await server.system.clients.upsert(body, context);
+    const snapshot = await server.system.clients.upsert(body, context);
 
-  await server.system.events.publishClientSnapshot(snapshot, context);
+    await server.system.events.publishClientSnapshot(snapshot, context);
 
-  return c.json(snapshot);
+    return c.json(snapshot);
 });
 ```
 
@@ -271,19 +271,19 @@ The server facade should define topics explicitly:
 
 ```ts
 type RallarServerTopicDefinition<T> = Readonly<{
-  topicId: string;
-  typeId: string;
-  scope: "app" | "room" | "world";
-  validate?: (
-    value: unknown,
-    context: RallarServerMessageContext,
-  ) => boolean | Promise<boolean>;
-  authorize?: (
-    message: ALMessage,
-    context: RallarServerMessageContext,
-  ) => boolean | Promise<boolean>;
-  maxPayloadBytes?: number;
-  fanout?: "live-only" | "outbox" | "none";
+    topicId: string;
+    typeId: string;
+    scope: 'app' | 'room' | 'world';
+    validate?: (
+        value: unknown,
+        context: RallarServerMessageContext
+    ) => boolean | Promise<boolean>;
+    authorize?: (
+        message: ALMessage,
+        context: RallarServerMessageContext
+    ) => boolean | Promise<boolean>;
+    maxPayloadBytes?: number;
+    fanout?: 'live-only' | 'outbox' | 'none';
 }>;
 ```
 
@@ -324,14 +324,14 @@ Example:
 
 ```ts
 server.ws.proxy({
-  from: { topicId: "room.cursor", typeId: "cursor.position.v1" },
-  authorize: ({ sender, room }) => room.hasSession(sender.sessionId),
-  targets: ({ message }) => ({
-    mode: "broadcast",
-    scope: "room",
-    exceptPeerIds: [message.id.senderId],
-  }),
-  suppressDefaultFanout: true,
+    from: { topicId: 'room.cursor', typeId: 'cursor.position.v1' },
+    authorize: ({ sender, room }) => room.hasSession(sender.sessionId),
+    targets: ({ message }) => ({
+        mode: 'broadcast',
+        scope: 'room',
+        exceptPeerIds: [message.id.senderId]
+    }),
+    suppressDefaultFanout: true
 });
 ```
 

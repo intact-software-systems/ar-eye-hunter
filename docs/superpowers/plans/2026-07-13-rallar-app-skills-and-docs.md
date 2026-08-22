@@ -81,7 +81,7 @@
 Create `packages/tests/repo/rallar-skill-integrity.test.ts` with:
 
 ```ts
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -96,14 +96,14 @@ const expectedSkills = [
     'rallar-hetzner-ops',
     'rallar-platform',
     'rallar-realtime',
-    'rallar-testing',
+    'rallar-testing'
 ] as const;
 
 describe('Rallar repo skill and documentation integrity', () => {
     it('uses one directly discoverable skill tree for the plugin', () => {
         const plugin = readJson('.codex-plugin/plugin.json') as {
             skills?: string;
-            interface?: { defaultPrompt?: readonly string[] };
+            interface?: { defaultPrompt?: readonly string[]; };
         };
         const skillDirectories = readdirSync(skillsRoot, { withFileTypes: true })
             .filter((entry) => entry.isDirectory())
@@ -128,7 +128,7 @@ describe('Rallar repo skill and documentation integrity', () => {
             for (const reference of source.matchAll(/`(references\/[a-z0-9./-]+\.md)`/g)) {
                 expect(
                     existsSync(path.join(skillsRoot, skillName, reference[1])),
-                    `${skillPath} -> ${reference[1]}`,
+                    `${skillPath} -> ${reference[1]}`
                 ).toBe(true);
             }
         }
@@ -137,13 +137,13 @@ describe('Rallar repo skill and documentation integrity', () => {
     it('provides the greenfield app workflow and audited evidence map', () => {
         const skill = readRepo('.agents/skills/building-rallar-apps/SKILL.md');
         const scaffolding = readRepo(
-            '.agents/skills/building-rallar-apps/references/app-scaffolding.md',
+            '.agents/skills/building-rallar-apps/references/app-scaffolding.md'
         );
         const architecture = readRepo(
-            '.agents/skills/building-rallar-apps/references/react-3d-architecture.md',
+            '.agents/skills/building-rallar-apps/references/react-3d-architecture.md'
         );
         const exampleMap = readRepo(
-            '.agents/skills/building-rallar-apps/references/example-map.md',
+            '.agents/skills/building-rallar-apps/references/example-map.md'
         );
 
         expectAll(skill, [
@@ -151,20 +151,20 @@ describe('Rallar repo skill and documentation integrity', () => {
             '`references/react-3d-architecture.md`',
             '`references/example-map.md`',
             'rallar.setup',
-            'roomRef',
+            'roomRef'
         ]);
         expectAll(scaffolding, [
             'apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts',
             'rallar.rooms.enter',
             'rallar.rooms.createAndSwitch',
-            'AbortController',
+            'AbortController'
         ]);
         expectAll(architecture, [
             'Direct Three.js',
             'React Three Fiber',
             'no per-frame React state',
             'Rallar Motion',
-            'dispose',
+            'dispose'
         ]);
         expectAll(exampleMap, [
             'examples/browser-startup-room',
@@ -173,7 +173,7 @@ describe('Rallar repo skill and documentation integrity', () => {
             'examples/motion-smoothing',
             'apps/ar-eye-hunter-v1',
             'apps/relic-hunters-v1',
-            'projects/cash-chase-arena',
+            'projects/cash-chase-arena'
         ]);
     });
 
@@ -183,7 +183,7 @@ describe('Rallar repo skill and documentation integrity', () => {
         const realtime = readRepo('.agents/skills/rallar-realtime/SKILL.md');
         const testing = readRepo('.agents/skills/rallar-testing/SKILL.md');
         const testCommands = readRepo(
-            '.agents/skills/rallar-testing/references/test-commands.md',
+            '.agents/skills/rallar-testing/references/test-commands.md'
         );
 
         expect(platform).toContain('building-rallar-apps');
@@ -192,16 +192,18 @@ describe('Rallar repo skill and documentation integrity', () => {
         expect(realtime).toContain('building-rallar-apps');
         expect(testing).toContain('rallar-skill-integrity.test.ts');
         expect(testCommands).toContain(
-            'npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts',
+            'npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts'
         );
     });
 
     it('routes active repo guidance through the canonical skill location', () => {
-        for (const filePath of [
-            'AGENTS.md',
-            'docs/README.md',
-            'projects/cash-chase-arena/Cash_Chase_Arena_Codex_Prompt_Pack.md',
-        ]) {
+        for (
+            const filePath of [
+                'AGENTS.md',
+                'docs/README.md',
+                'projects/cash-chase-arena/Cash_Chase_Arena_Codex_Prompt_Pack.md'
+            ]
+        ) {
             const source = readRepo(filePath);
             expect(source, filePath).toContain('.agents/skills');
             expect(source, filePath).not.toMatch(/(?<!\.agents\/)skills\/\*\*/);
@@ -223,29 +225,29 @@ describe('Rallar repo skill and documentation integrity', () => {
         expect(troubleshooting).toContain('`rallar.setup(...)`');
         expect(quickstart).not.toContain('motionLane.send(');
         expectAll(quickstart, [
-            "const motionUpdates = room.realtime<PoseUpdate>",
-            'await motionUpdates.send(nextPose)',
+            'const motionUpdates = room.realtime<PoseUpdate>',
+            'await motionUpdates.send(nextPose)'
         ]);
         expect(aiExample).toContain(
-            "import { rallar } from '@shared-web/browser/rallar.ts';",
+            'import { rallar } from \'@shared-web/browser/rallar.ts\';'
         );
         expect(docsIndex).toContain(
-            '../iterations/completed/rallar-api-v1-in-memory-sql-performance-mode.md',
+            '../iterations/completed/rallar-api-v1-in-memory-sql-performance-mode.md'
         );
         expect(
             existsSync(
                 path.join(
                     repoRoot,
-                    'iterations/completed/rallar-api-v1-in-memory-sql-performance-mode.md',
-                ),
-            ),
+                    'iterations/completed/rallar-api-v1-in-memory-sql-performance-mode.md'
+                )
+            )
         ).toBe(true);
     });
 
     it('does not expose root commands or project references for removed apps', () => {
-        const packageJson = readJson('package.json') as { scripts?: Record<string, string> };
+        const packageJson = readJson('package.json') as { scripts?: Record<string, string>; };
         const tsconfig = readJson('tsconfig.json') as {
-            references?: readonly { path?: string }[];
+            references?: readonly { path?: string; }[];
         };
 
         expect(packageJson.scripts).not.toHaveProperty('dev:web');
@@ -256,7 +258,7 @@ describe('Rallar repo skill and documentation integrity', () => {
             expect(command).not.toMatch(/\bapps\/api(?:\s|$)/);
         }
         expect(tsconfig.references?.map((reference) => reference.path)).not.toContain(
-            'apps/web',
+            'apps/web'
         );
     });
 });
@@ -275,8 +277,8 @@ function readJson(filePath: string): unknown {
 
 function readFrontmatter(
     source: string,
-    filePath: string,
-): Readonly<{ name: string; description: string }> {
+    filePath: string
+): Readonly<{ name: string; description: string; }> {
     const block = source.match(/^---\n([\s\S]*?)\n---(?:\n|$)/)?.[1];
     expect(block, filePath).toBeDefined();
     const name = block?.match(/^name:\s*(.+)$/m)?.[1]?.trim() ?? '';
@@ -365,7 +367,7 @@ add:
 
 ```ts
 expect(commands).toContain(
-    'npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts',
+    'npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts'
 );
 ```
 
@@ -549,21 +551,21 @@ valid when tooling/expertise wins a measured comparison.
 
 Create `references/example-map.md` with a table mapping:
 
-| Need | Primary evidence |
-| --- | --- |
-| Initial browser boot and rooms | `examples/browser-startup-room` |
-| Reliable/fallback room messages | `examples/room-message-channel` |
-| Low-latency room data | `examples/room-realtime-channel` |
-| Browser director | `examples/director-relay`, `apps/ar-eye-hunter-v1` |
-| Motion presentation | `examples/motion-smoothing`, `apps/relic-hunters-v1/src/game/scene/networking.ts` |
-| Browser local state | `examples/browser-data-store` |
-| Authored collaboration | `examples/room-crdt-document` |
-| Server authority | `examples/server-authoritative-game`, `apps/relic-hunter-server-v1` |
-| Server middleware/app data | `examples/server-middleware`, `examples/server-app-data` |
-| AI proposals | `examples/rallar-ai-game-event`, `examples/rallar-ai-server-ollama` |
-| Complete runtime boundary | `apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts`, `apps/relic-hunters-v1/docs/scene-contracts.md` |
-| Broad game composition | `apps/ar-eye-hunter-v1/src/game/useRallarArena.ts` |
-| Renderer-neutral planning | `projects/cash-chase-arena/Cash_Chase_Arena_Rallar_React_Three_Plans.md` |
+| Need                            | Primary evidence                                                                                           |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Initial browser boot and rooms  | `examples/browser-startup-room`                                                                            |
+| Reliable/fallback room messages | `examples/room-message-channel`                                                                            |
+| Low-latency room data           | `examples/room-realtime-channel`                                                                           |
+| Browser director                | `examples/director-relay`, `apps/ar-eye-hunter-v1`                                                         |
+| Motion presentation             | `examples/motion-smoothing`, `apps/relic-hunters-v1/src/game/scene/networking.ts`                          |
+| Browser local state             | `examples/browser-data-store`                                                                              |
+| Authored collaboration          | `examples/room-crdt-document`                                                                              |
+| Server authority                | `examples/server-authoritative-game`, `apps/relic-hunter-server-v1`                                        |
+| Server middleware/app data      | `examples/server-middleware`, `examples/server-app-data`                                                   |
+| AI proposals                    | `examples/rallar-ai-game-event`, `examples/rallar-ai-server-ollama`                                        |
+| Complete runtime boundary       | `apps/relic-hunters-v1/src/game/relic-hunters-runtime.ts`, `apps/relic-hunters-v1/docs/scene-contracts.md` |
+| Broad game composition          | `apps/ar-eye-hunter-v1/src/game/useRallarArena.ts`                                                         |
+| Renderer-neutral planning       | `projects/cash-chase-arena/Cash_Chase_Arena_Rallar_React_Three_Plans.md`                                   |
 
 End with: inspect the smallest matching source and its tests; do not copy either
 large SPA wholesale.
@@ -702,17 +704,18 @@ or root skill/config routing.
 
 In `references/test-commands.md`, add:
 
-```markdown
+````markdown
 ## Skills And Active Documentation
 
 ```sh
 npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts
 ```
+````
 
 Run this after changing repo skills, plugin metadata, active Rallar examples,
 startup guidance, or root app-path configuration.
-```
 
+````
 - [ ] **Step 5: Update the Cash Chase prompt pack path**
 
 Replace `skills/**` with `.agents/skills/**` in the orientation prompt. Do not
@@ -725,7 +728,7 @@ Run:
 ```sh
 npx vitest run packages/tests/repo/rallar-skill-integrity.test.ts -t "routes active repo guidance"
 npx vitest run packages/tests/rallar-black-box/rallar-testing-skill.test.ts
-```
+````
 
 Expected: PASS.
 
@@ -794,12 +797,12 @@ Change the browser implementation workflow to call:
 
 ```ts
 await rallar.setup({
-  apiBaseUrl,
-  applicationId: 'app',
-  workspaceId: 'default',
-  start: {
-    refreshPeople: true,
-  },
+    apiBaseUrl,
+    applicationId: 'app',
+    workspaceId: 'default',
+    start: {
+        refreshPeople: true
+    }
 });
 ```
 
@@ -813,12 +816,12 @@ expected `configure`/`setDefaults`/`start` sequence with:
 
 ```ts
 await rallar.setup({
-  apiBaseUrl,
-  applicationId,
-  workspaceId,
-  start: {
-    refreshPeople: true,
-  },
+    apiBaseUrl,
+    applicationId,
+    workspaceId,
+    start: {
+        refreshPeople: true
+    }
 });
 ```
 
@@ -842,7 +845,7 @@ const room = await rallar.rooms.enter('lobby');
 const motionUpdates = room.realtime<PoseUpdate>({
     laneId: 'motion',
     waitTimeoutMs: 1000,
-    key: `pose:${sessionId}`,
+    key: `pose:${sessionId}`
 });
 
 motionUpdates.on((message) => {
@@ -852,7 +855,7 @@ motionUpdates.on((message) => {
         position: message.data.position,
         velocity: message.data.velocity,
         seq: message.data.seq,
-        metadata: message.data,
+        metadata: message.data
     });
 });
 ```

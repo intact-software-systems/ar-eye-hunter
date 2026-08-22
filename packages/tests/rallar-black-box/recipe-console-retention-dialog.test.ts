@@ -2,12 +2,10 @@
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RetentionConfirmDialog } from
-    '../../../apps/rallar-black-box/src/recipe-console/history/RetentionConfirmDialog.tsx';
-import type { RetentionCleanupPreview } from
-    '../../../apps/rallar-black-box/src/recipe-console/history/use-retention-cleanup.ts';
+import { RetentionConfirmDialog } from '../../../apps/rallar-black-box/src/recipe-console/history/RetentionConfirmDialog.tsx';
+import type { RetentionCleanupPreview } from '../../../apps/rallar-black-box/src/recipe-console/history/use-retention-cleanup.ts';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const PREVIEW: RetentionCleanupPreview = {
     current: true,
@@ -23,17 +21,17 @@ const PREVIEW: RetentionCleanupPreview = {
         issuedRunTokenCount: 3,
         distributedRuns: [{
             distributedRunId: 'distributed-delete-exact',
-            state: 'failed',
+            state: 'failed'
         }],
-        fleetReportIds: ['fleet-delete-exact'],
+        fleetReportIds: ['fleet-delete-exact']
     }],
     wouldDeleteRunIds: ['control-delete-exact'],
     wouldDeleteDistributedRunIds: ['distributed-delete-exact'],
     wouldDeleteFleetReportIds: ['fleet-delete-exact'],
     preserves: {
         connectedAgentSockets: true,
-        storedArtifactFiles: true,
-    },
+        storedArtifactFiles: true
+    }
 };
 
 describe('RetentionConfirmDialog', () => {
@@ -66,15 +64,17 @@ describe('RetentionConfirmDialog', () => {
     }> = {}) {
         const onCancel = input.onCancel ?? vi.fn();
         const onConfirm = input.onConfirm ?? vi.fn();
-        await act(async () => root.render(createElement(RetentionConfirmDialog, {
-            open: input.open ?? true,
-            preview: input.preview ?? PREVIEW,
-            busy: input.busy ?? false,
-            message: input.message,
-            restoreFocus,
-            onCancel,
-            onConfirm,
-        })));
+        await act(async () =>
+            root.render(createElement(RetentionConfirmDialog, {
+                open: input.open ?? true,
+                preview: input.preview ?? PREVIEW,
+                busy: input.busy ?? false,
+                message: input.message,
+                restoreFocus,
+                onCancel,
+                onConfirm
+            }))
+        );
         return { onCancel, onConfirm };
     }
 
@@ -82,7 +82,7 @@ describe('RetentionConfirmDialog', () => {
         await render();
         const dialog = container.querySelector<HTMLElement>('[role="alertdialog"]');
         const candidates = container.querySelector<HTMLElement>(
-            '[role="region"][aria-label="Previewed runs to delete"]',
+            '[role="region"][aria-label="Previewed runs to delete"]'
         );
         const keep = button('Keep history');
         const confirm = button('Delete previewed runs');
@@ -101,7 +101,7 @@ describe('RetentionConfirmDialog', () => {
     it('wraps Tab and Shift+Tab inside the dialog', async () => {
         await render();
         const candidates = container.querySelector<HTMLElement>(
-            '[role="region"][aria-label="Previewed runs to delete"]',
+            '[role="region"][aria-label="Previewed runs to delete"]'
         )!;
         const confirm = button('Delete previewed runs');
 
@@ -120,7 +120,7 @@ describe('RetentionConfirmDialog', () => {
 
         onCancel.mockClear();
         const backdrop = container.querySelector<HTMLElement>(
-            '[data-retention-confirm-dialog]',
+            '[data-retention-confirm-dialog]'
         );
         await act(async () => backdrop?.click());
         expect(onCancel).toHaveBeenCalledTimes(1);
@@ -139,16 +139,17 @@ describe('RetentionConfirmDialog', () => {
         });
         expect(onConfirm).toHaveBeenCalledTimes(1);
 
-        await render({ busy: true, message: 'Deleting previewed runs…', onCancel,
-            onConfirm });
+        await render({ busy: true, message: 'Deleting previewed runs…', onCancel, onConfirm });
         const dialog = container.querySelector<HTMLElement>('[role="alertdialog"]');
         expect(document.activeElement).toBe(dialog);
         expect(container.querySelector('[aria-live="assertive"]')?.textContent)
             .toContain('Deleting previewed runs…');
         await key(dialog!, 'Escape');
-        await act(async () => container.querySelector<HTMLElement>(
-            '[data-retention-confirm-dialog]',
-        )?.click());
+        await act(async () =>
+            container.querySelector<HTMLElement>(
+                '[data-retention-confirm-dialog]'
+            )?.click()
+        );
         expect(onCancel).not.toHaveBeenCalled();
         expect(button('Keep history').disabled).toBe(true);
         expect(button('Delete previewed runs').disabled).toBe(true);
@@ -157,7 +158,7 @@ describe('RetentionConfirmDialog', () => {
     it('keeps stale preview consequences visible but nonconfirmable', async () => {
         await render({
             preview: { ...PREVIEW, current: false },
-            message: 'Preview is stale; preview again.',
+            message: 'Preview is stale; preview again.'
         });
 
         expect(container.textContent).toContain('Preview is stale; preview again.');
@@ -167,17 +168,23 @@ describe('RetentionConfirmDialog', () => {
 
     function button(text: string): HTMLButtonElement {
         const match = [...container.querySelectorAll<HTMLButtonElement>('button')]
-            .find(candidate => candidate.textContent === text);
-        if (!match) throw new Error(`Missing button ${text}`);
+            .find((candidate) => candidate.textContent === text);
+        if (!match) {
+            throw new Error(`Missing button ${text}`);
+        }
         return match;
     }
 });
 
 async function key(target: HTMLElement, keyValue: string, shiftKey = false) {
-    await act(async () => target.dispatchEvent(new KeyboardEvent('keydown', {
-        key: keyValue,
-        shiftKey,
-        bubbles: true,
-        cancelable: true,
-    })));
+    await act(async () =>
+        target.dispatchEvent(
+            new KeyboardEvent('keydown', {
+                key: keyValue,
+                shiftKey,
+                bubbles: true,
+                cancelable: true
+            })
+        )
+    );
 }

@@ -1,7 +1,7 @@
 export function findStringDeep(
     value: unknown,
     keys: readonly string[],
-    depth = 0,
+    depth = 0
 ): string | undefined {
     if (depth > 4 || value === undefined || value === null) {
         return undefined;
@@ -9,7 +9,9 @@ export function findStringDeep(
     if (Array.isArray(value)) {
         for (const item of value) {
             const found = findStringDeep(item, keys, depth + 1);
-            if (found) return found;
+            if (found) {
+                return found;
+            }
         }
         return undefined;
     }
@@ -26,7 +28,9 @@ export function findStringDeep(
     }
     for (const child of Object.values(record)) {
         const found = findStringDeep(child, keys, depth + 1);
-        if (found) return found;
+        if (found) {
+            return found;
+        }
     }
     return undefined;
 }

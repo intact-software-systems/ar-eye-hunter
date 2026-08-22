@@ -16,9 +16,16 @@ type RunnerRecipeCatalogListProps = Readonly<{
 }>;
 
 export function RunnerRecipeCatalogList({
-    filteredRecipes, selectedRecipe, localDisabledReason, localRunning,
-    distributedDisabledReason, setSelectedRecipeId, runLocalRecipe,
-    runDistributedRecipe, setShowEditor, copyText,
+    filteredRecipes,
+    selectedRecipe,
+    localDisabledReason,
+    localRunning,
+    distributedDisabledReason,
+    setSelectedRecipeId,
+    runLocalRecipe,
+    runDistributedRecipe,
+    setShowEditor,
+    copyText
 }: RunnerRecipeCatalogListProps) {
     return (
         <section className="runner-recipe-list" aria-label="Recipe catalog">
@@ -66,9 +73,7 @@ export function RunnerRecipeCatalogList({
                             <div className="runner-recipe-card-actions">
                                 <button
                                     type="button"
-                                    disabled={
-                                        Boolean(localDisabledReason) || localRunning
-                                    }
+                                    disabled={Boolean(localDisabledReason) || localRunning}
                                     title={localDisabledReason}
                                     onClick={() => void runLocalRecipe()}
                                 >
@@ -76,10 +81,8 @@ export function RunnerRecipeCatalogList({
                                 </button>
                                 <button
                                     type="button"
-                                    disabled={
-                                        Boolean(distributedDisabledReason) ||
-                                        localRunning
-                                    }
+                                    disabled={Boolean(distributedDisabledReason) ||
+                                        localRunning}
                                     title={distributedDisabledReason}
                                     onClick={() => void runDistributedRecipe()}
                                 >
@@ -87,9 +90,7 @@ export function RunnerRecipeCatalogList({
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={() =>
-                                        setShowEditor((value) => !value)
-                                    }
+                                    onClick={() => setShowEditor((value) => !value)}
                                 >
                                     Open in editor
                                 </button>
@@ -98,9 +99,8 @@ export function RunnerRecipeCatalogList({
                                     onClick={() =>
                                         void copyText(
                                             entry.copyCommand,
-                                            'Copied recipe command.',
-                                        )
-                                    }
+                                            'Copied recipe command.'
+                                        )}
                                 >
                                     Copy command
                                 </button>
@@ -109,9 +109,7 @@ export function RunnerRecipeCatalogList({
                     </article>
                 );
             })}
-            {filteredRecipes.length === 0 && (
-                <div className="empty-state">No recipes match the filters</div>
-            )}
+            {filteredRecipes.length === 0 && <div className="empty-state">No recipes match the filters</div>}
         </section>
     );
 }

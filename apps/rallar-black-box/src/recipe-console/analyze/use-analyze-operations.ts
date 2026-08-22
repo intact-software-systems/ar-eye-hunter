@@ -1,11 +1,18 @@
+import type { DistributedArtifactEvidenceWindowQuery } from '@shared-test/rallar-bb-test/mod.ts';
 import { useCallback, useEffect, useRef } from 'react';
-import type { DistributedArtifactEvidenceWindowQuery } from
-    '@shared-test/rallar-bb-test/mod.ts';
-import type { RecipeConsoleControlConnection } from
-    '../control/ControlConnectionProvider.tsx';
-import { createAnalyzeLocalOffer, type AnalyzeImportFile } from
-    './analyze-local-offer.ts';
+import type { RecipeConsoleControlConnection } from '../control/ControlConnectionProvider.tsx';
+import { createAnalyzeControlIdentityDigest } from './analyze-control-identity-digest.ts';
+import { resolveAnalyzeOperationContext } from './analyze-current-url-boundary.ts';
+import { createAnalyzeLocalOffer, type AnalyzeImportFile } from './analyze-local-offer.ts';
+import { boundedText, MAX_METADATA_BYTES } from './analyze-projection-bounds.ts';
 import { analyzeImportedIdentityPatch } from './analyze-selection.ts';
+import type { AnalyzeWorkerClient } from './analyze-worker-client.ts';
+import type { AnalyzeWorkerArtifactOffer } from './analyze-worker-contract.ts';
+import {
+    useAnalyzeWorkerWorkspaceAdapter,
+    type AnalyzeControlBoundary,
+    type AnalyzePendingOperation
+} from './analyze-worker-workspace-adapter.ts';
 import { createAnalyzeInterruptedError } from './analyze-workspace-policy.ts';
 import {
     beginAnalyzeWorkspaceOperation,
@@ -13,58 +20,51 @@ import {
     reconcileAnalyzeWorkspaceContext,
     type AnalyzeWorkspaceAction,
     type AnalyzeWorkspaceContext,
-    type AnalyzeWorkspaceOperationAuthority,
+    type AnalyzeWorkspaceOperationAuthority
 } from './analyze-workspace-state.ts';
-import type { AnalyzeWorkerArtifactOffer } from './analyze-worker-contract.ts';
-import type { AnalyzeWorkerClient } from './analyze-worker-client.ts';
-import { resolveAnalyzeOperationContext } from './analyze-current-url-boundary.ts';
-import { createAnalyzeControlIdentityDigest } from
-    './analyze-control-identity-digest.ts';
-import { boundedText, MAX_METADATA_BYTES } from './analyze-projection-bounds.ts';
-import {
-    useAnalyzeWorkerWorkspaceAdapter,
-    type AnalyzeControlBoundary,
-    type AnalyzePendingOperation,
-} from './analyze-worker-workspace-adapter.ts';
 
-export function useAnalyzeOperations(input: Readonly<{
-    connection: RecipeConsoleControlConnection;
-    context?: AnalyzeWorkspaceContext;
-    navigate(patch: ReturnType<typeof analyzeImportedIdentityPatch>): void;
-}>) {
+export function useAnalyzeOperations(
+    input: Readonly<{
+        connection: RecipeConsoleControlConnection;
+        context?: AnalyzeWorkspaceContext;
+        navigate(patch: ReturnType<typeof analyzeImportedIdentityPatch>): void;
+    }>
+) {
     const inputRef = useRef(input);
     inputRef.current = input;
-    const currentOperationContext = () => resolveAnalyzeOperationContext({
-        baseUrl: inputRef.current.connection.baseUrl,
-        renderedContext: inputRef.current.context,
-        search: typeof window === 'undefined' ? undefined : window.location.search,
-    });
+    const currentOperationContext = () =>
+        resolveAnalyzeOperationContext({
+            baseUrl: inputRef.current.connection.baseUrl,
+            renderedContext: inputRef.current.context,
+            search: typeof window === 'undefined' ? undefined : window.location.search
+        });
     const pendingRef = useRef<AnalyzePendingOperation | undefined>(undefined);
     const generationRef = useRef(0);
     const boundaryRef = useRef<AnalyzeControlBoundary>({
         contextKey: input.context?.key,
         currentContextKey: () => currentOperationContext()?.key,
         execution: input.connection.execution,
-        baseUrl: input.connection.baseUrl,
+        baseUrl: input.connection.baseUrl
     });
     boundaryRef.current = {
         contextKey: input.context?.key,
         currentContextKey: () => currentOperationContext()?.key,
         execution: input.connection.execution,
-        baseUrl: input.connection.baseUrl,
+        baseUrl: input.connection.baseUrl
     };
     const workspace = useAnalyzeWorkerWorkspaceAdapter({
         pendingRef,
         boundaryRef,
-        navigateIdentity: identity => inputRef.current.navigate(
-            analyzeImportedIdentityPatch(identity),
-        ),
+        navigateIdentity: (identity) =>
+            inputRef.current.navigate(
+                analyzeImportedIdentityPatch(identity)
+            )
     });
     const workspaceRef = useRef(workspace);
     workspaceRef.current = workspace;
     generationRef.current = Math.max(
         generationRef.current,
-        workspace.state.operationGeneration,
+        workspace.state.operationGeneration
     );
 
     useEffect(() => {
@@ -78,7 +78,7 @@ export function useAnalyzeOperations(input: Readonly<{
             pendingRef.current = undefined;
             pending.resolve(false);
         }
-        workspace.setState(previous => {
+        workspace.setState((previous) => {
             if (previous.contextKey !== input.context?.key) {
                 return reconcileAnalyzeWorkspaceContext(previous, input.context);
             }
@@ -89,7 +89,7 @@ export function useAnalyzeOperations(input: Readonly<{
                 return failAnalyzeWorkspaceOperation(
                     previous,
                     previous.activeOperation,
-                    createAnalyzeInterruptedError('Analyze control source changed.'),
+                    createAnalyzeInterruptedError('Analyze control source changed.')
                 );
             }
             return previous;
@@ -99,13 +99,17 @@ export function useAnalyzeOperations(input: Readonly<{
     const perform = useCallback(async (
         action: AnalyzeWorkspaceAction,
         operationContext: AnalyzeWorkspaceContext | undefined,
-        loadOffer: (signal: AbortSignal) => Promise<AnalyzeWorkerArtifactOffer>,
+        loadOffer: (signal: AbortSignal) => Promise<AnalyzeWorkerArtifactOffer>
     ): Promise<boolean> => {
-        if (pendingRef.current) return false;
+        if (pendingRef.current) {
+            return false;
+        }
         const contextKey = action === 'load-control'
             ? operationContext?.key
             : 'local-import';
-        if (!contextKey) return false;
+        if (!contextKey) {
+            return false;
+        }
         const controller = new AbortController();
         const generation = ++generationRef.current;
         const authority: AnalyzeWorkspaceOperationAuthority = {
@@ -115,12 +119,12 @@ export function useAnalyzeOperations(input: Readonly<{
             ...(action === 'load-control'
                 ? {
                     expectedControlRunId: operationContext?.controlRunId,
-                    expectedDistributedRunId: operationContext?.distributedRunId,
+                    expectedDistributedRunId: operationContext?.distributedRunId
                 }
-                : {}),
+                : {})
         };
         let resolveCompletion!: (value: boolean) => void;
-        const completion = new Promise<boolean>(resolve => {
+        const completion = new Promise<boolean>((resolve) => {
             resolveCompletion = resolve;
         });
         pendingRef.current = {
@@ -129,21 +133,23 @@ export function useAnalyzeOperations(input: Readonly<{
             resolve: resolveCompletion,
             ...(action === 'load-control'
                 ? { controlExecution: inputRef.current.connection.execution }
-                : {}),
+                : {})
         };
         const activeWorkspace = workspaceRef.current;
-        activeWorkspace.setState(previous => beginAnalyzeWorkspaceOperation(
-            action === 'load-control'
-                ? reconcileAnalyzeWorkspaceContext(previous, operationContext)
-                : previous,
-            {
-                action,
-                contextKey,
-                expectedControlRunId: authority.expectedControlRunId,
-                expectedDistributedRunId: authority.expectedDistributedRunId,
-            },
-            generation,
-        ).state);
+        activeWorkspace.setState((previous) =>
+            beginAnalyzeWorkspaceOperation(
+                action === 'load-control'
+                    ? reconcileAnalyzeWorkspaceContext(previous, operationContext)
+                    : previous,
+                {
+                    action,
+                    contextKey,
+                    expectedControlRunId: authority.expectedControlRunId,
+                    expectedDistributedRunId: authority.expectedDistributedRunId
+                },
+                generation
+            ).state
+        );
         activeWorkspace.setPendingPaintGeneration(undefined);
         try {
             const offer = await loadOffer(controller.signal);
@@ -155,13 +161,16 @@ export function useAnalyzeOperations(input: Readonly<{
                 throw createAnalyzeInterruptedError('Artifact operation was interrupted.');
             }
             client.offer(offer, generation);
-        } catch (error) {
+        }
+        catch (error) {
             if (pendingRef.current?.authority === authority) {
-                activeWorkspace.setState(previous => failAnalyzeWorkspaceOperation(
-                    previous,
-                    authority,
-                    error,
-                ));
+                activeWorkspace.setState((previous) =>
+                    failAnalyzeWorkspaceOperation(
+                        previous,
+                        authority,
+                        error
+                    )
+                );
                 pendingRef.current = undefined;
                 resolveCompletion(false);
             }
@@ -170,10 +179,12 @@ export function useAnalyzeOperations(input: Readonly<{
     }, []);
 
     const importFiles = useCallback(async (
-        files: readonly AnalyzeImportFile[],
+        files: readonly AnalyzeImportFile[]
     ): Promise<boolean> => {
-        if (files.length === 0) return false;
-        return perform('import-local', undefined, async signal => {
+        if (files.length === 0) {
+            return false;
+        }
+        return perform('import-local', undefined, async (signal) => {
             const offer = await createAnalyzeLocalOffer(files, Date.now());
             if (signal.aborted) {
                 throw createAnalyzeInterruptedError('Artifact import was interrupted.');
@@ -186,21 +197,23 @@ export function useAnalyzeOperations(input: Readonly<{
         const { connection } = inputRef.current;
         const execution = connection.execution;
         const context = currentOperationContext();
-        if (!execution || !context) return false;
+        if (!execution || !context) {
+            return false;
+        }
         boundaryRef.current = {
             ...boundaryRef.current,
-            contextKey: context.key,
+            contextKey: context.key
         };
-        return perform('load-control', context, async signal => {
+        return perform('load-control', context, async (signal) => {
             const [bundle, expectedControlIdentity] = await Promise.all([
                 execution.exportRunArtifactBytes({
                     distributedRunId: context.distributedRunId,
-                    signal,
+                    signal
                 }),
                 createAnalyzeControlIdentityDigest({
                     distributedRunId: context.distributedRunId,
-                    controlRunId: context.controlRunId,
-                }),
+                    controlRunId: context.controlRunId
+                })
             ]);
             const boundary = boundaryRef.current;
             if (
@@ -208,37 +221,37 @@ export function useAnalyzeOperations(input: Readonly<{
                 boundary.execution !== execution
             ) {
                 throw createAnalyzeInterruptedError(
-                    'Analyze control source changed while the artifact was loading.',
+                    'Analyze control source changed while the artifact was loading.'
                 );
             }
             return {
                 source: 'control',
                 label: boundedText(
                     `Control artifact ${context.distributedRunId}`,
-                    MAX_METADATA_BYTES,
+                    MAX_METADATA_BYTES
                 ),
                 files: [],
                 controlEnvelope: bundle.bytes,
-                expectedControlIdentity,
+                expectedControlIdentity
             };
         });
     }, [perform]);
 
     const search = useCallback((
         query: DistributedArtifactEvidenceWindowQuery,
-        fingerprint: string,
+        fingerprint: string
     ) => workspaceRef.current.searchEvidence(query, fingerprint), []);
     const requestWindow = useCallback((
         query: DistributedArtifactEvidenceWindowQuery,
         cursor: string,
-        fingerprint: string,
+        fingerprint: string
     ) => workspaceRef.current.requestEvidenceWindow(
         query,
         cursor,
-        fingerprint,
+        fingerprint
     ), []);
     const requestTune = useCallback((
-        tune: Parameters<AnalyzeWorkerClient['tune']>[0],
+        tune: Parameters<AnalyzeWorkerClient['tune']>[0]
     ) => workspaceRef.current.currentClient()?.tune(tune), []);
     const exportArtifact = useCallback(() => {
         downloadRetainedExport(workspaceRef.current.currentExport());
@@ -251,14 +264,16 @@ export function useAnalyzeOperations(input: Readonly<{
         search,
         requestWindow,
         requestTune,
-        exportArtifact,
+        exportArtifact
     } as const;
 }
 
 function downloadRetainedExport(
-    retained: ReturnType<AnalyzeWorkerClient['currentExport']>,
+    retained: ReturnType<AnalyzeWorkerClient['currentExport']>
 ): void {
-    if (!retained || typeof document === 'undefined') return;
+    if (!retained || typeof document === 'undefined') {
+        return;
+    }
     const href = URL.createObjectURL(retained.blob);
     const anchor = document.createElement('a');
     anchor.href = href;

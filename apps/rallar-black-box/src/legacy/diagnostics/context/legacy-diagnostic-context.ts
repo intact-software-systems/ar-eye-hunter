@@ -1,6 +1,4 @@
-import {
-    buildDiagnosticBridgeReturnHref,
-} from '../../../app/diagnostic-bridge-return-href.ts';
+import { buildDiagnosticBridgeReturnHref } from '../../../app/diagnostic-bridge-return-href.ts';
 import {
     DIAGNOSTIC_BRIDGE_LEGACY_SURFACE_IDS,
     DIAGNOSTIC_BRIDGE_PROVIDERS,
@@ -10,7 +8,7 @@ import {
     type DiagnosticBridgeLegacySurfaceId,
     type DiagnosticBridgeProvider,
     type DiagnosticBridgeSourceView,
-    type DiagnosticBridgeTransport,
+    type DiagnosticBridgeTransport
 } from '../../../app/diagnostic-bridge-url-contract.ts';
 
 const ISSUE_LIMIT = 32;
@@ -23,7 +21,7 @@ const CONTEXT_STRING_FIELDS = [
     'distributedRunId',
     'agentId',
     'recipeId',
-    'commandId',
+    'commandId'
 ] as const;
 
 const SENSITIVE_FIELDS = new Set([
@@ -37,7 +35,7 @@ const SENSITIVE_FIELDS = new Set([
     'token',
     'authorization',
     'apikey',
-    'secret',
+    'secret'
 ]);
 
 const FORBIDDEN_CONTEXT_FIELDS = new Set([
@@ -52,7 +50,7 @@ const FORBIDDEN_CONTEXT_FIELDS = new Set([
     'clientId',
     'principalId',
     'sourceView',
-    'contextRoomId',
+    'contextRoomId'
 ]);
 
 export type LegacyDiagnosticProvider = DiagnosticBridgeProvider;
@@ -102,7 +100,7 @@ type IssueCollector = Readonly<{
 }>;
 
 export function parseLegacyDiagnosticContext(
-    search: string,
+    search: string
 ): ParsedLegacyDiagnosticContext {
     const params = new URLSearchParams(normalizeSearch(search));
     const markerValues = params.getAll('diagnosticContext');
@@ -110,7 +108,7 @@ export function parseLegacyDiagnosticContext(
         return {
             status: 'absent',
             issues: [],
-            omittedIssueCount: 0,
+            omittedIssueCount: 0
         };
     }
 
@@ -120,7 +118,7 @@ export function parseLegacyDiagnosticContext(
         collector.add(issue(
             'diagnosticContext',
             'malformed',
-            'The diagnostic context marker is malformed.',
+            'The diagnostic context marker is malformed.'
         ));
         return withIssues('invalid', undefined, collector);
     }
@@ -128,7 +126,7 @@ export function parseLegacyDiagnosticContext(
         collector.add(issue(
             'diagnosticContext',
             'duplicate',
-            'The diagnostic context marker must appear exactly once.',
+            'The diagnostic context marker must appear exactly once.'
         ));
         return withIssues('invalid', undefined, collector);
     }
@@ -136,7 +134,7 @@ export function parseLegacyDiagnosticContext(
         collector.add(issue(
             'diagnosticContext',
             'unsupported',
-            'This diagnostic context version is not supported.',
+            'This diagnostic context version is not supported.'
         ));
         return withIssues('unsupported', undefined, collector);
     }
@@ -147,11 +145,12 @@ export function parseLegacyDiagnosticContext(
     if (provider !== undefined) {
         if (includes(DIAGNOSTIC_BRIDGE_PROVIDERS, provider)) {
             context.provider = provider;
-        } else {
+        }
+        else {
             collector.add(issue(
                 'provider',
                 'invalid',
-                'The diagnostic provider is not allow-listed.',
+                'The diagnostic provider is not allow-listed.'
             ));
         }
     }
@@ -165,16 +164,17 @@ export function parseLegacyDiagnosticContext(
         params,
         'legacySurface',
         malformed,
-        collector,
+        collector
     );
     if (legacySurface !== undefined) {
         if (includes(DIAGNOSTIC_BRIDGE_LEGACY_SURFACE_IDS, legacySurface)) {
             context.legacySurface = legacySurface;
-        } else {
+        }
+        else {
             collector.add(issue(
                 'legacySurface',
                 'invalid',
-                'The legacy diagnostic surface is not registered.',
+                'The legacy diagnostic surface is not registered.'
             ));
         }
     }
@@ -182,11 +182,12 @@ export function parseLegacyDiagnosticContext(
     if (transport !== undefined) {
         if (includes(DIAGNOSTIC_BRIDGE_TRANSPORTS, transport)) {
             context.transport = transport;
-        } else {
+        }
+        else {
             collector.add(issue(
                 'transport',
                 'invalid',
-                'The diagnostic transport is not supported.',
+                'The diagnostic transport is not supported.'
             ));
         }
     }
@@ -194,11 +195,12 @@ export function parseLegacyDiagnosticContext(
     if (view !== undefined) {
         if (includes(DIAGNOSTIC_BRIDGE_SOURCE_VIEWS, view)) {
             context.view = view;
-        } else {
+        }
+        else {
             collector.add(issue(
                 'view',
                 'invalid',
-                'The source Recipe Console view is not supported.',
+                'The source Recipe Console view is not supported.'
             ));
         }
     }
@@ -207,7 +209,7 @@ export function parseLegacyDiagnosticContext(
 }
 
 export function buildLegacyDiagnosticReturnHref(
-    context: LegacyDiagnosticContext | undefined,
+    context: LegacyDiagnosticContext | undefined
 ): string | undefined {
     return buildDiagnosticBridgeReturnHref(context);
 }
@@ -216,13 +218,13 @@ function readSingleValue(
     params: URLSearchParams,
     field: string,
     malformed: ReadonlySet<string>,
-    collector: IssueCollector,
+    collector: IssueCollector
 ): string | undefined {
     if (malformed.has(field)) {
         collector.add(issue(
             field,
             'malformed',
-            `${field} is not valid URL-encoded text.`,
+            `${field} is not valid URL-encoded text.`
         ));
         return undefined;
     }
@@ -234,17 +236,19 @@ function readSingleValue(
         collector.add(issue(
             field,
             'duplicate',
-            `${field} must appear at most once.`,
+            `${field} must appear at most once.`
         ));
         return undefined;
     }
     const value = values[0];
-    if (new TextEncoder().encode(value).byteLength >
-        DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES) {
+    if (
+        new TextEncoder().encode(value).byteLength >
+            DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES
+    ) {
         collector.add(issue(
             field,
             'overlong',
-            `${field} exceeds the 4,096-byte limit.`,
+            `${field} exceeds the 4,096-byte limit.`
         ));
         return undefined;
     }
@@ -252,7 +256,7 @@ function readSingleValue(
         collector.add(issue(
             field,
             'invalid',
-            `${field} is empty or contains control characters.`,
+            `${field} is empty or contains control characters.`
         ));
         return undefined;
     }
@@ -268,7 +272,7 @@ function isSafeValue(value: string): boolean {
 
 function collectForbiddenIssues(
     params: URLSearchParams,
-    collector: IssueCollector,
+    collector: IssueCollector
 ): void {
     for (const field of params.keys()) {
         if (
@@ -278,7 +282,7 @@ function collectForbiddenIssues(
             collector.add(issue(
                 field,
                 'forbidden',
-                `${field} is not accepted as diagnostic bridge context.`,
+                `${field} is not accepted as diagnostic bridge context.`
             ));
         }
     }
@@ -297,7 +301,8 @@ function malformedKnownFields(search: string): ReadonlySet<string> {
         let field: string;
         try {
             field = decodeFormComponent(rawField);
-        } catch {
+        }
+        catch {
             continue;
         }
         if (!isKnownValueField(field)) {
@@ -305,7 +310,8 @@ function malformedKnownFields(search: string): ReadonlySet<string> {
         }
         try {
             decodeFormComponent(rawValue);
-        } catch {
+        }
+        catch {
             malformed.add(field);
         }
     }
@@ -331,7 +337,7 @@ function normalizeSearch(search: string): string {
 
 function includes<const Value extends string>(
     values: readonly Value[],
-    value: string,
+    value: string
 ): value is Value {
     return (values as readonly string[]).includes(value);
 }
@@ -339,7 +345,7 @@ function includes<const Value extends string>(
 function issue(
     field: string,
     code: LegacyDiagnosticContextIssue['code'],
-    message: string,
+    message: string
 ): LegacyDiagnosticContextIssue {
     return { field, code, message };
 }
@@ -357,20 +363,20 @@ function createIssueCollector(): IssueCollector {
         result() {
             return {
                 issues,
-                omittedIssueCount: Math.max(0, total - issues.length),
+                omittedIssueCount: Math.max(0, total - issues.length)
             };
-        },
+        }
     };
 }
 
 function withIssues(
     status: ParsedLegacyDiagnosticContext['status'],
     context: LegacyDiagnosticContext | undefined,
-    collector: IssueCollector,
+    collector: IssueCollector
 ): ParsedLegacyDiagnosticContext {
     return {
         status,
         ...(context ? { context } : {}),
-        ...collector.result(),
+        ...collector.result()
     };
 }

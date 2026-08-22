@@ -1,22 +1,15 @@
-import {
-    canonicalRallarAiJson,
-} from './rallar-ai-hashing.ts';
-import type {
-    RallarAiJsonProvider,
-    RallarAiJsonRequest,
-    RallarAiJsonResult,
-} from './rallar-ai-types.ts';
+import { canonicalRallarAiJson } from './rallar-ai-hashing.ts';
+import type { RallarAiJsonProvider, RallarAiJsonRequest, RallarAiJsonResult } from './rallar-ai-types.ts';
 
-export type RallarAiEvaluationCase<TValue = unknown, TContext = unknown> =
-    Readonly<{
-        caseId: string;
-        request: RallarAiJsonRequest<TContext>;
-        expectedValue?: TValue;
-        expectValidationOk?: boolean;
-        validateResult?: (
-            result: RallarAiJsonResult<TValue>,
-        ) => readonly string[] | void;
-    }>;
+export type RallarAiEvaluationCase<TValue = unknown, TContext = unknown> = Readonly<{
+    caseId: string;
+    request: RallarAiJsonRequest<TContext>;
+    expectedValue?: TValue;
+    expectValidationOk?: boolean;
+    validateResult?: (
+        result: RallarAiJsonResult<TValue>
+    ) => readonly string[] | void;
+}>;
 
 export type RallarAiEvaluationCaseResult<TValue = unknown> = Readonly<{
     caseId: string;
@@ -44,7 +37,7 @@ export type RunRallarAiEvaluationSuiteInput = Readonly<{
 }>;
 
 export async function runRallarAiEvaluationSuite(
-    input: RunRallarAiEvaluationSuiteInput,
+    input: RunRallarAiEvaluationSuiteInput
 ): Promise<RallarAiEvaluationSuiteResult> {
     const results: RallarAiEvaluationCaseResult[] = [];
 
@@ -59,13 +52,13 @@ export async function runRallarAiEvaluationSuite(
         modelId: input.provider.modelId,
         passed,
         failed: results.length - passed,
-        results,
+        results
     };
 }
 
 async function runEvaluationCase(
     provider: RallarAiJsonProvider,
-    testCase: RallarAiEvaluationCase,
+    testCase: RallarAiEvaluationCase
 ): Promise<RallarAiEvaluationCaseResult> {
     try {
         const result = await provider.generateJson(testCase.request);
@@ -77,30 +70,31 @@ async function runEvaluationCase(
             modelId: result.modelId,
             validationOk: result.validation.ok,
             result,
-            errors,
+            errors
         };
-    } catch (error) {
+    }
+    catch (error) {
         return {
             caseId: testCase.caseId,
             ok: false,
             providerId: provider.providerId,
             modelId: provider.modelId,
             errors: [
-                error instanceof Error ? error.message : String(error),
-            ],
+                error instanceof Error ? error.message : String(error)
+            ]
         };
     }
 }
 
 function collectEvaluationErrors(
     result: RallarAiJsonResult,
-    testCase: RallarAiEvaluationCase,
+    testCase: RallarAiEvaluationCase
 ): readonly string[] {
     const errors: string[] = [];
     const expectedValidationOk = testCase.expectValidationOk ?? true;
     if (result.validation.ok !== expectedValidationOk) {
         errors.push(
-            `Expected validation.ok=${expectedValidationOk}, got ${result.validation.ok}.`,
+            `Expected validation.ok=${expectedValidationOk}, got ${result.validation.ok}.`
         );
     }
 
@@ -115,4 +109,3 @@ function collectEvaluationErrors(
     errors.push(...(testCase.validateResult?.(result) ?? []));
     return errors;
 }
-

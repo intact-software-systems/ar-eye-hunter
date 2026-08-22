@@ -1,9 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { ADMIN_PRUNE_EXPIRED_CATEGORIES, type AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import {
-    ADMIN_PRUNE_EXPIRED_CATEGORIES,
-    type AdminPruneExpiredCategory,
-} from '@shared/api/admin-operations-types.ts';
 import { hashRallarCrdtJson } from '@shared/crdt/crdt-hash.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '../services/app-inbox-queue-key.ts';
@@ -44,27 +41,39 @@ export type AdminPrunePageWork = Readonly<{
     appData: AdminPruneAppData | null;
 }>;
 
-export type ReservedAdminPrunePageWork = AdminPrunePageWork & Readonly<{
-    reservation: ResourceEntry;
-}>;
+export type ReservedAdminPrunePageWork =
+    & AdminPrunePageWork
+    & Readonly<{
+        reservation: ResourceEntry;
+    }>;
 
 export async function createAdminPruneCommand(
-    input: Omit<AdminPruneCommand, 'version' | 'commandHash'>,
+    input: Omit<AdminPruneCommand, 'version' | 'commandHash'>
 ): Promise<AdminPruneCommand> {
     const stable = { ...input, version: 1 as const };
     return decodeAdminPruneCommand({
         ...stable,
-        commandHash: hashRallarCrdtJson(stable),
+        commandHash: hashRallarCrdtJson(stable)
     });
 }
 
 export function decodeAdminPruneCommand(value: unknown): AdminPruneCommand {
     const command = exactRecord(value, [
-        'version', 'jobId', 'commandHash', 'requestedBy', 'requestedSessionId',
-        'capturedAtEpochMs', 'expireAtEpochMs', 'dryRun', 'categories', 'appData',
-        'pageSize',
+        'version',
+        'jobId',
+        'commandHash',
+        'requestedBy',
+        'requestedSessionId',
+        'capturedAtEpochMs',
+        'expireAtEpochMs',
+        'dryRun',
+        'categories',
+        'appData',
+        'pageSize'
     ], 'admin prune command');
-    if (command.version !== 1) throw new TypeError('Admin prune command version is invalid');
+    if (command.version !== 1) {
+        throw new TypeError('Admin prune command version is invalid');
+    }
     requireString(command.jobId, 'jobId');
     requireString(command.commandHash, 'commandHash');
     requireString(command.requestedBy, 'requestedBy');
@@ -74,7 +83,9 @@ export function decodeAdminPruneCommand(value: unknown): AdminPruneCommand {
     if ((command.expireAtEpochMs as number) <= (command.capturedAtEpochMs as number)) {
         throw new TypeError('Admin prune expiry must follow capture time');
     }
-    if (typeof command.dryRun !== 'boolean') throw new TypeError('dryRun must be boolean');
+    if (typeof command.dryRun !== 'boolean') {
+        throw new TypeError('dryRun must be boolean');
+    }
     requireCategories(command.categories);
     decodeAppData(command.appData);
     const includesAppData = (command.categories as readonly unknown[]).includes('app-data');
@@ -94,7 +105,12 @@ export function decodeAdminPruneWork(entry: ResourceEntry): ReservedAdminPrunePa
         throw new TypeError('Admin prune work must be a reserved APP_OUTBOX entry');
     }
     const outer = exactRecord(JSON.parse(entry.resource), [
-        'id', 'route', 'targets', 'constraints', 'payload', 'audit',
+        'id',
+        'route',
+        'targets',
+        'constraints',
+        'payload',
+        'audit'
     ], 'admin prune message');
     const id = exactRecord(outer.id, ['v', 'msgId', 'ts', 'senderId'], 'admin prune id');
     const route = exactRecord(outer.route, ['topicId', 'resourceId', 'contextId'], 'admin prune route');
@@ -105,12 +121,14 @@ export function decodeAdminPruneWork(entry: ResourceEntry): ReservedAdminPrunePa
     if (payload.typeId !== 'ADMIN_PRUNE_EXPIRED' || payload.contentType !== 'application/json') {
         throw new TypeError('Admin prune payload identity is invalid');
     }
-    if (typeof payload.resource !== 'string') throw new TypeError('Admin prune resource is invalid');
+    if (typeof payload.resource !== 'string') {
+        throw new TypeError('Admin prune resource is invalid');
+    }
     const work = decodePageWork(JSON.parse(payload.resource));
     const expectedRoute = toAppQueueKey({
         topicId: ADMIN_PRUNE_APP_OUTBOX_TOPIC,
         resourceId: `${work.jobId}:${work.category}:${work.pageIndex}`,
-        contextId: work.jobId,
+        contextId: work.jobId
     });
     if (
         id.v !== 2 || id.msgId !== expectedRoute.resourceId || id.ts !== work.capturedAtEpochMs ||
@@ -124,7 +142,9 @@ export function decodeAdminPruneWork(entry: ResourceEntry): ReservedAdminPrunePa
         entry.audit.createdBy !== toAppQueueCreatedBy(id.senderId) ||
         entry.audit.createdTs.toString() !== toPlainDateTime(work.capturedAtEpochMs).toString() ||
         Number(entry.audit.expiryTs.epochMilliseconds) !== work.expireAtEpochMs
-    ) throw new TypeError('Admin prune work route, sender, expiry, or audit identity is invalid');
+    ) {
+        throw new TypeError('Admin prune work route, sender, expiry, or audit identity is invalid');
+    }
     return { ...work, reservation: entry };
 }
 
@@ -132,7 +152,7 @@ export function toAdminPruneOutbox(work: AdminPrunePageWork, serviceId: string):
     const route = toAppQueueKey({
         topicId: ADMIN_PRUNE_APP_OUTBOX_TOPIC,
         resourceId: `${work.jobId}:${work.category}:${work.pageIndex}`,
-        contextId: work.jobId,
+        contextId: work.jobId
     });
     const message = {
         id: { v: 2, msgId: route.resourceId, ts: work.capturedAtEpochMs, senderId: serviceId },
@@ -142,9 +162,9 @@ export function toAdminPruneOutbox(work: AdminPrunePageWork, serviceId: string):
         payload: {
             typeId: 'ADMIN_PRUNE_EXPIRED',
             contentType: 'application/json',
-            resource: JSON.stringify(work),
+            resource: JSON.stringify(work)
         },
-        audit: { createdBy: serviceId, createdTs: work.capturedAtEpochMs },
+        audit: { createdBy: serviceId, createdTs: work.capturedAtEpochMs }
     };
     const createdTs = toPlainDateTime(work.capturedAtEpochMs);
     return {
@@ -156,19 +176,29 @@ export function toAdminPruneOutbox(work: AdminPrunePageWork, serviceId: string):
             date: createdTs.toPlainTime(),
             createdBy: toAppQueueCreatedBy(serviceId),
             createdTs,
-            expiryTs: Temporal.Instant.fromEpochMilliseconds(work.expireAtEpochMs),
+            expiryTs: Temporal.Instant.fromEpochMilliseconds(work.expireAtEpochMs)
         },
-        dequeueAudit: { attempts: 0 },
+        dequeueAudit: { attempts: 0 }
     };
 }
 
 function decodePageWork(value: unknown): AdminPrunePageWork {
     const work = exactRecord(value, [
-        'kind', 'jobId', 'category', 'requestedBy', 'requestedSessionId',
-        'capturedAtEpochMs', 'expireAtEpochMs',
-        'pageSize', 'afterCursor', 'pageIndex', 'appData',
+        'kind',
+        'jobId',
+        'category',
+        'requestedBy',
+        'requestedSessionId',
+        'capturedAtEpochMs',
+        'expireAtEpochMs',
+        'pageSize',
+        'afterCursor',
+        'pageIndex',
+        'appData'
     ], 'admin prune page work');
-    if (work.kind !== 'page') throw new TypeError('Admin prune work kind is invalid');
+    if (work.kind !== 'page') {
+        throw new TypeError('Admin prune work kind is invalid');
+    }
     requireString(work.jobId, 'jobId');
     requireCategory(work.category);
     requireString(work.requestedBy, 'requestedBy');
@@ -179,7 +209,9 @@ function decodePageWork(value: unknown): AdminPrunePageWork {
         throw new TypeError('Admin prune page expiry must follow capture time');
     }
     requirePageSize(work.pageSize);
-    if (work.afterCursor !== null) requireString(work.afterCursor, 'afterCursor');
+    if (work.afterCursor !== null) {
+        requireString(work.afterCursor, 'afterCursor');
+    }
     requireEpoch(work.pageIndex, 'pageIndex');
     decodeAppData(work.appData);
     if (((work.pageIndex as number) === 0) !== (work.afterCursor === null)) {
@@ -192,17 +224,25 @@ function decodePageWork(value: unknown): AdminPrunePageWork {
 }
 
 function decodeAppData(value: unknown): AdminPruneAppData | null {
-    if (value === null) return null;
+    if (value === null) {
+        return null;
+    }
     const data = exactRecord(value, ['namespace', 'storeName'], 'appData');
     requireString(data.namespace, 'appData.namespace');
-    if (data.storeName !== null) requireString(data.storeName, 'appData.storeName');
+    if (data.storeName !== null) {
+        requireString(data.storeName, 'appData.storeName');
+    }
     return data as unknown as AdminPruneAppData;
 }
 
 function requireCategories(value: unknown): asserts value is readonly AdminPruneExpiredCategory[] {
-    if (!Array.isArray(value) || value.length === 0) throw new TypeError('categories are invalid');
+    if (!Array.isArray(value) || value.length === 0) {
+        throw new TypeError('categories are invalid');
+    }
     value.forEach(requireCategory);
-    if (new Set(value).size !== value.length) throw new TypeError('categories contain duplicates');
+    if (new Set(value).size !== value.length) {
+        throw new TypeError('categories contain duplicates');
+    }
 }
 
 function requireCategory(value: unknown): asserts value is AdminPruneExpiredCategory {
@@ -223,11 +263,15 @@ function exactRecord(value: unknown, keys: readonly string[], label: string): Re
 }
 
 function requireString(value: unknown, label: string): asserts value is string {
-    if (typeof value !== 'string' || value.length === 0) throw new TypeError(`${label} is invalid`);
+    if (typeof value !== 'string' || value.length === 0) {
+        throw new TypeError(`${label} is invalid`);
+    }
 }
 
 function requireEpoch(value: unknown, label: string): asserts value is number {
-    if (!Number.isSafeInteger(value) || (value as number) < 0) throw new TypeError(`${label} is invalid`);
+    if (!Number.isSafeInteger(value) || (value as number) < 0) {
+        throw new TypeError(`${label} is invalid`);
+    }
 }
 
 export function requirePageSize(value: unknown): number {

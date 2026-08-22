@@ -7,7 +7,7 @@ import type { ALMessage } from './al-contract.ts';
  * groups the principal is an active member of. Never a world broadcast.
  */
 export function readALPrincipalBroadcastTarget(
-    message: ALMessage,
+    message: ALMessage
 ): ClientPrincipalRef | undefined {
     const targets = message.targets;
     if (
@@ -24,6 +24,6 @@ export function readALPrincipalBroadcastTarget(
     return {
         applicationId: targets.principalRef.applicationId,
         workspaceId: targets.principalRef.workspaceId,
-        principalId: targets.principalRef.principalId,
+        principalId: targets.principalRef.principalId
     };
 }

@@ -1,32 +1,25 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
+import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { DEFAULT_RTC_DATA_CHANNEL_LANE_ID } from '@shared/services/WebRtcConnectionService.ts';
-import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createGroupSnapshotFixture } from './authoritative-group-fixtures.ts';
 
 type AppContextModule = typeof import('@shared-web/browser/app-context.ts');
 type ApiIntegrationModule = typeof import('@shared-web/browser/api-integration.ts');
 type AuthApiModule = typeof import('@shared-web/browser/auth/session-http-api.ts');
 type ApiWorkflowsModule = typeof import('@shared-web/browser/api-workflows.ts');
-type RoomGroupStateWorkflowsModule =
-    typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
-type RoomGroupStateMutationWorkflowsModule =
-    typeof import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts');
-type RoomMembershipGroupStateWorkflowsModule =
-    typeof import('@shared-web/browser/rooms/room-membership-group-state-workflows.ts');
+type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
+type RoomGroupStateMutationWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-mutation-workflows.ts');
+type RoomMembershipGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-membership-group-state-workflows.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
 type AuthModule = typeof import('@shared/api/auth.ts');
-type ClientStateSnapshotsRepositoryModule =
-    typeof import('@shared/repository/client-state-snapshots-repository.ts');
-type GroupStateSnapshotsRepositoryModule =
-    typeof import('@shared/repository/group-state-snapshots-repository.ts');
+type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
+type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
 
-const CLIENT_REPOSITORY_MISSING_MESSAGE =
-    'Repository not found: shared.repository.client-state-snapshots';
-const GROUP_REPOSITORY_MISSING_MESSAGE =
-    'Repository not found: shared.repository.group-state-snapshots';
+const CLIENT_REPOSITORY_MISSING_MESSAGE = 'Repository not found: shared.repository.client-state-snapshots';
+const GROUP_REPOSITORY_MISSING_MESSAGE = 'Repository not found: shared.repository.group-state-snapshots';
 
 const mocks = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
@@ -51,95 +44,67 @@ const mocks = await vi.hoisted(async () => {
         hydrateStateCaches: vi.fn<DataCachesModule['hydrateStateCaches']>(() => Promise.resolve()),
         initMiddleware: vi.fn<AppContextModule['initMiddleware']>(() => Promise.resolve(ctx)),
         isMiddlewareReady: vi.fn<AppContextModule['isMiddlewareReady']>(() => false),
-        createAndJoinStateGroup: vi.fn<
-            RoomGroupStateWorkflowsModule['createAndJoinStateGroup']
-        >(() => Promise.reject(new Error('create not mocked'))),
-        joinStateGroup: vi.fn<RoomGroupStateWorkflowsModule['joinStateGroup']>(() =>
-            Promise.reject(new Error('join not mocked'))
+        createAndJoinStateGroup: vi.fn<RoomGroupStateWorkflowsModule['createAndJoinStateGroup']>(() => Promise.reject(new Error('create not mocked'))),
+        joinStateGroup: vi.fn<RoomGroupStateWorkflowsModule['joinStateGroup']>(() => Promise.reject(new Error('join not mocked'))),
+        leaveStateGroup: vi.fn<RoomGroupStateWorkflowsModule['leaveStateGroup']>(() => Promise.reject(new Error('leave not mocked'))),
+        updateStateGroupMetadata: vi.fn<RoomGroupStateMutationWorkflowsModule['updateStateGroupMetadata']>(() =>
+            Promise.reject(new Error('metadata update not mocked'))
         ),
-        leaveStateGroup: vi.fn<RoomGroupStateWorkflowsModule['leaveStateGroup']>(() =>
-            Promise.reject(new Error('leave not mocked'))
+        updateStateGroupDetails: vi.fn<RoomGroupStateMutationWorkflowsModule['updateStateGroupDetails']>(() =>
+            Promise.reject(new Error('room update not mocked'))
         ),
-        updateStateGroupMetadata: vi.fn<
-            RoomGroupStateMutationWorkflowsModule['updateStateGroupMetadata']
-        >(() => Promise.reject(new Error('metadata update not mocked'))),
-        updateStateGroupDetails: vi.fn<
-            RoomGroupStateMutationWorkflowsModule['updateStateGroupDetails']
-        >(() => Promise.reject(new Error('room update not mocked'))),
-        archiveStateGroup: vi.fn<
-            RoomGroupStateMutationWorkflowsModule['archiveStateGroup']
-        >(() => Promise.reject(new Error('room archive not mocked'))),
-        deleteStateGroup: vi.fn<
-            RoomGroupStateMutationWorkflowsModule['deleteStateGroup']
-        >(() => Promise.reject(new Error('room delete not mocked'))),
-        createStateGroupInvite: vi.fn<
-            RoomMembershipGroupStateWorkflowsModule['createStateGroupInvite']
-        >(() => Promise.reject(new Error('room invite not mocked'))),
-        acceptStateGroupInvite: vi.fn<
-            RoomMembershipGroupStateWorkflowsModule['acceptStateGroupInvite']
-        >(() => Promise.reject(new Error('room invite accept not mocked'))),
-        removeStateGroupMember: vi.fn<
-            RoomMembershipGroupStateWorkflowsModule['removeStateGroupMember']
-        >(() => Promise.reject(new Error('room member remove not mocked'))),
-        banStateGroupMember: vi.fn<
-            RoomMembershipGroupStateWorkflowsModule['banStateGroupMember']
-        >(() => Promise.reject(new Error('room member ban not mocked'))),
-        unbanStateGroupMember: vi.fn<
-            RoomMembershipGroupStateWorkflowsModule['unbanStateGroupMember']
-        >(() => Promise.reject(new Error('room member unban not mocked'))),
-        setStateGroupMemberRole: vi.fn<
-            RoomMembershipGroupStateWorkflowsModule['setStateGroupMemberRole']
-        >(() => Promise.reject(new Error('room member role not mocked'))),
-        transferStateGroupOwnership: vi.fn<
-            RoomMembershipGroupStateWorkflowsModule['transferStateGroupOwnership']
-        >(() => Promise.reject(new Error('room owner transfer not mocked'))),
+        archiveStateGroup: vi.fn<RoomGroupStateMutationWorkflowsModule['archiveStateGroup']>(() => Promise.reject(new Error('room archive not mocked'))),
+        deleteStateGroup: vi.fn<RoomGroupStateMutationWorkflowsModule['deleteStateGroup']>(() => Promise.reject(new Error('room delete not mocked'))),
+        createStateGroupInvite: vi.fn<RoomMembershipGroupStateWorkflowsModule['createStateGroupInvite']>(() =>
+            Promise.reject(new Error('room invite not mocked'))
+        ),
+        acceptStateGroupInvite: vi.fn<RoomMembershipGroupStateWorkflowsModule['acceptStateGroupInvite']>(() =>
+            Promise.reject(new Error('room invite accept not mocked'))
+        ),
+        removeStateGroupMember: vi.fn<RoomMembershipGroupStateWorkflowsModule['removeStateGroupMember']>(() =>
+            Promise.reject(new Error('room member remove not mocked'))
+        ),
+        banStateGroupMember: vi.fn<RoomMembershipGroupStateWorkflowsModule['banStateGroupMember']>(() =>
+            Promise.reject(new Error('room member ban not mocked'))
+        ),
+        unbanStateGroupMember: vi.fn<RoomMembershipGroupStateWorkflowsModule['unbanStateGroupMember']>(() =>
+            Promise.reject(new Error('room member unban not mocked'))
+        ),
+        setStateGroupMemberRole: vi.fn<RoomMembershipGroupStateWorkflowsModule['setStateGroupMemberRole']>(() =>
+            Promise.reject(new Error('room member role not mocked'))
+        ),
+        transferStateGroupOwnership: vi.fn<RoomMembershipGroupStateWorkflowsModule['transferStateGroupOwnership']>(() =>
+            Promise.reject(new Error('room owner transfer not mocked'))
+        ),
         loginToApi: vi.fn<AuthApiModule['loginToApi']>(() => Promise.resolve(ctx.session)),
-        listStateClientEvents: vi.fn<ApiIntegrationModule['listStateClientEvents']>(() =>
-            Promise.reject(new Error('client events not mocked'))
-        ),
-        listStateClientEventPage: vi.fn<
-            ApiIntegrationModule['listStateClientEventPage']
-        >(() => Promise.reject(new Error('client event page not mocked'))),
-        listStateGroupEvents: vi.fn<ApiIntegrationModule['listStateGroupEvents']>(() =>
-            Promise.reject(new Error('group events not mocked'))
-        ),
+        listStateClientEvents: vi.fn<ApiIntegrationModule['listStateClientEvents']>(() => Promise.reject(new Error('client events not mocked'))),
+        listStateClientEventPage: vi.fn<ApiIntegrationModule['listStateClientEventPage']>(() => Promise.reject(new Error('client event page not mocked'))),
+        listStateGroupEvents: vi.fn<ApiIntegrationModule['listStateGroupEvents']>(() => Promise.reject(new Error('group events not mocked'))),
         listStateGroupEventPage: vi.fn<ApiIntegrationModule['listStateGroupEventPage']>(
-            () => Promise.reject(new Error('group event page not mocked')),
+            () => Promise.reject(new Error('group event page not mocked'))
         ),
-        logoutFromApi: vi.fn<AuthApiModule['logoutFromApi']>(() =>
-            Promise.resolve({ loggedOut: true })
-        ),
+        logoutFromApi: vi.fn<AuthApiModule['logoutFromApi']>(() => Promise.resolve({ loggedOut: true })),
         registerWithApi: vi.fn<AuthApiModule['registerWithApi']>(() =>
             Promise.resolve({
                 clientId: 'client-new',
                 username: 'new-user',
                 displayName: null,
-                registeredAtEpochMs: 1_000,
+                registeredAtEpochMs: 1_000
             })
         ),
         onStateCacheChange: vi.fn<DataCachesModule['onStateCacheChange']>(() => vi.fn()),
         readSession: vi.fn<AuthModule['readSession']>(() => ctx.session),
-        refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(() =>
-            Promise.resolve({ clients: [], groups: [] })
-        ),
-        findClientStateSnapshotByPrincipalId: vi.fn<
-            ClientStateSnapshotsRepositoryModule['findClientStateSnapshotByPrincipalId']
-        >(throwClientRepositoryMissing),
-        getAllClientStateSnapshots: vi.fn<
-            ClientStateSnapshotsRepositoryModule['getAllClientStateSnapshots']
-        >(throwClientRepositoryMissing),
+        refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(() => Promise.resolve({ clients: [], groups: [] })),
+        findClientStateSnapshotByPrincipalId: vi.fn<ClientStateSnapshotsRepositoryModule['findClientStateSnapshotByPrincipalId']>(throwClientRepositoryMissing),
+        getAllClientStateSnapshots: vi.fn<ClientStateSnapshotsRepositoryModule['getAllClientStateSnapshots']>(throwClientRepositoryMissing),
         findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<
             GroupStateSnapshotsRepositoryModule[
                 'findFirstGroupStateSnapshotRefSessionIdIsIn'
             ]
         >(throwGroupRepositoryMissing),
-        findGroupStateSnapshotByRef: vi.fn<
-            GroupStateSnapshotsRepositoryModule['findGroupStateSnapshotByRef']
-        >(throwGroupRepositoryMissing),
-        getAllGroupStateSnapshots: vi.fn<
-            GroupStateSnapshotsRepositoryModule['getAllGroupStateSnapshots']
-        >(throwGroupRepositoryMissing),
-        writeSession: vi.fn<AuthModule['writeSession']>(),
+        findGroupStateSnapshotByRef: vi.fn<GroupStateSnapshotsRepositoryModule['findGroupStateSnapshotByRef']>(throwGroupRepositoryMissing),
+        getAllGroupStateSnapshots: vi.fn<GroupStateSnapshotsRepositoryModule['getAllGroupStateSnapshots']>(throwGroupRepositoryMissing),
+        writeSession: vi.fn<AuthModule['writeSession']>()
     };
 });
 
@@ -149,8 +114,8 @@ vi.mock(
         clearMiddleware: mocks.clearMiddleware,
         getMiddleware: vi.fn(() => mocks.ctx),
         initMiddleware: mocks.initMiddleware,
-        isMiddlewareReady: mocks.isMiddlewareReady,
-    }),
+        isMiddlewareReady: mocks.isMiddlewareReady
+    })
 );
 
 vi.mock(
@@ -159,14 +124,14 @@ vi.mock(
         listStateClientEventPage: mocks.listStateClientEventPage,
         listStateClientEvents: mocks.listStateClientEvents,
         listStateGroupEventPage: mocks.listStateGroupEventPage,
-        listStateGroupEvents: mocks.listStateGroupEvents,
-    }),
+        listStateGroupEvents: mocks.listStateGroupEvents
+    })
 );
 
 vi.mock(import('@shared-web/browser/auth/session-http-api.ts'), (): Partial<AuthApiModule> => ({
     loginToApi: mocks.loginToApi,
     logoutFromApi: mocks.logoutFromApi,
-    registerWithApi: mocks.registerWithApi,
+    registerWithApi: mocks.registerWithApi
 }));
 
 vi.mock(
@@ -186,8 +151,8 @@ vi.mock(
         transferStateGroupOwnership: mocks.transferStateGroupOwnership,
         unbanStateGroupMember: mocks.unbanStateGroupMember,
         updateStateGroupDetails: mocks.updateStateGroupDetails,
-        updateStateGroupMetadata: mocks.updateStateGroupMetadata,
-    }),
+        updateStateGroupMetadata: mocks.updateStateGroupMetadata
+    })
 );
 
 vi.mock(
@@ -195,8 +160,8 @@ vi.mock(
     (): Partial<RoomGroupStateWorkflowsModule> => ({
         createAndJoinStateGroup: mocks.createAndJoinStateGroup,
         joinStateGroup: mocks.joinStateGroup,
-        leaveStateGroup: mocks.leaveStateGroup,
-    }),
+        leaveStateGroup: mocks.leaveStateGroup
+    })
 );
 
 vi.mock(
@@ -205,8 +170,8 @@ vi.mock(
         archiveStateGroup: mocks.archiveStateGroup,
         deleteStateGroup: mocks.deleteStateGroup,
         updateStateGroupDetails: mocks.updateStateGroupDetails,
-        updateStateGroupMetadata: mocks.updateStateGroupMetadata,
-    }),
+        updateStateGroupMetadata: mocks.updateStateGroupMetadata
+    })
 );
 
 vi.mock(
@@ -218,41 +183,40 @@ vi.mock(
         removeStateGroupMember: mocks.removeStateGroupMember,
         setStateGroupMemberRole: mocks.setStateGroupMemberRole,
         transferStateGroupOwnership: mocks.transferStateGroupOwnership,
-        unbanStateGroupMember: mocks.unbanStateGroupMember,
-    }),
+        unbanStateGroupMember: mocks.unbanStateGroupMember
+    })
 );
 
 vi.mock(
     import('@shared-web/browser/data-caches.ts'),
     (): Partial<DataCachesModule> => ({
         hydrateStateCaches: mocks.hydrateStateCaches,
-        onStateCacheChange: mocks.onStateCacheChange,
-    }),
+        onStateCacheChange: mocks.onStateCacheChange
+    })
 );
 
 vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
     clearSession: mocks.clearSession,
     isLoggedIn: vi.fn(() => true),
     readSession: mocks.readSession,
-    writeSession: mocks.writeSession,
+    writeSession: mocks.writeSession
 }));
 
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
     (): Partial<ClientStateSnapshotsRepositoryModule> => ({
         findClientStateSnapshotByPrincipalId: mocks.findClientStateSnapshotByPrincipalId,
-        getAllClientStateSnapshots: mocks.getAllClientStateSnapshots,
-    }),
+        getAllClientStateSnapshots: mocks.getAllClientStateSnapshots
+    })
 );
 
 vi.mock(
     import('@shared/repository/group-state-snapshots-repository.ts'),
     (): Partial<GroupStateSnapshotsRepositoryModule> => ({
-        findFirstGroupStateSnapshotRefSessionIdIsIn:
-            mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
+        findFirstGroupStateSnapshotRefSessionIdIsIn: mocks.findFirstGroupStateSnapshotRefSessionIdIsIn,
         findGroupStateSnapshotByRef: mocks.findGroupStateSnapshotByRef,
-        getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots,
-    }),
+        getAllGroupStateSnapshots: mocks.getAllGroupStateSnapshots
+    })
 );
 
 describe('Rallar workflow options compatibility', () => {
@@ -271,37 +235,37 @@ describe('Rallar workflow options compatibility', () => {
         mocks.joinStateGroup.mockRejectedValue(new Error('join not mocked'));
         mocks.leaveStateGroup.mockRejectedValue(new Error('leave not mocked'));
         mocks.updateStateGroupMetadata.mockRejectedValue(
-            new Error('metadata update not mocked'),
+            new Error('metadata update not mocked')
         );
         mocks.updateStateGroupDetails.mockRejectedValue(
-            new Error('room update not mocked'),
+            new Error('room update not mocked')
         );
         mocks.archiveStateGroup.mockRejectedValue(
-            new Error('room archive not mocked'),
+            new Error('room archive not mocked')
         );
         mocks.deleteStateGroup.mockRejectedValue(
-            new Error('room delete not mocked'),
+            new Error('room delete not mocked')
         );
         mocks.createStateGroupInvite.mockRejectedValue(
-            new Error('room invite not mocked'),
+            new Error('room invite not mocked')
         );
         mocks.acceptStateGroupInvite.mockRejectedValue(
-            new Error('room invite accept not mocked'),
+            new Error('room invite accept not mocked')
         );
         mocks.removeStateGroupMember.mockRejectedValue(
-            new Error('room member remove not mocked'),
+            new Error('room member remove not mocked')
         );
         mocks.banStateGroupMember.mockRejectedValue(
-            new Error('room member ban not mocked'),
+            new Error('room member ban not mocked')
         );
         mocks.unbanStateGroupMember.mockRejectedValue(
-            new Error('room member unban not mocked'),
+            new Error('room member unban not mocked')
         );
         mocks.setStateGroupMemberRole.mockRejectedValue(
-            new Error('room member role not mocked'),
+            new Error('room member role not mocked')
         );
         mocks.transferStateGroupOwnership.mockRejectedValue(
-            new Error('room owner transfer not mocked'),
+            new Error('room owner transfer not mocked')
         );
         mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes
             .mockReturnValue([]);
@@ -313,26 +277,24 @@ describe('Rallar workflow options compatibility', () => {
                 Either.ofLeft({
                     kind: 'connect-failed',
                     peerId,
-                    error: new Error('connect not mocked'),
-                }),
+                    error: new Error('connect not mocked')
+                })
         );
         mocks.webRtcConnectionService.ensurePeerLaneOpen.mockImplementation(
             async (peerId, laneId = DEFAULT_RTC_DATA_CHANNEL_LANE_ID) => ({
                 status: 'connect-failed',
                 peerId,
                 laneId,
-                error: new Error('connect not mocked'),
-            }),
+                error: new Error('connect not mocked')
+            })
         );
-        mocks.webRtcConnectionService.onRtcPeerLifecycleDo.mockImplementation(() =>
-            mocks.webRtcConnectionService
-        );
+        mocks.webRtcConnectionService.onRtcPeerLifecycleDo.mockImplementation(() => mocks.webRtcConnectionService);
         mocks.webRtcConnectionService.readPeer.mockReturnValue(undefined);
         mocks.webRtcConnectionService.removeRtcPeerLifecycleById.mockReturnValue(true);
         mocks.rtcRxStreamer.onInboxMessageDo.mockReturnValue(mocks.rtcRxStreamer);
         mocks.rtcRxStreamer.removeInboxMessageCallback.mockReturnValue(true);
         mocks.webSocketQueueBox.onAnyInboxMessageDo.mockReturnValue(
-            mocks.webSocketQueueBox,
+            mocks.webSocketQueueBox
         );
         mocks.webSocketQueueBox.removeAnyInboxMessageCallback.mockReturnValue(true);
         mocks.webSocketQueueBox.readHealth.mockReturnValue({
@@ -344,32 +306,32 @@ describe('Rallar workflow options compatibility', () => {
             reconnectEnabled: false,
             reconnectAttempts: 0,
             maxReconnectAttempts: 12,
-            reconnectExhausted: false,
+            reconnectExhausted: false
         });
         mocks.webSocketQueueBox.close.mockImplementation((code, reason) => {
             mocks.webSocketClient.close(code, reason);
         });
         mocks.webSocketClient.onWebsocketCallbacksDo.mockReturnValue(
-            mocks.webSocketClient,
+            mocks.webSocketClient
         );
         mocks.webSocketClient.removeWebsocketCallbackById.mockReturnValue(true);
         mocks.registerWithApi.mockResolvedValue({
             clientId: 'client-new',
             username: 'new-user',
             displayName: null,
-            registeredAtEpochMs: 1_000,
+            registeredAtEpochMs: 1_000
         });
         mocks.listStateClientEvents.mockRejectedValue(
-            new Error('client events not mocked'),
+            new Error('client events not mocked')
         );
         mocks.listStateClientEventPage.mockRejectedValue(
-            new Error('client event page not mocked'),
+            new Error('client event page not mocked')
         );
         mocks.listStateGroupEvents.mockRejectedValue(
-            new Error('group events not mocked'),
+            new Error('group events not mocked')
         );
         mocks.listStateGroupEventPage.mockRejectedValue(
-            new Error('group event page not mocked'),
+            new Error('group event page not mocked')
         );
     });
 
@@ -380,26 +342,26 @@ describe('Rallar workflow options compatibility', () => {
         const signal = new AbortController().signal;
         const scope = {
             applicationId: 'app-1',
-            workspaceId: 'workspace-1',
+            workspaceId: 'workspace-1'
         };
 
         await createRallarFacade().rooms.refresh({
             scope,
             signal,
-            timeoutMs: 123,
+            timeoutMs: 123
         });
 
         expect(mocks.initMiddleware).toHaveBeenCalledWith({
             onAuthInvalid: expect.any(Function),
             scope,
             signal,
-            timeoutMs: 123,
+            timeoutMs: 123
         });
         expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(scope, {
             command: {
                 signal,
-                timeoutMs: 123,
-            },
+                timeoutMs: 123
+            }
         });
     });
 
@@ -411,16 +373,16 @@ describe('Rallar workflow options compatibility', () => {
         mocks.joinStateGroup.mockResolvedValue(snapshot);
 
         await createRallarFacade().rooms.join('room-1', {
-            maxAttempts: 3,
+            maxAttempts: 3
         });
 
         const policies = requireRecord(
             mocks.joinStateGroup.mock.calls[0]?.[5],
-            'join workflow policies',
+            'join workflow policies'
         );
         const command = requireRecord(
             policies.command,
-            'join workflow command policies',
+            'join workflow command policies'
         );
         const shouldRetry = command.shouldRetry;
         if (typeof shouldRetry !== 'function') {
@@ -430,26 +392,26 @@ describe('Rallar workflow options compatibility', () => {
         expect(
             shouldRetry(
                 new ApiHttpError('POST', '/api/state/mutation', 503, 'server busy'),
-                1,
-            ),
+                1
+            )
         ).toBe(true);
         expect(
             shouldRetry(
                 new ApiHttpError('POST', '/api/state/mutation', 429, 'rate limited'),
-                1,
-            ),
+                1
+            )
         ).toBe(true);
         expect(
             shouldRetry(
                 new ApiHttpError('POST', '/api/state/mutation', 400, 'bad request'),
-                1,
-            ),
+                1
+            )
         ).toBe(false);
         expect(
             shouldRetry(
                 new ApiHttpError('POST', '/api/state/mutation', 409, 'conflict'),
-                1,
-            ),
+                1
+            )
         ).toBe(false);
     });
 
@@ -467,11 +429,11 @@ describe('Rallar workflow options compatibility', () => {
             applicationId: 'game-app',
             workspaceId: 'arena-1',
             rtc: {
-                maxPeerConnections: 10,
+                maxPeerConnections: 10
             },
             start: {
-                timeoutMs: 123,
-            },
+                timeoutMs: 123
+            }
         });
 
         expect(readApiBaseUrl()).toBe('http://localhost:8080');
@@ -479,8 +441,8 @@ describe('Rallar workflow options compatibility', () => {
             applicationId: 'game-app',
             workspaceId: 'arena-1',
             rtc: {
-                maxPeerConnections: 10,
-            },
+                maxPeerConnections: 10
+            }
         });
         expect(result.connected).toBe(true);
         expect(result.session?.sessionId).toBe('session-1');
@@ -488,21 +450,21 @@ describe('Rallar workflow options compatibility', () => {
             onAuthInvalid: expect.any(Function),
             scope: {
                 applicationId: 'game-app',
-                workspaceId: 'arena-1',
+                workspaceId: 'arena-1'
             },
             timeoutMs: 123,
-            maxPeerConnections: 10,
+            maxPeerConnections: 10
         });
         expect(mocks.refreshStateSnapshots).toHaveBeenCalledWith(
             {
                 applicationId: 'game-app',
-                workspaceId: 'arena-1',
+                workspaceId: 'arena-1'
             },
             {
                 command: {
-                    timeoutMs: 123,
-                },
-            },
+                    timeoutMs: 123
+                }
+            }
         );
     });
 
@@ -515,8 +477,8 @@ describe('Rallar workflow options compatibility', () => {
         facade.setDefaults({
             applicationId: 'app-1',
             operations: {
-                maxAttempts: 4,
-            },
+                maxAttempts: 4
+            }
         });
         mocks.joinStateGroup.mockResolvedValue(snapshot);
 
@@ -524,11 +486,11 @@ describe('Rallar workflow options compatibility', () => {
 
         const policies = requireRecord(
             mocks.joinStateGroup.mock.calls[0]?.[5],
-            'join workflow policies',
+            'join workflow policies'
         );
         const command = requireRecord(
             policies.command,
-            'join workflow command policies',
+            'join workflow command policies'
         );
         expect(command.maxAttempts).toBe(4);
     });
@@ -540,12 +502,12 @@ describe('Rallar workflow options compatibility', () => {
         const roomRef = {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
-            groupId: 'room-ref',
+            groupId: 'room-ref'
         };
         const roomIdSnapshot = createGroupSnapshot('room-id', ['session-1']);
         const roomRefSnapshot = createGroupSnapshot('room-ref', ['session-1'], {
             applicationId: 'app-1',
-            workspaceId: 'workspace-1',
+            workspaceId: 'workspace-1'
         });
         mocks.joinStateGroup
             .mockResolvedValueOnce(roomIdSnapshot)
@@ -554,18 +516,18 @@ describe('Rallar workflow options compatibility', () => {
         const facade = createRallarFacade();
         await facade.rooms.join({
             roomId: 'room-id',
-            leaveCurrent: false,
+            leaveCurrent: false
         });
         await facade.rooms.join({
             roomRef,
-            leaveCurrent: false,
+            leaveCurrent: false
         });
 
         expect(mocks.joinStateGroup.mock.calls[0]?.[0]).toBe('room-id');
         expect(mocks.joinStateGroup.mock.calls[1]?.[0]).toBe('room-ref');
         expect(mocks.joinStateGroup.mock.calls[1]?.[4]).toEqual({
             applicationId: 'app-1',
-            workspaceId: 'workspace-1',
+            workspaceId: 'workspace-1'
         });
     });
 
@@ -579,12 +541,12 @@ describe('Rallar workflow options compatibility', () => {
         await createRallarFacade().rooms.join({
             roomId: 'room-1',
             inviteToken: 'invite-1',
-            joinCode: 'code-1',
+            joinCode: 'code-1'
         });
 
         expect(mocks.joinStateGroup.mock.calls[0]?.[6]).toEqual({
             inviteToken: 'invite-1',
-            joinCode: 'code-1',
+            joinCode: 'code-1'
         });
     });
 
@@ -601,13 +563,13 @@ describe('Rallar workflow options compatibility', () => {
 
         const room = await createRallarFacade().rooms.enter('room-1');
         const messageResult = await room
-            .message<{ text: string }>('chat')
+            .message<{ text: string; }>('chat')
             .sendWs(
                 { text: 'hello' },
-                { resourceId: 'chat-message-1' },
+                { resourceId: 'chat-message-1' }
             );
         const realtimeResult = await room
-            .realtime<{ x: number }>('motion')
+            .realtime<{ x: number; }>('motion')
             .send({ x: 1 });
 
         expect(room.roomId).toBe('room-1');
@@ -617,7 +579,7 @@ describe('Rallar workflow options compatibility', () => {
         expect(messageResult.message.route).toMatchObject({
             topicId: 'room.chat',
             contextId: 'room-1',
-            resourceId: 'chat-message-1',
+            resourceId: 'chat-message-1'
         });
         expect(messageResult.message.payload.typeId).toBe('room.chat.v1');
         expect(messageResult.message.targets).toMatchObject({
@@ -626,8 +588,8 @@ describe('Rallar workflow options compatibility', () => {
             groupRef: {
                 applicationId: 'app-1',
                 workspaceId: 'workspace-1',
-                groupId: 'room-1',
-            },
+                groupId: 'room-1'
+            }
         });
         expect(realtimeResult.laneId).toBe('motion');
         expect(realtimeResult.roomRef).toEqual(snapshot.group);
@@ -675,9 +637,9 @@ describe('Rallar workflow options compatibility', () => {
                 roomRef: {
                     applicationId: 'app-1',
                     workspaceId: 'workspace-1',
-                    groupId: 'room-b',
-                },
-            }),
+                    groupId: 'room-b'
+                }
+            })
         ).rejects.toThrow('roomId must match roomRef.groupId');
 
         expect(mocks.joinStateGroup).not.toHaveBeenCalled();
@@ -696,11 +658,11 @@ describe('Rallar workflow options compatibility', () => {
             mocks.ctx.middleware.webRtcGroupManager,
             expect.objectContaining({
                 clientId: 'principal-1',
-                sessionId: 'session-1',
+                sessionId: 'session-1'
             }),
             [],
             [snapshot],
-            expect.any(Object),
+            expect.any(Object)
         );
     });
 
@@ -716,7 +678,7 @@ describe('Rallar workflow options compatibility', () => {
         mocks.leaveStateGroup.mockResolvedValue(leftOldRoom);
 
         const snapshot = await createRallarFacade().rooms.createAndSwitch({
-            displayName: 'New Room',
+            displayName: 'New Room'
         });
 
         expect(snapshot).toBe(newRoom);
@@ -727,7 +689,7 @@ describe('Rallar workflow options compatibility', () => {
             undefined,
             undefined,
             {},
-            undefined,
+            undefined
         );
         expect(mocks.leaveStateGroup).toHaveBeenCalledWith(
             'old-room',
@@ -736,29 +698,29 @@ describe('Rallar workflow options compatibility', () => {
             undefined,
             {
                 applicationId: 'app-1',
-                workspaceId: 'workspace-1',
+                workspaceId: 'workspace-1'
             },
-            {},
+            {}
         );
         expect(mocks.hydrateStateCaches).toHaveBeenCalledWith(
             mocks.ctx.middleware.webRtcGroupManager,
             expect.objectContaining({
                 clientId: 'principal-1',
-                sessionId: 'session-1',
+                sessionId: 'session-1'
             }),
             [],
             [newRoom],
-            expect.any(Object),
+            expect.any(Object)
         );
         expect(mocks.hydrateStateCaches).toHaveBeenCalledWith(
             mocks.ctx.middleware.webRtcGroupManager,
             expect.objectContaining({
                 clientId: 'principal-1',
-                sessionId: 'session-1',
+                sessionId: 'session-1'
             }),
             [],
             [leftOldRoom],
-            expect.any(Object),
+            expect.any(Object)
         );
     });
 
@@ -775,13 +737,13 @@ describe('Rallar workflow options compatibility', () => {
         const facade = createRallarFacade();
 
         await expect(facade.rooms.createAndSwitch({
-            displayName: 'New Room',
+            displayName: 'New Room'
         })).rejects.toMatchObject({
             name: 'RallarRoomSwitchPartialFailureError',
             operation: 'create-and-switch',
             joinedRoom: newRoom,
             previousRoomRef: oldRoom.group,
-            leaveError,
+            leaveError
         });
 
         expect(facade.rooms.current()).toBe(newRoom);
@@ -790,11 +752,11 @@ describe('Rallar workflow options compatibility', () => {
             mocks.ctx.middleware.webRtcGroupManager,
             expect.objectContaining({
                 clientId: 'principal-1',
-                sessionId: 'session-1',
+                sessionId: 'session-1'
             }),
             [],
             [newRoom],
-            expect.any(Object),
+            expect.any(Object)
         );
     });
 
@@ -808,8 +770,8 @@ describe('Rallar workflow options compatibility', () => {
 
         await expect(
             createRallarFacade().rooms.createAndSwitch({
-                displayName: 'New Room',
-            }),
+                displayName: 'New Room'
+            })
         ).rejects.toThrow('create failed');
 
         expect(mocks.leaveStateGroup).not.toHaveBeenCalled();
@@ -832,7 +794,7 @@ describe('Rallar workflow options compatibility', () => {
             operation: 'join',
             joinedRoom: newRoom,
             previousRoomRef: oldRoom.group,
-            leaveError,
+            leaveError
         });
 
         expect(facade.rooms.current()).toBe(newRoom);
@@ -845,7 +807,7 @@ describe('Rallar workflow options compatibility', () => {
         );
         const scope = {
             applicationId: 'app-1',
-            workspaceId: 'workspace-1',
+            workspaceId: 'workspace-1'
         };
         const snapshot = createGroupSnapshot('custom-room', ['session-1']);
         mocks.createAndJoinStateGroup.mockResolvedValue(snapshot);
@@ -859,7 +821,7 @@ describe('Rallar workflow options compatibility', () => {
             maxSessionsPerMember: 2,
             metadata: { map: 'fjord' },
             scope,
-            timeoutMs: 55,
+            timeoutMs: 55
         });
 
         expect(mocks.createAndJoinStateGroup).toHaveBeenCalledWith(
@@ -870,8 +832,8 @@ describe('Rallar workflow options compatibility', () => {
             scope,
             {
                 command: {
-                    timeoutMs: 55,
-                },
+                    timeoutMs: 55
+                }
             },
             'custom-room',
             {
@@ -879,8 +841,8 @@ describe('Rallar workflow options compatibility', () => {
                 joinMode: 'open',
                 maxMembers: 8,
                 maxSessionsPerMember: 2,
-                metadata: { map: 'fjord' },
-            },
+                metadata: { map: 'fjord' }
+            }
         );
     });
 
@@ -891,7 +853,7 @@ describe('Rallar workflow options compatibility', () => {
         const roomRef = {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
-            groupId: 'room-1',
+            groupId: 'room-1'
         };
         const snapshot = createGroupSnapshot('room-1', ['session-1']);
         const nextSnapshot = withSnapshotVersion(snapshot, 2);
@@ -906,7 +868,7 @@ describe('Rallar workflow options compatibility', () => {
                 mocks.banStateGroupMember,
                 mocks.unbanStateGroupMember,
                 mocks.setStateGroupMemberRole,
-                mocks.transferStateGroupOwnership,
+                mocks.transferStateGroupOwnership
             ]
         ) {
             workflow.mockResolvedValue(nextSnapshot);
@@ -915,7 +877,7 @@ describe('Rallar workflow options compatibility', () => {
         const options = {
             signal,
             timeoutMs: 75,
-            maxAttempts: 2,
+            maxAttempts: 2
         };
         const facade = createRallarFacade();
 
@@ -927,13 +889,13 @@ describe('Rallar workflow options compatibility', () => {
             maxMembers: 8,
             maxSessionsPerMember: 2,
             metadata: { map: 'fjord' },
-            ...options,
+            ...options
         });
         await facade.rooms.archive(roomRef, options);
         await facade.rooms.delete(roomRef, options);
         await facade.rooms.invite(roomRef, 'member-1', {
             invitationExpiresAtEpochMs: 2_000,
-            ...options,
+            ...options
         });
         await facade.rooms.acceptInvite(roomRef, options);
         await facade.rooms.removeMember(roomRef, 'member-1', options);
@@ -944,15 +906,15 @@ describe('Rallar workflow options compatibility', () => {
 
         const scope = {
             applicationId: 'app-1',
-            workspaceId: 'workspace-1',
+            workspaceId: 'workspace-1'
         };
         const policies = {
             command: {
                 signal,
                 timeoutMs: 75,
                 maxAttempts: 2,
-                shouldRetry: expect.any(Function),
-            },
+                shouldRetry: expect.any(Function)
+            }
         };
         expect(mocks.updateStateGroupDetails).toHaveBeenCalledWith(
             'room-1',
@@ -962,12 +924,12 @@ describe('Rallar workflow options compatibility', () => {
                 joinMode: 'open',
                 maxMembers: 8,
                 maxSessionsPerMember: 2,
-                metadata: { map: 'fjord' },
+                metadata: { map: 'fjord' }
             },
             'principal-1',
             'session-1',
             scope,
-            policies,
+            policies
         );
         expect(mocks.archiveStateGroup).toHaveBeenCalledWith(
             'room-1',
@@ -975,7 +937,7 @@ describe('Rallar workflow options compatibility', () => {
             'principal-1',
             'session-1',
             scope,
-            policies,
+            policies
         );
         expect(mocks.deleteStateGroup).toHaveBeenCalledWith(
             'room-1',
@@ -983,7 +945,7 @@ describe('Rallar workflow options compatibility', () => {
             'principal-1',
             'session-1',
             scope,
-            policies,
+            policies
         );
         expect(mocks.createStateGroupInvite).toHaveBeenCalledWith(
             'room-1',
@@ -992,7 +954,7 @@ describe('Rallar workflow options compatibility', () => {
             'principal-1',
             'session-1',
             scope,
-            policies,
+            policies
         );
         expect(mocks.acceptStateGroupInvite).toHaveBeenCalledWith(
             'room-1',
@@ -1000,7 +962,7 @@ describe('Rallar workflow options compatibility', () => {
             'session-1',
             undefined,
             scope,
-            policies,
+            policies
         );
         expect(mocks.removeStateGroupMember).toHaveBeenCalledWith(
             'room-1',
@@ -1009,7 +971,7 @@ describe('Rallar workflow options compatibility', () => {
             'principal-1',
             'session-1',
             scope,
-            policies,
+            policies
         );
         expect(mocks.banStateGroupMember).toHaveBeenCalledWith(
             'room-1',
@@ -1018,7 +980,7 @@ describe('Rallar workflow options compatibility', () => {
             'principal-1',
             'session-1',
             scope,
-            policies,
+            policies
         );
         expect(mocks.unbanStateGroupMember).toHaveBeenCalledWith(
             'room-1',
@@ -1027,7 +989,7 @@ describe('Rallar workflow options compatibility', () => {
             'principal-1',
             'session-1',
             scope,
-            policies,
+            policies
         );
         expect(mocks.setStateGroupMemberRole).toHaveBeenCalledWith(
             'room-1',
@@ -1036,7 +998,7 @@ describe('Rallar workflow options compatibility', () => {
             'principal-1',
             'session-1',
             scope,
-            policies,
+            policies
         );
         expect(mocks.transferStateGroupOwnership).toHaveBeenCalledWith(
             'room-1',
@@ -1044,17 +1006,17 @@ describe('Rallar workflow options compatibility', () => {
             'principal-1',
             'session-1',
             scope,
-            policies,
+            policies
         );
         expect(mocks.hydrateStateCaches).toHaveBeenCalledWith(
             mocks.ctx.middleware.webRtcGroupManager,
             expect.objectContaining({
                 clientId: 'principal-1',
-                sessionId: 'session-1',
+                sessionId: 'session-1'
             }),
             [],
             [nextSnapshot],
-            expect.any(Object),
+            expect.any(Object)
         );
     });
 
@@ -1069,9 +1031,9 @@ describe('Rallar workflow options compatibility', () => {
                 roomRef: {
                     applicationId: 'app-1',
                     workspaceId: 'workspace-1',
-                    groupId: 'room-b',
-                },
-            }, 'member-1'),
+                    groupId: 'room-b'
+                }
+            }, 'member-1')
         ).rejects.toThrow('roomId must match roomRef.groupId');
 
         expect(mocks.removeStateGroupMember).not.toHaveBeenCalled();
@@ -1087,27 +1049,27 @@ describe('Rallar workflow options compatibility', () => {
                 label: 'custom-realtime',
                 init: {
                     ordered: false,
-                    maxRetransmits: 0,
+                    maxRetransmits: 0
                 },
                 binaryType: 'arraybuffer' as const,
                 flowControl: {
                     highWatermarkBytes: 4096,
                     lowWatermarkBytes: 1024,
                     overflow: 'drop-old' as const,
-                    maxQueueItems: 4,
-                },
-            },
+                    maxQueueItems: 4
+                }
+            }
         ];
 
         await createRallarFacade().connect({
             dataChannelLanes: lanes,
-            maxPeerConnections: 12,
+            maxPeerConnections: 12
         });
 
         expect(mocks.initMiddleware).toHaveBeenCalledWith({
             onAuthInvalid: expect.any(Function),
             dataChannelLanes: lanes,
-            maxPeerConnections: 12,
+            maxPeerConnections: 12
         });
     });
 
@@ -1118,11 +1080,11 @@ describe('Rallar workflow options compatibility', () => {
         const nextSession = {
             ...mocks.ctx.session,
             sessionId: 'session-2',
-            accessToken: 'token-2',
+            accessToken: 'token-2'
         };
         const nextCtx: ApiMiddleware = {
             ...mocks.ctx,
-            session: nextSession,
+            session: nextSession
         };
         const facade = createRallarFacade();
 
@@ -1142,7 +1104,7 @@ describe('Rallar workflow options compatibility', () => {
         );
         const scope = {
             applicationId: 'app-1',
-            workspaceId: 'workspace-1',
+            workspaceId: 'workspace-1'
         };
 
         await createRallarFacade().people.refresh(scope);
@@ -1172,7 +1134,7 @@ describe('Rallar workflow options compatibility', () => {
         const primaryConnect = facade.connect();
         const timedConnect = facade.connect({ timeoutMs: 10 });
         const expectation = expect(timedConnect).rejects.toThrow(
-            'Command timed out after 10 ms',
+            'Command timed out after 10 ms'
         );
 
         await vi.advanceTimersByTimeAsync(10);
@@ -1192,17 +1154,17 @@ describe('Rallar workflow options compatibility', () => {
                     return {
                         applicationId: 'app-1',
                         workspaceId: 'workspace-1',
-                        groupId: 'old-room',
+                        groupId: 'old-room'
                     };
                 }
 
                 throw new Error(GROUP_REPOSITORY_MISSING_MESSAGE);
-            },
+            }
         );
         mocks.joinStateGroup.mockRejectedValueOnce(new Error('join failed'));
 
         await expect(createRallarFacade().rooms.join('new-room')).rejects.toThrow(
-            'join failed',
+            'join failed'
         );
 
         expect(mocks.leaveStateGroup).not.toHaveBeenCalled();
@@ -1241,7 +1203,7 @@ function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
     mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation((sessionId) =>
         snapshots.find((snapshot) =>
             snapshot.activeSessions.some(
-                (activeSession) => activeSession.sessionId === sessionId,
+                (activeSession) => activeSession.sessionId === sessionId
             )
         )?.group
     );
@@ -1249,14 +1211,14 @@ function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
 
 function withSnapshotVersion(
     snapshot: GroupSnapshot,
-    snapshotVersion: number,
+    snapshotVersion: number
 ): GroupSnapshot {
     return {
         ...snapshot,
         group: {
             ...snapshot.group,
-            snapshotVersion,
-        },
+            snapshotVersion
+        }
     };
 }
 
@@ -1266,7 +1228,7 @@ function createGroupSnapshot(
     scope: Readonly<{
         applicationId?: string;
         workspaceId?: string;
-    }> = {},
+    }> = {}
 ): GroupSnapshot {
     const applicationId = scope.applicationId ?? 'app-1';
     const workspaceId = scope.workspaceId ?? 'workspace-1';
@@ -1274,7 +1236,7 @@ function createGroupSnapshot(
         applicationId,
         workspaceId,
         groupId,
-        sessionIds,
+        sessionIds
     });
 }
 

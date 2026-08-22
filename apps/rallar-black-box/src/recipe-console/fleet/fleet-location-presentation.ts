@@ -1,8 +1,7 @@
-import type { FleetGeographyLocation } from
-    '@shared-test/rallar-bb-test/fleet-geography.ts';
+import type { FleetGeographyLocation } from '@shared-test/rallar-bb-test/fleet-geography.ts';
 
 export function fleetLocationProvenance(
-    location: FleetGeographyLocation,
+    location: FleetGeographyLocation
 ): string {
     return `${location.source.replaceAll('-', ' ')} · ${location.precision}`;
 }

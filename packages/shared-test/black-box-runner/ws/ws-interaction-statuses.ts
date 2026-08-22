@@ -10,7 +10,7 @@ function toOutputReportFields(interaction: any): any {
         transform: interaction.request.transform,
         secret: interaction.request.secret,
         redact: interaction.request.redact,
-        redactAs: interaction.request.redactAs,
+        redactAs: interaction.request.redactAs
     };
 }
 
@@ -23,7 +23,7 @@ function toCorrelationReportFields(interaction: any): any {
     return {
         runnerRunId: correlation.runnerRunId,
         runnerStepId: correlation.runnerStepId,
-        correlation,
+        correlation
     };
 }
 
@@ -32,10 +32,10 @@ export function toWsConnectionName(request: any): string {
 }
 
 export function toWsExpectedConnectionName(interaction: any): string {
-    return interaction.response?.connection
-        || interaction.response?.onConnection
-        || interaction.request?.expectConnection
-        || toWsConnectionName(interaction.request);
+    return interaction.response?.connection ||
+        interaction.response?.onConnection ||
+        interaction.request?.expectConnection ||
+        toWsConnectionName(interaction.request);
 }
 
 export function toWsSuccessStatus(config: any, interaction: any, details: any = {}): any {
@@ -54,7 +54,7 @@ export function toWsSuccessStatus(config: any, interaction: any, details: any = 
         expected: interaction.response,
         actual: details,
         ...toOutputReportFields(interaction),
-        input: interaction.request.input,
+        input: interaction.request.input
     };
 }
 
@@ -62,7 +62,7 @@ export function toWsFailureStatus(
     config: any,
     interaction: any,
     result: string,
-    details: any = {},
+    details: any = {}
 ): any {
     return {
         name: config.interactionName,
@@ -79,6 +79,6 @@ export function toWsFailureStatus(
         repeatIndex: config.interaction.request.repeatIndex,
         expected: interaction.response,
         actual: details,
-        ...config,
+        ...config
     };
 }

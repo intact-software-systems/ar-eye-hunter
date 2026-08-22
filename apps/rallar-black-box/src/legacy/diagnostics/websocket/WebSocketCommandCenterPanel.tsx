@@ -1,15 +1,15 @@
-import { WebSocketCommandCenterView } from './WebSocketCommandCenterView.tsx';
 import {
-    type UseWebSocketCommandCenterControllerInput,
     useWebSocketCommandCenterController,
+    type UseWebSocketCommandCenterControllerInput
 } from './use-websocket-command-center-controller.ts';
+import { WebSocketCommandCenterView } from './WebSocketCommandCenterView.tsx';
 
 type WebSocketCommandCenterPanelProps =
-    UseWebSocketCommandCenterControllerInput &
-        Readonly<{
-            busy: boolean;
-            onSelectCommand(commandId: string): void;
-        }>;
+    & UseWebSocketCommandCenterControllerInput
+    & Readonly<{
+        busy: boolean;
+        onSelectCommand(commandId: string): void;
+    }>;
 
 export function WebSocketCommandCenterPanel({
     state,
@@ -18,23 +18,50 @@ export function WebSocketCommandCenterPanel({
     globalValues,
     browserStatus,
     busy,
-    onSelectCommand,
+    onSelectCommand
 }: WebSocketCommandCenterPanelProps) {
     const {
-        providerMode, values, payloadPresetId, localError, busyAction,
-        actionFeedback, waitStatus, ticket, subscription, diagnostics,
-        activePreset, canSendViaRallarSignaling, routePreview,
-        subscriptionStatusLabel, subscriptionStatusTone, receiveStatusText,
-        payloadResult, updateValue, updateGroupId, updateWsScope,
-        selectPayloadPreset, configure, open, send, close, reconnect, cleanup,
-        subscribeWs, unsubscribeWs, createTicket, waitForMessage,
-        waitForRallarWsOpen, copyDiagnostics, copyRecipe, openMissingTicket,
+        providerMode,
+        values,
+        payloadPresetId,
+        localError,
+        busyAction,
+        actionFeedback,
+        waitStatus,
+        ticket,
+        subscription,
+        diagnostics,
+        activePreset,
+        canSendViaRallarSignaling,
+        routePreview,
+        subscriptionStatusLabel,
+        subscriptionStatusTone,
+        receiveStatusText,
+        payloadResult,
+        updateValue,
+        updateGroupId,
+        updateWsScope,
+        selectPayloadPreset,
+        configure,
+        open,
+        send,
+        close,
+        reconnect,
+        cleanup,
+        subscribeWs,
+        unsubscribeWs,
+        createTicket,
+        waitForMessage,
+        waitForRallarWsOpen,
+        copyDiagnostics,
+        copyRecipe,
+        openMissingTicket
     } = useWebSocketCommandCenterController({
         state,
         bootstrap,
         authSession,
         globalValues,
-        browserStatus,
+        browserStatus
     });
 
     return (
@@ -78,7 +105,7 @@ export function WebSocketCommandCenterPanel({
                 waitForRallarWsOpen,
                 copyDiagnostics,
                 copyRecipe,
-                openMissingTicket,
+                openMissingTicket
             }}
         />
     );

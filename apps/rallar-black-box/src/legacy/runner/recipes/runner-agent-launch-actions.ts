@@ -3,11 +3,9 @@ import { createBrowserAgentLaunchService } from '../../../browser-agent-launch-s
 import {
     navigateReservedBrowserAgentPopups,
     releaseReservedBrowserAgentPopups,
-    reserveBrowserAgentPopups,
+    reserveBrowserAgentPopups
 } from '../../../browser-agent-popup.ts';
-import {
-    runnerNewAgentLaunchSuffix,
-} from '../../../runner-agent-launch.ts';
+import { runnerNewAgentLaunchSuffix } from '../../../runner-agent-launch.ts';
 import { runnerFriendlyErrorMessage } from '../../../runner-readiness.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { runnerBrowserOrigin } from './runner-endpoints.ts';
@@ -47,7 +45,7 @@ export function createRunnerAgentLaunchActions({
     setBusyAction,
     setAgentLaunchMessage,
     setAgentLaunchSuffix,
-    setControlRunId,
+    setControlRunId
 }: RunnerAgentLaunchActionsInput) {
     const launchService = createBrowserAgentLaunchService({
         origin: runnerBrowserOrigin(),
@@ -65,16 +63,17 @@ export function createRunnerAgentLaunchActions({
                 agentId,
                 token: controlToken,
                 issuedAtEpochMs,
-                expiresAtEpochMs: issuedAtEpochMs + 60 * 60 * 1_000,
+                expiresAtEpochMs: issuedAtEpochMs + 60 * 60 * 1_000
             };
-        },
+        }
     });
 
-    const prepare = (ids: readonly string[]) => launchService.prepare({
-        runId: agentRunId,
-        agentIds: ids,
-        group: { applicationId, workspaceId, groupId },
-    });
+    const prepare = (ids: readonly string[]) =>
+        launchService.prepare({
+            runId: agentRunId,
+            agentIds: ids,
+            group: { applicationId, workspaceId, groupId }
+        });
 
     const copyAgentLinks = async (): Promise<void> => {
         setBusyAction('agent-links');
@@ -83,16 +82,20 @@ export function createRunnerAgentLaunchActions({
             const prepared = await prepare(agentIds);
             setControlRunId(prepared.runId);
             await copyText(
-                prepared.agents.map(agent => agent.launchUrl).join('\n'),
-                `Copied ${prepared.agents.length} one-time agent link${prepared.agents.length === 1 ? '' : 's'}.`,
+                prepared.agents.map((agent) => agent.launchUrl).join('\n'),
+                `Copied ${prepared.agents.length} one-time agent link${prepared.agents.length === 1 ? '' : 's'}.`
             );
             setAgentLaunchMessage(
-                `Copied ${prepared.agents.length} one-time, short-lived agent link${prepared.agents.length === 1 ? '' : 's'}.`,
+                `Copied ${prepared.agents.length} one-time, short-lived agent link${
+                    prepared.agents.length === 1 ? '' : 's'
+                }.`
             );
             setAgentLaunchSuffix(runnerNewAgentLaunchSuffix());
-        } catch (error) {
+        }
+        catch (error) {
             setAgentLaunchMessage(runnerFriendlyErrorMessage(error));
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -101,13 +104,13 @@ export function createRunnerAgentLaunchActions({
         const reservation = reserveBrowserAgentPopups(agentIds);
         if (reservation.reservedAgentIds.length === 0) {
             setAgentLaunchMessage(
-                `Your browser blocked all ${agentIds.length} agent tabs. Copy the launch links instead.`,
+                `Your browser blocked all ${agentIds.length} agent tabs. Copy the launch links instead.`
             );
             return;
         }
         setBusyAction('agent-tabs');
         setAgentLaunchMessage(
-            'Minting fresh one-time agent sessions...',
+            'Minting fresh one-time agent sessions...'
         );
         try {
             const prepared = await prepare(reservation.reservedAgentIds);
@@ -116,15 +119,21 @@ export function createRunnerAgentLaunchActions({
             const blocked = reservation.blockedAgentIds.length;
             setAgentLaunchMessage(
                 blocked > 0
-                    ? `Opened ${prepared.agents.length} agent tabs. ${blocked} ${blocked === 1 ? 'tab was' : 'tabs were'} blocked; copy fresh links for the remainder.`
-                    : `Opened ${prepared.agents.length} agent tab${prepared.agents.length === 1 ? '' : 's'} with fresh one-time sessions.`,
+                    ? `Opened ${prepared.agents.length} agent tabs. ${blocked} ${
+                        blocked === 1 ? 'tab was' : 'tabs were'
+                    } blocked; copy fresh links for the remainder.`
+                    : `Opened ${prepared.agents.length} agent tab${
+                        prepared.agents.length === 1 ? '' : 's'
+                    } with fresh one-time sessions.`
             );
             setAgentLaunchSuffix(runnerNewAgentLaunchSuffix());
-        } catch (error) {
+        }
+        catch (error) {
             const message = runnerFriendlyErrorMessage(error);
             releaseReservedBrowserAgentPopups(reservation, message);
             setAgentLaunchMessage(message);
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };

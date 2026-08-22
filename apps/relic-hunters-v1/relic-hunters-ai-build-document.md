@@ -267,13 +267,13 @@ description
 
 Example relics:
 
-| Name | Value | Effect |
-|---|---:|---|
-| Golden Idol | 5 | No special effect |
-| Cursed Mask | 8 | Valuable but dangerous |
-| Oracle Stone | 4 | Reveals one clue more clearly |
-| Sun Disk | 6 | Protects from one trap |
-| Serpent Crown | 7 | Increases monster attention |
+| Name          | Value | Effect                        |
+| ------------- | ----: | ----------------------------- |
+| Golden Idol   |     5 | No special effect             |
+| Cursed Mask   |     8 | Valuable but dangerous        |
+| Oracle Stone  |     4 | Reveals one clue more clearly |
+| Sun Disk      |     6 | Protects from one trap        |
+| Serpent Crown |     7 | Increases monster attention   |
 
 ## 3.5 Health
 
@@ -285,12 +285,12 @@ Recommended MVP health:
 
 Damage examples:
 
-| Source | Damage |
-|---|---:|
-| Minor trap | 1 |
-| Monster attack | 1–2 |
+| Source          |      Damage |
+| --------------- | ----------: |
+| Minor trap      |           1 |
+| Monster attack  |         1–2 |
 | Collapsing room | 2 or defeat |
-| Curse | special |
+| Curse           |     special |
 
 Avoid early hard elimination if possible. A defeated player may drop relics and return to the entrance instead.
 
@@ -597,14 +597,14 @@ Noise may trigger ruin events.
 
 ## 7.2 Suggested Noise Values
 
-| Action | Noise |
-|---|---:|
-| Rest | 0 |
-| Move | 1 |
-| Disarm trap | 1 |
-| Search | 2 |
-| Set trap | 2 |
-| Steal | 3 |
+| Action      | Noise |
+| ----------- | ----: |
+| Rest        |     0 |
+| Move        |     1 |
+| Disarm trap |     1 |
+| Search      |     2 |
+| Set trap    |     2 |
+| Steal       |     3 |
 
 ## 7.3 Noise Feedback
 
@@ -641,13 +641,13 @@ The collapse timer creates urgency.
 
 ## 8.3 Collapse Stages
 
-| Round | State |
-|---:|---|
-| 1–3 | Stable |
-| 4–6 | Warning signs |
-| 7–9 | Rooms become unstable |
-| 10 | Final escape pressure |
-| 11+ | Collapse |
+| Round | State                 |
+| ----: | --------------------- |
+|   1–3 | Stable                |
+|   4–6 | Warning signs         |
+|   7–9 | Rooms become unstable |
+|    10 | Final escape pressure |
+|   11+ | Collapse              |
 
 ## 8.4 Ruin Events
 
@@ -1052,73 +1052,73 @@ export type TrapId = string;
 export type GameId = string;
 
 export type GamePhase =
-  | "observation"
-  | "planning"
-  | "reveal"
-  | "resolution"
-  | "ruin"
-  | "finished";
+    | 'observation'
+    | 'planning'
+    | 'reveal'
+    | 'resolution'
+    | 'ruin'
+    | 'finished';
 
 export type HunterRole =
-  | "scout"
-  | "scholar"
-  | "trickster"
-  | "guardian";
+    | 'scout'
+    | 'scholar'
+    | 'trickster'
+    | 'guardian';
 
 export type RoomType =
-  | "entrance"
-  | "hallway"
-  | "shrine"
-  | "treasure_chamber"
-  | "trap_room"
-  | "monster_lair"
-  | "hidden_passage"
-  | "exit";
+    | 'entrance'
+    | 'hallway'
+    | 'shrine'
+    | 'treasure_chamber'
+    | 'trap_room'
+    | 'monster_lair'
+    | 'hidden_passage'
+    | 'exit';
 
 export interface GameState {
-  gameId: GameId;
-  round: number;
-  maxRounds: number;
-  phase: GamePhase;
-  map: RuinMap;
-  players: Record<PlayerId, PlayerState>;
-  pendingActions: Record<PlayerId, PlayerAction>;
-  eventLog: GameEvent[];
-  rngSeed: string;
+    gameId: GameId;
+    round: number;
+    maxRounds: number;
+    phase: GamePhase;
+    map: RuinMap;
+    players: Record<PlayerId, PlayerState>;
+    pendingActions: Record<PlayerId, PlayerAction>;
+    eventLog: GameEvent[];
+    rngSeed: string;
 }
 
 export interface RuinMap {
-  rooms: Record<RoomId, RoomState>;
+    rooms: Record<RoomId, RoomState>;
 }
 
 export interface RoomState {
-  id: RoomId;
-  name: string;
-  description: string;
-  type: RoomType;
-  connectedRoomIds: RoomId[];
-  isExit: boolean;
-  isCollapsed: boolean;
-  isUnstable: boolean;
-  hiddenRelicIds: RelicId[];
-  visibleRelicIds: RelicId[];
-  trapIds: TrapId[];
-  noiseLevel: number;
-  dangerLevel: number;
-  clueSources: ClueSource[];
+    id: RoomId;
+    name: string;
+    description: string;
+    type: RoomType;
+    connectedRoomIds: RoomId[];
+    isExit: boolean;
+    isCollapsed: boolean;
+    isUnstable: boolean;
+    hiddenRelicIds: RelicId[];
+    visibleRelicIds: RelicId[];
+    trapIds: TrapId[];
+    noiseLevel: number;
+    dangerLevel: number;
+    clueSources: ClueSource[];
 }
 
 export interface PlayerState {
-  id: PlayerId;
-  displayName: string;
-  role: HunterRole;
-  currentRoomId: RoomId;
-  health: number;
-  relicIds: RelicId[];
-  hasEscaped: boolean;
-  isDefeated: boolean;
-  decoyAvailable: boolean;
-  score: number;
+    id: PlayerId;
+    displayName: string;
+    role: HunterRole;
+    currentRoomId: RoomId;
+    health: number;
+    relicIds: RelicId[];
+    hasEscaped: boolean;
+    isDefeated: boolean;
+    decoyAvailable: boolean;
+    score: number;
 }
 ```
 
@@ -1126,63 +1126,63 @@ export interface PlayerState {
 
 ```ts
 export type PlayerAction =
-  | MoveAction
-  | SearchAction
-  | StealAction
-  | EscapeAction
-  | SetTrapAction
-  | DisarmTrapAction
-  | RestAction;
+    | MoveAction
+    | SearchAction
+    | StealAction
+    | EscapeAction
+    | SetTrapAction
+    | DisarmTrapAction
+    | RestAction;
 
 export interface MoveAction {
-  type: "move";
-  playerId: PlayerId;
-  targetRoomId: RoomId;
-  decoy?: DecoyAction;
+    type: 'move';
+    playerId: PlayerId;
+    targetRoomId: RoomId;
+    decoy?: DecoyAction;
 }
 
 export interface SearchAction {
-  type: "search";
-  playerId: PlayerId;
-  target?: string;
-  decoy?: DecoyAction;
+    type: 'search';
+    playerId: PlayerId;
+    target?: string;
+    decoy?: DecoyAction;
 }
 
 export interface StealAction {
-  type: "steal";
-  playerId: PlayerId;
-  targetPlayerId: PlayerId;
-  decoy?: DecoyAction;
+    type: 'steal';
+    playerId: PlayerId;
+    targetPlayerId: PlayerId;
+    decoy?: DecoyAction;
 }
 
 export interface EscapeAction {
-  type: "escape";
-  playerId: PlayerId;
-  decoy?: DecoyAction;
+    type: 'escape';
+    playerId: PlayerId;
+    decoy?: DecoyAction;
 }
 
 export interface SetTrapAction {
-  type: "set_trap";
-  playerId: PlayerId;
-  decoy?: DecoyAction;
+    type: 'set_trap';
+    playerId: PlayerId;
+    decoy?: DecoyAction;
 }
 
 export interface DisarmTrapAction {
-  type: "disarm_trap";
-  playerId: PlayerId;
-  targetTrapId?: TrapId;
-  decoy?: DecoyAction;
+    type: 'disarm_trap';
+    playerId: PlayerId;
+    targetTrapId?: TrapId;
+    decoy?: DecoyAction;
 }
 
 export interface RestAction {
-  type: "rest";
-  playerId: PlayerId;
-  decoy?: DecoyAction;
+    type: 'rest';
+    playerId: PlayerId;
+    decoy?: DecoyAction;
 }
 
 export interface DecoyAction {
-  type: "fake_movement";
-  fakeTargetRoomId: RoomId;
+    type: 'fake_movement';
+    fakeTargetRoomId: RoomId;
 }
 ```
 
@@ -1190,28 +1190,28 @@ export interface DecoyAction {
 
 ```ts
 export type ClueCategory =
-  | "player"
-  | "relic"
-  | "trap"
-  | "monster"
-  | "collapse"
-  | "decoy";
+    | 'player'
+    | 'relic'
+    | 'trap'
+    | 'monster'
+    | 'collapse'
+    | 'decoy';
 
 export type ClueQuality =
-  | "weak"
-  | "clear"
-  | "strong";
+    | 'weak'
+    | 'clear'
+    | 'strong';
 
 export interface ClueSource {
-  id: string;
-  category: ClueCategory;
-  roomId: RoomId;
-  isFalse: boolean;
-  relatedPlayerId?: PlayerId;
-  relatedRoomId?: RoomId;
-  relatedRelicId?: RelicId;
-  quality: ClueQuality;
-  text: string;
+    id: string;
+    category: ClueCategory;
+    roomId: RoomId;
+    isFalse: boolean;
+    relatedPlayerId?: PlayerId;
+    relatedRoomId?: RoomId;
+    relatedRelicId?: RelicId;
+    quality: ClueQuality;
+    text: string;
 }
 ```
 
@@ -1219,31 +1219,31 @@ export interface ClueSource {
 
 ```ts
 export type GameEventType =
-  | "round_started"
-  | "player_observed"
-  | "action_revealed"
-  | "player_moved"
-  | "player_searched"
-  | "relic_found"
-  | "steal_succeeded"
-  | "steal_failed"
-  | "trap_triggered"
-  | "player_damaged"
-  | "player_escaped"
-  | "decoy_created"
-  | "room_unstable"
-  | "room_collapsed"
-  | "monster_warning"
-  | "monster_attack"
-  | "game_finished";
+    | 'round_started'
+    | 'player_observed'
+    | 'action_revealed'
+    | 'player_moved'
+    | 'player_searched'
+    | 'relic_found'
+    | 'steal_succeeded'
+    | 'steal_failed'
+    | 'trap_triggered'
+    | 'player_damaged'
+    | 'player_escaped'
+    | 'decoy_created'
+    | 'room_unstable'
+    | 'room_collapsed'
+    | 'monster_warning'
+    | 'monster_attack'
+    | 'game_finished';
 
 export interface GameEvent {
-  id: string;
-  round: number;
-  type: GameEventType;
-  publicText: string;
-  privateTextByPlayerId?: Record<PlayerId, string>;
-  animationCue?: AnimationCue;
+    id: string;
+    round: number;
+    type: GameEventType;
+    publicText: string;
+    privateTextByPlayerId?: Record<PlayerId, string>;
+    animationCue?: AnimationCue;
 }
 ```
 
@@ -1251,25 +1251,25 @@ export interface GameEvent {
 
 ```ts
 export type AnimationCueType =
-  | "camera_move"
-  | "search_altar"
-  | "relic_reveal"
-  | "trap_click"
-  | "damage_shake"
-  | "steal_attempt"
-  | "escape_run"
-  | "heart_relic_victory"
-  | "noise_pulse"
-  | "room_collapse";
+    | 'camera_move'
+    | 'search_altar'
+    | 'relic_reveal'
+    | 'trap_click'
+    | 'damage_shake'
+    | 'steal_attempt'
+    | 'escape_run'
+    | 'heart_relic_victory'
+    | 'noise_pulse'
+    | 'room_collapse';
 
 export interface AnimationCue {
-  type: AnimationCueType;
-  roomId?: RoomId;
-  playerId?: PlayerId;
-  targetPlayerId?: PlayerId;
-  relicId?: RelicId;
-  durationMs?: number;
-  intensity?: "low" | "medium" | "high";
+    type: AnimationCueType;
+    roomId?: RoomId;
+    playerId?: PlayerId;
+    targetPlayerId?: PlayerId;
+    relicId?: RelicId;
+    durationMs?: number;
+    intensity?: 'low' | 'medium' | 'high';
 }
 ```
 
@@ -1305,13 +1305,13 @@ Example:
 
 ```ts
 export interface ResolveTurnInput {
-  state: GameState;
-  actions: PlayerAction[];
+    state: GameState;
+    actions: PlayerAction[];
 }
 
 export interface ResolveTurnOutput {
-  state: GameState;
-  events: GameEvent[];
+    state: GameState;
+    events: GameEvent[];
 }
 ```
 
@@ -1401,9 +1401,9 @@ Example:
 
 ```ts
 export interface RoomCameraAnchor {
-  roomId: RoomId;
-  position: { x: number; y: number; z: number };
-  rotation: { x: number; y: number; z: number };
+    roomId: RoomId;
+    position: { x: number; y: number; z: number; };
+    rotation: { x: number; y: number; z: number; };
 }
 ```
 
@@ -1556,14 +1556,14 @@ Campaign mode
 
 ## 17.1 Basic Scoring
 
-| Event | Points |
-|---|---:|
-| Escape alive | +5 |
-| Common relic | +2 |
-| Rare relic | +5 |
-| Legendary relic | +8 |
-| Fail to escape | -5 |
-| Defeated | -3 |
+| Event           | Points |
+| --------------- | -----: |
+| Escape alive    |     +5 |
+| Common relic    |     +2 |
+| Rare relic      |     +5 |
+| Legendary relic |     +8 |
+| Fail to escape  |     -5 |
+| Defeated        |     -3 |
 
 ## 17.2 Winner
 

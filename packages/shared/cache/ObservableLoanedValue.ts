@@ -1,17 +1,13 @@
-import {
-    LoanedValue,
-    type LoanedValueOptions,
-    type LoanedValueRefresh,
-} from './LoanedValue.ts';
-import type { ReadableValue } from './ReadableValue.ts';
+import { LoanedValue, type LoanedValueOptions, type LoanedValueRefresh } from './LoanedValue.ts';
 import type { ValueEqualityChecker } from './ObservableLatestValue.ts';
+import type { ReadableValue } from './ReadableValue.ts';
 import {
+    ObservableValueEventType,
     type ObservableValue,
     type ObservableValueErrorHandler,
     type ObservableValueEvent,
-    ObservableValueEventType,
     type ObservableValueListener,
-    type Unsubscribe,
+    type Unsubscribe
 } from './RepositoryInterfaces.ts';
 
 export { ObservableValueEventType } from './RepositoryInterfaces.ts';
@@ -20,32 +16,30 @@ export type {
     ObservableValueErrorHandler,
     ObservableValueEvent,
     ObservableValueListener,
-    Unsubscribe,
+    Unsubscribe
 } from './RepositoryInterfaces.ts';
 
-export type ObservableLoanedValueOptions<T> = LoanedValueOptions<T> & Readonly<{
-    equals?: ValueEqualityChecker<T>;
-    onObserverError?: ObservableValueErrorHandler<T>;
-}>;
+export type ObservableLoanedValueOptions<T> =
+    & LoanedValueOptions<T>
+    & Readonly<{
+        equals?: ValueEqualityChecker<T>;
+        onObserverError?: ObservableValueErrorHandler<T>;
+    }>;
 
 const defaultEquals = <T>(left: T, right: T): boolean => Object.is(left, right);
 
-export class ObservableLoanedValue<T>
-    implements ReadableValue<T>, ObservableValue<T> {
+export class ObservableLoanedValue<T> implements ReadableValue<T>, ObservableValue<T> {
     private readonly loaned: LoanedValue<T>;
     private readonly equals: ValueEqualityChecker<T>;
     private readonly onObserverError?: ObservableValueErrorHandler<T>;
-    private readonly listenersByType = new Map<
-        ObservableValueEventType,
-        Set<ObservableValueListener<T>>
-    >();
+    private readonly listenersByType = new Map<ObservableValueEventType, Set<ObservableValueListener<T>>>();
     private readonly changeListeners = new Set<ObservableValueListener<T>>();
     private observerQueue: Promise<void> = Promise.resolve();
     private observedRefresh: Promise<T> | undefined;
 
     public constructor(
         refresher: LoanedValueRefresh<T>,
-        options: ObservableLoanedValueOptions<T> = {},
+        options: ObservableLoanedValueOptions<T> = {}
     ) {
         this.loaned = new LoanedValue<T>(refresher, options);
         this.equals = options.equals ?? defaultEquals;
@@ -93,7 +87,7 @@ export class ObservableLoanedValue<T>
             this.emit({
                 type: ObservableValueEventType.Deleted,
                 previous,
-                atEpochMs: Date.now(),
+                atEpochMs: Date.now()
             });
         }
 
@@ -110,7 +104,7 @@ export class ObservableLoanedValue<T>
             this.emit({
                 type: ObservableValueEventType.Deleted,
                 previous,
-                atEpochMs: Date.now(),
+                atEpochMs: Date.now()
             });
         }
 
@@ -139,7 +133,7 @@ export class ObservableLoanedValue<T>
             this.emit({
                 type: ObservableValueEventType.Deleted,
                 previous,
-                atEpochMs: Date.now(),
+                atEpochMs: Date.now()
             });
         }
     }
@@ -209,7 +203,7 @@ export class ObservableLoanedValue<T>
 
     private onTypeDo(
         type: ObservableValueEventType,
-        listener: ObservableValueListener<T>,
+        listener: ObservableValueListener<T>
     ): Unsubscribe {
         let listeners = this.listenersByType.get(type);
         if (!listeners) {
@@ -229,13 +223,13 @@ export class ObservableLoanedValue<T>
     private toWriteEvent(
         hadValue: boolean,
         previous: T | undefined,
-        value: T,
+        value: T
     ): ObservableValueEvent<T> {
         if (!hadValue) {
             return {
                 type: ObservableValueEventType.Created,
                 value,
-                atEpochMs: Date.now(),
+                atEpochMs: Date.now()
             };
         }
 
@@ -245,14 +239,14 @@ export class ObservableLoanedValue<T>
                 : ObservableValueEventType.Updated,
             value,
             previous,
-            atEpochMs: Date.now(),
+            atEpochMs: Date.now()
         };
     }
 
     private emit(event: ObservableValueEvent<T>): void {
         const listeners = [
             ...(this.listenersByType.get(event.type) ?? []),
-            ...this.changeListeners,
+            ...this.changeListeners
         ];
 
         if (listeners.length === 0) {
@@ -264,38 +258,40 @@ export class ObservableLoanedValue<T>
                 await Promise.all(
                     listeners.map(async (listener) => {
                         await this.notifyListener(listener, event);
-                    }),
+                    })
                 );
             },
             async () => {
                 await Promise.all(
                     listeners.map(async (listener) => {
                         await this.notifyListener(listener, event);
-                    }),
+                    })
                 );
-            },
+            }
         );
     }
 
     private async notifyListener(
         listener: ObservableValueListener<T>,
-        event: ObservableValueEvent<T>,
+        event: ObservableValueEvent<T>
     ): Promise<void> {
         try {
             await listener(event);
-        } catch (error) {
+        }
+        catch (error) {
             await this.handleObserverError(error, event);
         }
     }
 
     private async handleObserverError(
         error: unknown,
-        event: ObservableValueEvent<T>,
+        event: ObservableValueEvent<T>
     ): Promise<void> {
         if (this.onObserverError) {
             try {
                 await this.onObserverError(error, event);
-            } catch (handlerError) {
+            }
+            catch (handlerError) {
                 console.error('Error handling observable loaned value observer failure', handlerError);
             }
             return;
@@ -315,6 +311,6 @@ function toUnsubscribe(unsubscribe: () => void): Unsubscribe {
 
             active = false;
             unsubscribe();
-        },
+        }
     };
 }

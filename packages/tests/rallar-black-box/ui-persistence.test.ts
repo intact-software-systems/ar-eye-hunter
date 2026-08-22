@@ -12,7 +12,7 @@ import {
     writeRallarServerWorkbenchDraft,
     writeStoredAppMode,
     writeStoredAppTab,
-    type RallarBlackBoxUiStorage,
+    type RallarBlackBoxUiStorage
 } from '../../../apps/rallar-black-box/src/ui-persistence.ts';
 
 class MemoryStorage implements RallarBlackBoxUiStorage {
@@ -56,15 +56,15 @@ describe('rallar-black-box UI persistence', () => {
                 ...DEFAULT_MANUAL_WORKBENCH_VALUES,
                 groupId: 'draft-room',
                 rallarUsername: 'alice',
-                rallarPassword: 'manual-password',
+                rallarPassword: 'manual-password'
             },
             payloadPresetId: 'custom',
             payloadText: JSON.stringify({
                 token: 'payload-token',
                 nested: {
-                    password: 'payload-password',
-                },
-            }),
+                    password: 'payload-password'
+                }
+            })
         };
 
         const sanitized = sanitizeManualWorkbenchDraft(draft, ['payload-token']);
@@ -80,19 +80,19 @@ describe('rallar-black-box UI persistence', () => {
             values: {
                 ...DEFAULT_MANUAL_WORKBENCH_VALUES,
                 groupId: 'persisted-room',
-                rallarPassword: 'persisted-password',
+                rallarPassword: 'persisted-password'
             },
             payloadPresetId: 'custom',
-            payloadText: '{"kind":"ping"}',
+            payloadText: '{"kind":"ping"}'
         });
 
         const restored = readManualWorkbenchDraft(storage, {
             values: {
                 ...DEFAULT_MANUAL_WORKBENCH_VALUES,
-                rallarPassword: 'bootstrap-password',
+                rallarPassword: 'bootstrap-password'
             },
             payloadPresetId: 'ping',
-            payloadText: '{"kind":"default"}',
+            payloadText: '{"kind":"default"}'
         });
 
         expect(storage.getItem(UI_STORAGE_KEYS.manualDraft)).not.toContain('persisted-password');
@@ -108,20 +108,20 @@ describe('rallar-black-box UI persistence', () => {
             method: 'POST' as const,
             path: '/api/example',
             headersText: JSON.stringify({
-                authorization: 'Bearer secret-token',
+                authorization: 'Bearer secret-token'
             }),
             queryText: JSON.stringify({
-                access_token: 'query-token',
+                access_token: 'query-token'
             }),
             bodyText: JSON.stringify({
                 password: 'body-password',
                 nested: {
-                    apiKey: 'body-key',
-                },
+                    apiKey: 'body-key'
+                }
             }),
             responseBodyMode: 'json' as const,
             attachAuth: true,
-            timeoutMs: 5000,
+            timeoutMs: 5000
         };
 
         writeRallarServerWorkbenchDraft(storage, draft, ['secret-token']);
@@ -149,7 +149,7 @@ describe('rallar-black-box UI persistence', () => {
             bodyText: 'password=secret',
             responseBodyMode: 'json',
             attachAuth: true,
-            timeoutMs: 5000,
+            timeoutMs: 5000
         }, ['secret-token']);
 
         expect(sanitized.headersText).toBe('');

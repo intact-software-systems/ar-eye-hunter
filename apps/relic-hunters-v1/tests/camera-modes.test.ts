@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import type { RelicPublicSnapshot, RelicRoom } from '@relic-hunters/mod.ts';
+import { describe, expect, it } from 'vitest';
 import {
     AVATAR_CAMERA_FOLLOW_HOLD_MS,
     AVATAR_CAMERA_ZOOM_OUT_MS,
@@ -10,7 +10,7 @@ import {
     planRoomFlyoverCameraPose,
     planTacticalCameraPose,
     ROOM_FLYOVER_DURATION_MS,
-    tacticalFocusRooms,
+    tacticalFocusRooms
 } from '../src/game/scene/cameraModes.ts';
 
 const rooms: readonly RelicRoom[] = [
@@ -20,7 +20,7 @@ const rooms: readonly RelicRoom[] = [
     { id: 'trap', name: 'Trap Room', kind: 'trap', x: -4, z: 0, neighbors: ['storage', 'shrine'] },
     { id: 'shrine', name: 'Shrine', kind: 'shrine', x: 0, z: 0, neighbors: ['hallway', 'trap', 'treasure', 'exit'] },
     { id: 'treasure', name: 'Treasure', kind: 'treasure', x: 4, z: 0, neighbors: ['shrine'] },
-    { id: 'exit', name: 'Exit', kind: 'exit', x: 0, z: 3, neighbors: ['shrine'] },
+    { id: 'exit', name: 'Exit', kind: 'exit', x: 0, z: 3, neighbors: ['shrine'] }
 ];
 
 describe('camera modes', () => {
@@ -35,7 +35,7 @@ describe('camera modes', () => {
             snapshot: snapshot('planning'),
             localPlayerId: 'alice-session',
             isRoaming: false,
-            isInspecting: false,
+            isInspecting: false
         })).toBe('tactical');
     });
 
@@ -44,13 +44,13 @@ describe('camera modes', () => {
             snapshot: snapshot('planning'),
             localPlayerId: 'alice-session',
             isRoaming: true,
-            isInspecting: false,
+            isInspecting: false
         })).toBe('roam');
         expect(deriveRelicCameraMode({
             snapshot: snapshot('planning'),
             localPlayerId: 'alice-session',
             isRoaming: true,
-            isInspecting: true,
+            isInspecting: true
         })).toBe('inspection');
     });
 
@@ -59,14 +59,14 @@ describe('camera modes', () => {
             snapshot: snapshot('lobby'),
             localPlayerId: 'alice-session',
             isRoaming: false,
-            isInspecting: false,
+            isInspecting: false
         })).toBe('lobby');
         expect(deriveRelicCameraMode({
             snapshot: snapshot('finished'),
             localPlayerId: 'alice-session',
             isRoaming: false,
             isInspecting: false,
-            focusRoomId: 'treasure',
+            focusRoomId: 'treasure'
         })).toBe('event-focus');
     });
 
@@ -74,15 +74,15 @@ describe('camera modes', () => {
         const shot = snapshot('planning', {
             playerRooms: {
                 'alice-session': 'entrance',
-                'bob-session': 'exit',
-            },
+                'bob-session': 'exit'
+            }
         });
         const currentRoom = rooms[0];
         const focusRooms = tacticalFocusRooms({
             snapshot: shot,
             currentRoom,
             selectedRoomId: 'treasure',
-            objectiveTargetRoomId: 'shrine',
+            objectiveTargetRoomId: 'shrine'
         });
 
         expect(focusRooms.map((room) => room.id)).toEqual([
@@ -91,7 +91,7 @@ describe('camera modes', () => {
             'storage',
             'treasure',
             'shrine',
-            'exit',
+            'exit'
         ]);
 
         const pose = planTacticalCameraPose({
@@ -99,7 +99,7 @@ describe('camera modes', () => {
             currentRoom,
             selectedRoomId: 'treasure',
             objectiveTargetRoomId: 'shrine',
-            aspectRatio: 16 / 9,
+            aspectRatio: 16 / 9
         });
         expect(pose.position.y).toBeGreaterThan(20);
         expect(pose.position.z).toBeLessThan(pose.target.z);
@@ -110,16 +110,16 @@ describe('camera modes', () => {
         expect(avatarCameraReturnState({
             snapshotPhase: 'planning',
             lastRoamInputMs: 1_000,
-            nowMs: 1_000 + AVATAR_CAMERA_FOLLOW_HOLD_MS - 1,
+            nowMs: 1_000 + AVATAR_CAMERA_FOLLOW_HOLD_MS - 1
         })).toEqual({
             phase: 'follow',
-            progress: 0,
+            progress: 0
         });
 
         const midpoint = avatarCameraReturnState({
             snapshotPhase: 'planning',
             lastRoamInputMs: 1_000,
-            nowMs: 1_000 + AVATAR_CAMERA_FOLLOW_HOLD_MS + AVATAR_CAMERA_ZOOM_OUT_MS / 2,
+            nowMs: 1_000 + AVATAR_CAMERA_FOLLOW_HOLD_MS + AVATAR_CAMERA_ZOOM_OUT_MS / 2
         });
         expect(midpoint.phase).toBe('zoom-out');
         expect(midpoint.progress).toBeCloseTo(0.5);
@@ -127,10 +127,10 @@ describe('camera modes', () => {
         expect(avatarCameraReturnState({
             snapshotPhase: 'planning',
             lastRoamInputMs: 1_000,
-            nowMs: 1_000 + AVATAR_CAMERA_FOLLOW_HOLD_MS + AVATAR_CAMERA_ZOOM_OUT_MS + 1,
+            nowMs: 1_000 + AVATAR_CAMERA_FOLLOW_HOLD_MS + AVATAR_CAMERA_ZOOM_OUT_MS + 1
         })).toEqual({
             phase: 'inactive',
-            progress: 1,
+            progress: 1
         });
     });
 
@@ -139,14 +139,14 @@ describe('camera modes', () => {
             {
                 position: new Vector3(0, 2, 0),
                 target: new Vector3(0, 1, 0),
-                fov: 0.94,
+                fov: 0.94
             },
             {
                 position: new Vector3(10, 22, -20),
                 target: new Vector3(4, 1, -6),
-                fov: 0.72,
+                fov: 0.72
             },
-            0.25,
+            0.25
         );
 
         expect(pose.position.x).toBeCloseTo(2.5);
@@ -161,22 +161,22 @@ describe('camera modes', () => {
         const returnPose = {
             position: new Vector3(2, 6, -8),
             target: new Vector3(1, 1, -3),
-            fov: 0.9,
+            fov: 0.9
         };
         const start = planRoomFlyoverCameraPose({
             rooms,
             progress: 0,
-            returnPose,
+            returnPose
         });
         const middle = planRoomFlyoverCameraPose({
             rooms,
             progress: 0.5,
-            returnPose,
+            returnPose
         });
         const end = planRoomFlyoverCameraPose({
             rooms,
             progress: 1,
-            returnPose,
+            returnPose
         });
 
         expect(start.target.z).toBeLessThan(middle.target.z);
@@ -191,7 +191,7 @@ describe('camera modes', () => {
 
 function snapshot(
     phase: RelicPublicSnapshot['phase'],
-    options: Readonly<{ playerRooms?: Readonly<Record<string, string>> }> = {},
+    options: Readonly<{ playerRooms?: Readonly<Record<string, string>>; }> = {}
 ): RelicPublicSnapshot {
     return {
         protocolVersion: 1,
@@ -215,7 +215,7 @@ function snapshot(
                 escaped: false,
                 defeated: false,
                 score: 0,
-                relicIds: [],
+                relicIds: []
             },
             {
                 playerId: 'bob-session',
@@ -226,11 +226,11 @@ function snapshot(
                 escaped: false,
                 defeated: false,
                 score: 0,
-                relicIds: [],
-            },
+                relicIds: []
+            }
         ],
         submittedPlayerIds: [],
         events: [],
-        winnerIds: [],
+        winnerIds: []
     };
 }

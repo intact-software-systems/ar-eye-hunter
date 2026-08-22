@@ -1,18 +1,18 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
-import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import type {
     AppDataConditionalDeleteResult,
     AppDataConditionalInsertResult,
     AppDataConditionalRepositoryLike,
     AppDataConditionalWriteResult,
-    AppDataEntryPageOptions,
     AppDataEntry,
-    AppDataUpsertInput,
+    AppDataEntryPageOptions,
     AppDataUpsertIfRevisionInput,
+    AppDataUpsertInput
 } from '@shared-server/app-data/AppDataRepository.ts';
-import { createRallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
 import { RallarServerDataFacade } from '@shared-server/rallar-facade/RallarServer.ts';
+import { createRallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
+import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
+import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 type Todo = Readonly<{
     title: string;
@@ -28,7 +28,7 @@ describe('Rallar server app data stores', () => {
         const facade = new RallarServerDataFacade(new RepositoryManager());
 
         await expect(facade.open<Todo>('todos')).rejects.toThrow(
-            'Rallar server app data repository is not configured.',
+            'Rallar server app data repository is not configured.'
         );
     });
 
@@ -40,25 +40,25 @@ describe('Rallar server app data stores', () => {
 
         await todos.set('1', {
             title: 'Implement server data stores',
-            done: false,
+            done: false
         });
 
         expect(todos.read('1')).toEqual({
             title: 'Implement server data stores',
-            done: false,
+            done: false
         });
         expect(await todos.get('1')).toEqual({
             title: 'Implement server data stores',
-            done: false,
+            done: false
         });
         expect(await todos.getEntries()).toEqual([
             ['1', {
                 title: 'Implement server data stores',
-                done: false,
-            }],
+                done: false
+            }]
         ]);
         expect(facade.lookupStore<Todo>('todos')?.repositoryId).toBe(
-            todos.repositoryId,
+            todos.repositoryId
         );
         expect(manager.has(todos.repositoryId)).toBe(true);
     });
@@ -66,26 +66,26 @@ describe('Rallar server app data stores', () => {
     it('reuses opened stores and keeps key prefixes isolated', async () => {
         const facade = new RallarServerDataFacade(
             new RepositoryManager(),
-            new FakeAppDataRepository(),
+            new FakeAppDataRepository()
         );
         const todos = await facade.open<Todo>('todos', {
-            schemaVersion: 1,
+            schemaVersion: 1
         });
 
         expect(
-            (await facade.open<Todo>('todos', { schemaVersion: 1 })).repositoryId,
+            (await facade.open<Todo>('todos', { schemaVersion: 1 })).repositoryId
         ).toBe(todos.repositoryId);
         await expect(
             facade.open<Todo>('todos', {
-                schemaVersion: 2,
-            }),
+                schemaVersion: 2
+            })
         ).rejects.toThrow(
-            'Rallar server app data store already opened with different options',
+            'Rallar server app data store already opened with different options'
         );
 
         const archived = await facade.open<Todo>('todos', {
             keyPrefix: 'archived:',
-            schemaVersion: 1,
+            schemaVersion: 1
         });
 
         expect(archived.repositoryId).not.toBe(todos.repositoryId);
@@ -98,15 +98,15 @@ describe('Rallar server app data stores', () => {
         const repository = new FakeAppDataRepository();
         const facade = new RallarServerDataFacade(
             new RepositoryManager(),
-            repository,
+            repository
         );
         const todos = await facade.open<Todo>('todos', {
-            ttlMs: 1_000,
+            ttlMs: 1_000
         });
 
         await todos.set('1', {
             title: 'Temporary',
-            done: false,
+            done: false
         });
         vi.setSystemTime(new Date('2026-01-01T00:00:01.001Z'));
 
@@ -125,16 +125,16 @@ describe('Rallar server app data stores', () => {
             storeName: 'todos',
             key: 'legacy',
             value: {
-                text: 'Migrated todo',
+                text: 'Migrated todo'
             },
             schemaVersion: 1,
             expireAtTimestamp: Date.now() + 60_000,
             updatedTimestamp: new Date().toISOString(),
-            revision: 0,
+            revision: 0
         });
         const facade = new RallarServerDataFacade(
             new RepositoryManager(),
-            repository,
+            repository
         );
         const todos = await facade.open<Todo>('todos', {
             schemaVersion: 2,
@@ -142,26 +142,26 @@ describe('Rallar server app data stores', () => {
                 expect(context).toMatchObject({
                     key: 'legacy',
                     fromVersion: 1,
-                    toVersion: 2,
+                    toVersion: 2
                 });
                 return {
-                    title: (value as { text: string }).text,
-                    done: false,
+                    title: (value as { text: string; }).text,
+                    done: false
                 };
-            },
+            }
         });
 
         expect(await todos.get('legacy')).toEqual({
             title: 'Migrated todo',
-            done: false,
+            done: false
         });
         expect(await repository.findEntry('app', 'todos', 'legacy')).toMatchObject({
             value: {
                 title: 'Migrated todo',
-                done: false,
+                done: false
             },
             schemaVersion: 2,
-            revision: 1,
+            revision: 1
         });
     });
 
@@ -171,30 +171,27 @@ describe('Rallar server app data stores', () => {
             wsQBoxServerService: {
                 name: 'server-1',
                 onAnyInboxMessageDo: vi.fn().mockReturnThis(),
-                removeAnyInboxMessageCallback: vi.fn(),
-            } as unknown as WsQueueBoxServerService,
+                removeAnyInboxMessageCallback: vi.fn()
+            } as unknown as WsQueueBoxServerService
         };
-        const server = createRallarServerApplication<
-            typeof runtime,
-            Record<string, never>
-        >({
+        const server = createRallarServerApplication<typeof runtime, Record<string, never>>({
             runtime,
             appData: {
-                repository,
-            },
+                repository
+            }
         });
         const todos = await server.data.open<Todo>('todos');
 
         await todos.set('1', {
             title: 'From application facade',
-            done: true,
+            done: true
         });
 
         expect(await repository.findEntry('app', 'todos', '1')).toMatchObject({
             value: {
                 title: 'From application facade',
-                done: true,
-            },
+                done: true
+            }
         });
     });
 
@@ -202,34 +199,34 @@ describe('Rallar server app data stores', () => {
         const repository = new FakeAppDataRepository();
         const left = await new RallarServerDataFacade(
             new RepositoryManager(),
-            repository,
+            repository
         ).open<Todo>('todos');
         const right = await new RallarServerDataFacade(
             new RepositoryManager(),
-            repository,
+            repository
         ).open<Todo>('todos');
 
         await left.set('1', {
             title: 'Initial',
-            done: false,
+            done: false
         });
         expect(await right.get('1')).toEqual({
             title: 'Initial',
-            done: false,
+            done: false
         });
 
         await left.set('1', {
             title: 'Updated elsewhere',
-            done: true,
+            done: true
         });
 
         expect(right.read('1')).toEqual({
             title: 'Initial',
-            done: false,
+            done: false
         });
         expect(await right.get('1')).toEqual({
             title: 'Updated elsewhere',
-            done: true,
+            done: true
         });
     });
 
@@ -237,31 +234,31 @@ describe('Rallar server app data stores', () => {
         const repository = new FakeAppDataRepository();
         const left = await new RallarServerDataFacade(
             new RepositoryManager(),
-            repository,
+            repository
         ).open<Todo>('todos');
         const right = await new RallarServerDataFacade(
             new RepositoryManager(),
-            repository,
+            repository
         ).open<Todo>('todos', {
-            readConsistency: 'cache-first',
+            readConsistency: 'cache-first'
         });
 
         await left.set('1', {
             title: 'Initial',
-            done: false,
+            done: false
         });
         expect(await right.get('1')).toEqual({
             title: 'Initial',
-            done: false,
+            done: false
         });
         await left.set('1', {
             title: 'Updated elsewhere',
-            done: true,
+            done: true
         });
 
         expect(await right.get('1')).toEqual({
             title: 'Initial',
-            done: false,
+            done: false
         });
     });
 
@@ -269,30 +266,30 @@ describe('Rallar server app data stores', () => {
         const repository = new FakeAppDataRepository();
         const left = await new RallarServerDataFacade(
             new RepositoryManager(),
-            repository,
+            repository
         ).open<Todo>('todos');
         const right = await new RallarServerDataFacade(
             new RepositoryManager(),
-            repository,
+            repository
         ).open<Todo>('todos');
 
         await left.set('1', {
             title: 'Initial',
-            done: false,
+            done: false
         });
         const expected = await left.get('1');
         await right.set('1', {
             title: 'Updated elsewhere',
-            done: true,
+            done: true
         });
 
         await expect(left.compareAndSet('1', expected, {
             title: 'Stale update',
-            done: true,
+            done: true
         })).resolves.toBe(false);
         expect(await left.get('1')).toEqual({
             title: 'Updated elsewhere',
-            done: true,
+            done: true
         });
     });
 
@@ -300,22 +297,22 @@ describe('Rallar server app data stores', () => {
         const repository = new FakeAppDataRepository();
         const left = await new RallarServerDataFacade(
             new RepositoryManager(),
-            repository,
+            repository
         ).open<Todo>('todos');
         const right = await new RallarServerDataFacade(
             new RepositoryManager(),
-            repository,
+            repository
         ).open<Todo>('todos');
 
         const [leftValue, rightValue] = await Promise.all([
             left.setIfAbsent('1', () => ({
                 title: 'Left',
-                done: false,
+                done: false
             })),
             right.setIfAbsent('1', () => ({
                 title: 'Right',
-                done: false,
-            })),
+                done: false
+            }))
         ]);
 
         expect(leftValue).toEqual(rightValue);
@@ -331,20 +328,20 @@ describe('Rallar server app data stores', () => {
                 key: `bulk:${String(index).padStart(4, '0')}`,
                 value: {
                     title: `Todo ${index}`,
-                    done: false,
+                    done: false
                 },
                 schemaVersion: 1,
                 expireAtTimestamp: Date.now() + 60_000,
                 updatedTimestamp: new Date().toISOString(),
-                revision: 0,
+                revision: 0
             });
         }
 
         const todos = await new RallarServerDataFacade(
             new RepositoryManager(),
-            repository,
+            repository
         ).open<Todo>('todos', {
-            keyPrefix: 'bulk:',
+            keyPrefix: 'bulk:'
         });
 
         await todos.hydrate();
@@ -359,8 +356,8 @@ describe('Rallar server app data stores', () => {
         const repository = new FakeAppDataRepository();
         const counters = await new RallarServerDataFacade(
             new RepositoryManager(),
-            repository,
-        ).open<{ count: number }>('counters');
+            repository
+        ).open<{ count: number; }>('counters');
 
         await counters.set('count', { count: 0 });
         repository.conflictNextUpsertWith({
@@ -369,13 +366,13 @@ describe('Rallar server app data stores', () => {
             key: 'count',
             value: { count: 1 },
             schemaVersion: 1,
-            expireAtTimestamp: Date.now() + 60_000,
+            expireAtTimestamp: Date.now() + 60_000
         });
 
         await expect(
             counters.updateOrCreate('count', (current) => ({
-                count: (current?.count ?? 0) + 1,
-            })),
+                count: (current?.count ?? 0) + 1
+            }))
         ).resolves.toEqual({ count: 2 });
         expect(await counters.get('count')).toEqual({ count: 2 });
     });
@@ -391,7 +388,7 @@ class FakeAppDataRepository implements AppDataConditionalRepositoryLike {
     seed(entry: AppDataEntry): void {
         this.data.set(
             this.toCompositeKey(entry.namespace, entry.storeName, entry.key),
-            entry,
+            entry
         );
     }
 
@@ -402,7 +399,7 @@ class FakeAppDataRepository implements AppDataConditionalRepositoryLike {
     async findEntry(
         namespace: string,
         storeName: string,
-        key: string,
+        key: string
     ): Promise<AppDataEntry | undefined> {
         return this.data.get(this.toCompositeKey(namespace, storeName, key));
     }
@@ -410,7 +407,7 @@ class FakeAppDataRepository implements AppDataConditionalRepositoryLike {
     async findEntries(
         namespace: string,
         storeName: string,
-        keyPrefix?: string,
+        keyPrefix?: string
     ): Promise<readonly AppDataEntry[]> {
         this.findEntriesCalls += 1;
         return this.listEntries(namespace, storeName, keyPrefix);
@@ -419,17 +416,15 @@ class FakeAppDataRepository implements AppDataConditionalRepositoryLike {
     async findEntriesPage(
         namespace: string,
         storeName: string,
-        options: AppDataEntryPageOptions,
+        options: AppDataEntryPageOptions
     ): Promise<readonly AppDataEntry[]> {
         this.findEntriesPageCalls += 1;
         const rows = this.listEntries(namespace, storeName, options.keyPrefix)
-            .filter((entry) =>
-                options.afterKey === undefined || entry.key > options.afterKey
-            )
+            .filter((entry) => options.afterKey === undefined || entry.key > options.afterKey)
             .slice(0, Math.max(1, Math.floor(options.limit)));
         this.maxRowsReturnedPerFindEntriesPage = Math.max(
             this.maxRowsReturnedPerFindEntriesPage,
-            rows.length,
+            rows.length
         );
         return rows;
     }
@@ -437,7 +432,7 @@ class FakeAppDataRepository implements AppDataConditionalRepositoryLike {
     private listEntries(
         namespace: string,
         storeName: string,
-        keyPrefix?: string,
+        keyPrefix?: string
     ): readonly AppDataEntry[] {
         return [...this.data.values()]
             .filter((entry) =>
@@ -453,30 +448,30 @@ class FakeAppDataRepository implements AppDataConditionalRepositoryLike {
     }
 
     async insertIfAbsent<V = unknown>(
-        input: AppDataUpsertInput<V>,
+        input: AppDataUpsertInput<V>
     ): Promise<AppDataConditionalInsertResult<V>> {
         const compositeKey = this.toCompositeKey(
             input.namespace,
             input.storeName,
-            input.key,
+            input.key
         );
         const current = this.data.get(compositeKey);
         if (current) {
             return {
                 status: 'exists',
-                current: current as AppDataEntry<V>,
+                current: current as AppDataEntry<V>
             };
         }
 
         const entry = this.writeInput(input, 0);
         return {
             status: 'inserted',
-            entry: entry as AppDataEntry<V>,
+            entry: entry as AppDataEntry<V>
         };
     }
 
     async upsertIfRevision<V = unknown>(
-        input: AppDataUpsertIfRevisionInput<V>,
+        input: AppDataUpsertIfRevisionInput<V>
     ): Promise<AppDataConditionalWriteResult<V>> {
         if (this.nextUpsertConflict) {
             const conflictInput = this.nextUpsertConflict;
@@ -484,34 +479,34 @@ class FakeAppDataRepository implements AppDataConditionalRepositoryLike {
             const current = this.writeInput(conflictInput);
             return {
                 status: 'conflict',
-                current: current as AppDataEntry<V>,
+                current: current as AppDataEntry<V>
             };
         }
 
         const compositeKey = this.toCompositeKey(
             input.namespace,
             input.storeName,
-            input.key,
+            input.key
         );
         const current = this.data.get(compositeKey);
         if (!current || current.revision !== input.expectedRevision) {
             return {
                 status: 'conflict',
-                current: current as AppDataEntry<V> | undefined,
+                current: current as AppDataEntry<V> | undefined
             };
         }
 
         const entry = this.writeInput(input, current.revision + 1);
         return {
             status: 'written',
-            entry: entry as AppDataEntry<V>,
+            entry: entry as AppDataEntry<V>
         };
     }
 
     async deleteByKey(
         namespace: string,
         storeName: string,
-        key: string,
+        key: string
     ): Promise<boolean> {
         return this.data.delete(this.toCompositeKey(namespace, storeName, key));
     }
@@ -520,21 +515,21 @@ class FakeAppDataRepository implements AppDataConditionalRepositoryLike {
         namespace: string,
         storeName: string,
         key: string,
-        expectedRevision: number,
+        expectedRevision: number
     ): Promise<AppDataConditionalDeleteResult> {
         const compositeKey = this.toCompositeKey(namespace, storeName, key);
         const current = this.data.get(compositeKey);
         if (!current || current.revision !== expectedRevision) {
             return {
                 status: 'conflict',
-                current,
+                current
             };
         }
 
         this.data.delete(compositeKey);
         return {
             status: 'deleted',
-            entry: current,
+            entry: current
         };
     }
 
@@ -562,7 +557,7 @@ class FakeAppDataRepository implements AppDataConditionalRepositoryLike {
         const compositeKey = this.toCompositeKey(
             input.namespace,
             input.storeName,
-            input.key,
+            input.key
         );
         const current = this.data.get(compositeKey);
         const entry = {
@@ -573,7 +568,7 @@ class FakeAppDataRepository implements AppDataConditionalRepositoryLike {
             schemaVersion: input.schemaVersion,
             expireAtTimestamp: input.expireAtTimestamp,
             updatedTimestamp: new Date().toISOString(),
-            revision: revision ?? (current ? current.revision + 1 : 0),
+            revision: revision ?? (current ? current.revision + 1 : 0)
         };
         this.data.set(compositeKey, entry);
         return entry;

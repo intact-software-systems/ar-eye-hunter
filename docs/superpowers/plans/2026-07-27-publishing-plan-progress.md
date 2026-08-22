@@ -55,11 +55,11 @@ the new skill, `AGENTS.md`, and plugin metadata and requires:
 ```ts
 expectAll(agents, ['publishing-plan-progress', 'long-running']);
 expectAll(progressSkill, [
-  '`codex/<topic>`',
-  'draft pull request',
-  'completed plan milestone',
-  'without waiting for human review',
-  'Explicit user instructions',
+    '`codex/<topic>`',
+    'draft pull request',
+    'completed plan milestone',
+    'without waiting for human review',
+    'Explicit user instructions'
 ]);
 expect(plugin.interface?.longDescription).toContain('observable plan progress');
 ```

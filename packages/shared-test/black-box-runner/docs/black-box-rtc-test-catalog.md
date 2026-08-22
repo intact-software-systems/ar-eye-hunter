@@ -15,15 +15,15 @@ Provider-specific behavior is selected with `request.provider` or a connection c
 
 ## Provider Summary
 
-| Provider | Main test purpose | Real network/browser? |
-| --- | --- | --- |
-| `rallar-stub` | Fast parser, report, and wait/matching smoke tests. | No |
-| `rallar-memory` | Deterministic multi-peer routing tests without network cost. | No |
-| `rallar-signaling` | Explicit WebSocket signaling-only Rallar provider. | WebSocket signaling only |
-| `rallar` | Legacy alias for `rallar-signaling`. | WebSocket signaling only |
-| `rallar-browser` | Browser-backed Rallar RTC tests through Playwright and the browser `rallar` facade. | Yes |
-| `rallar-remote-browser` | Control-server-backed provider that drives a visible or remote browser agent. | Yes |
-| Custom `RtcProvider` | Unit/integration tests with injected clients or runtimes. | Depends on injection |
+| Provider                | Main test purpose                                                                   | Real network/browser?    |
+| ----------------------- | ----------------------------------------------------------------------------------- | ------------------------ |
+| `rallar-stub`           | Fast parser, report, and wait/matching smoke tests.                                 | No                       |
+| `rallar-memory`         | Deterministic multi-peer routing tests without network cost.                        | No                       |
+| `rallar-signaling`      | Explicit WebSocket signaling-only Rallar provider.                                  | WebSocket signaling only |
+| `rallar`                | Legacy alias for `rallar-signaling`.                                                | WebSocket signaling only |
+| `rallar-browser`        | Browser-backed Rallar RTC tests through Playwright and the browser `rallar` facade. | Yes                      |
+| `rallar-remote-browser` | Control-server-backed provider that drives a visible or remote browser agent.       | Yes                      |
+| Custom `RtcProvider`    | Unit/integration tests with injected clients or runtimes.                           | Depends on injection     |
 
 Important boundary: `rallar-signaling` and the legacy `rallar` alias are not
 real WebRTC data paths. Use `rallar-browser` or `rallar-remote-browser` for real
@@ -74,10 +74,10 @@ Supported checks:
 
 Recommended providers:
 
-| Provider | Good for |
-| --- | --- |
-| `rallar-stub` | Basic lifecycle report shape. |
-| `rallar-memory` | Duplicate connect, reconnect, deterministic close diagnostics. |
+| Provider         | Good for                                                                                        |
+| ---------------- | ----------------------------------------------------------------------------------------------- |
+| `rallar-stub`    | Basic lifecycle report shape.                                                                   |
+| `rallar-memory`  | Duplicate connect, reconnect, deterministic close diagnostics.                                  |
 | `rallar-browser` | Browser context/page cleanup, auto-close, setup failure cleanup, unexpected page close cleanup. |
 
 Example close expectation:
@@ -184,28 +184,28 @@ Use these tests to verify how messages select their receiving peers/connections.
 
 Runner-level target fields:
 
-| Field | Meaning |
-| --- | --- |
-| `expect.connection` | Expected receiving RTC connection. |
-| `expect.onConnection` | Alias-style expected receiving connection. |
-| `request.expectConnection` | Request-side target hint. |
-| `request.deliverTo` | Explicit delivery target for stub/provider routing. |
-| `request.to` | Explicit delivery target for stub/provider routing. |
-| `request.toConnection` | Browser provider target hint. |
+| Field                      | Meaning                                             |
+| -------------------------- | --------------------------------------------------- |
+| `expect.connection`        | Expected receiving RTC connection.                  |
+| `expect.onConnection`      | Alias-style expected receiving connection.          |
+| `request.expectConnection` | Request-side target hint.                           |
+| `request.deliverTo`        | Explicit delivery target for stub/provider routing. |
+| `request.to`               | Explicit delivery target for stub/provider routing. |
+| `request.toConnection`     | Browser provider target hint.                       |
 
 `rallar-memory` target fields:
 
-| Field | Meaning |
-| --- | --- |
-| `send.toPeerId` | Direct peer target. |
-| `send.targetPeerId` | Direct peer target. |
-| `send.to` | Direct peer target. |
-| `send.payload.toPeerId` | Direct peer target in payload. |
-| `send.payload.targetPeerId` | Direct peer target in payload. |
-| `send.payload.to` | Direct peer target in payload. |
-| connection `remotePeerId` | Fallback direct peer target. |
-| `send.broadcast: true` | Broadcast to connected peers in the same group. |
-| `send.payload.broadcast: true` | Payload-level broadcast flag. |
+| Field                          | Meaning                                         |
+| ------------------------------ | ----------------------------------------------- |
+| `send.toPeerId`                | Direct peer target.                             |
+| `send.targetPeerId`            | Direct peer target.                             |
+| `send.to`                      | Direct peer target.                             |
+| `send.payload.toPeerId`        | Direct peer target in payload.                  |
+| `send.payload.targetPeerId`    | Direct peer target in payload.                  |
+| `send.payload.to`              | Direct peer target in payload.                  |
+| connection `remotePeerId`      | Fallback direct peer target.                    |
+| `send.broadcast: true`         | Broadcast to connected peers in the same group. |
+| `send.payload.broadcast: true` | Payload-level broadcast flag.                   |
 
 Target precedence in `rallar-memory`: payload/request target fields are preferred before `remotePeerId`.
 
@@ -217,9 +217,9 @@ groupId || overlayId || roomId
 
 Browser provider target resolution:
 
-| Transport | `expect.connection` becomes |
-| --- | --- |
-| `realtime` | `peerIds` containing the target browser Rallar `sessionId`. |
+| Transport      | `expect.connection` becomes                                        |
+| -------------- | ------------------------------------------------------------------ |
+| `realtime`     | `peerIds` containing the target browser Rallar `sessionId`.        |
 | `messages.rtc` | `nextHopPeerIds` containing the target browser Rallar `sessionId`. |
 
 ## 6. Broadcast Tests
@@ -386,9 +386,9 @@ Use these tests for deployed-service or browser-level RTC behavior.
 
 Supported transports:
 
-| Transport | Rallar API |
-| --- | --- |
-| `realtime` | `rallar.realtime.onJson` and `rallar.realtime.sendJson` |
+| Transport      | Rallar API                                                     |
+| -------------- | -------------------------------------------------------------- |
+| `realtime`     | `rallar.realtime.onJson` and `rallar.realtime.sendJson`        |
 | `messages.rtc` | `rallar.messages.rtc.onMessage` and `rallar.messages.rtc.send` |
 
 Supported checks:
@@ -409,11 +409,11 @@ Supported checks:
 
 Provider-mode examples:
 
-| Example | Purpose |
-| --- | --- |
-| `examples/rtc-rallar-browser-connect.json` | Connect and close two browser-backed RTC connections. |
-| `examples/rtc-rallar-browser-realtime.json` | Two-browser realtime send/wait. |
-| `examples/rtc-rallar-browser-messages-rtc.json` | Two-browser `messages.rtc` send/wait. |
+| Example                                         | Purpose                                               |
+| ----------------------------------------------- | ----------------------------------------------------- |
+| `examples/rtc-rallar-browser-connect.json`      | Connect and close two browser-backed RTC connections. |
+| `examples/rtc-rallar-browser-realtime.json`     | Two-browser realtime send/wait.                       |
+| `examples/rtc-rallar-browser-messages-rtc.json` | Two-browser `messages.rtc` send/wait.                 |
 
 Validation wrapper:
 
@@ -447,18 +447,18 @@ Supported checks:
 
 ## Provider Choice
 
-| Goal | Provider |
-| --- | --- |
-| Validate RTC scenario parsing/report shape quickly | `rallar-stub` |
-| Test deterministic direct routing | `rallar-memory` |
-| Test deterministic broadcast routing | `rallar-memory` |
-| Test reconnect/duplicate connect behavior | `rallar-memory` |
-| Test generic provider contract with an injected client | `createRtcProviderFromClientFactory` |
-| Test data-channel-like encode/decode/open behavior | `createRallarRtcProviderFromDataChannelFactory` |
-| Test current Rallar signaling WebSocket behavior | `rallar-signaling` or legacy alias `rallar` |
-| Test real browser Rallar realtime delivery | `rallar-browser` with `transport: "realtime"` |
-| Test real browser Rallar app-level RTC delivery | `rallar-browser` with `transport: "messages.rtc"` |
-| Test deployed-service readiness in CI | `rallar-browser-live-validation.mts` |
+| Goal                                                   | Provider                                          |
+| ------------------------------------------------------ | ------------------------------------------------- |
+| Validate RTC scenario parsing/report shape quickly     | `rallar-stub`                                     |
+| Test deterministic direct routing                      | `rallar-memory`                                   |
+| Test deterministic broadcast routing                   | `rallar-memory`                                   |
+| Test reconnect/duplicate connect behavior              | `rallar-memory`                                   |
+| Test generic provider contract with an injected client | `createRtcProviderFromClientFactory`              |
+| Test data-channel-like encode/decode/open behavior     | `createRallarRtcProviderFromDataChannelFactory`   |
+| Test current Rallar signaling WebSocket behavior       | `rallar-signaling` or legacy alias `rallar`       |
+| Test real browser Rallar realtime delivery             | `rallar-browser` with `transport: "realtime"`     |
+| Test real browser Rallar app-level RTC delivery        | `rallar-browser` with `transport: "messages.rtc"` |
+| Test deployed-service readiness in CI                  | `rallar-browser-live-validation.mts`              |
 
 ## Current Gaps
 

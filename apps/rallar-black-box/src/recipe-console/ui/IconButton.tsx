@@ -2,13 +2,15 @@ import { forwardRef, type ButtonHTMLAttributes } from 'react';
 import { Icon, type IconName } from './Icon.tsx';
 import styles from './primitives.module.css';
 
-export type IconButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> & Readonly<{
-    icon: IconName;
-    'aria-label': string;
-    title?: string;
-}>;
+export type IconButtonProps =
+    & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'>
+    & Readonly<{
+        icon: IconName;
+        'aria-label': string;
+        title?: string;
+    }>;
 
-export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton({
+export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton ({
     icon,
     'aria-label': ariaLabel,
     title,

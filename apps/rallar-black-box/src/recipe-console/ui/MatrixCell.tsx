@@ -1,12 +1,14 @@
 import type { ButtonHTMLAttributes } from 'react';
-import { StatusMark, type OperationalStatus } from './StatusMark.tsx';
 import styles from './primitives.module.css';
+import { StatusMark, type OperationalStatus } from './StatusMark.tsx';
 
-export type MatrixCellProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> & Readonly<{
-    label: string;
-    selected?: boolean;
-    status: OperationalStatus;
-}>;
+export type MatrixCellProps =
+    & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'>
+    & Readonly<{
+        label: string;
+        selected?: boolean;
+        status: OperationalStatus;
+    }>;
 
 export function MatrixCell({ label, selected = false, status, type = 'button', ...props }: MatrixCellProps) {
     return (

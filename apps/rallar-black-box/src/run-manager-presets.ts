@@ -10,24 +10,24 @@ export const RUN_MANAGER_COMMAND_PRESETS: readonly {
         label: 'Health',
         command: {
             kind: 'health',
-            label: 'Run manager health probe',
-        },
+            label: 'Run manager health probe'
+        }
     },
     {
         presetId: 'stats',
         label: 'Stats',
         command: {
             kind: 'stats',
-            label: 'Run manager stats snapshot',
-        },
+            label: 'Run manager stats snapshot'
+        }
     },
     {
         presetId: 'reset',
         label: 'Browser Reset',
         command: {
             kind: 'reset',
-            label: 'Run manager browser reset',
-        },
+            label: 'Run manager browser reset'
+        }
     },
     {
         presetId: 'crdt-open-local',
@@ -43,21 +43,21 @@ export const RUN_MANAGER_COMMAND_PRESETS: readonly {
             documentType: 'checklist',
             documentId: 'rallar-black-box-room',
             scope: {
-                kind: 'room',
+                kind: 'room'
             },
             roomRef: {
                 applicationId: 'rallar-server',
                 workspaceId: 'default',
-                groupId: 'rallar-black-box-room',
+                groupId: 'rallar-black-box-room'
             },
             transport: 'local-only',
             persist: true,
             tabSync: true,
             initialValue: {
-                items: [],
+                items: []
             },
-            timeoutMs: 5_000,
-        },
+            timeoutMs: 5_000
+        }
     },
     {
         presetId: 'crdt-wait-clean',
@@ -75,16 +75,16 @@ export const RUN_MANAGER_COMMAND_PRESETS: readonly {
                     source: 'health',
                     path: 'pendingUpdateCount',
                     operator: 'equals',
-                    expected: 0,
+                    expected: 0
                 },
                 {
                     source: 'health',
                     path: 'dependencyBlockedUpdateCount',
                     operator: 'equals',
-                    expected: 0,
-                },
-            ],
-        },
+                    expected: 0
+                }
+            ]
+        }
     },
     {
         presetId: 'crdt-health',
@@ -94,7 +94,7 @@ export const RUN_MANAGER_COMMAND_PRESETS: readonly {
             commandId: 'crdt-health',
             label: 'Read CRDT health',
             handle: 'checklist',
-            timeoutMs: 5_000,
-        },
-    },
+            timeoutMs: 5_000
+        }
+    }
 ];

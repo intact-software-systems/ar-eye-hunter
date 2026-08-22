@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
 import { LatestRepository } from '@shared/cache/LatestRepository.ts';
 import { LatestValue } from '@shared/cache/LatestValue.ts';
+import { describe, expect, it, vi } from 'vitest';
 
 interface Decision {
     readonly claimed: boolean;
@@ -17,7 +17,7 @@ describe('LatestRepository expiry surface', () => {
             key: 'work-1',
             value: { claimed: true },
             nowEpochMs: 1_000,
-            expireAtEpochMs: 60_000,
+            expireAtEpochMs: 60_000
         });
 
         expect(repository.readAt('work-1', 1_000)).toEqual({ claimed: true });
@@ -34,13 +34,13 @@ describe('LatestRepository expiry surface', () => {
             key: 'short',
             value: { claimed: true },
             nowEpochMs: 0,
-            expireAtEpochMs: 100,
+            expireAtEpochMs: 100
         });
         repository.acceptAt({
             key: 'long',
             value: { claimed: false },
             nowEpochMs: 0,
-            expireAtEpochMs: 10_000,
+            expireAtEpochMs: 10_000
         });
 
         expect(repository.readAt('short', 99)).toEqual({ claimed: true });
@@ -58,7 +58,7 @@ describe('LatestRepository expiry surface', () => {
             key: 'work-1',
             value: { claimed: true },
             nowEpochMs: 0,
-            expireAtEpochMs: 100,
+            expireAtEpochMs: 100
         });
         expect(repository.size()).toBe(1);
 
@@ -74,13 +74,13 @@ describe('LatestRepository expiry surface', () => {
             key: 'work-1',
             nowEpochMs: 0,
             expireAtEpochMs: 100,
-            create,
+            create
         });
         const second = repository.readOrAcceptAt({
             key: 'work-1',
             nowEpochMs: 50,
             expireAtEpochMs: 100,
-            create,
+            create
         });
 
         expect(first).toEqual({ claimed: true });
@@ -94,7 +94,7 @@ describe('LatestRepository expiry surface', () => {
     it('evicts from the write path on a rate-limited budget', () => {
         const repository = new LatestRepository<string, Decision>({
             evictWindowMs: 20_000,
-            evictsPerWindow: 1,
+            evictsPerWindow: 1
         });
 
         for (const [index, nowEpochMs] of [[1, 0], [2, 10], [3, 20]] as const) {
@@ -102,7 +102,7 @@ describe('LatestRepository expiry surface', () => {
                 key: `work-${index}`,
                 value: { claimed: true },
                 nowEpochMs,
-                expireAtEpochMs: 100,
+                expireAtEpochMs: 100
             });
         }
 
@@ -116,7 +116,7 @@ describe('LatestRepository expiry surface', () => {
             key: 'work-4',
             value: { claimed: true },
             nowEpochMs: 30_000,
-            expireAtEpochMs: 60_000,
+            expireAtEpochMs: 60_000
         });
 
         expect(repository.readEvictionCounts()).toEqual({ retained: 1, evictionRuns: 2 });
@@ -129,13 +129,13 @@ describe('LatestRepository expiry surface', () => {
             key: 'a',
             value: { claimed: true },
             nowEpochMs: 0,
-            expireAtEpochMs: 100,
+            expireAtEpochMs: 100
         });
         repository.acceptAt({
             key: 'b',
             value: { claimed: true },
             nowEpochMs: 500,
-            expireAtEpochMs: 600,
+            expireAtEpochMs: 600
         });
 
         expect(repository.readEvictionCounts()).toEqual({ retained: 2, evictionRuns: 0 });
@@ -151,7 +151,7 @@ describe('LatestRepository expiry surface', () => {
             isValid: (_value, nowEpochMs) => {
                 seen.push(nowEpochMs);
                 return true;
-            },
+            }
         });
 
         repository.acceptAt({ key: 'a', value: { claimed: true }, nowEpochMs: 0 });
@@ -173,7 +173,7 @@ describe('LatestRepository expiry surface', () => {
             key: 'a',
             value: { claimed: true },
             nowEpochMs: 0,
-            expireAtEpochMs: 100,
+            expireAtEpochMs: 100
         });
         expect(deadline.readAt('a', 99)).toEqual({ claimed: true });
         expect(deadline.readAt('a', 100)).toBeUndefined();

@@ -1,10 +1,10 @@
-import { expect, type Page, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import {
     expectFullStackApiReady,
     loginThroughUi,
     readBrowserAuthSession,
     readFullStackConfig,
-    uniqueSuffix,
+    uniqueSuffix
 } from './full-stack-helpers.ts';
 
 const config = readFullStackConfig();
@@ -38,7 +38,7 @@ async function connectManualAgent(
         connection: string;
         groupId: string;
         createGroup?: boolean;
-    }>,
+    }>
 ): Promise<ManualAgent> {
     await openManualTab(page);
     await fillManualField(page, 'Group', input.groupId);
@@ -55,7 +55,7 @@ async function connectManualAgent(
     await page.locator('#panel-manual-rallar')
         .getByRole('button', {
             name: input.createGroup ? 'Create and join group' : 'Connect',
-            exact: true,
+            exact: true
         })
         .click();
     await expectManualCommandCompleted(page, 'manual-rtc-connect');
@@ -63,7 +63,7 @@ async function connectManualAgent(
     return {
         page,
         connection: input.connection,
-        sessionId,
+        sessionId
     };
 }
 
@@ -72,7 +72,7 @@ async function sendManualRealtimePayload(
     input: Readonly<{
         targetSessionId: string;
         payload: Record<string, unknown>;
-    }>,
+    }>
 ): Promise<void> {
     await openManualTab(sender.page);
     await fillManualField(sender.page, 'Connection', sender.connection);
@@ -88,7 +88,7 @@ async function sendManualRealtimePayload(
 
 async function expectReceivedPayload(
     receiver: ManualAgent,
-    payloadId: string,
+    payloadId: string
 ): Promise<void> {
     await openManualTab(receiver.page);
     const inbox = receiver.page.locator('#panel-manual-rallar .received-inbox-panel');
@@ -114,10 +114,7 @@ async function closeManualAgent(agent: ManualAgent): Promise<void> {
 test.describe('full-stack Manual Rallar realtime delivery', () => {
     test.skip(!config.enabled, config.skipReason);
 
-    test('two browsers send real realtime JSON through Manual Rallar', async ({
-        browser,
-        request,
-    }) => {
+    test('two browsers send real realtime JSON through Manual Rallar', async ({ browser, request }) => {
         test.setTimeout(150_000);
         await expectFullStackApiReady(request, config);
 
@@ -131,21 +128,21 @@ test.describe('full-stack Manual Rallar realtime delivery', () => {
         try {
             await loginThroughUi(pageA, config, config.userA, {
                 suffix: `manual-a-${suffix}`,
-                tab: 'manual-rallar',
+                tab: 'manual-rallar'
             });
             await loginThroughUi(pageB, config, config.userB, {
                 suffix: `manual-b-${suffix}`,
-                tab: 'manual-rallar',
+                tab: 'manual-rallar'
             });
 
             const agentA = await connectManualAgent(pageA, {
                 connection: `manual-a-realtime-${suffix}`,
                 groupId: roomId,
-                createGroup: true,
+                createGroup: true
             });
             const agentB = await connectManualAgent(pageB, {
                 connection: `manual-b-realtime-${suffix}`,
-                groupId: roomId,
+                groupId: roomId
             });
 
             const payloadId = `manual-realtime-${suffix}`;
@@ -157,20 +154,21 @@ test.describe('full-stack Manual Rallar realtime delivery', () => {
                     direction: 'a-to-b',
                     roomId,
                     from: config.userA.username,
-                    to: config.userB.username,
-                },
+                    to: config.userB.username
+                }
             });
 
             await expectReceivedPayload(agentB, payloadId);
             await expectRealProviderEvents(pageB);
             await Promise.all([
                 closeManualAgent(agentA),
-                closeManualAgent(agentB),
+                closeManualAgent(agentB)
             ]);
-        } finally {
+        }
+        finally {
             await Promise.all([
                 contextA.close(),
-                contextB.close(),
+                contextB.close()
             ]);
         }
     });

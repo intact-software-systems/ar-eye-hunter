@@ -1,14 +1,13 @@
-import { ExplicitWindowControls } from
-    '../ui/ExplicitWindowControls.tsx';
+import { ExplicitWindowControls } from '../ui/ExplicitWindowControls.tsx';
+import styles from './FleetWindowControls.module.css';
 import { FleetWindowTruth } from './FleetWindowTruth.tsx';
 import type { FleetWindowController } from './use-fleet-window.ts';
-import styles from './FleetWindowControls.module.css';
 
 export function FleetWindowControls({
     contentId,
     itemLabel,
     label,
-    window,
+    window
 }: Readonly<{
     contentId: string;
     itemLabel: string;
@@ -24,7 +23,7 @@ export function FleetWindowControls({
                 focusProps.onClick(event);
                 const direction = event.target instanceof Element
                     ? event.target.closest(
-                        'button[data-explicit-window-direction]',
+                        'button[data-explicit-window-direction]'
                     )
                     : null;
                 if (direction && event.currentTarget.contains(direction)) {
@@ -32,17 +31,19 @@ export function FleetWindowControls({
                 }
             }}
         >
-            {window.model.total > window.model.windowSize ? (
-                <ExplicitWindowControls
-                    announceRange={false}
-                    contentId={contentId}
-                    itemLabel={itemLabel}
-                    label={label}
-                    model={window.model}
-                    onNext={window.next}
-                    onPrevious={window.previous}
-                />
-            ) : null}
+            {window.model.total > window.model.windowSize
+                ? (
+                    <ExplicitWindowControls
+                        announceRange={false}
+                        contentId={contentId}
+                        itemLabel={itemLabel}
+                        label={label}
+                        model={window.model}
+                        onNext={window.next}
+                        onPrevious={window.previous}
+                    />
+                )
+                : null}
             <FleetWindowTruth
                 itemLabel={itemLabel}
                 label={label}

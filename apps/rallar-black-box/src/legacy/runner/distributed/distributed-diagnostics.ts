@@ -1,17 +1,16 @@
 import type { DistributedRunMonitor } from '../../../distributed-recipes.ts';
 
-export type DistributedRuntimeDiagnostic =
-    DistributedRunMonitor['runtimeDiagnostics'][number];
+export type DistributedRuntimeDiagnostic = DistributedRunMonitor['runtimeDiagnostics'][number];
 
 export function distributedDiagnosticGroupValue(
-    row: DistributedRuntimeDiagnostic,
+    row: DistributedRuntimeDiagnostic
 ): string | undefined {
     return row.groupId ?? row.roomId ?? row.contextId;
 }
 
 export function distributedDiagnosticSearchText(
     row: DistributedRuntimeDiagnostic,
-    distributedRunId: string | undefined,
+    distributedRunId: string | undefined
 ): string {
     return [
         distributedRunId,
@@ -39,7 +38,7 @@ export function distributedDiagnosticSearchText(
         row.contextId,
         row.resourceId,
         row.source,
-        ...row.correlatedFailureKeys,
+        ...row.correlatedFailureKeys
     ]
         .filter(Boolean)
         .join(' ')

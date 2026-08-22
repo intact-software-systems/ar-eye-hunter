@@ -9,8 +9,8 @@ export type ResourceInboxRetryPolicy = Readonly<{
 }>;
 
 export type ResourceInboxRetryDecision =
-    | Readonly<{ status: 'retry'; delayMs: number }>
-    | Readonly<{ status: 'failed'; delayMs: null }>;
+    | Readonly<{ status: 'retry'; delayMs: number; }>
+    | Readonly<{ status: 'failed'; delayMs: null; }>;
 
 export type ResourceInboxFairnessTelemetry = Readonly<{
     queueAgeMs: number;
@@ -32,23 +32,23 @@ export const DEFAULT_RESOURCE_INBOX_RETRY_POLICY: ResourceInboxRetryPolicy = {
         2_000,
         4_000,
         8_000,
-        16_000,
+        16_000
     ],
     maxDelayMs: 30_000,
     jitterRatio: 0.2,
-    staleDueThresholdMs: 30_000,
+    staleDueThresholdMs: 30_000
 };
 
 export const RESOURCE_INBOX_RETRY_PROCESSING_MARGIN_MS = 60_000;
 
 export function resourceInboxRetryHorizonMs(
-    policy: ResourceInboxRetryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+    policy: ResourceInboxRetryPolicy = DEFAULT_RESOURCE_INBOX_RETRY_POLICY
 ): number {
     let horizonMs = 0;
     for (let attempt = 1; attempt < policy.maxAttempts; attempt += 1) {
         const baseDelayMs = Math.min(
             policy.delaysAfterAttemptMs[attempt - 1] ?? policy.maxDelayMs,
-            policy.maxDelayMs,
+            policy.maxDelayMs
         );
         horizonMs += Math.max(1, Math.ceil(baseDelayMs * (1 + policy.jitterRatio)));
     }
@@ -56,12 +56,12 @@ export function resourceInboxRetryHorizonMs(
 }
 
 export const DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS = resourceInboxRetryHorizonMs(
-    DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
+    DEFAULT_RESOURCE_INBOX_RETRY_POLICY
 );
 
 export function resourceInboxRetryExpiryAtEpochMs(
     capturedAtEpochMs: number,
-    requestedExpireAtEpochMs = capturedAtEpochMs,
+    requestedExpireAtEpochMs = capturedAtEpochMs
 ): number {
     if (
         !Number.isSafeInteger(capturedAtEpochMs) || capturedAtEpochMs < 0 ||
@@ -82,7 +82,7 @@ export function resourceInboxRetryExpiryAtEpochMs(
 export function retryAfterAttempt(
     policy: ResourceInboxRetryPolicy,
     attempts: number,
-    jitterUnit: number,
+    jitterUnit: number
 ): ResourceInboxRetryDecision {
     if (attempts >= policy.maxAttempts) {
         return { status: 'failed', delayMs: null };
@@ -90,7 +90,7 @@ export function retryAfterAttempt(
 
     const baseDelayMs = Math.min(
         policy.delaysAfterAttemptMs[attempts - 1] ?? policy.maxDelayMs,
-        policy.maxDelayMs,
+        policy.maxDelayMs
     );
     const jitterMultiplier = 1 - policy.jitterRatio + (2 * policy.jitterRatio * jitterUnit);
     const delayMs = Math.max(1, Math.round(baseDelayMs * jitterMultiplier));
@@ -100,11 +100,11 @@ export function retryAfterAttempt(
 
 export function toResourceInboxFairnessTelemetry(
     selection: ResourceInboxFairnessSelection,
-    selectedAtEpochMs: number,
+    selectedAtEpochMs: number
 ): ResourceInboxFairnessTelemetry {
     const { entry, selectedDueTs } = selection;
     const createdAtEpochMs = Number(
-        entry.audit.createdTs.toZonedDateTime('UTC').toInstant().epochMilliseconds,
+        entry.audit.createdTs.toZonedDateTime('UTC').toInstant().epochMilliseconds
     );
 
     return {
@@ -112,6 +112,6 @@ export function toResourceInboxFairnessTelemetry(
         dueAgeMs: selectedAtEpochMs - Number(selectedDueTs.epochMilliseconds),
         attempt: entry.dequeueAudit.attempts,
         type: entry.typeId,
-        lane: 'FAIRNESS',
+        lane: 'FAIRNESS'
     };
 }

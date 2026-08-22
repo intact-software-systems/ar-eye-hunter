@@ -1,9 +1,5 @@
+import { createRallarGameLanePresets, DEFAULT_RALLAR_GAME_LANE_IDS, resolveRallarGameLaneIds } from '@shared-web/game/mod.ts';
 import { describe, expect, it } from 'vitest';
-import {
-    createRallarGameLanePresets,
-    DEFAULT_RALLAR_GAME_LANE_IDS,
-    resolveRallarGameLaneIds,
-} from '@shared-web/game/mod.ts';
 
 describe('Rallar Game lane presets', () => {
     it('uses stable default lane IDs', () => {
@@ -12,7 +8,7 @@ describe('Rallar Game lane presets', () => {
             intent: 'game-intent',
             snapshot: 'game-snapshot',
             metrics: 'game-metrics',
-            replication: 'game-replication',
+            replication: 'game-replication'
         });
     });
 
@@ -27,8 +23,8 @@ describe('Rallar Game lane presets', () => {
                     highWatermarkBytes: 32 * 1024,
                     lowWatermarkBytes: 8 * 1024,
                     overflow: 'replace-by-key',
-                    maxQueueItems: 16,
-                },
+                    maxQueueItems: 16
+                }
             },
             {
                 id: 'game-intent',
@@ -39,8 +35,8 @@ describe('Rallar Game lane presets', () => {
                     highWatermarkBytes: 128 * 1024,
                     lowWatermarkBytes: 32 * 1024,
                     overflow: 'queue',
-                    maxQueueItems: 128,
-                },
+                    maxQueueItems: 128
+                }
             },
             {
                 id: 'game-snapshot',
@@ -51,8 +47,8 @@ describe('Rallar Game lane presets', () => {
                     highWatermarkBytes: 64 * 1024,
                     lowWatermarkBytes: 16 * 1024,
                     overflow: 'replace-by-key',
-                    maxQueueItems: 8,
-                },
+                    maxQueueItems: 8
+                }
             },
             {
                 id: 'game-metrics',
@@ -63,8 +59,8 @@ describe('Rallar Game lane presets', () => {
                     highWatermarkBytes: 16 * 1024,
                     lowWatermarkBytes: 4 * 1024,
                     overflow: 'drop-old',
-                    maxQueueItems: 16,
-                },
+                    maxQueueItems: 16
+                }
             },
             {
                 id: 'game-replication',
@@ -75,9 +71,9 @@ describe('Rallar Game lane presets', () => {
                     highWatermarkBytes: 256 * 1024,
                     lowWatermarkBytes: 64 * 1024,
                     overflow: 'queue',
-                    maxQueueItems: 256,
-                },
-            },
+                    maxQueueItems: 256
+                }
+            }
         ]);
     });
 
@@ -86,17 +82,17 @@ describe('Rallar Game lane presets', () => {
             createRallarGameLanePresets({
                 laneIds: {
                     input: 'cash-input',
-                    snapshot: 'cash-snapshot',
+                    snapshot: 'cash-snapshot'
                 },
-                inputMaxQueueItems: 4,
-            })[0],
+                inputMaxQueueItems: 4
+            })[0]
         ).toMatchObject({
             id: 'cash-input',
             label: 'rtc-game-input',
             flowControl: {
                 overflow: 'replace-by-key',
-                maxQueueItems: 4,
-            },
+                maxQueueItems: 4
+            }
         });
 
         expect(resolveRallarGameLaneIds({ metrics: 'cash-metrics' })).toEqual({
@@ -104,7 +100,7 @@ describe('Rallar Game lane presets', () => {
             intent: 'game-intent',
             snapshot: 'game-snapshot',
             metrics: 'cash-metrics',
-            replication: 'game-replication',
+            replication: 'game-replication'
         });
     });
 });

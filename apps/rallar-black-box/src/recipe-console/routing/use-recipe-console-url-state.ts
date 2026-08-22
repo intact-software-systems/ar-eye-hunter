@@ -1,17 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { resolveAppExperience } from '../../app/experience-route.ts';
-import {
-    createRecipeConsoleUrlHistory,
-    type RecipeConsoleHistoryPort,
-} from './url-history.ts';
-import {
-    createRecipeConsoleShareHref,
-    scrubRecipeConsoleHash,
-} from './url-state-codec.ts';
-import type {
-    ParsedRecipeConsoleUrl,
-    RecipeConsoleUrlState,
-} from './url-state-contract.ts';
+import { createRecipeConsoleUrlHistory, type RecipeConsoleHistoryPort } from './url-history.ts';
+import { createRecipeConsoleShareHref, scrubRecipeConsoleHash } from './url-state-codec.ts';
+import type { ParsedRecipeConsoleUrl, RecipeConsoleUrlState } from './url-state-contract.ts';
 
 function writeBrowserSearch(method: 'pushState' | 'replaceState', search: string): void {
     const url = new URL(window.location.href);
@@ -23,12 +14,12 @@ function writeBrowserSearch(method: 'pushState' | 'replaceState', search: string
 function createBrowserPort(): RecipeConsoleHistoryPort {
     return {
         readSearch: () => window.location.search,
-        push: search => writeBrowserSearch('pushState', search),
-        replace: search => writeBrowserSearch('replaceState', search),
-        subscribe: listener => {
+        push: (search) => writeBrowserSearch('pushState', search),
+        replace: (search) => writeBrowserSearch('replaceState', search),
+        subscribe: (listener) => {
             window.addEventListener('popstate', listener);
             return () => window.removeEventListener('popstate', listener);
-        },
+        }
     };
 }
 
@@ -49,13 +40,13 @@ function replaceNonCanonicalBrowserUrl(value: ParsedRecipeConsoleUrl): void {
 export function useRecipeConsoleUrlState() {
     const history = useMemo(
         () => createRecipeConsoleUrlHistory(createBrowserPort()),
-        [],
+        []
     );
     const [value, setValue] = useState(history.read);
 
     useEffect(() => {
         replaceNonCanonicalBrowserUrl(history.read());
-        return history.subscribe(next => {
+        return history.subscribe((next) => {
             replaceNonCanonicalBrowserUrl(next);
             setValue(next);
         });
@@ -66,9 +57,9 @@ export function useRecipeConsoleUrlState() {
     }, [history]);
     const replace = useCallback((patch: Partial<RecipeConsoleUrlState>): void => {
         const next = history.replace(patch);
-        setValue(previous => ({
+        setValue((previous) => ({
             ...next,
-            issues: previous.issues,
+            issues: previous.issues
         }));
     }, [history]);
     const copyHref = createRecipeConsoleShareHref(window.location, value.state);
@@ -78,6 +69,6 @@ export function useRecipeConsoleUrlState() {
         issues: value.issues,
         navigate,
         replace,
-        copyHref,
+        copyHref
     } as const;
 }

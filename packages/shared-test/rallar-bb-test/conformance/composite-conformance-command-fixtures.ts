@@ -1,11 +1,8 @@
-import type {
-    RallarBlackBoxTestCommand,
-    RallarBlackBoxTestTransport,
-} from '../types.ts';
+import type { RallarBlackBoxTestCommand, RallarBlackBoxTestTransport } from '../types.ts';
 
 import type {
     RallarBlackBoxCompositeConformanceCaseId,
-    RallarBlackBoxCompositeConformanceRecipeOptions,
+    RallarBlackBoxCompositeConformanceRecipeOptions
 } from '../composite-conformance.ts';
 
 export const DEFAULT_TIMEOUT_MS = 5_000;
@@ -15,8 +12,8 @@ export const DEFAULT_ROOM_ID = 'rallar-conformance-room';
 
 export function configureCommand(
     caseId: RallarBlackBoxCompositeConformanceCaseId,
-    options: RallarBlackBoxCompositeConformanceRecipeOptions,
-): Extract<RallarBlackBoxTestCommand, { kind: 'configure' }> {
+    options: RallarBlackBoxCompositeConformanceRecipeOptions
+): Extract<RallarBlackBoxTestCommand, { kind: 'configure'; }> {
     return {
         kind: 'configure',
         commandId: `${caseId}-configure`,
@@ -34,21 +31,21 @@ export function configureCommand(
                 wsBaseUrl: wsBaseUrl(options.apiBaseUrl ?? 'http://localhost:8080'),
                 applicationId: options.applicationId ?? 'rallar-server',
                 workspaceId: options.workspaceId ?? 'default',
-                roomId: options.roomId ?? DEFAULT_ROOM_ID,
+                roomId: options.roomId ?? DEFAULT_ROOM_ID
             },
             control: {
                 providerMode: options.providerMode ?? 'simulated',
-                conformance: true,
+                conformance: true
             },
             defaults: {
                 timeoutMs: timeoutMs(options),
-                connection: options.connection ?? DEFAULT_CONNECTION,
+                connection: options.connection ?? DEFAULT_CONNECTION
             },
             redaction: {
-                keys: ['password', 'accessToken', 'token'],
-            },
+                keys: ['password', 'accessToken', 'token']
+            }
         },
-        metadata: commandMetadata(caseId, `${caseId}-configure`),
+        metadata: commandMetadata(caseId, `${caseId}-configure`)
     };
 }
 
@@ -58,8 +55,8 @@ export function rtcConnectCommand(
     connection: string,
     roomId: string,
     transport: Extract<RallarBlackBoxTestTransport, 'realtime' | 'messages.rtc'>,
-    options: RallarBlackBoxCompositeConformanceRecipeOptions,
-): Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect' }> {
+    options: RallarBlackBoxCompositeConformanceRecipeOptions
+): Extract<RallarBlackBoxTestCommand, { kind: 'rtc.connect'; }> {
     return {
         kind: 'rtc.connect',
         commandId,
@@ -71,37 +68,37 @@ export function rtcConnectCommand(
         ...scopeFields(options),
         rallar: {
             sessionId: options.sessionId ?? 'alice-session',
-            transport,
+            transport
         },
-        metadata: commandMetadata(caseId, commandId),
+        metadata: commandMetadata(caseId, commandId)
     };
 }
 
 export function statsCommand(
     commandId: string,
-    caseId: RallarBlackBoxCompositeConformanceCaseId,
-): Extract<RallarBlackBoxTestCommand, { kind: 'stats' }> {
+    caseId: RallarBlackBoxCompositeConformanceCaseId
+): Extract<RallarBlackBoxTestCommand, { kind: 'stats'; }> {
     return {
         kind: 'stats',
         commandId,
-        metadata: commandMetadata(caseId, commandId),
+        metadata: commandMetadata(caseId, commandId)
     };
 }
 
 export function closeCommand(
     commandId: string,
-    caseId: RallarBlackBoxCompositeConformanceCaseId,
-): Extract<RallarBlackBoxTestCommand, { kind: 'close' }> {
+    caseId: RallarBlackBoxCompositeConformanceCaseId
+): Extract<RallarBlackBoxTestCommand, { kind: 'close'; }> {
     return {
         kind: 'close',
         commandId,
-        metadata: commandMetadata(caseId, commandId),
+        metadata: commandMetadata(caseId, commandId)
     };
 }
 
 export function recipeId(
     caseId: RallarBlackBoxCompositeConformanceCaseId,
-    options: RallarBlackBoxCompositeConformanceRecipeOptions,
+    options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): string {
     return [options.recipeIdPrefix ?? 'composite-conformance', caseId].join('-');
 }
@@ -114,7 +111,7 @@ export function timeoutMs(options: RallarBlackBoxCompositeConformanceRecipeOptio
 }
 
 export function scopeFields(
-    options: RallarBlackBoxCompositeConformanceRecipeOptions,
+    options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): Record<string, unknown> {
     return {
         applicationId: options.applicationId ?? 'rallar-server',
@@ -122,8 +119,8 @@ export function scopeFields(
         roomRef: {
             applicationId: options.applicationId ?? 'rallar-server',
             workspaceId: options.workspaceId ?? 'default',
-            groupId: options.roomId ?? DEFAULT_ROOM_ID,
-        },
+            groupId: options.roomId ?? DEFAULT_ROOM_ID
+        }
     };
 }
 
@@ -132,31 +129,32 @@ function wsBaseUrl(apiBaseUrl: string): string {
         const url = new URL(apiBaseUrl);
         url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
         return url.toString().replace(/\/+$/, '');
-    } catch {
+    }
+    catch {
         return 'ws://localhost:8080';
     }
 }
 
 export function recipeMetadata(
-    caseId: RallarBlackBoxCompositeConformanceCaseId,
+    caseId: RallarBlackBoxCompositeConformanceCaseId
 ): Record<string, unknown> {
     return {
         conformance: {
             schemaVersion: 1,
-            caseId,
-        },
+            caseId
+        }
     };
 }
 
 export function commandMetadata(
     caseId: RallarBlackBoxCompositeConformanceCaseId,
-    commandId: string,
+    commandId: string
 ): Record<string, unknown> {
     return {
         conformance: {
             schemaVersion: 1,
             caseId,
-            commandId,
-        },
+            commandId
+        }
     };
 }

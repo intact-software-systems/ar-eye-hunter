@@ -1,42 +1,25 @@
-import { useEffect, useMemo, useState } from 'react';
-import type {
-    AuthSession,
-    WebSocketTicketResponse,
-} from '@shared/api/api-config.ts';
-import { clearSession } from '@shared/api/auth.ts';
 import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import { selectRallarBlackBoxCurrentConfig } from '@shared-test/rallar-bb-test/selectors.ts';
 import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
-import {
-    authenticateRallarBlackBox,
-    authErrorMessage,
-    bootstrapPatchFromAuthSession,
-} from '../../../auth-flow.ts';
+import type { AuthSession, WebSocketTicketResponse } from '@shared/api/api-config.ts';
+import { clearSession } from '@shared/api/auth.ts';
+import { useEffect, useMemo, useState } from 'react';
+import { authenticateRallarBlackBox, authErrorMessage, bootstrapPatchFromAuthSession } from '../../../auth-flow.ts';
 import { executeRallarServerMutationRequest } from '../../../rallar-server-workbench.ts';
 import {
-    type RallarBlackBoxBootstrapConfig,
     rallarBlackBoxProviderModeFromConfig,
     rallarBlackBoxRuntimeStore,
+    type RallarBlackBoxBootstrapConfig
 } from '../../../runtime-store.ts';
 import { loadBrowserRallarFacade } from '../../rallar/load-browser-rallar-facade.ts';
 import { CollapsiblePanelSection } from '../../shared/CollapsiblePanelSection.tsx';
 import { recordValue as optionalRecord } from '../../shared/record-value.ts';
-import {
-    redactedJson,
-    uiRedactionOptions,
-} from '../../shared/redaction-presentation.ts';
-import {
-    formatDuration,
-    formatRelativeDuration,
-    formatTime,
-} from '../../shared/time-format.ts';
+import { redactedJson, uiRedactionOptions } from '../../shared/redaction-presentation.ts';
+import { formatDuration, formatRelativeDuration, formatTime } from '../../shared/time-format.ts';
 import type { CommandCenterGlobalValues } from '../../shell/global-context-model.ts';
 import { readCurrentAuthSession } from '../../shell/read-current-auth-session.ts';
 import type { AuthCommandCenterTicket } from '../shared/auth-command-center-ticket.ts';
-import {
-    type CommandCenterRestActionLog,
-    restLogEntry,
-} from '../shared/rest-action-log.ts';
+import { restLogEntry, type CommandCenterRestActionLog } from '../shared/rest-action-log.ts';
 import { authRecipeSnippet } from './auth-recipe.ts';
 
 export function AuthCommandCenterPanel({
@@ -45,7 +28,7 @@ export function AuthCommandCenterPanel({
     authSession,
     globalValues,
     onAuthenticated,
-    onLogout,
+    onLogout
 }: {
     state: RallarBlackBoxTestState;
     bootstrap: RallarBlackBoxBootstrapConfig;
@@ -57,18 +40,16 @@ export function AuthCommandCenterPanel({
     const config = selectRallarBlackBoxCurrentConfig(state);
     const providerMode = rallarBlackBoxProviderModeFromConfig(config);
     const [apiBaseUrl, setApiBaseUrl] = useState(
-        globalValues?.apiBaseUrl ?? config?.apiBaseUrl ?? bootstrap.apiBaseUrl,
+        globalValues?.apiBaseUrl ?? config?.apiBaseUrl ?? bootstrap.apiBaseUrl
     );
     const [username, setUsername] = useState(
-        authSession?.username ?? bootstrap.rallarUsername ?? bootstrap.actor,
+        authSession?.username ?? bootstrap.rallarUsername ?? bootstrap.actor
     );
     const [password, setPassword] = useState(bootstrap.rallarPassword ?? '');
     const [busyAction, setBusyAction] = useState<string | undefined>();
     const [localError, setLocalError] = useState<string | undefined>();
     const [ticket, setTicket] = useState<AuthCommandCenterTicket | undefined>();
-    const [actions, setActions] = useState<
-        readonly CommandCenterRestActionLog[]
-    >([]);
+    const [actions, setActions] = useState<readonly CommandCenterRestActionLog[]>([]);
     const recipeText = useMemo(() => authRecipeSnippet(username), [username]);
     const diagnosticsText = useMemo(
         () =>
@@ -79,17 +60,17 @@ export function AuthCommandCenterPanel({
                     session: authSession,
                     wsTicket: ticket
                         ? {
-                              ...ticket,
-                              ticket: '<redacted:ws-ticket>',
-                              expiresInMs: ticket.expiresAtEpochMs - Date.now(),
-                          }
+                            ...ticket,
+                            ticket: '<redacted:ws-ticket>',
+                            expiresInMs: ticket.expiresAtEpochMs - Date.now()
+                        }
                         : undefined,
-                    recentActions: actions.slice(-6),
+                    recentActions: actions.slice(-6)
                 },
                 state,
-                authSession,
+                authSession
             ),
-        [actions, apiBaseUrl, authSession, providerMode, state, ticket],
+        [actions, apiBaseUrl, authSession, providerMode, state, ticket]
     );
     const sessionExpiresInMs = authSession
         ? authSession.expiresAtEpochMs - Date.now()
@@ -110,15 +91,17 @@ export function AuthCommandCenterPanel({
 
     const runWithBusy = async (
         label: string,
-        action: () => Promise<void>,
+        action: () => Promise<void>
     ): Promise<void> => {
         setBusyAction(label);
         setLocalError(undefined);
         try {
             await action();
-        } catch (error) {
+        }
+        catch (error) {
             setLocalError(authErrorMessage(error));
-        } finally {
+        }
+        finally {
             setBusyAction(undefined);
         }
     };
@@ -133,11 +116,11 @@ export function AuthCommandCenterPanel({
                         apiBaseUrl,
                         username,
                         password,
-                        register,
-                    },
+                        register
+                    }
                 );
                 rallarBlackBoxRuntimeStore.updateBootstrapConfig(
-                    bootstrapPatchFromAuthSession(session, apiBaseUrl),
+                    bootstrapPatchFromAuthSession(session, apiBaseUrl)
                 );
                 onAuthenticated(session);
                 appendAction({
@@ -148,9 +131,9 @@ export function AuthCommandCenterPanel({
                     status: register ? 201 : 200,
                     statusText: 'OK',
                     durationMs: 0,
-                    bodyJson: session,
+                    bodyJson: session
                 });
-            },
+            }
         );
     };
 
@@ -162,7 +145,7 @@ export function AuthCommandCenterPanel({
             return;
         }
         rallarBlackBoxRuntimeStore.updateBootstrapConfig(
-            bootstrapPatchFromAuthSession(restored, apiBaseUrl),
+            bootstrapPatchFromAuthSession(restored, apiBaseUrl)
         );
         appendAction({
             actionId: `auth-restore-${Date.now()}`,
@@ -172,7 +155,7 @@ export function AuthCommandCenterPanel({
             status: 200,
             statusText: 'Restored',
             durationMs: 0,
-            bodyJson: restored,
+            bodyJson: restored
         });
     };
 
@@ -187,7 +170,7 @@ export function AuthCommandCenterPanel({
             ok: true,
             status: 200,
             statusText: 'Cleared',
-            durationMs: 0,
+            durationMs: 0
         });
     };
 
@@ -204,7 +187,7 @@ export function AuthCommandCenterPanel({
                 responseBodyMode: 'json',
                 attachAuth: true,
                 authSession,
-                timeoutMs: 5_000,
+                timeoutMs: 5_000
             }, requestId);
             appendAction(restLogEntry('Create WS ticket', response));
             const body = optionalRecord(response.bodyJson);
@@ -219,7 +202,7 @@ export function AuthCommandCenterPanel({
                     ticket: wsTicket.ticket,
                     sessionId: wsTicket.sessionId,
                     expiresAtEpochMs: wsTicket.expiresAtEpochMs,
-                    issuedAtEpochMs: Date.now(),
+                    issuedAtEpochMs: Date.now()
                 });
             }
         });
@@ -237,7 +220,7 @@ export function AuthCommandCenterPanel({
                 bodyText: '{}',
                 responseBodyMode: 'json',
                 attachAuth: false,
-                timeoutMs: 5_000,
+                timeoutMs: 5_000
             }, requestId);
             appendAction(restLogEntry('Missing auth WS ticket', response));
         });
@@ -248,9 +231,9 @@ export function AuthCommandCenterPanel({
         await runWithBusy('Expired auth WS ticket', async () => {
             const expiredSession = authSession
                 ? {
-                      ...authSession,
-                      expiresAtEpochMs: Date.now() - 1_000,
-                  }
+                    ...authSession,
+                    expiresAtEpochMs: Date.now() - 1_000
+                }
                 : undefined;
             const response = await executeRallarServerMutationRequest({
                 apiBaseUrl,
@@ -262,7 +245,7 @@ export function AuthCommandCenterPanel({
                 responseBodyMode: 'json',
                 attachAuth: true,
                 authSession: expiredSession,
-                timeoutMs: 5_000,
+                timeoutMs: 5_000
             }, requestId);
             appendAction(restLogEntry('Expired auth WS ticket', response));
         });
@@ -279,11 +262,11 @@ export function AuthCommandCenterPanel({
                 queryText: '{}',
                 bodyText: JSON.stringify({
                     username: username || 'unknown',
-                    password: `${password || 'bad'}-invalid`,
+                    password: `${password || 'bad'}-invalid`
                 }),
                 responseBodyMode: 'json',
                 attachAuth: false,
-                timeoutMs: 5_000,
+                timeoutMs: 5_000
             }, requestId);
             appendAction(restLogEntry('Bad credentials', response));
         });
@@ -314,18 +297,14 @@ export function AuthCommandCenterPanel({
                         <span>API Base URL</span>
                         <input
                             value={apiBaseUrl}
-                            onChange={(event) =>
-                                setApiBaseUrl(event.target.value)
-                            }
+                            onChange={(event) => setApiBaseUrl(event.target.value)}
                         />
                     </label>
                     <label className="field">
                         <span>Username</span>
                         <input
                             value={username}
-                            onChange={(event) =>
-                                setUsername(event.target.value)
-                            }
+                            onChange={(event) => setUsername(event.target.value)}
                             autoCapitalize="none"
                             autoComplete="username"
                             autoCorrect="off"
@@ -337,9 +316,7 @@ export function AuthCommandCenterPanel({
                         <input
                             type="password"
                             value={password}
-                            onChange={(event) =>
-                                setPassword(event.target.value)
-                            }
+                            onChange={(event) => setPassword(event.target.value)}
                             autoComplete="current-password"
                         />
                     </label>
@@ -462,10 +439,9 @@ export function AuthCommandCenterPanel({
                 className="command-center-status auth-session-guidance"
                 role="note"
             >
-                Ordinary same-origin tabs share localStorage `auth.session`.
-                Agent tabs opened from Connect Agents use one-time links and
-                sessionStorage so the same logged-in user can create distinct
-                targetable browser sessions.
+                Ordinary same-origin tabs share localStorage `auth.session`. Agent tabs opened from Connect Agents use
+                one-time links and sessionStorage so the same logged-in user can create distinct targetable browser
+                sessions.
             </div>
             {busyAction && (
                 <div className="command-center-status" role="status">
@@ -476,14 +452,12 @@ export function AuthCommandCenterPanel({
                 <div className="workbench-error" role="status">
                     {redactRallarBlackBoxValue(
                         localError,
-                        uiRedactionOptions(state, authSession, [password]),
+                        uiRedactionOptions(state, authSession, [password])
                     )}
                 </div>
             )}
             <div className="command-center-action-list">
-                {actions.length === 0 && (
-                    <div className="empty-state">No auth actions yet</div>
-                )}
+                {actions.length === 0 && <div className="empty-state">No auth actions yet</div>}
                 {actions
                     .slice()
                     .reverse()
@@ -495,8 +469,7 @@ export function AuthCommandCenterPanel({
                             <div>
                                 <strong>{action.label}</strong>
                                 <small>
-                                    {formatTime(action.atEpochMs)} -{' '}
-                                    {formatDuration(action.durationMs)}
+                                    {formatTime(action.atEpochMs)} - {formatDuration(action.durationMs)}
                                 </small>
                             </div>
                             <span

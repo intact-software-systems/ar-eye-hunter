@@ -5,12 +5,7 @@ export type WebSocketPayloadPreset = Readonly<{
     label: string;
     description: string;
     payload: unknown;
-    values?: Partial<
-        Pick<
-            WebSocketCommandCenterValues,
-            'wsScope' | 'typeId' | 'topicId' | 'contextId'
-        >
-    >;
+    values?: Partial<Pick<WebSocketCommandCenterValues, 'wsScope' | 'typeId' | 'topicId' | 'contextId'>>;
 }>;
 
 export type WebSocketRoutePreview = Readonly<{

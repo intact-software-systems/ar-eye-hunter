@@ -5,39 +5,40 @@ import { GroupTopologyConfigRepository } from '../persistence/group-topology-con
 import { backfillGroupTopologyConfigGenerationsForRef } from './backfill-group-topology-config-generations.ts';
 
 export class GroupTopologyConfigGenerationReadiness {
-  private readonly readinessByGroupKey = new Map<string, Promise<void>>();
-  private readonly repository: GroupTopologyConfigRepository | undefined;
-  private readonly sleep: ((delayMs: number) => Promise<void>) | undefined;
+    private readonly readinessByGroupKey = new Map<string, Promise<void>>();
+    private readonly repository: GroupTopologyConfigRepository | undefined;
+    private readonly sleep: ((delayMs: number) => Promise<void>) | undefined;
 
-  constructor(
-    repository: GroupTopologyConfigRepository | undefined,
-    sleep?: (delayMs: number) => Promise<void>,
-  ) {
-    this.repository = repository;
-    this.sleep = sleep;
-  }
-
-  async ensure(groupRef: GroupRef): Promise<void> {
-    if (!this.repository) {
-      return;
+    constructor(
+        repository: GroupTopologyConfigRepository | undefined,
+        sleep?: (delayMs: number) => Promise<void>
+    ) {
+        this.repository = repository;
+        this.sleep = sleep;
     }
 
-    const groupKey = toScopedOverlayId(groupRef);
-    let readiness = this.readinessByGroupKey.get(groupKey);
-    if (!readiness) {
-      readiness = backfillGroupTopologyConfigGenerationsForRef(this.repository, groupRef, {
-        sleep: this.sleep,
-      }).then(() => undefined);
-      this.readinessByGroupKey.set(groupKey, readiness);
-    }
+    async ensure(groupRef: GroupRef): Promise<void> {
+        if (!this.repository) {
+            return;
+        }
 
-    try {
-      await readiness;
-    } catch (error) {
-      if (this.readinessByGroupKey.get(groupKey) === readiness) {
-        this.readinessByGroupKey.delete(groupKey);
-      }
-      throw error;
+        const groupKey = toScopedOverlayId(groupRef);
+        let readiness = this.readinessByGroupKey.get(groupKey);
+        if (!readiness) {
+            readiness = backfillGroupTopologyConfigGenerationsForRef(this.repository, groupRef, {
+                sleep: this.sleep
+            }).then(() => undefined);
+            this.readinessByGroupKey.set(groupKey, readiness);
+        }
+
+        try {
+            await readiness;
+        }
+        catch (error) {
+            if (this.readinessByGroupKey.get(groupKey) === readiness) {
+                this.readinessByGroupKey.delete(groupKey);
+            }
+            throw error;
+        }
     }
-  }
 }

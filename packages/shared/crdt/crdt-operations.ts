@@ -1,3 +1,13 @@
+import { createRallarCrdtLamportClock, type RallarCrdtLamportClock } from './crdt-clock.ts';
+import {
+    formatRallarCrdtValidation,
+    validateRallarCrdtOperationBatch,
+    validateRallarCrdtSnapshotEnvelope,
+    validateRallarCrdtUpdateEnvelope,
+    type RallarCrdtValidationOptions
+} from './crdt-codec.ts';
+import { toRallarCrdtDocumentKey } from './crdt-document-key.ts';
+import { canonicalRallarCrdtJson, hashRallarCrdtSnapshotEnvelope, hashRallarCrdtUpdateEnvelope } from './crdt-hash.ts';
 import {
     RALLAR_CRDT_OPERATION_VERSION,
     RALLAR_CRDT_PROTOCOL_VERSION,
@@ -24,50 +34,31 @@ import {
     type RallarCrdtSequenceSnapshotState,
     type RallarCrdtSetSnapshotAdd,
     type RallarCrdtSnapshotEnvelope,
-    type RallarCrdtUpdateEnvelope,
+    type RallarCrdtUpdateEnvelope
 } from './crdt-types.ts';
-import {
-    formatRallarCrdtValidation,
-    type RallarCrdtValidationOptions,
-    validateRallarCrdtOperationBatch,
-    validateRallarCrdtSnapshotEnvelope,
-    validateRallarCrdtUpdateEnvelope,
-} from './crdt-codec.ts';
-import {
-    createRallarCrdtLamportClock,
-    type RallarCrdtLamportClock,
-} from './crdt-clock.ts';
-import { toRallarCrdtDocumentKey } from './crdt-document-key.ts';
-import {
-    canonicalRallarCrdtJson,
-    hashRallarCrdtSnapshotEnvelope,
-    hashRallarCrdtUpdateEnvelope,
-} from './crdt-hash.ts';
 
-export type RallarCrdtDocument<
-    TValue = unknown,
-    TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
-> = Readonly<{
-    ref: RallarCrdtDocumentRef;
-    replicaId: string;
-    read(): TValue;
-    conflicts(): readonly RallarCrdtConflict[];
-    apply(update: RallarCrdtUpdateEnvelope<TPayload>): RallarCrdtApplyResult;
-    applyLocal(payload: TPayload): RallarCrdtUpdateEnvelope<TPayload>;
-    snapshot(reason?: string): RallarCrdtSnapshotEnvelope<TValue>;
-    importSnapshot(snapshot: RallarCrdtSnapshotEnvelope<TValue>): void;
-    seenUpdateIds(): ReadonlySet<string>;
-    dependencyState(): RallarCrdtDependencyState;
-    observedMapUpdateIds(path: RallarCrdtPath, key: string): readonly string[];
-    observedSetAddUpdateIds(
-        path: RallarCrdtPath,
-        elementId: string,
-    ): readonly string[];
-    observedSequenceUpdateIds(
-        path: RallarCrdtPath,
-        elementId: string,
-    ): readonly string[];
-}>;
+export type RallarCrdtDocument<TValue = unknown, TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch> =
+    Readonly<{
+        ref: RallarCrdtDocumentRef;
+        replicaId: string;
+        read(): TValue;
+        conflicts(): readonly RallarCrdtConflict[];
+        apply(update: RallarCrdtUpdateEnvelope<TPayload>): RallarCrdtApplyResult;
+        applyLocal(payload: TPayload): RallarCrdtUpdateEnvelope<TPayload>;
+        snapshot(reason?: string): RallarCrdtSnapshotEnvelope<TValue>;
+        importSnapshot(snapshot: RallarCrdtSnapshotEnvelope<TValue>): void;
+        seenUpdateIds(): ReadonlySet<string>;
+        dependencyState(): RallarCrdtDependencyState;
+        observedMapUpdateIds(path: RallarCrdtPath, key: string): readonly string[];
+        observedSetAddUpdateIds(
+            path: RallarCrdtPath,
+            elementId: string
+        ): readonly string[];
+        observedSequenceUpdateIds(
+            path: RallarCrdtPath,
+            elementId: string
+        ): readonly string[];
+    }>;
 
 export type RallarCrdtDocumentOptions<TValue = unknown> = Readonly<{
     ref: RallarCrdtDocumentRef;
@@ -101,43 +92,50 @@ type WriteMeta = Readonly<{
     parents: readonly string[];
 }>;
 
-type RegisterWrite = WriteMeta &
-    Readonly<{
+type RegisterWrite =
+    & WriteMeta
+    & Readonly<{
         policy: 'lww' | 'multi';
         value: RallarCrdtJsonValue;
     }>;
 
-type SetAdd = WriteMeta &
-    Readonly<{
+type SetAdd =
+    & WriteMeta
+    & Readonly<{
         elementId: string;
         value: RallarCrdtJsonValue;
     }>;
 
-type MapSet = WriteMeta &
-    Readonly<{
+type MapSet =
+    & WriteMeta
+    & Readonly<{
         key: string;
         value: RallarCrdtJsonValue;
     }>;
 
-type CounterAdd = WriteMeta &
-    Readonly<{
+type CounterAdd =
+    & WriteMeta
+    & Readonly<{
         delta: number;
     }>;
 
-type NumberWrite = WriteMeta &
-    Readonly<{
+type NumberWrite =
+    & WriteMeta
+    & Readonly<{
         merge: RallarCrdtNumberMergePolicy;
         value: number;
     }>;
 
-type SequencePosition = WriteMeta &
-    Readonly<{
+type SequencePosition =
+    & WriteMeta
+    & Readonly<{
         elementId: string;
         positionId: string;
     }>;
 
-type SequenceInsert = SequencePosition &
-    Readonly<{
+type SequenceInsert =
+    & SequencePosition
+    & Readonly<{
         value: RallarCrdtJsonValue;
     }>;
 
@@ -147,34 +145,25 @@ type Model = {
     registers: Map<string, RegisterWrite[]>;
     sets: Map<
         string,
-        Map<
-            string,
-            {
-                adds: Map<string, SetAdd>;
-                removes: Set<string>;
-            }
-        >
+        Map<string, {
+            adds: Map<string, SetAdd>;
+            removes: Set<string>;
+        }>
     >;
     maps: Map<
         string,
-        Map<
-            string,
-            {
-                sets: Map<string, MapSet>;
-                deletes: Set<string>;
-            }
-        >
+        Map<string, {
+            sets: Map<string, MapSet>;
+            deletes: Set<string>;
+        }>
     >;
     sequences: Map<
         string,
-        Map<
-            string,
-            {
-                inserts: Map<string, SequenceInsert>;
-                moves: Map<string, SequenceMove>;
-                deletes: Set<string>;
-            }
-        >
+        Map<string, {
+            inserts: Map<string, SequenceInsert>;
+            moves: Map<string, SequenceMove>;
+            deletes: Set<string>;
+        }>
     >;
     counters: Map<string, CounterAdd[]>;
     numbers: Map<string, NumberWrite[]>;
@@ -186,14 +175,14 @@ export function createRallarCrdtDocument<
     TValue = unknown,
     TPayload extends RallarCrdtOperationBatch = RallarCrdtOperationBatch,
 >(
-    options: RallarCrdtDocumentOptions<TValue>,
+    options: RallarCrdtDocumentOptions<TValue>
 ): RallarCrdtDocument<TValue, TPayload> {
     return new OperationBackedRallarCrdtDocument<TValue, TPayload>(options);
 }
 
 export function rallarCrdtBatch(
     operations: readonly RallarCrdtOperation[],
-    options: Omit<RallarCrdtOperationBatch, 'kind' | 'operations'> = {},
+    options: Omit<RallarCrdtOperationBatch, 'kind' | 'operations'> = {}
 ): RallarCrdtOperationBatch {
     return {
         kind: 'batch',
@@ -202,81 +191,80 @@ export function rallarCrdtBatch(
             ? { operationGroupId: options.operationGroupId }
             : {}),
         ...(options.undo ? { undo: options.undo } : {}),
-        ...(options.redo ? { redo: options.redo } : {}),
+        ...(options.redo ? { redo: options.redo } : {})
     };
 }
 
 export function rallarCrdtSetRegisterOperation(
     path: RallarCrdtPath,
     value: RallarCrdtJsonValue,
-    policy: RallarCrdtRegisterPolicy = 'lww',
+    policy: RallarCrdtRegisterPolicy = 'lww'
 ): RallarCrdtOperation {
     return {
         kind: 'register.set',
         path,
         value,
-        policy,
+        policy
     };
 }
 
-export const rallarCrdtResolveRegisterOperation =
-    rallarCrdtSetRegisterOperation;
+export const rallarCrdtResolveRegisterOperation = rallarCrdtSetRegisterOperation;
 
 export function rallarCrdtSetMapKeyOperation(
     path: RallarCrdtPath,
     key: string,
-    value: RallarCrdtJsonValue,
+    value: RallarCrdtJsonValue
 ): RallarCrdtOperation {
     return {
         kind: 'map.set',
         path,
         key,
-        value,
+        value
     };
 }
 
 export function rallarCrdtDeleteMapKeyOperation(
     document: Pick<RallarCrdtDocument, 'observedMapUpdateIds'>,
     path: RallarCrdtPath,
-    key: string,
+    key: string
 ): RallarCrdtOperation {
     return {
         kind: 'map.delete',
         path,
         key,
-        observedUpdateIds: document.observedMapUpdateIds(path, key),
+        observedUpdateIds: document.observedMapUpdateIds(path, key)
     };
 }
 
 export function rallarCrdtAddSetElementOperation(
     path: RallarCrdtPath,
     elementId: string,
-    value: RallarCrdtJsonValue,
+    value: RallarCrdtJsonValue
 ): RallarCrdtOperation {
     return {
         kind: 'orset.add',
         path,
         elementId,
-        value,
+        value
     };
 }
 
 export function rallarCrdtRemoveSetElementOperation(
     document: Pick<RallarCrdtDocument, 'observedSetAddUpdateIds'>,
     path: RallarCrdtPath,
-    elementId: string,
+    elementId: string
 ): RallarCrdtOperation {
     return {
         kind: 'orset.remove',
         path,
         elementId,
-        observedAddUpdateIds: document.observedSetAddUpdateIds(path, elementId),
+        observedAddUpdateIds: document.observedSetAddUpdateIds(path, elementId)
     };
 }
 
 export function rallarCrdtSequencePositionBetween(
     before?: string,
-    after?: string,
+    after?: string
 ): string {
     const alphabet = '0123456789abcdefghijklmnopqrstuvwxyz';
     const min = 0;
@@ -291,12 +279,10 @@ export function rallarCrdtSequencePositionBetween(
             return `${output}${alphabet[Math.floor(max / 2)]}`;
         }
 
-        const leftValue =
-            index < left.length ? alphabet.indexOf(left[index] ?? '') : min;
-        const rightValue =
-            index < right.length && right
-                ? alphabet.indexOf(right[index] ?? '')
-                : max;
+        const leftValue = index < left.length ? alphabet.indexOf(left[index] ?? '') : min;
+        const rightValue = index < right.length && right
+            ? alphabet.indexOf(right[index] ?? '')
+            : max;
         const safeLeft = leftValue < 0 ? min : leftValue;
         const safeRight = rightValue < 0 ? max : rightValue;
 
@@ -311,55 +297,53 @@ export function rallarCrdtSequencePositionBetween(
 
 export function rallarCrdtAddCounterOperation(
     path: RallarCrdtPath,
-    delta: number,
+    delta: number
 ): RallarCrdtOperation {
     return {
         kind: 'counter.add',
         path,
-        delta,
+        delta
     };
 }
 
 export function rallarCrdtIncrementCounterOperation(
     path: RallarCrdtPath,
-    amount = 1,
+    amount = 1
 ): RallarCrdtOperation {
     return rallarCrdtAddCounterOperation(path, amount);
 }
 
 export function rallarCrdtDecrementCounterOperation(
     path: RallarCrdtPath,
-    amount = 1,
+    amount = 1
 ): RallarCrdtOperation {
     return rallarCrdtAddCounterOperation(path, -amount);
 }
 
 export function rallarCrdtNumberMinOperation(
     path: RallarCrdtPath,
-    value: number,
+    value: number
 ): RallarCrdtOperation {
     return {
         kind: 'number.min',
         path,
-        value,
+        value
     };
 }
 
 export function rallarCrdtNumberMaxOperation(
     path: RallarCrdtPath,
-    value: number,
+    value: number
 ): RallarCrdtOperation {
     return {
         kind: 'number.max',
         path,
-        value,
+        value
     };
 }
 
-class OperationBackedRallarCrdtDocument<
-    TValue,
-    TPayload extends RallarCrdtOperationBatch,
-> implements RallarCrdtDocument<TValue, TPayload> {
+class OperationBackedRallarCrdtDocument<TValue, TPayload extends RallarCrdtOperationBatch>
+    implements RallarCrdtDocument<TValue, TPayload> {
     public readonly ref: RallarCrdtDocumentRef;
     public readonly replicaId: string;
 
@@ -374,10 +358,7 @@ class OperationBackedRallarCrdtDocument<
     private readonly validation: RallarCrdtValidationOptions;
     private readonly clock: RallarCrdtLamportClock;
     private readonly updates = new Map<string, InternalUpdate>();
-    private readonly dependencyBlocked = new Map<
-        string,
-        RallarCrdtDependencyBlockedUpdate<RallarCrdtOperationBatch>
-    >();
+    private readonly dependencyBlocked = new Map<string, RallarCrdtDependencyBlockedUpdate<RallarCrdtOperationBatch>>();
     private readonly snapshotSeenUpdateIds = new Set<string>();
 
     private baseValue: unknown;
@@ -389,19 +370,16 @@ class OperationBackedRallarCrdtDocument<
         this.replicaId = options.replicaId ?? createRandomId('replica');
         this.documentKey = toRallarCrdtDocumentKey(options.ref);
         this.schemaVersion = options.schemaVersion ?? 1;
-        this.operationVersion =
-            options.operationVersion ?? RALLAR_CRDT_OPERATION_VERSION;
+        this.operationVersion = options.operationVersion ?? RALLAR_CRDT_OPERATION_VERSION;
         this.actorId = options.actorId;
         this.sessionId = options.sessionId;
         this.now = options.now ?? Date.now;
-        this.createUpdateId =
-            options.createUpdateId ?? (() => createRandomId('update'));
-        this.createSnapshotId =
-            options.createSnapshotId ?? (() => createRandomId('snapshot'));
+        this.createUpdateId = options.createUpdateId ?? (() => createRandomId('update'));
+        this.createSnapshotId = options.createSnapshotId ?? (() => createRandomId('snapshot'));
         this.validation = {
             allowedSchemaVersions: [this.schemaVersion],
             allowedOperationVersions: [this.operationVersion],
-            ...options.validation,
+            ...options.validation
         };
         this.clock = createRallarCrdtLamportClock(this.replicaId);
         this.baseValue = cloneJsonValue(options.initialValue ?? {});
@@ -416,12 +394,12 @@ class OperationBackedRallarCrdtDocument<
     }
 
     public apply(
-        update: RallarCrdtUpdateEnvelope<TPayload>,
+        update: RallarCrdtUpdateEnvelope<TPayload>
     ): RallarCrdtApplyResult {
         const validation = validateRallarCrdtUpdateEnvelope(
             update,
             '$',
-            this.validation,
+            this.validation
         );
         if (!validation.valid) {
             return {
@@ -431,7 +409,7 @@ class OperationBackedRallarCrdtDocument<
                 releasedUpdateIds: [],
                 missingDependencyIds: [],
                 validation,
-                error: formatRallarCrdtValidation(validation),
+                error: formatRallarCrdtValidation(validation)
             };
         }
 
@@ -442,7 +420,7 @@ class OperationBackedRallarCrdtDocument<
                 appliedUpdateIds: [],
                 releasedUpdateIds: [],
                 missingDependencyIds: [],
-                error: 'CRDT update belongs to a different document.',
+                error: 'CRDT update belongs to a different document.'
             };
         }
 
@@ -452,7 +430,7 @@ class OperationBackedRallarCrdtDocument<
                 updateId: update.updateId,
                 appliedUpdateIds: [],
                 releasedUpdateIds: [],
-                missingDependencyIds: [],
+                missingDependencyIds: []
             };
         }
 
@@ -469,21 +447,21 @@ class OperationBackedRallarCrdtDocument<
                     appliedUpdateIds: [],
                     releasedUpdateIds: [],
                     missingDependencyIds,
-                    error: `CRDT dependency-blocked queue exceeds ${this.validation.maxBlockedUpdateCount} updates.`,
+                    error: `CRDT dependency-blocked queue exceeds ${this.validation.maxBlockedUpdateCount} updates.`
                 };
             }
             this.dependencyBlocked.set(update.updateId, {
                 update,
                 blockedAtEpochMs: this.now(),
                 missingDependencyIds,
-                reason: 'Missing CRDT update dependencies.',
+                reason: 'Missing CRDT update dependencies.'
             });
             return {
                 status: 'dependency-blocked',
                 updateId: update.updateId,
                 appliedUpdateIds: [],
                 releasedUpdateIds: [],
-                missingDependencyIds,
+                missingDependencyIds
             };
         }
 
@@ -495,7 +473,7 @@ class OperationBackedRallarCrdtDocument<
             updateId: update.updateId,
             appliedUpdateIds: [update.updateId, ...releasedUpdateIds],
             releasedUpdateIds,
-            missingDependencyIds: [],
+            missingDependencyIds: []
         };
     }
 
@@ -503,7 +481,7 @@ class OperationBackedRallarCrdtDocument<
         const payloadValidation = validateRallarCrdtOperationBatch(
             payload,
             '$.payload',
-            this.validation,
+            this.validation
         );
         if (!payloadValidation.valid) {
             throw new Error(formatRallarCrdtValidation(payloadValidation));
@@ -526,13 +504,13 @@ class OperationBackedRallarCrdtDocument<
             createdAtEpochMs: this.now(),
             causalFrontier: {
                 frontierUpdateIds: parents,
-                replicaClocks: clock.replicaClocks,
+                replicaClocks: clock.replicaClocks
             },
-            payload,
+            payload
         };
         const update = {
             ...updateWithoutHash,
-            hash: hashRallarCrdtUpdateEnvelope(updateWithoutHash),
+            hash: hashRallarCrdtUpdateEnvelope(updateWithoutHash)
         };
 
         const result = this.apply(update);
@@ -542,7 +520,7 @@ class OperationBackedRallarCrdtDocument<
         ) {
             throw new Error(
                 result.error ??
-                    `Could not apply local CRDT update: ${result.status}.`,
+                    `Could not apply local CRDT update: ${result.status}.`
             );
         }
 
@@ -561,9 +539,9 @@ class OperationBackedRallarCrdtDocument<
             maxLamport: Math.max(
                 this.clock.read(),
                 ...Array.from(this.updates.values()).map(
-                    (update) => update.lamport,
+                    (update) => update.lamport
                 ),
-                0,
+                0
             ),
             includedUpdateIds,
             updateClock: this.clock.snapshot(),
@@ -577,13 +555,13 @@ class OperationBackedRallarCrdtDocument<
                 ...(materialized.sequenceState
                     ? { sequenceState: materialized.sequenceState }
                     : {}),
-                ...(reason ? { reason } : {}),
-            },
+                ...(reason ? { reason } : {})
+            }
         };
 
         return {
             ...snapshotWithoutHash,
-            hash: hashRallarCrdtSnapshotEnvelope(snapshotWithoutHash),
+            hash: hashRallarCrdtSnapshotEnvelope(snapshotWithoutHash)
         };
     }
 
@@ -591,7 +569,7 @@ class OperationBackedRallarCrdtDocument<
         const validation = validateRallarCrdtSnapshotEnvelope(
             snapshot,
             '$',
-            this.validation,
+            this.validation
         );
         if (!validation.valid) {
             throw new Error(formatRallarCrdtValidation(validation));
@@ -599,7 +577,7 @@ class OperationBackedRallarCrdtDocument<
 
         if (toRallarCrdtDocumentKey(snapshot.document) !== this.documentKey) {
             throw new Error(
-                'Cannot import CRDT snapshot for a different document.',
+                'Cannot import CRDT snapshot for a different document.'
             );
         }
 
@@ -637,13 +615,13 @@ class OperationBackedRallarCrdtDocument<
             seenUpdateIds: this.sortedSeenUpdateIds(),
             blockedUpdateIds: Array.from(this.dependencyBlocked.keys()).sort(),
             missingUpdateIds: Array.from(missing).sort(),
-            dependencyBlockedCount: this.dependencyBlocked.size,
+            dependencyBlockedCount: this.dependencyBlocked.size
         };
     }
 
     public observedMapUpdateIds(
         path: RallarCrdtPath,
-        key: string,
+        key: string
     ): readonly string[] {
         const model = this.currentModel();
         const entry = model.maps.get(toPathKey(path))?.get(key);
@@ -657,7 +635,7 @@ class OperationBackedRallarCrdtDocument<
 
     public observedSetAddUpdateIds(
         path: RallarCrdtPath,
-        elementId: string,
+        elementId: string
     ): readonly string[] {
         const model = this.currentModel();
         const entry = model.sets.get(toPathKey(path))?.get(elementId);
@@ -671,7 +649,7 @@ class OperationBackedRallarCrdtDocument<
 
     public observedSequenceUpdateIds(
         path: RallarCrdtPath,
-        elementId: string,
+        elementId: string
     ): readonly string[] {
         const model = this.currentModel();
         const entry = model.sequences.get(toPathKey(path))?.get(elementId);
@@ -680,12 +658,10 @@ class OperationBackedRallarCrdtDocument<
         }
         const lifecycleIds = new Set([
             ...entry.inserts.keys(),
-            ...entry.moves.keys(),
+            ...entry.moves.keys()
         ]);
         if (
-            Array.from(entry.deletes).some((updateId) =>
-                lifecycleIds.has(updateId),
-            )
+            Array.from(entry.deletes).some((updateId) => lifecycleIds.has(updateId))
         ) {
             return [];
         }
@@ -693,7 +669,7 @@ class OperationBackedRallarCrdtDocument<
     }
 
     private applyReadyUpdate(
-        update: RallarCrdtUpdateEnvelope<RallarCrdtOperationBatch>,
+        update: RallarCrdtUpdateEnvelope<RallarCrdtOperationBatch>
     ): void {
         this.dependencyBlocked.delete(update.updateId);
         this.updates.set(update.updateId, update);
@@ -707,7 +683,7 @@ class OperationBackedRallarCrdtDocument<
         while (progress) {
             progress = false;
             const blockedUpdates = Array.from(
-                this.dependencyBlocked.values(),
+                this.dependencyBlocked.values()
             ).sort((left, right) => compareUpdates(left.update, right.update));
 
             for (const blocked of blockedUpdates) {
@@ -720,7 +696,7 @@ class OperationBackedRallarCrdtDocument<
                 if (missing.length > 0) {
                     this.dependencyBlocked.set(blocked.update.updateId, {
                         ...blocked,
-                        missingDependencyIds: missing,
+                        missingDependencyIds: missing
                     });
                     continue;
                 }
@@ -735,7 +711,7 @@ class OperationBackedRallarCrdtDocument<
     }
 
     private findMissingDependencies(
-        update: RallarCrdtUpdateEnvelope<RallarCrdtOperationBatch>,
+        update: RallarCrdtUpdateEnvelope<RallarCrdtOperationBatch>
     ): string[] {
         const missing = new Set<string>();
         const maybeRequire = (updateId: string): void => {
@@ -753,7 +729,8 @@ class OperationBackedRallarCrdtDocument<
                 for (const observed of operation.observedAddUpdateIds) {
                     maybeRequire(observed);
                 }
-            } else if (
+            }
+            else if (
                 operation.kind === 'map.delete' ||
                 operation.kind === 'sequence.delete' ||
                 operation.kind === 'sequence.move'
@@ -776,7 +753,7 @@ class OperationBackedRallarCrdtDocument<
 
     private sortedSeenUpdateIds(): string[] {
         return Array.from(
-            new Set([...this.snapshotSeenUpdateIds, ...this.updates.keys()]),
+            new Set([...this.snapshotSeenUpdateIds, ...this.updates.keys()])
         ).sort();
     }
 
@@ -784,7 +761,7 @@ class OperationBackedRallarCrdtDocument<
         const model = createModel(this.baseCrdtState, this.sequenceBaseState);
         const updates = Array.from(this.updates.values())
             .filter(
-                (update) => !this.snapshotSeenUpdateIds.has(update.updateId),
+                (update) => !this.snapshotSeenUpdateIds.has(update.updateId)
             )
             .sort(compareUpdates);
 
@@ -829,10 +806,7 @@ class OperationBackedRallarCrdtDocument<
         const model = this.currentModel();
         let value = cloneJsonValue(this.baseValue);
         const conflicts: RallarCrdtConflict[] = [];
-        const sequenceState: Record<
-            string,
-            RallarCrdtSequenceSnapshotPathState
-        > = {};
+        const sequenceState: Record<string, RallarCrdtSequenceSnapshotPathState> = {};
         const ancestors = createAncestorReader(model);
 
         for (const [pathKey, values] of sortedMapEntries(model.maps)) {
@@ -851,7 +825,7 @@ class OperationBackedRallarCrdtDocument<
             value = setJsonValueAtPath(value, path, materialized.value);
             sequenceState[pathKey] = {
                 path,
-                entries: materialized.entries,
+                entries: materialized.entries
             };
         }
 
@@ -884,17 +858,16 @@ class OperationBackedRallarCrdtDocument<
             conflicts,
             tombstoneCount: model.tombstoneCount,
             crdtState: createCrdtStateSnapshot(model),
-            sequenceState:
-                Object.keys(sequenceState).length > 0
-                    ? sequenceState
-                    : undefined,
+            sequenceState: Object.keys(sequenceState).length > 0
+                ? sequenceState
+                : undefined
         };
     }
 }
 
 function createModel(
     crdtState: RallarCrdtCrdtStateSnapshot | undefined = undefined,
-    sequenceState: RallarCrdtSequenceSnapshotState | undefined = undefined,
+    sequenceState: RallarCrdtSequenceSnapshotState | undefined = undefined
 ): Model {
     const model: Model = {
         registers: new Map(),
@@ -904,7 +877,7 @@ function createModel(
         counters: new Map(),
         numbers: new Map(),
         pathLookup: new Map(),
-        tombstoneCount: 0,
+        tombstoneCount: 0
     };
 
     if (crdtState) {
@@ -919,8 +892,8 @@ function createModel(
                     createdAtEpochMs: write.createdAtEpochMs,
                     parents: [...write.parents],
                     policy: write.policy,
-                    value: cloneJsonValue(write.value) as RallarCrdtJsonValue,
-                })),
+                    value: cloneJsonValue(write.value) as RallarCrdtJsonValue
+                }))
             );
         }
 
@@ -940,12 +913,12 @@ function createModel(
                                 parents: [...add.parents],
                                 elementId: add.elementId,
                                 value: cloneJsonValue(
-                                    add.value,
-                                ) as RallarCrdtJsonValue,
-                            },
-                        ]),
+                                    add.value
+                                ) as RallarCrdtJsonValue
+                            }
+                        ])
                     ),
-                    removes: new Set(element.removes),
+                    removes: new Set(element.removes)
                 });
                 model.tombstoneCount += element.removes.length;
             }
@@ -967,21 +940,23 @@ function createModel(
                                 parents: [...set.parents],
                                 key: set.key,
                                 value: cloneJsonValue(
-                                    set.value,
-                                ) as RallarCrdtJsonValue,
-                            },
-                        ]),
+                                    set.value
+                                ) as RallarCrdtJsonValue
+                            }
+                        ])
                     ),
-                    deletes: new Set(entry.deletes),
+                    deletes: new Set(entry.deletes)
                 });
                 model.tombstoneCount += entry.deletes.length;
             }
         }
 
         addSequenceStateToModel(model, crdtState.sequences);
-        for (const [pathKey, state] of Object.entries(
-            crdtState.counters ?? {},
-        )) {
+        for (
+            const [pathKey, state] of Object.entries(
+                crdtState.counters ?? {}
+            )
+        ) {
             model.pathLookup.set(pathKey, state.path);
             model.counters.set(
                 pathKey,
@@ -991,13 +966,15 @@ function createModel(
                     lamport: add.lamport,
                     createdAtEpochMs: add.createdAtEpochMs,
                     parents: [...add.parents],
-                    delta: add.delta,
-                })),
+                    delta: add.delta
+                }))
             );
         }
-        for (const [pathKey, state] of Object.entries(
-            crdtState.numbers ?? {},
-        )) {
+        for (
+            const [pathKey, state] of Object.entries(
+                crdtState.numbers ?? {}
+            )
+        ) {
             model.pathLookup.set(pathKey, state.path);
             model.numbers.set(
                 pathKey,
@@ -1008,8 +985,8 @@ function createModel(
                     createdAtEpochMs: write.createdAtEpochMs,
                     parents: [...write.parents],
                     merge: write.merge,
-                    value: write.value,
-                })),
+                    value: write.value
+                }))
             );
         }
         return model;
@@ -1022,7 +999,7 @@ function createModel(
 
 function addSequenceStateToModel(
     model: Model,
-    sequenceState: RallarCrdtSequenceSnapshotState | undefined,
+    sequenceState: RallarCrdtSequenceSnapshotState | undefined
 ): void {
     for (const [pathKey, pathState] of Object.entries(sequenceState ?? {})) {
         model.pathLookup.set(pathKey, pathState.path);
@@ -1034,8 +1011,8 @@ function addSequenceStateToModel(
                 () => ({
                     inserts: new Map<string, SequenceInsert>(),
                     moves: new Map<string, SequenceMove>(),
-                    deletes: new Set<string>(),
-                }),
+                    deletes: new Set<string>()
+                })
             );
             sequenceEntry.inserts.set(entry.insertUpdateId, {
                 updateId: entry.insertUpdateId,
@@ -1045,7 +1022,7 @@ function addSequenceStateToModel(
                 parents: [],
                 elementId: entry.elementId,
                 positionId: entry.positionId,
-                value: entry.value,
+                value: entry.value
             });
             if (entry.positionUpdateId !== entry.insertUpdateId) {
                 sequenceEntry.moves.set(entry.positionUpdateId, {
@@ -1055,7 +1032,7 @@ function addSequenceStateToModel(
                     createdAtEpochMs: entry.createdAtEpochMs,
                     parents: [],
                     elementId: entry.elementId,
-                    positionId: entry.positionId,
+                    positionId: entry.positionId
                 });
             }
         }
@@ -1065,14 +1042,14 @@ function addSequenceStateToModel(
 function addOperationToModel(
     model: Model,
     update: InternalUpdate,
-    operation: RallarCrdtOperation,
+    operation: RallarCrdtOperation
 ): void {
     const meta: WriteMeta = {
         updateId: update.updateId,
         replicaId: update.replicaId,
         lamport: update.lamport,
         createdAtEpochMs: update.createdAtEpochMs,
-        parents: update.parents,
+        parents: update.parents
     };
     const pathKey = toPathKey(operation.path);
     model.pathLookup.set(pathKey, operation.path);
@@ -1082,12 +1059,12 @@ function addOperationToModel(
             const set = getOrCreate(model.sets, pathKey, () => new Map());
             const element = getOrCreate(set, operation.elementId, () => ({
                 adds: new Map<string, SetAdd>(),
-                removes: new Set<string>(),
+                removes: new Set<string>()
             }));
             element.adds.set(update.updateId, {
                 ...meta,
                 elementId: operation.elementId,
-                value: operation.value,
+                value: operation.value
             });
             break;
         }
@@ -1095,7 +1072,7 @@ function addOperationToModel(
             const set = getOrCreate(model.sets, pathKey, () => new Map());
             const element = getOrCreate(set, operation.elementId, () => ({
                 adds: new Map<string, SetAdd>(),
-                removes: new Set<string>(),
+                removes: new Set<string>()
             }));
             for (const observed of operation.observedAddUpdateIds) {
                 element.removes.add(observed);
@@ -1108,7 +1085,7 @@ function addOperationToModel(
             register.push({
                 ...meta,
                 policy: operation.policy,
-                value: operation.value,
+                value: operation.value
             });
             break;
         }
@@ -1116,12 +1093,12 @@ function addOperationToModel(
             const map = getOrCreate(model.maps, pathKey, () => new Map());
             const entry = getOrCreate(map, operation.key, () => ({
                 sets: new Map<string, MapSet>(),
-                deletes: new Set<string>(),
+                deletes: new Set<string>()
             }));
             entry.sets.set(update.updateId, {
                 ...meta,
                 key: operation.key,
-                value: operation.value,
+                value: operation.value
             });
             break;
         }
@@ -1133,18 +1110,18 @@ function addOperationToModel(
             const sequence = getOrCreate(
                 model.sequences,
                 pathKey,
-                () => new Map(),
+                () => new Map()
             );
             const entry = getOrCreate(sequence, operation.elementId, () => ({
                 inserts: new Map<string, SequenceInsert>(),
                 moves: new Map<string, SequenceMove>(),
-                deletes: new Set<string>(),
+                deletes: new Set<string>()
             }));
             entry.inserts.set(update.updateId, {
                 ...meta,
                 elementId: operation.elementId,
                 positionId: operation.positionId,
-                value: operation.value,
+                value: operation.value
             });
             break;
         }
@@ -1156,17 +1133,17 @@ function addOperationToModel(
             const sequence = getOrCreate(
                 model.sequences,
                 pathKey,
-                () => new Map(),
+                () => new Map()
             );
             const entry = getOrCreate(sequence, operation.elementId, () => ({
                 inserts: new Map<string, SequenceInsert>(),
                 moves: new Map<string, SequenceMove>(),
-                deletes: new Set<string>(),
+                deletes: new Set<string>()
             }));
             entry.moves.set(update.updateId, {
                 ...meta,
                 elementId: operation.elementId,
-                positionId: operation.positionId,
+                positionId: operation.positionId
             });
             break;
         }
@@ -1174,7 +1151,7 @@ function addOperationToModel(
             const counter = getOrCreate(model.counters, pathKey, () => []);
             counter.push({
                 ...meta,
-                delta: operation.delta,
+                delta: operation.delta
             });
             break;
         }
@@ -1184,7 +1161,7 @@ function addOperationToModel(
             number.push({
                 ...meta,
                 merge: operation.kind === 'number.min' ? 'min' : 'max',
-                value: operation.value,
+                value: operation.value
             });
             break;
         }
@@ -1194,12 +1171,12 @@ function addOperationToModel(
 function addMapDeleteToModel(
     model: Model,
     pathKey: string,
-    operation: RallarCrdtMapDeleteOperation,
+    operation: RallarCrdtMapDeleteOperation
 ): void {
     const map = getOrCreate(model.maps, pathKey, () => new Map());
     const entry = getOrCreate(map, operation.key, () => ({
         sets: new Map<string, MapSet>(),
-        deletes: new Set<string>(),
+        deletes: new Set<string>()
     }));
 
     for (const observed of operation.observedUpdateIds) {
@@ -1214,13 +1191,13 @@ function addSequenceDeleteToModel(
     operation: {
         elementId: string;
         observedUpdateIds: readonly string[];
-    },
+    }
 ): void {
     const sequence = getOrCreate(model.sequences, pathKey, () => new Map());
     const entry = getOrCreate(sequence, operation.elementId, () => ({
         inserts: new Map<string, SequenceInsert>(),
         moves: new Map<string, SequenceMove>(),
-        deletes: new Set<string>(),
+        deletes: new Set<string>()
     }));
 
     for (const observed of operation.observedUpdateIds) {
@@ -1230,13 +1207,10 @@ function addSequenceDeleteToModel(
 }
 
 function materializeMap(
-    map: Map<
-        string,
-        {
-            sets: Map<string, MapSet>;
-            deletes: Set<string>;
-        }
-    >,
+    map: Map<string, {
+        sets: Map<string, MapSet>;
+        deletes: Set<string>;
+    }>
 ): Record<string, unknown> {
     const value: Record<string, unknown> = {};
 
@@ -1254,13 +1228,10 @@ function materializeMap(
 }
 
 function materializeSet(
-    set: Map<
-        string,
-        {
-            adds: Map<string, SetAdd>;
-            removes: Set<string>;
-        }
-    >,
+    set: Map<string, {
+        adds: Map<string, SetAdd>;
+        removes: Set<string>;
+    }>
 ): unknown[] {
     return sortedMapEntries(set)
         .flatMap(([elementId, entry]) => {
@@ -1270,31 +1241,28 @@ function materializeSet(
             const winner = liveAdds.at(-1);
             return winner
                 ? [
-                      {
-                          elementId,
-                          winner,
-                          value: cloneJsonValue(winner.value),
-                      },
-                  ]
+                    {
+                        elementId,
+                        winner,
+                        value: cloneJsonValue(winner.value)
+                    }
+                ]
                 : [];
         })
         .sort(
             (left, right) =>
                 left.elementId.localeCompare(right.elementId) ||
-                compareWrites(left.winner, right.winner),
+                compareWrites(left.winner, right.winner)
         )
         .map((entry) => entry.value);
 }
 
 function materializeSequence(
-    sequence: Map<
-        string,
-        {
-            inserts: Map<string, SequenceInsert>;
-            moves: Map<string, SequenceMove>;
-            deletes: Set<string>;
-        }
-    >,
+    sequence: Map<string, {
+        inserts: Map<string, SequenceInsert>;
+        moves: Map<string, SequenceMove>;
+        deletes: Set<string>;
+    }>
 ): Readonly<{
     value: unknown[];
     entries: readonly RallarCrdtSequenceSnapshotEntry[];
@@ -1302,7 +1270,7 @@ function materializeSequence(
     const entries = sortedMapEntries(sequence)
         .flatMap(([elementId, entry]) => {
             const inserts = Array.from(entry.inserts.values()).sort(
-                compareWrites,
+                compareWrites
             );
             const insert = inserts.at(-1);
             if (!insert) {
@@ -1311,20 +1279,17 @@ function materializeSequence(
 
             const lifecycleIds = new Set([
                 ...entry.inserts.keys(),
-                ...entry.moves.keys(),
+                ...entry.moves.keys()
             ]);
             if (
-                Array.from(entry.deletes).some((updateId) =>
-                    lifecycleIds.has(updateId),
-                )
+                Array.from(entry.deletes).some((updateId) => lifecycleIds.has(updateId))
             ) {
                 return [];
             }
 
-            const position =
-                [...inserts, ...entry.moves.values()]
-                    .sort(compareWrites)
-                    .at(-1) ?? insert;
+            const position = [...inserts, ...entry.moves.values()]
+                .sort(compareWrites)
+                .at(-1) ?? insert;
             const snapshotEntry: RallarCrdtSequenceSnapshotEntry = {
                 elementId,
                 positionId: position.positionId,
@@ -1333,31 +1298,31 @@ function materializeSequence(
                 positionUpdateId: position.updateId,
                 replicaId: position.replicaId,
                 lamport: position.lamport,
-                createdAtEpochMs: position.createdAtEpochMs,
+                createdAtEpochMs: position.createdAtEpochMs
             };
 
             return [
                 {
                     snapshotEntry,
                     position,
-                    value: cloneJsonValue(insert.value),
-                },
+                    value: cloneJsonValue(insert.value)
+                }
             ];
         })
         .sort(
             (left, right) =>
                 left.snapshotEntry.positionId.localeCompare(
-                    right.snapshotEntry.positionId,
+                    right.snapshotEntry.positionId
                 ) ||
                 compareWrites(left.position, right.position) ||
                 left.snapshotEntry.elementId.localeCompare(
-                    right.snapshotEntry.elementId,
-                ),
+                    right.snapshotEntry.elementId
+                )
         );
 
     return {
         value: entries.map((entry) => entry.value),
-        entries: entries.map((entry) => entry.snapshotEntry),
+        entries: entries.map((entry) => entry.snapshotEntry)
     };
 }
 
@@ -1366,8 +1331,8 @@ function materializeCounter(adds: readonly CounterAdd[]): number {
 }
 
 function materializeNumber(
-    writes: readonly NumberWrite[],
-): Readonly<{ hasValue: boolean; value?: number }> {
+    writes: readonly NumberWrite[]
+): Readonly<{ hasValue: boolean; value?: number; }> {
     if (writes.length === 0) {
         return { hasValue: false };
     }
@@ -1376,64 +1341,49 @@ function materializeNumber(
     const merge = ordered.at(-1)?.merge ?? 'max';
     const matching = ordered.filter((write) => write.merge === merge);
     const values = (matching.length > 0 ? matching : ordered).map(
-        (write) => write.value,
+        (write) => write.value
     );
     return {
         hasValue: true,
-        value: merge === 'min' ? Math.min(...values) : Math.max(...values),
+        value: merge === 'min' ? Math.min(...values) : Math.max(...values)
     };
 }
 
 function createCrdtStateSnapshot(model: Model): RallarCrdtCrdtStateSnapshot {
-    const registers: Record<
-        string,
-        {
-            path: RallarCrdtPath;
-            writes: RallarCrdtRegisterSnapshotWrite[];
-        }
-    > = {};
-    const sets: Record<
-        string,
-        {
-            path: RallarCrdtPath;
-            elements: Array<{
-                elementId: string;
-                adds: RallarCrdtSetSnapshotAdd[];
-                removes: string[];
-            }>;
-        }
-    > = {};
-    const maps: Record<
-        string,
-        {
-            path: RallarCrdtPath;
-            entries: Array<{
-                key: string;
-                sets: RallarCrdtMapSnapshotSet[];
-                deletes: string[];
-            }>;
-        }
-    > = {};
+    const registers: Record<string, {
+        path: RallarCrdtPath;
+        writes: RallarCrdtRegisterSnapshotWrite[];
+    }> = {};
+    const sets: Record<string, {
+        path: RallarCrdtPath;
+        elements: Array<{
+            elementId: string;
+            adds: RallarCrdtSetSnapshotAdd[];
+            removes: string[];
+        }>;
+    }> = {};
+    const maps: Record<string, {
+        path: RallarCrdtPath;
+        entries: Array<{
+            key: string;
+            sets: RallarCrdtMapSnapshotSet[];
+            deletes: string[];
+        }>;
+    }> = {};
     const sequences: Record<string, RallarCrdtSequenceSnapshotPathState> = {};
-    const counters: Record<
-        string,
-        {
-            path: RallarCrdtPath;
-            adds: RallarCrdtCounterSnapshotAdd[];
-        }
-    > = {};
-    const numbers: Record<
-        string,
-        {
-            path: RallarCrdtPath;
-            writes: RallarCrdtNumberSnapshotWrite[];
-        }
-    > = {};
+    const counters: Record<string, {
+        path: RallarCrdtPath;
+        adds: RallarCrdtCounterSnapshotAdd[];
+    }> = {};
+    const numbers: Record<string, {
+        path: RallarCrdtPath;
+        writes: RallarCrdtNumberSnapshotWrite[];
+    }> = {};
 
     for (const [pathKey, writes] of sortedMapEntries(model.registers)) {
         registers[pathKey] = {
             path: model.pathLookup.get(pathKey) ?? [],
-            writes: writes.sort(compareWrites).map(toRegisterSnapshotWrite),
+            writes: writes.sort(compareWrites).map(toRegisterSnapshotWrite)
         };
     }
 
@@ -1445,8 +1395,8 @@ function createCrdtStateSnapshot(model: Model): RallarCrdtCrdtStateSnapshot {
                 adds: Array.from(entry.adds.values())
                     .sort(compareWrites)
                     .map(toSetSnapshotAdd),
-                removes: Array.from(entry.removes).sort(),
-            })),
+                removes: Array.from(entry.removes).sort()
+            }))
         };
     }
 
@@ -1458,29 +1408,29 @@ function createCrdtStateSnapshot(model: Model): RallarCrdtCrdtStateSnapshot {
                 sets: Array.from(entry.sets.values())
                     .sort(compareWrites)
                     .map(toMapSnapshotSet),
-                deletes: Array.from(entry.deletes).sort(),
-            })),
+                deletes: Array.from(entry.deletes).sort()
+            }))
         };
     }
 
     for (const [pathKey, values] of sortedMapEntries(model.sequences)) {
         sequences[pathKey] = {
             path: model.pathLookup.get(pathKey) ?? [],
-            entries: materializeSequence(values).entries,
+            entries: materializeSequence(values).entries
         };
     }
 
     for (const [pathKey, values] of sortedMapEntries(model.counters)) {
         counters[pathKey] = {
             path: model.pathLookup.get(pathKey) ?? [],
-            adds: values.sort(compareWrites).map(toCounterSnapshotAdd),
+            adds: values.sort(compareWrites).map(toCounterSnapshotAdd)
         };
     }
 
     for (const [pathKey, values] of sortedMapEntries(model.numbers)) {
         numbers[pathKey] = {
             path: model.pathLookup.get(pathKey) ?? [],
-            writes: values.sort(compareWrites).map(toNumberSnapshotWrite),
+            writes: values.sort(compareWrites).map(toNumberSnapshotWrite)
         };
     }
 
@@ -1491,12 +1441,12 @@ function createCrdtStateSnapshot(model: Model): RallarCrdtCrdtStateSnapshot {
         maps,
         sequences,
         counters,
-        numbers,
+        numbers
     };
 }
 
 function toRegisterSnapshotWrite(
-    write: RegisterWrite,
+    write: RegisterWrite
 ): RallarCrdtRegisterSnapshotWrite {
     return {
         updateId: write.updateId,
@@ -1505,7 +1455,7 @@ function toRegisterSnapshotWrite(
         createdAtEpochMs: write.createdAtEpochMs,
         parents: [...write.parents],
         policy: write.policy,
-        value: cloneJsonValue(write.value) as RallarCrdtJsonValue,
+        value: cloneJsonValue(write.value) as RallarCrdtJsonValue
     };
 }
 
@@ -1517,7 +1467,7 @@ function toSetSnapshotAdd(add: SetAdd): RallarCrdtSetSnapshotAdd {
         createdAtEpochMs: add.createdAtEpochMs,
         parents: [...add.parents],
         elementId: add.elementId,
-        value: cloneJsonValue(add.value) as RallarCrdtJsonValue,
+        value: cloneJsonValue(add.value) as RallarCrdtJsonValue
     };
 }
 
@@ -1529,7 +1479,7 @@ function toMapSnapshotSet(set: MapSet): RallarCrdtMapSnapshotSet {
         createdAtEpochMs: set.createdAtEpochMs,
         parents: [...set.parents],
         key: set.key,
-        value: cloneJsonValue(set.value) as RallarCrdtJsonValue,
+        value: cloneJsonValue(set.value) as RallarCrdtJsonValue
     };
 }
 
@@ -1540,12 +1490,12 @@ function toCounterSnapshotAdd(add: CounterAdd): RallarCrdtCounterSnapshotAdd {
         lamport: add.lamport,
         createdAtEpochMs: add.createdAtEpochMs,
         parents: [...add.parents],
-        delta: add.delta,
+        delta: add.delta
     };
 }
 
 function toNumberSnapshotWrite(
-    write: NumberWrite,
+    write: NumberWrite
 ): RallarCrdtNumberSnapshotWrite {
     return {
         updateId: write.updateId,
@@ -1554,14 +1504,14 @@ function toNumberSnapshotWrite(
         createdAtEpochMs: write.createdAtEpochMs,
         parents: [...write.parents],
         merge: write.merge,
-        value: write.value,
+        value: write.value
     };
 }
 
 function materializeRegister(
     writes: readonly RegisterWrite[],
     path: RallarCrdtPath,
-    ancestors: (updateId: string) => ReadonlySet<string>,
+    ancestors: (updateId: string) => ReadonlySet<string>
 ): Readonly<{
     hasValue: boolean;
     value?: unknown;
@@ -1577,7 +1527,7 @@ function materializeRegister(
         const winner = ordered[ordered.length - 1];
         return {
             hasValue: true,
-            value: cloneJsonValue(winner?.value),
+            value: cloneJsonValue(winner?.value)
         };
     }
 
@@ -1586,16 +1536,16 @@ function materializeRegister(
             !ordered.some(
                 (other) =>
                     other.updateId !== candidate.updateId &&
-                    ancestors(other.updateId).has(candidate.updateId),
-            ),
+                    ancestors(other.updateId).has(candidate.updateId)
+            )
     );
 
     if (survivors.length <= 1) {
         return {
             hasValue: true,
             value: cloneJsonValue(
-                (survivors[0] ?? ordered[ordered.length - 1])?.value,
-            ),
+                (survivors[0] ?? ordered[ordered.length - 1])?.value
+            )
         };
     }
 
@@ -1606,8 +1556,8 @@ function materializeRegister(
         conflict: {
             kind: 'multi-value-register',
             path,
-            values,
-        },
+            values
+        }
     };
 }
 
@@ -1617,12 +1567,12 @@ function toConflictValue(write: RegisterWrite): RallarCrdtConflictValue {
         replicaId: write.replicaId,
         lamport: write.lamport,
         createdAtEpochMs: write.createdAtEpochMs,
-        value: cloneJsonValue(write.value) as RallarCrdtJsonValue,
+        value: cloneJsonValue(write.value) as RallarCrdtJsonValue
     };
 }
 
 function createAncestorReader(
-    model: Model,
+    model: Model
 ): (updateId: string) => ReadonlySet<string> {
     const cache = new Map<string, ReadonlySet<string>>();
     const parentsByUpdateId = new Map<string, readonly string[]>();
@@ -1688,7 +1638,7 @@ function createAncestorReader(
 }
 
 function operationObservedUpdateIds(
-    operation: RallarCrdtOperation,
+    operation: RallarCrdtOperation
 ): readonly string[] {
     switch (operation.kind) {
         case 'orset.remove':
@@ -1722,11 +1672,9 @@ function compareWrites(left: WriteMeta, right: WriteMeta): number {
 }
 
 function sortedMapEntries<K extends string, V>(
-    map: ReadonlyMap<K, V>,
+    map: ReadonlyMap<K, V>
 ): Array<readonly [K, V]> {
-    return Array.from(map.entries()).sort(([left], [right]) =>
-        left.localeCompare(right),
-    );
+    return Array.from(map.entries()).sort(([left], [right]) => left.localeCompare(right));
 }
 
 function getOrCreate<K, V>(map: Map<K, V>, key: K, create: () => V): V {
@@ -1747,7 +1695,7 @@ function toPathKey(path: RallarCrdtPath): string {
 function setJsonValueAtPath(
     current: unknown,
     path: RallarCrdtPath,
-    value: unknown,
+    value: unknown
 ): unknown {
     const next = cloneJsonValue(current);
 
@@ -1763,7 +1711,8 @@ function setJsonValueAtPath(
         const child = cursor[segment];
         if (isPlainRecord(child)) {
             cursor = child;
-        } else {
+        }
+        else {
             const created: Record<string, unknown> = {};
             cursor[segment] = created;
             cursor = created;
@@ -1797,6 +1746,6 @@ function createRandomId(prefix: string): string {
 
 function readUpdateId(value: unknown): string {
     return value && typeof value === 'object' && 'updateId' in value
-        ? String((value as { updateId?: unknown }).updateId ?? 'unknown')
+        ? String((value as { updateId?: unknown; }).updateId ?? 'unknown')
         : 'unknown';
 }

@@ -14,7 +14,7 @@ export function RunnerFleetControls({
     copyShareLink,
     lastRefresh,
     reports,
-    error,
+    error
 }: {
     controlBaseUrl: string;
     setControlBaseUrl(value: string): void;
@@ -23,10 +23,10 @@ export function RunnerFleetControls({
     filters: FleetFilterState;
     updateFilter<K extends keyof FleetFilterState>(
         key: K,
-        value: FleetFilterState[K],
+        value: FleetFilterState[K]
     ): void;
     busy: string | undefined;
-    refreshFleet(options?: Readonly<{ rebuild?: boolean; quiet?: boolean }>): Promise<void>;
+    refreshFleet(options?: Readonly<{ rebuild?: boolean; quiet?: boolean; }>): Promise<void>;
     copyShareLink(): Promise<void>;
     lastRefresh: number | undefined;
     reports: readonly ControlFleetRunReport[];
@@ -39,9 +39,7 @@ export function RunnerFleetControls({
                     <span>Control HTTP</span>
                     <input
                         value={controlBaseUrl}
-                        onChange={(event) =>
-                            setControlBaseUrl(event.target.value)
-                        }
+                        onChange={(event) => setControlBaseUrl(event.target.value)}
                     />
                 </label>
                 <label className="field compact-field">
@@ -60,9 +58,8 @@ export function RunnerFleetControls({
                         onChange={(event) =>
                             updateFilter(
                                 'window',
-                                event.target.value as FleetFilterState['window'],
-                            )
-                        }
+                                event.target.value as FleetFilterState['window']
+                            )}
                     >
                         <option value="1h">Last hour</option>
                         <option value="24h">Last 24h</option>
@@ -94,9 +91,7 @@ export function RunnerFleetControls({
                     <input
                         placeholder="eu-north"
                         value={filters.region}
-                        onChange={(event) =>
-                            updateFilter('region', event.target.value)
-                        }
+                        onChange={(event) => updateFilter('region', event.target.value)}
                     />
                 </label>
                 <label className="field">
@@ -104,9 +99,7 @@ export function RunnerFleetControls({
                     <input
                         placeholder="hetzner"
                         value={filters.provider}
-                        onChange={(event) =>
-                            updateFilter('provider', event.target.value)
-                        }
+                        onChange={(event) => updateFilter('provider', event.target.value)}
                     />
                 </label>
                 <label className="field">
@@ -114,9 +107,7 @@ export function RunnerFleetControls({
                     <input
                         placeholder="recipe id"
                         value={filters.recipeId}
-                        onChange={(event) =>
-                            updateFilter('recipeId', event.target.value)
-                        }
+                        onChange={(event) => updateFilter('recipeId', event.target.value)}
                     />
                 </label>
                 <label className="field">
@@ -124,18 +115,14 @@ export function RunnerFleetControls({
                     <input
                         placeholder="group id"
                         value={filters.groupId}
-                        onChange={(event) =>
-                            updateFilter('groupId', event.target.value)
-                        }
+                        onChange={(event) => updateFilter('groupId', event.target.value)}
                     />
                 </label>
                 <label className="field">
                     <span>State</span>
                     <select
                         value={filters.state}
-                        onChange={(event) =>
-                            updateFilter('state', event.target.value)
-                        }
+                        onChange={(event) => updateFilter('state', event.target.value)}
                     >
                         <option value="">Any</option>
                         <option value="passed">Passed</option>

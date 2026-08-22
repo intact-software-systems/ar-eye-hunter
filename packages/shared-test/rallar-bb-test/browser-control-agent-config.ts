@@ -1,14 +1,11 @@
 import { readSession, type AuthSessionStorageKind } from '@shared/api/auth.ts';
 import {
-    RALLAR_BLACK_BOX_CLIENT_DEFAULTS,
     parseRallarBlackBoxProviderMode,
-    type RallarBlackBoxProviderMode,
+    RALLAR_BLACK_BOX_CLIENT_DEFAULTS,
+    type RallarBlackBoxProviderMode
 } from './client-defaults.ts';
-import type {
-    RallarBlackBoxTestConfig,
-    RallarBlackBoxTestError,
-} from './types.ts';
 import type { RallarBlackBoxGeoLocation } from './distributed-run.ts';
+import type { RallarBlackBoxTestConfig, RallarBlackBoxTestError } from './types.ts';
 
 export type RallarBlackBoxBootstrapConfig = Readonly<{
     mode: 'local-workbench' | 'control-agent';
@@ -68,7 +65,7 @@ function paramValue(
     params: URLSearchParams,
     env: Readonly<Record<string, string | undefined>>,
     paramName: string,
-    envName: string,
+    envName: string
 ): string | undefined {
     const fromUrl = params.get(paramName)?.trim();
     return fromUrl && fromUrl.length > 0 ? fromUrl : env[envName]?.trim() || undefined;
@@ -76,7 +73,7 @@ function paramValue(
 
 function booleanParamValue(
     value: string | undefined,
-    fallback = false,
+    fallback = false
 ): boolean {
     if (!value) {
         return fallback;
@@ -90,7 +87,7 @@ function booleanParamValue(
 }
 
 function registerParamValue(
-    value: string | undefined,
+    value: string | undefined
 ): boolean | 'if-needed' {
     if (value?.toLowerCase() === 'if-needed') {
         return 'if-needed';
@@ -99,13 +96,13 @@ function registerParamValue(
 }
 
 function authStorageParamValue(
-    value: string | undefined,
+    value: string | undefined
 ): AuthSessionStorageKind {
     return value?.toLowerCase() === 'session' ? 'session' : 'local';
 }
 
 function numberParamValue(
-    value: string | undefined,
+    value: string | undefined
 ): number | undefined {
     if (!value) {
         return undefined;
@@ -117,7 +114,7 @@ function numberParamValue(
 
 function positiveIntegerParamValue(
     value: string | undefined,
-    fallback: number,
+    fallback: number
 ): number | undefined {
     if (!value) {
         return undefined;
@@ -130,7 +127,7 @@ function positiveIntegerParamValue(
 function coordinateParamValue(
     value: string | undefined,
     min: number,
-    max: number,
+    max: number
 ): number | undefined {
     const trimmed = value?.trim();
     if (!trimmed || !isStrictDecimalNumber(trimmed)) {
@@ -161,7 +158,7 @@ function stringValue(value: unknown): string | undefined {
 
 function controlModeFrom(
     params: URLSearchParams,
-    env: Readonly<Record<string, string | undefined>>,
+    env: Readonly<Record<string, string | undefined>>
 ): RallarBlackBoxBootstrapConfig['mode'] {
     const mode = params.get('mode') ?? env.VITE_RALLAR_BOOTSTRAP_MODE;
     return mode === 'control' || mode === 'control-agent'
@@ -171,7 +168,7 @@ function controlModeFrom(
 
 function bootstrapSource(
     params: URLSearchParams,
-    env: Readonly<Record<string, string | undefined>>,
+    env: Readonly<Record<string, string | undefined>>
 ): RallarBlackBoxBootstrapConfig['source'] {
     const urlKeys = [
         'mode',
@@ -212,9 +209,9 @@ function bootstrapSource(
         'runnerAgentCount',
         'fleetLatitude',
         'fleetLongitude',
-        'fleetLocationLabel',
+        'fleetLocationLabel'
     ];
-    if (urlKeys.some(key => params.has(key))) {
+    if (urlKeys.some((key) => params.has(key))) {
         return 'url';
     }
 
@@ -257,26 +254,26 @@ function bootstrapSource(
         'VITE_RALLAR_RUNNER_AGENT_COUNT',
         'VITE_RALLAR_AGENT_LATITUDE',
         'VITE_RALLAR_AGENT_LONGITUDE',
-        'VITE_RALLAR_AGENT_LOCATION_LABEL',
+        'VITE_RALLAR_AGENT_LOCATION_LABEL'
     ];
-    return envKeys.some(key => env[key]) ? 'environment' : 'default';
+    return envKeys.some((key) => env[key]) ? 'environment' : 'default';
 }
 
 export function rallarBlackBoxProviderModeFromConfig(
-    config: RallarBlackBoxTestConfig | undefined,
+    config: RallarBlackBoxTestConfig | undefined
 ): RallarBlackBoxProviderMode {
     const control = asRecord(config?.control);
     const defaults = asRecord(config?.defaults);
     return parseRallarBlackBoxProviderMode(
         stringValue(control.providerMode) ??
-        stringValue(control.provider) ??
-        stringValue(defaults.providerMode) ??
-        stringValue(defaults.provider),
+            stringValue(control.provider) ??
+            stringValue(defaults.providerMode) ??
+            stringValue(defaults.provider)
     );
 }
 
 export function validateRallarBlackBoxProviderConfig(
-    config: RallarBlackBoxTestConfig,
+    config: RallarBlackBoxTestConfig
 ): RallarBlackBoxTestError | undefined {
     const providerMode = rallarBlackBoxProviderModeFromConfig(config);
     if (providerMode === 'simulated') {
@@ -292,8 +289,8 @@ export function validateRallarBlackBoxProviderConfig(
             message: 'browser-rallar provider requires a real Rallar API base URL.',
             details: {
                 providerMode,
-                apiBaseUrl: config.apiBaseUrl,
-            },
+                apiBaseUrl: config.apiBaseUrl
+            }
         };
     }
 
@@ -308,8 +305,8 @@ export function validateRallarBlackBoxProviderConfig(
                 providerMode,
                 hasApiBaseUrl: true,
                 hasUsernamePassword: hasLogin,
-                restoreSession: canRestoreSession,
-            },
+                restoreSession: canRestoreSession
+            }
         };
     }
 
@@ -319,25 +316,25 @@ export function validateRallarBlackBoxProviderConfig(
 export function resolveRallarBlackBoxBootstrapConfig(
     search = globalThis.window?.location?.search ?? '',
     env: Readonly<Record<string, string | undefined>> =
-        (import.meta as { env?: Record<string, string | undefined> }).env ?? {},
-    hash = globalThis.window?.location?.hash ?? '',
+        (import.meta as { env?: Record<string, string | undefined>; }).env ?? {},
+    hash = globalThis.window?.location?.hash ?? ''
 ): RallarBlackBoxBootstrapConfig {
     const params = searchParams(search);
     const fragmentParams = hashParams(hash);
     const mode = controlModeFrom(params, env);
     const providerMode = parseRallarBlackBoxProviderMode(
         paramValue(params, env, 'provider', 'VITE_RALLAR_PROVIDER') ??
-        paramValue(params, env, 'providerMode', 'VITE_RALLAR_PROVIDER_MODE'),
+            paramValue(params, env, 'providerMode', 'VITE_RALLAR_PROVIDER_MODE')
     );
     const controlUrl = paramValue(
         params,
         env,
         'controlUrl',
-        'VITE_RALLAR_CONTROL_URL',
+        'VITE_RALLAR_CONTROL_URL'
     ) ?? RALLAR_BLACK_BOX_CLIENT_DEFAULTS.controlUrl;
     const autoConnect = booleanParamValue(
         paramValue(params, env, 'autoConnect', 'VITE_RALLAR_AUTO_CONNECT'),
-        mode === 'control-agent',
+        mode === 'control-agent'
     );
     const agentId = paramValue(params, env, 'agentId', 'VITE_RALLAR_AGENT_ID') ??
         RALLAR_BLACK_BOX_CLIENT_DEFAULTS.agentId;
@@ -346,24 +343,23 @@ export function resolveRallarBlackBoxBootstrapConfig(
         params,
         env,
         'runnerAgentCount',
-        'VITE_RALLAR_RUNNER_AGENT_COUNT',
+        'VITE_RALLAR_RUNNER_AGENT_COUNT'
     );
     const rawFleetLatitude = paramValue(
         params,
         env,
         'fleetLatitude',
-        'VITE_RALLAR_AGENT_LATITUDE',
+        'VITE_RALLAR_AGENT_LATITUDE'
     );
     const rawFleetLongitude = paramValue(
         params,
         env,
         'fleetLongitude',
-        'VITE_RALLAR_AGENT_LONGITUDE',
+        'VITE_RALLAR_AGENT_LONGITUDE'
     );
     const fleetLatitude = coordinateParamValue(rawFleetLatitude, -90, 90);
     const fleetLongitude = coordinateParamValue(rawFleetLongitude, -180, 180);
-    const hasFleetCoordinatePair =
-        fleetLatitude !== undefined && fleetLongitude !== undefined;
+    const hasFleetCoordinatePair = fleetLatitude !== undefined && fleetLongitude !== undefined;
     const runId = paramValue(params, env, 'runId', 'VITE_RALLAR_RUN_ID') ??
         (mode === 'control-agent'
             ? RALLAR_BLACK_BOX_CLIENT_DEFAULTS.controlRunId
@@ -382,19 +378,19 @@ export function resolveRallarBlackBoxBootstrapConfig(
             params,
             env,
             'heartbeatIntervalMs',
-            'VITE_RALLAR_HEARTBEAT_INTERVAL_MS',
+            'VITE_RALLAR_HEARTBEAT_INTERVAL_MS'
         )),
         statsIntervalMs: numberParamValue(paramValue(
             params,
             env,
             'statsIntervalMs',
-            'VITE_RALLAR_STATS_INTERVAL_MS',
+            'VITE_RALLAR_STATS_INTERVAL_MS'
         )),
         finalReportUploadUrl: paramValue(
             params,
             env,
             'reportUploadUrl',
-            'VITE_RALLAR_REPORT_UPLOAD_URL',
+            'VITE_RALLAR_REPORT_UPLOAD_URL'
         ),
         environment: paramValue(params, env, 'environment', 'VITE_RALLAR_ENVIRONMENT') ??
             RALLAR_BLACK_BOX_CLIENT_DEFAULTS.environment,
@@ -415,22 +411,22 @@ export function resolveRallarBlackBoxBootstrapConfig(
         rallarPassword: paramValue(params, env, 'rallarPassword', 'VITE_RALLAR_PASSWORD'),
         rallarToken: paramValue(params, env, 'rallarToken', 'VITE_RALLAR_TOKEN'),
         rallarRegister: registerParamValue(
-            paramValue(params, env, 'rallarRegister', 'VITE_RALLAR_REGISTER'),
+            paramValue(params, env, 'rallarRegister', 'VITE_RALLAR_REGISTER')
         ),
         rallarAuthStorage: authStorageParamValue(
-            paramValue(params, env, 'rallarAuthStorage', 'VITE_RALLAR_AUTH_STORAGE'),
+            paramValue(params, env, 'rallarAuthStorage', 'VITE_RALLAR_AUTH_STORAGE')
         ),
         rallarAgentSessionTicket: fragmentParams.get('agentSessionTicket')?.trim() ||
             undefined,
         rallarRestoreSession: booleanParamValue(
-            paramValue(params, env, 'rallarRestoreSession', 'VITE_RALLAR_RESTORE_SESSION'),
+            paramValue(params, env, 'rallarRestoreSession', 'VITE_RALLAR_RESTORE_SESSION')
         ),
         rallarLogoutOnClose: booleanParamValue(
-            paramValue(params, env, 'rallarLogoutOnClose', 'VITE_RALLAR_LOGOUT_ON_CLOSE'),
+            paramValue(params, env, 'rallarLogoutOnClose', 'VITE_RALLAR_LOGOUT_ON_CLOSE')
         ),
         rallarLeaveRoomOnClose: booleanParamValue(
             paramValue(params, env, 'rallarLeaveRoomOnClose', 'VITE_RALLAR_LEAVE_ROOM_ON_CLOSE'),
-            true,
+            true
         ),
         fleetRegion: paramValue(params, env, 'fleetRegion', 'VITE_RALLAR_AGENT_REGION'),
         fleetProvider: paramValue(params, env, 'fleetProvider', 'VITE_RALLAR_AGENT_PROVIDER'),
@@ -449,7 +445,7 @@ export function resolveRallarBlackBoxBootstrapConfig(
             : undefined,
         runnerAgentPrefix: paramValue(params, env, 'runnerAgentPrefix', 'VITE_RALLAR_RUNNER_AGENT_PREFIX'),
         runnerAgentCount: positiveIntegerParamValue(runnerAgentCountValue, 1),
-        source: bootstrapSource(params, env),
+        source: bootstrapSource(params, env)
     };
 }
 
@@ -458,19 +454,19 @@ function splitBootstrapCsv(value: string | undefined): readonly string[] | undef
         return undefined;
     }
     const entries = value.split(',')
-        .map(entry => entry.trim())
+        .map((entry) => entry.trim())
         .filter(Boolean);
     return entries.length > 0 ? entries : undefined;
 }
 
 export function rallarConfigFromBootstrap(
-    bootstrap: RallarBlackBoxBootstrapConfig,
+    bootstrap: RallarBlackBoxBootstrapConfig
 ): RallarBlackBoxTestConfig['rallar'] {
     if (bootstrap.providerMode === 'simulated') {
         return {
             username: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.demoUsername,
             password: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.demoPassword,
-            token: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.demoToken,
+            token: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.demoToken
         };
     }
 
@@ -482,7 +478,7 @@ export function rallarConfigFromBootstrap(
             ? { restoreSession: true }
             : {}),
         ...(bootstrap.rallarLogoutOnClose ? { logoutOnClose: true } : {}),
-        leaveRoomOnClose: bootstrap.rallarLeaveRoomOnClose,
+        leaveRoomOnClose: bootstrap.rallarLeaveRoomOnClose
     };
     return Object.keys(rallar).length > 0 ? rallar : undefined;
 }
@@ -494,14 +490,15 @@ function browserAuthSessionExists(): boolean {
 
     try {
         return Boolean(readSession());
-    } catch {
+    }
+    catch {
         return false;
     }
 }
 
 export function remoteControlConfig(
     bootstrap: RallarBlackBoxBootstrapConfig,
-    runNumber: number,
+    runNumber: number
 ): RallarBlackBoxTestConfig {
     const runId = bootstrap.runId || `${RALLAR_BLACK_BOX_CLIENT_DEFAULTS.controlRunId}-${runNumber}`;
     const rallar = rallarConfigFromBootstrap(bootstrap);
@@ -522,7 +519,7 @@ export function remoteControlConfig(
             connected: bootstrap.autoConnect,
             autoConnect: bootstrap.autoConnect,
             url: bootstrap.controlUrl,
-            source: bootstrap.source,
+            source: bootstrap.source
         },
         defaults: {
             timeoutMs: RALLAR_BLACK_BOX_CLIENT_DEFAULTS.timeoutMs,
@@ -530,14 +527,14 @@ export function remoteControlConfig(
             providerMode: bootstrap.providerMode,
             applicationId: bootstrap.applicationId,
             workspaceId: bootstrap.workspaceId,
-            groupId: bootstrap.roomId,
+            groupId: bootstrap.roomId
         },
-        fleet: bootstrapFleetMetadata(bootstrap),
+        fleet: bootstrapFleetMetadata(bootstrap)
     };
 }
 
 export function bootstrapFleetMetadata(
-    bootstrap: RallarBlackBoxBootstrapConfig,
+    bootstrap: RallarBlackBoxBootstrapConfig
 ): Readonly<Record<string, unknown>> | undefined {
     const location = bootstrapFleetLocation(bootstrap);
     const fleet = {
@@ -551,15 +548,15 @@ export function bootstrapFleetMetadata(
         browserVersion: bootstrap.fleetBrowserVersion,
         os: bootstrap.fleetOs,
         tags: bootstrap.fleetTags,
-        location,
+        location
     };
-    return Object.values(fleet).some(value => value !== undefined)
+    return Object.values(fleet).some((value) => value !== undefined)
         ? fleet
         : undefined;
 }
 
 function bootstrapFleetLocation(
-    bootstrap: RallarBlackBoxBootstrapConfig,
+    bootstrap: RallarBlackBoxBootstrapConfig
 ): RallarBlackBoxGeoLocation | undefined {
     if (bootstrap.fleetLatitude === undefined || bootstrap.fleetLongitude === undefined) {
         return undefined;
@@ -569,6 +566,6 @@ function bootstrapFleetLocation(
         latitude: bootstrap.fleetLatitude,
         longitude: bootstrap.fleetLongitude,
         label: bootstrap.fleetLocationLabel,
-        precision: 'exact',
+        precision: 'exact'
     };
 }

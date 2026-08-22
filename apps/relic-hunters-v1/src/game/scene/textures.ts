@@ -1,5 +1,5 @@
-import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
 import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial.js';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
 import { Scene } from '@babylonjs/core/scene.js';
 
 export type CastleSurfaceTextures = Readonly<{
@@ -11,8 +11,8 @@ export type CastleSurfaceTextures = Readonly<{
 export function createCastleSurfaceTextures(scene: Scene): CastleSurfaceTextures {
     return {
         stoneNormal: buildNormalMap(scene, 'castle-stone-normal', 128, stoneHeightFn, 9),
-        woodNormal:  buildNormalMap(scene, 'castle-wood-normal',   64, woodHeightFn,  6),
-        metalNormal: buildNormalMap(scene, 'castle-metal-normal',  64, metalHeightFn, 4),
+        woodNormal: buildNormalMap(scene, 'castle-wood-normal', 64, woodHeightFn, 6),
+        metalNormal: buildNormalMap(scene, 'castle-metal-normal', 64, metalHeightFn, 4)
     };
 }
 
@@ -23,7 +23,7 @@ export function applyNormalMap(
     src: DynamicTexture,
     uScale: number,
     vScale: number,
-    level = 1.0,
+    level = 1.0
 ): void {
     const tex = src.clone() as DynamicTexture;
     tex.uScale = uScale;
@@ -35,7 +35,7 @@ export function applyNormalMap(
 export function applyClearCoat(
     mat: PBRMaterial,
     intensity: number,
-    roughness: number,
+    roughness: number
 ): void {
     mat.clearCoat.isEnabled = true;
     mat.clearCoat.intensity = intensity;
@@ -46,7 +46,7 @@ export function applyClearCoat(
 export function applySheen(
     mat: PBRMaterial,
     intensity: number,
-    roughness: number,
+    roughness: number
 ): void {
     mat.sheen.isEnabled = true;
     mat.sheen.intensity = intensity;
@@ -60,7 +60,7 @@ function buildNormalMap(
     name: string,
     size: number,
     heightFn: (u: number, v: number) => number,
-    bumpScale: number,
+    bumpScale: number
 ): DynamicTexture {
     const tex = new DynamicTexture(name, { width: size, height: size }, scene, false);
     const ctx = tex.getContext() as CanvasRenderingContext2D;
@@ -115,25 +115,25 @@ function smoothNoise(x: number, y: number): number {
     const fy = y - iy;
     const ux = fx * fx * (3 - 2 * fx);
     const uy = fy * fy * (3 - 2 * fy);
-    return pseudoNoise(ix,     iy    ) * (1 - ux) * (1 - uy)
-         + pseudoNoise(ix + 1, iy    ) * ux       * (1 - uy)
-         + pseudoNoise(ix,     iy + 1) * (1 - ux) * uy
-         + pseudoNoise(ix + 1, iy + 1) * ux       * uy;
+    return pseudoNoise(ix, iy) * (1 - ux) * (1 - uy) +
+        pseudoNoise(ix + 1, iy) * ux * (1 - uy) +
+        pseudoNoise(ix, iy + 1) * (1 - ux) * uy +
+        pseudoNoise(ix + 1, iy + 1) * ux * uy;
 }
 
 // Stacked brick courses with mortar joints and per-stone dome curvature
 function stoneHeightFn(u: number, v: number): number {
-    const row    = Math.floor(v * 7);
+    const row = Math.floor(v * 7);
     const rowOff = (row % 2) * 0.5;
-    const col    = Math.floor((u + rowOff) * 5);
-    const lu     = (u + rowOff) * 5 - col;
-    const lv     = v * 7 - row;
-    const mu     = Math.min(lu, 1 - lu) * 8;
-    const mv     = Math.min(lv, 1 - lv) * 8;
+    const col = Math.floor((u + rowOff) * 5);
+    const lu = (u + rowOff) * 5 - col;
+    const lv = v * 7 - row;
+    const mu = Math.min(lu, 1 - lu) * 8;
+    const mv = Math.min(lv, 1 - lv) * 8;
     const mortar = Math.min(1, Math.min(mu, mv));
-    const dome   = Math.min(lu, 1 - lu) * Math.min(lv, 1 - lv) * 4;
-    const seed   = Math.abs(Math.sin(col * 37.3 + row * 119.7)) * 0.35;
-    const grain  = (smoothNoise(u * 28, v * 28) * 0.6 + smoothNoise(u * 56, v * 56) * 0.4) * 0.18;
+    const dome = Math.min(lu, 1 - lu) * Math.min(lv, 1 - lv) * 4;
+    const seed = Math.abs(Math.sin(col * 37.3 + row * 119.7)) * 0.35;
+    const grain = (smoothNoise(u * 28, v * 28) * 0.6 + smoothNoise(u * 56, v * 56) * 0.4) * 0.18;
     return mortar * (0.55 + seed) * Math.min(1, dome) + grain;
 }
 
@@ -147,8 +147,8 @@ function woodHeightFn(u: number, v: number): number {
 
 // Fine horizontal machining scratches — makes iron look forged, not plastic
 function metalHeightFn(u: number, v: number): number {
-    const s1   = Math.abs(Math.sin(v * 180 + Math.sin(u * 0.7) * 2.5)) * 0.5;
-    const s2   = Math.abs(Math.sin(v * 380 + u * 1.8)) * 0.35;
+    const s1 = Math.abs(Math.sin(v * 180 + Math.sin(u * 0.7) * 2.5)) * 0.5;
+    const s2 = Math.abs(Math.sin(v * 380 + u * 1.8)) * 0.35;
     const grain = smoothNoise(u * 36, v * 36) * 0.15;
     return s1 * 0.55 + s2 * 0.3 + grain;
 }

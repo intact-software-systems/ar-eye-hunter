@@ -1,13 +1,9 @@
 // deno-lint-ignore-file no-explicit-any
-import { CompareJson } from '../../json-compare/json-compare.ts';
 import type { JsonValue } from '../../json-compare/CompareJson.ts';
+import { CompareJson } from '../../json-compare/json-compare.ts';
 
 import type { RallarBlackBoxTestAssertOperator } from '../types.ts';
-import {
-    containsValue,
-    type PayloadPathLookup,
-    sameJsonValue,
-} from '../wait/wait-event-match.ts';
+import { containsValue, sameJsonValue, type PayloadPathLookup } from '../wait/wait-event-match.ts';
 
 export const RALLAR_BLACK_BOX_ASSERT_OPERATORS = [
     'equals',
@@ -22,11 +18,11 @@ export const RALLAR_BLACK_BOX_ASSERT_OPERATORS = [
     'length',
     'matches',
     'matchesShape',
-    'matchesShapeComplete',
+    'matchesShapeComplete'
 ] as const;
 
 export function isRallarBlackBoxAssertOperator(
-    value: unknown,
+    value: unknown
 ): value is RallarBlackBoxTestAssertOperator {
     return typeof value === 'string' &&
         RALLAR_BLACK_BOX_ASSERT_OPERATORS.includes(value as RallarBlackBoxTestAssertOperator);
@@ -35,7 +31,7 @@ export function isRallarBlackBoxAssertOperator(
 export function assertValueMatches(
     source: PayloadPathLookup,
     operator: RallarBlackBoxTestAssertOperator,
-    expected: unknown,
+    expected: unknown
 ): boolean {
     switch (operator) {
         case 'equals':
@@ -86,7 +82,7 @@ export function assertValueMatches(
 function boundedNumberMatches(
     value: any,
     bound: any,
-    satisfies: (actual: number, bound: number) => boolean,
+    satisfies: (actual: number, bound: number) => boolean
 ): boolean {
     const actualNumber = Number(value);
     const boundNumber = Number(bound);
@@ -98,7 +94,7 @@ function boundedNumberMatches(
 function betweenMatches(value: any, expected: any): boolean {
     const bounds = Array.isArray(expected) ? expected.map(Number) : [];
     const actualNumber = Number(value);
-    if (bounds.length !== 2 || bounds.some(bound => !Number.isFinite(bound))) {
+    if (bounds.length !== 2 || bounds.some((bound) => !Number.isFinite(bound))) {
         return false;
     }
     return Number.isFinite(actualNumber) && actualNumber >= bounds[0] && actualNumber <= bounds[1];
@@ -118,14 +114,15 @@ function regexMatches(value: any, expected: any): boolean {
     }
     try {
         return new RegExp(String(expected)).test(value);
-    } catch (_error) {
+    }
+    catch (_error) {
         return false;
     }
 }
 
 function containsAssertValue(value: unknown, expected: unknown): boolean {
     if (Array.isArray(value)) {
-        return value.some(entry => sameJsonValue(entry, expected));
+        return value.some((entry) => sameJsonValue(entry, expected));
     }
 
     if (typeof value === 'string') {
@@ -137,7 +134,7 @@ function containsAssertValue(value: unknown, expected: unknown): boolean {
             return containsValue(value, expected);
         }
         return Object.values(value as Record<string, unknown>)
-            .some(entry => sameJsonValue(entry, expected));
+            .some((entry) => sameJsonValue(entry, expected));
     }
 
     return containsValue(value, String(expected));

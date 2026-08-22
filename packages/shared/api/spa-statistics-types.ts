@@ -1,9 +1,4 @@
-import type {
-    GroupJoinMode,
-    GroupRef,
-    GroupRole,
-    GroupStatus,
-} from './group-types.ts';
+import type { GroupJoinMode, GroupRef, GroupRole, GroupStatus } from './group-types.ts';
 import type { StateScope } from './state-types.ts';
 
 export const SPA_STATISTICS_WARNING_CODES = [
@@ -13,11 +8,10 @@ export const SPA_STATISTICS_WARNING_CODES = [
     'process-local-realtime',
     'websocket-session-missing',
     'client-session-missing',
-    'group-presence-filtered',
+    'group-presence-filtered'
 ] as const;
 
-export type SpaStatisticsWarningCode =
-    typeof SPA_STATISTICS_WARNING_CODES[number];
+export type SpaStatisticsWarningCode = typeof SPA_STATISTICS_WARNING_CODES[number];
 
 export type SpaStatisticsWarning = Readonly<{
     code: SpaStatisticsWarningCode;
@@ -52,10 +46,12 @@ export type SpaStatisticsSafeGroupSummary = Readonly<{
 export type WorkspaceSpaStatisticsResponse = Readonly<{
     generatedAtEpochMs: number;
     scope: StateScope;
-    actor: SpaStatisticsActor & Readonly<{
-        activeClientSessionCount: number;
-        groupPresenceCount: number;
-    }>;
+    actor:
+        & SpaStatisticsActor
+        & Readonly<{
+            activeClientSessionCount: number;
+            groupPresenceCount: number;
+        }>;
     warnings: readonly SpaStatisticsWarning[];
     groups: Readonly<{
         fullReadableCount: number;
@@ -72,14 +68,18 @@ export type GroupSpaStatisticsResponse = Readonly<{
     generatedAtEpochMs: number;
     scope: StateScope;
     groupRef: GroupRef;
-    actor: SpaStatisticsActor & Readonly<{
-        role?: GroupRole;
-        activePresenceSessionCount: number;
-    }>;
+    actor:
+        & SpaStatisticsActor
+        & Readonly<{
+            role?: GroupRole;
+            activePresenceSessionCount: number;
+        }>;
     warnings: readonly SpaStatisticsWarning[];
-    group: Omit<SpaStatisticsSafeGroupSummary, 'groupRef'> & Readonly<{
-        groupId: string;
-    }>;
+    group:
+        & Omit<SpaStatisticsSafeGroupSummary, 'groupRef'>
+        & Readonly<{
+            groupId: string;
+        }>;
     activity: Readonly<{
         recentGroupEventCount: SpaStatisticsBoundedCount;
     }>;
@@ -104,8 +104,14 @@ export type MyRealtimeSpaStatisticsResponse = Readonly<{
     }>;
     groupPresence: Readonly<{
         activeGroupPresenceCount: number;
-        groups: readonly (Omit<SpaStatisticsSafeGroupSummary, 'activeSessionCount' | 'memberCount' | 'onlineMemberCount' | 'snapshotVersion' | 'presenceVersion'> & Readonly<{
-            actorSessionPresent: true;
-        }>)[];
+        groups: readonly (
+            & Omit<
+                SpaStatisticsSafeGroupSummary,
+                'activeSessionCount' | 'memberCount' | 'onlineMemberCount' | 'snapshotVersion' | 'presenceVersion'
+            >
+            & Readonly<{
+                actorSessionPresent: true;
+            }>
+        )[];
     }>;
 }>;

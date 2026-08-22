@@ -1,18 +1,18 @@
-import { useState } from 'react';
 import type { AuthSession } from '@shared/api/api-config.ts';
+import { useState } from 'react';
 import type { CommandCenterGlobalValues } from './global-context-model.ts';
 
 export function GlobalContextBar({
     values,
     authSession,
     onChange,
-    onReset,
+    onReset
 }: {
     values: CommandCenterGlobalValues;
     authSession?: AuthSession;
     onChange<K extends keyof CommandCenterGlobalValues>(
         key: K,
-        value: CommandCenterGlobalValues[K],
+        value: CommandCenterGlobalValues[K]
     ): void;
     onReset(): void;
 }) {
@@ -51,9 +51,7 @@ export function GlobalContextBar({
                     <input
                         aria-label="Global Server URL"
                         value={values.apiBaseUrl}
-                        onChange={(event) =>
-                            onChange('apiBaseUrl', event.target.value)
-                        }
+                        onChange={(event) => onChange('apiBaseUrl', event.target.value)}
                     />
                 </label>
                 <label className="field">
@@ -61,9 +59,7 @@ export function GlobalContextBar({
                     <input
                         aria-label="Global Application"
                         value={values.applicationId}
-                        onChange={(event) =>
-                            onChange('applicationId', event.target.value)
-                        }
+                        onChange={(event) => onChange('applicationId', event.target.value)}
                     />
                 </label>
                 <label className="field">
@@ -71,9 +67,7 @@ export function GlobalContextBar({
                     <input
                         aria-label="Global Workspace"
                         value={values.workspaceId}
-                        onChange={(event) =>
-                            onChange('workspaceId', event.target.value)
-                        }
+                        onChange={(event) => onChange('workspaceId', event.target.value)}
                     />
                 </label>
                 <label className="field">
@@ -81,9 +75,7 @@ export function GlobalContextBar({
                     <input
                         aria-label="Global Room"
                         value={values.roomId}
-                        onChange={(event) =>
-                            onChange('roomId', event.target.value)
-                        }
+                        onChange={(event) => onChange('roomId', event.target.value)}
                     />
                 </label>
                 <label className="field">
@@ -91,9 +83,7 @@ export function GlobalContextBar({
                     <input
                         aria-label="Global Client"
                         value={values.clientId}
-                        onChange={(event) =>
-                            onChange('clientId', event.target.value)
-                        }
+                        onChange={(event) => onChange('clientId', event.target.value)}
                     />
                 </label>
                 <label className="field">
@@ -101,9 +91,7 @@ export function GlobalContextBar({
                     <input
                         aria-label="Global Session"
                         value={values.sessionId}
-                        onChange={(event) =>
-                            onChange('sessionId', event.target.value)
-                        }
+                        onChange={(event) => onChange('sessionId', event.target.value)}
                     />
                 </label>
             </div>

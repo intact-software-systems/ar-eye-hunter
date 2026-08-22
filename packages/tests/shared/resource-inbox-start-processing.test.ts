@@ -1,13 +1,12 @@
-import { beforeAll, describe, expect, it } from 'vitest';
 import { Temporal } from '@js-temporal/polyfill';
-import { EntityStatus, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
+import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 if (!('Temporal' in globalThis)) {
     Object.assign(globalThis, { Temporal });
 }
 
-type ResourceInboxRepositoryModule =
-    typeof import('@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts');
+type ResourceInboxRepositoryModule = typeof import('@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts');
 
 type ResourceInboxRow = {
     ri_row_id: bigint;
@@ -32,7 +31,7 @@ let repositoryModule: ResourceInboxRepositoryModule;
 beforeAll(async () => {
     repositoryModule = await import(
         '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts'
-        );
+    );
 });
 
 describe('ResourceInboxRepository.startProcessingEntity', () => {
@@ -40,7 +39,7 @@ describe('ResourceInboxRepository.startProcessingEntity', () => {
         const active = createEntry('active-1', Temporal.Now.instant().add({ minutes: 5 }));
         const expired = createEntry(
             'expired-1',
-            Temporal.Now.instant().subtract({ seconds: 1 }),
+            Temporal.Now.instant().subtract({ seconds: 1 })
         );
         const harness = createSqlHarness([toRow(active, 1n), toRow(expired, 2n)]);
         const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
@@ -48,7 +47,7 @@ describe('ResourceInboxRepository.startProcessingEntity', () => {
         const skipped = await repo.startProcessingEntity(expired);
         expect(skipped.left).toEqual({
             kind: 'expired-or-missing',
-            key: expired.key,
+            key: expired.key
         });
 
         const reserved = await repo.startProcessingEntity(active);
@@ -65,8 +64,8 @@ describe('ResourceInboxRepository.startProcessingEntity', () => {
                 attempts: 20,
                 startTs: Temporal.Now.instant().subtract({ minutes: 1 }),
                 endTs: Temporal.Now.instant().subtract({ seconds: 31 }),
-                nextTs: Temporal.Now.instant().subtract({ seconds: 30 }),
-            },
+                nextTs: Temporal.Now.instant().subtract({ seconds: 30 })
+            }
         } satisfies ResourceEntry;
         const harness = createSqlHarness([toRow(exhausted, 1n)]);
         const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
@@ -75,7 +74,7 @@ describe('ResourceInboxRepository.startProcessingEntity', () => {
 
         expect(skipped.left).toEqual({
             kind: 'expired-or-missing',
-            key: exhausted.key,
+            key: exhausted.key
         });
     });
 
@@ -87,8 +86,8 @@ describe('ResourceInboxRepository.startProcessingEntity', () => {
                 attempts: 2,
                 startTs: Temporal.Now.instant().subtract({ minutes: 1 }),
                 endTs: Temporal.Now.instant().subtract({ seconds: 31 }),
-                nextTs: Temporal.Now.instant().subtract({ seconds: 30 }),
-            },
+                nextTs: Temporal.Now.instant().subtract({ seconds: 30 })
+            }
         } satisfies ResourceEntry;
         const harness = createSqlHarness([toRow(exhausted, 1n)]);
         const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
@@ -97,14 +96,14 @@ describe('ResourceInboxRepository.startProcessingEntity', () => {
 
         expect(skipped.left).toEqual({
             kind: 'expired-or-missing',
-            key: exhausted.key,
+            key: exhausted.key
         });
     });
 });
 
 function createSqlHarness(seedRows: ResourceInboxRow[]) {
     const rows = new Map(
-        seedRows.map((row) => [toCompositeKey(row), row] as const),
+        seedRows.map((row) => [toCompositeKey(row), row] as const)
     );
 
     const sql = ((
@@ -120,10 +119,9 @@ function createSqlHarness(seedRows: ResourceInboxRow[]) {
             query.includes('update resource_inbox') &&
             query.includes('set ri_status =') &&
             query.includes('ri_attempts =') &&
-            query.includes("expire_ts > (now() at time zone 'utc')")
+            query.includes('expire_ts > (now() at time zone \'utc\')')
         ) {
-            const [status, attempts, endTs, nextTs, topicId, resourceId, contextId, maxAttempts] =
-                values;
+            const [status, attempts, endTs, nextTs, topicId, resourceId, contextId, maxAttempts] = values;
             const key = `${contextId}::${topicId}::${resourceId}`;
             const row = rows.get(key);
 
@@ -141,7 +139,7 @@ function createSqlHarness(seedRows: ResourceInboxRow[]) {
                 ri_attempts: BigInt(attempts as number),
                 start_ts: new Date().toISOString(),
                 end_ts: toOptionalString(endTs),
-                next_ts: toOptionalString(nextTs),
+                next_ts: toOptionalString(nextTs)
             };
             rows.set(key, updated);
             return [cloneRow(updated)];
@@ -156,7 +154,7 @@ function createSqlHarness(seedRows: ResourceInboxRow[]) {
     };
 
     return {
-        sql: sql as never,
+        sql: sql as never
     };
 }
 
@@ -165,7 +163,7 @@ function createEntry(resourceId: string, expiryTs: Temporal.Instant): ResourceEn
         key: {
             topicId: 'topic-1',
             resourceId,
-            contextId: 'ctx-1',
+            contextId: 'ctx-1'
         },
         resource: JSON.stringify({ resourceId }),
         typeId: 'type-1',
@@ -174,11 +172,11 @@ function createEntry(resourceId: string, expiryTs: Temporal.Instant): ResourceEn
             date: Temporal.Now.plainDateTimeISO().toPlainTime(),
             createdBy: 'tester',
             createdTs: Temporal.Now.plainDateTimeISO(),
-            expiryTs,
+            expiryTs
         },
         dequeueAudit: {
-            attempts: 0,
-        },
+            attempts: 0
+        }
     };
 }
 
@@ -198,7 +196,7 @@ function toRow(entry: ResourceEntry, rowId: bigint): ResourceInboxRow {
         start_ts: null,
         end_ts: null,
         next_ts: null,
-        ri_attempts: BigInt(entry.dequeueAudit.attempts ?? 0),
+        ri_attempts: BigInt(entry.dequeueAudit.attempts ?? 0)
     };
 }
 

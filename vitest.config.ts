@@ -1,30 +1,30 @@
-import { defineConfig } from 'vitest/config';
 import path from 'node:path';
+import { defineConfig } from 'vitest/config';
 
 process.chdir(__dirname);
 
 export default defineConfig({
-  root: __dirname,
-  resolve: {
-    alias: {
-      '@shared-web': path.resolve(__dirname, 'packages/shared-web'),
-      '@shared-server': path.resolve(__dirname, 'packages/shared-server'),
-      '@shared': path.resolve(__dirname, 'packages/shared'),
-      '@shared-graph': path.resolve(__dirname, 'packages/shared-graph'),
-      '@shared-test': path.resolve(__dirname, 'packages/shared-test'),
-      '@relic-hunters': path.resolve(__dirname, 'packages/relic-hunters'),
+    root: __dirname,
+    resolve: {
+        alias: {
+            '@shared-web': path.resolve(__dirname, 'packages/shared-web'),
+            '@shared-server': path.resolve(__dirname, 'packages/shared-server'),
+            '@shared': path.resolve(__dirname, 'packages/shared'),
+            '@shared-graph': path.resolve(__dirname, 'packages/shared-graph'),
+            '@shared-test': path.resolve(__dirname, 'packages/shared-test'),
+            '@relic-hunters': path.resolve(__dirname, 'packages/relic-hunters')
+        }
     },
-  },
 
-  test: {
-    include: ['packages/tests/**/*.test.ts', 'packages/shared-rtc-bench/tests/**/*.test.ts'],
-    exclude: [
-      'packages/tests/shared-server/integration/**',
-      'packages/tests/shared-test/scenario-black-box-rtc-config.test.ts',
-      'packages/tests/shared-test/execute-black-box-rtc-client-provider.test.ts',
-    ],
-    environment: 'node',
-    globals: true,
-    setupFiles: ['packages/tests/setup-vitest.ts'],
-  },
+    test: {
+        include: ['packages/tests/**/*.test.ts', 'packages/shared-rtc-bench/tests/**/*.test.ts'],
+        exclude: [
+            'packages/tests/shared-server/integration/**',
+            'packages/tests/shared-test/scenario-black-box-rtc-config.test.ts',
+            'packages/tests/shared-test/execute-black-box-rtc-client-provider.test.ts'
+        ],
+        environment: 'node',
+        globals: true,
+        setupFiles: ['packages/tests/setup-vitest.ts']
+    }
 });

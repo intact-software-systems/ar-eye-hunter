@@ -14,7 +14,7 @@ const todos = await rallar.data.open<Todo>('todos');
 
 await todos.set('1', { title: 'Persist custom data', done: false });
 
-const cached = todos.read('1');      // RAM only
+const cached = todos.read('1'); // RAM only
 const loaded = await todos.get('1'); // RAM, then IndexedDB
 const all = await todos.getEntries();
 ```
@@ -52,7 +52,7 @@ background. Use `flush()` or `whenIdle()` before unload-sensitive work.
 
 ```ts
 const drafts = await rallar.data.open<Todo>('drafts', {
-    durability: 'write-behind',
+    durability: 'write-behind'
 });
 
 await drafts.set('1', { title: 'Fast local write', done: false });
@@ -71,12 +71,12 @@ const todos = await rallar.data.open<Todo>('todos', {
     schemaVersion: 2,
     migrate: (persisted, context) => {
         if (context.fromVersion === 1) {
-            const old = persisted as { text: string };
+            const old = persisted as { text: string; };
             return { title: old.text, done: false };
         }
 
         return persisted as Todo;
-    },
+    }
 });
 ```
 

@@ -4,90 +4,89 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
 
-import type {
-  RtcRttEndpointAdmission,
-  RtcRttMutationReceipt,
-} from '../persistence/rtc-rtt-persistence-contracts.ts';
+import type { RtcRttEndpointAdmission, RtcRttMutationReceipt } from '../persistence/rtc-rtt-persistence-contracts.ts';
 import type { RtcRttAcceptanceReason } from '../policy/rtc-rtt-measurement-policy.ts';
 
 export type RtcRttStableRequest = Readonly<{
-  rtt: RttMeasurementInfo;
-  alSenderId: string;
+    rtt: RttMeasurementInfo;
+    alSenderId: string;
 }>;
 
-export type RtcRttMutationCommand = RtcRttStableRequest &
-  (
-    | Readonly<{
-        candidateGroups: null;
-        overlaySnapshotsByGroupKey: null;
-        degreeLimit: null;
-      }>
-    | Readonly<{
-        candidateGroups: readonly GroupSnapshot[];
-        overlaySnapshotsByGroupKey: ReadonlyMap<string, RallarOverlayTopologySnapshot>;
-        degreeLimit: number;
-      }>
-  );
+export type RtcRttMutationCommand =
+    & RtcRttStableRequest
+    & (
+        | Readonly<{
+            candidateGroups: null;
+            overlaySnapshotsByGroupKey: null;
+            degreeLimit: null;
+        }>
+        | Readonly<{
+            candidateGroups: readonly GroupSnapshot[];
+            overlaySnapshotsByGroupKey: ReadonlyMap<string, RallarOverlayTopologySnapshot>;
+            degreeLimit: number;
+        }>
+    );
 
 export type RtcRttMutationRead =
-  | Readonly<{
-      receipt: RuntimeStateEntryValue<RtcRttMutationReceipt>;
+    | Readonly<{
+        receipt: RuntimeStateEntryValue<RtcRttMutationReceipt>;
     }>
-  | Readonly<{
-      receipt: null;
-      measurement: RuntimeStateEntryValue<RttMeasurementInfo> | null;
-      expiredMeasurementEntry: RuntimeStateEntry | null;
-      endpointAdmissions: readonly RuntimeStateEntryValue<RtcRttEndpointAdmission>[];
-      expiredEndpointAdmissionEntries: readonly RuntimeStateEntry[];
-      measurements: readonly RuntimeStateEntryValue<RttMeasurementInfo>[];
+    | Readonly<{
+        receipt: null;
+        measurement: RuntimeStateEntryValue<RttMeasurementInfo> | null;
+        expiredMeasurementEntry: RuntimeStateEntry | null;
+        endpointAdmissions: readonly RuntimeStateEntryValue<RtcRttEndpointAdmission>[];
+        expiredEndpointAdmissionEntries: readonly RuntimeStateEntry[];
+        measurements: readonly RuntimeStateEntryValue<RttMeasurementInfo>[];
     }>;
 
-export type RtcRttMutationFacts = (
-  | Readonly<{
-      purgeAfterEpochMs: null;
-      requestedAtEpochMs: null;
-    }>
-  | RtcRttMutationLifecycleFacts
-) &
-  Readonly<{
-    commandHash: string;
-    attemptCount: number;
-  }>;
+export type RtcRttMutationFacts =
+    & (
+        | Readonly<{
+            purgeAfterEpochMs: null;
+            requestedAtEpochMs: null;
+        }>
+        | RtcRttMutationLifecycleFacts
+    )
+    & Readonly<{
+        commandHash: string;
+        attemptCount: number;
+    }>;
 
 export type RtcRttMutationLifecycleFacts = Readonly<{
-  purgeAfterEpochMs: number;
-  requestedAtEpochMs: number;
+    purgeAfterEpochMs: number;
+    requestedAtEpochMs: number;
 }>;
 
 export type RtcRttEndpointGuard = Readonly<{
-  endpointId: string;
-  expectedRevision: number | null;
-  expireAtTimestamp: number;
-  value: RtcRttEndpointAdmission;
+    endpointId: string;
+    expectedRevision: number | null;
+    expireAtTimestamp: number;
+    value: RtcRttEndpointAdmission;
 }>;
 
 export type RtcRttMutationComputed =
-  | Readonly<{
-      outcome: 'replay';
-      reason: 'accepted';
-      affectedGroups: readonly GroupSnapshot[];
-      receipt: RtcRttMutationReceipt;
+    | Readonly<{
+        outcome: 'replay';
+        reason: 'accepted';
+        affectedGroups: readonly GroupSnapshot[];
+        receipt: RtcRttMutationReceipt;
     }>
-  | Readonly<{
-      outcome: 'rejected';
-      reason: RtcRttAcceptanceReason | 'stale';
-      affectedGroups: readonly GroupSnapshot[];
+    | Readonly<{
+        outcome: 'rejected';
+        reason: RtcRttAcceptanceReason | 'stale';
+        affectedGroups: readonly GroupSnapshot[];
     }>
-  | Readonly<{
-      outcome: 'write';
-      reason: 'accepted';
-      affectedGroups: readonly GroupSnapshot[];
-      endpointGuards: readonly RtcRttEndpointGuard[];
-      measurementGuard: Readonly<{
-        expectedRevision: number | null;
-        value: RttMeasurementInfo;
-        purgeAfterEpochMs: number;
-      }>;
-      receipt: RtcRttMutationReceipt;
-      senderId: string;
+    | Readonly<{
+        outcome: 'write';
+        reason: 'accepted';
+        affectedGroups: readonly GroupSnapshot[];
+        endpointGuards: readonly RtcRttEndpointGuard[];
+        measurementGuard: Readonly<{
+            expectedRevision: number | null;
+            value: RttMeasurementInfo;
+            purgeAfterEpochMs: number;
+        }>;
+        receipt: RtcRttMutationReceipt;
+        senderId: string;
     }>;

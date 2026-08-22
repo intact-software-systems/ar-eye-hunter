@@ -16,13 +16,13 @@ export type ArenaBrowserAiConfig = Readonly<{
 }>;
 
 export function resolveArenaBrowserAiMode(
-    env: ArenaBrowserAiEnv = readImportMetaEnv(),
+    env: ArenaBrowserAiEnv = readImportMetaEnv()
 ): ArenaBrowserAiMode {
     return resolveArenaBrowserAiConfig(env).mode;
 }
 
 export function resolveArenaBrowserAiConfig(
-    env: ArenaBrowserAiEnv = readImportMetaEnv(),
+    env: ArenaBrowserAiEnv = readImportMetaEnv()
 ): ArenaBrowserAiConfig {
     const enabled = readBoolLike(env[ARENA_BROWSER_AI_ENABLED_ENV_KEY]);
     const mode = readStringLike(env[ARENA_BROWSER_AI_MODE_ENV_KEY]).toLowerCase();
@@ -39,7 +39,7 @@ export function resolveArenaBrowserAiConfig(
         enabled: resolvedMode !== 'off',
         mode: resolvedMode,
         modelId,
-        fallbackMode: isDisabledValue(fallback) ? 'off' : 'mock',
+        fallbackMode: isDisabledValue(fallback) ? 'off' : 'mock'
     };
 }
 
@@ -56,7 +56,7 @@ function isDisabledValue(value: string): boolean {
 }
 
 function readImportMetaEnv(): ArenaBrowserAiEnv {
-    return (import.meta as { env?: ArenaBrowserAiEnv }).env ?? {};
+    return (import.meta as { env?: ArenaBrowserAiEnv; }).env ?? {};
 }
 
 function readBoolLike(value: string | boolean | undefined): boolean | undefined {

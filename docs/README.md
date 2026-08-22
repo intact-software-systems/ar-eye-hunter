@@ -78,6 +78,11 @@ and authoritative persisted/shared contracts use mandatory fields by default.
 - [Convergent State And RTC Topology Architecture](./rallar-convergent-state-and-rtc-topology.md)
   Durable causal revisions, optimistic snapshot reads, atomic topology
   execution, cross-server authorization, fanout, and retry guarantees.
+- [Rallar Group Formation Architecture](./rallar-group-formation-architecture.md)
+  Formation intent lifecycle, the lifecycle policy document and presets,
+  admission and the manager role, readiness and the activation criterion,
+  pre-activation data gating, the read surface, and the recipes that pin each
+  behaviour.
 
 ## Repo Codex Skills
 

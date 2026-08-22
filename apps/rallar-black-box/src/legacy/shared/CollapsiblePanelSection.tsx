@@ -1,4 +1,4 @@
-import { type ReactNode, useId, useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 
 export function CollapsiblePanelSection({
     title,
@@ -6,7 +6,7 @@ export function CollapsiblePanelSection({
     defaultExpanded = true,
     className,
     contentClassName,
-    children,
+    children
 }: {
     title: string;
     meta?: ReactNode;
@@ -25,9 +25,7 @@ export function CollapsiblePanelSection({
         >
             <div className="collapsible-section-heading">
                 <h3>{title}</h3>
-                {meta && (
-                    <span className="collapsible-section-meta">{meta}</span>
-                )}
+                {meta && <span className="collapsible-section-meta">{meta}</span>}
                 <button
                     type="button"
                     className="collapsible-toggle"

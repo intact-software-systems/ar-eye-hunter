@@ -28,12 +28,12 @@ export type RallarMessage<T = unknown> = Readonly<{
 }>;
 
 export type RallarMessageHandler<T = unknown> = (
-    message: RallarMessage<T>,
+    message: RallarMessage<T>
 ) => void | Promise<void>;
 
 export type RallarStateEventListener<TEvent> = (
     event: TEvent,
-    message: RallarMessage<TEvent>,
+    message: RallarMessage<TEvent>
 ) => void | Promise<void>;
 
 export type RallarMessageSendBase<T> = Readonly<{
@@ -52,26 +52,26 @@ export type RallarMessageSendBase<T> = Readonly<{
 export type RallarRtcSendInput<T> =
     & RallarMessageSendBase<T>
     & Readonly<{
-    roomId?: string;
-    roomRef?: GroupRef;
-    membershipEpoch?: number;
-    minSnapshotVersion?: number;
-    seq?: number;
-    orderingKey?: string;
-    nextHopPeerIds?: readonly string[];
-    overlayId?: string;
-    fanoutLimit?: number;
-}>;
+        roomId?: string;
+        roomRef?: GroupRef;
+        membershipEpoch?: number;
+        minSnapshotVersion?: number;
+        seq?: number;
+        orderingKey?: string;
+        nextHopPeerIds?: readonly string[];
+        overlayId?: string;
+        fanoutLimit?: number;
+    }>;
 
 export type RallarWsSendInput<T> =
     & RallarMessageSendBase<T>
     & Readonly<{
-    scope?: 'room' | 'world' | 'all';
-    roomId?: string;
-    roomRef?: GroupRef;
-    minSnapshotVersion?: number;
-    exceptPeerIds?: readonly string[];
-}>;
+        scope?: 'room' | 'world' | 'all';
+        roomId?: string;
+        roomRef?: GroupRef;
+        minSnapshotVersion?: number;
+        exceptPeerIds?: readonly string[];
+    }>;
 
 export type RallarMessageSendStatus = ALOutboundEnqueueStatus;
 
@@ -86,11 +86,11 @@ export type RallarMessageSendResult = Readonly<{
 
 export type RallarMessageLane<TSendInput, TSelector = string> = Readonly<{
     send<T>(
-        input: TSendInput & RallarMessageSendBase<T>,
+        input: TSendInput & RallarMessageSendBase<T>
     ): Promise<RallarMessageSendResult>;
     onMessage<T = unknown>(
         selector: TSelector,
-        handler: RallarMessageHandler<T>,
+        handler: RallarMessageHandler<T>
     ): RallarUnsubscribe;
 }>;
 
@@ -101,38 +101,32 @@ export type RallarTypedMessageChannelDefinition = Readonly<{
 
 export type RallarTypedPayloadHandler<T> = (
     payload: T,
-    message: RallarMessage<T>,
+    message: RallarMessage<T>
 ) => void | Promise<void>;
 
-export type RallarTypedRtcSendOptions<T> = Omit<
-    RallarRtcSendInput<T>,
-    'topicId' | 'typeId' | 'payload'
->;
+export type RallarTypedRtcSendOptions<T> = Omit<RallarRtcSendInput<T>, 'topicId' | 'typeId' | 'payload'>;
 
-export type RallarTypedWsSendOptions<T> = Omit<
-    RallarWsSendInput<T>,
-    'topicId' | 'typeId' | 'payload'
->;
+export type RallarTypedWsSendOptions<T> = Omit<RallarWsSendInput<T>, 'topicId' | 'typeId' | 'payload'>;
 
 export type RallarTypedMessageSendOptions<T> =
     & Partial<RallarTypedRtcSendOptions<T>>
     & Partial<RallarTypedWsSendOptions<T>>
     & Readonly<{
-    strategy?: RallarTypedMessageSendStrategy;
-}>;
+        strategy?: RallarTypedMessageSendStrategy;
+    }>;
 
 export type RallarTypedMessageChannel<T> = Readonly<{
     send(
         payload: T,
-        options?: RallarTypedMessageSendOptions<T>,
+        options?: RallarTypedMessageSendOptions<T>
     ): Promise<RallarMessageSendResult>;
     sendRtc(
         payload: T,
-        options?: RallarTypedRtcSendOptions<T>,
+        options?: RallarTypedRtcSendOptions<T>
     ): Promise<RallarMessageSendResult>;
     sendWs(
         payload: T,
-        options?: RallarTypedWsSendOptions<T>,
+        options?: RallarTypedWsSendOptions<T>
     ): Promise<RallarMessageSendResult>;
     onRtc(handler: RallarTypedPayloadHandler<T>): RallarUnsubscribe;
     onWs(handler: RallarTypedPayloadHandler<T>): RallarUnsubscribe;
@@ -141,52 +135,42 @@ export type RallarTypedMessageChannel<T> = Readonly<{
 export type RallarRoomMessageChannelDefinition =
     & RallarTypedMessageChannelDefinition
     & Readonly<{
-    roomId?: string;
-    roomRef?: GroupRef;
-}>;
+        roomId?: string;
+        roomRef?: GroupRef;
+    }>;
 
 export type RallarRoomMessageChannel<T> = RallarTypedMessageChannel<T>;
 
 export type RallarMessagesFacade = Readonly<{
-    rtc: RallarMessageLane<
-        RallarRtcSendInput<unknown>,
-        RallarMessageSelectorInput
-    >;
-    ws: RallarMessageLane<
-        RallarWsSendInput<unknown>,
-        RallarMessageSelectorInput
-    >;
+    rtc: RallarMessageLane<RallarRtcSendInput<unknown>, RallarMessageSelectorInput>;
+    ws: RallarMessageLane<RallarWsSendInput<unknown>, RallarMessageSelectorInput>;
     channel<T>(
-        definition: RallarTypedMessageChannelDefinition,
+        definition: RallarTypedMessageChannelDefinition
     ): RallarTypedMessageChannel<T>;
     room<T>(
-        definition: RallarRoomMessageChannelDefinition,
+        definition: RallarRoomMessageChannelDefinition
     ): RallarRoomMessageChannel<T>;
 }>;
 
 export type CreateRallarMessagesFacadeOptions = RallarMessagesFacade;
 
 export function createRallarMessagesFacade(
-    operations: CreateRallarMessagesFacadeOptions,
+    operations: CreateRallarMessagesFacadeOptions
 ): RallarMessagesFacade {
     return {
         rtc: {
             send: async (input) => await operations.rtc.send(input),
-            onMessage: (selector, handler) =>
-                operations.rtc.onMessage(selector, handler),
+            onMessage: (selector, handler) => operations.rtc.onMessage(selector, handler)
         },
         ws: {
             send: async (input) => await operations.ws.send(input),
-            onMessage: (selector, handler) =>
-                operations.ws.onMessage(selector, handler),
+            onMessage: (selector, handler) => operations.ws.onMessage(selector, handler)
         },
         channel: <T>(
-            definition: RallarTypedMessageChannelDefinition,
-        ): RallarTypedMessageChannel<T> =>
-            operations.channel<T>(definition),
+            definition: RallarTypedMessageChannelDefinition
+        ): RallarTypedMessageChannel<T> => operations.channel<T>(definition),
         room: <T>(
-            definition: RallarRoomMessageChannelDefinition,
-        ): RallarRoomMessageChannel<T> =>
-            operations.room<T>(definition),
+            definition: RallarRoomMessageChannelDefinition
+        ): RallarRoomMessageChannel<T> => operations.room<T>(definition)
     };
 }

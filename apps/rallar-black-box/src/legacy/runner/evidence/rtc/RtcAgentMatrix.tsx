@@ -1,7 +1,7 @@
 import type { RtcPerformanceView } from '../../../../rtc-diagnostics.ts';
 
 export function RtcAgentMatrix({
-    cells,
+    cells
 }: {
     cells: RtcPerformanceView['agentMatrix'];
 }) {
@@ -12,11 +12,11 @@ export function RtcAgentMatrix({
         'ready',
         'active',
         'stale',
-        'missing',
+        'missing'
     ];
     const cellByKey = new Map(cells.map((cell) => [
         `${cell.laneId}:${cell.metric}`,
-        cell,
+        cell
     ]));
 
     if (laneIds.length === 0) {
@@ -27,9 +27,7 @@ export function RtcAgentMatrix({
         <div className="rtc-agent-matrix" role="table" aria-label="RTC peer lane matrix">
             <div className="rtc-agent-matrix-head" role="row">
                 <span role="columnheader">lane</span>
-                {metrics.map((metric) => (
-                    <span role="columnheader" key={metric}>{metric}</span>
-                ))}
+                {metrics.map((metric) => <span role="columnheader" key={metric}>{metric}</span>)}
             </div>
             {laneIds.map((laneId) => (
                 <div className="rtc-agent-matrix-row" role="row" key={laneId}>

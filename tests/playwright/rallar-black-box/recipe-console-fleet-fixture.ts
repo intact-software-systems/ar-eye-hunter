@@ -1,27 +1,22 @@
-import type {
-    BrowserContext,
-    Page,
-    Route,
-} from '@playwright/test';
+import type { BrowserContext, Page, Route } from '@playwright/test';
+import type { ControlEventEnvelope } from '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import type {
     ControlAgentSnapshot,
     ControlRunSnapshot,
-    ControlServerSnapshot,
+    ControlServerSnapshot
 } from '../../../packages/shared-test/rallar-bb-test/control-snapshots.ts';
-import type { ControlEventEnvelope } from
-    '../../../packages/shared-test/rallar-bb-test/control-protocol.ts';
 import type {
     ControlFleetAgentRunOutcome,
     ControlFleetFailureSignature,
     ControlFleetReportBundle,
-    ControlFleetRunReport,
+    ControlFleetRunReport
 } from '../../../packages/shared-test/rallar-bb-test/fleet-report.ts';
 import {
     installRecipeConsoleMonitorFixture,
     MONITOR_CONTROL_RUN_ID,
     MONITOR_DISTRIBUTED_RUN_ID,
     MONITOR_FAILURE_AGENT_ID,
-    MONITOR_FAILURE_RECIPE_ID,
+    MONITOR_FAILURE_RECIPE_ID
 } from './recipe-console-monitor-fixture.ts';
 
 export const FLEET_REPORT_ID = MONITOR_DISTRIBUTED_RUN_ID;
@@ -31,10 +26,8 @@ export const FLEET_PRIMARY_RECIPE_ID = MONITOR_FAILURE_RECIPE_ID;
 export const FLEET_PRIMARY_SIGNATURE_ID = 'fleet-signature-route-timeout';
 export const FLEET_SELECTED_REGION = 'region-01';
 export const FLEET_ALTERNATE_REGION = 'region-00';
-export const FLEET_EXPLICIT_ONLY_AGENT_ID =
-    'fleet-peer-id-is-not-explicit-route-evidence';
-export const FLEET_LONG_BIDI_AGENT_ID =
-    'fleet-agent-segment-segment-segment-segment-segment-אבג-مرحبا-終端';
+export const FLEET_EXPLICIT_ONLY_AGENT_ID = 'fleet-peer-id-is-not-explicit-route-evidence';
+export const FLEET_LONG_BIDI_AGENT_ID = 'fleet-agent-segment-segment-segment-segment-segment-אבג-مرحبا-終端';
 
 export const FLEET_ROUTE = '/?' + new URLSearchParams({
     provider: 'simulated',
@@ -47,7 +40,7 @@ export const FLEET_ROUTE = '/?' + new URLSearchParams({
     workspaceId: 'default',
     roomId: 'monitor-group',
     fleetRegion: FLEET_SELECTED_REGION,
-    fleetMapLayers: 'live-agents,historical-regions,failures',
+    fleetMapLayers: 'live-agents,historical-regions,failures'
 }).toString();
 
 const CONTROL_ROUTE = /https?:\/\/(?:localhost|127\.0\.0\.1):5180\/.*/;
@@ -55,7 +48,7 @@ const BASE_EPOCH_MS = 2_100_000_000_000;
 const GROUP = {
     applicationId: 'rallar-server',
     workspaceId: 'default',
-    groupId: 'monitor-group',
+    groupId: 'monitor-group'
 } as const;
 const REPORT_COUNT = 14;
 const RESOLVED_LIVE_AGENT_COUNT = 48;
@@ -74,13 +67,13 @@ export type RecipeConsoleFleetFixture = Readonly<{
     recoverRootReads(): void;
     releaseRootReads(): void;
     setFleetCollection(
-        mode: 'present' | 'absent' | 'empty' | 'schema-error',
+        mode: 'present' | 'absent' | 'empty' | 'schema-error'
     ): void;
 }>;
 
 export async function installRecipeConsoleFleetFixture(
     context: BrowserContext,
-    page: Page,
+    page: Page
 ): Promise<RecipeConsoleFleetFixture> {
     const monitor = await installRecipeConsoleMonitorFixture(context);
     const reports = createReports();
@@ -88,7 +81,7 @@ export async function installRecipeConsoleFleetFixture(
     const snapshot: ControlServerSnapshot = {
         runs: [controlRun],
         distributedRuns: monitor.snapshot.distributedRuns,
-        fleetReports: reports,
+        fleetReports: reports
     };
     const artifact = createArtifact(reports[0]!);
     let rootReads = 0;
@@ -96,10 +89,9 @@ export async function installRecipeConsoleFleetFixture(
     let rootReadsFail = false;
     let heldRootReads: Promise<void> | undefined;
     let releaseHeldRootReads: (() => void) | undefined;
-    let collectionMode: 'present' | 'absent' | 'empty' | 'schema-error' =
-        'present';
+    let collectionMode: 'present' | 'absent' | 'empty' | 'schema-error' = 'present';
 
-    await page.route(CONTROL_ROUTE, async route => {
+    await page.route(CONTROL_ROUTE, async (route) => {
         const request = route.request();
         const url = new URL(request.url());
         if (request.method() === 'OPTIONS') {
@@ -109,13 +101,16 @@ export async function installRecipeConsoleFleetFixture(
         if (request.method() === 'GET' && url.pathname === '/runs') {
             rootReads += 1;
             const heldRead = heldRootReads;
-            if (heldRead) await heldRead;
+            if (heldRead) {
+                await heldRead;
+            }
             if (rootReadsFail) {
                 await route.abort('connectionfailed');
-            } else {
+            }
+            else {
                 await fulfillJson(
                     route,
-                    rootSnapshotForCollection(snapshot, reports, collectionMode),
+                    rootSnapshotForCollection(snapshot, reports, collectionMode)
                 );
             }
             return;
@@ -144,41 +139,51 @@ export async function installRecipeConsoleFleetFixture(
         artifact,
         artifactRequestCount: () => artifactReads,
         rootRequestCount: () => rootReads,
-        failRootReads: () => { rootReadsFail = true; },
+        failRootReads: () => {
+            rootReadsFail = true;
+        },
         holdRootReads: () => {
-            if (heldRootReads) return;
-            heldRootReads = new Promise<void>(resolve => {
+            if (heldRootReads) {
+                return;
+            }
+            heldRootReads = new Promise<void>((resolve) => {
                 releaseHeldRootReads = resolve;
             });
         },
-        recoverRootReads: () => { rootReadsFail = false; },
+        recoverRootReads: () => {
+            rootReadsFail = false;
+        },
         releaseRootReads: () => {
             const release = releaseHeldRootReads;
             heldRootReads = undefined;
             releaseHeldRootReads = undefined;
             release?.();
         },
-        setFleetCollection: mode => { collectionMode = mode; },
+        setFleetCollection: (mode) => {
+            collectionMode = mode;
+        }
     };
 }
 
 function rootSnapshotForCollection(
     snapshot: ControlServerSnapshot,
     reports: readonly ControlFleetRunReport[],
-    mode: 'present' | 'absent' | 'empty' | 'schema-error',
+    mode: 'present' | 'absent' | 'empty' | 'schema-error'
 ): unknown {
     if (mode === 'absent') {
         const { fleetReports: _fleetReports, ...core } = snapshot;
         return core;
     }
-    if (mode === 'empty') return { ...snapshot, fleetReports: [] };
+    if (mode === 'empty') {
+        return { ...snapshot, fleetReports: [] };
+    }
     if (mode === 'schema-error') {
         return {
             ...snapshot,
             fleetReports: [...reports, {
                 fleetReportSchemaVersion: 999,
-                distributedRunId: 'fleet-quarantined-report',
-            }],
+                distributedRunId: 'fleet-quarantined-report'
+            }]
         };
     }
     return snapshot;
@@ -193,42 +198,42 @@ function augmentControlRun(base: ControlRunSnapshot): ControlRunSnapshot {
             providerMode: 'browser-rallar',
             region: index === 0 ? 'region-00' : FLEET_SELECTED_REGION,
             provider: `fleet-live-provider-${index}`,
-            location: location(index),
-        },
+            location: location(index)
+        }
     }));
     const resolvedIds = Array.from(
         { length: RESOLVED_LIVE_AGENT_COUNT },
-        (_, index) => index === RESOLVED_LIVE_AGENT_COUNT - 1
-            ? FLEET_LONG_BIDI_AGENT_ID
-            : `fleet-live-resolved-${pad(index)}`,
+        (_, index) =>
+            index === RESOLVED_LIVE_AGENT_COUNT - 1
+                ? FLEET_LONG_BIDI_AGENT_ID
+                : `fleet-live-resolved-${pad(index)}`
     );
-    const resolvedAgents = resolvedIds.map((agentId, index) =>
-        controlAgent(agentId, index, true)
-    );
+    const resolvedAgents = resolvedIds.map((agentId, index) => controlAgent(agentId, index, true));
     const unresolvedAgents = Array.from(
         { length: UNRESOLVED_LIVE_AGENT_COUNT },
-        (_, index) => controlAgent(
-            `fleet-live-unresolved-${pad(index)}`,
-            index,
-            false,
-        ),
+        (_, index) =>
+            controlAgent(
+                `fleet-live-unresolved-${pad(index)}`,
+                index,
+                false
+            )
     );
     const routes = createRouteEvents([
-        ...baseAgents.map(agent => agent.agentId),
-        ...resolvedIds,
+        ...baseAgents.map((agent) => agent.agentId),
+        ...resolvedIds
     ]);
     return {
         ...base,
         updatedAtEpochMs: BASE_EPOCH_MS + 9_000,
         agents: [...baseAgents, ...resolvedAgents, ...unresolvedAgents],
-        events: [...base.events, ...routes],
+        events: [...base.events, ...routes]
     };
 }
 
 function controlAgent(
     agentId: string,
     index: number,
-    resolved: boolean,
+    resolved: boolean
 ): ControlAgentSnapshot {
     return {
         runId: FLEET_CONTROL_RUN_ID,
@@ -244,21 +249,23 @@ function controlAgent(
             ...GROUP,
             providerMode: 'browser-rallar',
             browserName: 'chromium',
-            ...(resolved ? {
-                region: `region-${pad(index % 30)}`,
-                provider: `fleet-live-provider-${index % 6}`,
-                location: location(index + 2),
-            } : {
-                region: `undocumented-region-${pad(index)}`,
-                provider: 'unresolved-provider',
-            }),
+            ...(resolved
+                ? {
+                    region: `region-${pad(index % 30)}`,
+                    provider: `fleet-live-provider-${index % 6}`,
+                    location: location(index + 2)
+                }
+                : {
+                    region: `undocumented-region-${pad(index)}`,
+                    provider: 'unresolved-provider'
+                })
         },
         connectionSequence: 1,
         reconnectCount: index % 4,
         receivedResultCount: index % 8,
         receivedEventCount: index % 11,
         completedCommandIds: [],
-        resumeCompletedCommandIds: [],
+        resumeCompletedCommandIds: []
     };
 }
 
@@ -275,9 +282,9 @@ function createRouteEvents(resolvedAgentIds: readonly string[]): readonly Contro
             payload: {
                 targetAgentId: resolvedAgentIds[index + 1]!,
                 transport: index % 2 === 0 ? 'messages.rtc' : 'ws',
-                ok: index % 5 !== 0,
-            },
-        }),
+                ok: index % 5 !== 0
+            }
+        })
     );
     const unresolved = Array.from(
         { length: UNRESOLVED_ROUTE_ENDPOINT_COUNT },
@@ -291,9 +298,9 @@ function createRouteEvents(resolvedAgentIds: readonly string[]): readonly Contro
             payload: {
                 targetAgentId: `fleet-route-unresolved-endpoint-${pad(index)}`,
                 transport: 'rtc',
-                failed: index % 3 === 0,
-            },
-        }),
+                failed: index % 3 === 0
+            }
+        })
     );
     const explicitOnlyGuard: ControlEventEnvelope = {
         kind: 'event',
@@ -305,8 +312,8 @@ function createRouteEvents(resolvedAgentIds: readonly string[]): readonly Contro
         payload: {
             peerId: FLEET_EXPLICIT_ONLY_AGENT_ID,
             transport: 'rtc',
-            message: `A peer label alone must not create ${FLEET_EXPLICIT_ONLY_AGENT_ID}`,
-        },
+            message: `A peer label alone must not create ${FLEET_EXPLICIT_ONLY_AGENT_ID}`
+        }
     };
     return [...resolved, ...unresolved, explicitOnlyGuard];
 }
@@ -328,20 +335,21 @@ function createReports(): readonly ControlFleetRunReport[] {
                 failed: index % 3 === 0,
                 signatureIds: index % 3 === 0
                     ? [FLEET_PRIMARY_SIGNATURE_ID]
-                    : [],
+                    : []
             })];
-        const failures = selected ? createFailureSignatures(
-            selectedOutcomes.slice(0, 45).map(outcome => outcome.agentId),
-        ) : [];
+        const failures = selected
+            ? createFailureSignatures(
+                selectedOutcomes.slice(0, 45).map((outcome) => outcome.agentId)
+            )
+            : [];
         const recipes = selected
             ? Array.from({ length: 30 }, (_, recipeIndex) =>
                 recipeIndex === 0
                     ? FLEET_PRIMARY_RECIPE_ID
-                    : `fleet-recipe-${pad(recipeIndex)}`
-            )
+                    : `fleet-recipe-${pad(recipeIndex)}`)
             : [FLEET_PRIMARY_RECIPE_ID];
-        const failed = outcomes.filter(outcome => !outcome.ok).length;
-        const missing = outcomes.filter(outcome => outcome.missing).length;
+        const failed = outcomes.filter((outcome) => !outcome.ok).length;
+        const missing = outcomes.filter((outcome) => outcome.missing).length;
         return {
             fleetReportSchemaVersion: 1,
             distributedRunId,
@@ -358,16 +366,16 @@ function createReports(): readonly ControlFleetRunReport[] {
                 passed: outcomes.length - failed - missing,
                 failed,
                 missing,
-                flaky: outcomes.filter(outcome => outcome.flaky).length,
-                stale: outcomes.filter(outcome => outcome.stale).length,
+                flaky: outcomes.filter((outcome) => outcome.flaky).length,
+                stale: outcomes.filter((outcome) => outcome.stale).length,
                 passRate: outcomes.length === 0
                     ? 0
                     : (outcomes.length - failed - missing) / outcomes.length,
-                failureGroups: failures.length,
+                failureGroups: failures.length
             },
             timing: {
                 run: timing(1_500 + index * 37),
-                commands: timing(140 + index * 3),
+                commands: timing(140 + index * 3)
             },
             agents: outcomes,
             regions: [],
@@ -375,8 +383,8 @@ function createReports(): readonly ControlFleetRunReport[] {
             artifactRefs: {
                 distributedRun: `/distributed-runs/${distributedRunId}`,
                 controlRun: `/runs/${FLEET_CONTROL_RUN_ID}`,
-                fleetReport: `/fleet/reports/${distributedRunId}`,
-            },
+                fleetReport: `/fleet/reports/${distributedRunId}`
+            }
         } satisfies ControlFleetRunReport;
     });
 }
@@ -391,11 +399,12 @@ function createSelectedReportOutcomes(): readonly ControlFleetAgentRunOutcome[] 
             region: `region-${pad(index)}`,
             provider: index === 1 ? 'fleet-primary-provider' : `provider-${pad(index)}`,
             failed: index < 30,
-            signatureIds: [index === 1
-                ? FLEET_PRIMARY_SIGNATURE_ID
-                : `fleet-signature-${pad(index)}`],
-        })
-    );
+            signatureIds: [
+                index === 1
+                    ? FLEET_PRIMARY_SIGNATURE_ID
+                    : `fleet-signature-${pad(index)}`
+            ]
+        }));
     const repeatedRegionProviders = Array.from({ length: 25 }, (_, index) =>
         historicalOutcome({
             agentId: `fleet-history-region-01-provider-${pad(index + 1)}`,
@@ -403,9 +412,8 @@ function createSelectedReportOutcomes(): readonly ControlFleetAgentRunOutcome[] 
             region: FLEET_SELECTED_REGION,
             provider: `fleet-extra-provider-${pad(index + 1)}`,
             failed: index < 15,
-            signatureIds: index < 15 ? [`fleet-signature-${pad(index)}`] : [],
-        })
-    );
+            signatureIds: index < 15 ? [`fleet-signature-${pad(index)}`] : []
+        }));
     const unlabeled = Array.from({ length: 45 }, (_, index) =>
         historicalOutcome({
             agentId: index === 44
@@ -413,20 +421,21 @@ function createSelectedReportOutcomes(): readonly ControlFleetAgentRunOutcome[] 
                 : `fleet-history-unlabeled-${pad(index)}`,
             index: index + 55,
             failed: false,
-            signatureIds: [],
-        })
-    );
+            signatureIds: []
+        }));
     return [...baseRegions, ...repeatedRegionProviders, ...unlabeled];
 }
 
-function historicalOutcome(input: Readonly<{
-    agentId: string;
-    index: number;
-    region?: string;
-    provider?: string;
-    failed: boolean;
-    signatureIds: readonly string[];
-}>): ControlFleetAgentRunOutcome {
+function historicalOutcome(
+    input: Readonly<{
+        agentId: string;
+        index: number;
+        region?: string;
+        provider?: string;
+        failed: boolean;
+        signatureIds: readonly string[];
+    }>
+): ControlFleetAgentRunOutcome {
     return {
         agentId: input.agentId,
         label: {
@@ -434,7 +443,7 @@ function historicalOutcome(input: Readonly<{
             ...(input.region ? { region: input.region } : {}),
             ...(input.provider ? { provider: input.provider } : {}),
             browserName: input.index % 2 === 0 ? 'chromium' : 'webkit',
-            location: location(input.index + 5),
+            location: location(input.index + 5)
         },
         state: input.failed ? 'failed' : 'passed',
         ok: !input.failed,
@@ -449,12 +458,12 @@ function historicalOutcome(input: Readonly<{
         reconnectCount: input.index % 3,
         durationMs: 120 + input.index * 11,
         lastHeartbeatAtEpochMs: BASE_EPOCH_MS - input.index,
-        failureSignatureIds: input.signatureIds,
+        failureSignatureIds: input.signatureIds
     };
 }
 
 function createFailureSignatures(
-    affectedAgents: readonly string[],
+    affectedAgents: readonly string[]
 ): readonly ControlFleetFailureSignature[] {
     const primary: ControlFleetFailureSignature = {
         signatureId: FLEET_PRIMARY_SIGNATURE_ID,
@@ -471,7 +480,7 @@ function createFailureSignatures(
         affectedRegions: [FLEET_SELECTED_REGION],
         affectedRuns: [FLEET_REPORT_ID],
         likelyCause: 'One receiver stopped acknowledging the explicit route.',
-        nextAction: 'Open the proving run and inspect the receiver evidence.',
+        nextAction: 'Open the proving run and inspect the receiver evidence.'
     };
     const additional = Array.from({ length: 29 }, (_, index) => ({
         signatureId: `fleet-signature-${pad(index)}`,
@@ -485,7 +494,7 @@ function createFailureSignatures(
         affectedRegions: [`region-${pad(index % 30)}`],
         affectedRuns: [FLEET_REPORT_ID],
         likelyCause: 'A deterministic fixture condition repeated.',
-        nextAction: 'Inspect the exact run and agent before changing the recipe.',
+        nextAction: 'Inspect the exact run and agent before changing the recipe.'
     } satisfies ControlFleetFailureSignature));
     return [primary, ...additional];
 }
@@ -499,9 +508,8 @@ function createArtifact(report: ControlFleetRunReport): ControlFleetReportBundle
             'fleet-report.json': JSON.stringify(report),
             'summary.md': '# Deterministic Fleet report\n\nValidated root-snapshot evidence.\n',
             'agent-results.csv': 'agentId,state\nmonitor-agent-receiver,failed\n',
-            'failure-signatures.csv':
-                `signatureId,count\n${FLEET_PRIMARY_SIGNATURE_ID},50\n`,
-        },
+            'failure-signatures.csv': `signatureId,count\n${FLEET_PRIMARY_SIGNATURE_ID},50\n`
+        }
     };
 }
 
@@ -512,7 +520,7 @@ function timing(value: number) {
         p50Ms: value,
         p90Ms: value,
         p95Ms: value,
-        maxMs: value,
+        maxMs: value
     } as const;
 }
 
@@ -521,7 +529,7 @@ function location(index: number) {
         latitude: -58 + (index * 7) % 116,
         longitude: -170 + (index * 13) % 340,
         label: `Fixture location ${index}`,
-        precision: 'exact' as const,
+        precision: 'exact' as const
     };
 }
 
@@ -534,7 +542,7 @@ async function fulfillJson(route: Route, body: unknown): Promise<void> {
         status: 200,
         contentType: 'application/json',
         headers: corsHeaders(),
-        body: JSON.stringify(body),
+        body: JSON.stringify(body)
     });
 }
 
@@ -542,7 +550,6 @@ function corsHeaders(): Record<string, string> {
     return {
         'access-control-allow-origin': '*',
         'access-control-allow-methods': 'GET, POST, OPTIONS',
-        'access-control-allow-headers':
-            'authorization, content-type, x-client-id',
+        'access-control-allow-headers': 'authorization, content-type, x-client-id'
     };
 }

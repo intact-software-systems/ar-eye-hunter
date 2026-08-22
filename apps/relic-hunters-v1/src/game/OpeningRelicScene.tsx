@@ -1,4 +1,3 @@
-import { useEffect, useRef } from 'react';
 import { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera.js';
 import { Engine } from '@babylonjs/core/Engines/engine.js';
 import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight.js';
@@ -9,6 +8,7 @@ import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
 import { Scene } from '@babylonjs/core/scene.js';
+import { useEffect, useRef } from 'react';
 import { CURRENT_RELIC_ASSET_PIPELINE } from './scene/assetPipeline.ts';
 import { lightingPresetById } from './scene/lightingPresets.ts';
 import { startCappedRenderLoop } from './scene/renderLoop.ts';
@@ -29,7 +29,7 @@ export function OpeningRelicScene() {
             preserveDrawingBuffer: false,
             stencil: false,
             adaptToDeviceRatio: true,
-            limitDeviceRatio: 2,
+            limitDeviceRatio: 2
         });
 
         const createdAtMs = performance.now();
@@ -108,7 +108,7 @@ export function OpeningRelicScene() {
         };
     }, []);
 
-    return <canvas ref={canvasRef} className="relic-scene" aria-label="Relic Hunters opening scene" tabIndex={-1}/>;
+    return <canvas ref={canvasRef} className="relic-scene" aria-label="Relic Hunters opening scene" tabIndex={-1} />;
 }
 
 function buildOpeningScene(scene: Scene): void {
@@ -126,7 +126,7 @@ function buildOpeningScene(scene: Scene): void {
         const step = MeshBuilder.CreateBox(`opening-step-${i}`, {
             width: 6.6 - i * 0.24,
             height: 0.16,
-            depth: 0.82,
+            depth: 0.82
         }, scene);
         step.position.set(0, 0.08 + i * 0.055, -4.2 + i * 0.86);
         step.material = i % 2 === 0 ? stone : moss;
@@ -136,7 +136,7 @@ function buildOpeningScene(scene: Scene): void {
         const pillar = MeshBuilder.CreateBox(`opening-gate-pillar-${side}`, {
             width: 0.58,
             height: 4.6,
-            depth: 0.58,
+            depth: 0.58
         }, scene);
         pillar.position.set(side * 2.7, 2.3, 1.4);
         pillar.material = wood;
@@ -144,7 +144,7 @@ function buildOpeningScene(scene: Scene): void {
         const cap = MeshBuilder.CreateBox(`opening-gate-cap-${side}`, {
             width: 0.92,
             height: 0.36,
-            depth: 0.82,
+            depth: 0.82
         }, scene);
         cap.position.set(side * 2.7, 4.72, 1.4);
         cap.material = gold;
@@ -180,7 +180,7 @@ function buildOpeningScene(scene: Scene): void {
         const rock = MeshBuilder.CreateBox(`opening-rubble-${i}`, {
             width: 0.18 + (i % 3) * 0.08,
             height: 0.12 + (i % 4) * 0.05,
-            depth: 0.2 + (i % 5) * 0.04,
+            depth: 0.2 + (i % 5) * 0.04
         }, scene);
         const side = i % 2 === 0 ? -1 : 1;
         rock.position.set(side * (3.4 + (i % 5) * 0.62), rock.scaling.y * 0.08, -3.8 + (i % 7) * 1.15);

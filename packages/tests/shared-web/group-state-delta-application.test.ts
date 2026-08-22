@@ -1,43 +1,23 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
+import * as dataCaches from '@shared-web/browser/data-caches.ts';
+import { setBrowserStateReadDiagnosticsSink, type BrowserStateReadDiagnosticEvent } from '@shared-web/browser/state-read/diagnostics.ts';
+import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, type ClientInfo } from '@shared/api/api-config.ts';
-import {
-    type GroupStateDeltaEnvelope,
-    validateGroupStateDeltaEnvelope,
-} from '@shared/api/group-state-delta.ts';
-import type {
-    GroupEvent,
-    GroupMember,
-    GroupPresenceSession,
-    GroupSnapshot,
-    GroupStateCausalRevision,
-} from '@shared/api/group-types.ts';
-import {
-    DEFAULT_STATE_APPLICATION_ID,
-    DEFAULT_STATE_WORKSPACE_ID,
-} from '@shared/api/state-types.ts';
-import {
-    newALBroadcastMessage,
-    newALEventRoute,
-} from '@shared/al-contracts/al-contract.ts';
+import { validateGroupStateDeltaEnvelope, type GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
+import type { GroupEvent, GroupMember, GroupPresenceSession, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
+import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { decideGroupSnapshotCausalRevision } from '@shared/repository/group-state-snapshot-revision.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
-import { configureApiClient } from '@shared-web/browser/api-client-config.ts';
-import * as dataCaches from '@shared-web/browser/data-caches.ts';
-import {
-    type BrowserStateReadDiagnosticEvent,
-    setBrowserStateReadDiagnosticsSink,
-} from '@shared-web/browser/state-read/diagnostics.ts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configureTestCacheRepositories } from '../cache-repository-config.ts';
 import { createTestGroup } from '../create-test-group.ts';
 
 vi.mock('@shared/repository/group-state-snapshot-revision.ts', async (importOriginal) => {
-    const actual = await importOriginal<
-        typeof import('@shared/repository/group-state-snapshot-revision.ts')
-    >();
+    const actual = await importOriginal<typeof import('@shared/repository/group-state-snapshot-revision.ts')>();
     return {
         ...actual,
-        decideGroupSnapshotCausalRevision: vi.fn(actual.decideGroupSnapshotCausalRevision),
+        decideGroupSnapshotCausalRevision: vi.fn(actual.decideGroupSnapshotCausalRevision)
     };
 });
 
@@ -63,21 +43,21 @@ describe('browser group-state delta application', () => {
             groupId: 'room-delta-apply',
             memberPrincipalIds: ['m-alpha', 'm-charlie'],
             activePrincipalIds: ['m-alpha', 'm-charlie'],
-            causalRevision: { groupRevision: 1, presenceRevision: 1 },
+            causalRevision: { groupRevision: 1, presenceRevision: 1 }
         });
         const resulting = createDeltaGroupSnapshot({
             groupId: 'room-delta-apply',
             memberPrincipalIds: ['m-alpha', 'm-bravo', 'm-charlie'],
             activePrincipalIds: ['m-alpha', 'm-charlie'],
-            causalRevision: { groupRevision: 2, presenceRevision: 1 },
+            causalRevision: { groupRevision: 2, presenceRevision: 1 }
         });
         const joinedMember = resulting.members.find(
-            (member) => member.principalId === 'm-bravo',
+            (member) => member.principalId === 'm-bravo'
         );
         const envelope = createDeltaEnvelope({
             resulting,
             predecessorCausalRevision: predecessor.causalRevision,
-            members: joinedMember ? [joinedMember] : [],
+            members: joinedMember ? [joinedMember] : []
         });
         await runtime.hydrate([predecessor]);
         runtime.manager.acceptGroupUpdate.mockClear();
@@ -89,7 +69,7 @@ describe('browser group-state delta application', () => {
         // The joined member lands mid-roster: canonical storage-key order, not
         // append order, and the whole snapshot equals the server assembly.
         expect(
-            groupStateSnapshotsRepository.findGroupStateSnapshotByRef(resulting.group),
+            groupStateSnapshotsRepository.findGroupStateSnapshotByRef(resulting.group)
         ).toEqual(resulting);
         expect(runtime.manager.acceptGroupUpdate).toHaveBeenCalledWith(resulting);
         expect(fetchMock).not.toHaveBeenCalled();
@@ -99,7 +79,7 @@ describe('browser group-state delta application', () => {
         // must decide as a duplicate against the materialized snapshot.
         await expect(runtime.receiveSnapshotMessage(resulting)).resolves.toBeUndefined();
         expect(
-            groupStateSnapshotsRepository.findGroupStateSnapshotByRef(resulting.group),
+            groupStateSnapshotsRepository.findGroupStateSnapshotByRef(resulting.group)
         ).toEqual(resulting);
     });
 
@@ -109,15 +89,15 @@ describe('browser group-state delta application', () => {
             groupId: 'room-delta-noop',
             memberPrincipalIds: ['m-alpha'],
             activePrincipalIds: ['m-alpha'],
-            causalRevision: { groupRevision: 2, presenceRevision: 1 },
+            causalRevision: { groupRevision: 2, presenceRevision: 1 }
         });
         const duplicate = createDeltaEnvelope({
             resulting: cached,
-            predecessorCausalRevision: { groupRevision: 1, presenceRevision: 1 },
+            predecessorCausalRevision: { groupRevision: 1, presenceRevision: 1 }
         });
         const summaryNoOp = createDeltaEnvelope({
             resulting: cached,
-            predecessorCausalRevision: cached.causalRevision,
+            predecessorCausalRevision: cached.causalRevision
         });
         await runtime.hydrate([cached]);
         const fetchMock = vi.fn();
@@ -127,7 +107,7 @@ describe('browser group-state delta application', () => {
         await runtime.receiveDeltaMessage(summaryNoOp);
 
         expect(
-            groupStateSnapshotsRepository.findGroupStateSnapshotByRef(cached.group),
+            groupStateSnapshotsRepository.findGroupStateSnapshotByRef(cached.group)
         ).toEqual(cached);
         expect(fetchMock).not.toHaveBeenCalled();
         expect(deltaApplyResults()).toEqual(['no-op', 'no-op']);
@@ -139,21 +119,21 @@ describe('browser group-state delta application', () => {
             groupId: 'room-delta-gap',
             memberPrincipalIds: ['m-alpha'],
             activePrincipalIds: ['m-alpha'],
-            causalRevision: { groupRevision: 1, presenceRevision: 1 },
+            causalRevision: { groupRevision: 1, presenceRevision: 1 }
         });
         const resulting = createDeltaGroupSnapshot({
             groupId: 'room-delta-gap',
             memberPrincipalIds: ['m-alpha'],
             activePrincipalIds: ['m-alpha'],
-            causalRevision: { groupRevision: 2, presenceRevision: 3 },
+            causalRevision: { groupRevision: 2, presenceRevision: 3 }
         });
         const envelope = createDeltaEnvelope({
             resulting,
-            predecessorCausalRevision: { groupRevision: 2, presenceRevision: 2 },
+            predecessorCausalRevision: { groupRevision: 2, presenceRevision: 2 }
         });
         await runtime.hydrate([stale]);
         const fetchMock = vi.fn<typeof fetch>(
-            async () => groupSnapshotResponse(resulting),
+            async () => groupSnapshotResponse(resulting)
         );
         vi.stubGlobal('fetch', fetchMock);
 
@@ -161,10 +141,10 @@ describe('browser group-state delta application', () => {
 
         expect(fetchMock).toHaveBeenCalledOnce();
         expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
-            '/groups/room-delta-gap?minGroupRevision=2&minPresenceRevision=3',
+            '/groups/room-delta-gap?minGroupRevision=2&minPresenceRevision=3'
         );
         expect(
-            groupStateSnapshotsRepository.findGroupStateSnapshotByRef(resulting.group),
+            groupStateSnapshotsRepository.findGroupStateSnapshotByRef(resulting.group)
         ).toEqual(resulting);
         expect(deltaApplyResults()).toEqual(['gap-pull']);
     });
@@ -175,17 +155,17 @@ describe('browser group-state delta application', () => {
             groupId: 'room-delta-order',
             memberPrincipalIds: ['m-alpha'],
             activePrincipalIds: ['m-alpha'],
-            causalRevision: { groupRevision: 2, presenceRevision: 3 },
+            causalRevision: { groupRevision: 2, presenceRevision: 3 }
         });
         const older = createDeltaGroupSnapshot({
             groupId: 'room-delta-order',
             memberPrincipalIds: ['m-alpha'],
             activePrincipalIds: ['m-alpha'],
-            causalRevision: { groupRevision: 2, presenceRevision: 2 },
+            causalRevision: { groupRevision: 2, presenceRevision: 2 }
         });
         const outOfOrder = createDeltaEnvelope({
             resulting: older,
-            predecessorCausalRevision: { groupRevision: 2, presenceRevision: 1 },
+            predecessorCausalRevision: { groupRevision: 2, presenceRevision: 1 }
         });
         await runtime.hydrate([newer]);
         const fetchMock = vi.fn();
@@ -194,7 +174,7 @@ describe('browser group-state delta application', () => {
         await runtime.receiveDeltaMessage(outOfOrder);
 
         expect(
-            groupStateSnapshotsRepository.findGroupStateSnapshotByRef(newer.group),
+            groupStateSnapshotsRepository.findGroupStateSnapshotByRef(newer.group)
         ).toEqual(newer);
         expect(fetchMock).not.toHaveBeenCalled();
         expect(deltaApplyResults()).toEqual(['no-op']);
@@ -206,24 +186,24 @@ describe('browser group-state delta application', () => {
             groupId: 'room-delta-session',
             memberPrincipalIds: ['m-alpha', 'm-bravo'],
             activePrincipalIds: ['m-alpha'],
-            causalRevision: { groupRevision: 1, presenceRevision: 1 },
+            causalRevision: { groupRevision: 1, presenceRevision: 1 }
         });
         const resulting = createDeltaGroupSnapshot({
             groupId: 'room-delta-session',
             memberPrincipalIds: ['m-alpha', 'm-bravo'],
             activePrincipalIds: ['m-alpha', 'm-bravo'],
-            causalRevision: { groupRevision: 1, presenceRevision: 2 },
+            causalRevision: { groupRevision: 1, presenceRevision: 2 }
         });
         // Service-driven transition: complete identity set, no session slice.
         const envelope = createDeltaEnvelope({
             resulting,
             predecessorCausalRevision: cached.causalRevision,
             eventType: 'session-connected',
-            sessions: [],
+            sessions: []
         });
         await runtime.hydrate([cached]);
         const fetchMock = vi.fn<typeof fetch>(
-            async () => groupSnapshotResponse(resulting),
+            async () => groupSnapshotResponse(resulting)
         );
         vi.stubGlobal('fetch', fetchMock);
 
@@ -231,10 +211,10 @@ describe('browser group-state delta application', () => {
 
         expect(fetchMock).toHaveBeenCalledOnce();
         expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
-            '/groups/room-delta-session?minGroupRevision=1&minPresenceRevision=2',
+            '/groups/room-delta-session?minGroupRevision=1&minPresenceRevision=2'
         );
         expect(
-            groupStateSnapshotsRepository.findGroupStateSnapshotByRef(resulting.group),
+            groupStateSnapshotsRepository.findGroupStateSnapshotByRef(resulting.group)
         ).toEqual(resulting);
         expect(deltaApplyResults()).toEqual(['gap-pull']);
     });
@@ -245,22 +225,22 @@ describe('browser group-state delta application', () => {
             groupId: 'room-delta-oracle',
             memberPrincipalIds: ['m-alpha'],
             activePrincipalIds: ['m-alpha'],
-            causalRevision: { groupRevision: 1, presenceRevision: 1 },
+            causalRevision: { groupRevision: 1, presenceRevision: 1 }
         });
         const resulting = createDeltaGroupSnapshot({
             groupId: 'room-delta-oracle',
             memberPrincipalIds: ['m-alpha'],
             activePrincipalIds: ['m-alpha'],
-            causalRevision: { groupRevision: 2, presenceRevision: 1 },
+            causalRevision: { groupRevision: 2, presenceRevision: 1 }
         });
         const envelope = createDeltaEnvelope({
             resulting,
             predecessorCausalRevision: cached.causalRevision,
-            eventType: 'group-updated',
+            eventType: 'group-updated'
         });
         await runtime.hydrate([cached]);
         const fetchMock = vi.fn<typeof fetch>(
-            async () => groupSnapshotResponse(resulting),
+            async () => groupSnapshotResponse(resulting)
         );
         vi.stubGlobal('fetch', fetchMock);
         vi.mocked(decideGroupSnapshotCausalRevision).mockImplementationOnce(() => {
@@ -272,10 +252,10 @@ describe('browser group-state delta application', () => {
         expect(deltaApplyResults()).toEqual(['revision-conflict']);
         expect(fetchMock).toHaveBeenCalledOnce();
         expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
-            '/groups/room-delta-oracle?minGroupRevision=2&minPresenceRevision=1',
+            '/groups/room-delta-oracle?minGroupRevision=2&minPresenceRevision=1'
         );
         expect(
-            groupStateSnapshotsRepository.findGroupStateSnapshotByRef(resulting.group),
+            groupStateSnapshotsRepository.findGroupStateSnapshotByRef(resulting.group)
         ).toEqual(resulting);
     });
 
@@ -293,12 +273,12 @@ function createStateCacheRuntime() {
         acceptGroupUpdate: vi.fn(async () => undefined),
         ensureAllGroupsConnected: vi.fn(async () => undefined),
         delete: vi.fn(async () => undefined),
-        has: vi.fn(() => false),
+        has: vi.fn(() => false)
     };
     const clientData: ClientInfo = {
         clientId: 'm-alpha',
         sessionId: 'session-m-alpha',
-        isOnline: true,
+        isOnline: true
     };
     let onInboxMessage: ((message: unknown) => Promise<void>) | undefined;
     const webSocketQueueBox = {
@@ -307,7 +287,7 @@ function createStateCacheRuntime() {
         }) => {
             onInboxMessage = callback.onMessage;
             return webSocketQueueBox;
-        }),
+        })
     };
     dataCaches.initialise(webSocketQueueBox, manager as never, clientData);
 
@@ -318,7 +298,7 @@ function createStateCacheRuntime() {
                 manager as never,
                 clientData,
                 [],
-                snapshots,
+                snapshots
             );
         },
         receiveDeltaMessage: async (envelope: GroupStateDeltaEnvelope) => {
@@ -328,12 +308,12 @@ function createStateCacheRuntime() {
                     newALEventRoute(
                         AppTopics.groupStateEvent,
                         envelope.event.groupId,
-                        envelope.event.eventId,
+                        envelope.event.eventId
                     ),
                     'all',
                     AppTopics.groupStateEvent,
-                    envelope,
-                ),
+                    envelope
+                )
             );
         },
         receiveSnapshotMessage: async (snapshot: GroupSnapshot) => {
@@ -343,14 +323,14 @@ function createStateCacheRuntime() {
                     newALEventRoute(
                         AppTopics.groupStateSnapshot,
                         snapshot.group.groupId,
-                        snapshot.group.groupId,
+                        snapshot.group.groupId
                     ),
                     'all',
                     AppTopics.groupStateSnapshot,
-                    snapshot,
-                ),
+                    snapshot
+                )
             );
-        },
+        }
     };
 }
 
@@ -385,16 +365,12 @@ function createDeltaGroupSnapshot(input: DeltaGroupSnapshotInput): GroupSnapshot
             created: deltaAuditStamp(),
             updated: deltaAuditStamp(),
             activeMemberCount: input.memberPrincipalIds.length,
-            ownerPrincipalId,
+            ownerPrincipalId
         }),
-        members: input.memberPrincipalIds.map((principalId) =>
-            createDeltaGroupMember(input.groupId, principalId, principalId === ownerPrincipalId)
-        ),
-        activeSessions: input.activePrincipalIds.map((principalId) =>
-            createDeltaGroupSession(input.groupId, principalId)
-        ),
+        members: input.memberPrincipalIds.map((principalId) => createDeltaGroupMember(input.groupId, principalId, principalId === ownerPrincipalId)),
+        activeSessions: input.activePrincipalIds.map((principalId) => createDeltaGroupSession(input.groupId, principalId)),
         memberCount: input.memberPrincipalIds.length,
-        onlineMemberCount: input.activePrincipalIds.length,
+        onlineMemberCount: input.activePrincipalIds.length
     };
 }
 
@@ -423,7 +399,7 @@ function createDeltaEnvelope(input: DeltaEnvelopeInput): GroupStateDeltaEnvelope
             reason: null,
             traceId: null,
             requestId: 'request-delta',
-            payload: {},
+            payload: {}
         },
         predecessorCausalRevision: input.predecessorCausalRevision,
         resultingCausalRevision: resulting.causalRevision,
@@ -435,7 +411,7 @@ function createDeltaEnvelope(input: DeltaEnvelopeInput): GroupStateDeltaEnvelope
         group: resulting.group,
         memberCount: resulting.memberCount,
         onlineMemberCount: resulting.onlineMemberCount,
-        audienceSessionIds: activeSessionIds,
+        audienceSessionIds: activeSessionIds
     };
     // Fixture self-check: hand-built envelopes must satisfy the landed wire
     // validator so the tests mirror the server's emission semantics.
@@ -446,7 +422,7 @@ function createDeltaEnvelope(input: DeltaEnvelopeInput): GroupStateDeltaEnvelope
 function createDeltaGroupMember(
     groupId: string,
     principalId: string,
-    isOwner: boolean,
+    isOwner: boolean
 ): GroupMember {
     return {
         applicationId: DEFAULT_STATE_APPLICATION_ID,
@@ -461,13 +437,13 @@ function createDeltaGroupMember(
         removed: null,
         banned: null,
         invitedByPrincipalId: null,
-        invitationExpiresAtEpochMs: null,
+        invitationExpiresAtEpochMs: null
     };
 }
 
 function createDeltaGroupSession(
     groupId: string,
-    principalId: string,
+    principalId: string
 ): GroupPresenceSession {
     return {
         applicationId: DEFAULT_STATE_APPLICATION_ID,
@@ -482,7 +458,7 @@ function createDeltaGroupSession(
         lastHeartbeatAtEpochMs: 1,
         expiresAtEpochMs: 60_000,
         disconnectedAtEpochMs: null,
-        disconnectReason: null,
+        disconnectReason: null
     };
 }
 
@@ -492,7 +468,7 @@ function deltaAuditStamp() {
         actor: { kind: 'service', serviceId: 'test' },
         reason: null,
         traceId: null,
-        requestId: null,
+        requestId: null
     } as const;
 }
 
@@ -504,7 +480,7 @@ function groupSnapshotResponse(snapshot: GroupSnapshot): Response {
             'cache-control': 'no-store',
             'rallar-state-source': 'durable',
             'rallar-group-revision': String(snapshot.causalRevision.groupRevision),
-            'rallar-presence-revision': String(snapshot.causalRevision.presenceRevision),
-        },
+            'rallar-presence-revision': String(snapshot.causalRevision.presenceRevision)
+        }
     });
 }

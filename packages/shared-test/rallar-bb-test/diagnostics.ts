@@ -1,37 +1,39 @@
+import { redactRallarBlackBoxValue } from './redaction.ts';
 import type {
     RallarBlackBoxTestRedactionOptions,
     RallarBlackBoxTestSeverity,
-    RallarBlackBoxTestTransport,
+    RallarBlackBoxTestTransport
 } from './types.ts';
-import { redactRallarBlackBoxValue } from './redaction.ts';
 
 export const RALLAR_BLACK_BOX_RUNTIME_DIAGNOSTIC_SCHEMA_VERSION = 1;
 
-export type RallarBlackBoxRuntimeDiagnosticPayload = Readonly<{
-    diagnosticSchemaVersion: typeof RALLAR_BLACK_BOX_RUNTIME_DIAGNOSTIC_SCHEMA_VERSION;
-    diagnosticTypeId: string;
-    topic: string;
-    severity: RallarBlackBoxTestSeverity;
-    message: string;
-    transport?: RallarBlackBoxTestTransport;
-    commandId?: string;
-    connection?: string;
-    actor?: string;
-    groupId?: string;
-    roomId?: string;
-    laneId?: string;
-    peerId?: string;
-    remotePeerId?: string;
-    senderId?: string;
-    typeId?: string;
-    topicId?: string;
-    contextId?: string;
-    resourceId?: string;
-    atEpochMs?: number;
-    data?: unknown;
-    error?: unknown;
-    source?: string;
-}> & Readonly<Record<string, unknown>>;
+export type RallarBlackBoxRuntimeDiagnosticPayload =
+    & Readonly<{
+        diagnosticSchemaVersion: typeof RALLAR_BLACK_BOX_RUNTIME_DIAGNOSTIC_SCHEMA_VERSION;
+        diagnosticTypeId: string;
+        topic: string;
+        severity: RallarBlackBoxTestSeverity;
+        message: string;
+        transport?: RallarBlackBoxTestTransport;
+        commandId?: string;
+        connection?: string;
+        actor?: string;
+        groupId?: string;
+        roomId?: string;
+        laneId?: string;
+        peerId?: string;
+        remotePeerId?: string;
+        senderId?: string;
+        typeId?: string;
+        topicId?: string;
+        contextId?: string;
+        resourceId?: string;
+        atEpochMs?: number;
+        data?: unknown;
+        error?: unknown;
+        source?: string;
+    }>
+    & Readonly<Record<string, unknown>>;
 
 export type NormalizeRallarBlackBoxRuntimeDiagnosticInput = Readonly<{
     topic: string;
@@ -66,7 +68,7 @@ export function inferRallarBlackBoxDiagnosticSeverity(
         error?: unknown;
         data?: unknown;
         payload?: unknown;
-    }>,
+    }>
 ): RallarBlackBoxTestSeverity {
     if (input.severity) {
         return input.severity;
@@ -123,7 +125,7 @@ export function inferRallarBlackBoxDiagnosticSeverity(
 }
 
 export function normalizeRallarBlackBoxRuntimeDiagnostic(
-    input: NormalizeRallarBlackBoxRuntimeDiagnosticInput,
+    input: NormalizeRallarBlackBoxRuntimeDiagnosticInput
 ): RallarBlackBoxRuntimeDiagnosticPayload {
     const payloadRecord = asRecord(input.payload);
     const dataRecord = asRecord(input.data);
@@ -143,21 +145,21 @@ export function normalizeRallarBlackBoxRuntimeDiagnostic(
             typeId: input.typeId ?? stringValue(payloadRecord.typeId),
             topicId: input.topicId ?? stringValue(payloadRecord.topicId),
             contextId: input.contextId ?? stringValue(payloadRecord.contextId),
-            resourceId: input.resourceId ?? stringValue(payloadRecord.resourceId),
-        }),
+            resourceId: input.resourceId ?? stringValue(payloadRecord.resourceId)
+        })
     };
     const severity = inferRallarBlackBoxDiagnosticSeverity({
         topic: input.topic,
         severity: input.severity ?? toSeverity(payloadRecord.severity),
         error: input.error ?? payloadRecord.error,
         data: input.data,
-        payload: input.payload,
+        payload: input.payload
     });
     const data = input.data !== undefined
         ? input.data
         : payloadRecord.data !== undefined
-            ? payloadRecord.data
-            : input.payload;
+        ? payloadRecord.data
+        : input.payload;
     const error = input.error ?? payloadRecord.error;
     const typeId = stringValue(input.typeId ?? payloadRecord.typeId ?? dataRecord.typeId);
     const topicId = stringValue(input.topicId ?? payloadRecord.topicId ?? dataRecord.topicId);
@@ -177,7 +179,7 @@ export function normalizeRallarBlackBoxRuntimeDiagnostic(
         ...(error !== undefined ? { error } : {}),
         ...(input.source !== undefined ? { source: input.source } : {}),
         ...(typeId !== undefined ? { typeId } : {}),
-        ...(topicId !== undefined ? { topicId } : {}),
+        ...(topicId !== undefined ? { topicId } : {})
     } satisfies RallarBlackBoxRuntimeDiagnosticPayload;
 
     return redactRallarBlackBoxValue(diagnostic, input.redaction);
@@ -187,7 +189,7 @@ function diagnosticMessage(
     topic: string,
     payload: unknown,
     data: unknown,
-    error: unknown,
+    error: unknown
 ): string {
     const errorRecord = asRecord(error);
     const payloadRecord = asRecord(payload);
@@ -219,9 +221,9 @@ function toSeverity(value: unknown): RallarBlackBoxTestSeverity | undefined {
 }
 
 function definedRecord(
-    value: Record<string, unknown>,
+    value: Record<string, unknown>
 ): Record<string, unknown> {
     return Object.fromEntries(
-        Object.entries(value).filter(([_key, entry]) => entry !== undefined),
+        Object.entries(value).filter(([_key, entry]) => entry !== undefined)
     );
 }

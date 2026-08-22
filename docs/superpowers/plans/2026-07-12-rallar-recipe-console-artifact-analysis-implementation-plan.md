@@ -116,15 +116,15 @@ administrative workflows that are outside this bounded cut.
 ## Task 0: Baseline And Critical Review
 
 - [x] Read the parent plan, product spec, migration register, shared distributed
-  analyzer/monitor, control-server artifact producer, credential-aware client,
-  legacy distributed/shared-test importers, URL codec, shell composition, and
-  existing browser/structure tests.
+      analyzer/monitor, control-server artifact producer, credential-aware client,
+      legacy distributed/shared-test importers, URL codec, shell composition, and
+      existing browser/structure tests.
 - [x] Dispatch independent shared-contract and UI/browser/cutover audits.
 - [x] Establish a green baseline: 81/81 across distributed recipes, Hetzner
-  manifests, distributed artifact analysis, and legacy SPA reuse tests.
+      manifests, distributed artifact analysis, and legacy SPA reuse tests.
 - [x] Record the server-v2 drift, envelope round-trip gap, profile distinction,
-  missing compatibility/search model, causal-label limitation, input bounds,
-  and no-cutover decisions before editing.
+      missing compatibility/search model, causal-label limitation, input bounds,
+      and no-cutover decisions before editing.
 
 ## Task 1: Normalize Distributed Artifact Compatibility
 
@@ -138,17 +138,17 @@ Files:
   `packages/tests/**/distributed-artifact-*.test.ts`
 
 - [x] RED-test the actual seven-file control-server v2 envelope: it remains v2,
-  validates core/report/failures/metadata, and labels absent results/events as
-  optional/linked rather than invalid.
+      validates core/report/failures/metadata, and labels absent results/events as
+      optional/linked rather than invalid.
 - [x] RED-test loose core, partial evidence, malformed present JSON/JSONL,
-  unknown version, wrong envelope root, unsupported profile, ignored file, and
-  missing identity distinctions. Valid sibling files and valid JSONL rows stay
-  usable.
+      unknown version, wrong envelope root, unsupported profile, ignored file, and
+      missing identity distinctions. Valid sibling files and valid JSONL rows stay
+      usable.
 - [x] RED-test that unpacked files and a downloaded envelope converge on the
-  same analysis/snapshots while declared version and generated time remain
-  deterministic.
+      same analysis/snapshots while declared version and generated time remain
+      deterministic.
 - [x] Implement only additive public types/functions and correct v2 inference
-  against server behavior without changing its endpoint or payload contract.
+      against server behavior without changing its endpoint or payload contract.
 - [x] Pass focused shared/app tests and shared-test TypeScript checks.
 - [x] Commit shared compatibility and evidence as `f96b5b4` (`feat: normalize distributed artifact evidence`).
 
@@ -163,15 +163,15 @@ Files:
 - Modify focused distributed artifact tests
 
 - [x] RED-test failure/result/event/diagnostic projection with stable IDs,
-  correct provenance, bounded summaries, deduplication, stable source/time
-  ordering, index/result limits, and exact omitted counts.
+      correct provenance, bounded summaries, deduplication, stable source/time
+      ordering, index/result limits, and exact omitted counts.
 - [x] RED-test free text across agent, command, recipe, topic, diagnostic type,
-  payload summary, and failure category; structured status/severity/transport
-  and inclusive from/to filters; combined filters use AND semantics.
+      payload summary, and failure category; structured status/severity/transport
+      and inclusive from/to filters; combined filters use AND semantics.
 - [x] RED-test deterministic first actionable failure, likely causal trail
-  labels/sources, evidence-quality summary, and issue-ready markdown composition
-  using an injected generation epoch. Exclude unrelated evidence where shared
-  correlations support it; otherwise surface the heuristic limitation.
+      labels/sources, evidence-quality summary, and issue-ready markdown composition
+      using an injected generation epoch. Exclude unrelated evidence where shared
+      correlations support it; otherwise surface the heuristic limitation.
 - [x] Keep all derivation reusable and UI-agnostic under `packages/shared-test`.
 - [x] Pass focused tests and shared-test TypeScript checks.
 - [x] Commit the bounded index/search slice in `f96b5b4` after independent review.
@@ -187,17 +187,17 @@ Files:
 - Add focused Analyze state/boundary/structure tests
 
 - [x] RED-test file count/per-file/total limits, duplicate basenames, unknown
-  files, directory selection, exported-envelope intake, ambiguous input, read
-  failure, and atomic valid-candidate replacement.
+      files, directory selection, exported-envelope intake, ambiguous input, read
+      failure, and atomic valid-candidate replacement.
 - [x] RED-test idle/importing/loading/ready/error states, prior-evidence
-  retention, clear, operation generations, context changes, identity mismatch,
-  and abort-resistant late control responses.
+      retention, clear, operation generations, context changes, identity mismatch,
+      and abort-resistant late control responses.
 - [x] RED-test that offline local import invokes no artifact export endpoint
-  (the independent root control snapshot query may remain active), Control Load
-  uses only `connection.execution.exportRunArtifact`, and Export downloads the
-  loaded envelope with deterministic name/content that re-imports.
+      (the independent root control snapshot query may remain active), Control Load
+      uses only `connection.execution.exportRunArtifact`, and Export downloads the
+      loaded envelope with deterministic name/content that re-imports.
 - [x] Keep the artifact payload memory-only above the unmounted view; project
-  safe run/filter state through the existing v1 codec only.
+      safe run/filter state through the existing v1 codec only.
 - [x] Pass focused tests, structure checks, and app typecheck.
 - [x] Commit operations with the cohesive Analyze workspace milestone `abe257e`.
 
@@ -214,22 +214,22 @@ Files:
 - Add/modify focused structure, URL, shell, status, and seeded-preview tests
 
 - [x] RED-test composition ownership and ordering before React implementation:
-  actions -> failure verdict/fix -> likely causal trail/evidence quality ->
-  performance -> search/results -> issue markdown.
+      actions -> failure verdict/fix -> likely causal trail/evidence quality ->
+      performance -> search/results -> issue markdown.
 - [x] Render picker plus drop zone, local/control provenance, loaded profile and
-  version, first actionable failure, likely cause, next action, minimal fix,
-  evidence file, affected agents/regions, verification command, likely causal
-  trail, file-specific warnings, performance summary, and copyable markdown.
+      version, first actionable failure, likely cause, next action, minimal fix,
+      evidence file, affected agents/regions, verification command, likely causal
+      trail, file-specific warnings, performance summary, and copyable markdown.
 - [x] Render URL-backed search and bounded keyboard-operable result rows. An
-  explicit row activation opens the one inspector and projects available
-  agent/recipe/command context without making raw JSON the success path.
+      explicit row activation opens the one inspector and projects available
+      agent/recipe/command context without making raw JSON the success path.
 - [x] Render honest empty, reading, loaded partial/complete, malformed,
-  incompatible, stale retained, offline, authorization, credential-trust,
-  identity mismatch, and recovered states. Reloaded URL without bytes requests
-  re-import/load explicitly.
+      incompatible, stale retained, offline, authorization, credential-trust,
+      identity mismatch, and recovered states. Reloaded URL without bytes requests
+      re-import/load explicitly.
 - [x] Preserve Signal Ledger desktop/tablet/portrait/short-landscape geometry,
-  44px targets, contained scrolling, status announcements, reduced motion, and
-  CSS isolation.
+      44px targets, contained scrolling, status announcements, reduced motion, and
+      CSS isolation.
 - [x] Pass focused tests, app typecheck/build, and scoped browser RED->GREEN.
 - [x] Commit `abe257e` (`feat: replace analyze preview with artifact workspace`).
 
@@ -243,46 +243,46 @@ Files:
   Analyze-specific coverage belongs
 
 - [x] Keep the canonical acceptance name exact:
-  `imports a partial bundle offline and focuses the first actionable failure`.
+      `imports a partial bundle offline and focuses the first actionable failure`.
 - [x] Prove no artifact endpoint/export request during offline import; actual
-  drag/drop and keyboard picker fallback; wrapper/unpacked round trip; missing optional,
-  malformed present, unknown version, duplicate, bounded-input, first failure,
-  performance, likely causal trail, evidence quality, markdown, and search by
-  every required field/time bound.
+      drag/drop and keyboard picker fallback; wrapper/unpacked round trip; missing optional,
+      malformed present, unknown version, duplicate, bounded-input, first failure,
+      performance, likely causal trail, evidence quality, markdown, and search by
+      every required field/time bound.
 - [x] Prove visible Control Load and in-memory Export, identity mismatch,
-  prior-evidence retention, abort-ignoring late response rejection, and offline
-  re-import of the exported envelope.
+      prior-evidence retention, abort-ignoring late response rejection, and offline
+      re-import of the exported envelope.
 - [x] Prove URL copy/back/forward and reload semantics for run IDs and filters;
-  prove artifact bytes do not persist and reload requests re-import.
+      prove artifact bytes do not persist and reload requests re-import.
 - [x] Prove 1440x900, 900x900, 430x932, and 932x430; keyboard-only evidence and
-  inspector paths; 44px targets; focus restore/Escape; reduced motion; live
-  announcements; zero document overflow; and actual Analyze CSS in both load
-  orders.
+      inspector paths; 44px targets; focus restore/Escape; reduced motion; live
+      announcements; zero document overflow; and actual Analyze CSS in both load
+      orders.
 - [x] Preserve and test contextual links/deep links for legacy Runs and the
-  Shared Test fallback. Do not hide or alter any legacy row or mount policy.
+      Shared Test fallback. Do not hide or alter any legacy row or mount policy.
 - [x] Commit the initial browser proof with `abe257e` and the final exact
-  keyboard/drop/legacy-handoff proof with `47c332d`.
+      keyboard/drop/legacy-handoff proof with `47c332d`.
 
 ## Task 6: Fresh Exit, Review, And Documentation
 
 - [x] Run the iteration's exact focused validation plus artifact workspace
-  tests, complete app suite, shared/app typechecks, production build/chunk
-  assertion, complete Recipe Console browser config, exact preserved legacy
-  navigation/ticket pair, and control-server artifact tests if the shared
-  boundary changed their expectations.
+      tests, complete app suite, shared/app typechecks, production build/chunk
+      assertion, complete Recipe Console browser config, exact preserved legacy
+      navigation/ticket pair, and control-server artifact tests if the shared
+      boundary changed their expectations.
 - [x] Perform desktop/mobile portrait/mobile landscape, keyboard, reduced
-  motion, operational-state, CSS-isolation, and visual-hierarchy QA. Try the
-  in-app Browser first and record its exact unavailable reason before fallback.
+      motion, operational-state, CSS-isolation, and visual-hierarchy QA. Try the
+      in-app Browser first and record its exact unavailable reason before fallback.
 - [x] Dispatch independent shared-contract, app-state, and browser/cutover
-  reviews. Cover every Critical/Important finding with RED/GREEN proof and rerun
-  fresh validation after the last fix.
+      reviews. Cover every Critical/Important finding with RED/GREEN proof and rerun
+      fresh validation after the last fix.
 - [x] Update this plan, parent plan, product spec, migration register, and
-  fidelity ledger with actual commits, counts, compatibility decisions,
-  cutover evidence, skips, and remaining risks.
+      fidelity ledger with actual commits, counts, compatibility decisions,
+      cutover evidence, skips, and remaining risks.
 - [x] Mark `runner.artifact-analysis` code-backed only after the canonical
-  offline acceptance passes. Keep `runner.runs`,
-  `legacy.distributed-recipes`, `legacy.shared-test-import`, and
-  `legacy.run-manager` visible, deep-linkable, and uncut.
+      offline acceptance passes. Keep `runner.runs`,
+      `legacy.distributed-recipes`, `legacy.shared-test-import`, and
+      `legacy.run-manager` visible, deep-linkable, and uncut.
 - [x] Commit the exit documentation after the fresh proof below.
 
 ## Iteration 6 Focused Validation Contract

@@ -1,3 +1,4 @@
+import { SelectSteinerCandidate } from '../algo-props.ts';
 import { TreeGraph, VertexId, VertexState, VertexType } from '../graph-props.ts';
 import {
     canAcceptChild,
@@ -8,20 +9,23 @@ import {
     getEdgeWeight,
     neighborsOf
 } from '../graph/graph-algs.ts';
-import { SelectSteinerCandidate } from '../algo-props.ts';
 
 export function insertMinimumDiameterDegreeLimitedEdge(
     tree: TreeGraph,
     globalGraph: TreeGraph,
     actionVertexId: VertexId,
-    selectSteinerCandidate?: SelectSteinerCandidate,
+    selectSteinerCandidate?: SelectSteinerCandidate
 ): TreeGraph {
     let bestScore = Number.POSITIVE_INFINITY;
     let bestTarget: VertexId | undefined;
 
     for (const candidate of tree.nodes() as string[]) {
-        if (!canAcceptChild(tree, candidate)) continue;
-        if (candidate === actionVertexId) continue;
+        if (!canAcceptChild(tree, candidate)) {
+            continue;
+        }
+        if (candidate === actionVertexId) {
+            continue;
+        }
 
         const connectWeight = getEdgeWeight(globalGraph, actionVertexId, candidate);
         const worstCaseDistance = tree.degree(candidate) > 0
@@ -47,7 +51,7 @@ export function insertMinimumDiameterDegreeLimitedEdge(
         tree,
         globalGraph,
         actionVertexId,
-        selectSteinerCandidate,
+        selectSteinerCandidate
     );
 }
 
@@ -55,13 +59,15 @@ export function insertTryReplaceMddlNaive(
     tree: TreeGraph,
     globalGraph: TreeGraph,
     actionVertexId: VertexId,
-    selectSteinerCandidate?: SelectSteinerCandidate,
+    selectSteinerCandidate?: SelectSteinerCandidate
 ): TreeGraph {
     let bestScore = Number.POSITIVE_INFINITY;
     let mcpVertexId: VertexId | undefined;
 
     for (const candidate of tree.nodes() as string[]) {
-        if (!canAcceptChild(tree, candidate)) continue;
+        if (!canAcceptChild(tree, candidate)) {
+            continue;
+        }
 
         const connectWeight = getEdgeWeight(globalGraph, actionVertexId, candidate);
         const worstCaseDistance = tree.degree(candidate) > 0
@@ -91,7 +97,7 @@ export function insertTryReplaceMddlNaive(
         tree,
         globalGraph,
         actionVertexId,
-        new Set([mcpVertexId]),
+        new Set([mcpVertexId])
     );
 
     if (
@@ -104,7 +110,7 @@ export function insertTryReplaceMddlNaive(
             actionVertexId,
             mcpVertexId,
             spVertexId,
-            adjacent,
+            adjacent
         );
         steinerDiameter = diameterDistance(steinerTree);
     }
@@ -118,7 +124,7 @@ export function insertTryReplaceMddlNaive(
             globalGraph,
             actionVertexId,
             mcpVertexId,
-            adjacent,
+            adjacent
         );
         actionDiameter = diameterDistance(actionTree);
     }
@@ -138,7 +144,7 @@ function simulateDirectAttach(
     tree: TreeGraph,
     globalGraph: TreeGraph,
     actionVertexId: VertexId,
-    mcpVertexId: VertexId,
+    mcpVertexId: VertexId
 ): TreeGraph {
     const next = cloneTree(tree);
     addMemberVertexFromGlobal(next, globalGraph, actionVertexId);
@@ -152,7 +158,7 @@ function simulateSteinerIntersection(
     actionVertexId: VertexId,
     mcpVertexId: VertexId,
     spVertexId: VertexId,
-    adjacent: VertexId[],
+    adjacent: VertexId[]
 ): TreeGraph {
     const next = cloneTree(tree);
 
@@ -169,7 +175,8 @@ function simulateSteinerIntersection(
 
     if (!mcpIsSteiner) {
         upsertWeightedEdge(next, globalGraph, spVertexId, mcpVertexId);
-    } else if (next.degree(mcpVertexId) === 0) {
+    }
+    else if (next.degree(mcpVertexId) === 0) {
         next.dropNode(mcpVertexId);
     }
 
@@ -184,7 +191,7 @@ function simulateActionVertexIntersection(
     globalGraph: TreeGraph,
     actionVertexId: VertexId,
     mcpVertexId: VertexId,
-    adjacent: VertexId[],
+    adjacent: VertexId[]
 ): TreeGraph {
     const next = cloneTree(tree);
 
@@ -200,7 +207,8 @@ function simulateActionVertexIntersection(
 
     if (!mcpIsSteiner) {
         upsertWeightedEdge(next, globalGraph, actionVertexId, mcpVertexId);
-    } else if (next.degree(mcpVertexId) === 0) {
+    }
+    else if (next.degree(mcpVertexId) === 0) {
         next.dropNode(mcpVertexId);
     }
 
@@ -210,32 +218,36 @@ function simulateActionVertexIntersection(
 function addMemberVertexFromGlobal(
     tree: TreeGraph,
     globalGraph: TreeGraph,
-    vertexId: VertexId,
+    vertexId: VertexId
 ): void {
-    if (tree.hasNode(vertexId)) return;
+    if (tree.hasNode(vertexId)) {
+        return;
+    }
 
     const attrs = globalGraph.getNodeAttributes(vertexId);
     tree.addNode(vertexId, {
         ...attrs,
         type: VertexType.CLIENT,
         state: VertexState.MEMBER,
-        degreeLimit: globalGraph.getAttributes().degreeLimitMember,
+        degreeLimit: globalGraph.getAttributes().degreeLimitMember
     });
 }
 
 function addSteinerVertexFromGlobal(
     tree: TreeGraph,
     globalGraph: TreeGraph,
-    vertexId: VertexId,
+    vertexId: VertexId
 ): void {
-    if (tree.hasNode(vertexId)) return;
+    if (tree.hasNode(vertexId)) {
+        return;
+    }
 
     const attrs = globalGraph.getNodeAttributes(vertexId);
     tree.addNode(vertexId, {
         ...attrs,
         type: VertexType.CORE,
         state: VertexState.STEINER,
-        degreeLimit: globalGraph.getAttributes().degreeLimitSteiner,
+        degreeLimit: globalGraph.getAttributes().degreeLimitSteiner
     });
 }
 
@@ -243,15 +255,17 @@ function upsertWeightedEdge(
     tree: TreeGraph,
     globalGraph: TreeGraph,
     a: VertexId,
-    b: VertexId,
+    b: VertexId
 ): void {
     const weight = getEdgeWeight(globalGraph, a, b);
 
-    if (tree.hasEdge(a, b)) return;
+    if (tree.hasEdge(a, b)) {
+        return;
+    }
 
     tree.addEdge(a, b, {
         from: a,
         to: b,
-        weight,
+        weight
     });
 }

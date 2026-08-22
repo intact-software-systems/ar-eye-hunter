@@ -1,14 +1,14 @@
 export class AuthMutationRejectedError extends Error {
-  readonly code = 'auth-mutation-rejected';
+    readonly code = 'auth-mutation-rejected';
 
-  readonly status: number;
+    readonly status: number;
 
-  constructor(
-    message: string,
-    status = 409,
-  ) {
-    super(message);
-    this.status = status;
-    this.name = 'AuthMutationRejectedError';
-  }
+    constructor(
+        message: string,
+        status = 409
+    ) {
+        super(message);
+        this.status = status;
+        this.name = 'AuthMutationRejectedError';
+    }
 }

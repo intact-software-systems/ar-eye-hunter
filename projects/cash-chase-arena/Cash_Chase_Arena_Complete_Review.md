@@ -1,8 +1,8 @@
 # Cash Chase Arena — Complete Product and Technical Review
 
-**Review date:** 2026-07-12  
-**Repository snapshot:** `9540106`  
-**Scope:** All five planning documents in `projects/cash-chase-arena/`, current Rallar public code under `packages/**`, AR Eye Hunter, Relic Hunters, and relevant tests.  
+**Review date:** 2026-07-12\
+**Repository snapshot:** `9540106`\
+**Scope:** All five planning documents in `projects/cash-chase-arena/`, current Rallar public code under `packages/**`, AR Eye Hunter, Relic Hunters, and relevant tests.\
 **Change boundary:** Analysis only. No application or package implementation was changed.
 
 **Follow-up resolution:** On July 12, 2026, the five source documents were rewritten from this review. The recommended defaults were applied: unranked browser-director MVP, mandatory controlled migration gate, caught/cashed-out spectator state, initial 240-second/10-credit/60-second cash-out tuning, desktop active play, renderer-neutral direct-Three-led bake-off, post-core AI/CRDT, and manual or separately consented telemetry.

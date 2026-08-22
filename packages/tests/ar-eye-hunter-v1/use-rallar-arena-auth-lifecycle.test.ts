@@ -1,32 +1,25 @@
 // @vitest-environment happy-dom
-import { createElement } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
-import { act } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { readApiConfig, readIceCandidates } from '@shared-web/browser/api-integration.ts';
+import type { RallarAuthState, RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
+import type { RallarGameMatchStatus, RallarGamePeerReadiness } from '@shared-web/game/mod.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { validateRallarJsonPayload } from '@shared/api/rallar-validation.ts';
-import type { RallarAuthState, RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
-import { readApiConfig, readIceCandidates } from '@shared-web/browser/api-integration.ts';
-import {
-    createInitialArenaState,
-    createInitialVitalsState,
-    toArenaSnapshot,
-} from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
-import {
-    type ArenaConnection,
-    useRallarArena,
-} from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/use-rallar-arena.ts';
+import { createElement } from 'react';
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useRallarArena, type ArenaConnection } from '../../../apps/ar-eye-hunter-v1/src/game/arena-runtime/use-rallar-arena.ts';
 import type { ArenaRallarGameMatchHandle } from '../../../apps/ar-eye-hunter-v1/src/game/rallar-game-match-adapter.ts';
-import type { RallarGameMatchStatus, RallarGamePeerReadiness } from '@shared-web/game/mod.ts';
+import { createInitialArenaState, createInitialVitalsState, toArenaSnapshot } from '../../../apps/ar-eye-hunter-v1/src/game/simulation.ts';
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean; }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const session: AuthSession = {
     clientId: 'hunter-1',
     accessToken: 'token-1',
     username: 'hunter',
     sessionId: 'session-1',
-    expiresAtEpochMs: Date.now() + 60_000,
+    expiresAtEpochMs: Date.now() + 60_000
 };
 
 const authListeners = new Set<(state: RallarAuthState) => void | Promise<void>>();
@@ -44,7 +37,7 @@ const mockMatch = vi.hoisted(() => ({
         recovery: { status: 'idle' },
         started: true,
         stopped: false,
-        updatedAtEpochMs: 1,
+        updatedAtEpochMs: 1
     })),
     diagnostics: vi.fn(() => ({
         generatedAtEpochMs: 1,
@@ -59,40 +52,34 @@ const mockMatch = vi.hoisted(() => ({
         capabilityCount: 0,
         rtcPeerCount: 0,
         realtimeHealth: [],
-        issues: [],
+        issues: []
     })),
     canAppointDirector: vi.fn<ArenaRallarGameMatchHandle['canAppointDirector']>(() => ({
         allowed: true,
         status: 'allowed',
-        policy: 'metadata-owner-admin-or-member-fallback',
+        policy: 'metadata-owner-admin-or-member-fallback'
     })),
     start: vi.fn(() => Promise.resolve()),
-    reportCapability: vi.fn<ArenaRallarGameMatchHandle['reportCapability']>(() =>
-        Promise.resolve({ status: 'sent' })
-    ),
+    reportCapability: vi.fn<ArenaRallarGameMatchHandle['reportCapability']>(() => Promise.resolve({ status: 'sent' })),
     appointIfElected: vi.fn<ArenaRallarGameMatchHandle['appointIfElected']>(() =>
         Promise.resolve({
             status: 'not-elected',
             election: {
                 candidates: [],
                 nowEpochMs: 1,
-                capabilityTtlMs: 10_000,
+                capabilityTtlMs: 10_000
             },
-            reason: 'The local peer is not the elected host.',
+            reason: 'The local peer is not the elected host.'
         })
     ),
     onStatus: vi.fn(() => vi.fn()),
-    waitForReadyLanes: vi.fn<ArenaRallarGameMatchHandle['waitForReadyLanes']>(() =>
-        Promise.resolve(emptyPeerReadiness())
-    ),
+    waitForReadyLanes: vi.fn<ArenaRallarGameMatchHandle['waitForReadyLanes']>(() => Promise.resolve(emptyPeerReadiness())),
     publishEvent: vi.fn(),
     publishSnapshot: vi.fn(),
     sendIntent: vi.fn(),
     sendInput: vi.fn(),
     sendPresence: vi.fn(),
-    requestSync: vi.fn<ArenaRallarGameMatchHandle['requestSync']>(() =>
-        Promise.resolve({ status: 'sent' })
-    ),
+    requestSync: vi.fn<ArenaRallarGameMatchHandle['requestSync']>(() => Promise.resolve({ status: 'sent' }))
 }));
 const mockRallar = vi.hoisted(() => ({
     auth: {
@@ -100,7 +87,7 @@ const mockRallar = vi.hoisted(() => ({
         onChange: vi.fn(),
         login: vi.fn(),
         registerAndLogin: vi.fn(),
-        logout: vi.fn(),
+        logout: vi.fn()
     },
     start: vi.fn(),
     rooms: {
@@ -109,58 +96,58 @@ const mockRallar = vi.hoisted(() => ({
         refresh: vi.fn(),
         create: vi.fn(),
         createAndSwitch: vi.fn(),
-        join: vi.fn(),
+        join: vi.fn()
     },
     director: {
         status: vi.fn(),
         onStatus: vi.fn(),
-        appoint: vi.fn(),
+        appoint: vi.fn()
     },
     realtime: {
         onJson: vi.fn(),
         sendJson: vi.fn(),
         room: vi.fn(),
-        health: vi.fn(),
+        health: vi.fn()
     },
     rtc: {
         status: vi.fn(),
         waitForRoomLane: vi.fn(),
-        diagnostics: vi.fn(),
+        diagnostics: vi.fn()
     },
     ws: {
-        status: vi.fn(),
+        status: vi.fn()
     },
-    subscriptions: vi.fn(),
+    subscriptions: vi.fn()
 }));
 
 vi.mock('@shared-web/browser/rallar.ts', () => ({
-    rallar: mockRallar,
+    rallar: mockRallar
 }));
 
 vi.mock('@shared-web/browser/api-integration.ts', () => ({
     readApiConfig: vi.fn(() =>
         Promise.resolve({
             apiBaseUrl: 'https://api.test',
-            wsBaseUrl: 'wss://api.test',
+            wsBaseUrl: 'wss://api.test'
         })
     ),
     readIceCandidates: vi.fn(() =>
         Promise.resolve({
             iceServers: [
-                { urls: 'stun:stun.test' },
-            ],
+                { urls: 'stun:stun.test' }
+            ]
         })
-    ),
+    )
 }));
 
 vi.mock('@shared-web/browser/auth/websocket-ticket-http-api.ts', () => ({
-    readWebSocketTicketBackoffState: vi.fn(() => ({ status: 'idle' })),
+    readWebSocketTicketBackoffState: vi.fn(() => ({ status: 'idle' }))
 }));
 
 vi.mock('@shared-web/browser/rallar-ai.ts', () => ({
     createRallarBrowserAi: () => ({
-        complete: vi.fn(),
-    }),
+        complete: vi.fn()
+    })
 }));
 
 vi.mock(
@@ -169,9 +156,9 @@ vi.mock(
         const actual = await importOriginal<object>();
         return {
             ...actual,
-            createArenaRallarGameMatch: vi.fn(() => mockMatch),
+            createArenaRallarGameMatch: vi.fn(() => mockMatch)
         };
-    },
+    }
 );
 
 describe('useRallarArena auth lifecycle', () => {
@@ -198,25 +185,25 @@ describe('useRallarArena auth lifecycle', () => {
                     {
                         roomId: 'arena-1',
                         groupId: 'arena-1',
-                        name: 'Arena: Vector Circuit',
-                    },
+                        name: 'Arena: Vector Circuit'
+                    }
                 ],
-                currentRoomId: 'arena-1',
-            },
+                currentRoomId: 'arena-1'
+            }
         });
         mockRallar.rooms.state.mockReturnValue({
             rooms: [],
-            currentRoomId: undefined,
+            currentRoomId: undefined
         });
         mockRallar.director.status.mockReturnValue({
             role: 'none',
             state: 'none',
             isDirector: false,
-            isFresh: false,
+            isFresh: false
         });
         mockRallar.subscriptions.mockReturnValue({
             add: vi.fn().mockReturnThis(),
-            unsubscribe: vi.fn(),
+            unsubscribe: vi.fn()
         });
         mockRallar.realtime.onJson.mockReturnValue(vi.fn());
         mockRallar.realtime.room.mockReturnValue({
@@ -227,15 +214,15 @@ describe('useRallarArena auth lifecycle', () => {
                     desiredPeerIds: ['peer-b'],
                     results: [],
                     transport: 'rtc',
-                    laneId: 'combat',
+                    laneId: 'combat'
                 })
-            ),
+            )
         });
         mockRallar.realtime.health.mockReturnValue([]);
         mockRallar.rooms.onChange.mockReturnValue(vi.fn());
         mockRallar.rooms.refresh.mockResolvedValue({
             rooms: [],
-            currentRoomId: undefined,
+            currentRoomId: undefined
         });
         mockRallar.rooms.create.mockReset();
         mockRallar.rooms.createAndSwitch.mockReset();
@@ -248,7 +235,7 @@ describe('useRallarArena auth lifecycle', () => {
             reconnectEnabled: true,
             reconnectAttempts: 0,
             maxReconnectAttempts: 5,
-            reconnectExhausted: false,
+            reconnectExhausted: false
         });
         mockRallar.rtc.status.mockReturnValue({
             laneId: 'motion',
@@ -256,19 +243,19 @@ describe('useRallarArena auth lifecycle', () => {
             activePeerIds: ['peer-b'],
             peerIdsWithNoReconnectableLanes: [],
             readyPeerIds: ['peer-b'],
-            peers: [],
+            peers: []
         });
         mockRallar.rtc.diagnostics.mockResolvedValue({
             generatedAtEpochMs: 1,
             peerCount: 1,
             connectedPeerCount: 1,
             relayPeerCount: 0,
-            peers: [],
+            peers: []
         });
         mockRallar.rtc.waitForRoomLane.mockResolvedValue({
             status: 'closed',
             ready: [],
-            notReady: [],
+            notReady: []
         });
         mockMatch.stop.mockClear();
         mockMatch.status.mockClear();
@@ -307,7 +294,7 @@ describe('useRallarArena auth lifecycle', () => {
 
         await emitAuthState({
             authenticated: false,
-            reason: 'expired',
+            reason: 'expired'
         });
 
         expect(current?.session).toBeUndefined();
@@ -397,7 +384,7 @@ describe('useRallarArena auth lifecycle', () => {
             direction: [0, 0, 1] as const,
             weaponKind: 'pulse-rifle' as const,
             seq: 1,
-            sentAtEpochMs: 5_000,
+            sentAtEpochMs: 5_000
         };
         await act(async () => {
             connectedConnection?.sendPose({
@@ -406,7 +393,7 @@ describe('useRallarArena auth lifecycle', () => {
                 score: 12,
                 seq: 8,
                 sentAtEpochMs: 456,
-                vitals: createInitialVitalsState(),
+                vitals: createInitialVitalsState()
             });
             connectedConnection?.sendShot(
                 {
@@ -414,7 +401,7 @@ describe('useRallarArena auth lifecycle', () => {
                     direction: fullShot.direction,
                     weaponKind: fullShot.weaponKind,
                     seq: fullShot.seq,
-                    sentAtEpochMs: fullShot.sentAtEpochMs,
+                    sentAtEpochMs: fullShot.sentAtEpochMs
                 },
                 {
                     shot: fullShot,
@@ -425,8 +412,8 @@ describe('useRallarArena auth lifecycle', () => {
                     multiplier: 1,
                     overdrive: 0,
                     revision: 1,
-                    acceptedAtEpochMs: 5_000,
-                },
+                    acceptedAtEpochMs: 5_000
+                }
             );
             connectedConnection?.publishArenaSnapshot(arenaSnapshot(99));
         });
@@ -485,12 +472,12 @@ describe('useRallarArena auth lifecycle', () => {
             return () => roomChangeListeners.delete(listener as never);
         });
         mockRallar.rtc.waitForRoomLane.mockImplementation(
-            (_room, _lane, options?: { signal?: AbortSignal }) => {
+            (_room, _lane, options?: { signal?: AbortSignal; }) => {
                 if (options?.signal) {
                     waitSignals.push(options.signal);
                 }
                 return new Promise(() => undefined);
-            },
+            }
         );
 
         await renderHook();
@@ -507,7 +494,7 @@ describe('useRallarArena auth lifecycle', () => {
                 listener({
                     rooms: [],
                     currentRoomId: undefined,
-                    currentRoomRef: undefined,
+                    currentRoomRef: undefined
                 });
             }
         });
@@ -524,9 +511,7 @@ describe('useRallarArena auth lifecycle', () => {
                 currentRoomRef?: undefined;
             }) => void
         >();
-        const appointment = createDeferred<
-            Awaited<ReturnType<typeof mockMatch.appointIfElected>>
-        >();
+        const appointment = createDeferred<Awaited<ReturnType<typeof mockMatch.appointIfElected>>>();
         mockRallar.rooms.onChange.mockImplementation((listener) => {
             roomChangeListeners.add(listener as never);
             return () => roomChangeListeners.delete(listener as never);
@@ -555,7 +540,7 @@ describe('useRallarArena auth lifecycle', () => {
                 listener({
                     rooms: [],
                     currentRoomId: undefined,
-                    currentRoomRef: undefined,
+                    currentRoomRef: undefined
                 });
             }
         });
@@ -567,9 +552,9 @@ describe('useRallarArena auth lifecycle', () => {
                 election: {
                     candidates: [],
                     nowEpochMs: 2,
-                    capabilityTtlMs: 10_000,
+                    capabilityTtlMs: 10_000
                 },
-                directorStatus: freshDirectorStatus(),
+                directorStatus: freshDirectorStatus()
             });
             await appointment.promise;
         });
@@ -590,7 +575,7 @@ describe('useRallarArena auth lifecycle', () => {
 
         await emitAuthState({
             authenticated: false,
-            reason: 'logout',
+            reason: 'logout'
         });
 
         await act(async () => {
@@ -602,11 +587,11 @@ describe('useRallarArena auth lifecycle', () => {
                         {
                             roomId: 'arena-1',
                             groupId: 'arena-1',
-                            name: 'Arena: Vector Circuit',
-                        },
+                            name: 'Arena: Vector Circuit'
+                        }
                     ],
-                    currentRoomId: 'arena-1',
-                },
+                    currentRoomId: 'arena-1'
+                }
             });
             await startup.promise;
         });
@@ -660,7 +645,7 @@ describe('useRallarArena auth lifecycle', () => {
             direction: [0, 0, 1] as const,
             weaponKind: 'pulse-rifle' as const,
             seq: 1,
-            sentAtEpochMs: 5_000,
+            sentAtEpochMs: 5_000
         };
 
         await act(async () => {
@@ -670,7 +655,7 @@ describe('useRallarArena auth lifecycle', () => {
                     direction: fullShot.direction,
                     weaponKind: fullShot.weaponKind,
                     seq: fullShot.seq,
-                    sentAtEpochMs: fullShot.sentAtEpochMs,
+                    sentAtEpochMs: fullShot.sentAtEpochMs
                 },
                 {
                     shot: fullShot,
@@ -681,22 +666,22 @@ describe('useRallarArena auth lifecycle', () => {
                     multiplier: 1,
                     overdrive: 0,
                     revision: 1,
-                    acceptedAtEpochMs: 5_000,
-                },
+                    acceptedAtEpochMs: 5_000
+                }
             );
             signedOutConnection?.sendPlayerHit({
                 shot: fullShot,
                 targetSessionId: 'target-session',
                 targetSeq: 3,
                 predictedImpact: [0, 1.5, 8],
-                sentAtEpochMs: 5_001,
+                sentAtEpochMs: 5_001
             });
             signedOutConnection?.sendPickupIntent({
                 pickupId: 'pickup-1',
                 sessionId: session.sessionId,
                 position: [0, 0, 1],
                 seq: 1,
-                sentAtEpochMs: 5_002,
+                sentAtEpochMs: 5_002
             });
         });
 
@@ -717,7 +702,7 @@ describe('useRallarArena auth lifecycle', () => {
         expect(current?.directorAttempt).toMatchObject({
             source: 'auto',
             status: 'not-elected',
-            reason: 'The local peer is not the elected host.',
+            reason: 'The local peer is not the elected host.'
         });
 
         mockMatch.appointIfElected.mockResolvedValueOnce({
@@ -725,9 +710,9 @@ describe('useRallarArena auth lifecycle', () => {
             election: {
                 candidates: [],
                 nowEpochMs: 2,
-                capabilityTtlMs: 10_000,
+                capabilityTtlMs: 10_000
             },
-            reason: 'director write timed out',
+            reason: 'director write timed out'
         });
 
         await act(async () => {
@@ -737,7 +722,7 @@ describe('useRallarArena auth lifecycle', () => {
         expect(current?.directorAttempt).toMatchObject({
             source: 'manual',
             status: 'failed',
-            reason: 'director write timed out',
+            reason: 'director write timed out'
         });
 
         await act(async () => {
@@ -764,17 +749,17 @@ describe('useRallarArena auth lifecycle', () => {
         });
         mockRallar.rooms.createAndSwitch.mockResolvedValue({
             group: {
-                groupId: 'arena-2',
-            },
+                groupId: 'arena-2'
+            }
         });
         mockRallar.rooms.refresh.mockResolvedValue({
             rooms: [
                 {
                     roomId: 'arena-2',
-                    name: 'Arena: Hyper Prism',
-                },
+                    name: 'Arena: Hyper Prism'
+                }
             ],
-            currentRoomId: 'arena-2',
+            currentRoomId: 'arena-2'
         });
 
         await renderHook();
@@ -796,9 +781,9 @@ describe('useRallarArena auth lifecycle', () => {
                         score: 4,
                         combo: 0,
                         seq: 1,
-                        sentAtEpochMs: 123,
-                    },
-                },
+                        sentAtEpochMs: 123
+                    }
+                }
             });
         });
         await waitForState(() => current?.remotePlayers.size === 1);
@@ -808,7 +793,7 @@ describe('useRallarArena auth lifecycle', () => {
         });
 
         expect(mockRallar.rooms.createAndSwitch).toHaveBeenCalledWith({
-            displayName: expect.stringContaining('AR Eye Hunter Arena:'),
+            displayName: expect.stringContaining('AR Eye Hunter Arena:')
         });
         expect(mockRallar.rooms.create).not.toHaveBeenCalled();
         expect(current?.roomId).toBe('arena-2');
@@ -826,9 +811,9 @@ describe('useRallarArena auth lifecycle', () => {
             election: {
                 candidates: [],
                 nowEpochMs: 2,
-                capabilityTtlMs: 10_000,
+                capabilityTtlMs: 10_000
             },
-            directorStatus: freshDirectorStatus(),
+            directorStatus: freshDirectorStatus()
         });
         mockMatch.diagnostics.mockReturnValue({
             generatedAtEpochMs: 1,
@@ -837,7 +822,7 @@ describe('useRallarArena auth lifecycle', () => {
             directorAuthority: 'active',
             egress: {
                 reliable: 'ready',
-                realtime: 'empty',
+                realtime: 'empty'
             },
             recovery: { status: 'idle' },
             knownPeerIds: [],
@@ -846,7 +831,7 @@ describe('useRallarArena auth lifecycle', () => {
             capabilityCount: 0,
             rtcPeerCount: 0,
             realtimeHealth: [],
-            issues: [],
+            issues: []
         });
         mockMatch.waitForReadyLanes.mockReturnValueOnce(laneWait.promise);
 
@@ -861,8 +846,8 @@ describe('useRallarArena auth lifecycle', () => {
             directorAuthority: 'active',
             egress: {
                 reliable: 'ready',
-                realtime: 'empty',
-            },
+                realtime: 'empty'
+            }
         });
 
         await act(async () => {
@@ -890,9 +875,9 @@ describe('useRallarArena auth lifecycle', () => {
             election: {
                 candidates: [],
                 nowEpochMs: 2,
-                capabilityTtlMs: 10_000,
+                capabilityTtlMs: 10_000
             },
-            directorStatus: freshDirectorStatus(),
+            directorStatus: freshDirectorStatus()
         });
         mockRallar.rooms.state.mockReturnValue({
             rooms: [],
@@ -905,9 +890,9 @@ describe('useRallarArena auth lifecycle', () => {
                     status: 'active',
                     isOwner: false,
                     isOnline: true,
-                    sessionIds: [session.sessionId],
-                },
-            ],
+                    sessionIds: [session.sessionId]
+                }
+            ]
         });
 
         await renderHook();
@@ -917,7 +902,7 @@ describe('useRallarArena auth lifecycle', () => {
         expect(current?.directorAttempt).toMatchObject({
             source: 'auto',
             status: 'succeeded',
-            resultStatus: 'appointed',
+            resultStatus: 'appointed'
         });
         expect(mockMatch.reportCapability).toHaveBeenCalled();
         expect(mockMatch.appointIfElected).toHaveBeenCalled();
@@ -936,34 +921,34 @@ describe('useRallarArena auth lifecycle', () => {
                 score: 12,
                 combo: 2,
                 seq: 7,
-                sentAtEpochMs: 123,
+                sentAtEpochMs: 123
             });
         });
 
         expect(mockMatch.sendInput).toHaveBeenCalledWith(expect.objectContaining({
             kind: 'player-pose-intent',
             pose: expect.objectContaining({
-                sessionId: session.sessionId,
-            }),
+                sessionId: session.sessionId
+            })
         }));
         expect(mockMatch.sendPresence).toHaveBeenCalledWith(
             expect.objectContaining({
                 kind: 'player-pose',
                 pose: expect.objectContaining({
                     sessionId: session.sessionId,
-                    position: [1, 2, 3],
-                }),
+                    position: [1, 2, 3]
+                })
             }),
             expect.objectContaining({
                 laneId: 'motion',
                 key: `pose:${session.sessionId}`,
                 maxAgeMs: 250,
-                openTimeoutMs: 1500,
-            }),
+                openTimeoutMs: 1500
+            })
         );
         expect(mockRallar.realtime.sendJson).not.toHaveBeenCalledWith(expect.objectContaining({
             laneId: 'motion',
-            key: `pose:${session.sessionId}`,
+            key: `pose:${session.sessionId}`
         }));
     });
 
@@ -981,8 +966,8 @@ describe('useRallarArena auth lifecycle', () => {
                 sentAtEpochMs: 456,
                 vitals: {
                     ...createInitialVitalsState(),
-                    deadUntilEpochMs: undefined,
-                },
+                    deadUntilEpochMs: undefined
+                }
             });
         });
 
@@ -1008,7 +993,7 @@ describe('useRallarArena auth lifecycle', () => {
         expect(mockMatch.publishSnapshot).toHaveBeenCalledTimes(1);
         expect(mockMatch.publishSnapshot).toHaveBeenCalledWith(
             snapshot,
-            { reliable: true },
+            { reliable: true }
         );
     });
 
@@ -1027,7 +1012,7 @@ describe('useRallarArena auth lifecycle', () => {
 
         expect(mockMatch.publishSnapshot).toHaveBeenCalledTimes(1);
         expect(mockMatch.publishSnapshot.mock.calls[0]?.[0]).toMatchObject({
-            revision: 20,
+            revision: 20
         });
 
         await act(async () => {
@@ -1041,7 +1026,7 @@ describe('useRallarArena auth lifecycle', () => {
 
         expect(mockMatch.publishSnapshot).toHaveBeenCalledTimes(2);
         expect(mockMatch.publishSnapshot.mock.calls[1]?.[0]).toMatchObject({
-            revision: 22,
+            revision: 22
         });
         expect(mockMatch.publishSnapshot.mock.calls[1]?.[1]).toEqual({ reliable: true });
     });
@@ -1061,7 +1046,7 @@ describe('useRallarArena auth lifecycle', () => {
 
         await emitAuthState({
             authenticated: false,
-            reason: 'expired',
+            reason: 'expired'
         });
         await act(async () => {
             await vi.advanceTimersByTimeAsync(1_000);
@@ -1114,14 +1099,14 @@ function freshDirectorStatus(): RallarDirectorStatus {
             principalId: session.clientId,
             epoch: 1,
             appointedAtEpochMs: 1,
-            heartbeatTtlMs: 10_000,
+            heartbeatTtlMs: 10_000
         },
         isDirector: true,
         isFresh: true,
         active: true,
         freshness: 'fresh',
         lastHeartbeatAtEpochMs: 1,
-        nowEpochMs: 1,
+        nowEpochMs: 1
     };
 }
 
@@ -1130,12 +1115,12 @@ function arenaSnapshot(revision: number) {
         ...toArenaSnapshot(
             {
                 ...createInitialArenaState(1_000),
-                revision,
+                revision
             },
             'arena-1',
-            1_000 + revision,
+            1_000 + revision
         ),
-        revision,
+        revision
     };
 }
 
@@ -1154,7 +1139,7 @@ function localDirectorMatchStatus(): RallarGameMatchStatus {
         recovery: { status: 'idle' },
         started: true,
         stopped: false,
-        updatedAtEpochMs: 2,
+        updatedAtEpochMs: 2
     };
 }
 
@@ -1167,7 +1152,7 @@ function emptyPeerReadiness(): RallarGamePeerReadiness {
         missingPeerIds: [],
         extraPeerIds: [],
         observedCount: 0,
-        lanes: [],
+        lanes: []
     };
 }
 

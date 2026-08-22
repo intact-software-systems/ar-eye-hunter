@@ -1,6 +1,6 @@
 import {
     isDistributedRunTerminalState,
-    type RallarBlackBoxDistributedRunState,
+    type RallarBlackBoxDistributedRunState
 } from '@shared-test/rallar-bb-test/distributed-run.ts';
 
 export type ExecuteAction =
@@ -36,16 +36,14 @@ export type ExecuteActionBlockCode =
     | 'terminal-run';
 
 export type ExecuteActionDecision =
-    | Readonly<{ enabled: true; code?: never; reason?: never }>
+    | Readonly<{ enabled: true; code?: never; reason?: never; }>
     | Readonly<{
         enabled: false;
         code: ExecuteActionBlockCode;
         reason: string;
     }>;
 
-export type ExecuteActionPolicy = Readonly<
-    Record<ExecuteAction, ExecuteActionDecision>
->;
+export type ExecuteActionPolicy = Readonly<Record<ExecuteAction, ExecuteActionDecision>>;
 
 export type ExecuteActionPolicyInput = Readonly<{
     connection: ExecuteConnectionTruth;
@@ -62,12 +60,12 @@ export type ExecuteActionPolicyInput = Readonly<{
 }>;
 
 export function deriveExecuteActionPolicy(
-    input: ExecuteActionPolicyInput,
+    input: ExecuteActionPolicyInput
 ): ExecuteActionPolicy {
     if (input.busyAction) {
         return allBlocked(
             'busy',
-            `${title(input.busyAction)} is already in progress.`,
+            `${title(input.busyAction)} is already in progress.`
         );
     }
 
@@ -78,7 +76,7 @@ export function deriveExecuteActionPolicy(
         start: blocked('connection', 'Complete live control truth is required.'),
         cancel: blocked('connection', 'Complete live control truth is required.'),
         refresh: enabled(),
-        export: blocked('run-unavailable', 'Select a known distributed run to export.'),
+        export: blocked('run-unavailable', 'Select a known distributed run to export.')
     };
 
     if (
@@ -93,11 +91,15 @@ export function deriveExecuteActionPolicy(
     if (input.hasKnownRun) {
         policy.export = enabled();
     }
-    if (input.connection === 'stale') return policy;
+    if (input.connection === 'stale') {
+        return policy;
+    }
 
     const safe = guidedSafety(input);
     policy.resolve = safe ?? enabled();
-    if (input.connection === 'partial') return policy;
+    if (input.connection === 'partial') {
+        return policy;
+    }
 
     policy.create = createDecision(input, safe);
     policy.stage = stageDecision(input, safe);
@@ -108,18 +110,20 @@ export function deriveExecuteActionPolicy(
 
 function createDecision(
     input: ExecuteActionPolicyInput,
-    safe: ExecuteActionDecision | undefined,
+    safe: ExecuteActionDecision | undefined
 ): ExecuteActionDecision {
     if (input.unknownDistributedRunId) {
         return blocked(
             'run-unavailable',
-            'The explicit distributed run ID is unavailable; clear or restore it before Create.',
+            'The explicit distributed run ID is unavailable; clear or restore it before Create.'
         );
     }
     if (input.hasKnownRun || input.runState !== undefined) {
         return blocked('run-state', 'Create requires a new run without existing run truth.');
     }
-    if (safe) return safe;
+    if (safe) {
+        return safe;
+    }
     if (!input.resolutionCurrent) {
         return blocked('resolution-required', 'Resolve the current manifest and safe targets first.');
     }
@@ -128,12 +132,14 @@ function createDecision(
 
 function stageDecision(
     input: ExecuteActionPolicyInput,
-    safe: ExecuteActionDecision | undefined,
+    safe: ExecuteActionDecision | undefined
 ): ExecuteActionDecision {
     if (!input.hasKnownRun || input.runState !== 'draft') {
         return blocked('run-state', 'Stage requires an authoritative draft run.');
     }
-    if (safe) return safe;
+    if (safe) {
+        return safe;
+    }
     if (!input.resolutionCurrent) {
         return blocked('resolution-required', 'Resolve the current manifest and safe targets first.');
     }
@@ -142,12 +148,14 @@ function stageDecision(
 
 function startDecision(
     input: ExecuteActionPolicyInput,
-    safe: ExecuteActionDecision | undefined,
+    safe: ExecuteActionDecision | undefined
 ): ExecuteActionDecision {
     if (!input.hasKnownRun || input.runState !== 'ready') {
         return blocked('run-state', 'Start requires authoritative ready state.');
     }
-    if (safe) return safe;
+    if (safe) {
+        return safe;
+    }
     return enabled();
 }
 
@@ -162,7 +170,7 @@ function cancelDecision(input: ExecuteActionPolicyInput): ExecuteActionDecision 
 }
 
 function guidedSafety(
-    input: ExecuteActionPolicyInput,
+    input: ExecuteActionPolicyInput
 ): ExecuteActionDecision | undefined {
     if (!input.recipeAvailable) {
         return blocked('recipe-unavailable', 'Select an available repository recipe.');
@@ -184,7 +192,7 @@ function guidedSafety(
 
 function allBlocked(
     code: ExecuteActionBlockCode,
-    reason: string,
+    reason: string
 ): ExecuteActionPolicy {
     return Object.fromEntries([
         'resolve',
@@ -193,7 +201,7 @@ function allBlocked(
         'start',
         'cancel',
         'refresh',
-        'export',
+        'export'
     ].map((action) => [action, blocked(code, reason)])) as ExecuteActionPolicy;
 }
 
@@ -203,7 +211,7 @@ function enabled(): ExecuteActionDecision {
 
 function blocked(
     code: ExecuteActionBlockCode,
-    reason: string,
+    reason: string
 ): ExecuteActionDecision {
     return { enabled: false, code, reason };
 }

@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import '@babylonjs/core/Culling/ray.js';
 import { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera.js';
+import { Engine } from '@babylonjs/core/Engines/engine.js';
+import { GlowLayer } from '@babylonjs/core/Layers/glowLayer.js';
+import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight.js';
+import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight.js';
+import { PointLight } from '@babylonjs/core/Lights/pointLight.js';
+import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial.js';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
-import { Engine } from '@babylonjs/core/Engines/engine.js';
-import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight.js';
-import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight.js';
-import { PointLight } from '@babylonjs/core/Lights/pointLight.js';
-import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
-import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial.js';
-import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
-import { GlowLayer } from '@babylonjs/core/Layers/glowLayer.js';
 import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
@@ -23,23 +23,23 @@ import type {
     RelicEvent,
     RelicPlayer,
     RelicPublicSnapshot,
-    RelicRoom,
+    RelicRoom
 } from '@relic-hunters/mod.ts';
 import { findRelicCharacter } from '@relic-hunters/mod.ts';
-import { SceneInteractionPrompt } from './scene/SceneInteractionPrompt.tsx';
-import { SceneObjectivePanel } from './scene/SceneObjectivePanel.tsx';
 import { ROOM_ROAM_SPRINT_SPEED, ROOM_ROAM_WALK_SPEED } from './scene/motionTuning.ts';
+import { sceneMoveActionForPickedRoom } from './scene/movement.ts';
+import { RELIC_NEON_THEME, relicNeonAccentForRoom } from './scene/neonTheme.ts';
 import {
     broadcastLocalPosition,
     createRelicMotionState,
     isRelicMotionEstimateFreshForPlayer,
     RELIC_MOTION_LANE_ID,
-    type RelicMotionPhase,
-    type RelicMotionRuntimeState,
     subscribeRelicScenePositionUpdates,
+    type RelicMotionPhase,
+    type RelicMotionRuntimeState
 } from './scene/networking.ts';
 import { deriveSceneObjective } from './scene/objectives.ts';
-import { sceneMoveActionForPickedRoom } from './scene/movement.ts';
+import { directionBetweenRooms } from './scene/prompts.ts';
 import {
     blackHumourSignForRoom,
     facilityRoomCallsign,
@@ -53,11 +53,11 @@ import {
     RELIC_SCENE_NEXT_CAMERA_MODES,
     RELIC_SCENE_NEXT_FLYOVER_DURATION_MS,
     RELIC_SCENE_NEXT_REDUCED_FLYOVER_DURATION_MS,
-    type RelicSceneNextCameraMode,
+    type RelicSceneNextCameraMode
 } from './scene/relicSceneNextModel.ts';
-import { RELIC_NEON_THEME, relicNeonAccentForRoom } from './scene/neonTheme.ts';
-import { directionBetweenRooms } from './scene/prompts.ts';
 import { startCappedRenderLoop } from './scene/renderLoop.ts';
+import { SceneInteractionPrompt } from './scene/SceneInteractionPrompt.tsx';
+import { SceneObjectivePanel } from './scene/SceneObjectivePanel.tsx';
 import type { ScenePrompt } from './scene/types.ts';
 
 const FRAME_INTERVAL_MS = 1000 / 45;
@@ -81,7 +81,7 @@ const VIEW_CONTROLS: readonly {
     { mode: 'avatar', label: 'Avatar', shortLabel: '3rd', ariaLabel: 'Avatar view' },
     { mode: 'first-person', label: 'Visor', shortLabel: '1st', ariaLabel: 'First-person view' },
     { mode: 'overview', label: 'Overview', shortLabel: 'Map', ariaLabel: 'Overview view' },
-    { mode: 'flyover', label: 'Flyover', shortLabel: 'Fly', ariaLabel: 'Fly over rooms' },
+    { mode: 'flyover', label: 'Flyover', shortLabel: 'Fly', ariaLabel: 'Fly over rooms' }
 ];
 
 export type RelicSceneNextProps = Readonly<{
@@ -205,27 +205,27 @@ type RelicSceneNextRuntime = {
     camera: UniversalCamera;
     glow: GlowLayer;
     materials: FacilityMaterials;
-    snapshot: { value?: RelicPublicSnapshot };
-    localPlayerId: { value?: string };
-    selectedRoomId: { value?: string };
-    primedAction: { value?: RelicActionInput };
-    focusRoomId: { value?: string };
-    objectiveTargetRoomId: { value?: string };
-    rtcReady: { value: boolean };
-    inputEnabled: { value: boolean };
-    cameraMode: { value: RelicSceneNextCameraMode };
-    previousCameraMode: { value: RelicSceneNextCameraMode };
-    cameraYaw: { value: number };
-    cameraPitch: { value: number };
+    snapshot: { value?: RelicPublicSnapshot; };
+    localPlayerId: { value?: string; };
+    selectedRoomId: { value?: string; };
+    primedAction: { value?: RelicActionInput; };
+    focusRoomId: { value?: string; };
+    objectiveTargetRoomId: { value?: string; };
+    rtcReady: { value: boolean; };
+    inputEnabled: { value: boolean; };
+    cameraMode: { value: RelicSceneNextCameraMode; };
+    previousCameraMode: { value: RelicSceneNextCameraMode; };
+    cameraYaw: { value: number; };
+    cameraPitch: { value: number; };
     pointerLook: PointerLookState;
-    flyoverStartedAtMs: { value?: number };
-    flyoverDurationMs: { value: number };
-    reducedMotion: { value: boolean };
-    motionPhase: { value: RelicMotionPhase };
+    flyoverStartedAtMs: { value?: number; };
+    flyoverDurationMs: { value: number; };
+    reducedMotion: { value: boolean; };
+    motionPhase: { value: RelicMotionPhase; };
     motion: RelicMotionRuntimeState;
     firstPersonRig: FirstPersonRig;
     roamOffset: Vector3;
-    roamRoomId: { value?: string };
+    roamRoomId: { value?: string; };
     pressedKeys: Set<string>;
     rooms: Map<string, RoomBundle>;
     avatars: Map<string, AvatarBundle>;
@@ -233,18 +233,18 @@ type RelicSceneNextRuntime = {
     effects: SceneEffect[];
     review: ReviewPlaybackState;
     reviewAvatarMotions: Map<string, ReviewAvatarMotion>;
-    nearbyRelic: { value?: RelicPickupPrompt };
+    nearbyRelic: { value?: RelicPickupPrompt; };
     transientMeshes: Mesh[];
-    mapKey: { value?: string };
-    pulsePhase: { value: number };
-    onSelectRoom: { value(roomId: string): void };
-    onPrimeAction: { value?: (action: RelicActionInput) => void };
-    onPickupRelic: { value?: (relicId: string) => void };
-    onPromptChange: { value(prompt?: ScenePrompt): void };
-    onPickupPromptChange: { value(prompt?: RelicPickupPrompt): void };
-    onCameraModeChange: { value(mode: RelicSceneNextCameraMode): void };
-    reviewDirector: { value: boolean };
-    onReviewPlaybackComplete: { value?: () => void };
+    mapKey: { value?: string; };
+    pulsePhase: { value: number; };
+    onSelectRoom: { value(roomId: string): void; };
+    onPrimeAction: { value?: (action: RelicActionInput) => void; };
+    onPickupRelic: { value?: (relicId: string) => void; };
+    onPromptChange: { value(prompt?: ScenePrompt): void; };
+    onPickupPromptChange: { value(prompt?: RelicPickupPrompt): void; };
+    onCameraModeChange: { value(mode: RelicSceneNextCameraMode): void; };
+    reviewDirector: { value: boolean; };
+    onReviewPlaybackComplete: { value?: () => void; };
 };
 
 export function RelicSceneNext({
@@ -259,7 +259,7 @@ export function RelicSceneNext({
     onSelectRoom,
     onPrimeAction,
     onPickupRelic,
-    onReviewPlaybackComplete,
+    onReviewPlaybackComplete
 }: RelicSceneNextProps) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const runtimeRef = useRef<RelicSceneNextRuntime | undefined>(undefined);
@@ -267,7 +267,7 @@ export function RelicSceneNext({
     const [scenePrompt, setScenePrompt] = useState<ScenePrompt | undefined>();
     const [pickupPrompt, setPickupPrompt] = useState<RelicPickupPrompt | undefined>();
     const [cameraMode, setCameraModeState] = useState<RelicSceneNextCameraMode>(() =>
-        readStoredCameraMode() ?? resolveDefaultCameraMode(snapshot, localPlayerId),
+        readStoredCameraMode() ?? resolveDefaultCameraMode(snapshot, localPlayerId)
     );
     const snapshotRef = useRef(snapshot);
     const localPlayerIdRef = useRef(localPlayerId);
@@ -283,7 +283,7 @@ export function RelicSceneNext({
     const onReviewPlaybackCompleteRef = useRef(onReviewPlaybackComplete);
     const objective = useMemo(
         () => deriveSceneObjective({ snapshot, localPlayerId, primedAction }),
-        [localPlayerId, primedAction, snapshot],
+        [localPlayerId, primedAction, snapshot]
     );
 
     useEffect(() => {
@@ -347,7 +347,9 @@ export function RelicSceneNext({
 
     useEffect(() => {
         const runtime = runtimeRef.current;
-        if (!runtime) return;
+        if (!runtime) {
+            return;
+        }
         runtime.cameraMode.value = cameraMode;
         if (cameraMode !== 'flyover') {
             runtime.previousCameraMode.value = cameraMode;
@@ -385,7 +387,9 @@ export function RelicSceneNext({
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+            return;
+        }
 
         let runtime: RelicSceneNextRuntime;
         try {
@@ -405,19 +409,22 @@ export function RelicSceneNext({
                 onPromptChange: setScenePrompt,
                 onPickupPromptChange: setPickupPrompt,
                 onCameraModeChange: setCameraModeState,
-                onReviewPlaybackComplete: onReviewPlaybackCompleteRef.current,
+                onReviewPlaybackComplete: onReviewPlaybackCompleteRef.current
             });
             runtimeRef.current = runtime;
             setCameraModeState(runtime.cameraMode.value);
             setSceneError(undefined);
-        } catch (error) {
+        }
+        catch (error) {
             setSceneError(error instanceof Error ? error.message : String(error));
             return;
         }
 
         const resize = () => runtime.engine.resize();
         const keydown = (event: KeyboardEvent) => {
-            if (!runtime.inputEnabled.value || isTypingTarget(event.target)) return;
+            if (!runtime.inputEnabled.value || isTypingTarget(event.target)) {
+                return;
+            }
             const key = event.key.toLowerCase();
             if (key === 'e' && runtime.nearbyRelic.value) {
                 runtime.onPickupRelic.value?.(runtime.nearbyRelic.value.relicId);
@@ -453,9 +460,13 @@ export function RelicSceneNext({
             runtime.pressedKeys.delete(event.key.toLowerCase());
         };
         const pointerdown = (event: PointerEvent) => {
-            if (!runtime.inputEnabled.value) return;
+            if (!runtime.inputEnabled.value) {
+                return;
+            }
             canvas.focus();
-            if (!cameraModeAcceptsLook(runtime.cameraMode.value)) return;
+            if (!cameraModeAcceptsLook(runtime.cameraMode.value)) {
+                return;
+            }
             runtime.pointerLook.active = true;
             runtime.pointerLook.pointerId = event.pointerId;
             runtime.pointerLook.lastX = event.clientX;
@@ -468,11 +479,13 @@ export function RelicSceneNext({
                 event.preventDefault();
                 return;
             }
-            if (!runtime.pointerLook.active || runtime.pointerLook.pointerId !== event.pointerId) return;
+            if (!runtime.pointerLook.active || runtime.pointerLook.pointerId !== event.pointerId) {
+                return;
+            }
             applyCameraLook(
                 runtime,
                 event.clientX - runtime.pointerLook.lastX,
-                event.clientY - runtime.pointerLook.lastY,
+                event.clientY - runtime.pointerLook.lastY
             );
             runtime.pointerLook.lastX = event.clientX;
             runtime.pointerLook.lastY = event.clientY;
@@ -494,7 +507,7 @@ export function RelicSceneNext({
                 return;
             }
             const metadata = event.pickInfo?.pickedMesh?.metadata as
-                | Readonly<{ roomId?: unknown; primeAction?: unknown; relicId?: unknown }>
+                | Readonly<{ roomId?: unknown; primeAction?: unknown; relicId?: unknown; }>
                 | undefined;
             if (typeof metadata?.relicId === 'string') {
                 runtime.onPickupRelic.value?.(metadata.relicId);
@@ -511,7 +524,7 @@ export function RelicSceneNext({
             const move = sceneMoveActionForPickedRoom({
                 snapshot: runtime.snapshot.value,
                 localPlayerId: runtime.localPlayerId.value,
-                roomId,
+                roomId
             });
             runtime.onSelectRoom.value(roomId);
             runtime.selectedRoomId.value = roomId;
@@ -613,7 +626,8 @@ export function RelicSceneNext({
                     const runtime = runtimeRef.current;
                     if (runtime) {
                         setRuntimeCameraMode(runtime, mode);
-                    } else {
+                    }
+                    else {
                         setCameraModeState(mode);
                     }
                 }}
@@ -624,7 +638,7 @@ export function RelicSceneNext({
                     eyebrow: objective.eyebrow === 'Expedition'
                         ? 'Compliance Quest'
                         : objective.eyebrow,
-                    detail: dystopianObjectiveDetail(objective.detail),
+                    detail: dystopianObjectiveDetail(objective.detail)
                 }}
                 onPrimeAction={(action) => onPrimeAction?.(action)}
             />
@@ -642,7 +656,7 @@ export function RelicSceneNext({
 
 function ScenePickupPrompt({
     prompt,
-    onPickup,
+    onPickup
 }: Readonly<{
     prompt?: RelicPickupPrompt;
     onPickup(relicId: string): void;
@@ -664,7 +678,7 @@ function ScenePickupPrompt({
 
 function SceneViewControls({
     mode,
-    onChange,
+    onChange
 }: Readonly<{
     mode: RelicSceneNextCameraMode;
     onChange(mode: RelicSceneNextCameraMode): void;
@@ -697,7 +711,8 @@ function setRuntimeCameraMode(runtime: RelicSceneNextRuntime, mode: RelicSceneNe
             ? runtime.previousCameraMode.value
             : runtime.cameraMode.value;
         runtime.flyoverStartedAtMs.value = performance.now();
-    } else {
+    }
+    else {
         runtime.previousCameraMode.value = nextMode;
         runtime.flyoverStartedAtMs.value = undefined;
         persistCameraMode(nextMode);
@@ -713,7 +728,7 @@ function cycleRuntimeCameraMode(runtime: RelicSceneNextRuntime): void {
         : runtime.cameraMode.value;
     const available = RELIC_SCENE_NEXT_CAMERA_MODES.filter((mode) =>
         (mode !== 'avatar' && mode !== 'first-person') ||
-            hasPlayableLocalHunter(runtime.snapshot.value, runtime.localPlayerId.value),
+        hasPlayableLocalHunter(runtime.snapshot.value, runtime.localPlayerId.value)
     );
     const index = Math.max(0, available.indexOf(current));
     setRuntimeCameraMode(runtime, available[(index + 1) % available.length] ?? 'overview');
@@ -731,7 +746,7 @@ function ensureCameraModeHasPlayer(runtime: RelicSceneNextRuntime): void {
 function resolveDefaultCameraMode(
     snapshot?: RelicPublicSnapshot,
     localPlayerId?: string,
-    stored?: RelicSceneNextCameraMode,
+    stored?: RelicSceneNextCameraMode
 ): RelicSceneNextCameraMode {
     if (stored && stored !== 'flyover') {
         if ((stored === 'avatar' || stored === 'first-person') && !hasPlayableLocalHunter(snapshot, localPlayerId)) {
@@ -743,19 +758,25 @@ function resolveDefaultCameraMode(
 }
 
 function hasPlayableLocalHunter(snapshot?: RelicPublicSnapshot, localPlayerId?: string): boolean {
-    if (!snapshot || snapshot.phase === 'lobby') return false;
+    if (!snapshot || snapshot.phase === 'lobby') {
+        return false;
+    }
     const localPlayer = snapshot.players.find((player) => player.playerId === localPlayerId);
     return !!localPlayer && !localPlayer.escaped && !localPlayer.defeated;
 }
 
 function readStoredCameraMode(): RelicSceneNextCameraMode | undefined {
-    if (typeof window === 'undefined') return undefined;
+    if (typeof window === 'undefined') {
+        return undefined;
+    }
     const value = window.localStorage?.getItem(CAMERA_MODE_STORAGE_KEY);
     return isRelicSceneNextCameraMode(value) && value !== 'flyover' ? value : undefined;
 }
 
 function persistCameraMode(mode: RelicSceneNextCameraMode): void {
-    if (typeof window === 'undefined' || mode === 'flyover') return;
+    if (typeof window === 'undefined' || mode === 'flyover') {
+        return;
+    }
     window.localStorage?.setItem(CAMERA_MODE_STORAGE_KEY, mode);
 }
 
@@ -785,7 +806,7 @@ function createNextRuntime({
     onPromptChange,
     onPickupPromptChange,
     onCameraModeChange,
-    onReviewPlaybackComplete,
+    onReviewPlaybackComplete
 }: Readonly<{
     canvas: HTMLCanvasElement;
     snapshot?: RelicPublicSnapshot;
@@ -808,7 +829,7 @@ function createNextRuntime({
         adaptToDeviceRatio: true,
         antialias: true,
         preserveDrawingBuffer: true,
-        stencil: true,
+        stencil: true
     });
     engine.setHardwareScalingLevel(1 / Math.min(window.devicePixelRatio || 1, 2));
     const scene = new Scene(engine);
@@ -868,7 +889,7 @@ function createNextRuntime({
         pointerLook: { active: false, lastX: 0, lastY: 0 },
         flyoverStartedAtMs: { value: undefined },
         flyoverDurationMs: {
-            value: reducedMotion ? RELIC_SCENE_NEXT_REDUCED_FLYOVER_DURATION_MS : RELIC_SCENE_NEXT_FLYOVER_DURATION_MS,
+            value: reducedMotion ? RELIC_SCENE_NEXT_REDUCED_FLYOVER_DURATION_MS : RELIC_SCENE_NEXT_FLYOVER_DURATION_MS
         },
         reducedMotion: { value: reducedMotion },
         motionPhase: { value: 'idle' },
@@ -887,7 +908,7 @@ function createNextRuntime({
             index: 0,
             cueStartedAtMs: undefined,
             completed: false,
-            notifiedKey: undefined,
+            notifiedKey: undefined
         },
         reviewAvatarMotions: new Map(),
         nearbyRelic: { value: undefined },
@@ -901,7 +922,7 @@ function createNextRuntime({
         onPickupPromptChange: { value: onPickupPromptChange },
         onCameraModeChange: { value: onCameraModeChange },
         reviewDirector: { value: reviewDirector },
-        onReviewPlaybackComplete: { value: onReviewPlaybackComplete },
+        onReviewPlaybackComplete: { value: onReviewPlaybackComplete }
     };
 
     createWorldBase(runtime);
@@ -919,15 +940,17 @@ function syncNextRuntime(runtime: RelicSceneNextRuntime): void {
         return;
     }
     const mapKey = snapshot.map
-        .map((room) => [
-            room.id,
-            room.kind,
-            room.x,
-            room.z,
-            room.neighbors.join(','),
-            room.collapsed ? 'c' : '-',
-            room.unstable ? 'u' : '-',
-        ].join(':'))
+        .map((room) =>
+            [
+                room.id,
+                room.kind,
+                room.x,
+                room.z,
+                room.neighbors.join(','),
+                room.collapsed ? 'c' : '-',
+                room.unstable ? 'u' : '-'
+            ].join(':')
+        )
         .join('|');
     if (mapKey !== runtime.mapKey.value) {
         rebuildFacility(runtime, snapshot);
@@ -955,14 +978,14 @@ function createFacilityMaterials(scene: Scene): FacilityMaterials {
         green: pbr(scene, 'next-green', '#07180f', RELIC_NEON_THEME.green, 1.3, 0.1, 0.18),
         danger: pbr(scene, 'next-danger', '#19070c', RELIC_NEON_THEME.coral, 1.2, 0.08, 0.2),
         white: pbr(scene, 'next-white', '#0d1824', RELIC_NEON_THEME.white, 0.9, 0.08, 0.16),
-        avatarCore: pbr(scene, 'next-avatar-core', '#172434', '#25445c', 0.12, 0.36, 0.38),
+        avatarCore: pbr(scene, 'next-avatar-core', '#172434', '#25445c', 0.12, 0.36, 0.38)
     };
 }
 
 function createFirstPersonRig(
     scene: Scene,
     camera: UniversalCamera,
-    materials: FacilityMaterials,
+    materials: FacilityMaterials
 ): FirstPersonRig {
     const root = new TransformNode('neon-visor-rig', scene);
     root.parent = camera;
@@ -978,28 +1001,28 @@ function createFirstPersonRig(
 
     const leftHand = add(
         MeshBuilder.CreateBox('neon-visor-left-hand', { width: 0.22, height: 0.16, depth: 0.54 }, scene),
-        materials.magenta,
+        materials.magenta
     );
     leftHand.position.set(-0.46, -0.44, 1.08);
     leftHand.rotation.set(0.18, -0.32, 0.28);
 
     const rightHand = add(
         MeshBuilder.CreateBox('neon-visor-right-hand', { width: 0.24, height: 0.16, depth: 0.62 }, scene),
-        materials.cyan,
+        materials.cyan
     );
     rightHand.position.set(0.42, -0.48, 1.02);
     rightHand.rotation.set(0.18, 0.28, -0.22);
 
     const blade = add(
         MeshBuilder.CreateBox('neon-visor-katana-edge', { width: 0.045, height: 0.055, depth: 1.36 }, scene),
-        materials.white,
+        materials.white
     );
     blade.position.set(0.64, -0.36, 1.55);
     blade.rotation.set(0.08, -0.35, 0.08);
 
     const scanner = add(
         MeshBuilder.CreateBox('neon-visor-compliance-scanner', { width: 0.34, height: 0.12, depth: 0.34 }, scene),
-        materials.amber,
+        materials.amber
     );
     scanner.position.set(-0.66, -0.36, 1.32);
     scanner.rotation.set(0.12, 0.3, -0.16);
@@ -1013,7 +1036,7 @@ function createWorldBase(runtime: RelicSceneNextRuntime): void {
     const base = MeshBuilder.CreateGround(
         'neon-dystopia-base-grid',
         { width: baseSize, height: baseSize, subdivisions: 2 },
-        scene,
+        scene
     );
     base.position.y = -0.06;
     base.material = materials.floor;
@@ -1022,14 +1045,14 @@ function createWorldBase(runtime: RelicSceneNextRuntime): void {
         const xStrip = MeshBuilder.CreateBox(
             `base-grid-x-${index}`,
             { width: 0.035, height: 0.018, depth: baseSize },
-            scene,
+            scene
         );
         xStrip.position.set(index * NEON_ROOM_GRID_SCALE, 0.02, 0);
         xStrip.material = index === 0 ? materials.magenta : materials.cyan;
         const zStrip = MeshBuilder.CreateBox(
             `base-grid-z-${index}`,
             { width: baseSize, height: 0.018, depth: 0.035 },
-            scene,
+            scene
         );
         zStrip.position.set(0, 0.022, index * NEON_ROOM_GRID_SCALE);
         zStrip.material = index === 0 ? materials.magenta : materials.cyan;
@@ -1048,9 +1071,13 @@ function rebuildFacility(runtime: RelicSceneNextRuntime, snapshot: RelicPublicSn
     for (const room of snapshot.map) {
         for (const neighborId of room.neighbors) {
             const neighbor = roomById.get(neighborId);
-            if (!neighbor) continue;
+            if (!neighbor) {
+                continue;
+            }
             const key = [room.id, neighbor.id].sort().join(':');
-            if (seenEdges.has(key)) continue;
+            if (seenEdges.has(key)) {
+                continue;
+            }
             seenEdges.add(key);
             runtime.transientMeshes.push(...createCorridor(runtime, room, neighbor));
         }
@@ -1116,17 +1143,17 @@ function syncRelics(runtime: RelicSceneNextRuntime, snapshot: RelicPublicSnapsho
 function createRelicBundle(
     runtime: RelicSceneNextRuntime,
     relic: RelicDefinition,
-    room: RelicRoom,
+    room: RelicRoom
 ): RelicBundle {
     const root = new TransformNode(`facility-relic-${relic.id}`, runtime.scene);
     const parts: Mesh[] = [];
     const accentMaterial = relic.value >= 7
         ? runtime.materials.magenta
         : relic.value >= 4
-            ? runtime.materials.amber
-            : room.kind === 'monster' || room.kind === 'trap'
-                ? runtime.materials.danger
-                : runtime.materials.cyan;
+        ? runtime.materials.amber
+        : room.kind === 'monster' || room.kind === 'trap'
+        ? runtime.materials.danger
+        : runtime.materials.cyan;
     const add = (mesh: Mesh, material: PBRMaterial | StandardMaterial) => {
         mesh.material = material;
         mesh.parent = root;
@@ -1139,9 +1166,9 @@ function createRelicBundle(
         MeshBuilder.CreateCylinder(
             `facility-relic-${relic.id}-pedestal`,
             { diameter: 1.0, height: 0.42, tessellation: 8 },
-            runtime.scene,
+            runtime.scene
         ),
-        runtime.materials.wall,
+        runtime.materials.wall
     );
     pedestal.position.y = -0.2;
 
@@ -1149,9 +1176,9 @@ function createRelicBundle(
         MeshBuilder.CreateTorus(
             `facility-relic-${relic.id}-pickup-ring`,
             { diameter: 1.34, thickness: 0.045, tessellation: 40 },
-            runtime.scene,
+            runtime.scene
         ),
-        accentMaterial,
+        accentMaterial
     );
     ring.rotation.x = Math.PI / 2;
     ring.position.y = 0.08;
@@ -1160,9 +1187,9 @@ function createRelicBundle(
         MeshBuilder.CreateSphere(
             `facility-relic-${relic.id}-core`,
             { diameter: 0.54 + Math.min(0.28, relic.value * 0.025), segments: 16 },
-            runtime.scene,
+            runtime.scene
         ),
-        accentMaterial,
+        accentMaterial
     );
     core.position.y = 0.5;
 
@@ -1170,9 +1197,9 @@ function createRelicBundle(
         MeshBuilder.CreateBox(
             `facility-relic-${relic.id}-shard`,
             { width: 0.18, height: 0.98, depth: 0.18 },
-            runtime.scene,
+            runtime.scene
         ),
-        runtime.materials.white,
+        runtime.materials.white
     );
     shard.position.y = 0.78;
     shard.rotation.set(0.34, 0.44, 0.23);
@@ -1181,12 +1208,12 @@ function createRelicBundle(
         `facility-relic-${relic.id}-label-texture`,
         { width: 512, height: 160 },
         runtime.scene,
-        false,
+        false
     );
     const label = MeshBuilder.CreatePlane(
         `facility-relic-${relic.id}-label`,
         { width: 2.55, height: 0.8 },
-        runtime.scene,
+        runtime.scene
     );
     label.billboardMode = Mesh.BILLBOARDMODE_ALL;
     label.parent = root;
@@ -1202,19 +1229,23 @@ function createRelicBundle(
         parts: [...parts, label],
         label,
         labelTexture,
-        baseY: 0.68,
+        baseY: 0.68
     };
 }
 
 function updateRelicLabel(
     bundle: Pick<RelicBundle, 'labelTexture'>,
-    relic: Pick<RelicDefinition, 'name' | 'value'>,
+    relic: Pick<RelicDefinition, 'name' | 'value'>
 ): void {
     const ctx = bundle.labelTexture.getContext();
     ctx.clearRect(0, 0, 512, 160);
     ctx.fillStyle = 'rgba(4, 9, 21, 0.88)';
     ctx.fillRect(0, 0, 512, 160);
-    ctx.strokeStyle = relic.value >= 7 ? RELIC_NEON_THEME.magenta : relic.value >= 4 ? RELIC_NEON_THEME.amber : RELIC_NEON_THEME.cyan;
+    ctx.strokeStyle = relic.value >= 7
+        ? RELIC_NEON_THEME.magenta
+        : relic.value >= 4
+        ? RELIC_NEON_THEME.amber
+        : RELIC_NEON_THEME.cyan;
     ctx.lineWidth = 5;
     ctx.strokeRect(5, 5, 502, 150);
     ctx.fillStyle = '#f8fdff';
@@ -1226,13 +1257,13 @@ function updateRelicLabel(
     bundle.labelTexture.update();
 }
 
-function relicLocalOffset(relic: Pick<RelicDefinition, 'id' | 'value'>): Readonly<{ x: number; z: number }> {
+function relicLocalOffset(relic: Pick<RelicDefinition, 'id' | 'value'>): Readonly<{ x: number; z: number; }> {
     const hash = hashText(relic.id);
     const angle = (hash % 360) * Math.PI / 180;
     const radius = Math.min(ROOM_HALF_ROAM - 0.9, 2.15 + (hash % 7) * 0.24 + Math.min(0.7, relic.value * 0.04));
     return {
         x: Math.cos(angle) * radius,
-        z: Math.sin(angle) * radius,
+        z: Math.sin(angle) * radius
     };
 }
 
@@ -1246,7 +1277,7 @@ function createRoomBundle(runtime: RelicSceneNextRuntime, room: RelicRoom): Room
     const skirt = MeshBuilder.CreateBox(
         `facility-room-${room.id}-skirt`,
         { width: ROOM_FLOOR_SIZE + 0.62, height: 0.7, depth: ROOM_FLOOR_SIZE + 0.62 },
-        scene,
+        scene
     );
     skirt.position.y = -0.38;
     skirt.material = materials.wall;
@@ -1255,7 +1286,7 @@ function createRoomBundle(runtime: RelicSceneNextRuntime, room: RelicRoom): Room
     const floor = MeshBuilder.CreateBox(
         `facility-room-${room.id}-floor`,
         { width: ROOM_FLOOR_SIZE, height: 0.24, depth: ROOM_FLOOR_SIZE },
-        scene,
+        scene
     );
     floor.position.y = 0.08;
     floor.material = room.collapsed ? materials.danger : materials.floorPanel;
@@ -1265,7 +1296,7 @@ function createRoomBundle(runtime: RelicSceneNextRuntime, room: RelicRoom): Room
     const inset = MeshBuilder.CreateBox(
         `facility-room-${room.id}-inset`,
         { width: ROOM_FLOOR_SIZE - 1.2, height: 0.035, depth: ROOM_FLOOR_SIZE - 1.2 },
-        scene,
+        scene
     );
     inset.position.y = 0.235;
     inset.material = accent;
@@ -1276,7 +1307,11 @@ function createRoomBundle(runtime: RelicSceneNextRuntime, room: RelicRoom): Room
     const wallMeshes = createHologlassWalls(runtime, room, root);
     const sign = createRoomSign(runtime, room, root, accent);
     const searchKiosk = createSearchKiosk(runtime, room, root);
-    const light = new PointLight(`facility-room-${room.id}-accent-light`, new Vector3(position.x, 3.2, position.z), scene);
+    const light = new PointLight(
+        `facility-room-${room.id}-accent-light`,
+        new Vector3(position.x, 3.2, position.z),
+        scene
+    );
     light.diffuse = Color3.FromHexString(relicNeonAccentForRoom(room).emissive);
     light.range = 18;
     light.intensity = room.collapsed ? 5 : room.unstable ? 10 : 7.4;
@@ -1287,7 +1322,7 @@ function createRoomBundle(runtime: RelicSceneNextRuntime, room: RelicRoom): Room
         floor,
         accent,
         light,
-        dynamicMeshes: [...railMeshes, ...wallMeshes, sign, searchKiosk],
+        dynamicMeshes: [...railMeshes, ...wallMeshes, sign, searchKiosk]
     };
 }
 
@@ -1295,7 +1330,7 @@ function createRoomRails(
     runtime: RelicSceneNextRuntime,
     room: RelicRoom,
     root: TransformNode,
-    accent: PBRMaterial,
+    accent: PBRMaterial
 ): Mesh[] {
     const meshes: Mesh[] = [];
     const add = (name: string, width: number, depth: number, x: number, z: number) => {
@@ -1316,7 +1351,7 @@ function createRoomRails(
 function createHologlassWalls(
     runtime: RelicSceneNextRuntime,
     room: RelicRoom,
-    root: TransformNode,
+    root: TransformNode
 ): Mesh[] {
     const meshes: Mesh[] = [];
     const wallHeight = 2.45;
@@ -1347,7 +1382,7 @@ function createHologlassWalls(
         const rail = MeshBuilder.CreateBox(
             `facility-room-${room.id}-ceiling-rail-${index}`,
             { width: ROOM_FLOOR_SIZE - 0.6, height: 0.06, depth: 0.08 },
-            runtime.scene,
+            runtime.scene
         );
         rail.position.set(0, 2.86, z);
         rail.material = runtime.materials.white;
@@ -1361,12 +1396,12 @@ function createRoomSign(
     runtime: RelicSceneNextRuntime,
     room: RelicRoom,
     root: TransformNode,
-    accent: PBRMaterial,
+    accent: PBRMaterial
 ): Mesh {
     const signBack = MeshBuilder.CreateBox(
         `facility-room-${room.id}-sign-back`,
         { width: 3.7, height: 1.04, depth: 0.08 },
-        runtime.scene,
+        runtime.scene
     );
     signBack.position.set(0, 2.34, -ROOM_FLOOR_SIZE / 2 - 0.05);
     signBack.material = accent;
@@ -1379,7 +1414,7 @@ function createRoomSign(
     sign.material = createTextMaterial(runtime.scene, `sign-${room.id}`, {
         title: facilityRoomCallsign(room),
         detail: blackHumourSignForRoom(room),
-        accent: relicNeonAccentForRoom(room).emissive,
+        accent: relicNeonAccentForRoom(room).emissive
     });
     sign.metadata = { roomId: room.id };
     sign.parent = root;
@@ -1389,12 +1424,12 @@ function createRoomSign(
 function createSearchKiosk(
     runtime: RelicSceneNextRuntime,
     room: RelicRoom,
-    root: TransformNode,
+    root: TransformNode
 ): Mesh {
     const kiosk = MeshBuilder.CreateBox(
         `facility-room-${room.id}-kiosk`,
         { width: 0.72, height: 0.82, depth: 0.42 },
-        runtime.scene,
+        runtime.scene
     );
     kiosk.position.set(-ROOM_FLOOR_SIZE / 2 + 0.86, 0.68, ROOM_FLOOR_SIZE / 2 - 0.9);
     kiosk.material = room.kind === 'trap' || room.unstable ? runtime.materials.danger : runtime.materials.cyan;
@@ -1406,7 +1441,7 @@ function createSearchKiosk(
 function createCorridor(
     runtime: RelicSceneNextRuntime,
     from: RelicRoom,
-    to: RelicRoom,
+    to: RelicRoom
 ): Mesh[] {
     const a = facilityRoomPosition(from);
     const b = facilityRoomPosition(to);
@@ -1416,13 +1451,13 @@ function createCorridor(
     const alongX = dx >= dz;
     const length = Math.max(1.1, (alongX ? dx : dz) - ROOM_FLOOR_SIZE + 0.9);
     const floor = MeshBuilder.CreateBox(
-            `facility-corridor-${from.id}-${to.id}`,
+        `facility-corridor-${from.id}-${to.id}`,
         {
             width: alongX ? length : 3.25,
             height: 0.18,
-            depth: alongX ? 3.25 : length,
+            depth: alongX ? 3.25 : length
         },
-        runtime.scene,
+        runtime.scene
     );
     floor.position.set(mid.x, 0.12, mid.z);
     floor.material = runtime.materials.corridor;
@@ -1433,9 +1468,9 @@ function createCorridor(
         {
             width: alongX ? length : 0.12,
             height: 0.05,
-            depth: alongX ? 0.12 : length,
+            depth: alongX ? 0.12 : length
         },
-        runtime.scene,
+        runtime.scene
     );
     seam.position.set(mid.x, 0.27, mid.z);
     seam.material = from.unstable || to.unstable ? runtime.materials.danger : runtime.materials.cyan;
@@ -1461,7 +1496,8 @@ function syncAvatars(runtime: RelicSceneNextRuntime, snapshot: RelicPublicSnapsh
         avatar.target.copyFrom(snapshotPositionForPlayer(snapshot, player));
         if (player.escaped || player.defeated) {
             avatar.root.setEnabled(false);
-        } else {
+        }
+        else {
             avatar.root.setEnabled(true);
         }
     }
@@ -1480,7 +1516,13 @@ function createAvatarBundle(runtime: RelicSceneNextRuntime, player: RelicPlayer)
     const root = new TransformNode(`neon-ronin-${player.playerId}`, runtime.scene);
     const accent = character.colors.accent;
     const accentMaterial = standard(runtime.scene, `ronin-${player.playerId}-accent`, '#06111f', accent, 1.2);
-    const visorMaterial = standard(runtime.scene, `ronin-${player.playerId}-visor`, '#041018', RELIC_NEON_THEME.cyanSoft, 1.4);
+    const visorMaterial = standard(
+        runtime.scene,
+        `ronin-${player.playerId}-visor`,
+        '#041018',
+        RELIC_NEON_THEME.cyanSoft,
+        1.4
+    );
     const armorMaterial = runtime.materials.avatarCore;
     const parts: Mesh[] = [];
     const add = (mesh: Mesh, material: StandardMaterial | PBRMaterial) => {
@@ -1490,78 +1532,108 @@ function createAvatarBundle(runtime: RelicSceneNextRuntime, player: RelicPlayer)
         return mesh;
     };
 
-    const torso = add(MeshBuilder.CreateBox(
-        `ronin-${player.playerId}-torso`,
-        { width: 0.82, height: 1.18, depth: 0.42 },
-        runtime.scene,
-    ), armorMaterial);
+    const torso = add(
+        MeshBuilder.CreateBox(
+            `ronin-${player.playerId}-torso`,
+            { width: 0.82, height: 1.18, depth: 0.42 },
+            runtime.scene
+        ),
+        armorMaterial
+    );
     torso.position.y = 0.92;
 
-    const chestTrim = add(MeshBuilder.CreateBox(
-        `ronin-${player.playerId}-chest-trim`,
-        { width: 0.9, height: 0.08, depth: 0.46 },
-        runtime.scene,
-    ), accentMaterial);
+    const chestTrim = add(
+        MeshBuilder.CreateBox(
+            `ronin-${player.playerId}-chest-trim`,
+            { width: 0.9, height: 0.08, depth: 0.46 },
+            runtime.scene
+        ),
+        accentMaterial
+    );
     chestTrim.position.y = 1.22;
 
-    const head = add(MeshBuilder.CreateSphere(
-        `ronin-${player.playerId}-helmet`,
-        { diameterX: 0.62, diameterY: 0.5, diameterZ: 0.58, segments: 14 },
-        runtime.scene,
-    ), armorMaterial);
+    const head = add(
+        MeshBuilder.CreateSphere(
+            `ronin-${player.playerId}-helmet`,
+            { diameterX: 0.62, diameterY: 0.5, diameterZ: 0.58, segments: 14 },
+            runtime.scene
+        ),
+        armorMaterial
+    );
     head.position.y = 1.72;
 
-    const visor = add(MeshBuilder.CreateBox(
-        `ronin-${player.playerId}-visor`,
-        { width: 0.58, height: 0.08, depth: 0.06 },
-        runtime.scene,
-    ), visorMaterial);
+    const visor = add(
+        MeshBuilder.CreateBox(
+            `ronin-${player.playerId}-visor`,
+            { width: 0.58, height: 0.08, depth: 0.06 },
+            runtime.scene
+        ),
+        visorMaterial
+    );
     visor.position.set(0, 1.72, -0.3);
 
     for (const side of [-1, 1]) {
-        const shoulder = add(MeshBuilder.CreateBox(
-            `ronin-${player.playerId}-shoulder-${side}`,
-            { width: 0.28, height: 0.22, depth: 0.42 },
-            runtime.scene,
-        ), accentMaterial);
+        const shoulder = add(
+            MeshBuilder.CreateBox(
+                `ronin-${player.playerId}-shoulder-${side}`,
+                { width: 0.28, height: 0.22, depth: 0.42 },
+                runtime.scene
+            ),
+            accentMaterial
+        );
         shoulder.position.set(side * 0.58, 1.33, 0);
 
-        const arm = add(MeshBuilder.CreateBox(
-            `ronin-${player.playerId}-arm-${side}`,
-            { width: 0.16, height: 0.76, depth: 0.18 },
-            runtime.scene,
-        ), armorMaterial);
+        const arm = add(
+            MeshBuilder.CreateBox(
+                `ronin-${player.playerId}-arm-${side}`,
+                { width: 0.16, height: 0.76, depth: 0.18 },
+                runtime.scene
+            ),
+            armorMaterial
+        );
         arm.position.set(side * 0.64, 0.86, 0);
 
-        const leg = add(MeshBuilder.CreateBox(
-            `ronin-${player.playerId}-leg-${side}`,
-            { width: 0.22, height: 0.72, depth: 0.24 },
-            runtime.scene,
-        ), armorMaterial);
+        const leg = add(
+            MeshBuilder.CreateBox(
+                `ronin-${player.playerId}-leg-${side}`,
+                { width: 0.22, height: 0.72, depth: 0.24 },
+                runtime.scene
+            ),
+            armorMaterial
+        );
         leg.position.set(side * 0.22, 0.22, 0);
 
-        const blade = add(MeshBuilder.CreateBox(
-            `ronin-${player.playerId}-blade-${side}`,
-            { width: 0.06, height: 1.15, depth: 0.08 },
-            runtime.scene,
-        ), accentMaterial);
+        const blade = add(
+            MeshBuilder.CreateBox(
+                `ronin-${player.playerId}-blade-${side}`,
+                { width: 0.06, height: 1.15, depth: 0.08 },
+                runtime.scene
+            ),
+            accentMaterial
+        );
         blade.position.set(side * 0.82, 0.76, 0.24);
         blade.rotation.z = side * 0.24;
     }
 
-    const ring = add(MeshBuilder.CreateTorus(
-        `ronin-${player.playerId}-floor-ring`,
-        { diameter: 1.62, thickness: 0.045, tessellation: 36 },
-        runtime.scene,
-    ), accentMaterial);
+    const ring = add(
+        MeshBuilder.CreateTorus(
+            `ronin-${player.playerId}-floor-ring`,
+            { diameter: 1.62, thickness: 0.045, tessellation: 36 },
+            runtime.scene
+        ),
+        accentMaterial
+    );
     ring.position.y = 0.045;
     ring.rotation.x = Math.PI / 2;
 
-    const trail = add(MeshBuilder.CreateBox(
-        `ronin-${player.playerId}-motion-trail`,
-        { width: 0.34, height: 0.06, depth: 1.4 },
-        runtime.scene,
-    ), accentMaterial);
+    const trail = add(
+        MeshBuilder.CreateBox(
+            `ronin-${player.playerId}-motion-trail`,
+            { width: 0.34, height: 0.06, depth: 1.4 },
+            runtime.scene
+        ),
+        accentMaterial
+    );
     trail.position.set(0, 0.18, 0.74);
     trail.setEnabled(false);
 
@@ -1569,12 +1641,12 @@ function createAvatarBundle(runtime: RelicSceneNextRuntime, player: RelicPlayer)
         `ronin-${player.playerId}-label-texture`,
         { width: 512, height: 128 },
         runtime.scene,
-        false,
+        false
     );
     const label = MeshBuilder.CreatePlane(
         `ronin-${player.playerId}-label`,
         { width: 2.3, height: 0.58 },
-        runtime.scene,
+        runtime.scene
     );
     label.billboardMode = Mesh.BILLBOARDMODE_ALL;
     label.parent = root;
@@ -1594,7 +1666,7 @@ function createAvatarBundle(runtime: RelicSceneNextRuntime, player: RelicPlayer)
         trail,
         target,
         lastPosition: target.clone(),
-        lastMovedAtMs: performance.now(),
+        lastMovedAtMs: performance.now()
     };
 }
 
@@ -1639,7 +1711,7 @@ function updateLocalRoam(runtime: RelicSceneNextRuntime): void {
     const direction = new Vector3(
         right.x * rawRight + forward.x * rawForward,
         0,
-        right.z * rawRight + forward.z * rawForward,
+        right.z * rawRight + forward.z * rawForward
     );
     if (direction.lengthSquared() <= 0.0001) {
         runtime.motionPhase.value = 'idle';
@@ -1657,12 +1729,16 @@ function updateLocalRoam(runtime: RelicSceneNextRuntime): void {
 
 function updateAvatarPositions(runtime: RelicSceneNextRuntime): void {
     const snapshot = runtime.snapshot.value;
-    if (!snapshot) return;
+    if (!snapshot) {
+        return;
+    }
     const nowEpochMs = Date.now();
     const nowMs = performance.now();
     for (const player of snapshot.players) {
         const avatar = runtime.avatars.get(player.playerId);
-        if (!avatar || player.escaped || player.defeated) continue;
+        if (!avatar || player.escaped || player.defeated) {
+            continue;
+        }
         let target = avatar.target;
         if (player.playerId === runtime.localPlayerId.value && snapshot.phase !== 'lobby') {
             const room = snapshot.map.find((candidate) => candidate.id === player.roomId);
@@ -1670,7 +1746,8 @@ function updateAvatarPositions(runtime: RelicSceneNextRuntime): void {
                 const world = facilityRoomPosition(room);
                 target = new Vector3(world.x + runtime.roamOffset.x, AVATAR_Y, world.z + runtime.roamOffset.z);
             }
-        } else {
+        }
+        else {
             let estimate = runtime.motion.buffer.sample(player.playerId, nowEpochMs);
             const estimateRoomId = estimate?.metadata?.roomId;
             if (!isRelicMotionEstimateFreshForPlayer(estimate, player.roomId, nowEpochMs)) {
@@ -1751,7 +1828,7 @@ function updateRelicMeshes(runtime: RelicSceneNextRuntime): void {
                 nearby = {
                     relicId: relic.id,
                     name: relic.name,
-                    value: relic.value,
+                    value: relic.value
                 };
             }
         }
@@ -1778,7 +1855,7 @@ function syncReviewPlayback(runtime: RelicSceneNextRuntime, snapshot: RelicPubli
         index: 0,
         cueStartedAtMs: undefined,
         completed: false,
-        notifiedKey: runtime.review.notifiedKey,
+        notifiedKey: runtime.review.notifiedKey
     };
     runtime.reviewAvatarMotions.clear();
 }
@@ -1790,7 +1867,7 @@ function resetReviewPlayback(runtime: RelicSceneNextRuntime): void {
         index: 0,
         cueStartedAtMs: undefined,
         completed: false,
-        notifiedKey: runtime.review.notifiedKey,
+        notifiedKey: runtime.review.notifiedKey
     };
     runtime.reviewAvatarMotions.clear();
 }
@@ -1813,7 +1890,7 @@ function buildReviewQueue(snapshot: RelicPublicSnapshot): ReviewPlaybackCue[] {
                 eventId: event.id,
                 event,
                 cue: event.animationCue,
-                durationMs: event.animationCue.durationMs ?? defaultReviewCueDuration(event.animationCue.type),
+                durationMs: event.animationCue.durationMs ?? defaultReviewCueDuration(event.animationCue.type)
             }];
         });
 }
@@ -1860,7 +1937,7 @@ function completeReviewPlayback(runtime: RelicSceneNextRuntime): void {
 function startReviewCue(
     runtime: RelicSceneNextRuntime,
     item: ReviewPlaybackCue,
-    startedAtMs: number,
+    startedAtMs: number
 ): void {
     const cue = item.cue;
     const roomId = cue.roomId ?? roomIdForCuePlayer(runtime.snapshot.value, cue.playerId);
@@ -1879,48 +1956,166 @@ function startReviewCue(
                         from,
                         to,
                         startedAtMs,
-                        durationMs: item.durationMs,
+                        durationMs: item.durationMs
                     });
                     spawnBeamEffect(runtime, from, to, runtime.materials.cyan, item.durationMs);
                 }
             }
-            spawnPulseEffect(runtime, `review-move-${item.eventId}`, position, runtime.materials.cyan, item.durationMs, 2.3);
+            spawnPulseEffect(
+                runtime,
+                `review-move-${item.eventId}`,
+                position,
+                runtime.materials.cyan,
+                item.durationMs,
+                2.3
+            );
             return;
         }
         case 'search_altar':
-            spawnPulseEffect(runtime, `review-search-${item.eventId}`, position, runtime.materials.amber, item.durationMs, 2.8);
-            spawnBurstEffect(runtime, `review-search-scan-${item.eventId}`, position.add(new Vector3(0, 0.8, 0)), runtime.materials.white, item.durationMs);
+            spawnPulseEffect(
+                runtime,
+                `review-search-${item.eventId}`,
+                position,
+                runtime.materials.amber,
+                item.durationMs,
+                2.8
+            );
+            spawnBurstEffect(
+                runtime,
+                `review-search-scan-${item.eventId}`,
+                position.add(new Vector3(0, 0.8, 0)),
+                runtime.materials.white,
+                item.durationMs
+            );
             return;
         case 'relic_reveal':
-            spawnPulseEffect(runtime, `review-reveal-${item.eventId}`, position, runtime.materials.green, item.durationMs, 3.2);
-            spawnBurstEffect(runtime, `review-reveal-burst-${item.eventId}`, position.add(new Vector3(0, 0.9, 0)), runtime.materials.amber, item.durationMs);
+            spawnPulseEffect(
+                runtime,
+                `review-reveal-${item.eventId}`,
+                position,
+                runtime.materials.green,
+                item.durationMs,
+                3.2
+            );
+            spawnBurstEffect(
+                runtime,
+                `review-reveal-burst-${item.eventId}`,
+                position.add(new Vector3(0, 0.9, 0)),
+                runtime.materials.amber,
+                item.durationMs
+            );
             return;
         case 'relic_pickup':
-            spawnPulseEffect(runtime, `review-pickup-${item.eventId}`, position, runtime.materials.magenta, item.durationMs, 3.0);
-            spawnBurstEffect(runtime, `review-pickup-burst-${item.eventId}`, position.add(new Vector3(0, 0.72, 0)), runtime.materials.white, item.durationMs);
+            spawnPulseEffect(
+                runtime,
+                `review-pickup-${item.eventId}`,
+                position,
+                runtime.materials.magenta,
+                item.durationMs,
+                3.0
+            );
+            spawnBurstEffect(
+                runtime,
+                `review-pickup-burst-${item.eventId}`,
+                position.add(new Vector3(0, 0.72, 0)),
+                runtime.materials.white,
+                item.durationMs
+            );
             return;
         case 'steal_attempt':
-            spawnPulseEffect(runtime, `review-steal-${item.eventId}`, position, runtime.materials.magenta, item.durationMs, 2.9);
-            spawnBurstEffect(runtime, `review-steal-burst-${item.eventId}`, position.add(new Vector3(0, 1, 0)), runtime.materials.danger, item.durationMs);
+            spawnPulseEffect(
+                runtime,
+                `review-steal-${item.eventId}`,
+                position,
+                runtime.materials.magenta,
+                item.durationMs,
+                2.9
+            );
+            spawnBurstEffect(
+                runtime,
+                `review-steal-burst-${item.eventId}`,
+                position.add(new Vector3(0, 1, 0)),
+                runtime.materials.danger,
+                item.durationMs
+            );
             return;
         case 'escape_run':
-            spawnPulseEffect(runtime, `review-escape-${item.eventId}`, position, runtime.materials.green, item.durationMs, 3.4);
-            spawnBeamEffect(runtime, position, position.add(new Vector3(0, 0, 3.8)), runtime.materials.green, item.durationMs);
+            spawnPulseEffect(
+                runtime,
+                `review-escape-${item.eventId}`,
+                position,
+                runtime.materials.green,
+                item.durationMs,
+                3.4
+            );
+            spawnBeamEffect(
+                runtime,
+                position,
+                position.add(new Vector3(0, 0, 3.8)),
+                runtime.materials.green,
+                item.durationMs
+            );
             return;
         case 'noise_pulse':
-            spawnPulseEffect(runtime, `review-noise-${item.eventId}`, position, runtime.materials.violet, item.durationMs, cue.intensity === 'high' ? 5.6 : 4.2);
+            spawnPulseEffect(
+                runtime,
+                `review-noise-${item.eventId}`,
+                position,
+                runtime.materials.violet,
+                item.durationMs,
+                cue.intensity === 'high' ? 5.6 : 4.2
+            );
             return;
         case 'damage_shake':
-            spawnPulseEffect(runtime, `review-damage-${item.eventId}`, position, runtime.materials.danger, item.durationMs, 3.5);
-            spawnBurstEffect(runtime, `review-damage-burst-${item.eventId}`, position.add(new Vector3(0, 1.1, 0)), runtime.materials.danger, item.durationMs);
+            spawnPulseEffect(
+                runtime,
+                `review-damage-${item.eventId}`,
+                position,
+                runtime.materials.danger,
+                item.durationMs,
+                3.5
+            );
+            spawnBurstEffect(
+                runtime,
+                `review-damage-burst-${item.eventId}`,
+                position.add(new Vector3(0, 1.1, 0)),
+                runtime.materials.danger,
+                item.durationMs
+            );
             return;
         case 'room_collapse':
-            spawnPulseEffect(runtime, `review-collapse-${item.eventId}`, position, runtime.materials.danger, item.durationMs, 5.0);
-            spawnBurstEffect(runtime, `review-collapse-burst-${item.eventId}`, position.add(new Vector3(0, 1.2, 0)), runtime.materials.amber, item.durationMs);
+            spawnPulseEffect(
+                runtime,
+                `review-collapse-${item.eventId}`,
+                position,
+                runtime.materials.danger,
+                item.durationMs,
+                5.0
+            );
+            spawnBurstEffect(
+                runtime,
+                `review-collapse-burst-${item.eventId}`,
+                position.add(new Vector3(0, 1.2, 0)),
+                runtime.materials.amber,
+                item.durationMs
+            );
             return;
         case 'heart_relic_victory':
-            spawnPulseEffect(runtime, `review-victory-${item.eventId}`, position, runtime.materials.white, item.durationMs, 6.0);
-            spawnBurstEffect(runtime, `review-victory-burst-${item.eventId}`, position.add(new Vector3(0, 1.4, 0)), runtime.materials.green, item.durationMs);
+            spawnPulseEffect(
+                runtime,
+                `review-victory-${item.eventId}`,
+                position,
+                runtime.materials.white,
+                item.durationMs,
+                6.0
+            );
+            spawnBurstEffect(
+                runtime,
+                `review-victory-burst-${item.eventId}`,
+                position.add(new Vector3(0, 1.4, 0)),
+                runtime.materials.green,
+                item.durationMs
+            );
             return;
     }
 }
@@ -1993,24 +2188,27 @@ function updateCamera(runtime: RelicSceneNextRuntime): void {
             localPlayerId: runtime.localPlayerId.value,
             selectedRoomId: reviewCue.roomId ?? roomIdForCuePlayer(snapshot, reviewCue.playerId),
             focusRoomId: reviewCue.roomId ?? roomIdForCuePlayer(snapshot, reviewCue.playerId),
-            aspectRatio,
+            aspectRatio
         });
         smoothing = 0.26;
-    } else if (runtime.cameraMode.value === 'avatar' && localAvatar && canUseAvatar) {
+    }
+    else if (runtime.cameraMode.value === 'avatar' && localAvatar && canUseAvatar) {
         pose = planNeonAvatarCameraPose({
             avatarPosition: localAvatar.root.position,
             cameraYaw: runtime.cameraYaw.value,
-            cameraPitch: runtime.cameraPitch.value,
+            cameraPitch: runtime.cameraPitch.value
         });
         smoothing = 0.28;
-    } else if (runtime.cameraMode.value === 'first-person' && localAvatar && canUseAvatar) {
+    }
+    else if (runtime.cameraMode.value === 'first-person' && localAvatar && canUseAvatar) {
         pose = planNeonFirstPersonCameraPose({
             avatarPosition: localAvatar.root.position,
             cameraYaw: runtime.cameraYaw.value,
-            cameraPitch: runtime.cameraPitch.value,
+            cameraPitch: runtime.cameraPitch.value
         });
         smoothing = 0.56;
-    } else if (runtime.cameraMode.value === 'flyover') {
+    }
+    else if (runtime.cameraMode.value === 'flyover') {
         const startedAt = runtime.flyoverStartedAtMs.value ?? performance.now();
         runtime.flyoverStartedAtMs.value = startedAt;
         const progress = Math.min(1, (performance.now() - startedAt) / runtime.flyoverDurationMs.value);
@@ -2035,11 +2233,13 @@ function updateRoomHighlights(runtime: RelicSceneNextRuntime): void {
         const local = roomId === localPlayer?.roomId;
         const pulse = 0.18 + Math.sin(runtime.pulsePhase.value * 3.2) * 0.08;
         bundle.accent.emissiveColor = Color3.FromHexString(
-            relicNeonAccentForRoom(snapshot?.map.find((room) => room.id === roomId) ?? {
-                kind: 'hallway',
-                collapsed: false,
-                unstable: false,
-            }).emissive,
+            relicNeonAccentForRoom(
+                snapshot?.map.find((room) => room.id === roomId) ?? {
+                    kind: 'hallway',
+                    collapsed: false,
+                    unstable: false
+                }
+            ).emissive
         ).scale(selected ? 1.45 : local ? 1.05 : 0.62 + pulse);
         bundle.floor.scaling.y = selected ? 1.32 : 1;
     }
@@ -2059,7 +2259,7 @@ function updatePromptForSelection(runtime: RelicSceneNextRuntime, roomId?: strin
     const move = sceneMoveActionForPickedRoom({
         snapshot,
         localPlayerId: runtime.localPlayerId.value,
-        roomId,
+        roomId
     });
     if (move) {
         const localPlayer = snapshot.players.find((player) => player.playerId === runtime.localPlayerId.value);
@@ -2068,7 +2268,7 @@ function updatePromptForSelection(runtime: RelicSceneNextRuntime, roomId?: strin
             kind: 'move',
             roomId,
             roomName: room.name,
-            direction: localRoom ? directionBetweenRooms(localRoom, room) : 'north',
+            direction: localRoom ? directionBetweenRooms(localRoom, room) : 'north'
         });
         return;
     }
@@ -2077,7 +2277,7 @@ function updatePromptForSelection(runtime: RelicSceneNextRuntime, roomId?: strin
         runtime.onPromptChange.value({
             kind: 'search',
             label: blackHumourSignForRoom(room),
-            detail: 'Inspect the room. The facility insists this counts as optimism.',
+            detail: 'Inspect the room. The facility insists this counts as optimism.'
         });
         return;
     }
@@ -2086,7 +2286,7 @@ function updatePromptForSelection(runtime: RelicSceneNextRuntime, roomId?: strin
 
 function snapshotPositionForPlayer(
     snapshot: RelicPublicSnapshot | undefined,
-    player: RelicPlayer,
+    player: RelicPlayer
 ): Vector3 {
     const room = snapshot?.map.find((candidate) => candidate.id === player.roomId);
     if (!snapshot || !room) {
@@ -2101,7 +2301,7 @@ function snapshotPositionForPlayer(
     return new Vector3(
         world.x + Math.cos(angle) * radius,
         AVATAR_Y,
-        world.z + Math.sin(angle) * radius,
+        world.z + Math.sin(angle) * radius
     );
 }
 
@@ -2139,7 +2339,7 @@ function defaultReviewCueDuration(type: RelicAnimationCue['type']): number {
 
 function roomIdForCuePlayer(
     snapshot: RelicPublicSnapshot | undefined,
-    playerId: string | undefined,
+    playerId: string | undefined
 ): string | undefined {
     if (!snapshot || !playerId) {
         return undefined;
@@ -2182,12 +2382,12 @@ function spawnPulseEffect(
     position: Vector3,
     material: PBRMaterial,
     durationMs: number,
-    maxScale: number,
+    maxScale: number
 ): void {
     const ring = MeshBuilder.CreateTorus(
         `${id}-pulse`,
         { diameter: 1, thickness: 0.055, tessellation: 48 },
-        runtime.scene,
+        runtime.scene
     );
     ring.position.set(position.x, 0.34, position.z);
     ring.rotation.x = Math.PI / 2;
@@ -2205,7 +2405,7 @@ function spawnPulseEffect(
         },
         dispose() {
             ring.dispose();
-        },
+        }
     });
 }
 
@@ -2214,7 +2414,7 @@ function spawnBurstEffect(
     id: string,
     position: Vector3,
     material: PBRMaterial,
-    durationMs: number,
+    durationMs: number
 ): void {
     const core = MeshBuilder.CreateSphere(`${id}-core`, { diameter: 0.32, segments: 12 }, runtime.scene);
     core.position.copyFrom(position);
@@ -2246,7 +2446,7 @@ function spawnBurstEffect(
             for (const mesh of meshes) {
                 mesh.dispose();
             }
-        },
+        }
     });
 }
 
@@ -2255,14 +2455,14 @@ function spawnBeamEffect(
     from: Vector3,
     to: Vector3,
     material: PBRMaterial,
-    durationMs: number,
+    durationMs: number
 ): void {
     const delta = to.subtract(from);
     const length = Math.max(0.1, Math.sqrt(delta.x * delta.x + delta.z * delta.z));
     const beam = MeshBuilder.CreateBox(
         `review-beam-${runtime.effects.length}`,
         { width: length, height: 0.08, depth: 0.16 },
-        runtime.scene,
+        runtime.scene
     );
     beam.position.set((from.x + to.x) / 2, 0.4, (from.z + to.z) / 2);
     beam.rotation.y = -Math.atan2(delta.z, delta.x);
@@ -2280,7 +2480,7 @@ function spawnBeamEffect(
         },
         dispose() {
             beam.dispose();
-        },
+        }
     });
 }
 
@@ -2306,7 +2506,7 @@ function writeDiagnostics(runtime: RelicSceneNextRuntime): void {
     runtime.canvas.dataset.sceneBatchedMeshCount = '0';
     runtime.canvas.dataset.sceneActiveEffectCount = String(runtime.effects.length);
     runtime.canvas.dataset.sceneEffectMeshCount = String(
-        runtime.effects.reduce((total, effect) => total + effect.meshes.length, 0),
+        runtime.effects.reduce((total, effect) => total + effect.meshes.length, 0)
     );
     runtime.canvas.dataset.reviewPlaybackState = runtime.review.key
         ? runtime.review.completed ? 'completed' : 'playing'
@@ -2331,7 +2531,7 @@ function writeDiagnostics(runtime: RelicSceneNextRuntime): void {
 function createTextMaterial(
     scene: Scene,
     name: string,
-    options: Readonly<{ title: string; detail: string; accent: string }>,
+    options: Readonly<{ title: string; detail: string; accent: string; }>
 ): StandardMaterial {
     const texture = new DynamicTexture(`${name}-texture`, { width: 768, height: 256 }, scene, false);
     const ctx = texture.getContext();
@@ -2363,7 +2563,7 @@ function labelMaterial(scene: Scene, name: string, texture: DynamicTexture): Sta
 function updateAvatarLabel(
     avatar: Pick<AvatarBundle, 'labelTexture'>,
     character: RelicCharacter,
-    player: RelicPlayer,
+    player: RelicPlayer
 ): void {
     const ctx = avatar.labelTexture.getContext();
     ctx.clearRect(0, 0, 512, 128);
@@ -2389,7 +2589,7 @@ function pbr(
     emissiveScale: number,
     metallic: number,
     roughness: number,
-    alpha = 1,
+    alpha = 1
 ): PBRMaterial {
     const material = new PBRMaterial(name, scene);
     material.albedoColor = Color3.FromHexString(albedo);
@@ -2410,7 +2610,7 @@ function accentMaterialForRoom(scene: Scene, room: RelicRoom): PBRMaterial {
         accent.emissive,
         room.collapsed ? 0.58 : room.unstable ? 1.35 : 1.08,
         0.08,
-        0.18,
+        0.18
     );
 }
 
@@ -2419,7 +2619,7 @@ function standard(
     name: string,
     diffuse: string,
     emissive: string,
-    emissiveScale: number,
+    emissiveScale: number
 ): StandardMaterial {
     const material = new StandardMaterial(name, scene);
     material.diffuseColor = Color3.FromHexString(diffuse);
@@ -2429,7 +2629,7 @@ function standard(
 
 type TextDrawingContext = Readonly<{
     fillText(text: string, x: number, y: number): void;
-    measureText(text: string): Readonly<{ width: number }>;
+    measureText(text: string): Readonly<{ width: number; }>;
 }>;
 
 function wrapText(
@@ -2438,7 +2638,7 @@ function wrapText(
     x: number,
     y: number,
     maxWidth: number,
-    lineHeight: number,
+    lineHeight: number
 ): void {
     const words = text.split(/\s+/);
     let line = '';
@@ -2449,11 +2649,14 @@ function wrapText(
             ctx.fillText(line, x, lineY);
             line = word;
             lineY += lineHeight;
-        } else {
+        }
+        else {
             line = test;
         }
     }
-    if (line) ctx.fillText(line, x, lineY);
+    if (line) {
+        ctx.fillText(line, x, lineY);
+    }
 }
 
 function dystopianObjectiveDetail(detail: string): string {
@@ -2501,20 +2704,26 @@ function cameraModeAllowsMovement(mode: RelicSceneNextCameraMode): boolean {
 }
 
 function updateCameraYawFromKeys(runtime: RelicSceneNextRuntime): void {
-    if (!cameraModeAcceptsLook(runtime.cameraMode.value)) return;
+    if (!cameraModeAcceptsLook(runtime.cameraMode.value)) {
+        return;
+    }
     const left = runtime.pressedKeys.has('q') ? 1 : 0;
     const right = runtime.pressedKeys.has('e') ? 1 : 0;
-    if (left === right) return;
+    if (left === right) {
+        return;
+    }
     runtime.cameraYaw.value = wrapAngle(runtime.cameraYaw.value + (left - right) * KEYBOARD_LOOK_STEP);
 }
 
 function applyCameraLook(runtime: RelicSceneNextRuntime, deltaX: number, deltaY: number): void {
-    if (!cameraModeAcceptsLook(runtime.cameraMode.value)) return;
+    if (!cameraModeAcceptsLook(runtime.cameraMode.value)) {
+        return;
+    }
     runtime.cameraYaw.value = wrapAngle(runtime.cameraYaw.value + deltaX * POINTER_LOOK_SENSITIVITY);
     runtime.cameraPitch.value = clamp(
         runtime.cameraPitch.value - deltaY * POINTER_LOOK_SENSITIVITY * 0.75,
         -0.72,
-        0.72,
+        0.72
     );
 }
 

@@ -1,15 +1,12 @@
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { ReportPanel } from '../advanced/ReportPanel.tsx';
 import { CausalTrailPanel } from '../evidence/CausalTrailPanel.tsx';
-import { RunVerdictPanel } from '../evidence/RunVerdictPanel.tsx';
 import { RtcPerformancePanel } from '../evidence/rtc/RtcPerformancePanel.tsx';
+import { RunVerdictPanel } from '../evidence/RunVerdictPanel.tsx';
 import { FailurePanel } from './FailurePanel.tsx';
 import { RunnerDistributedAnalysisSection } from './RunnerDistributedAnalysisSection.tsx';
 import { RunnerLocalRunsSection } from './RunnerLocalRunsSection.tsx';
-import {
-    type UseRunnerRunsControllerInput,
-    useRunnerRunsController,
-} from './use-runner-runs-controller.ts';
+import { useRunnerRunsController, type UseRunnerRunsControllerInput } from './use-runner-runs-controller.ts';
 
 export { FailurePanel } from './FailurePanel.tsx';
 
@@ -22,7 +19,7 @@ export function RunnerRunsPanel({
     bootstrap,
     control,
     authSession,
-    preferredDistributedRun,
+    preferredDistributedRun
 }: RunnerRunsPanelProps) {
     const {
         runLabel,
@@ -63,12 +60,12 @@ export function RunnerRunsPanel({
         history,
         failures,
         latestStats,
-        recentHistory,
+        recentHistory
     } = useRunnerRunsController({
         state,
         bootstrap,
         control,
-        preferredDistributedRun,
+        preferredDistributedRun
     });
 
     return (
@@ -97,8 +94,7 @@ export function RunnerRunsPanel({
                 artifactBundle={artifactBundle}
                 loadDistributedArtifact={() => void loadDistributedArtifact()}
                 copyDistributedArtifact={() => void copyDistributedArtifact()}
-                handleDistributedArtifactFiles={(event) =>
-                    void handleDistributedArtifactFiles(event)}
+                handleDistributedArtifactFiles={(event) => void handleDistributedArtifactFiles(event)}
                 clearSyntheticDistributedRunSeed={clearSyntheticDistributedRunSeed}
                 lastDistributedRefresh={lastDistributedRefresh}
                 controlRunId={controlRunId}
@@ -123,12 +119,8 @@ export function RunnerRunsPanel({
                 latestStats={latestStats}
                 controlState={control.state}
                 recentHistory={recentHistory}
-                failurePanel={
-                    <FailurePanel state={state} authSession={authSession} />
-                }
-                reportPanel={
-                    <ReportPanel state={state} authSession={authSession} />
-                }
+                failurePanel={<FailurePanel state={state} authSession={authSession} />}
+                reportPanel={<ReportPanel state={state} authSession={authSession} />}
             />
         </section>
     );

@@ -1,24 +1,16 @@
-import type {
-    ControlDistributedRunSnapshot,
-} from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import type { DistributedRunAnalysis } from
-    '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
-import type { RallarBlackBoxDistributedRunManifest } from
-    '@shared-test/rallar-bb-test/distributed-run.ts';
-import type { AnalyzeTuneArtifactFacade } from
-    '../analyze/analyze-worker-contract.ts';
+import type { ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type { DistributedRunAnalysis } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import type { RallarBlackBoxDistributedRunManifest } from '@shared-test/rallar-bb-test/distributed-run.ts';
+import type { AnalyzeTuneArtifactFacade } from '../analyze/analyze-worker-contract.ts';
 import {
     resolveTuneFacadeManifestValidation,
-    type TuneFacadeManifestValidation,
+    type TuneFacadeManifestValidation
 } from './tune-facade-manifest-validation.ts';
 import { projectTuneIdentitySurfaces } from './tune-identity.ts';
-import type {
-    TuneQuarantineCode,
-    TuneRunOption,
-} from './tune-run-catalog.ts';
+import type { TuneQuarantineCode, TuneRunOption } from './tune-run-catalog.ts';
 
 export type TuneFacadeCatalogProjection =
-    | Readonly<{ kind: 'option'; option: TuneRunOption }>
+    | Readonly<{ kind: 'option'; option: TuneRunOption; }>
     | Readonly<{
         kind: 'quarantine';
         distributedRunId: string;
@@ -27,22 +19,32 @@ export type TuneFacadeCatalogProjection =
         issues: readonly string[];
     }>;
 
-export function projectTuneFacadeCatalog(input: Readonly<{
-    facade: AnalyzeTuneArtifactFacade;
-    current?: TuneRunOption;
-    distributedIdentityIsAmbiguous: boolean;
-    manifestValidation?: TuneFacadeManifestValidation;
-}>): TuneFacadeCatalogProjection {
+export function projectTuneFacadeCatalog(
+    input: Readonly<{
+        facade: AnalyzeTuneArtifactFacade;
+        current?: TuneRunOption;
+        distributedIdentityIsAmbiguous: boolean;
+        manifestValidation?: TuneFacadeManifestValidation;
+    }>
+): TuneFacadeCatalogProjection {
     const facade = input.facade;
     const distributedRunId = facade.identity.distributedRunId;
     const controlRunId = facade.identity.controlRunId ?? facade.distributedRun.controlRunId;
     if (input.distributedIdentityIsAmbiguous) {
-        return quarantine(distributedRunId, controlRunId, 'ambiguous-run',
-            'Duplicate distributed run identity is ambiguous.');
+        return quarantine(
+            distributedRunId,
+            controlRunId,
+            'ambiguous-run',
+            'Duplicate distributed run identity is ambiguous.'
+        );
     }
     if (!facadeIdentityIsConsistent(facade, distributedRunId, controlRunId)) {
-        return quarantine(distributedRunId, controlRunId, 'identity-conflict',
-            'Retained facade identities conflict across its bounded projections.');
+        return quarantine(
+            distributedRunId,
+            controlRunId,
+            'identity-conflict',
+            'Retained facade identities conflict across its bounded projections.'
+        );
     }
     const identity = projectTuneIdentitySurfaces({ distributedRunId, controlRunId });
     if (identity.quarantined || !identity.reactKey || !identity.controlRunId) {
@@ -53,17 +55,22 @@ export function projectTuneFacadeCatalog(input: Readonly<{
             codes: ['unsafe-identity'],
             issues: identity.issues.length > 0
                 ? identity.issues
-                : ['Retained facade identity is unsafe.'],
+                : ['Retained facade identity is unsafe.']
         };
     }
     if (input.current && input.current.controlRunId !== controlRunId) {
-        return quarantine(distributedRunId, controlRunId, 'identity-conflict',
-            'Retained facade control identity conflicts with control evidence.');
+        return quarantine(
+            distributedRunId,
+            controlRunId,
+            'identity-conflict',
+            'Retained facade control identity conflicts with control evidence.'
+        );
     }
 
     const manifest = facade.candidateManifest ?? manifestSummaryProjection(facade);
     const validation = resolveTuneFacadeManifestValidation(
-        facade, input.manifestValidation,
+        facade,
+        input.manifestValidation
     );
     if (validation.status === 'invalid') {
         const first = validation.firstError;
@@ -73,7 +80,7 @@ export function projectTuneFacadeCatalog(input: Readonly<{
             'invalid-manifest',
             first
                 ? `Retained facade manifest is invalid at ${first.path}: ${first.message}`
-                : 'Retained facade manifest is invalid.',
+                : 'Retained facade manifest is invalid.'
         );
     }
     const distributedRun = facadeSnapshot(facade, manifest);
@@ -81,14 +88,14 @@ export function projectTuneFacadeCatalog(input: Readonly<{
         distributedRun,
         analysis: facade.analysis as unknown as DistributedRunAnalysis,
         performance: facade.analysis.performance,
-        pairStatus: 'missing' as const,
+        pairStatus: 'missing' as const
     };
     if (input.current) {
         return {
             kind: 'option',
             option: input.current.artifactEvidence
                 ? input.current
-                : { ...input.current, artifactEvidence },
+                : { ...input.current, artifactEvidence }
         };
     }
     return {
@@ -108,34 +115,34 @@ export function projectTuneFacadeCatalog(input: Readonly<{
                 ? 'authoritative'
                 : 'summary-projection',
             recipeIdentityComplete: facade.manifestSummary.recipeIds.omitted === 0,
-            artifactEvidence,
-        },
+            artifactEvidence
+        }
     };
 }
 
 function facadeIdentityIsConsistent(
     facade: AnalyzeTuneArtifactFacade,
     distributedRunId: string,
-    controlRunId: string,
+    controlRunId: string
 ): boolean {
     const distributedIds = [
         facade.manifestSummary.distributedRunId,
         facade.distributedRun.distributedRunId,
         facade.analysis.distributedRunId,
-        facade.candidateManifest?.distributedRunId,
+        facade.candidateManifest?.distributedRunId
     ].filter((value): value is string => value !== undefined);
     const controlIds = [
         facade.manifestSummary.controlRunId,
         facade.distributedRun.controlRunId,
         facade.analysis.controlRunId,
-        facade.candidateManifest?.controlRunId,
+        facade.candidateManifest?.controlRunId
     ].filter((value): value is string => value !== undefined);
-    return distributedIds.every(value => value === distributedRunId) &&
-        controlIds.every(value => value === controlRunId);
+    return distributedIds.every((value) => value === distributedRunId) &&
+        controlIds.every((value) => value === controlRunId);
 }
 
 function manifestSummaryProjection(
-    facade: AnalyzeTuneArtifactFacade,
+    facade: AnalyzeTuneArtifactFacade
 ): RallarBlackBoxDistributedRunManifest {
     const summary = facade.manifestSummary;
     return {
@@ -145,18 +152,18 @@ function manifestSummaryProjection(
         displayName: summary.displayName,
         group: summary.group,
         startMode: summary.startMode,
-        recipes: summary.recipeIds.entries.map(recipeId => ({ recipeId })),
+        recipes: summary.recipeIds.entries.map((recipeId) => ({ recipeId })),
         targetPolicy: {
             mode: summary.targetPolicy.mode,
             expectedParticipantCount: summary.targetPolicy.expectedParticipantCount,
-            agentIds: facade.distributedRun.targetAgentIds.entries,
-        },
+            agentIds: facade.distributedRun.targetAgentIds.entries
+        }
     };
 }
 
 function facadeSnapshot(
     facade: AnalyzeTuneArtifactFacade,
-    manifest: RallarBlackBoxDistributedRunManifest,
+    manifest: RallarBlackBoxDistributedRunManifest
 ): ControlDistributedRunSnapshot {
     const run = facade.distributedRun;
     return {
@@ -170,7 +177,7 @@ function facadeSnapshot(
         completedAtEpochMs: run.completedAtEpochMs,
         targetAgentIds: run.targetAgentIds.entries,
         commandLinks: [],
-        rollup: run.rollup,
+        rollup: run.rollup
     };
 }
 
@@ -178,13 +185,13 @@ function quarantine(
     distributedRunId: string,
     controlRunId: string | undefined,
     code: TuneQuarantineCode,
-    issue: string,
+    issue: string
 ): TuneFacadeCatalogProjection {
     return {
         kind: 'quarantine',
         distributedRunId,
         controlRunId,
         codes: [code],
-        issues: [issue],
+        issues: [issue]
     };
 }

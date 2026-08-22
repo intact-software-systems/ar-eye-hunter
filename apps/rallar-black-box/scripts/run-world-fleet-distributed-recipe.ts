@@ -1,11 +1,14 @@
+import type {
+    ControlDistributedRunArtifactBundle,
+    ControlDistributedRunSnapshot
+} from '@shared-test/rallar-bb-test/control-snapshots.ts';
+import type {
+    RallarBlackBoxDistributedRunManifest,
+    RallarBlackBoxDistributedTargetResolution
+} from '@shared-test/rallar-bb-test/distributed-run.ts';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { ControlDistributedRunArtifactBundle, ControlDistributedRunSnapshot } from '@shared-test/rallar-bb-test/control-snapshots.ts';
-import type {
-    RallarBlackBoxDistributedRunManifest,
-    RallarBlackBoxDistributedTargetResolution,
-} from '@shared-test/rallar-bb-test/distributed-run.ts';
 
 export type WorldFleetDistributedRecipeRunnerOptions = Readonly<{
     controlBaseUrl: string;
@@ -26,11 +29,11 @@ async function main(): Promise<void> {
 }
 
 export async function runWorldFleetDistributedRecipe(
-    options: WorldFleetDistributedRecipeRunnerOptions,
+    options: WorldFleetDistributedRecipeRunnerOptions
 ): Promise<void> {
     const manifest = applyWorldFleetControlRunIdOverride(
         JSON.parse(await readFile(options.manifestPath, 'utf8')) as RallarBlackBoxDistributedRunManifest,
-        options.controlRunId,
+        options.controlRunId
     );
 
     console.log(`world-fleet no-spawn runner: ${manifest.distributedRunId}`);
@@ -43,11 +46,13 @@ export async function runWorldFleetDistributedRecipe(
     const resolution = await postJson<RallarBlackBoxDistributedTargetResolution>(
         options,
         '/distributed-runs/resolve-targets',
-        { manifest },
+        { manifest }
     );
     const expected = manifest.targetPolicy.expectedParticipantCount;
     console.log(
-        `target preflight: selected ${resolution.summary.selected}/${expected ?? 'unspecified'}; blockers ${resolution.blockers.length}`,
+        `target preflight: selected ${resolution.summary.selected}/${
+            expected ?? 'unspecified'
+        }; blockers ${resolution.blockers.length}`
     );
     console.log(`role counts: ${JSON.stringify(resolution.summary.roleCounts)}`);
     console.log(`regions: ${JSON.stringify(resolution.summary.regions)}`);
@@ -55,7 +60,7 @@ export async function runWorldFleetDistributedRecipe(
 
     if (expected !== undefined && resolution.summary.selected !== expected) {
         throw new Error(
-            `Target preflight mismatch: selected ${resolution.summary.selected}, expected ${expected}.`,
+            `Target preflight mismatch: selected ${resolution.summary.selected}, expected ${expected}.`
         );
     }
 
@@ -65,12 +70,14 @@ export async function runWorldFleetDistributedRecipe(
     const staged = await postJson<ControlDistributedRunSnapshot>(
         options,
         `/distributed-runs/${encodeURIComponent(manifest.distributedRunId)}/stage`,
-        {},
+        {}
     );
     console.log(`staged: ${staged.state}`);
 
-    const ready = await waitForState(options, manifest.distributedRunId, (run) =>
-        run.state === 'ready' || run.state === 'running' || TERMINAL_STATES.has(run.state)
+    const ready = await waitForState(
+        options,
+        manifest.distributedRunId,
+        (run) => run.state === 'ready' || run.state === 'running' || TERMINAL_STATES.has(run.state)
     );
     if (ready.state !== 'ready' && ready.state !== 'running') {
         await exportDistributedRunArtifacts(options, manifest);
@@ -81,14 +88,12 @@ export async function runWorldFleetDistributedRecipe(
         const started = await postJson<ControlDistributedRunSnapshot>(
             options,
             `/distributed-runs/${encodeURIComponent(manifest.distributedRunId)}/start`,
-            {},
+            {}
         );
         console.log(`started: ${started.state}`);
     }
 
-    const terminal = await waitForState(options, manifest.distributedRunId, (run) =>
-        TERMINAL_STATES.has(run.state)
-    );
+    const terminal = await waitForState(options, manifest.distributedRunId, (run) => TERMINAL_STATES.has(run.state));
     console.log(`terminal: ${terminal.state}`);
 
     await exportDistributedRunArtifacts(options, manifest);
@@ -100,24 +105,24 @@ export async function runWorldFleetDistributedRecipe(
 
 export function applyWorldFleetControlRunIdOverride(
     manifest: RallarBlackBoxDistributedRunManifest,
-    controlRunId?: string,
+    controlRunId?: string
 ): RallarBlackBoxDistributedRunManifest {
     const cleanControlRunId = controlRunId?.trim();
     return cleanControlRunId
         ? {
             ...manifest,
-            controlRunId: cleanControlRunId,
+            controlRunId: cleanControlRunId
         }
         : manifest;
 }
 
 async function exportDistributedRunArtifacts(
     options: WorldFleetDistributedRecipeRunnerOptions,
-    manifest: RallarBlackBoxDistributedRunManifest,
+    manifest: RallarBlackBoxDistributedRunManifest
 ): Promise<void> {
     const bundle = await getJson<ControlDistributedRunArtifactBundle>(
         options,
-        `/distributed-runs/${encodeURIComponent(manifest.distributedRunId)}/artifacts`,
+        `/distributed-runs/${encodeURIComponent(manifest.distributedRunId)}/artifacts`
     );
     const artifactDir = options.artifactDir ??
         path.join('artifacts', 'world-fleet', manifest.distributedRunId);
@@ -128,13 +133,13 @@ async function exportDistributedRunArtifacts(
 async function waitForState(
     options: WorldFleetDistributedRecipeRunnerOptions,
     distributedRunId: string,
-    predicate: (run: ControlDistributedRunSnapshot) => boolean,
+    predicate: (run: ControlDistributedRunSnapshot) => boolean
 ): Promise<ControlDistributedRunSnapshot> {
     const startedAt = Date.now();
     while (Date.now() - startedAt <= options.timeoutMs) {
         const snapshot = await getJson<ControlDistributedRunSnapshot>(
             options,
-            `/distributed-runs/${encodeURIComponent(distributedRunId)}`,
+            `/distributed-runs/${encodeURIComponent(distributedRunId)}`
         );
         if (predicate(snapshot)) {
             return snapshot;
@@ -146,12 +151,12 @@ async function waitForState(
 
 async function writeArtifactBundle(
     artifactDir: string,
-    bundle: ControlDistributedRunArtifactBundle,
+    bundle: ControlDistributedRunArtifactBundle
 ): Promise<void> {
     await mkdir(artifactDir, { recursive: true });
     await writeFile(
         path.join(artifactDir, 'artifact-bundle.json'),
-        `${JSON.stringify(bundle, null, 2)}\n`,
+        `${JSON.stringify(bundle, null, 2)}\n`
     );
     for (const [fileName, contents] of Object.entries(bundle.files)) {
         const safeFileName = safeArtifactBundleFileName(fileName);
@@ -181,17 +186,17 @@ function safeArtifactBundleFileName(fileName: string): string | undefined {
 async function postJson<T>(
     options: WorldFleetDistributedRecipeRunnerOptions,
     pathname: string,
-    body: unknown,
+    body: unknown
 ): Promise<T> {
     return await jsonRequest<T>(options, pathname, {
         method: 'POST',
-        body: JSON.stringify(body),
+        body: JSON.stringify(body)
     });
 }
 
 async function getJson<T>(
     options: WorldFleetDistributedRecipeRunnerOptions,
-    pathname: string,
+    pathname: string
 ): Promise<T> {
     return await jsonRequest<T>(options, pathname, { method: 'GET' });
 }
@@ -199,15 +204,15 @@ async function getJson<T>(
 async function jsonRequest<T>(
     options: WorldFleetDistributedRecipeRunnerOptions,
     pathname: string,
-    init: RequestInit,
+    init: RequestInit
 ): Promise<T> {
     const response = await (options.fetchFn ?? fetch)(new URL(pathname, normalizedBaseUrl(options.controlBaseUrl)), {
         ...init,
         headers: {
             'Content-Type': 'application/json',
             ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
-            ...init.headers,
-        },
+            ...init.headers
+        }
     });
     if (!response.ok) {
         throw new Error(`${init.method ?? 'GET'} ${pathname} failed with ${response.status}: ${await response.text()}`);
@@ -217,7 +222,7 @@ async function jsonRequest<T>(
 
 function parseArgs(
     args: readonly string[],
-    env: NodeJS.ProcessEnv,
+    env: NodeJS.ProcessEnv
 ): WorldFleetDistributedRecipeRunnerOptions {
     const values = new Map<string, string>();
     for (let index = 0; index < args.length; index += 1) {
@@ -252,7 +257,7 @@ function parseArgs(
         token: values.get('token') ?? env.RALLAR_CONTROL_ADMIN_TOKEN,
         artifactDir: values.get('artifact-dir'),
         pollMs: positiveInteger(values.get('poll-ms'), 2_000),
-        timeoutMs: positiveInteger(values.get('timeout-ms'), 30 * 60_000),
+        timeoutMs: positiveInteger(values.get('timeout-ms'), 30 * 60_000)
     };
 }
 

@@ -1,31 +1,38 @@
+import { RECIPE_CONSOLE_URL_STRING_MAX_BYTES } from '../routing/url-state-contract.ts';
+import { isAnalyzeControlIdentityDigest } from './analyze-control-identity-digest.ts';
 import {
     ANALYZE_ARTIFACT_MAX_FILE_BYTES,
     ANALYZE_ARTIFACT_MAX_FILE_COUNT,
-    ANALYZE_ARTIFACT_MAX_TOTAL_BYTES,
+    ANALYZE_ARTIFACT_MAX_TOTAL_BYTES
 } from './analyze-file-boundary.ts';
-import { isAnalyzeControlIdentityDigest } from
-    './analyze-control-identity-digest.ts';
 import type {
     AnalyzeWorkerArtifactOffer,
     AnalyzeWorkerErrorProjection,
-    AnalyzeWorkerRequest,
+    AnalyzeWorkerRequest
 } from './analyze-worker-contract.ts';
-import { RECIPE_CONSOLE_URL_STRING_MAX_BYTES } from
-    '../routing/url-state-contract.ts';
 
 export const ANALYZE_WORKER_MAX_LABEL_BYTES = 1_024;
-export const ANALYZE_WORKER_MAX_REQUEST_TEXT_BYTES =
-    RECIPE_CONSOLE_URL_STRING_MAX_BYTES;
+export const ANALYZE_WORKER_MAX_REQUEST_TEXT_BYTES = RECIPE_CONSOLE_URL_STRING_MAX_BYTES;
 const ANALYZE_WORKER_MAX_FILE_NAME_BYTES = 1_024;
 const ANALYZE_WORKER_MAX_CONTROL_ENVELOPE_BYTES = 64 * 1_024 * 1_024;
 
 export function isAnalyzeWorkerArtifactOffer(
-    value: unknown,
+    value: unknown
 ): value is AnalyzeWorkerArtifactOffer {
-    if (!isRecord(value) || !onlyKeys(value, [
-        'source', 'label', 'generatedAtEpochMs', 'artifactSchemaVersion',
-        'files', 'controlEnvelope', 'ignoredFiles', 'expectedControlIdentity',
-    ])) return false;
+    if (
+        !isRecord(value) || !onlyKeys(value, [
+            'source',
+            'label',
+            'generatedAtEpochMs',
+            'artifactSchemaVersion',
+            'files',
+            'controlEnvelope',
+            'ignoredFiles',
+            'expectedControlIdentity'
+        ])
+    ) {
+        return false;
+    }
     if (
         (value.source !== 'local-files' && value.source !== 'control') ||
         !boundedString(value.label, ANALYZE_WORKER_MAX_LABEL_BYTES) ||
@@ -34,15 +41,23 @@ export function isAnalyzeWorkerArtifactOffer(
         !Array.isArray(value.files) ||
         value.files.length > ANALYZE_ARTIFACT_MAX_FILE_COUNT ||
         !validIgnoredFiles(value.ignoredFiles)
-    ) return false;
+    ) {
+        return false;
+    }
     let totalBytes = 0;
     for (const file of value.files) {
-        if (!isRecord(file) || !onlyKeys(file, ['name', 'bytes']) ||
+        if (
+            !isRecord(file) || !onlyKeys(file, ['name', 'bytes']) ||
             !boundedString(file.name, ANALYZE_WORKER_MAX_FILE_NAME_BYTES) ||
             !(file.bytes instanceof ArrayBuffer) ||
-            file.bytes.byteLength > ANALYZE_ARTIFACT_MAX_FILE_BYTES) return false;
+            file.bytes.byteLength > ANALYZE_ARTIFACT_MAX_FILE_BYTES
+        ) {
+            return false;
+        }
         totalBytes += file.bytes.byteLength;
-        if (totalBytes > ANALYZE_ARTIFACT_MAX_TOTAL_BYTES) return false;
+        if (totalBytes > ANALYZE_ARTIFACT_MAX_TOTAL_BYTES) {
+            return false;
+        }
     }
     if (value.source === 'control') {
         return value.files.length === 0 &&
@@ -55,7 +70,9 @@ export function isAnalyzeWorkerArtifactOffer(
 }
 
 export function isAnalyzeWorkerRequest(value: unknown): value is AnalyzeWorkerRequest {
-    if (!isRecord(value) || typeof value.type !== 'string') return false;
+    if (!isRecord(value) || typeof value.type !== 'string') {
+        return false;
+    }
     if (value.type === 'dispose') {
         return onlyKeys(value, ['type', 'reason']) &&
             ['clear', 'replacement', 'unmount', 'crash'].includes(String(value.reason));
@@ -69,17 +86,30 @@ export function isAnalyzeWorkerRequest(value: unknown): value is AnalyzeWorkerRe
         return onlyKeys(value, ['type', 'operationGeneration']) &&
             generation(value.operationGeneration);
     }
-    if (!generation(value.modelGeneration) || !generation(value.requestId)) return false;
+    if (!generation(value.modelGeneration) || !generation(value.requestId)) {
+        return false;
+    }
     if (value.type === 'search') {
         return onlyKeys(value, [
-            'type', 'modelGeneration', 'queryGeneration', 'requestId', 'query', 'windowSize',
+            'type',
+            'modelGeneration',
+            'queryGeneration',
+            'requestId',
+            'query',
+            'windowSize'
         ]) && generation(value.queryGeneration) && evidenceQuery(value.query) &&
             positiveSafeInteger(value.windowSize);
     }
     if (value.type === 'window') {
         return onlyKeys(value, [
-            'type', 'modelGeneration', 'queryGeneration', 'windowGeneration',
-            'requestId', 'query', 'cursor', 'windowSize',
+            'type',
+            'modelGeneration',
+            'queryGeneration',
+            'windowGeneration',
+            'requestId',
+            'query',
+            'cursor',
+            'windowSize'
         ]) && generation(value.queryGeneration) &&
             generation(value.windowGeneration) && evidenceQuery(value.query) &&
             boundedString(value.cursor, ANALYZE_WORKER_MAX_REQUEST_TEXT_BYTES) &&
@@ -87,68 +117,107 @@ export function isAnalyzeWorkerRequest(value: unknown): value is AnalyzeWorkerRe
     }
     if (value.type === 'select') {
         return onlyKeys(value, [
-            'type', 'modelGeneration', 'selectionGeneration', 'requestId', 'evidenceId',
+            'type',
+            'modelGeneration',
+            'selectionGeneration',
+            'requestId',
+            'evidenceId'
         ]) && generation(value.selectionGeneration) &&
             optionalBoundedString(value.evidenceId);
     }
     if (value.type === 'tune') {
         return onlyKeys(value, [
-            'type', 'modelGeneration', 'tuneGeneration', 'requestId',
-            'focusRunId', 'compareLeft', 'compareRight', 'timingMetric',
+            'type',
+            'modelGeneration',
+            'tuneGeneration',
+            'requestId',
+            'focusRunId',
+            'compareLeft',
+            'compareRight',
+            'timingMetric'
         ]) && generation(value.tuneGeneration) && [
-            value.focusRunId, value.compareLeft, value.compareRight, value.timingMetric,
+            value.focusRunId,
+            value.compareLeft,
+            value.compareRight,
+            value.timingMetric
         ].every(optionalBoundedString);
     }
     return false;
 }
 
 export function analyzeWorkerRequestStage(
-    request: Exclude<AnalyzeWorkerRequest, { type: 'dispose' }>,
+    request: Exclude<AnalyzeWorkerRequest, { type: 'dispose'; }>
 ): AnalyzeWorkerErrorProjection['stage'] {
-    if (request.type === 'offer') return 'offer';
-    if (request.type === 'start') return 'model';
-    if (request.type === 'select') return 'selection';
+    if (request.type === 'offer') {
+        return 'offer';
+    }
+    if (request.type === 'start') {
+        return 'model';
+    }
+    if (request.type === 'select') {
+        return 'selection';
+    }
     return request.type;
 }
 
 export function analyzeWorkerRequestIdentity(
-    request: Exclude<AnalyzeWorkerRequest, { type: 'dispose' }>,
-): Readonly<{ operationGeneration?: number; requestId?: number }> {
+    request: Exclude<AnalyzeWorkerRequest, { type: 'dispose'; }>
+): Readonly<{ operationGeneration?: number; requestId?: number; }> {
     return {
         ...('operationGeneration' in request
             ? { operationGeneration: request.operationGeneration }
             : {}),
-        ...('requestId' in request ? { requestId: request.requestId } : {}),
+        ...('requestId' in request ? { requestId: request.requestId } : {})
     };
 }
 
 export function invalidAnalyzeWorkerRequestStage(
-    value: unknown,
+    value: unknown
 ): AnalyzeWorkerErrorProjection['stage'] {
-    if (!isRecord(value)) return 'offer';
-    if (value.type === 'search') return 'search';
-    if (value.type === 'window') return 'window';
-    if (value.type === 'select') return 'selection';
-    if (value.type === 'tune') return 'tune';
-    if (value.type === 'start') return 'model';
+    if (!isRecord(value)) {
+        return 'offer';
+    }
+    if (value.type === 'search') {
+        return 'search';
+    }
+    if (value.type === 'window') {
+        return 'window';
+    }
+    if (value.type === 'select') {
+        return 'selection';
+    }
+    if (value.type === 'tune') {
+        return 'tune';
+    }
+    if (value.type === 'start') {
+        return 'model';
+    }
     return 'offer';
 }
 
 function evidenceQuery(value: unknown): boolean {
-    if (!isRecord(value)) return false;
+    if (!isRecord(value)) {
+        return false;
+    }
     const stringFields = [
-        'query', 'agentId', 'recipeId', 'commandId', 'status',
-        'severity', 'transport', 'category',
+        'query',
+        'agentId',
+        'recipeId',
+        'commandId',
+        'status',
+        'severity',
+        'transport',
+        'category'
     ] as const;
     const numberFields = ['fromEpochMs', 'toEpochMs'] as const;
     return onlyKeys(value, [...stringFields, ...numberFields]) &&
-        stringFields.every(key => optionalBoundedString(value[key])) &&
-        numberFields.every(key => optionalFiniteNumber(value[key]));
+        stringFields.every((key) => optionalBoundedString(value[key])) &&
+        numberFields.every((key) => optionalFiniteNumber(value[key]));
 }
 
 function validIgnoredFiles(value: unknown): boolean {
     return value === undefined || (Array.isArray(value) &&
-        value.length <= ANALYZE_ARTIFACT_MAX_FILE_COUNT && value.every(file =>
+        value.length <= ANALYZE_ARTIFACT_MAX_FILE_COUNT && value.every((file) =>
             isRecord(file) && onlyKeys(file, ['basename', 'sourcePath', 'reason']) &&
             boundedString(file.basename, ANALYZE_WORKER_MAX_FILE_NAME_BYTES) &&
             boundedString(file.sourcePath, ANALYZE_WORKER_MAX_REQUEST_TEXT_BYTES) &&
@@ -171,7 +240,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function onlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
     const keys = new Set(allowed);
-    return Object.keys(value).every(key => keys.has(key));
+    return Object.keys(value).every((key) => keys.has(key));
 }
 
 function generation(value: unknown): value is number {

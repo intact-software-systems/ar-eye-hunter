@@ -1,8 +1,5 @@
 import type { RallarBlackBoxTestSeverity } from '@shared-test/rallar-bb-test/types.ts';
-import type {
-    DistributedRunAnalysisReport,
-    DistributedRunProgressStatus,
-} from '../../../distributed-recipes.ts';
+import type { DistributedRunAnalysisReport, DistributedRunProgressStatus } from '../../../distributed-recipes.ts';
 
 const RTC_STREAM_PERFORMANCE_CATEGORY = 'rtc-stream-performance';
 
@@ -23,7 +20,7 @@ export function distributedProgressTone(status: DistributedRunProgressStatus): s
 }
 
 export function distributedFailureCategoryTone(
-    category: DistributedRunAnalysisReport['nextActions'][number]['category'],
+    category: DistributedRunAnalysisReport['nextActions'][number]['category']
 ): string {
     if (
         category === 'command' ||
@@ -47,7 +44,7 @@ export function distributedFailureCategoryTone(
 }
 
 export function distributedDiagnosticTone(
-    severity: RallarBlackBoxTestSeverity,
+    severity: RallarBlackBoxTestSeverity
 ): string {
     if (severity === 'error') {
         return 'bad';

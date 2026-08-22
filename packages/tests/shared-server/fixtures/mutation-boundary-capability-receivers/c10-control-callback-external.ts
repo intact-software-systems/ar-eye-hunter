@@ -1,5 +1,5 @@
 export function passArbitraryValueToExternal(
-  external: (value: unknown) => void,
+    external: (value: unknown) => void
 ): void {
-  external({ value: 'ordinary' });
+    external({ value: 'ordinary' });
 }

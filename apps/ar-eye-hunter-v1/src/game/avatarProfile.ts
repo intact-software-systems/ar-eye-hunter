@@ -2,7 +2,7 @@ import {
     createRallarAiMockProvider,
     type RallarAiJsonProvider,
     type RallarAiJsonRequest,
-    type RallarAiJsonSchema,
+    type RallarAiJsonSchema
 } from '@shared/rallar-ai/mod.ts';
 
 export const AVATAR_PROFILE_SCHEMA_ID = 'ar-eye-hunter.avatar-profile';
@@ -13,78 +13,78 @@ export const AVATAR_BODY_SHAPES = [
     'vanguard',
     'sprinter',
     'sentinel',
-    'cipher',
+    'cipher'
 ] as const;
 export const AVATAR_HELMETS = [
     'mono-visor',
     'split-visor',
     'audit-mask',
-    'halo-hood',
+    'halo-hood'
 ] as const;
 export const AVATAR_ARMOR_TRIMS = [
     'ribbed',
     'shoulder-plates',
     'circuit-sash',
-    'blade-collar',
+    'blade-collar'
 ] as const;
 export const AVATAR_GLOW_PALETTES = [
     'acid-cyan',
     'magenta-amber',
     'cyan-white',
-    'danger-acid',
+    'danger-acid'
 ] as const;
 export const AVATAR_TRAILS = [
     'none',
     'scanline',
     'afterimage',
-    'spark-leak',
+    'spark-leak'
 ] as const;
 export const AVATAR_DECALS = [
     'terms-accepted',
     'bug-bounty',
     'unpaid-overtime',
-    'privacy-leak',
+    'privacy-leak'
 ] as const;
 export const AVATAR_HUMOUR_TAGS = [
     'legally distinct hero',
     'compliance enthusiast',
     'morale still pending',
-    'blink twice for payroll',
+    'blink twice for payroll'
 ] as const;
 export const AVATAR_ROBOT_FRAMES = [
     'juggernaut',
     'warden',
     'reaper',
-    'bulwark',
+    'bulwark'
 ] as const;
 export const AVATAR_TORSO_MASSES = [
     'medium',
     'heavy',
-    'titan',
+    'titan'
 ] as const;
 export const AVATAR_SHOULDERS = [
     'anvil',
     'spike-rack',
     'riot-shields',
-    'reactor-pauldrons',
+    'reactor-pauldrons'
 ] as const;
 export const AVATAR_FACEPLATES = [
     'grim-slit',
     'skullplate',
     'tax-mask',
-    'hollow-smirk',
+    'hollow-smirk'
 ] as const;
 export const AVATAR_EXPRESSIONS = [
     'cold-stare',
     'angry-v',
     'deadpan',
-    'grim-smirk',
+    'grim-smirk'
 ] as const;
 export const AVATAR_BROWS = [
     'blade-brow',
     'downturned',
     'forked',
-    'visor-scowl',
+    'visor-scowl'
 ] as const;
 
 export type AvatarBodyShape = typeof AVATAR_BODY_SHAPES[number];
@@ -139,8 +139,8 @@ export type AvatarProfileContext = Readonly<{
 }>;
 
 export type AvatarProfileValidation =
-    | Readonly<{ ok: true; profile: AvatarProfile }>
-    | Readonly<{ ok: false; reason: string }>;
+    | Readonly<{ ok: true; profile: AvatarProfile; }>
+    | Readonly<{ ok: false; reason: string; }>;
 
 export const AVATAR_PROFILE_SCHEMA: RallarAiJsonSchema = {
     type: 'object',
@@ -162,7 +162,7 @@ export const AVATAR_PROFILE_SCHEMA: RallarAiJsonSchema = {
         'shoulderStyle',
         'faceplate',
         'visorExpression',
-        'browShape',
+        'browShape'
     ],
     additionalProperties: false,
     properties: {
@@ -183,12 +183,12 @@ export const AVATAR_PROFILE_SCHEMA: RallarAiJsonSchema = {
         shoulderStyle: { type: 'string', enum: [...AVATAR_SHOULDERS] },
         faceplate: { type: 'string', enum: [...AVATAR_FACEPLATES] },
         visorExpression: { type: 'string', enum: [...AVATAR_EXPRESSIONS] },
-        browShape: { type: 'string', enum: [...AVATAR_BROWS] },
-    },
+        browShape: { type: 'string', enum: [...AVATAR_BROWS] }
+    }
 };
 
 export function createAvatarProfileRequest(
-    context: AvatarProfileContext,
+    context: AvatarProfileContext
 ): RallarAiJsonRequest<AvatarProfileContext> {
     return {
         requestId: `avatar-profile:${context.sessionId}:${context.revision ?? 0}`,
@@ -206,8 +206,8 @@ export function createAvatarProfileRequest(
             'The avatar must look like a strong intimidating neon robot with a readable facial expression.',
             'Use only enum values from the schema. Do not include gameplay stats, health, weapon bonuses, hitbox changes, speed, damage, or extra fields.',
             `Session: ${context.sessionId}. Username: ${context.username}.`,
-            'Keep the callsign short, dry, and darkly funny.',
-        ].join('\n'),
+            'Keep the callsign short, dry, and darkly funny.'
+        ].join('\n')
     };
 }
 
@@ -219,16 +219,16 @@ export function createAvatarProfileMockProvider(): RallarAiJsonProvider {
             const context = request.context;
             const fallback = createDeterministicAvatarProfile(
                 context?.sessionId ?? 'mock-session',
-                context?.username ?? 'Hunter',
+                context?.username ?? 'Hunter'
             );
             return {
                 ...fallback,
                 callsign: fallback.callsign.replace(/^Null /, 'Steel ').slice(0, 22),
                 robotFrame: fallback.bodyShape === 'sprinter' ? 'reaper' : fallback.robotFrame,
                 torsoMass: fallback.bodyShape === 'sentinel' ? 'titan' : fallback.torsoMass,
-                visorExpression: fallback.helmet === 'audit-mask' ? 'deadpan' : fallback.visorExpression,
+                visorExpression: fallback.helmet === 'audit-mask' ? 'deadpan' : fallback.visorExpression
             };
-        },
+        }
     });
 }
 
@@ -244,7 +244,7 @@ const AVATAR_LEGACY_PROFILE_KEYS = new Set([
     'glowPalette',
     'trailStyle',
     'decal',
-    'humourTag',
+    'humourTag'
 ]);
 
 const AVATAR_PROFILE_KEYS = new Set([
@@ -254,12 +254,12 @@ const AVATAR_PROFILE_KEYS = new Set([
     'shoulderStyle',
     'faceplate',
     'visorExpression',
-    'browShape',
+    'browShape'
 ]);
 
 export function createDeterministicAvatarProfile(
     sessionId: string,
-    username: string,
+    username: string
 ): AvatarProfile {
     const seed = hashString(`${sessionId}:${username}`);
     const callsignBase = username.trim() || 'Hunter';
@@ -281,13 +281,13 @@ export function createDeterministicAvatarProfile(
         shoulderStyle: pick(AVATAR_SHOULDERS, seed >> 19),
         faceplate: pick(AVATAR_FACEPLATES, seed >> 21),
         visorExpression: pick(AVATAR_EXPRESSIONS, seed >> 23),
-        browShape: pick(AVATAR_BROWS, seed >> 25),
+        browShape: pick(AVATAR_BROWS, seed >> 25)
     };
 }
 
 export function validateAvatarProfile(
     value: unknown,
-    expectedSessionId?: string,
+    expectedSessionId?: string
 ): AvatarProfileValidation {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         return { ok: false, reason: 'not-object' };
@@ -348,7 +348,7 @@ export function validateAvatarProfile(
             : readEnum(record, 'visorExpression', AVATAR_EXPRESSIONS),
         browShape: legacy
             ? upgradeLegacyBrowShape(readEnum(record, 'armorTrim', AVATAR_ARMOR_TRIMS))
-            : readEnum(record, 'browShape', AVATAR_BROWS),
+            : readEnum(record, 'browShape', AVATAR_BROWS)
     };
 
     for (const key of ['profileId', 'callsign'] as const) {
@@ -356,21 +356,23 @@ export function validateAvatarProfile(
             return { ok: false, reason: `invalid-${key}` };
         }
     }
-    for (const key of [
-        'bodyShape',
-        'helmet',
-        'armorTrim',
-        'glowPalette',
-        'trailStyle',
-        'decal',
-        'humourTag',
-        'robotFrame',
-        'torsoMass',
-        'shoulderStyle',
-        'faceplate',
-        'visorExpression',
-        'browShape',
-    ] as const) {
+    for (
+        const key of [
+            'bodyShape',
+            'helmet',
+            'armorTrim',
+            'glowPalette',
+            'trailStyle',
+            'decal',
+            'humourTag',
+            'robotFrame',
+            'torsoMass',
+            'shoulderStyle',
+            'faceplate',
+            'visorExpression',
+            'browShape'
+        ] as const
+    ) {
         if (!profile[key]) {
             return { ok: false, reason: `invalid-${key}` };
         }
@@ -470,7 +472,7 @@ export function avatarAccentForPalette(palette: AvatarGlowPalette): string {
 function readShortString(
     record: Record<string, unknown>,
     key: string,
-    maxLength: number,
+    maxLength: number
 ): string | undefined {
     const value = record[key];
     if (typeof value !== 'string') {
@@ -486,7 +488,7 @@ function readShortString(
 function readEnum<T extends string>(
     record: Record<string, unknown>,
     key: string,
-    allowed: readonly T[],
+    allowed: readonly T[]
 ): T {
     const value = record[key];
     return typeof value === 'string' && allowed.includes(value as T)

@@ -1,11 +1,5 @@
+import { computePredictedRttMs, Coordinates, DEFAULT_VIVALDI_CONFIG, type VivaldiConfig, type VivaldiNodeData } from '@shared-graph/graph/vivaldi-core.ts';
 import { describe, expect, it } from 'vitest';
-import {
-    Coordinates,
-    computePredictedRttMs,
-    DEFAULT_VIVALDI_CONFIG,
-    type VivaldiConfig,
-    type VivaldiNodeData,
-} from '@shared-graph/graph/vivaldi-core.ts';
 
 // computePredictedRttMs replaced a Coordinates-based distance with a direct
 // loop to stop allocating per pair at O(N^2) call sites. Coordinates is still
@@ -17,7 +11,7 @@ describe('computePredictedRttMs', () => {
         { norm: 'L2 (default)', overrides: {} },
         { norm: 'L1', overrides: { useL1: true } },
         { norm: 'L-infinity', overrides: { useLInf: true } },
-        { norm: 'L-infinity wins over L1', overrides: { useL1: true, useLInf: true } },
+        { norm: 'L-infinity wins over L1', overrides: { useL1: true, useLInf: true } }
     ])('agrees with Coordinates.distance for $norm', ({ overrides }) => {
         const cfg: VivaldiConfig = { ...DEFAULT_VIVALDI_CONFIG, ...overrides };
         for (const [source, target] of createCoordinatePairs()) {
@@ -31,14 +25,14 @@ describe('computePredictedRttMs', () => {
         const source = toNode('peer-a', [1, 2]);
         const target = toNode('peer-b', [1, 2, 3]);
         expect(() => computePredictedRttMs(source, target, DEFAULT_VIVALDI_CONFIG)).toThrow(
-            'Coordinates must have the same dimension',
+            'Coordinates must have the same dimension'
         );
     });
 
     it('is symmetric and zero for identical coordinates', () => {
         for (const [source, target] of createCoordinatePairs()) {
             expect(computePredictedRttMs(source, target, DEFAULT_VIVALDI_CONFIG)).toBe(
-                computePredictedRttMs(target, source, DEFAULT_VIVALDI_CONFIG),
+                computePredictedRttMs(target, source, DEFAULT_VIVALDI_CONFIG)
             );
         }
         const node = toNode('peer-a', [3, -7, 11]);
@@ -59,7 +53,7 @@ function createCoordinatePairs(): (readonly [VivaldiNodeData, VivaldiNodeData])[
         [10, 0, -5],
         [-10, 0.125, 5],
         [1, 2, 3, 4],
-        [-1, -2, -3, -4],
+        [-1, -2, -3, -4]
     ];
     const pairs: (readonly [VivaldiNodeData, VivaldiNodeData])[] = [];
     for (const source of vectors) {

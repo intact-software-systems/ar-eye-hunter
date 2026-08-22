@@ -1,21 +1,12 @@
+import type { RallarMediaSourcesFacade, RallarMediaSourceStatus } from '@shared-web/browser/rallar-media-facade.ts';
+import type { RallarMessage, RallarMessageSendResult } from '@shared-web/browser/rallar-messages-facade.ts';
 import type {
-    RallarMediaSourceStatus,
-    RallarMediaSourcesFacade,
-} from '@shared-web/browser/rallar-media-facade.ts';
-import type {
-    RallarMessage,
-    RallarMessageSendResult,
-} from '@shared-web/browser/rallar-messages-facade.ts';
-import type {
-    RallarTargetMembership,
-    RallarTargetSelector,
     RallarTargetedChannel,
     RallarTargetedChannelDefinition,
+    RallarTargetMembership,
+    RallarTargetSelector
 } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type {
-    RallarRtcLaneStatus,
-    RallarWaitForOpenOptions,
-} from '@shared-web/browser/rallar-rtc-facade.ts';
+import type { RallarRtcLaneStatus, RallarWaitForOpenOptions } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
@@ -33,10 +24,10 @@ export type RallarCallDataInput = Readonly<{
 export type RallarCallStartInput =
     & RallarTargetSelector
     & Readonly<{
-    callId?: string;
-    media?: RallarCallMediaInput;
-    data?: RallarCallDataInput;
-}>;
+        callId?: string;
+        media?: RallarCallMediaInput;
+        data?: RallarCallDataInput;
+    }>;
 
 export type RallarCallParticipantState =
     | 'idle'
@@ -115,8 +106,8 @@ export type RallarCallSignalPayload = Readonly<{
 export type RallarCallInviteInput =
     & RallarCallStartInput
     & Readonly<{
-    message?: string;
-}>;
+        message?: string;
+    }>;
 
 export type RallarCallSignalSend = Readonly<{
     peerId: string;
@@ -148,20 +139,22 @@ export type RallarCallSignalEvent = Readonly<{
     raw: RallarMessage<RallarCallSignalPayload>;
 }>;
 
-export type RallarIncomingCallInvite = RallarCallSignalEvent & Readonly<{
-    kind: 'invite';
-    accept(
-        input?: Partial<RallarCallStartInput>,
-    ): Promise<RallarCallHandle>;
-    decline(reason?: string): Promise<readonly RallarCallSignalSend[]>;
-}>;
+export type RallarIncomingCallInvite =
+    & RallarCallSignalEvent
+    & Readonly<{
+        kind: 'invite';
+        accept(
+            input?: Partial<RallarCallStartInput>
+        ): Promise<RallarCallHandle>;
+        decline(reason?: string): Promise<readonly RallarCallSignalSend[]>;
+    }>;
 
 export type RallarCallSignalListener = (
-    event: RallarCallSignalEvent,
+    event: RallarCallSignalEvent
 ) => void | Promise<void>;
 
 export type RallarCallInviteListener = (
-    invite: RallarIncomingCallInvite,
+    invite: RallarIncomingCallInvite
 ) => void | Promise<void>;
 
 export type RallarCallHandle = Readonly<{
@@ -169,7 +162,7 @@ export type RallarCallHandle = Readonly<{
     status(): RallarCallStatus;
     wait(options?: RallarCallWaitOptions): Promise<RallarCallStatus>;
     channel<T>(
-        definition?: Partial<RallarTargetedChannelDefinition>,
+        definition?: Partial<RallarTargetedChannelDefinition>
     ): RallarTargetedChannel<T>;
     setLocalStream(stream: MediaStream): Promise<void>;
     setAudioEnabled(enabled: boolean): Promise<void>;
@@ -189,16 +182,12 @@ export type RallarCallsFacade = Readonly<{
 export type CreateRallarCallsFacadeOptions = RallarCallsFacade;
 
 export function createRallarCallsFacade(
-    operations: CreateRallarCallsFacadeOptions,
+    operations: CreateRallarCallsFacadeOptions
 ): RallarCallsFacade {
     return {
-        start: async (input): Promise<RallarCallHandle> =>
-            await operations.start(input),
-        invite: async (input): Promise<RallarCallInviteResult> =>
-            await operations.invite(input),
-        onInvite: (listener): RallarUnsubscribe =>
-            operations.onInvite(listener),
-        onSignal: (listener): RallarUnsubscribe =>
-            operations.onSignal(listener),
+        start: async (input): Promise<RallarCallHandle> => await operations.start(input),
+        invite: async (input): Promise<RallarCallInviteResult> => await operations.invite(input),
+        onInvite: (listener): RallarUnsubscribe => operations.onInvite(listener),
+        onSignal: (listener): RallarUnsubscribe => operations.onSignal(listener)
     };
 }

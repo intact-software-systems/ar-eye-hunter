@@ -1,15 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-    DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS,
-    DEFAULT_FLEET_REPORT_DERIVATION_POLICY,
-    FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL,
-    RALLAR_BLACK_BOX_FLEET_REPORT_BUNDLE_MAX_BYTES,
-    RALLAR_BLACK_BOX_FLEET_REPORT_FILE_MAX_BYTES,
-    RALLAR_BLACK_BOX_FLEET_REPORT_VALIDATION_MAX_ISSUES,
-    RALLAR_BLACK_BOX_FLEET_REPORT_VALIDATION_MAX_ISSUE_TEXT_LENGTH,
     createFleetGeographyHistoricalCollection,
     createFleetReportAnalysisCollection,
     createFleetReportAnalysisWork,
+    DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS,
+    DEFAULT_FLEET_REPORT_DERIVATION_POLICY,
     deriveFleetGeography,
     deriveFleetGeographyFromHistoricalCollection,
     deriveFleetReportAgentDetail,
@@ -18,31 +13,36 @@ import {
     deriveFleetReportAnalysisFromCollection,
     deriveFleetReportDisplaySummary,
     deriveFleetReportFailureRows,
+    deriveFleetReportFailureWindow,
     deriveFleetReportHeatmapRows,
     deriveFleetReportHeatmapWindow,
-    deriveFleetReportFailureWindow,
     deriveFleetReportMissingLabelAgentIds,
     deriveFleetReportMissingLabelAgentIdWindow,
+    deriveFleetReportRecipeTimingWindow,
     deriveFleetReportRegionRows,
     deriveFleetReportRegionTimingWindow,
     deriveFleetReportRegionWindow,
-    deriveFleetReportRecipeTimingWindow,
     deriveFleetReportTimingDistribution,
     deriveFleetReportTimingGroupsByRecipe,
     deriveFleetReportTimingGroupsByRegion,
+    FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL,
     fleetGeographyRouteEvidenceFromControlRun,
+    RALLAR_BLACK_BOX_FLEET_REPORT_BUNDLE_MAX_BYTES,
+    RALLAR_BLACK_BOX_FLEET_REPORT_FILE_MAX_BYTES,
+    RALLAR_BLACK_BOX_FLEET_REPORT_VALIDATION_MAX_ISSUE_TEXT_LENGTH,
+    RALLAR_BLACK_BOX_FLEET_REPORT_VALIDATION_MAX_ISSUES,
     resolveFleetGeographyDocumentedLocation,
     sortFleetRunReports,
     validateControlFleetReportBundle,
-    validateControlFleetRunReportCollection,
     validateControlFleetReportsResponse,
     validateControlFleetRunReport,
+    validateControlFleetRunReportCollection
 } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
 import type {
     ControlFleetReportBundleValidationResult,
+    ControlFleetReportsResponseValidationResult,
     ControlFleetReportValidationIssue,
     ControlFleetReportValidationIssueCode,
-    ControlFleetReportsResponseValidationResult,
     ControlFleetRunReportCollectionValidationResult,
     ControlFleetRunReportValidationResult,
     DeriveFleetGeographyInput,
@@ -50,9 +50,9 @@ import type {
     FleetGeographyDocumentedLocation,
     FleetGeographyDocumentedLocationInput,
     FleetGeographyDocumentedLocationSource,
-    FleetGeographyHistoricalOutcome,
     FleetGeographyHistoricalCollection,
     FleetGeographyHistoricalCollectionWork,
+    FleetGeographyHistoricalOutcome,
     FleetGeographyLiveAgentEvidence,
     FleetGeographyLiveState,
     FleetGeographyLocation,
@@ -78,7 +78,7 @@ import type {
     FleetReportHeatmapWindowRequest,
     FleetReportTimingGroup,
     FleetReportWindow,
-    FleetReportWindowRequest,
+    FleetReportWindowRequest
 } from '../../../packages/shared-test/rallar-bb-test/mod.ts';
 
 type PublicFleetTypeSurface = Readonly<{
@@ -154,18 +154,18 @@ const PUBLIC_FLEET_FUNCTIONS = [
     deriveFleetGeography,
     deriveFleetGeographyFromHistoricalCollection,
     fleetGeographyRouteEvidenceFromControlRun,
-    resolveFleetGeographyDocumentedLocation,
+    resolveFleetGeographyDocumentedLocation
 ] as const;
 
 describe('fleet report public surface', () => {
     it('exports every additive Fleet value through the package barrel', () => {
-        expect(PUBLIC_FLEET_FUNCTIONS.every(value => typeof value === 'function'))
+        expect(PUBLIC_FLEET_FUNCTIONS.every((value) => typeof value === 'function'))
             .toBe(true);
         expect(DEFAULT_FLEET_REPORT_DERIVATION_POLICY).toEqual({
             reportOrder: 'deterministic',
             timedOutAsFailed: true,
             stableTieBreaks: true,
-            textCollation: 'code-unit',
+            textCollation: 'code-unit'
         });
         expect(DEFAULT_FLEET_REPORT_ANALYSIS_LIMITS).toEqual({
             heatmapAgentRows: 32,
@@ -174,10 +174,10 @@ describe('fleet report public surface', () => {
             failureRows: 24,
             timingGroups: 24,
             missingLabelAgentIds: 40,
-            agentDetailRuns: 12,
+            agentDetailRuns: 12
         });
         expect(FLEET_GEOGRAPHY_ROUTE_EVIDENCE_LABEL).toContain(
-            'not a complete network topology',
+            'not a complete network topology'
         );
         expect(RALLAR_BLACK_BOX_FLEET_REPORT_VALIDATION_MAX_ISSUES).toBe(64);
         expect(RALLAR_BLACK_BOX_FLEET_REPORT_VALIDATION_MAX_ISSUE_TEXT_LENGTH)
@@ -189,9 +189,8 @@ describe('fleet report public surface', () => {
     });
 
     it('keeps every additive Fleet type available from the package barrel', () => {
-        const typeSurfaceCompiles = true as PublicFleetTypeSurface extends object
-            ? true
-            : false;
+        const typeSurfaceCompiles = true as PublicFleetTypeSurface extends object ? true :
+            false;
         expect(typeSurfaceCompiles).toBe(true);
     });
 });

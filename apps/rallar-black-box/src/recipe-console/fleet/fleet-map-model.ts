@@ -2,22 +2,16 @@ import type {
     FleetGeographyAgentEvidence,
     FleetGeographyModel,
     FleetGeographyRegionEvidence,
-    FleetGeographyRoute,
+    FleetGeographyRoute
 } from '@shared-test/rallar-bb-test/fleet-geography.ts';
-import {
-    projectWorldCoordinate,
-    type WorldMapPoint,
-} from '../../world-map-projection.ts';
-import {
-    RECIPE_CONSOLE_FLEET_MAP_LAYERS,
-    type RecipeConsoleFleetMapLayer,
-} from '../routing/url-state-contract.ts';
+import { projectWorldCoordinate, type WorldMapPoint } from '../../world-map-projection.ts';
+import { RECIPE_CONSOLE_FLEET_MAP_LAYERS, type RecipeConsoleFleetMapLayer } from '../routing/url-state-contract.ts';
 
 export const FLEET_MAP_RENDER_BUDGETS = {
     agents: 40,
     regions: 24,
     routes: 32,
-    failures: 40,
+    failures: 40
 } as const;
 
 export type FleetMapEvidenceSeverity = 'critical' | 'warning' | 'neutral';
@@ -37,26 +31,34 @@ type FleetMapOrderedItem = Readonly<{
     selected: boolean;
 }>;
 
-export type FleetMapAgentMarker = FleetMapOrderedItem & Readonly<{
-    point: WorldMapPoint;
-    agent: FleetGeographyAgentEvidence;
-}>;
+export type FleetMapAgentMarker =
+    & FleetMapOrderedItem
+    & Readonly<{
+        point: WorldMapPoint;
+        agent: FleetGeographyAgentEvidence;
+    }>;
 
-export type FleetMapRegionMarker = FleetMapOrderedItem & Readonly<{
-    point: WorldMapPoint;
-    region: FleetGeographyRegionEvidence;
-}>;
+export type FleetMapRegionMarker =
+    & FleetMapOrderedItem
+    & Readonly<{
+        point: WorldMapPoint;
+        region: FleetGeographyRegionEvidence;
+    }>;
 
-export type FleetMapRoutePath = FleetMapOrderedItem & Readonly<{
-    sourcePoint: WorldMapPoint;
-    targetPoint: WorldMapPoint;
-    route: FleetGeographyRoute;
-}>;
+export type FleetMapRoutePath =
+    & FleetMapOrderedItem
+    & Readonly<{
+        sourcePoint: WorldMapPoint;
+        targetPoint: WorldMapPoint;
+        route: FleetGeographyRoute;
+    }>;
 
-export type FleetMapFailureMarker = FleetMapOrderedItem & Readonly<{
-    point: WorldMapPoint;
-    agent: FleetGeographyAgentEvidence;
-}>;
+export type FleetMapFailureMarker =
+    & FleetMapOrderedItem
+    & Readonly<{
+        point: WorldMapPoint;
+        agent: FleetGeographyAgentEvidence;
+    }>;
 
 export type FleetMapModel = Readonly<{
     enabledLayers: readonly RecipeConsoleFleetMapLayer[];
@@ -86,27 +88,31 @@ export type DeriveFleetMapModelOptions = Readonly<{
 
 export function deriveFleetMapModel(
     geography: FleetGeographyModel,
-    options: DeriveFleetMapModelOptions = {},
+    options: DeriveFleetMapModelOptions = {}
 ): FleetMapModel {
     const enabledLayers = canonicalLayers(options.layers);
     const enabled = new Set(enabledLayers);
-    const agentMarkers = geography.agents.flatMap(agent => {
-        if (!agent.live || !agent.location) return [];
+    const agentMarkers = geography.agents.flatMap((agent) => {
+        if (!agent.live || !agent.location) {
+            return [];
+        }
         const recencyEpochMs = latestDefined([
             agent.live.observedAtEpochMs,
             agent.live.lastSeenAtEpochMs,
-            agent.live.lastHeartbeatAtEpochMs,
+            agent.live.lastHeartbeatAtEpochMs
         ]);
-        return [{
-            id: collisionSafeId('agent', agent.agentId),
-            severity: liveAgentSeverity(agent),
-            ...(recencyEpochMs === undefined ? {} : { recencyEpochMs }),
-            selected: agent.agentId === options.selectedAgentId,
-            point: projectWorldCoordinate(agent.location),
-            agent,
-        } satisfies FleetMapAgentMarker];
+        return [
+            {
+                id: collisionSafeId('agent', agent.agentId),
+                severity: liveAgentSeverity(agent),
+                ...(recencyEpochMs === undefined ? {} : { recencyEpochMs }),
+                selected: agent.agentId === options.selectedAgentId,
+                point: projectWorldCoordinate(agent.location),
+                agent
+            } satisfies FleetMapAgentMarker
+        ];
     }).sort(compareOrderedItems);
-    const regionMarkers = geography.regions.map(region => {
+    const regionMarkers = geography.regions.map((region) => {
         const recencyEpochMs = region.location.generatedAtEpochMs ??
             region.location.observedAtEpochMs;
         return {
@@ -115,10 +121,10 @@ export function deriveFleetMapModel(
             ...(recencyEpochMs === undefined ? {} : { recencyEpochMs }),
             selected: region.region === options.selectedRegion,
             point: projectWorldCoordinate(region.location),
-            region,
+            region
         } satisfies FleetMapRegionMarker;
     }).sort(compareOrderedItems);
-    const routePaths = geography.routes.map(route => ({
+    const routePaths = geography.routes.map((route) => ({
         id: collisionSafeId('route', route.routeId),
         severity: route.failedCount > 0 ? 'critical' : 'neutral',
         ...(route.lastSeenAtEpochMs === undefined
@@ -127,18 +133,22 @@ export function deriveFleetMapModel(
         selected: false,
         sourcePoint: projectWorldCoordinate(route.source),
         targetPoint: projectWorldCoordinate(route.target),
-        route,
+        route
     } satisfies FleetMapRoutePath)).sort(compareOrderedItems);
-    const failureMarkers = geography.agents.flatMap(agent => {
-        if (!agent.location || !hasHistoricalFailure(agent)) return [];
-        return [{
-            id: collisionSafeId('failure', agent.agentId),
-            severity: failureSeverity(agent),
-            recencyEpochMs: agent.historical!.latest.generatedAtEpochMs,
-            selected: agent.agentId === options.selectedAgentId,
-            point: projectWorldCoordinate(agent.location),
-            agent,
-        } satisfies FleetMapFailureMarker];
+    const failureMarkers = geography.agents.flatMap((agent) => {
+        if (!agent.location || !hasHistoricalFailure(agent)) {
+            return [];
+        }
+        return [
+            {
+                id: collisionSafeId('failure', agent.agentId),
+                severity: failureSeverity(agent),
+                recencyEpochMs: agent.historical!.latest.generatedAtEpochMs,
+                selected: agent.agentId === options.selectedAgentId,
+                point: projectWorldCoordinate(agent.location),
+                agent
+            } satisfies FleetMapFailureMarker
+        ];
     }).sort(compareOrderedItems);
 
     return {
@@ -146,60 +156,59 @@ export function deriveFleetMapModel(
         resolvedEvidence: {
             agentMarkers,
             regionMarkers,
-            failureMarkers,
+            failureMarkers
         },
         agentMarkers: boundedLayer(
             agentMarkers,
             enabled.has('live-agents'),
-            FLEET_MAP_RENDER_BUDGETS.agents,
+            FLEET_MAP_RENDER_BUDGETS.agents
         ),
         regionMarkers: boundedLayer(
             regionMarkers,
             enabled.has('historical-regions'),
-            FLEET_MAP_RENDER_BUDGETS.regions,
+            FLEET_MAP_RENDER_BUDGETS.regions
         ),
         routePaths: boundedLayer(
             routePaths,
             enabled.has('observed-routes'),
-            FLEET_MAP_RENDER_BUDGETS.routes,
+            FLEET_MAP_RENDER_BUDGETS.routes
         ),
         failureMarkers: boundedLayer(
             failureMarkers,
             enabled.has('failures'),
-            FLEET_MAP_RENDER_BUDGETS.failures,
+            FLEET_MAP_RENDER_BUDGETS.failures
         ),
         unresolved: {
             agentIds: [...geography.unresolvedAgentIds].sort(compareText),
             routeEndpointAgentIds: [
-                ...geography.routeEvidence.unresolvedEndpointAgentIds,
+                ...geography.routeEvidence.unresolvedEndpointAgentIds
             ].sort(compareText),
-            routeObservationCount:
-                geography.routeEvidence.unresolvedEndpointObservationCount,
+            routeObservationCount: geography.routeEvidence.unresolvedEndpointObservationCount,
             routeEvidenceLabel: geography.routeEvidence.label,
-            topologyComplete: false,
-        },
+            topologyComplete: false
+        }
     };
 }
 
 function canonicalLayers(
-    layers: readonly RecipeConsoleFleetMapLayer[] | undefined,
+    layers: readonly RecipeConsoleFleetMapLayer[] | undefined
 ): readonly RecipeConsoleFleetMapLayer[] {
     if (layers === undefined) {
         return [...RECIPE_CONSOLE_FLEET_MAP_LAYERS];
     }
     const selected = new Set(layers);
-    return RECIPE_CONSOLE_FLEET_MAP_LAYERS.filter(layer => selected.has(layer));
+    return RECIPE_CONSOLE_FLEET_MAP_LAYERS.filter((layer) => selected.has(layer));
 }
 
 function boundedLayer<Item extends FleetMapOrderedItem>(
     candidates: readonly Item[],
     enabled: boolean,
-    budget: number,
+    budget: number
 ): FleetMapLayerProjection<Item> {
-    const ordered = candidates.some(candidate => candidate.selected)
+    const ordered = candidates.some((candidate) => candidate.selected)
         ? [
-            ...candidates.filter(candidate => candidate.selected),
-            ...candidates.filter(candidate => !candidate.selected),
+            ...candidates.filter((candidate) => candidate.selected),
+            ...candidates.filter((candidate) => !candidate.selected)
         ]
         : candidates;
     const items = enabled ? ordered.slice(0, budget) : [];
@@ -208,14 +217,16 @@ function boundedLayer<Item extends FleetMapOrderedItem>(
         candidateCount: candidates.length,
         renderedCount: items.length,
         omittedCount: candidates.length - items.length,
-        items,
+        items
     };
 }
 
 function liveAgentSeverity(
-    agent: FleetGeographyAgentEvidence,
+    agent: FleetGeographyAgentEvidence
 ): FleetMapEvidenceSeverity {
-    if (agent.live?.state === 'offline') return 'critical';
+    if (agent.live?.state === 'offline') {
+        return 'critical';
+    }
     if (agent.live?.state === 'stale' || agent.live?.state === 'unknown') {
         return 'warning';
     }
@@ -223,10 +234,14 @@ function liveAgentSeverity(
 }
 
 function regionSeverity(
-    region: FleetGeographyRegionEvidence,
+    region: FleetGeographyRegionEvidence
 ): FleetMapEvidenceSeverity {
-    if (region.failed > 0) return 'critical';
-    if (region.missing > 0 || region.stale > 0) return 'warning';
+    if (region.failed > 0) {
+        return 'critical';
+    }
+    if (region.missing > 0 || region.stale > 0) {
+        return 'warning';
+    }
     return 'neutral';
 }
 
@@ -240,7 +255,7 @@ function hasHistoricalFailure(agent: FleetGeographyAgentEvidence): boolean {
 }
 
 function failureSeverity(
-    agent: FleetGeographyAgentEvidence,
+    agent: FleetGeographyAgentEvidence
 ): FleetMapEvidenceSeverity {
     const latest = agent.historical?.latest;
     return latest && (
@@ -253,28 +268,38 @@ function failureSeverity(
 
 function compareOrderedItems(
     left: FleetMapOrderedItem,
-    right: FleetMapOrderedItem,
+    right: FleetMapOrderedItem
 ): number {
     return severityRank(right.severity) - severityRank(left.severity) ||
         compareOptionalNumberDescending(
             left.recencyEpochMs,
-            right.recencyEpochMs,
+            right.recencyEpochMs
         ) || compareText(left.id, right.id);
 }
 
 function severityRank(severity: FleetMapEvidenceSeverity): number {
-    if (severity === 'critical') return 2;
-    if (severity === 'warning') return 1;
+    if (severity === 'critical') {
+        return 2;
+    }
+    if (severity === 'warning') {
+        return 1;
+    }
     return 0;
 }
 
 function compareOptionalNumberDescending(
     left: number | undefined,
-    right: number | undefined,
+    right: number | undefined
 ): number {
-    if (left === right) return 0;
-    if (left === undefined) return 1;
-    if (right === undefined) return -1;
+    if (left === right) {
+        return 0;
+    }
+    if (left === undefined) {
+        return 1;
+    }
+    if (right === undefined) {
+        return -1;
+    }
     return left > right ? -1 : 1;
 }
 

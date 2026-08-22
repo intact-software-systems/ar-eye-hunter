@@ -17,12 +17,13 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         id: 'shell-navigation-global-context',
         tab: 'quick-test',
         workspace: 'rallar',
-        intent: 'Exercise direct-mode shell defaults, workspace switching, trace, Global Context, and persisted UI state.',
+        intent:
+            'Exercise direct-mode shell defaults, workspace switching, trace, Global Context, and persisted UI state.',
         specFile: 'exhaustive-shell-navigation.spec.ts',
         liveBackend: true,
         requiresControl: false,
         requiresMedia: false,
-        evidence: ['mode switch', 'global context', 'trace strip', 'redacted storage'],
+        evidence: ['mode switch', 'global context', 'trace strip', 'redacted storage']
     },
     {
         id: 'auth-login-negative-ticket-restore',
@@ -33,7 +34,7 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: true,
         requiresControl: false,
         requiresMedia: false,
-        evidence: ['login shell', 'bad credentials', 'ws ticket', 'logout'],
+        evidence: ['login shell', 'bad credentials', 'ws ticket', 'logout']
     },
     {
         id: 'groups-clients-state-events',
@@ -44,7 +45,7 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: true,
         requiresControl: false,
         requiresMedia: false,
-        evidence: ['group row', 'client row', 'event page', 'principal mismatch'],
+        evidence: ['group row', 'client row', 'event page', 'principal mismatch']
     },
     {
         id: 'quick-test-ws-receive-repeat',
@@ -55,7 +56,7 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: true,
         requiresControl: false,
         requiresMedia: false,
-        evidence: ['received message', 'copy diagnostics', 'runner recipe'],
+        evidence: ['received message', 'copy diagnostics', 'runner recipe']
     },
     {
         id: 'websocket-command-center',
@@ -66,7 +67,7 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: true,
         requiresControl: false,
         requiresMedia: false,
-        evidence: ['ws ticket', 'open result', 'send result', 'missing ticket failure'],
+        evidence: ['ws ticket', 'open result', 'send result', 'missing ticket failure']
     },
     {
         id: 'rtc-realtime-direct-facade',
@@ -77,7 +78,7 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: true,
         requiresControl: false,
         requiresMedia: false,
-        evidence: ['rtc status', 'lane readiness', 'nack evidence', 'topology route'],
+        evidence: ['rtc status', 'lane readiness', 'nack evidence', 'topology route']
     },
     {
         id: 'rallar-data-operations',
@@ -88,7 +89,7 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: true,
         requiresControl: false,
         requiresMedia: false,
-        evidence: ['write result', 'compare-and-set', 'change events', 'storage estimate'],
+        evidence: ['write result', 'compare-and-set', 'change events', 'storage estimate']
     },
     {
         id: 'crdt-health-editor-admin',
@@ -99,18 +100,19 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: true,
         requiresControl: false,
         requiresMedia: false,
-        evidence: ['editor action', 'admin health', 'document table', 'failure state'],
+        evidence: ['editor action', 'admin health', 'document table', 'failure state']
     },
     {
         id: 'media-fake-device-console',
         tab: 'media',
         workspace: 'rallar',
-        intent: 'Attach fake media devices, toggle tracks, apply policy, subscribe remote streams, and copy diagnostics.',
+        intent:
+            'Attach fake media devices, toggle tracks, apply policy, subscribe remote streams, and copy diagnostics.',
         specFile: 'exhaustive-rallar-data-crdt-media.spec.ts',
         liveBackend: true,
         requiresControl: false,
         requiresMedia: true,
-        evidence: ['local stream', 'track toggles', 'policy result', 'diagnostics'],
+        evidence: ['local stream', 'track toggles', 'policy result', 'diagnostics']
     },
     {
         id: 'rallar-server-rest-workbench',
@@ -121,62 +123,67 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: true,
         requiresControl: false,
         requiresMedia: false,
-        evidence: ['status response', 'curl redaction', 'command preview', 'collection extraction'],
+        evidence: ['status response', 'curl redaction', 'command preview', 'collection extraction']
     },
     {
         id: 'runner-recipes-primary-launcher',
         tab: 'recipes',
         workspace: 'black-box-runner',
-        intent: 'Open the primary runner Recipes launcher, verify readiness statuses, one-click local launch affordances, and guided distributed launch blockers.',
+        intent:
+            'Open the primary runner Recipes launcher, verify readiness statuses, one-click local launch affordances, and guided distributed launch blockers.',
         specFile: 'exhaustive-runner-workbench.spec.ts',
         liveBackend: true,
         requiresControl: true,
         requiresMedia: false,
-        evidence: ['readiness panel', 'targetable agents', 'recipe card', 'distributed disabled reason'],
+        evidence: ['readiness panel', 'targetable agents', 'recipe card', 'distributed disabled reason']
     },
     {
         id: 'runner-runs-results-monitor',
         tab: 'runs',
         workspace: 'black-box-runner',
-        intent: 'Inspect current and recent runner results, failures, reports, and control state from the simplified Runs surface.',
+        intent:
+            'Inspect current and recent runner results, failures, reports, and control state from the simplified Runs surface.',
         specFile: 'exhaustive-runner-workbench.spec.ts',
         liveBackend: true,
         requiresControl: true,
         requiresMedia: false,
-        evidence: ['run metrics', 'run participants', 'recent command', 'report panel'],
+        evidence: ['run metrics', 'run participants', 'recent command', 'report panel']
     },
     {
         id: 'runner-fleet-regional-reporting',
         tab: 'fleet',
         workspace: 'black-box-runner',
-        intent: 'Inspect cross-run fleet reporting with agent heatmaps, region summaries, repeated failures, timing distributions, and shareable exports.',
+        intent:
+            'Inspect cross-run fleet reporting with agent heatmaps, region summaries, repeated failures, timing distributions, and shareable exports.',
         specFile: 'exhaustive-control-distributed.spec.ts',
         liveBackend: true,
         requiresControl: true,
         requiresMedia: false,
-        evidence: ['live fleet', 'agent heatmap', 'region summary', 'fleet export'],
+        evidence: ['live fleet', 'agent heatmap', 'region summary', 'fleet export']
     },
     {
         id: 'runner-builder-primary-flow',
         tab: 'builder',
         workspace: 'black-box-runner',
-        intent: 'Use the primary Builder tab to create flows, preview recipes, and export runner scenarios without entering Advanced.',
+        intent:
+            'Use the primary Builder tab to create flows, preview recipes, and export runner scenarios without entering Advanced.',
         specFile: 'exhaustive-runner-workbench.spec.ts',
         liveBackend: true,
         requiresControl: false,
         requiresMedia: false,
-        evidence: ['builder template', 'recipe preview', 'runner scenario', 'run flow'],
+        evidence: ['builder template', 'recipe preview', 'runner scenario', 'run flow']
     },
     {
         id: 'runner-advanced-raw-controls',
         tab: 'advanced',
         workspace: 'black-box-runner',
-        intent: 'Verify raw Manual Rallar, Local Workbench, Run Manager, Distributed Recipes, and Shared Test controls remain reachable under Advanced.',
+        intent:
+            'Verify raw Manual Rallar, Local Workbench, Run Manager, Distributed Recipes, and Shared Test controls remain reachable under Advanced.',
         specFile: 'exhaustive-runner-workbench.spec.ts',
         liveBackend: true,
         requiresControl: true,
         requiresMedia: false,
-        evidence: ['advanced switch', 'local workbench', 'run manager', 'distributed recipes'],
+        evidence: ['advanced switch', 'local workbench', 'run manager', 'distributed recipes']
     },
     {
         id: 'manual-rallar-runner-workbench',
@@ -187,7 +194,7 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: true,
         requiresControl: false,
         requiresMedia: false,
-        evidence: ['command preview', 'received inbox', 'history row', 'recipe snippet'],
+        evidence: ['command preview', 'received inbox', 'history row', 'recipe snippet']
     },
     {
         id: 'local-workbench-recipes',
@@ -198,7 +205,7 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: true,
         requiresControl: false,
         requiresMedia: false,
-        evidence: ['loaded recipe', 'command queue', 'completed command', 'report snapshot'],
+        evidence: ['loaded recipe', 'command queue', 'completed command', 'report snapshot']
     },
     {
         id: 'flow-builder-recipes',
@@ -209,7 +216,7 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: true,
         requiresControl: false,
         requiresMedia: false,
-        evidence: ['flow preview', 'run flow', 'SPA recipe', 'runner scenario'],
+        evidence: ['flow preview', 'run flow', 'SPA recipe', 'runner scenario']
     },
     {
         id: 'shared-test-catalog-artifacts',
@@ -220,7 +227,7 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: false,
         requiresControl: false,
         requiresMedia: false,
-        evidence: ['catalog row', 'copy command', 'valid artifact', 'invalid artifact'],
+        evidence: ['catalog row', 'copy command', 'valid artifact', 'invalid artifact']
     },
     {
         id: 'run-manager-control-artifacts',
@@ -231,7 +238,7 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: true,
         requiresControl: true,
         requiresMedia: false,
-        evidence: ['registered agents', 'queued command', 'result snapshot', 'artifact bundle'],
+        evidence: ['registered agents', 'queued command', 'result snapshot', 'artifact bundle']
     },
     {
         id: 'distributed-recipes-control-run',
@@ -242,7 +249,7 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: true,
         requiresControl: true,
         requiresMedia: false,
-        evidence: ['target resolution', 'manifest preview', 'run monitor', 'history/compare'],
+        evidence: ['target resolution', 'manifest preview', 'run monitor', 'history/compare']
     },
     {
         id: 'event-stream-focus-filters',
@@ -253,7 +260,7 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: true,
         requiresControl: false,
         requiresMedia: false,
-        evidence: ['kind filter', 'topic filter', 'window size', 'current focus'],
+        evidence: ['kind filter', 'topic filter', 'window size', 'current focus']
     },
     {
         id: 'rallar-trace-redacted-events',
@@ -264,7 +271,7 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: true,
         requiresControl: false,
         requiresMedia: false,
-        evidence: ['trace filter', 'severity metrics', 'payload JSON', 'redaction'],
+        evidence: ['trace filter', 'severity metrics', 'payload JSON', 'redaction']
     },
     {
         id: 'rtc-diagnostics-stages',
@@ -275,7 +282,7 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: true,
         requiresControl: false,
         requiresMedia: false,
-        evidence: ['stage list', 'lane health', 'warning filters', 'first payload'],
+        evidence: ['stage list', 'lane health', 'warning filters', 'first payload']
     },
     {
         id: 'topology-routes-search',
@@ -286,19 +293,19 @@ export const EXHAUSTIVE_UI_COVERAGE_MATRIX: readonly ExhaustiveUiCoverageRow[] =
         liveBackend: true,
         requiresControl: false,
         requiresMedia: false,
-        evidence: ['node counts', 'search', 'status filter', 'route command link'],
-    },
+        evidence: ['node counts', 'search', 'status filter', 'route command link']
+    }
 ] as const;
 
 export function exhaustiveUiCoverageRowsForTab(
     tab: AppTabId,
-    matrix: readonly ExhaustiveUiCoverageRow[] = EXHAUSTIVE_UI_COVERAGE_MATRIX,
+    matrix: readonly ExhaustiveUiCoverageRow[] = EXHAUSTIVE_UI_COVERAGE_MATRIX
 ): readonly ExhaustiveUiCoverageRow[] {
     return matrix.filter((row) => row.tab === tab);
 }
 
 export function exhaustiveUiCoverageSpecFiles(
-    matrix: readonly ExhaustiveUiCoverageRow[] = EXHAUSTIVE_UI_COVERAGE_MATRIX,
+    matrix: readonly ExhaustiveUiCoverageRow[] = EXHAUSTIVE_UI_COVERAGE_MATRIX
 ): readonly string[] {
     return [...new Set(matrix.map((row) => row.specFile))].sort();
 }

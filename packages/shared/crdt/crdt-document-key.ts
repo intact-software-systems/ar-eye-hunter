@@ -1,8 +1,8 @@
-import type { RallarCrdtDocumentRef } from './crdt-types.ts';
 import { canonicalRallarCrdtJson, hashRallarCrdtJson } from './crdt-hash.ts';
+import type { RallarCrdtDocumentRef } from './crdt-types.ts';
 
 export function normalizeRallarCrdtDocumentRef(
-    ref: RallarCrdtDocumentRef,
+    ref: RallarCrdtDocumentRef
 ): Record<string, unknown> {
     return {
         applicationId: ref.applicationId,
@@ -12,13 +12,13 @@ export function normalizeRallarCrdtDocumentRef(
         documentId: ref.documentId,
         roomRef: ref.roomRef
             ? {
-                  applicationId: ref.roomRef.applicationId,
-                  workspaceId: ref.roomRef.workspaceId ?? null,
-                  groupId: ref.roomRef.groupId,
-              }
+                applicationId: ref.roomRef.applicationId,
+                workspaceId: ref.roomRef.workspaceId ?? null,
+                groupId: ref.roomRef.groupId
+            }
             : null,
         principalId: ref.principalId ?? null,
-        customScope: ref.customScope ?? null,
+        customScope: ref.customScope ?? null
     };
 }
 
@@ -29,7 +29,7 @@ export function toRallarCrdtDocumentKey(ref: RallarCrdtDocumentRef): string {
         normalized.workspaceId,
         normalized.scope,
         normalized.documentType,
-        normalized.documentId,
+        normalized.documentId
     ]
         .map((part) => encodeURIComponent(String(part ?? '')))
         .join(':');
@@ -38,7 +38,7 @@ export function toRallarCrdtDocumentKey(ref: RallarCrdtDocumentRef): string {
 }
 
 export function canonicalRallarCrdtDocumentRef(
-    ref: RallarCrdtDocumentRef,
+    ref: RallarCrdtDocumentRef
 ): string {
     return canonicalRallarCrdtJson(normalizeRallarCrdtDocumentRef(ref));
 }

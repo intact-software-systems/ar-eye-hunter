@@ -14,7 +14,7 @@ const ignoredDirectoryNames = new Set([
     'node_modules',
     'playwright-report',
     'test-results',
-    'tmp',
+    'tmp'
 ]);
 
 type DependencyMap = Record<string, string>;
@@ -50,11 +50,11 @@ describe('native TypeScript 7 repository boundaries', () => {
                                 dependency,
                                 manifest: relativePath(manifestPath),
                                 section,
-                                version,
-                            }),
-                        ),
+                                version
+                            })
+                        )
                 );
-            },
+            }
         );
 
         expect(
@@ -62,45 +62,45 @@ describe('native TypeScript 7 repository boundaries', () => {
                 ({ dependency, version }) =>
                     dependency === '@typescript/typescript6' ||
                     version.includes('@typescript/typescript6') ||
-                    /^npm:typescript@(?:\D*)?[56](?:\.|$)/.test(version),
-            ),
+                    /^npm:typescript@(?:\D*)?[56](?:\.|$)/.test(version)
+            )
         ).toEqual([]);
 
         expect(
             declarations.filter(
-                ({ dependency }) => dependency === 'typescript',
-            ),
+                ({ dependency }) => dependency === 'typescript'
+            )
         ).toEqual([
             {
                 dependency: 'typescript',
                 manifest: 'apps/ar-eye-hunter-v1/package.json',
                 section: 'devDependencies',
-                version: expectedTypeScriptVersion,
+                version: expectedTypeScriptVersion
             },
             {
                 dependency: 'typescript',
                 manifest: 'apps/rallar-black-box/package.json',
                 section: 'devDependencies',
-                version: expectedTypeScriptVersion,
+                version: expectedTypeScriptVersion
             },
             {
                 dependency: 'typescript',
                 manifest: 'apps/rallar-black-box-headless/package.json',
                 section: 'devDependencies',
-                version: expectedTypeScriptVersion,
+                version: expectedTypeScriptVersion
             },
             {
                 dependency: 'typescript',
                 manifest: 'apps/relic-hunters-v1/package.json',
                 section: 'devDependencies',
-                version: expectedTypeScriptVersion,
+                version: expectedTypeScriptVersion
             },
             {
                 dependency: 'typescript',
                 manifest: 'package.json',
                 section: 'devDependencies',
-                version: expectedTypeScriptVersion,
-            },
+                version: expectedTypeScriptVersion
+            }
         ]);
     });
 
@@ -108,13 +108,11 @@ describe('native TypeScript 7 repository boundaries', () => {
         const denoOnlyConfigs = [
             'apps/api-v1/tsconfig.json',
             'apps/rallar-black-box-control-server/tsconfig.json',
-            'apps/relic-hunter-server-v1/tsconfig.json',
+            'apps/relic-hunter-server-v1/tsconfig.json'
         ];
 
         expect(
-            denoOnlyConfigs.filter((configPath) =>
-                existsSync(path.join(repositoryRoot, configPath)),
-            ),
+            denoOnlyConfigs.filter((configPath) => existsSync(path.join(repositoryRoot, configPath)))
         ).toEqual([]);
 
         const configProblems = findTypeScriptConfigs().flatMap((configPath) => {
@@ -138,23 +136,25 @@ describe('native TypeScript 7 repository boundaries', () => {
                 problems.push('does not declare ambient types explicitly');
             }
 
-            for (const [mapping, substitutions] of Object.entries(
-                compilerOptions.paths ?? {},
-            )) {
+            for (
+                const [mapping, substitutions] of Object.entries(
+                    compilerOptions.paths ?? {}
+                )
+            ) {
                 for (const substitution of substitutions) {
                     if (
                         !substitution.startsWith('./') &&
                         !substitution.startsWith('../')
                     ) {
                         problems.push(
-                            `maps ${mapping} to non-relative substitution ${substitution}`,
+                            `maps ${mapping} to non-relative substitution ${substitution}`
                         );
                     }
                 }
             }
 
             return problems.map(
-                (problem) => `${relativePath(configPath)}: ${problem}`,
+                (problem) => `${relativePath(configPath)}: ${problem}`
             );
         });
 
@@ -162,8 +162,7 @@ describe('native TypeScript 7 repository boundaries', () => {
     });
 
     it('does not import TypeScript compiler APIs', () => {
-        const compilerApiImport =
-            /(?:\bfrom\s+|\bimport\s*(?:\(\s*)?|\brequire\s*\(\s*)['"](?:typescript|@typescript\/typescript6)(?:\/[^'"]*)?['"]/;
+        const compilerApiImport = /(?:\bfrom\s+|\bimport\s*(?:\(\s*)?|\brequire\s*\(\s*)['"](?:typescript|@typescript\/typescript6)(?:\/[^'"]*)?['"]/;
         const sourceExtensions = new Set([
             '.cjs',
             '.cts',
@@ -172,12 +171,10 @@ describe('native TypeScript 7 repository boundaries', () => {
             '.mjs',
             '.mts',
             '.ts',
-            '.tsx',
+            '.tsx'
         ]);
         const importedBy = findSourceFiles(repositoryRoot, sourceExtensions)
-            .filter((sourcePath) =>
-                compilerApiImport.test(readFileSync(sourcePath, 'utf8')),
-            )
+            .filter((sourcePath) => compilerApiImport.test(readFileSync(sourcePath, 'utf8')))
             .map(relativePath);
 
         expect(importedBy).toEqual([]);
@@ -185,28 +182,28 @@ describe('native TypeScript 7 repository boundaries', () => {
 
     it('keeps TypeScript and Deno checking as separate release gates', () => {
         const sharedTestManifest = readJson<PackageManifest>(
-            path.join(repositoryRoot, 'packages/shared-test/package.json'),
+            path.join(repositoryRoot, 'packages/shared-test/package.json')
         );
         const releaseGate = readFileSync(
             path.join(repositoryRoot, '.github/workflows/release-gate.yml'),
-            'utf8',
+            'utf8'
         );
 
         expect(sharedTestManifest.scripts?.typecheck).toBe('npm run check:ts');
         expect(releaseGate).toContain(
-            'npm --workspace @ar-eye-hunter/shared-test run check:deno',
+            'npm --workspace @ar-eye-hunter/shared-test run check:deno'
         );
     });
 });
 
 function dependencySections(
-    manifest: PackageManifest,
+    manifest: PackageManifest
 ): Array<[string, DependencyMap]> {
     return [
         ['dependencies', manifest.dependencies ?? {}],
         ['devDependencies', manifest.devDependencies ?? {}],
         ['optionalDependencies', manifest.optionalDependencies ?? {}],
-        ['peerDependencies', manifest.peerDependencies ?? {}],
+        ['peerDependencies', manifest.peerDependencies ?? {}]
     ];
 }
 
@@ -216,7 +213,7 @@ function findFiles(directory: string, fileName: string): string[] {
 
 function findFilesMatching(
     directory: string,
-    matches: (entry: string) => boolean,
+    matches: (entry: string) => boolean
 ): string[] {
     if (!existsSync(directory)) {
         return [];
@@ -239,7 +236,7 @@ function findFilesMatching(
 
 function findSourceFiles(
     directory: string,
-    extensions: ReadonlySet<string>,
+    extensions: ReadonlySet<string>
 ): string[] {
     if (!existsSync(directory)) {
         return [];
@@ -261,9 +258,7 @@ function findSourceFiles(
 }
 
 function findTypeScriptConfigs(): string[] {
-    return findFilesMatching(repositoryRoot, (entry) =>
-        /^tsconfig(?:\..+)?\.json$/.test(entry),
-    );
+    return findFilesMatching(repositoryRoot, (entry) => /^tsconfig(?:\..+)?\.json$/.test(entry));
 }
 
 function readJson<T>(filePath: string): T {

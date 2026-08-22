@@ -1,1930 +1,1884 @@
 import {
-  type APIRequestContext,
-  type Browser,
-  type BrowserContext,
-  expect,
-  type Page,
-  test,
-  type TestInfo,
-} from "@playwright/test";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { openTab } from "./full-stack-helpers.ts";
+    expect,
+    test,
+    type APIRequestContext,
+    type Browser,
+    type BrowserContext,
+    type Page,
+    type TestInfo
+} from '@playwright/test';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { openTab } from './full-stack-helpers.ts';
 
-const SPA_BASE_URL = envValue("VITE_RALLAR_SPA_BASE_URL") ??
-  "http://localhost:5176";
-const CONTROL_BASE_URL = "http://127.0.0.1:5180";
-const CONTROL_WS_URL = "ws://127.0.0.1:5180/control";
+const SPA_BASE_URL = envValue('VITE_RALLAR_SPA_BASE_URL') ??
+    'http://localhost:5176';
+const CONTROL_BASE_URL = 'http://127.0.0.1:5180';
+const CONTROL_WS_URL = 'ws://127.0.0.1:5180/control';
 
-type TransportUnderTest = "realtime" | "messages.rtc";
-type AgentPrefix = "A" | "B" | "C";
-type DeliveryMode = "direct" | "multicast" | "broadcast";
+type TransportUnderTest = 'realtime' | 'messages.rtc';
+type AgentPrefix = 'A' | 'B' | 'C';
+type DeliveryMode = 'direct' | 'multicast' | 'broadcast';
 
 type RestoredSession = Readonly<{
-  clientId: string;
-  accessToken: string;
-  username: string;
-  sessionId: string;
-  expiresAtEpochMs: number;
+    clientId: string;
+    accessToken: string;
+    username: string;
+    sessionId: string;
+    expiresAtEpochMs: number;
 }>;
 
 type AgentAuth =
-  | Readonly<{
-    kind: "login";
-    username: string;
-    password: string;
-  }>
-  | Readonly<{
-    kind: "restore";
-    session: RestoredSession;
-  }>;
+    | Readonly<{
+        kind: 'login';
+        username: string;
+        password: string;
+    }>
+    | Readonly<{
+        kind: 'restore';
+        session: RestoredSession;
+    }>;
 
 type AgentHandle = Readonly<{
-  context: BrowserContext;
-  page: Page;
-  prefix: AgentPrefix;
-  agentId: string;
-  actor: string;
-  connection: string;
-}>;
-
-type ControlResult = Readonly<{
-  agentId?: string;
-  commandId?: string;
-  ok?: boolean;
-  result?: Readonly<{
-    value?: unknown;
-  }>;
-  error?: unknown;
-}>;
-
-type ControlEvent = Readonly<{
-  kind?: string;
-  agentId?: string;
-  payload?: unknown;
-}>;
-
-type ControlRunSnapshot = Readonly<{
-  agents?: readonly Readonly<{ agentId?: string }>[];
-  results?: readonly ControlResult[];
-  events?: readonly ControlEvent[];
-}>;
-
-type DeliveryScenarioRecord = Readonly<{
-  matrixId: string;
-  transport: TransportUnderTest;
-  deliveryMode: DeliveryMode;
-  senderAgentId: string;
-  expectedAgentIds: readonly string[];
-  allowedAgentIds: readonly string[];
-}>;
-
-const apiBaseUrl = envValue("VITE_RALLAR_API_BASE_URL");
-const roomSeed = firstEnvValue("VITE_RALLAR_ROOM_ID", "VITE_RALLAR_GROUP_ID");
-const applicationId = envValue("VITE_RALLAR_APPLICATION_ID") ?? "ar-eye-hunter";
-const workspaceId = envValue("VITE_RALLAR_WORKSPACE_ID") ?? "default";
-const messagesRtcTypeId = firstEnvValue(
-  "VITE_RALLAR_MESSAGES_RTC_TYPE_ID",
-  "VITE_RALLAR_TYPE_ID",
-) ?? "manual.type";
-const messagesRtcTopicId = firstEnvValue(
-  "VITE_RALLAR_MESSAGES_RTC_TOPIC_ID",
-  "VITE_RALLAR_TOPIC_ID",
-) ?? "manual.topic";
-const fullStackEnabled = booleanEnv("RALLAR_BLACK_BOX_FULL_STACK");
-const liveMatrixEnabled = booleanEnv("RALLAR_BLACK_BOX_LIVE_RTC_MATRIX");
-const liveAllScenariosEnabled = booleanEnv(
-  "RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS",
-);
-const agentAAuth = resolveAgentAuth("A");
-const agentBAuth = resolveAgentAuth("B");
-const agentCAuth = resolveAgentAuth("C");
-const hasThreeAgentConfig = Boolean(
-  fullStackEnabled &&
-    liveMatrixEnabled &&
-    apiBaseUrl &&
-    roomSeed &&
-    agentAAuth &&
-    agentBAuth &&
-    agentCAuth,
-);
-
-function envValue(key: string): string | undefined {
-  const value = process.env[key]?.trim();
-  return value && value.length > 0 ? value : undefined;
-}
-
-function firstEnvValue(...keys: readonly string[]): string | undefined {
-  for (const key of keys) {
-    const value = envValue(key);
-    if (value) {
-      return value;
-    }
-  }
-  return undefined;
-}
-
-function booleanEnv(key: string): boolean {
-  const normalized = envValue(key)?.toLowerCase();
-  return normalized === "1" ||
-    normalized === "true" ||
-    normalized === "yes" ||
-    normalized === "on";
-}
-
-function numberEnv(key: string): number | undefined {
-  const parsed = Number.parseInt(process.env[key] ?? "", 10);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function resolveAgentAuth(prefix: AgentPrefix): AgentAuth | undefined {
-  const genericUsername = prefix === "A" ? ["VITE_RALLAR_USERNAME"] : [];
-  const genericPassword = prefix === "A" ? ["VITE_RALLAR_PASSWORD"] : [];
-  const username = firstEnvValue(
-    `VITE_RALLAR_AGENT_${prefix}_USERNAME`,
-    `VITE_RALLAR_${prefix}_USERNAME`,
-    ...genericUsername,
-  );
-  const password = firstEnvValue(
-    `VITE_RALLAR_AGENT_${prefix}_PASSWORD`,
-    `VITE_RALLAR_${prefix}_PASSWORD`,
-    ...genericPassword,
-  );
-  if (username && password) {
-    return {
-      kind: "login",
-      username,
-      password,
-    };
-  }
-
-  const restoreUsername = firstEnvValue(
-    `VITE_RALLAR_AGENT_${prefix}_USERNAME`,
-    `VITE_RALLAR_${prefix}_USERNAME`,
-  );
-  const token = firstEnvValue(
-    `VITE_RALLAR_AGENT_${prefix}_TOKEN`,
-    `VITE_RALLAR_${prefix}_TOKEN`,
-  );
-  const clientId = firstEnvValue(
-    `VITE_RALLAR_AGENT_${prefix}_CLIENT_ID`,
-    `VITE_RALLAR_${prefix}_CLIENT_ID`,
-  );
-  const sessionId = firstEnvValue(
-    `VITE_RALLAR_AGENT_${prefix}_SESSION_ID`,
-    `VITE_RALLAR_${prefix}_SESSION_ID`,
-  );
-  if (!restoreUsername || !token || !clientId || !sessionId) {
-    return undefined;
-  }
-
-  return {
-    kind: "restore",
-    session: {
-      clientId,
-      accessToken: token,
-      username: restoreUsername,
-      sessionId,
-      expiresAtEpochMs:
-        numberEnv(`VITE_RALLAR_AGENT_${prefix}_EXPIRES_AT_EPOCH_MS`) ??
-          numberEnv(`VITE_RALLAR_${prefix}_EXPIRES_AT_EPOCH_MS`) ??
-          Date.now() + 30 * 60 * 1000,
-    },
-  };
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function stringArrayValue(value: unknown): readonly string[] {
-  return Array.isArray(value)
-    ? value.filter((entry): entry is string => typeof entry === "string")
-    : [];
-}
-
-function pathSegment(value: string): string {
-  return encodeURIComponent(value);
-}
-
-function transportSlug(transport: TransportUnderTest): string {
-  return transport.replace(".", "-");
-}
-
-function safeFileName(value: string): string {
-  return value.replace(/[^a-zA-Z0-9_.-]+/g, "-");
-}
-
-function agentAuth(prefix: AgentPrefix): AgentAuth {
-  const auth = prefix === "A"
-    ? agentAAuth
-    : prefix === "B"
-    ? agentBAuth
-    : agentCAuth;
-  if (!auth) {
-    throw new Error(`Missing auth for agent ${prefix}.`);
-  }
-  return auth;
-}
-
-function apiWebSocketUrl(): string {
-  const url = new URL(apiBaseUrl ?? "http://localhost:8080");
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  url.pathname = "/api/ws/{auth.sessionId}";
-  url.search = "ticket={auth.wsTicket}";
-  return url.toString();
-}
-
-function actorFor(prefix: AgentPrefix, suffix: string): string {
-  return firstEnvValue(
-    `VITE_RALLAR_AGENT_${prefix}_ACTOR`,
-    `VITE_RALLAR_${prefix}_ACTOR`,
-  ) ?? `agent-${prefix.toLowerCase()}-${suffix}`;
-}
-
-async function fetchRun(
-  request: APIRequestContext,
-  runId: string,
-): Promise<ControlRunSnapshot> {
-  const response = await request.get(
-    `${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`,
-  );
-  expect(response.ok()).toBe(true);
-  return await response.json() as ControlRunSnapshot;
-}
-
-async function enqueueCommand(
-  request: APIRequestContext,
-  runId: string,
-  agentId: string,
-  commandId: string,
-  command: unknown,
-): Promise<void> {
-  const response = await request.post(
-    `${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/agents/${
-      encodeURIComponent(agentId)
-    }/commands`,
-    {
-      data: {
-        commandId,
-        command,
-      },
-    },
-  );
-  expect(
-    response.status(),
-    `Expected command ${commandId} for agent ${agentId} to enqueue: ${
-      await response.text()
-    }`,
-  ).toBe(202);
-}
-
-async function waitForCommandResult(
-  request: APIRequestContext,
-  runId: string,
-  commandId: string,
-  timeout = 45_000,
-): Promise<ControlResult> {
-  let latest: ControlResult | undefined;
-  await expect.poll(async () => {
-    const run = await fetchRun(request, runId);
-    latest = run.results?.find((result) => result.commandId === commandId);
-    return Boolean(latest);
-  }, {
-    timeout,
-  }).toBe(true);
-
-  if (!latest) {
-    throw new Error(`Command ${commandId} did not return a result.`);
-  }
-  return latest;
-}
-
-async function executeResult(
-  request: APIRequestContext,
-  runId: string,
-  agentId: string,
-  commandId: string,
-  command: unknown,
-  timeout?: number,
-): Promise<ControlResult> {
-  await enqueueCommand(request, runId, agentId, commandId, command);
-  return await waitForCommandResult(request, runId, commandId, timeout);
-}
-
-async function executeOk(
-  request: APIRequestContext,
-  runId: string,
-  agentId: string,
-  commandId: string,
-  command: unknown,
-  timeout?: number,
-): Promise<ControlResult> {
-  const result = await executeResult(
-    request,
-    runId,
-    agentId,
-    commandId,
-    command,
-    timeout,
-  );
-  expect(
-    result.ok,
-    `Expected command ${commandId} for agent ${agentId} to succeed: ${
-      JSON.stringify(result)
-    }`,
-  ).toBe(true);
-  return result;
-}
-
-function resultValue(result: ControlResult): Record<string, unknown> {
-  return asRecord(result.result?.value);
-}
-
-function requireSessionId(result: ControlResult, commandId: string): string {
-  const sessionId = stringValue(resultValue(result).sessionId);
-  if (!sessionId) {
-    throw new Error(`Connect result ${commandId} did not include a sessionId.`);
-  }
-  return sessionId;
-}
-
-function eventPayload(event: ControlEvent): Record<string, unknown> {
-  return asRecord(event.payload);
-}
-
-function runtimeEventPayload(event: ControlEvent): Record<string, unknown> {
-  const payload = eventPayload(event);
-  if (typeof payload.kind === "string") {
-    return payload;
-  }
-
-  return asRecord(payload.payload ?? payload);
-}
-
-function messageData(event: ControlEvent): Record<string, unknown> {
-  const runtimeEvent = runtimeEventPayload(event);
-  const runtimePayload = asRecord(runtimeEvent.payload);
-  return asRecord(runtimePayload.data ?? runtimeEvent.data);
-}
-
-function isMessageFor(
-  event: ControlEvent,
-  input: Readonly<{
-    agentId: string;
-    transport: TransportUnderTest;
-    matrixId: string;
-    deliveryMode: string;
-  }>,
-): boolean {
-  const runtimeEvent = runtimeEventPayload(event);
-  const data = messageData(event);
-  return event.agentId === input.agentId &&
-    runtimeEvent.kind === "message" &&
-    runtimeEvent.transport === input.transport &&
-    data.matrixId === input.matrixId &&
-    data.deliveryMode === input.deliveryMode;
-}
-
-async function waitForMessage(
-  request: APIRequestContext,
-  runId: string,
-  input: Readonly<{
-    agentId: string;
-    transport: TransportUnderTest;
-    matrixId: string;
-    deliveryMode: string;
-  }>,
-): Promise<void> {
-  await expect.poll(async () => {
-    const run = await fetchRun(request, runId);
-    return run.events?.some((event) => isMessageFor(event, input)) ?? false;
-  }, {
-    message: `Expected ${input.agentId} to receive ${input.transport} ${input.deliveryMode} ${input.matrixId}`,
-    timeout: 60_000,
-  }).toBe(true);
-}
-
-function rallarConnectConfig(
-  transport: TransportUnderTest,
-): Record<string, unknown> {
-  return {
-    apiBaseUrl,
-    restoreSession: true,
-    logoutOnClose: false,
-    leaveRoomOnClose: false,
-    ...(transport === "messages.rtc"
-      ? {
-        typeId: messagesRtcTypeId,
-        topicId: messagesRtcTopicId,
-      }
-      : {}),
-  };
-}
-
-function sendPayload(
-  transport: TransportUnderTest,
-  groupId: string,
-  targetSessionIds: readonly string[] | undefined,
-  payload: Record<string, unknown>,
-  minSnapshotVersion?: number,
-): Record<string, unknown> {
-  if (transport === "messages.rtc") {
-    return {
-      roomId: groupId,
-      ...(targetSessionIds ? { nextHopPeerIds: targetSessionIds } : {}),
-      typeId: messagesRtcTypeId,
-      topicId: messagesRtcTopicId,
-      ...(minSnapshotVersion !== undefined ? { minSnapshotVersion } : {}),
-      payload,
-    };
-  }
-
-  return {
-    roomId: groupId,
-    ...(targetSessionIds ? { peerIds: targetSessionIds } : {}),
-    openTimeoutMs: 20_000,
-    data: payload,
-  };
-}
-
-async function openAgent(
-  browser: Browser,
-  input: Readonly<{
+    context: BrowserContext;
+    page: Page;
     prefix: AgentPrefix;
-    auth: AgentAuth;
-    runId: string;
     agentId: string;
     actor: string;
     connection: string;
-    groupId: string;
-  }>,
+}>;
+
+type ControlResult = Readonly<{
+    agentId?: string;
+    commandId?: string;
+    ok?: boolean;
+    result?: Readonly<{
+        value?: unknown;
+    }>;
+    error?: unknown;
+}>;
+
+type ControlEvent = Readonly<{
+    kind?: string;
+    agentId?: string;
+    payload?: unknown;
+}>;
+
+type ControlRunSnapshot = Readonly<{
+    agents?: readonly Readonly<{ agentId?: string; }>[];
+    results?: readonly ControlResult[];
+    events?: readonly ControlEvent[];
+}>;
+
+type DeliveryScenarioRecord = Readonly<{
+    matrixId: string;
+    transport: TransportUnderTest;
+    deliveryMode: DeliveryMode;
+    senderAgentId: string;
+    expectedAgentIds: readonly string[];
+    allowedAgentIds: readonly string[];
+}>;
+
+const apiBaseUrl = envValue('VITE_RALLAR_API_BASE_URL');
+const roomSeed = firstEnvValue('VITE_RALLAR_ROOM_ID', 'VITE_RALLAR_GROUP_ID');
+const applicationId = envValue('VITE_RALLAR_APPLICATION_ID') ?? 'ar-eye-hunter';
+const workspaceId = envValue('VITE_RALLAR_WORKSPACE_ID') ?? 'default';
+const messagesRtcTypeId = firstEnvValue(
+    'VITE_RALLAR_MESSAGES_RTC_TYPE_ID',
+    'VITE_RALLAR_TYPE_ID'
+) ?? 'manual.type';
+const messagesRtcTopicId = firstEnvValue(
+    'VITE_RALLAR_MESSAGES_RTC_TOPIC_ID',
+    'VITE_RALLAR_TOPIC_ID'
+) ?? 'manual.topic';
+const fullStackEnabled = booleanEnv('RALLAR_BLACK_BOX_FULL_STACK');
+const liveMatrixEnabled = booleanEnv('RALLAR_BLACK_BOX_LIVE_RTC_MATRIX');
+const liveAllScenariosEnabled = booleanEnv(
+    'RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS'
+);
+const agentAAuth = resolveAgentAuth('A');
+const agentBAuth = resolveAgentAuth('B');
+const agentCAuth = resolveAgentAuth('C');
+const hasThreeAgentConfig = Boolean(
+    fullStackEnabled &&
+        liveMatrixEnabled &&
+        apiBaseUrl &&
+        roomSeed &&
+        agentAAuth &&
+        agentBAuth &&
+        agentCAuth
+);
+
+function envValue(key: string): string | undefined {
+    const value = process.env[key]?.trim();
+    return value && value.length > 0 ? value : undefined;
+}
+
+function firstEnvValue(...keys: readonly string[]): string | undefined {
+    for (const key of keys) {
+        const value = envValue(key);
+        if (value) {
+            return value;
+        }
+    }
+    return undefined;
+}
+
+function booleanEnv(key: string): boolean {
+    const normalized = envValue(key)?.toLowerCase();
+    return normalized === '1' ||
+        normalized === 'true' ||
+        normalized === 'yes' ||
+        normalized === 'on';
+}
+
+function numberEnv(key: string): number | undefined {
+    const parsed = Number.parseInt(process.env[key] ?? '', 10);
+    return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function resolveAgentAuth(prefix: AgentPrefix): AgentAuth | undefined {
+    const genericUsername = prefix === 'A' ? ['VITE_RALLAR_USERNAME'] : [];
+    const genericPassword = prefix === 'A' ? ['VITE_RALLAR_PASSWORD'] : [];
+    const username = firstEnvValue(
+        `VITE_RALLAR_AGENT_${prefix}_USERNAME`,
+        `VITE_RALLAR_${prefix}_USERNAME`,
+        ...genericUsername
+    );
+    const password = firstEnvValue(
+        `VITE_RALLAR_AGENT_${prefix}_PASSWORD`,
+        `VITE_RALLAR_${prefix}_PASSWORD`,
+        ...genericPassword
+    );
+    if (username && password) {
+        return {
+            kind: 'login',
+            username,
+            password
+        };
+    }
+
+    const restoreUsername = firstEnvValue(
+        `VITE_RALLAR_AGENT_${prefix}_USERNAME`,
+        `VITE_RALLAR_${prefix}_USERNAME`
+    );
+    const token = firstEnvValue(
+        `VITE_RALLAR_AGENT_${prefix}_TOKEN`,
+        `VITE_RALLAR_${prefix}_TOKEN`
+    );
+    const clientId = firstEnvValue(
+        `VITE_RALLAR_AGENT_${prefix}_CLIENT_ID`,
+        `VITE_RALLAR_${prefix}_CLIENT_ID`
+    );
+    const sessionId = firstEnvValue(
+        `VITE_RALLAR_AGENT_${prefix}_SESSION_ID`,
+        `VITE_RALLAR_${prefix}_SESSION_ID`
+    );
+    if (!restoreUsername || !token || !clientId || !sessionId) {
+        return undefined;
+    }
+
+    return {
+        kind: 'restore',
+        session: {
+            clientId,
+            accessToken: token,
+            username: restoreUsername,
+            sessionId,
+            expiresAtEpochMs: numberEnv(`VITE_RALLAR_AGENT_${prefix}_EXPIRES_AT_EPOCH_MS`) ??
+                numberEnv(`VITE_RALLAR_${prefix}_EXPIRES_AT_EPOCH_MS`) ??
+                Date.now() + 30 * 60 * 1000
+        }
+    };
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : {};
+}
+
+function stringValue(value: unknown): string | undefined {
+    return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function stringArrayValue(value: unknown): readonly string[] {
+    return Array.isArray(value)
+        ? value.filter((entry): entry is string => typeof entry === 'string')
+        : [];
+}
+
+function pathSegment(value: string): string {
+    return encodeURIComponent(value);
+}
+
+function transportSlug(transport: TransportUnderTest): string {
+    return transport.replace('.', '-');
+}
+
+function safeFileName(value: string): string {
+    return value.replace(/[^a-zA-Z0-9_.-]+/g, '-');
+}
+
+function agentAuth(prefix: AgentPrefix): AgentAuth {
+    const auth = prefix === 'A'
+        ? agentAAuth
+        : prefix === 'B'
+        ? agentBAuth
+        : agentCAuth;
+    if (!auth) {
+        throw new Error(`Missing auth for agent ${prefix}.`);
+    }
+    return auth;
+}
+
+function apiWebSocketUrl(): string {
+    const url = new URL(apiBaseUrl ?? 'http://localhost:8080');
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    url.pathname = '/api/ws/{auth.sessionId}';
+    url.search = 'ticket={auth.wsTicket}';
+    return url.toString();
+}
+
+function actorFor(prefix: AgentPrefix, suffix: string): string {
+    return firstEnvValue(
+        `VITE_RALLAR_AGENT_${prefix}_ACTOR`,
+        `VITE_RALLAR_${prefix}_ACTOR`
+    ) ?? `agent-${prefix.toLowerCase()}-${suffix}`;
+}
+
+async function fetchRun(
+    request: APIRequestContext,
+    runId: string
+): Promise<ControlRunSnapshot> {
+    const response = await request.get(
+        `${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}`
+    );
+    expect(response.ok()).toBe(true);
+    return await response.json() as ControlRunSnapshot;
+}
+
+async function enqueueCommand(
+    request: APIRequestContext,
+    runId: string,
+    agentId: string,
+    commandId: string,
+    command: unknown
+): Promise<void> {
+    const response = await request.post(
+        `${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/agents/${encodeURIComponent(agentId)}/commands`,
+        {
+            data: {
+                commandId,
+                command
+            }
+        }
+    );
+    expect(
+        response.status(),
+        `Expected command ${commandId} for agent ${agentId} to enqueue: ${await response.text()}`
+    ).toBe(202);
+}
+
+async function waitForCommandResult(
+    request: APIRequestContext,
+    runId: string,
+    commandId: string,
+    timeout = 45_000
+): Promise<ControlResult> {
+    let latest: ControlResult | undefined;
+    await expect.poll(async () => {
+        const run = await fetchRun(request, runId);
+        latest = run.results?.find((result) => result.commandId === commandId);
+        return Boolean(latest);
+    }, {
+        timeout
+    }).toBe(true);
+
+    if (!latest) {
+        throw new Error(`Command ${commandId} did not return a result.`);
+    }
+    return latest;
+}
+
+async function executeResult(
+    request: APIRequestContext,
+    runId: string,
+    agentId: string,
+    commandId: string,
+    command: unknown,
+    timeout?: number
+): Promise<ControlResult> {
+    await enqueueCommand(request, runId, agentId, commandId, command);
+    return await waitForCommandResult(request, runId, commandId, timeout);
+}
+
+async function executeOk(
+    request: APIRequestContext,
+    runId: string,
+    agentId: string,
+    commandId: string,
+    command: unknown,
+    timeout?: number
+): Promise<ControlResult> {
+    const result = await executeResult(
+        request,
+        runId,
+        agentId,
+        commandId,
+        command,
+        timeout
+    );
+    expect(
+        result.ok,
+        `Expected command ${commandId} for agent ${agentId} to succeed: ${JSON.stringify(result)}`
+    ).toBe(true);
+    return result;
+}
+
+function resultValue(result: ControlResult): Record<string, unknown> {
+    return asRecord(result.result?.value);
+}
+
+function requireSessionId(result: ControlResult, commandId: string): string {
+    const sessionId = stringValue(resultValue(result).sessionId);
+    if (!sessionId) {
+        throw new Error(`Connect result ${commandId} did not include a sessionId.`);
+    }
+    return sessionId;
+}
+
+function eventPayload(event: ControlEvent): Record<string, unknown> {
+    return asRecord(event.payload);
+}
+
+function runtimeEventPayload(event: ControlEvent): Record<string, unknown> {
+    const payload = eventPayload(event);
+    if (typeof payload.kind === 'string') {
+        return payload;
+    }
+
+    return asRecord(payload.payload ?? payload);
+}
+
+function messageData(event: ControlEvent): Record<string, unknown> {
+    const runtimeEvent = runtimeEventPayload(event);
+    const runtimePayload = asRecord(runtimeEvent.payload);
+    return asRecord(runtimePayload.data ?? runtimeEvent.data);
+}
+
+function isMessageFor(
+    event: ControlEvent,
+    input: Readonly<{
+        agentId: string;
+        transport: TransportUnderTest;
+        matrixId: string;
+        deliveryMode: string;
+    }>
+): boolean {
+    const runtimeEvent = runtimeEventPayload(event);
+    const data = messageData(event);
+    return event.agentId === input.agentId &&
+        runtimeEvent.kind === 'message' &&
+        runtimeEvent.transport === input.transport &&
+        data.matrixId === input.matrixId &&
+        data.deliveryMode === input.deliveryMode;
+}
+
+async function waitForMessage(
+    request: APIRequestContext,
+    runId: string,
+    input: Readonly<{
+        agentId: string;
+        transport: TransportUnderTest;
+        matrixId: string;
+        deliveryMode: string;
+    }>
+): Promise<void> {
+    await expect.poll(async () => {
+        const run = await fetchRun(request, runId);
+        return run.events?.some((event) => isMessageFor(event, input)) ?? false;
+    }, {
+        message: `Expected ${input.agentId} to receive ${input.transport} ${input.deliveryMode} ${input.matrixId}`,
+        timeout: 60_000
+    }).toBe(true);
+}
+
+function rallarConnectConfig(
+    transport: TransportUnderTest
+): Record<string, unknown> {
+    return {
+        apiBaseUrl,
+        restoreSession: true,
+        logoutOnClose: false,
+        leaveRoomOnClose: false,
+        ...(transport === 'messages.rtc'
+            ? {
+                typeId: messagesRtcTypeId,
+                topicId: messagesRtcTopicId
+            }
+            : {})
+    };
+}
+
+function sendPayload(
+    transport: TransportUnderTest,
+    groupId: string,
+    targetSessionIds: readonly string[] | undefined,
+    payload: Record<string, unknown>,
+    minSnapshotVersion?: number
+): Record<string, unknown> {
+    if (transport === 'messages.rtc') {
+        return {
+            roomId: groupId,
+            ...(targetSessionIds ? { nextHopPeerIds: targetSessionIds } : {}),
+            typeId: messagesRtcTypeId,
+            topicId: messagesRtcTopicId,
+            ...(minSnapshotVersion !== undefined ? { minSnapshotVersion } : {}),
+            payload
+        };
+    }
+
+    return {
+        roomId: groupId,
+        ...(targetSessionIds ? { peerIds: targetSessionIds } : {}),
+        openTimeoutMs: 20_000,
+        data: payload
+    };
+}
+
+async function openAgent(
+    browser: Browser,
+    input: Readonly<{
+        prefix: AgentPrefix;
+        auth: AgentAuth;
+        runId: string;
+        agentId: string;
+        actor: string;
+        connection: string;
+        groupId: string;
+    }>
 ): Promise<AgentHandle> {
-  const context = await browser.newContext();
-  const page = await context.newPage();
+    const context = await browser.newContext();
+    const page = await context.newPage();
 
-  if (input.auth.kind === "restore") {
-    await page.addInitScript((session) => {
-      window.localStorage.setItem("auth.session", JSON.stringify(session));
-    }, input.auth.session);
-  }
+    if (input.auth.kind === 'restore') {
+        await page.addInitScript((session) => {
+            window.localStorage.setItem('auth.session', JSON.stringify(session));
+        }, input.auth.session);
+    }
 
-  const query = new URLSearchParams({
-    mode: "control",
-    provider: "browser-rallar",
-    autoConnect: "1",
-    tab: "local-workbench",
-    controlUrl: CONTROL_WS_URL,
-    runId: input.runId,
-    agentId: input.agentId,
-    apiBaseUrl: apiBaseUrl ?? "",
-    roomId: input.groupId,
-    actor: input.actor,
-    sessionId: input.agentId,
-    transport: "realtime",
-    statsIntervalMs: "2000",
-    rallarLeaveRoomOnClose: "0",
-    ...(booleanEnv("VITE_RALLAR_REGISTER") ? { rallarRegister: "1" } : {}),
-    ...(input.auth.kind === "restore" ? { rallarRestoreSession: "1" } : {}),
-    ...(input.auth.kind === "login"
-      ? {
-        rallarUsername: input.auth.username,
-        rallarPassword: input.auth.password,
-      }
-      : {}),
-  });
+    const query = new URLSearchParams({
+        mode: 'control',
+        provider: 'browser-rallar',
+        autoConnect: '1',
+        tab: 'local-workbench',
+        controlUrl: CONTROL_WS_URL,
+        runId: input.runId,
+        agentId: input.agentId,
+        apiBaseUrl: apiBaseUrl ?? '',
+        roomId: input.groupId,
+        actor: input.actor,
+        sessionId: input.agentId,
+        transport: 'realtime',
+        statsIntervalMs: '2000',
+        rallarLeaveRoomOnClose: '0',
+        ...(booleanEnv('VITE_RALLAR_REGISTER') ? { rallarRegister: '1' } : {}),
+        ...(input.auth.kind === 'restore' ? { rallarRestoreSession: '1' } : {}),
+        ...(input.auth.kind === 'login'
+            ? {
+                rallarUsername: input.auth.username,
+                rallarPassword: input.auth.password
+            }
+            : {})
+    });
 
-  await page.goto(`${SPA_BASE_URL}/?${query.toString()}`);
+    await page.goto(`${SPA_BASE_URL}/?${query.toString()}`);
 
-  if (input.auth.kind === "login") {
-    await expect(page.getByRole("heading", { name: "Rallar Server Login" }))
-      .toBeVisible();
-    await page.getByRole("button", { name: "Sign in" }).click();
-  }
+    if (input.auth.kind === 'login') {
+        await expect(page.getByRole('heading', { name: 'Rallar Server Login' }))
+            .toBeVisible();
+        await page.getByRole('button', { name: 'Sign in' }).click();
+    }
 
-  await openTab(page, "local-workbench", "black-box-runner");
-  await expect(page.locator("#panel-local-workbench .control-panel"))
-    .toContainText("registered", { timeout: 30_000 });
+    await openTab(page, 'local-workbench', 'black-box-runner');
+    await expect(page.locator('#panel-local-workbench .control-panel'))
+        .toContainText('registered', { timeout: 30_000 });
 
-  return {
-    context,
-    page,
-    prefix: input.prefix,
-    agentId: input.agentId,
-    actor: input.actor,
-    connection: input.connection,
-  };
+    return {
+        context,
+        page,
+        prefix: input.prefix,
+        agentId: input.agentId,
+        actor: input.actor,
+        connection: input.connection
+    };
 }
 
 async function openAgentTrio(
-  browser: Browser,
-  input: Readonly<{
-    runId: string;
-    groupId: string;
-    suffix: string;
-    label: string;
-  }>,
+    browser: Browser,
+    input: Readonly<{
+        runId: string;
+        groupId: string;
+        suffix: string;
+        label: string;
+    }>
 ): Promise<readonly [AgentHandle, AgentHandle, AgentHandle]> {
-  const handles: AgentHandle[] = [];
-  for (const prefix of ["A", "B", "C"] as const) {
-    const agentName = `${input.label}-${prefix.toLowerCase()}-${input.suffix}`;
-    handles.push(
-      await openAgent(browser, {
-        prefix,
-        auth: agentAuth(prefix),
-        runId: input.runId,
-        agentId: agentName,
-        actor: actorFor(prefix, input.suffix),
-        connection: agentName,
-        groupId: input.groupId,
-      }),
-    );
-  }
+    const handles: AgentHandle[] = [];
+    for (const prefix of ['A', 'B', 'C'] as const) {
+        const agentName = `${input.label}-${prefix.toLowerCase()}-${input.suffix}`;
+        handles.push(
+            await openAgent(browser, {
+                prefix,
+                auth: agentAuth(prefix),
+                runId: input.runId,
+                agentId: agentName,
+                actor: actorFor(prefix, input.suffix),
+                connection: agentName,
+                groupId: input.groupId
+            })
+        );
+    }
 
-  return handles as [AgentHandle, AgentHandle, AgentHandle];
+    return handles as [AgentHandle, AgentHandle, AgentHandle];
 }
 
 async function closeAgentContexts(
-  agents: readonly AgentHandle[],
+    agents: readonly AgentHandle[]
 ): Promise<void> {
-  await Promise.all(
-    agents.map((agent) => agent.context.close().catch(() => undefined)),
-  );
+    await Promise.all(
+        agents.map((agent) => agent.context.close().catch(() => undefined))
+    );
 }
 
 async function setupGroupMembership(
-  request: APIRequestContext,
-  runId: string,
-  input: Readonly<{
-    owner: AgentHandle;
-    members: readonly AgentHandle[];
-    groupId: string;
-    suffix: string;
-  }>,
+    request: APIRequestContext,
+    runId: string,
+    input: Readonly<{
+        owner: AgentHandle;
+        members: readonly AgentHandle[];
+        groupId: string;
+        suffix: string;
+    }>
 ): Promise<readonly string[]> {
-  const groupSegment = pathSegment(input.groupId);
-  const createCommandId = `group-create-${input.suffix}`;
-  const joinCommandIds: string[] = [];
+    const groupSegment = pathSegment(input.groupId);
+    const createCommandId = `group-create-${input.suffix}`;
+    const joinCommandIds: string[] = [];
 
-  await executeOk(request, runId, input.owner.agentId, createCommandId, {
-    kind: "http.request",
-    request: {
-      path: `/api/state/apps/${pathSegment(applicationId)}/workspaces/${
-        pathSegment(workspaceId)
-      }/groups`,
-      method: "POST",
-      body: {
-        groupId: input.groupId,
-        displayName: input.groupId,
-        description: "Created by rallar-black-box live three-browser matrix",
-        kind: "room",
-        joinMode: "open",
-        createdByPrincipalId: "{auth.clientId}",
-        metadata: {
-          source: "rallar-black-box",
-          matrix: "live-three-browser",
-          suffix: input.suffix,
+    await executeOk(request, runId, input.owner.agentId, createCommandId, {
+        kind: 'http.request',
+        request: {
+            path: `/api/state/apps/${pathSegment(applicationId)}/workspaces/${pathSegment(workspaceId)}/groups`,
+            method: 'POST',
+            body: {
+                groupId: input.groupId,
+                displayName: input.groupId,
+                description: 'Created by rallar-black-box live three-browser matrix',
+                kind: 'room',
+                joinMode: 'open',
+                createdByPrincipalId: '{auth.clientId}',
+                metadata: {
+                    source: 'rallar-black-box',
+                    matrix: 'live-three-browser',
+                    suffix: input.suffix
+                }
+            }
         },
-      },
-    },
-    response: {
-      body: "json",
-    },
-    timeoutMs: 10_000,
-  });
-
-  for (const member of input.members) {
-    const commandId = `group-join-${member.agentId}-${input.suffix}`;
-    joinCommandIds.push(commandId);
-    await executeOk(request, runId, member.agentId, commandId, {
-      kind: "http.request",
-      request: {
-        path: `/api/state/apps/${pathSegment(applicationId)}/workspaces/${
-          pathSegment(workspaceId)
-        }/groups/${groupSegment}/members/{auth.clientId}`,
-        method: "PUT",
-        body: {
-          status: "active",
+        response: {
+            body: 'json'
         },
-      },
-      response: {
-        body: "json",
-      },
-      timeoutMs: 10_000,
+        timeoutMs: 10_000
     });
-  }
 
-  return [createCommandId, ...joinCommandIds];
+    for (const member of input.members) {
+        const commandId = `group-join-${member.agentId}-${input.suffix}`;
+        joinCommandIds.push(commandId);
+        await executeOk(request, runId, member.agentId, commandId, {
+            kind: 'http.request',
+            request: {
+                path: `/api/state/apps/${pathSegment(applicationId)}/workspaces/${
+                    pathSegment(workspaceId)
+                }/groups/${groupSegment}/members/{auth.clientId}`,
+                method: 'PUT',
+                body: {
+                    status: 'active'
+                }
+            },
+            response: {
+                body: 'json'
+            },
+            timeoutMs: 10_000
+        });
+    }
+
+    return [createCommandId, ...joinCommandIds];
 }
 
 async function verifyGroupStateReadback(
-  request: APIRequestContext,
-  runId: string,
-  owner: AgentHandle,
-  input: Readonly<{
-    groupId: string;
-    suffix: string;
-  }>,
+    request: APIRequestContext,
+    runId: string,
+    owner: AgentHandle,
+    input: Readonly<{
+        groupId: string;
+        suffix: string;
+    }>
 ): Promise<readonly string[]> {
-  const groupSegment = pathSegment(input.groupId);
-  const readCommandId = `group-read-${input.suffix}`;
-  const eventsCommandId = `group-events-${input.suffix}`;
-  const readResult = await executeOk(
-    request,
-    runId,
-    owner.agentId,
-    readCommandId,
-    {
-      kind: "http.request",
-      request: {
-        path: `/api/state/apps/${pathSegment(applicationId)}/workspaces/${
-          pathSegment(workspaceId)
-        }/groups/${groupSegment}`,
-        method: "GET",
-      },
-      response: {
-        body: "json",
-      },
-      timeoutMs: 10_000,
-    },
-  );
-  expect(resultValue(readResult).status).toBe(200);
+    const groupSegment = pathSegment(input.groupId);
+    const readCommandId = `group-read-${input.suffix}`;
+    const eventsCommandId = `group-events-${input.suffix}`;
+    const readResult = await executeOk(
+        request,
+        runId,
+        owner.agentId,
+        readCommandId,
+        {
+            kind: 'http.request',
+            request: {
+                path: `/api/state/apps/${pathSegment(applicationId)}/workspaces/${
+                    pathSegment(workspaceId)
+                }/groups/${groupSegment}`,
+                method: 'GET'
+            },
+            response: {
+                body: 'json'
+            },
+            timeoutMs: 10_000
+        }
+    );
+    expect(resultValue(readResult).status).toBe(200);
 
-  const eventsResult = await executeOk(
-    request,
-    runId,
-    owner.agentId,
-    eventsCommandId,
-    {
-      kind: "http.request",
-      request: {
-        path: `/api/state/apps/${pathSegment(applicationId)}/workspaces/${
-          pathSegment(workspaceId)
-        }/groups/${groupSegment}/events/page?limit=20`,
-        method: "GET",
-      },
-      response: {
-        body: "json",
-      },
-      timeoutMs: 10_000,
-    },
-  );
-  expect(resultValue(eventsResult).status).toBe(200);
-  return [readCommandId, eventsCommandId];
+    const eventsResult = await executeOk(
+        request,
+        runId,
+        owner.agentId,
+        eventsCommandId,
+        {
+            kind: 'http.request',
+            request: {
+                path: `/api/state/apps/${pathSegment(applicationId)}/workspaces/${
+                    pathSegment(workspaceId)
+                }/groups/${groupSegment}/events/page?limit=20`,
+                method: 'GET'
+            },
+            response: {
+                body: 'json'
+            },
+            timeoutMs: 10_000
+        }
+    );
+    expect(resultValue(eventsResult).status).toBe(200);
+    return [readCommandId, eventsCommandId];
 }
 
 async function configureAgentForServerCommands(
-  request: APIRequestContext,
-  runId: string,
-  agent: AgentHandle,
-  input: Readonly<{
-    groupId: string;
-    suffix: string;
-  }>,
+    request: APIRequestContext,
+    runId: string,
+    agent: AgentHandle,
+    input: Readonly<{
+        groupId: string;
+        suffix: string;
+    }>
 ): Promise<string> {
-  const commandId =
-    `configure-server-${agent.prefix.toLowerCase()}-${input.suffix}`;
-  await executeOk(request, runId, agent.agentId, commandId, {
-    kind: "configure",
-    config: {
-      runId,
-      agentId: agent.agentId,
-      apiBaseUrl,
-      actor: agent.actor,
-      sessionId: agent.agentId,
-      roomId: input.groupId,
-      control: {
-        mode: "live-all-scenarios",
-        providerMode: "browser-rallar",
-      },
-      defaults: {
-        connection: agent.connection,
-        providerMode: "browser-rallar",
-      },
-      rallar: {
-        apiBaseUrl,
-        restoreSession: true,
-        leaveRoomOnClose: false,
-      },
-    },
-  });
-  return commandId;
+    const commandId = `configure-server-${agent.prefix.toLowerCase()}-${input.suffix}`;
+    await executeOk(request, runId, agent.agentId, commandId, {
+        kind: 'configure',
+        config: {
+            runId,
+            agentId: agent.agentId,
+            apiBaseUrl,
+            actor: agent.actor,
+            sessionId: agent.agentId,
+            roomId: input.groupId,
+            control: {
+                mode: 'live-all-scenarios',
+                providerMode: 'browser-rallar'
+            },
+            defaults: {
+                connection: agent.connection,
+                providerMode: 'browser-rallar'
+            },
+            rallar: {
+                apiBaseUrl,
+                restoreSession: true,
+                leaveRoomOnClose: false
+            }
+        }
+    });
+    return commandId;
 }
 
 async function runWebSocketOpenSendCloseMatrix(
-  request: APIRequestContext,
-  runId: string,
-  agents: readonly AgentHandle[],
-  input: Readonly<{
-    groupId: string;
-    suffix: string;
-  }>,
+    request: APIRequestContext,
+    runId: string,
+    agents: readonly AgentHandle[],
+    input: Readonly<{
+        groupId: string;
+        suffix: string;
+    }>
 ): Promise<readonly string[]> {
-  const commandIds: string[] = [];
-  for (const agent of agents) {
-    commandIds.push(
-      await configureAgentForServerCommands(request, runId, agent, input),
-    );
-    const connection = `ws-${agent.prefix.toLowerCase()}-${input.suffix}`;
-    const openCommandId =
-      `ws-open-${agent.prefix.toLowerCase()}-${input.suffix}`;
-    const sendCommandId =
-      `ws-send-${agent.prefix.toLowerCase()}-${input.suffix}`;
-    const closeCommandId =
-      `ws-close-${agent.prefix.toLowerCase()}-${input.suffix}`;
-    commandIds.push(openCommandId, sendCommandId, closeCommandId);
-    await executeOk(request, runId, agent.agentId, openCommandId, {
-      kind: "ws.open",
-      connection,
-      url: apiWebSocketUrl(),
-      timeoutMs: 15_000,
-    }, 30_000);
-    await executeOk(request, runId, agent.agentId, sendCommandId, {
-      kind: "ws.send",
-      connection,
-      data: {
-        id: {
-          v: 2,
-          msgId: `ws-${agent.prefix.toLowerCase()}-${input.suffix}`,
-          ts: 0,
-          senderId: "{auth.sessionId}",
-          sessionId: "{auth.sessionId}",
-          traceId: `ws-${input.suffix}`,
-        },
-        route: {
-          topicId: "app.black-box.live-three-browser.ws",
-          resourceId: `ws-${agent.prefix.toLowerCase()}-${input.suffix}`,
-          contextId: `${applicationId}:${workspaceId}:${input.groupId}`,
-        },
-        targets: {
-          mode: "unicast",
-          toPeerId: "{auth.sessionId}",
-        },
-        delivery: {
-          reliability: "best-effort",
-          ack: "none",
-        },
-        payload: {
-          typeId: "app.black-box.live-three-browser.ws",
-          contentType: "application/json",
-          resource: JSON.stringify({
-            matrixId: `ws-${agent.prefix.toLowerCase()}-${input.suffix}`,
-            agentId: agent.agentId,
-            groupId: input.groupId,
-            runId,
-          }),
-        },
-      },
-    });
-    await executeOk(request, runId, agent.agentId, closeCommandId, {
-      kind: "ws.close",
-      connection,
-      code: 1000,
-      reason: "live-all-scenarios-complete",
-    });
-  }
-  return commandIds;
+    const commandIds: string[] = [];
+    for (const agent of agents) {
+        commandIds.push(
+            await configureAgentForServerCommands(request, runId, agent, input)
+        );
+        const connection = `ws-${agent.prefix.toLowerCase()}-${input.suffix}`;
+        const openCommandId = `ws-open-${agent.prefix.toLowerCase()}-${input.suffix}`;
+        const sendCommandId = `ws-send-${agent.prefix.toLowerCase()}-${input.suffix}`;
+        const closeCommandId = `ws-close-${agent.prefix.toLowerCase()}-${input.suffix}`;
+        commandIds.push(openCommandId, sendCommandId, closeCommandId);
+        await executeOk(request, runId, agent.agentId, openCommandId, {
+            kind: 'ws.open',
+            connection,
+            url: apiWebSocketUrl(),
+            timeoutMs: 15_000
+        }, 30_000);
+        await executeOk(request, runId, agent.agentId, sendCommandId, {
+            kind: 'ws.send',
+            connection,
+            data: {
+                id: {
+                    v: 2,
+                    msgId: `ws-${agent.prefix.toLowerCase()}-${input.suffix}`,
+                    ts: 0,
+                    senderId: '{auth.sessionId}',
+                    sessionId: '{auth.sessionId}',
+                    traceId: `ws-${input.suffix}`
+                },
+                route: {
+                    topicId: 'app.black-box.live-three-browser.ws',
+                    resourceId: `ws-${agent.prefix.toLowerCase()}-${input.suffix}`,
+                    contextId: `${applicationId}:${workspaceId}:${input.groupId}`
+                },
+                targets: {
+                    mode: 'unicast',
+                    toPeerId: '{auth.sessionId}'
+                },
+                delivery: {
+                    reliability: 'best-effort',
+                    ack: 'none'
+                },
+                payload: {
+                    typeId: 'app.black-box.live-three-browser.ws',
+                    contentType: 'application/json',
+                    resource: JSON.stringify({
+                        matrixId: `ws-${agent.prefix.toLowerCase()}-${input.suffix}`,
+                        agentId: agent.agentId,
+                        groupId: input.groupId,
+                        runId
+                    })
+                }
+            }
+        });
+        await executeOk(request, runId, agent.agentId, closeCommandId, {
+            kind: 'ws.close',
+            connection,
+            code: 1000,
+            reason: 'live-all-scenarios-complete'
+        });
+    }
+    return commandIds;
 }
 
 async function connectAgent(
-  request: APIRequestContext,
-  runId: string,
-  agent: AgentHandle,
-  input: Readonly<{
-    transport: TransportUnderTest;
-    groupId: string;
-    suffix: string;
-  }>,
-): Promise<Readonly<{ commandId: string; sessionId: string }>> {
-  const commandId = `connect-${agent.prefix.toLowerCase()}-${
-    input.transport.replace(".", "-")
-  }-${input.suffix}`;
-  const result = await executeOk(request, runId, agent.agentId, commandId, {
-    kind: "rtc.connect",
-    connection: `${agent.connection}-${input.transport.replace(".", "-")}`,
-    actor: agent.actor,
-    roomId: input.groupId,
-    applicationId,
-    workspaceId,
-    roomRef: {
-      applicationId,
-      workspaceId,
-      groupId: input.groupId,
-    },
-    transport: input.transport,
-    rallar: rallarConnectConfig(input.transport),
-    timeoutMs: 45_000,
-  }, 60_000);
+    request: APIRequestContext,
+    runId: string,
+    agent: AgentHandle,
+    input: Readonly<{
+        transport: TransportUnderTest;
+        groupId: string;
+        suffix: string;
+    }>
+): Promise<Readonly<{ commandId: string; sessionId: string; }>> {
+    const commandId = `connect-${agent.prefix.toLowerCase()}-${input.transport.replace('.', '-')}-${input.suffix}`;
+    const result = await executeOk(request, runId, agent.agentId, commandId, {
+        kind: 'rtc.connect',
+        connection: `${agent.connection}-${input.transport.replace('.', '-')}`,
+        actor: agent.actor,
+        roomId: input.groupId,
+        applicationId,
+        workspaceId,
+        roomRef: {
+            applicationId,
+            workspaceId,
+            groupId: input.groupId
+        },
+        transport: input.transport,
+        rallar: rallarConnectConfig(input.transport),
+        timeoutMs: 45_000
+    }, 60_000);
 
-  return {
-    commandId,
-    sessionId: requireSessionId(result, commandId),
-  };
+    return {
+        commandId,
+        sessionId: requireSessionId(result, commandId)
+    };
 }
 
 async function waitForPeerReadiness(
-  request: APIRequestContext,
-  runId: string,
-  agent: AgentHandle,
-  expectedPeerIds: readonly string[],
-  suffix: string,
+    request: APIRequestContext,
+    runId: string,
+    agent: AgentHandle,
+    expectedPeerIds: readonly string[],
+    suffix: string
 ): Promise<void> {
-  let attempt = 0;
-  await expect.poll(async () => {
-    const result = await executeResult(
-      request,
-      runId,
-      agent.agentId,
-      `health-ready-${agent.prefix.toLowerCase()}-${suffix}-${attempt++}`,
-      { kind: "health" },
-      15_000,
-    ).catch(() => undefined);
-    if (!result?.ok) {
-      return [];
-    }
+    let attempt = 0;
+    await expect.poll(async () => {
+        const result = await executeResult(
+            request,
+            runId,
+            agent.agentId,
+            `health-ready-${agent.prefix.toLowerCase()}-${suffix}-${attempt++}`,
+            { kind: 'health' },
+            15_000
+        ).catch(() => undefined);
+        if (!result?.ok) {
+            return [];
+        }
 
-    return stringArrayValue(
-      asRecord(asRecord(resultValue(result).rallar).rtcStatus).readyPeerIds,
-    );
-  }, {
-    message: `Expected ${agent.agentId} to see ready peers ${expectedPeerIds.join(", ")} for ${suffix}`,
-    timeout: 60_000,
-  }).toEqual(expect.arrayContaining(expectedPeerIds));
+        return stringArrayValue(
+            asRecord(asRecord(resultValue(result).rallar).rtcStatus).readyPeerIds
+        );
+    }, {
+        message: `Expected ${agent.agentId} to see ready peers ${expectedPeerIds.join(', ')} for ${suffix}`,
+        timeout: 60_000
+    }).toEqual(expect.arrayContaining(expectedPeerIds));
 }
 
 async function sendMatrixPayload(
-  request: APIRequestContext,
-  runId: string,
-  sender: AgentHandle,
-  input: Readonly<{
-    transport: TransportUnderTest;
-    groupId: string;
-    suffix: string;
-    deliveryMode: "direct" | "multicast" | "broadcast";
-    targetSessionIds?: readonly string[];
-    matrixId: string;
-  }>,
+    request: APIRequestContext,
+    runId: string,
+    sender: AgentHandle,
+    input: Readonly<{
+        transport: TransportUnderTest;
+        groupId: string;
+        suffix: string;
+        deliveryMode: 'direct' | 'multicast' | 'broadcast';
+        targetSessionIds?: readonly string[];
+        matrixId: string;
+    }>
 ): Promise<string> {
-  const commandId = `send-${input.matrixId}`;
-  await executeOk(request, runId, sender.agentId, commandId, {
-    kind: "rtc.send",
-    connection: `${sender.connection}-${input.transport.replace(".", "-")}`,
-    transport: input.transport,
-    applicationId,
-    workspaceId,
-    roomRef: {
-      applicationId,
-      workspaceId,
-      groupId: input.groupId,
-    },
-    timeoutMs: 60_000,
-    send: sendPayload(input.transport, input.groupId, input.targetSessionIds, {
-      topic: "rallar.black-box.live-three-browser",
-      matrixId: input.matrixId,
-      deliveryMode: input.deliveryMode,
-      transport: input.transport,
-      runId,
-      groupId: input.groupId,
-    }),
-  }, 70_000);
-  return commandId;
+    const commandId = `send-${input.matrixId}`;
+    await executeOk(request, runId, sender.agentId, commandId, {
+        kind: 'rtc.send',
+        connection: `${sender.connection}-${input.transport.replace('.', '-')}`,
+        transport: input.transport,
+        applicationId,
+        workspaceId,
+        roomRef: {
+            applicationId,
+            workspaceId,
+            groupId: input.groupId
+        },
+        timeoutMs: 60_000,
+        send: sendPayload(input.transport, input.groupId, input.targetSessionIds, {
+            topic: 'rallar.black-box.live-three-browser',
+            matrixId: input.matrixId,
+            deliveryMode: input.deliveryMode,
+            transport: input.transport,
+            runId,
+            groupId: input.groupId
+        })
+    }, 70_000);
+    return commandId;
 }
 
 async function runDeliveryMatrix(
-  request: APIRequestContext,
-  runId: string,
-  agents: readonly [AgentHandle, AgentHandle, AgentHandle],
-  input: Readonly<{
-    transport: TransportUnderTest;
-    groupId: string;
-    suffix: string;
-  }>,
+    request: APIRequestContext,
+    runId: string,
+    agents: readonly [AgentHandle, AgentHandle, AgentHandle],
+    input: Readonly<{
+        transport: TransportUnderTest;
+        groupId: string;
+        suffix: string;
+    }>
 ): Promise<
-  Readonly<{
-    commandIds: readonly string[];
-    sessions: Readonly<Record<AgentPrefix, string>>;
-    matrixIds: readonly string[];
-  }>
+    Readonly<{
+        commandIds: readonly string[];
+        sessions: Readonly<Record<AgentPrefix, string>>;
+        matrixIds: readonly string[];
+    }>
 > {
-  const connectResults = await Promise.all(
-    agents.map((agent) => connectAgent(request, runId, agent, input)),
-  );
-  const sessions: Readonly<Record<AgentPrefix, string>> = {
-    A: connectResults[0].sessionId,
-    B: connectResults[1].sessionId,
-    C: connectResults[2].sessionId,
-  };
-  expect(new Set(Object.values(sessions)).size).toBe(3);
-
-  const [agentA, agentB, agentC] = agents;
-  const transportSuffix = `${
-    input.transport.replace(".", "-")
-  }-${input.suffix}`;
-  await waitForPeerReadiness(
-    request,
-    runId,
-    agentA,
-    [sessions.B, sessions.C],
-    transportSuffix,
-  );
-
-  const directMatrixId = `direct-${input.transport}-${input.suffix}`;
-  const multicastMatrixId = `multicast-${input.transport}-${input.suffix}`;
-  const broadcastMatrixId = `broadcast-${input.transport}-${input.suffix}`;
-  const sendDirect = await sendMatrixPayload(request, runId, agentA, {
-    ...input,
-    deliveryMode: "direct",
-    targetSessionIds: [sessions.B],
-    matrixId: directMatrixId,
-  });
-  await waitForMessage(request, runId, {
-    agentId: agentB.agentId,
-    transport: input.transport,
-    matrixId: directMatrixId,
-    deliveryMode: "direct",
-  });
-  await openTab(agentB.page, "manual-rallar", "black-box-runner");
-  await expect(
-    agentB.page.locator("#panel-manual-rallar .received-inbox-panel"),
-  )
-    .toContainText(directMatrixId, { timeout: 30_000 });
-
-  const sendMulticast = await sendMatrixPayload(request, runId, agentA, {
-    ...input,
-    deliveryMode: "multicast",
-    targetSessionIds: [sessions.B, sessions.C],
-    matrixId: multicastMatrixId,
-  });
-  await Promise.all([
-    waitForMessage(request, runId, {
-      agentId: agentB.agentId,
-      transport: input.transport,
-      matrixId: multicastMatrixId,
-      deliveryMode: "multicast",
-    }),
-    waitForMessage(request, runId, {
-      agentId: agentC.agentId,
-      transport: input.transport,
-      matrixId: multicastMatrixId,
-      deliveryMode: "multicast",
-    }),
-  ]);
-
-  const sendBroadcast = await sendMatrixPayload(request, runId, agentA, {
-    ...input,
-    deliveryMode: "broadcast",
-    matrixId: broadcastMatrixId,
-  });
-  await Promise.all([
-    waitForMessage(request, runId, {
-      agentId: agentB.agentId,
-      transport: input.transport,
-      matrixId: broadcastMatrixId,
-      deliveryMode: "broadcast",
-    }),
-    waitForMessage(request, runId, {
-      agentId: agentC.agentId,
-      transport: input.transport,
-      matrixId: broadcastMatrixId,
-      deliveryMode: "broadcast",
-    }),
-  ]);
-  await openTab(agentC.page, "manual-rallar", "black-box-runner");
-  await expect(
-    agentC.page.locator("#panel-manual-rallar .received-inbox-panel"),
-  )
-    .toContainText(broadcastMatrixId, { timeout: 30_000 });
-
-  if (input.transport === "realtime") {
-    const healthA = await executeOk(
-      request,
-      runId,
-      agentA.agentId,
-      `health-a-${input.suffix}`,
-      {
-        kind: "health",
-      },
+    const connectResults = await Promise.all(
+        agents.map((agent) => connectAgent(request, runId, agent, input))
     );
-    const readyPeerIds = stringArrayValue(
-      asRecord(asRecord(resultValue(healthA).rallar).rtcStatus).readyPeerIds,
-    );
-    expect(readyPeerIds).toEqual(
-      expect.arrayContaining([sessions.B, sessions.C]),
-    );
-  }
+    const sessions: Readonly<Record<AgentPrefix, string>> = {
+        A: connectResults[0].sessionId,
+        B: connectResults[1].sessionId,
+        C: connectResults[2].sessionId
+    };
+    expect(new Set(Object.values(sessions)).size).toBe(3);
 
-  return {
-    commandIds: [
-      ...connectResults.map((result) => result.commandId),
-      sendDirect,
-      sendMulticast,
-      sendBroadcast,
-    ],
-    sessions,
-    matrixIds: [directMatrixId, multicastMatrixId, broadcastMatrixId],
-  };
+    const [agentA, agentB, agentC] = agents;
+    const transportSuffix = `${input.transport.replace('.', '-')}-${input.suffix}`;
+    await waitForPeerReadiness(
+        request,
+        runId,
+        agentA,
+        [sessions.B, sessions.C],
+        transportSuffix
+    );
+
+    const directMatrixId = `direct-${input.transport}-${input.suffix}`;
+    const multicastMatrixId = `multicast-${input.transport}-${input.suffix}`;
+    const broadcastMatrixId = `broadcast-${input.transport}-${input.suffix}`;
+    const sendDirect = await sendMatrixPayload(request, runId, agentA, {
+        ...input,
+        deliveryMode: 'direct',
+        targetSessionIds: [sessions.B],
+        matrixId: directMatrixId
+    });
+    await waitForMessage(request, runId, {
+        agentId: agentB.agentId,
+        transport: input.transport,
+        matrixId: directMatrixId,
+        deliveryMode: 'direct'
+    });
+    await openTab(agentB.page, 'manual-rallar', 'black-box-runner');
+    await expect(
+        agentB.page.locator('#panel-manual-rallar .received-inbox-panel')
+    )
+        .toContainText(directMatrixId, { timeout: 30_000 });
+
+    const sendMulticast = await sendMatrixPayload(request, runId, agentA, {
+        ...input,
+        deliveryMode: 'multicast',
+        targetSessionIds: [sessions.B, sessions.C],
+        matrixId: multicastMatrixId
+    });
+    await Promise.all([
+        waitForMessage(request, runId, {
+            agentId: agentB.agentId,
+            transport: input.transport,
+            matrixId: multicastMatrixId,
+            deliveryMode: 'multicast'
+        }),
+        waitForMessage(request, runId, {
+            agentId: agentC.agentId,
+            transport: input.transport,
+            matrixId: multicastMatrixId,
+            deliveryMode: 'multicast'
+        })
+    ]);
+
+    const sendBroadcast = await sendMatrixPayload(request, runId, agentA, {
+        ...input,
+        deliveryMode: 'broadcast',
+        matrixId: broadcastMatrixId
+    });
+    await Promise.all([
+        waitForMessage(request, runId, {
+            agentId: agentB.agentId,
+            transport: input.transport,
+            matrixId: broadcastMatrixId,
+            deliveryMode: 'broadcast'
+        }),
+        waitForMessage(request, runId, {
+            agentId: agentC.agentId,
+            transport: input.transport,
+            matrixId: broadcastMatrixId,
+            deliveryMode: 'broadcast'
+        })
+    ]);
+    await openTab(agentC.page, 'manual-rallar', 'black-box-runner');
+    await expect(
+        agentC.page.locator('#panel-manual-rallar .received-inbox-panel')
+    )
+        .toContainText(broadcastMatrixId, { timeout: 30_000 });
+
+    if (input.transport === 'realtime') {
+        const healthA = await executeOk(
+            request,
+            runId,
+            agentA.agentId,
+            `health-a-${input.suffix}`,
+            {
+                kind: 'health'
+            }
+        );
+        const readyPeerIds = stringArrayValue(
+            asRecord(asRecord(resultValue(healthA).rallar).rtcStatus).readyPeerIds
+        );
+        expect(readyPeerIds).toEqual(
+            expect.arrayContaining([sessions.B, sessions.C])
+        );
+    }
+
+    return {
+        commandIds: [
+            ...connectResults.map((result) => result.commandId),
+            sendDirect,
+            sendMulticast,
+            sendBroadcast
+        ],
+        sessions,
+        matrixIds: [directMatrixId, multicastMatrixId, broadcastMatrixId]
+    };
 }
 
 async function runAllDeliveryPermutations(
-  request: APIRequestContext,
-  runId: string,
-  agents: readonly [AgentHandle, AgentHandle, AgentHandle],
-  input: Readonly<{
-    transport: TransportUnderTest;
-    groupId: string;
-    suffix: string;
-  }>,
+    request: APIRequestContext,
+    runId: string,
+    agents: readonly [AgentHandle, AgentHandle, AgentHandle],
+    input: Readonly<{
+        transport: TransportUnderTest;
+        groupId: string;
+        suffix: string;
+    }>
 ): Promise<
-  Readonly<{
-    commandIds: readonly string[];
-    sessions: Readonly<Record<AgentPrefix, string>>;
-    scenarios: readonly DeliveryScenarioRecord[];
-  }>
+    Readonly<{
+        commandIds: readonly string[];
+        sessions: Readonly<Record<AgentPrefix, string>>;
+        scenarios: readonly DeliveryScenarioRecord[];
+    }>
 > {
-  const slug = transportSlug(input.transport);
-  const connectResults = await Promise.all(
-    agents.map((agent) => connectAgent(request, runId, agent, input)),
-  );
-  const sessions: Readonly<Record<AgentPrefix, string>> = {
-    A: connectResults[0].sessionId,
-    B: connectResults[1].sessionId,
-    C: connectResults[2].sessionId,
-  };
-  expect(new Set(Object.values(sessions)).size).toBe(3);
+    const slug = transportSlug(input.transport);
+    const connectResults = await Promise.all(
+        agents.map((agent) => connectAgent(request, runId, agent, input))
+    );
+    const sessions: Readonly<Record<AgentPrefix, string>> = {
+        A: connectResults[0].sessionId,
+        B: connectResults[1].sessionId,
+        C: connectResults[2].sessionId
+    };
+    expect(new Set(Object.values(sessions)).size).toBe(3);
 
-  const readinessSuffix = `${slug}-${input.suffix}-all`;
-  await Promise.all(
-    agents.map((agent) =>
-      waitForPeerReadiness(
-        request,
-        runId,
-        agent,
-        agents
-          .filter((candidate) => candidate.agentId !== agent.agentId)
-          .map((candidate) => sessions[candidate.prefix]),
-        readinessSuffix,
-      )
-    ),
-  );
-
-  const commandIds = connectResults.map((result) => result.commandId);
-  const scenarios: DeliveryScenarioRecord[] = [];
-
-  for (const sender of agents) {
-    const receivers = agents.filter((agent) =>
-      agent.agentId !== sender.agentId
+    const readinessSuffix = `${slug}-${input.suffix}-all`;
+    await Promise.all(
+        agents.map((agent) =>
+            waitForPeerReadiness(
+                request,
+                runId,
+                agent,
+                agents
+                    .filter((candidate) => candidate.agentId !== agent.agentId)
+                    .map((candidate) => sessions[candidate.prefix]),
+                readinessSuffix
+            )
+        )
     );
 
-    for (const receiver of receivers) {
-      const matrixId =
-        `${slug}-direct-${sender.prefix.toLowerCase()}-to-${receiver.prefix.toLowerCase()}-${input.suffix}`;
-      commandIds.push(
-        await sendMatrixPayload(request, runId, sender, {
-          ...input,
-          deliveryMode: "direct",
-          targetSessionIds: [sessions[receiver.prefix]],
-          matrixId,
-        }),
-      );
-      await waitForMessage(request, runId, {
-        agentId: receiver.agentId,
-        transport: input.transport,
-        matrixId,
-        deliveryMode: "direct",
-      });
-      scenarios.push({
-        matrixId,
-        transport: input.transport,
-        deliveryMode: "direct",
-        senderAgentId: sender.agentId,
-        expectedAgentIds: [receiver.agentId],
-        allowedAgentIds: [receiver.agentId],
-      });
+    const commandIds = connectResults.map((result) => result.commandId);
+    const scenarios: DeliveryScenarioRecord[] = [];
+
+    for (const sender of agents) {
+        const receivers = agents.filter((agent) => agent.agentId !== sender.agentId);
+
+        for (const receiver of receivers) {
+            const matrixId =
+                `${slug}-direct-${sender.prefix.toLowerCase()}-to-${receiver.prefix.toLowerCase()}-${input.suffix}`;
+            commandIds.push(
+                await sendMatrixPayload(request, runId, sender, {
+                    ...input,
+                    deliveryMode: 'direct',
+                    targetSessionIds: [sessions[receiver.prefix]],
+                    matrixId
+                })
+            );
+            await waitForMessage(request, runId, {
+                agentId: receiver.agentId,
+                transport: input.transport,
+                matrixId,
+                deliveryMode: 'direct'
+            });
+            scenarios.push({
+                matrixId,
+                transport: input.transport,
+                deliveryMode: 'direct',
+                senderAgentId: sender.agentId,
+                expectedAgentIds: [receiver.agentId],
+                allowedAgentIds: [receiver.agentId]
+            });
+        }
+
+        const multicastMatrixId = `${slug}-multicast-${sender.prefix.toLowerCase()}-${input.suffix}`;
+        commandIds.push(
+            await sendMatrixPayload(request, runId, sender, {
+                ...input,
+                deliveryMode: 'multicast',
+                targetSessionIds: receivers.map((receiver) => sessions[receiver.prefix]),
+                matrixId: multicastMatrixId
+            })
+        );
+        await Promise.all(
+            receivers.map((receiver) =>
+                waitForMessage(request, runId, {
+                    agentId: receiver.agentId,
+                    transport: input.transport,
+                    matrixId: multicastMatrixId,
+                    deliveryMode: 'multicast'
+                })
+            )
+        );
+        scenarios.push({
+            matrixId: multicastMatrixId,
+            transport: input.transport,
+            deliveryMode: 'multicast',
+            senderAgentId: sender.agentId,
+            expectedAgentIds: receivers.map((receiver) => receiver.agentId),
+            allowedAgentIds: receivers.map((receiver) => receiver.agentId)
+        });
+
+        const broadcastMatrixId = `${slug}-broadcast-${sender.prefix.toLowerCase()}-${input.suffix}`;
+        commandIds.push(
+            await sendMatrixPayload(request, runId, sender, {
+                ...input,
+                deliveryMode: 'broadcast',
+                matrixId: broadcastMatrixId
+            })
+        );
+        await Promise.all(
+            receivers.map((receiver) =>
+                waitForMessage(request, runId, {
+                    agentId: receiver.agentId,
+                    transport: input.transport,
+                    matrixId: broadcastMatrixId,
+                    deliveryMode: 'broadcast'
+                })
+            )
+        );
+        scenarios.push({
+            matrixId: broadcastMatrixId,
+            transport: input.transport,
+            deliveryMode: 'broadcast',
+            senderAgentId: sender.agentId,
+            expectedAgentIds: receivers.map((receiver) => receiver.agentId),
+            allowedAgentIds: agents.map((agent) => agent.agentId)
+        });
     }
 
-    const multicastMatrixId =
-      `${slug}-multicast-${sender.prefix.toLowerCase()}-${input.suffix}`;
-    commandIds.push(
-      await sendMatrixPayload(request, runId, sender, {
-        ...input,
-        deliveryMode: "multicast",
-        targetSessionIds: receivers.map((receiver) =>
-          sessions[receiver.prefix]
-        ),
-        matrixId: multicastMatrixId,
-      }),
-    );
-    await Promise.all(
-      receivers.map((receiver) =>
-        waitForMessage(request, runId, {
-          agentId: receiver.agentId,
-          transport: input.transport,
-          matrixId: multicastMatrixId,
-          deliveryMode: "multicast",
-        })
-      ),
-    );
-    scenarios.push({
-      matrixId: multicastMatrixId,
-      transport: input.transport,
-      deliveryMode: "multicast",
-      senderAgentId: sender.agentId,
-      expectedAgentIds: receivers.map((receiver) => receiver.agentId),
-      allowedAgentIds: receivers.map((receiver) => receiver.agentId),
-    });
-
-    const broadcastMatrixId =
-      `${slug}-broadcast-${sender.prefix.toLowerCase()}-${input.suffix}`;
-    commandIds.push(
-      await sendMatrixPayload(request, runId, sender, {
-        ...input,
-        deliveryMode: "broadcast",
-        matrixId: broadcastMatrixId,
-      }),
-    );
-    await Promise.all(
-      receivers.map((receiver) =>
-        waitForMessage(request, runId, {
-          agentId: receiver.agentId,
-          transport: input.transport,
-          matrixId: broadcastMatrixId,
-          deliveryMode: "broadcast",
-        })
-      ),
-    );
-    scenarios.push({
-      matrixId: broadcastMatrixId,
-      transport: input.transport,
-      deliveryMode: "broadcast",
-      senderAgentId: sender.agentId,
-      expectedAgentIds: receivers.map((receiver) => receiver.agentId),
-      allowedAgentIds: agents.map((agent) => agent.agentId),
-    });
-  }
-
-  return {
-    commandIds,
-    sessions,
-    scenarios,
-  };
+    return {
+        commandIds,
+        sessions,
+        scenarios
+    };
 }
 
 async function expectNoUnexpectedDeliveries(
-  request: APIRequestContext,
-  runId: string,
-  scenarios: readonly DeliveryScenarioRecord[],
+    request: APIRequestContext,
+    runId: string,
+    scenarios: readonly DeliveryScenarioRecord[]
 ): Promise<void> {
-  const run = await fetchRun(request, runId);
-  const scenarioById = new Map(
-    scenarios.map((scenario) => [scenario.matrixId, scenario]),
-  );
-  const unexpected = (run.events ?? [])
-    .map((event) => {
-      const data = messageData(event);
-      const matrixId = stringValue(data.matrixId);
-      const scenario = matrixId ? scenarioById.get(matrixId) : undefined;
-      if (
-        !scenario || !event.agentId ||
-        scenario.allowedAgentIds.includes(event.agentId)
-      ) {
-        return undefined;
-      }
-      return {
-        matrixId,
-        transport: scenario.transport,
-        deliveryMode: scenario.deliveryMode,
-        senderAgentId: scenario.senderAgentId,
-        unexpectedAgentId: event.agentId,
-        expectedAgentIds: scenario.expectedAgentIds,
-      };
-    })
-    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
-  expect(unexpected).toEqual([]);
+    const run = await fetchRun(request, runId);
+    const scenarioById = new Map(
+        scenarios.map((scenario) => [scenario.matrixId, scenario])
+    );
+    const unexpected = (run.events ?? [])
+        .map((event) => {
+            const data = messageData(event);
+            const matrixId = stringValue(data.matrixId);
+            const scenario = matrixId ? scenarioById.get(matrixId) : undefined;
+            if (
+                !scenario || !event.agentId ||
+                scenario.allowedAgentIds.includes(event.agentId)
+            ) {
+                return undefined;
+            }
+            return {
+                matrixId,
+                transport: scenario.transport,
+                deliveryMode: scenario.deliveryMode,
+                senderAgentId: scenario.senderAgentId,
+                unexpectedAgentId: event.agentId,
+                expectedAgentIds: scenario.expectedAgentIds
+            };
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+    expect(unexpected).toEqual([]);
 }
 
 async function runNackProbe(
-  request: APIRequestContext,
-  runId: string,
-  agent: AgentHandle,
-  input: Readonly<{
-    groupId: string;
-    suffix: string;
-    targetSessionId: string;
-  }>,
+    request: APIRequestContext,
+    runId: string,
+    agent: AgentHandle,
+    input: Readonly<{
+        groupId: string;
+        suffix: string;
+        targetSessionId: string;
+    }>
 ): Promise<string> {
-  const commandId = `nack-not-yet-in-sync-${input.suffix}`;
-  const result = await executeResult(request, runId, agent.agentId, commandId, {
-    kind: "rtc.send",
-    connection: `${agent.connection}-messages-rtc`,
-    transport: "messages.rtc",
-    applicationId,
-    workspaceId,
-    roomRef: {
-      applicationId,
-      workspaceId,
-      groupId: input.groupId,
-    },
-    minSnapshotVersion: 9_999_999,
-    timeoutMs: 45_000,
-    send: sendPayload("messages.rtc", input.groupId, [input.targetSessionId], {
-      topic: "rallar.black-box.live-three-browser.nack",
-      matrixId: `nack-${input.suffix}`,
-      deliveryMode: "nack",
-      transport: "messages.rtc",
-      runId,
-      groupId: input.groupId,
-    }, 9_999_999),
-  }, 60_000);
-  const run = await fetchRun(request, runId);
-  const evidence = JSON.stringify({
-    result,
-    events: run.events?.filter((event) => event.agentId === agent.agentId)
-      .slice(-12),
-  }).toLowerCase();
-  expect(
-    evidence.includes("not-yet-in-sync") ||
-      evidence.includes("nack") ||
-      (result.ok === true && evidence.includes("minsnapshotversion")),
-  ).toBe(true);
-  return commandId;
+    const commandId = `nack-not-yet-in-sync-${input.suffix}`;
+    const result = await executeResult(request, runId, agent.agentId, commandId, {
+        kind: 'rtc.send',
+        connection: `${agent.connection}-messages-rtc`,
+        transport: 'messages.rtc',
+        applicationId,
+        workspaceId,
+        roomRef: {
+            applicationId,
+            workspaceId,
+            groupId: input.groupId
+        },
+        minSnapshotVersion: 9_999_999,
+        timeoutMs: 45_000,
+        send: sendPayload('messages.rtc', input.groupId, [input.targetSessionId], {
+            topic: 'rallar.black-box.live-three-browser.nack',
+            matrixId: `nack-${input.suffix}`,
+            deliveryMode: 'nack',
+            transport: 'messages.rtc',
+            runId,
+            groupId: input.groupId
+        }, 9_999_999)
+    }, 60_000);
+    const run = await fetchRun(request, runId);
+    const evidence = JSON.stringify({
+        result,
+        events: run.events?.filter((event) => event.agentId === agent.agentId)
+            .slice(-12)
+    }).toLowerCase();
+    expect(
+        evidence.includes('not-yet-in-sync') ||
+            evidence.includes('nack') ||
+            (result.ok === true && evidence.includes('minsnapshotversion'))
+    ).toBe(true);
+    return commandId;
 }
 
 async function expectClosedTransportFailure(
-  request: APIRequestContext,
-  runId: string,
-  agent: AgentHandle,
-  input: Readonly<{
-    groupId: string;
-    suffix: string;
-    targetSessionId: string;
-  }>,
+    request: APIRequestContext,
+    runId: string,
+    agent: AgentHandle,
+    input: Readonly<{
+        groupId: string;
+        suffix: string;
+        targetSessionId: string;
+    }>
 ): Promise<readonly string[]> {
-  const closeCommandId =
-    `close-before-stale-send-${agent.prefix.toLowerCase()}-${input.suffix}`;
-  await executeOk(request, runId, agent.agentId, closeCommandId, {
-    kind: "close",
-  }, 45_000);
+    const closeCommandId = `close-before-stale-send-${agent.prefix.toLowerCase()}-${input.suffix}`;
+    await executeOk(request, runId, agent.agentId, closeCommandId, {
+        kind: 'close'
+    }, 45_000);
 
-  const staleSendCommandId =
-    `stale-send-${agent.prefix.toLowerCase()}-${input.suffix}`;
-  const staleResult = await executeResult(
-    request,
-    runId,
-    agent.agentId,
-    staleSendCommandId,
-    {
-      kind: "rtc.send",
-      connection: `${agent.connection}-messages-rtc`,
-      transport: "messages.rtc",
-      timeoutMs: 10_000,
-      send: sendPayload(
-        "messages.rtc",
-        input.groupId,
-        [input.targetSessionId],
+    const staleSendCommandId = `stale-send-${agent.prefix.toLowerCase()}-${input.suffix}`;
+    const staleResult = await executeResult(
+        request,
+        runId,
+        agent.agentId,
+        staleSendCommandId,
         {
-          topic: "rallar.black-box.live-three-browser.stale-send",
-          matrixId: `stale-send-${input.suffix}`,
-          deliveryMode: "stale-send",
-          transport: "messages.rtc",
-          runId,
+            kind: 'rtc.send',
+            connection: `${agent.connection}-messages-rtc`,
+            transport: 'messages.rtc',
+            timeoutMs: 10_000,
+            send: sendPayload(
+                'messages.rtc',
+                input.groupId,
+                [input.targetSessionId],
+                {
+                    topic: 'rallar.black-box.live-three-browser.stale-send',
+                    matrixId: `stale-send-${input.suffix}`,
+                    deliveryMode: 'stale-send',
+                    transport: 'messages.rtc',
+                    runId
+                }
+            )
         },
-      ),
-    },
-    30_000,
-  );
-  expect(staleResult.ok).toBe(false);
-  expect(JSON.stringify(staleResult).toLowerCase()).toMatch(
-    /not connected|runtime|closed|connect/,
-  );
-  return [closeCommandId, staleSendCommandId];
+        30_000
+    );
+    expect(staleResult.ok).toBe(false);
+    expect(JSON.stringify(staleResult).toLowerCase()).toMatch(
+        /not connected|runtime|closed|connect/
+    );
+    return [closeCommandId, staleSendCommandId];
 }
 
 async function closeAndResetAgents(
-  request: APIRequestContext,
-  runId: string,
-  agents: readonly AgentHandle[],
-  suffix: string,
+    request: APIRequestContext,
+    runId: string,
+    agents: readonly AgentHandle[],
+    suffix: string
 ): Promise<readonly string[]> {
-  const commandIds: string[] = [];
-  for (const agent of agents) {
-    const closeCommandId = `close-${agent.prefix.toLowerCase()}-${suffix}`;
-    const resetCommandId = `reset-${agent.prefix.toLowerCase()}-${suffix}`;
-    commandIds.push(closeCommandId, resetCommandId);
-    await executeResult(request, runId, agent.agentId, closeCommandId, {
-      kind: "close",
-    }, 45_000);
-    await executeResult(request, runId, agent.agentId, resetCommandId, {
-      kind: "reset",
-    }, 30_000);
-  }
-  return commandIds;
+    const commandIds: string[] = [];
+    for (const agent of agents) {
+        const closeCommandId = `close-${agent.prefix.toLowerCase()}-${suffix}`;
+        const resetCommandId = `reset-${agent.prefix.toLowerCase()}-${suffix}`;
+        commandIds.push(closeCommandId, resetCommandId);
+        await executeResult(request, runId, agent.agentId, closeCommandId, {
+            kind: 'close'
+        }, 45_000);
+        await executeResult(request, runId, agent.agentId, resetCommandId, {
+            kind: 'reset'
+        }, 30_000);
+    }
+    return commandIds;
 }
 
 async function expectArtifactBundle(
-  request: APIRequestContext,
-  runId: string,
-  commandIds: readonly string[],
+    request: APIRequestContext,
+    runId: string,
+    commandIds: readonly string[]
 ): Promise<void> {
-  const response = await request.get(
-    `${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/artifacts`,
-  );
-  expect(response.ok()).toBe(true);
-  const bundle = await response.json() as {
-    files?: Record<string, string>;
-  };
-  const report = bundle.files?.["report.json"] ?? "";
-  const events = bundle.files?.["events.jsonl"] ?? "";
-  expect(report).toContain(commandIds[0]);
-  expect(events).toContain("rallar.browser");
+    const response = await request.get(
+        `${CONTROL_BASE_URL}/runs/${encodeURIComponent(runId)}/artifacts`
+    );
+    expect(response.ok()).toBe(true);
+    const bundle = await response.json() as {
+        files?: Record<string, string>;
+    };
+    const report = bundle.files?.['report.json'] ?? '';
+    const events = bundle.files?.['events.jsonl'] ?? '';
+    expect(report).toContain(commandIds[0]);
+    expect(events).toContain('rallar.browser');
 }
 
 async function attachRunSummary(
-  request: APIRequestContext,
-  testInfo: TestInfo,
-  runId: string,
+    request: APIRequestContext,
+    testInfo: TestInfo,
+    runId: string
 ): Promise<void> {
-  const run = await fetchRun(request, runId);
-  const body = JSON.stringify(
-    {
-      runId,
-      agents: run.agents?.map((agent) => agent.agentId),
-      resultCount: run.results?.length ?? 0,
-      eventCount: run.events?.length ?? 0,
-    },
-    null,
-    2,
-  );
-  await testInfo.attach("live-rtc-three-browser-run-summary.json", {
-    body,
-    contentType: "application/json",
-  });
-  await writePerfArtifact(
-    `live-rtc-three-browser-run-summary-${safeFileName(runId)}.json`,
-    body,
-  );
+    const run = await fetchRun(request, runId);
+    const body = JSON.stringify(
+        {
+            runId,
+            agents: run.agents?.map((agent) => agent.agentId),
+            resultCount: run.results?.length ?? 0,
+            eventCount: run.events?.length ?? 0
+        },
+        null,
+        2
+    );
+    await testInfo.attach('live-rtc-three-browser-run-summary.json', {
+        body,
+        contentType: 'application/json'
+    });
+    await writePerfArtifact(
+        `live-rtc-three-browser-run-summary-${safeFileName(runId)}.json`,
+        body
+    );
 }
 
 async function attachRtcDiagnosticsSnapshot(
-  request: APIRequestContext,
-  testInfo: TestInfo,
-  runId: string,
-  agents: readonly AgentHandle[],
-  label: string,
+    request: APIRequestContext,
+    testInfo: TestInfo,
+    runId: string,
+    agents: readonly AgentHandle[],
+    label: string
 ): Promise<readonly string[]> {
-  const commandIds: string[] = [];
-  const snapshots = [];
-  for (const agent of agents) {
-    const commandId = `rtc-diagnostics-${agent.prefix.toLowerCase()}-${label}`;
-    commandIds.push(commandId);
-    const result = await executeOk(request, runId, agent.agentId, commandId, {
-      kind: "health",
-      includeRtcDiagnostics: true,
-    }, 30_000);
-    snapshots.push(compactRtcDiagnosticsResult(agent, result));
-  }
+    const commandIds: string[] = [];
+    const snapshots = [];
+    for (const agent of agents) {
+        const commandId = `rtc-diagnostics-${agent.prefix.toLowerCase()}-${label}`;
+        commandIds.push(commandId);
+        const result = await executeOk(request, runId, agent.agentId, commandId, {
+            kind: 'health',
+            includeRtcDiagnostics: true
+        }, 30_000);
+        snapshots.push(compactRtcDiagnosticsResult(agent, result));
+    }
 
-  const body = JSON.stringify({
-    runId,
-    label,
-    capturedAtEpochMs: Date.now(),
-    snapshots,
-  }, null, 2);
-  await testInfo.attach(`live-rtc-diagnostics-${label}.json`, {
-    body,
-    contentType: "application/json",
-  });
-  await writePerfArtifact(
-    `live-rtc-diagnostics-${safeFileName(label)}.json`,
-    body,
-  );
-  return commandIds;
+    const body = JSON.stringify(
+        {
+            runId,
+            label,
+            capturedAtEpochMs: Date.now(),
+            snapshots
+        },
+        null,
+        2
+    );
+    await testInfo.attach(`live-rtc-diagnostics-${label}.json`, {
+        body,
+        contentType: 'application/json'
+    });
+    await writePerfArtifact(
+        `live-rtc-diagnostics-${safeFileName(label)}.json`,
+        body
+    );
+    return commandIds;
 }
 
 async function writePerfArtifact(fileName: string, body: string): Promise<void> {
-  const outDir = envValue("RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR");
-  if (!outDir) {
-    return;
-  }
-  await mkdir(outDir, { recursive: true });
-  await writeFile(join(outDir, fileName), body);
+    const outDir = envValue('RALLAR_BLACK_BOX_RTC_DIAGNOSTICS_OUT_DIR');
+    if (!outDir) {
+        return;
+    }
+    await mkdir(outDir, { recursive: true });
+    await writeFile(join(outDir, fileName), body);
 }
 
 function compactRtcDiagnosticsResult(
-  agent: AgentHandle,
-  result: ControlResult,
+    agent: AgentHandle,
+    result: ControlResult
 ) {
-  const rallar = asRecord(resultValue(result).rallar);
-  const diagnostics = asRecord(rallar.rtcDiagnostics);
-  const peers = Array.isArray(diagnostics.peers) ? diagnostics.peers : [];
-  return {
-    agentId: agent.agentId,
-    prefix: agent.prefix,
-    commandId: result.commandId,
-    sessionId: stringValue(diagnostics.sessionId),
-    generatedAtEpochMs: numberValue(diagnostics.generatedAtEpochMs),
-    peerCount: numberValue(diagnostics.peerCount),
-    connectedPeerCount: numberValue(diagnostics.connectedPeerCount),
-    relayPeerCount: numberValue(diagnostics.relayPeerCount),
-    rtcDiagnosticsError: rallar.rtcDiagnosticsError,
-    groupManager: diagnostics.groupManager,
-    overlayAdoption: diagnostics.overlayAdoption,
-    peers: peers.map(compactRtcPeerDiagnostics),
-  };
+    const rallar = asRecord(resultValue(result).rallar);
+    const diagnostics = asRecord(rallar.rtcDiagnostics);
+    const peers = Array.isArray(diagnostics.peers) ? diagnostics.peers : [];
+    return {
+        agentId: agent.agentId,
+        prefix: agent.prefix,
+        commandId: result.commandId,
+        sessionId: stringValue(diagnostics.sessionId),
+        generatedAtEpochMs: numberValue(diagnostics.generatedAtEpochMs),
+        peerCount: numberValue(diagnostics.peerCount),
+        connectedPeerCount: numberValue(diagnostics.connectedPeerCount),
+        relayPeerCount: numberValue(diagnostics.relayPeerCount),
+        rtcDiagnosticsError: rallar.rtcDiagnosticsError,
+        groupManager: diagnostics.groupManager,
+        overlayAdoption: diagnostics.overlayAdoption,
+        peers: peers.map(compactRtcPeerDiagnostics)
+    };
 }
 
 function compactRtcPeerDiagnostics(peerValue: unknown) {
-  const peer = asRecord(peerValue);
-  const connection = asRecord(peer.connection);
-  const candidatePair = asRecord(peer.selectedCandidatePair);
-  const connectionDiagnostics = asRecord(peer.connectionDiagnostics);
-  return {
-    peerId: stringValue(peer.peerId),
-    connectionState: stringValue(connection.connectionState),
-    iceConnectionState: stringValue(connection.iceConnectionState),
-    signalingState: stringValue(connection.signalingState),
-    usesRelay: peer.usesRelay === true,
-    statsAvailable: peer.statsAvailable === true,
-    currentRoundTripTime: numberValue(candidatePair.currentRoundTripTime),
-    connectionDiagnostics:
-      Object.keys(connectionDiagnostics).length > 0
-        ? connectionDiagnostics
-        : undefined,
-  };
+    const peer = asRecord(peerValue);
+    const connection = asRecord(peer.connection);
+    const candidatePair = asRecord(peer.selectedCandidatePair);
+    const connectionDiagnostics = asRecord(peer.connectionDiagnostics);
+    return {
+        peerId: stringValue(peer.peerId),
+        connectionState: stringValue(connection.connectionState),
+        iceConnectionState: stringValue(connection.iceConnectionState),
+        signalingState: stringValue(connection.signalingState),
+        usesRelay: peer.usesRelay === true,
+        statsAvailable: peer.statsAvailable === true,
+        currentRoundTripTime: numberValue(candidatePair.currentRoundTripTime),
+        connectionDiagnostics: Object.keys(connectionDiagnostics).length > 0
+            ? connectionDiagnostics
+            : undefined
+    };
 }
 
-test.describe("full-stack live three-browser RTC matrix", () => {
-  test.skip(
-    !hasThreeAgentConfig,
-    [
-      "Set RALLAR_BLACK_BOX_FULL_STACK=1 and RALLAR_BLACK_BOX_LIVE_RTC_MATRIX=1,",
-      "VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and three agent credentials or restored sessions:",
-      "VITE_RALLAR_AGENT_A_USERNAME/PASSWORD, VITE_RALLAR_AGENT_B_USERNAME/PASSWORD,",
-      "and VITE_RALLAR_AGENT_C_USERNAME/PASSWORD.",
-    ].join(" "),
-  );
-
-  test(
-    "proves direct, multicast, broadcast, NACK, stale-send, and artifact evidence with real data",
-    async ({
-      browser,
-      request,
-    }, testInfo) => {
-      test.setTimeout(360_000);
-
-      const suffix = `live3-${Date.now()}-${
-        Math.random().toString(16).slice(2)
-      }`;
-      const runId = `rallar-live-three-browser-${suffix}`;
-      const groupId = `${roomSeed}-${suffix}`;
-      const allHandles: AgentHandle[] = [];
-      const openHandles: AgentHandle[] = [];
-      const commandIds: string[] = [];
-      const openAgents = async (
-        label: string,
-      ): Promise<readonly [AgentHandle, AgentHandle, AgentHandle]> => {
-        const agents = await openAgentTrio(browser, {
-          runId,
-          groupId,
-          suffix,
-          label,
-        });
-        allHandles.push(...agents);
-        openHandles.push(...agents);
-        return agents;
-      };
-      const retireAgents = async (
-        agents: readonly AgentHandle[],
-        closeSuffix: string,
-      ): Promise<readonly string[]> => {
-        const retiredCommandIds = await closeAndResetAgents(
-          request,
-          runId,
-          agents,
-          closeSuffix,
-        );
-        await closeAgentContexts(agents);
-        for (const agent of agents) {
-          const index = openHandles.findIndex((candidate) =>
-            candidate.agentId === agent.agentId
-          );
-          if (index >= 0) {
-            openHandles.splice(index, 1);
-          }
-        }
-        return retiredCommandIds;
-      };
-
-      try {
-        const realtimeAgents = await openAgents("live-realtime");
-        commandIds.push(
-          ...await setupGroupMembership(request, runId, {
-            owner: realtimeAgents[0],
-            members: realtimeAgents,
-            groupId,
-            suffix,
-          }),
-        );
-
-        const realtime = await runDeliveryMatrix(
-          request,
-          runId,
-          realtimeAgents,
-          {
-            transport: "realtime",
-            groupId,
-            suffix,
-          },
-        );
-        commandIds.push(...realtime.commandIds);
-        commandIds.push(
-          ...await attachRtcDiagnosticsSnapshot(
-            request,
-            testInfo,
-            runId,
-            realtimeAgents,
-            `realtime-${suffix}`,
-          ),
-        );
-        commandIds.push(
-          ...await retireAgents(
-            realtimeAgents,
-            `${suffix}-after-realtime`,
-          ),
-        );
-
-        const messageAgents = await openAgents("live-messages");
-        commandIds.push(
-          ...await setupGroupMembership(request, runId, {
-            owner: messageAgents[0],
-            members: messageAgents,
-            groupId,
-            suffix: `${suffix}-messages`,
-          }),
-        );
-
-        const messages = await runDeliveryMatrix(
-          request,
-          runId,
-          messageAgents,
-          {
-            transport: "messages.rtc",
-            groupId,
-            suffix,
-          },
-        );
-        commandIds.push(...messages.commandIds);
-        commandIds.push(
-          await runNackProbe(request, runId, messageAgents[0], {
-            groupId,
-            suffix,
-            targetSessionId: messages.sessions.B,
-          }),
-        );
-        commandIds.push(
-          ...await attachRtcDiagnosticsSnapshot(
-            request,
-            testInfo,
-            runId,
-            messageAgents,
-            `messages-rtc-${suffix}`,
-          ),
-        );
-        commandIds.push(
-          ...await expectClosedTransportFailure(
-            request,
-            runId,
-            messageAgents[2],
-            {
-              groupId,
-              suffix,
-              targetSessionId: messages.sessions.B,
-            },
-          ),
-        );
-        commandIds.push(
-          ...await closeAndResetAgents(
-            request,
-            runId,
-            [messageAgents[0], messageAgents[1]],
-            `${suffix}-final`,
-          ),
-        );
-
-        await expectArtifactBundle(request, runId, commandIds);
-
-        await expect.poll(async () => {
-          const run = await fetchRun(request, runId);
-          const resultIds = new Set(
-            (run.results ?? [])
-              .filter((result) => result.ok === true)
-              .map((result) => result.commandId),
-          );
-          const topics = (run.events ?? [])
-            .map((event) => stringValue(runtimeEventPayload(event).topic))
-            .filter((topic): topic is string => Boolean(topic));
-          return {
-            agents: (run.agents ?? [])
-              .filter((agent) =>
-                allHandles.some((handle) => handle.agentId === agent.agentId)
-              )
-              .length,
-            keyCommandsComplete: commandIds
-              .filter((commandId) => !commandId.startsWith("stale-send-"))
-              .filter((commandId) =>
-                !commandId.startsWith("close-before-stale-send-")
-              )
-              .filter((commandId) =>
-                !commandId.startsWith("nack-not-yet-in-sync-")
-              )
-              .every((commandId) => resultIds.has(commandId)),
-            fakeTopicCount: topics.filter((topic) =>
-              topic.startsWith("rallar.bb.fake.")
-            ).length,
-          };
-        }, {
-          timeout: 20_000,
-        }).toEqual({
-          agents: allHandles.length,
-          keyCommandsComplete: true,
-          fakeTopicCount: 0,
-        });
-      } finally {
-        if (allHandles.length > 0) {
-          await attachRunSummary(request, testInfo, runId).catch(() =>
-            undefined
-          );
-        }
-        await Promise.all(openHandles.map(async (handle) => {
-          await executeResult(
-            request,
-            runId,
-            handle.agentId,
-            `best-effort-close-${handle.prefix.toLowerCase()}-${suffix}`,
-            { kind: "close" },
-            15_000,
-          ).catch(() => undefined);
-          await handle.context.close();
-        }));
-      }
-    },
-  );
-
-  test("runs every three-browser live sender and receiver scenario", async ({
-    browser,
-    request,
-  }, testInfo) => {
+test.describe('full-stack live three-browser RTC matrix', () => {
     test.skip(
-      !liveAllScenariosEnabled,
-      "Set RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 to run the exhaustive three-browser live matrix.",
+        !hasThreeAgentConfig,
+        [
+            'Set RALLAR_BLACK_BOX_FULL_STACK=1 and RALLAR_BLACK_BOX_LIVE_RTC_MATRIX=1,',
+            'VITE_RALLAR_API_BASE_URL, VITE_RALLAR_ROOM_ID, and three agent credentials or restored sessions:',
+            'VITE_RALLAR_AGENT_A_USERNAME/PASSWORD, VITE_RALLAR_AGENT_B_USERNAME/PASSWORD,',
+            'and VITE_RALLAR_AGENT_C_USERNAME/PASSWORD.'
+        ].join(' ')
     );
-    test.setTimeout(720_000);
 
-    const suffix = `live3-all-${Date.now()}-${
-      Math.random().toString(16).slice(2)
-    }`;
-    const runId = `rallar-live-three-browser-all-${suffix}`;
-    const groupId = `${roomSeed}-${suffix}`;
-    const allHandles: AgentHandle[] = [];
-    const openHandles: AgentHandle[] = [];
-    const commandIds: string[] = [];
-    const scenarios: DeliveryScenarioRecord[] = [];
-    const openAgents = async (
-      label: string,
-    ): Promise<readonly [AgentHandle, AgentHandle, AgentHandle]> => {
-      const agents = await openAgentTrio(browser, {
-        runId,
-        groupId,
-        suffix,
-        label,
-      });
-      allHandles.push(...agents);
-      openHandles.push(...agents);
-      return agents;
-    };
-    const retireAgents = async (
-      agents: readonly AgentHandle[],
-      closeSuffix: string,
-    ): Promise<readonly string[]> => {
-      const retiredCommandIds = await closeAndResetAgents(
-        request,
-        runId,
-        agents,
-        closeSuffix,
-      );
-      await closeAgentContexts(agents);
-      for (const agent of agents) {
-        const index = openHandles.findIndex((candidate) =>
-          candidate.agentId === agent.agentId
-        );
-        if (index >= 0) {
-          openHandles.splice(index, 1);
+    test(
+        'proves direct, multicast, broadcast, NACK, stale-send, and artifact evidence with real data',
+        async ({
+            browser,
+            request
+        }, testInfo) => {
+            test.setTimeout(360_000);
+
+            const suffix = `live3-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            const runId = `rallar-live-three-browser-${suffix}`;
+            const groupId = `${roomSeed}-${suffix}`;
+            const allHandles: AgentHandle[] = [];
+            const openHandles: AgentHandle[] = [];
+            const commandIds: string[] = [];
+            const openAgents = async (
+                label: string
+            ): Promise<readonly [AgentHandle, AgentHandle, AgentHandle]> => {
+                const agents = await openAgentTrio(browser, {
+                    runId,
+                    groupId,
+                    suffix,
+                    label
+                });
+                allHandles.push(...agents);
+                openHandles.push(...agents);
+                return agents;
+            };
+            const retireAgents = async (
+                agents: readonly AgentHandle[],
+                closeSuffix: string
+            ): Promise<readonly string[]> => {
+                const retiredCommandIds = await closeAndResetAgents(
+                    request,
+                    runId,
+                    agents,
+                    closeSuffix
+                );
+                await closeAgentContexts(agents);
+                for (const agent of agents) {
+                    const index = openHandles.findIndex((candidate) => candidate.agentId === agent.agentId);
+                    if (index >= 0) {
+                        openHandles.splice(index, 1);
+                    }
+                }
+                return retiredCommandIds;
+            };
+
+            try {
+                const realtimeAgents = await openAgents('live-realtime');
+                commandIds.push(
+                    ...await setupGroupMembership(request, runId, {
+                        owner: realtimeAgents[0],
+                        members: realtimeAgents,
+                        groupId,
+                        suffix
+                    })
+                );
+
+                const realtime = await runDeliveryMatrix(
+                    request,
+                    runId,
+                    realtimeAgents,
+                    {
+                        transport: 'realtime',
+                        groupId,
+                        suffix
+                    }
+                );
+                commandIds.push(...realtime.commandIds);
+                commandIds.push(
+                    ...await attachRtcDiagnosticsSnapshot(
+                        request,
+                        testInfo,
+                        runId,
+                        realtimeAgents,
+                        `realtime-${suffix}`
+                    )
+                );
+                commandIds.push(
+                    ...await retireAgents(
+                        realtimeAgents,
+                        `${suffix}-after-realtime`
+                    )
+                );
+
+                const messageAgents = await openAgents('live-messages');
+                commandIds.push(
+                    ...await setupGroupMembership(request, runId, {
+                        owner: messageAgents[0],
+                        members: messageAgents,
+                        groupId,
+                        suffix: `${suffix}-messages`
+                    })
+                );
+
+                const messages = await runDeliveryMatrix(
+                    request,
+                    runId,
+                    messageAgents,
+                    {
+                        transport: 'messages.rtc',
+                        groupId,
+                        suffix
+                    }
+                );
+                commandIds.push(...messages.commandIds);
+                commandIds.push(
+                    await runNackProbe(request, runId, messageAgents[0], {
+                        groupId,
+                        suffix,
+                        targetSessionId: messages.sessions.B
+                    })
+                );
+                commandIds.push(
+                    ...await attachRtcDiagnosticsSnapshot(
+                        request,
+                        testInfo,
+                        runId,
+                        messageAgents,
+                        `messages-rtc-${suffix}`
+                    )
+                );
+                commandIds.push(
+                    ...await expectClosedTransportFailure(
+                        request,
+                        runId,
+                        messageAgents[2],
+                        {
+                            groupId,
+                            suffix,
+                            targetSessionId: messages.sessions.B
+                        }
+                    )
+                );
+                commandIds.push(
+                    ...await closeAndResetAgents(
+                        request,
+                        runId,
+                        [messageAgents[0], messageAgents[1]],
+                        `${suffix}-final`
+                    )
+                );
+
+                await expectArtifactBundle(request, runId, commandIds);
+
+                await expect.poll(async () => {
+                    const run = await fetchRun(request, runId);
+                    const resultIds = new Set(
+                        (run.results ?? [])
+                            .filter((result) => result.ok === true)
+                            .map((result) => result.commandId)
+                    );
+                    const topics = (run.events ?? [])
+                        .map((event) => stringValue(runtimeEventPayload(event).topic))
+                        .filter((topic): topic is string => Boolean(topic));
+                    return {
+                        agents: (run.agents ?? [])
+                            .filter((agent) => allHandles.some((handle) => handle.agentId === agent.agentId))
+                            .length,
+                        keyCommandsComplete: commandIds
+                            .filter((commandId) => !commandId.startsWith('stale-send-'))
+                            .filter((commandId) => !commandId.startsWith('close-before-stale-send-'))
+                            .filter((commandId) => !commandId.startsWith('nack-not-yet-in-sync-'))
+                            .every((commandId) => resultIds.has(commandId)),
+                        fakeTopicCount: topics.filter((topic) => topic.startsWith('rallar.bb.fake.')).length
+                    };
+                }, {
+                    timeout: 20_000
+                }).toEqual({
+                    agents: allHandles.length,
+                    keyCommandsComplete: true,
+                    fakeTopicCount: 0
+                });
+            }
+            finally {
+                if (allHandles.length > 0) {
+                    await attachRunSummary(request, testInfo, runId).catch(() => undefined);
+                }
+                await Promise.all(openHandles.map(async (handle) => {
+                    await executeResult(
+                        request,
+                        runId,
+                        handle.agentId,
+                        `best-effort-close-${handle.prefix.toLowerCase()}-${suffix}`,
+                        { kind: 'close' },
+                        15_000
+                    ).catch(() => undefined);
+                    await handle.context.close();
+                }));
+            }
         }
-      }
-      return retiredCommandIds;
-    };
+    );
 
-    try {
-      const realtimeAgents = await openAgents("live-all-realtime");
-      commandIds.push(
-        ...await setupGroupMembership(request, runId, {
-          owner: realtimeAgents[0],
-          members: realtimeAgents,
-          groupId,
-          suffix,
-        }),
-      );
-      commandIds.push(
-        ...await verifyGroupStateReadback(request, runId, realtimeAgents[0], {
-          groupId,
-          suffix,
-        }),
-      );
-
-      const realtime = await runAllDeliveryPermutations(
-        request,
-        runId,
-        realtimeAgents,
-        {
-          transport: "realtime",
-          groupId,
-          suffix,
-        },
-      );
-      commandIds.push(...realtime.commandIds);
-      scenarios.push(...realtime.scenarios);
-      await expectNoUnexpectedDeliveries(request, runId, realtime.scenarios);
-      commandIds.push(
-        ...await retireAgents(
-          realtimeAgents,
-          `${suffix}-after-realtime-all`,
-        ),
-      );
-
-      const wsAgents = await openAgents("live-all-ws");
-      commandIds.push(
-        ...await runWebSocketOpenSendCloseMatrix(
-          request,
-          runId,
-          wsAgents,
-          {
-            groupId,
-            suffix,
-          },
-        ),
-      );
-      commandIds.push(
-        ...await retireAgents(wsAgents, `${suffix}-after-ws-all`),
-      );
-
-      const messageAgents = await openAgents("live-all-messages");
-      commandIds.push(
-        ...await setupGroupMembership(request, runId, {
-          owner: messageAgents[0],
-          members: messageAgents,
-          groupId,
-          suffix: `${suffix}-messages`,
-        }),
-      );
-
-      const messages = await runAllDeliveryPermutations(
-        request,
-        runId,
-        messageAgents,
-        {
-          transport: "messages.rtc",
-          groupId,
-          suffix,
-        },
-      );
-      commandIds.push(...messages.commandIds);
-      scenarios.push(...messages.scenarios);
-      await expectNoUnexpectedDeliveries(request, runId, messages.scenarios);
-
-      commandIds.push(
-        await runNackProbe(request, runId, messageAgents[0], {
-          groupId,
-          suffix,
-          targetSessionId: messages.sessions.B,
-        }),
-      );
-      commandIds.push(
-        ...await expectClosedTransportFailure(
-          request,
-          runId,
-          messageAgents[2],
-          {
-            groupId,
-            suffix,
-            targetSessionId: messages.sessions.B,
-          },
-        ),
-      );
-
-      const reconnectC = await connectAgent(request, runId, messageAgents[2], {
-        transport: "messages.rtc",
-        groupId,
-        suffix: `${suffix}-reconnect-c`,
-      });
-      commandIds.push(reconnectC.commandId);
-      await waitForPeerReadiness(
-        request,
-        runId,
-        messageAgents[1],
-        [reconnectC.sessionId],
-        `${suffix}-reconnect-c`,
-      );
-      const reconnectMatrixId = `messages-rtc-reconnect-b-to-c-${suffix}`;
-      commandIds.push(
-        await sendMatrixPayload(request, runId, messageAgents[1], {
-          transport: "messages.rtc",
-          groupId,
-          suffix,
-          deliveryMode: "direct",
-          targetSessionIds: [reconnectC.sessionId],
-          matrixId: reconnectMatrixId,
-        }),
-      );
-      await waitForMessage(request, runId, {
-        agentId: messageAgents[2].agentId,
-        transport: "messages.rtc",
-        matrixId: reconnectMatrixId,
-        deliveryMode: "direct",
-      });
-
-      commandIds.push(
-        ...await closeAndResetAgents(
-          request,
-          runId,
-          messageAgents,
-          `${suffix}-final-all`,
-        ),
-      );
-      await expectNoUnexpectedDeliveries(request, runId, scenarios);
-      await expectArtifactBundle(request, runId, commandIds);
-
-      await expect.poll(async () => {
-        const run = await fetchRun(request, runId);
-        const resultIds = new Set(
-          (run.results ?? [])
-            .filter((result) => result.ok === true)
-            .map((result) => result.commandId),
+    test('runs every three-browser live sender and receiver scenario', async ({
+        browser,
+        request
+    }, testInfo) => {
+        test.skip(
+            !liveAllScenariosEnabled,
+            'Set RALLAR_BLACK_BOX_LIVE_ALL_SCENARIOS=1 to run the exhaustive three-browser live matrix.'
         );
-        const topics = (run.events ?? [])
-          .map((event) => stringValue(runtimeEventPayload(event).topic))
-          .filter((topic): topic is string => Boolean(topic));
-        return {
-          agents: (run.agents ?? [])
-            .filter((agent) =>
-              allHandles.some((handle) => handle.agentId === agent.agentId)
-            )
-            .length,
-          keyCommandsComplete: commandIds
-            .filter((commandId) => !commandId.startsWith("stale-send-"))
-            .filter((commandId) =>
-              !commandId.startsWith("close-before-stale-send-")
-            )
-            .filter((commandId) =>
-              !commandId.startsWith("nack-not-yet-in-sync-")
-            )
-            .every((commandId) => resultIds.has(commandId)),
-          fakeTopicCount: topics.filter((topic) =>
-            topic.startsWith("rallar.bb.fake.")
-          ).length,
-          scenarioCount: scenarios.length,
+        test.setTimeout(720_000);
+
+        const suffix = `live3-all-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const runId = `rallar-live-three-browser-all-${suffix}`;
+        const groupId = `${roomSeed}-${suffix}`;
+        const allHandles: AgentHandle[] = [];
+        const openHandles: AgentHandle[] = [];
+        const commandIds: string[] = [];
+        const scenarios: DeliveryScenarioRecord[] = [];
+        const openAgents = async (
+            label: string
+        ): Promise<readonly [AgentHandle, AgentHandle, AgentHandle]> => {
+            const agents = await openAgentTrio(browser, {
+                runId,
+                groupId,
+                suffix,
+                label
+            });
+            allHandles.push(...agents);
+            openHandles.push(...agents);
+            return agents;
         };
-      }, {
-        timeout: 20_000,
-      }).toEqual({
-        agents: allHandles.length,
-        keyCommandsComplete: true,
-        fakeTopicCount: 0,
-        scenarioCount: 24,
-      });
-    } finally {
-      if (allHandles.length > 0) {
-        await attachRunSummary(request, testInfo, runId).catch(() => undefined);
-      }
-      await Promise.all(openHandles.map(async (handle) => {
-        await executeResult(
-          request,
-          runId,
-          handle.agentId,
-          `best-effort-close-${handle.prefix.toLowerCase()}-${suffix}`,
-          { kind: "close" },
-          15_000,
-        ).catch(() => undefined);
-        await handle.context.close();
-      }));
-    }
-  });
+        const retireAgents = async (
+            agents: readonly AgentHandle[],
+            closeSuffix: string
+        ): Promise<readonly string[]> => {
+            const retiredCommandIds = await closeAndResetAgents(
+                request,
+                runId,
+                agents,
+                closeSuffix
+            );
+            await closeAgentContexts(agents);
+            for (const agent of agents) {
+                const index = openHandles.findIndex((candidate) => candidate.agentId === agent.agentId);
+                if (index >= 0) {
+                    openHandles.splice(index, 1);
+                }
+            }
+            return retiredCommandIds;
+        };
+
+        try {
+            const realtimeAgents = await openAgents('live-all-realtime');
+            commandIds.push(
+                ...await setupGroupMembership(request, runId, {
+                    owner: realtimeAgents[0],
+                    members: realtimeAgents,
+                    groupId,
+                    suffix
+                })
+            );
+            commandIds.push(
+                ...await verifyGroupStateReadback(request, runId, realtimeAgents[0], {
+                    groupId,
+                    suffix
+                })
+            );
+
+            const realtime = await runAllDeliveryPermutations(
+                request,
+                runId,
+                realtimeAgents,
+                {
+                    transport: 'realtime',
+                    groupId,
+                    suffix
+                }
+            );
+            commandIds.push(...realtime.commandIds);
+            scenarios.push(...realtime.scenarios);
+            await expectNoUnexpectedDeliveries(request, runId, realtime.scenarios);
+            commandIds.push(
+                ...await retireAgents(
+                    realtimeAgents,
+                    `${suffix}-after-realtime-all`
+                )
+            );
+
+            const wsAgents = await openAgents('live-all-ws');
+            commandIds.push(
+                ...await runWebSocketOpenSendCloseMatrix(
+                    request,
+                    runId,
+                    wsAgents,
+                    {
+                        groupId,
+                        suffix
+                    }
+                )
+            );
+            commandIds.push(
+                ...await retireAgents(wsAgents, `${suffix}-after-ws-all`)
+            );
+
+            const messageAgents = await openAgents('live-all-messages');
+            commandIds.push(
+                ...await setupGroupMembership(request, runId, {
+                    owner: messageAgents[0],
+                    members: messageAgents,
+                    groupId,
+                    suffix: `${suffix}-messages`
+                })
+            );
+
+            const messages = await runAllDeliveryPermutations(
+                request,
+                runId,
+                messageAgents,
+                {
+                    transport: 'messages.rtc',
+                    groupId,
+                    suffix
+                }
+            );
+            commandIds.push(...messages.commandIds);
+            scenarios.push(...messages.scenarios);
+            await expectNoUnexpectedDeliveries(request, runId, messages.scenarios);
+
+            commandIds.push(
+                await runNackProbe(request, runId, messageAgents[0], {
+                    groupId,
+                    suffix,
+                    targetSessionId: messages.sessions.B
+                })
+            );
+            commandIds.push(
+                ...await expectClosedTransportFailure(
+                    request,
+                    runId,
+                    messageAgents[2],
+                    {
+                        groupId,
+                        suffix,
+                        targetSessionId: messages.sessions.B
+                    }
+                )
+            );
+
+            const reconnectC = await connectAgent(request, runId, messageAgents[2], {
+                transport: 'messages.rtc',
+                groupId,
+                suffix: `${suffix}-reconnect-c`
+            });
+            commandIds.push(reconnectC.commandId);
+            await waitForPeerReadiness(
+                request,
+                runId,
+                messageAgents[1],
+                [reconnectC.sessionId],
+                `${suffix}-reconnect-c`
+            );
+            const reconnectMatrixId = `messages-rtc-reconnect-b-to-c-${suffix}`;
+            commandIds.push(
+                await sendMatrixPayload(request, runId, messageAgents[1], {
+                    transport: 'messages.rtc',
+                    groupId,
+                    suffix,
+                    deliveryMode: 'direct',
+                    targetSessionIds: [reconnectC.sessionId],
+                    matrixId: reconnectMatrixId
+                })
+            );
+            await waitForMessage(request, runId, {
+                agentId: messageAgents[2].agentId,
+                transport: 'messages.rtc',
+                matrixId: reconnectMatrixId,
+                deliveryMode: 'direct'
+            });
+
+            commandIds.push(
+                ...await closeAndResetAgents(
+                    request,
+                    runId,
+                    messageAgents,
+                    `${suffix}-final-all`
+                )
+            );
+            await expectNoUnexpectedDeliveries(request, runId, scenarios);
+            await expectArtifactBundle(request, runId, commandIds);
+
+            await expect.poll(async () => {
+                const run = await fetchRun(request, runId);
+                const resultIds = new Set(
+                    (run.results ?? [])
+                        .filter((result) => result.ok === true)
+                        .map((result) => result.commandId)
+                );
+                const topics = (run.events ?? [])
+                    .map((event) => stringValue(runtimeEventPayload(event).topic))
+                    .filter((topic): topic is string => Boolean(topic));
+                return {
+                    agents: (run.agents ?? [])
+                        .filter((agent) => allHandles.some((handle) => handle.agentId === agent.agentId))
+                        .length,
+                    keyCommandsComplete: commandIds
+                        .filter((commandId) => !commandId.startsWith('stale-send-'))
+                        .filter((commandId) => !commandId.startsWith('close-before-stale-send-'))
+                        .filter((commandId) => !commandId.startsWith('nack-not-yet-in-sync-'))
+                        .every((commandId) => resultIds.has(commandId)),
+                    fakeTopicCount: topics.filter((topic) => topic.startsWith('rallar.bb.fake.')).length,
+                    scenarioCount: scenarios.length
+                };
+            }, {
+                timeout: 20_000
+            }).toEqual({
+                agents: allHandles.length,
+                keyCommandsComplete: true,
+                fakeTopicCount: 0,
+                scenarioCount: 24
+            });
+        }
+        finally {
+            if (allHandles.length > 0) {
+                await attachRunSummary(request, testInfo, runId).catch(() => undefined);
+            }
+            await Promise.all(openHandles.map(async (handle) => {
+                await executeResult(
+                    request,
+                    runId,
+                    handle.agentId,
+                    `best-effort-close-${handle.prefix.toLowerCase()}-${suffix}`,
+                    { kind: 'close' },
+                    15_000
+                ).catch(() => undefined);
+                await handle.context.close();
+            }));
+        }
+    });
 });

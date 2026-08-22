@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { Coordinates, VivaldiNode } from '@shared-graph/graph/vivaldi-core.ts';
+import { describe, expect, it } from 'vitest';
 
 const SQRT_HALF = Math.SQRT1_2;
 
@@ -59,7 +59,7 @@ describe('VivaldiNode construction', () => {
     it.each([
         { label: 'zero', dimensions: 0 },
         { label: 'negative', dimensions: -1 },
-        { label: 'fractional', dimensions: 1.5 },
+        { label: 'fractional', dimensions: 1.5 }
     ])('rejects $label dimensions', ({ dimensions }) => {
         expect(() => new VivaldiNode({ dimensions }))
             .toThrow('Vivaldi node dimensions must be an integer >= 1');

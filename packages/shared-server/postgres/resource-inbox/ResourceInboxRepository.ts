@@ -1,27 +1,21 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { Either } from '@shared/resilience/Either.ts';
-import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import {
-    type ResourceInboxReleaseDisposition,
-    type ResourceInboxReservationInput,
     toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
+    type ResourceInboxReleaseDisposition,
+    type ResourceInboxReservationInput
 } from '@shared/queuebox/QueueBoxTypes.ts';
+import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
-import {
-    ResourceInboxRow,
-    rowsToMap,
-    toDomain,
-    toPgTimestamp,
-    toSystemDate,
-} from './repository-utils.ts';
+import { ResourceInboxRow, rowsToMap, toDomain, toPgTimestamp, toSystemDate } from './repository-utils.ts';
 import { requeueObservedResourceInboxDeliveryFailure } from './resource-inbox-delivery-failure.ts';
 import { writeMaterializedResourceInboxEntry } from './write-materialized-resource-inbox-entry.ts';
 export {
     initResourceInboxExpiryEviction,
-    RESOURCE_INBOX_EXPIRY_EVICTION_INTERVAL_MS,
+    RESOURCE_INBOX_EXPIRY_EVICTION_INTERVAL_MS
 } from './ResourceInboxMaintenance.ts';
 
 export type StartProcessingEntitySkipped = Readonly<{
@@ -59,7 +53,7 @@ export class ResourceInboxRepository {
         const newVar = await this.sql.begin<T>(
             async (sql: PSqlTransactionSql) => {
                 return await fn(new ResourceInboxRepository(sql));
-            },
+            }
         );
 
         return newVar as T;
@@ -98,21 +92,21 @@ export class ResourceInboxRepository {
                     ${entry.audit.createdBy},
                     ${toPgTimestamp(entry.audit.createdTs)},
                     ${toPgTimestamp(entry.audit.expiryTs)},
-                    ${
-            entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null
-        },
+                    ${entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null},
                     ${entry.dequeueAudit.endTs ? toPgTimestamp(entry.dequeueAudit.endTs) : null},
                     ${entry.dequeueAudit.nextTs ? toPgTimestamp(entry.dequeueAudit.nextTs) : null},
                     ${entry.dequeueAudit.attempts ?? 0})
             returning *
         `;
 
-        if (rows.length !== 1) throw new Error('Insert failed: expected exactly one row');
+        if (rows.length !== 1) {
+            throw new Error('Insert failed: expected exactly one row');
+        }
         return toDomain(rows[0]);
     }
 
     async writeIfAbsentOrMatch(
-        entry: ResourceEntry,
+        entry: ResourceEntry
     ): Promise<'inserted' | 'matched'> {
         const systemDate = toSystemDate(entry);
         const inserted = await this.sql<ResourceInboxRow[]>`
@@ -140,9 +134,7 @@ export class ResourceInboxRepository {
                     ${entry.audit.createdBy},
                     ${toPgTimestamp(entry.audit.createdTs)},
                     ${toPgTimestamp(entry.audit.expiryTs)},
-                    ${
-            entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null
-        },
+                    ${entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null},
                     ${entry.dequeueAudit.endTs ? toPgTimestamp(entry.dequeueAudit.endTs) : null},
                     ${entry.dequeueAudit.nextTs ? toPgTimestamp(entry.dequeueAudit.nextTs) : null},
                     ${entry.dequeueAudit.attempts ?? 0})
@@ -157,7 +149,7 @@ export class ResourceInboxRepository {
         if (inserted.length !== 0) {
             throw new ResourceInboxInvariantCorruptionError(
                 entry.key,
-                'Resource inbox insert returned an unexpected row count',
+                'Resource inbox insert returned an unexpected row count'
             );
         }
 
@@ -222,7 +214,7 @@ export class ResourceInboxRepository {
         ) {
             throw new ResourceInboxInvariantCorruptionError(
                 entry.key,
-                'Resource inbox immutable content or lifecycle differs',
+                'Resource inbox immutable content or lifecycle differs'
             );
         }
 
@@ -232,7 +224,7 @@ export class ResourceInboxRepository {
     async replacePendingIfMatch(
         expected: ResourceEntry,
         next: ResourceEntry,
-        expectedGeneration: number,
+        expectedGeneration: number
     ): Promise<ResourceEntry | null> {
         if (
             expected.key.topicId !== next.key.topicId ||
@@ -249,7 +241,7 @@ export class ResourceInboxRepository {
         ) {
             throw new ResourceInboxInvariantCorruptionError(
                 next.key,
-                'Resource inbox pending replacement identity or lifecycle differs',
+                'Resource inbox pending replacement identity or lifecycle differs'
             );
         }
 
@@ -257,9 +249,7 @@ export class ResourceInboxRepository {
             update resource_inbox
             set ri_resource = ${next.resource},
                 ri_status = ${next.status},
-                next_ts = ${
-            next.dequeueAudit.nextTs ? toPgTimestamp(next.dequeueAudit.nextTs) : null
-        }
+                next_ts = ${next.dequeueAudit.nextTs ? toPgTimestamp(next.dequeueAudit.nextTs) : null}
             where ri_topic_id = ${expected.key.topicId}
               and ri_resource_id = ${expected.key.resourceId}
               and fk_ext_bank_id = ${expected.key.contextId}
@@ -279,7 +269,7 @@ export class ResourceInboxRepository {
         if (rows.length !== 1) {
             throw new ResourceInboxInvariantCorruptionError(
                 next.key,
-                'Resource inbox pending replacement returned an unexpected row count',
+                'Resource inbox pending replacement returned an unexpected row count'
             );
         }
 
@@ -291,7 +281,7 @@ export class ResourceInboxRepository {
         ) {
             throw new ResourceInboxInvariantCorruptionError(
                 next.key,
-                'Resource inbox pending replacement returned different content',
+                'Resource inbox pending replacement returned different content'
             );
         }
         return updated;
@@ -325,9 +315,7 @@ export class ResourceInboxRepository {
                     ${entry.audit.createdBy},
                     ${toPgTimestamp(entry.audit.createdTs)},
                     ${toPgTimestamp(entry.audit.expiryTs)},
-                    ${
-            entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null
-        },
+                    ${entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null},
                     ${entry.dequeueAudit.endTs ? toPgTimestamp(entry.dequeueAudit.endTs) : null},
                     ${entry.dequeueAudit.nextTs ? toPgTimestamp(entry.dequeueAudit.nextTs) : null},
                     ${entry.dequeueAudit.attempts ?? 0})
@@ -346,7 +334,9 @@ export class ResourceInboxRepository {
             returning *
         `;
 
-        if (rows.length !== 1) throw new Error('Replace failed: expected exactly one row');
+        if (rows.length !== 1) {
+            throw new Error('Replace failed: expected exactly one row');
+        }
         return toDomain(rows[0]);
     }
 
@@ -362,13 +352,13 @@ export class ResourceInboxRepository {
         }
 
         throw new Error(
-            'Write-if-absent failed: conflicting row was not returned and no active row exists',
+            'Write-if-absent failed: conflicting row was not returned and no active row exists'
         );
     }
 
     async writeMaterializedIfAbsentOrReplaceExpired(
         placeholder: ResourceEntry,
-        materialize: () => Promise<ResourceEntry>,
+        materialize: () => Promise<ResourceEntry>
     ): Promise<ResourceEntry> {
         return await writeMaterializedResourceInboxEntry(
             this,
@@ -377,13 +367,13 @@ export class ResourceInboxRepository {
             (key) =>
                 new ResourceInboxInvariantCorruptionError(
                     key,
-                    'Materialized resource inbox identity differs from its reservation',
-                ),
+                    'Materialized resource inbox identity differs from its reservation'
+                )
         );
     }
 
     async tryWriteIfAbsentOrReplaceExpired(
-        entry: ResourceEntry,
+        entry: ResourceEntry
     ): Promise<ResourceEntry | null> {
         const systemDate = toSystemDate(entry);
 
@@ -412,9 +402,7 @@ export class ResourceInboxRepository {
                     ${entry.audit.createdBy},
                     ${toPgTimestamp(entry.audit.createdTs)},
                     ${toPgTimestamp(entry.audit.expiryTs)},
-                    ${
-            entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null
-        },
+                    ${entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null},
                     ${entry.dequeueAudit.endTs ? toPgTimestamp(entry.dequeueAudit.endTs) : null},
                     ${entry.dequeueAudit.nextTs ? toPgTimestamp(entry.dequeueAudit.nextTs) : null},
                     ${entry.dequeueAudit.attempts ?? 0})
@@ -467,7 +455,7 @@ export class ResourceInboxRepository {
 
     async findAllByTopicAndResourceId(
         topicId: string,
-        resourceId: string,
+        resourceId: string
     ): Promise<readonly ResourceEntry[]> {
         const rows = await this.sql<ResourceInboxRow[]>`
             select *
@@ -482,9 +470,7 @@ export class ResourceInboxRepository {
 
     async findAllKeys(): Promise<Key[]> {
         const now = new Date();
-        const rows = await this.sql<
-            Pick<ResourceInboxRow, 'ri_topic_id' | 'ri_resource_id' | 'fk_ext_bank_id'>[]
-        >`
+        const rows = await this.sql<Pick<ResourceInboxRow, 'ri_topic_id' | 'ri_resource_id' | 'fk_ext_bank_id'>[]>`
             select ri_topic_id, ri_resource_id, fk_ext_bank_id
             from resource_inbox
             where expire_ts > ${now}
@@ -494,7 +480,7 @@ export class ResourceInboxRepository {
         return rows.map((row) => ({
             topicId: row.ri_topic_id,
             resourceId: row.ri_resource_id,
-            contextId: row.fk_ext_bank_id,
+            contextId: row.fk_ext_bank_id
         }));
     }
 
@@ -531,7 +517,7 @@ export class ResourceInboxRepository {
     async findEntriesSkipLocked(
         typeIds: ReadonlySet<string>,
         statusIds: ReadonlySet<EntityStatus>,
-        reservationInput: ResourceInboxReservationInput,
+        reservationInput: ResourceInboxReservationInput
     ): Promise<Map<string, ResourceEntry>> {
         if (typeIds.size === 0 || statusIds.size === 0) {
             return new Map();
@@ -539,7 +525,7 @@ export class ResourceInboxRepository {
 
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
-            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
 
         const rows = await this.sql<ResourceInboxRow[]>`
@@ -567,11 +553,11 @@ export class ResourceInboxRepository {
     async findOverdueRetryEntriesSkipLocked(
         typeIds: ReadonlySet<string>,
         overdueBeforeEpochMs: number,
-        reservationInput: ResourceInboxReservationInput,
+        reservationInput: ResourceInboxReservationInput
     ): Promise<Map<string, ResourceEntry>> {
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
-            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
         if (typeIds.size === 0 || maxToReserve <= 0) {
             return new Map();
@@ -597,11 +583,11 @@ export class ResourceInboxRepository {
     async findTimedOutReservedEntriesSkipLocked(
         typeIds: ReadonlySet<string>,
         timeSinceStartMs: number,
-        reservationInput: ResourceInboxReservationInput,
+        reservationInput: ResourceInboxReservationInput
     ): Promise<Map<string, ResourceEntry>> {
         if (!Number.isSafeInteger(timeSinceStartMs) || timeSinceStartMs < 0) {
             throw new Error(
-                'Reserved-entry timeout must be a non-negative safe integer in milliseconds',
+                'Reserved-entry timeout must be a non-negative safe integer in milliseconds'
             );
         }
         if (typeIds.size === 0) {
@@ -610,7 +596,7 @@ export class ResourceInboxRepository {
 
         const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
             reservationInput,
-            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
         const rows = await this.sql<ResourceInboxRow[]>`
             select *
@@ -632,7 +618,7 @@ export class ResourceInboxRepository {
     async findRetryExhaustionFinalizationsSkipLocked(
         typeIds: ReadonlySet<string>,
         staleAfterMs: number,
-        options: Readonly<{ processingAttempts: number; maxToReserve: number }>,
+        options: Readonly<{ processingAttempts: number; maxToReserve: number; }>
     ): Promise<Map<string, ResourceEntry>> {
         if (!Number.isSafeInteger(staleAfterMs) || staleAfterMs < 0) {
             throw new Error('Finalization stale duration must be a non-negative safe integer');
@@ -643,7 +629,9 @@ export class ResourceInboxRepository {
         if (!Number.isSafeInteger(options.maxToReserve) || options.maxToReserve < 0) {
             throw new Error('Finalization reservation limit must be a non-negative safe integer');
         }
-        if (!typeIds.has(EnqueuedType.APP_INBOX) || options.maxToReserve === 0) return new Map();
+        if (!typeIds.has(EnqueuedType.APP_INBOX) || options.maxToReserve === 0) {
+            return new Map();
+        }
         const rows = await this.sql<ResourceInboxRow[]>`
             select *
             from resource_inbox
@@ -668,7 +656,7 @@ export class ResourceInboxRepository {
     async isEntriesToLock(
         typeIds: ReadonlySet<string>,
         statusIds: ReadonlySet<EntityStatus>,
-        maxAttempts: number = DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+        maxAttempts: number = DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
     ): Promise<boolean> {
         if (typeIds.size === 0 || statusIds.size === 0) {
             return false;
@@ -678,7 +666,7 @@ export class ResourceInboxRepository {
             throw new Error('maxAttempts must be a positive safe integer');
         }
 
-        const rows = await this.sql<{ one: number }[]>`
+        const rows = await this.sql<{ one: number; }[]>`
             select 1 as one
             from resource_inbox
             where ri_type_id in ${this.sql([...typeIds])}
@@ -705,7 +693,7 @@ export class ResourceInboxRepository {
 
         const now = new Date();
 
-        const rows = await this.sql<{ one: number }[]>`
+        const rows = await this.sql<{ one: number; }[]>`
             select 1 as one
             from resource_inbox
             where ri_status in ${this.sql([...statuses])}
@@ -719,7 +707,7 @@ export class ResourceInboxRepository {
     async isTimeoutOnReservedEntries(
         typeIds: ReadonlySet<string>,
         timeSinceStartTs: Temporal.Duration,
-        maxAttempts: number = DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+        maxAttempts: number = DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
     ): Promise<boolean> {
         if (typeIds.size === 0) {
             return false;
@@ -728,14 +716,14 @@ export class ResourceInboxRepository {
         const timeoutMs = timeSinceStartTs.total({ unit: 'milliseconds' });
         if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0) {
             throw new Error(
-                'Reserved-entry timeout must be a non-negative safe integer in milliseconds',
+                'Reserved-entry timeout must be a non-negative safe integer in milliseconds'
             );
         }
         if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1) {
             throw new Error('maxAttempts must be a positive safe integer');
         }
 
-        const rows = await this.sql<{ one: number }[]>`
+        const rows = await this.sql<{ one: number; }[]>`
                     select 1 as one
                     from resource_inbox
                     where ri_type_id in ${this.sql([...typeIds])}
@@ -753,10 +741,12 @@ export class ResourceInboxRepository {
     async isRetryExhaustionFinalizationRequired(
         typeIds: ReadonlySet<string>,
         staleAfterMs: number,
-        processingAttempts: number,
+        processingAttempts: number
     ): Promise<boolean> {
-        if (!typeIds.has(EnqueuedType.APP_INBOX)) return false;
-        const rows = await this.sql<{ one: number }[]>`
+        if (!typeIds.has(EnqueuedType.APP_INBOX)) {
+            return false;
+        }
+        const rows = await this.sql<{ one: number; }[]>`
             select 1 as one
             from resource_inbox
             where ri_type_id = ${EnqueuedType.APP_INBOX}
@@ -778,7 +768,7 @@ export class ResourceInboxRepository {
 
         const now = new Date();
 
-        const rows = await this.sql<{ one: number }[]>`
+        const rows = await this.sql<{ one: number; }[]>`
             select 1 as one
             from resource_inbox
             where ri_status in ${this.sql(statuses)}
@@ -798,7 +788,7 @@ export class ResourceInboxRepository {
 
     async startProcessingEntity(
         entry: ResourceEntry,
-        maxAttempts: number = DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+        maxAttempts: number = DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
     ): Promise<Either<StartProcessingEntitySkipped, ResourceEntry>> {
         const attempts = (entry.dequeueAudit.attempts ?? 0) + 1;
 
@@ -820,14 +810,14 @@ export class ResourceInboxRepository {
         return rows.length === 0
             ? Either.ofLeft<StartProcessingEntitySkipped, ResourceEntry>({
                 kind: 'expired-or-missing',
-                key: entry.key,
+                key: entry.key
             })
             : Either.ofRight<StartProcessingEntitySkipped, ResourceEntry>(toDomain(rows[0]));
     }
 
     async startFinalizationRecovery(
         entry: ResourceEntry,
-        processingAttempts: number,
+        processingAttempts: number
     ): Promise<Either<StartProcessingEntitySkipped, ResourceEntry>> {
         if (entry.dequeueAudit.attempts >= Number.MAX_SAFE_INTEGER) {
             throw new RangeError('Resource inbox finalization reservation generation overflow');
@@ -857,7 +847,7 @@ export class ResourceInboxRepository {
     async updateResourceEntry(
         key: Key,
         newStatus: EntityStatus,
-        timeUntilNextAttemptMs: number | null,
+        timeUntilNextAttemptMs: number | null
     ): Promise<number> {
         if (
             timeUntilNextAttemptMs !== null &&
@@ -871,7 +861,7 @@ export class ResourceInboxRepository {
             ? new Date(endTs.getTime() + timeUntilNextAttemptMs)
             : null;
 
-        const rows = await this.sql<{ ri_row_id: bigint }[]>`
+        const rows = await this.sql<{ ri_row_id: bigint; }[]>`
             update resource_inbox
             set ri_status = ${newStatus},
                 end_ts    = ${endTs},
@@ -891,12 +881,12 @@ export class ResourceInboxRepository {
             expectedAttempts: number;
             releasedAt: Temporal.Instant;
             disposition: ResourceInboxReleaseDisposition;
-        }>,
+        }>
     ): Promise<ResourceEntry | null> {
         const disposition = toResourceInboxReleaseDisposition(options.disposition);
 
         const persistedReleasedAt = Temporal.Instant.fromEpochMilliseconds(
-            Number(options.releasedAt.epochMilliseconds),
+            Number(options.releasedAt.epochMilliseconds)
         );
         const endTs = new Date(Number(persistedReleasedAt.epochMilliseconds));
         const nextTs = disposition.delayMs !== null
@@ -928,8 +918,8 @@ export class ResourceInboxRepository {
                 endTs: persistedReleasedAt,
                 nextTs: disposition.delayMs !== null
                     ? persistedReleasedAt.add({ milliseconds: disposition.delayMs })
-                    : undefined,
-            },
+                    : undefined
+            }
         };
     }
 
@@ -937,18 +927,18 @@ export class ResourceInboxRepository {
         key: Key,
         expectedAttempts: number,
         status: typeof EntityStatus.COMPLETED | typeof EntityStatus.FAILED,
-        completedAt: Date,
+        completedAt: Date
     ): Promise<boolean> {
         if (
             status !== EntityStatus.COMPLETED &&
             status !== EntityStatus.FAILED
         ) {
             throw new Error(
-                'Resource inbox reservation finish status must be COMPLETED or FAILED',
+                'Resource inbox reservation finish status must be COMPLETED or FAILED'
             );
         }
 
-        const rows = await this.sql<{ ri_row_id: bigint }[]>`
+        const rows = await this.sql<{ ri_row_id: bigint; }[]>`
             update resource_inbox
             set ri_status = ${status}, end_ts = ${completedAt}, next_ts = null
             where ri_topic_id = ${key.topicId}
@@ -965,7 +955,7 @@ export class ResourceInboxRepository {
 
     async requeueObservedDeliveryFailure(
         observed: ResourceEntry,
-        disposition: ResourceInboxReleaseDisposition,
+        disposition: ResourceInboxReleaseDisposition
     ): Promise<ResourceEntry | null> {
         return await requeueObservedResourceInboxDeliveryFailure(this.sql, observed, disposition);
     }
@@ -998,9 +988,7 @@ export class ResourceInboxRepository {
                     ${entry.audit.createdBy},
                     ${toPgTimestamp(entry.audit.createdTs)},
                     ${toPgTimestamp(entry.audit.expiryTs)},
-                    ${
-            entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null
-        },
+                    ${entry.dequeueAudit.startTs ? toPgTimestamp(entry.dequeueAudit.startTs) : null},
                     ${entry.dequeueAudit.endTs ? toPgTimestamp(entry.dequeueAudit.endTs) : null},
                     ${entry.dequeueAudit.nextTs ? toPgTimestamp(entry.dequeueAudit.nextTs) : null},
                     ${entry.dequeueAudit.attempts ?? 0})
@@ -1015,7 +1003,9 @@ export class ResourceInboxRepository {
             returning *
         `;
 
-        if (rows.length !== 1) throw new Error('Upsert failed: expected exactly one row');
+        if (rows.length !== 1) {
+            throw new Error('Upsert failed: expected exactly one row');
+        }
         return toDomain(rows[0]);
     }
 
@@ -1024,7 +1014,7 @@ export class ResourceInboxRepository {
     // ---------------------------------
 
     async deleteByKey(key: Key): Promise<boolean> {
-        const rows = await this.sql<{ ri_row_id: bigint }[]>`
+        const rows = await this.sql<{ ri_row_id: bigint; }[]>`
             delete
             from resource_inbox
             where ri_topic_id = ${key.topicId}
@@ -1037,7 +1027,7 @@ export class ResourceInboxRepository {
     }
 
     async deleteExpired(): Promise<number> {
-        const rows = await this.sql<{ ri_row_id: bigint }[]>`
+        const rows = await this.sql<{ ri_row_id: bigint; }[]>`
             delete
             from resource_inbox
             where expire_ts <= (now() at time zone 'UTC')
@@ -1075,7 +1065,8 @@ function isValidResourceInboxLifecycle(row: ResourceInboxRow): boolean {
         startTs = row.start_ts ? parsePostgresTimestamp6(row.start_ts) : null;
         endTs = row.end_ts ? parsePostgresTimestamp6(row.end_ts) : null;
         nextTs = row.next_ts ? parsePostgresTimestamp6(row.next_ts) : null;
-    } catch {
+    }
+    catch {
         return false;
     }
 
@@ -1111,7 +1102,7 @@ function isValidResourceInboxLifecycle(row: ResourceInboxRow): boolean {
 
 function hasMatchingImmutableResourceInboxContent(
     row: ResourceInboxRow,
-    entry: ResourceEntry,
+    entry: ResourceEntry
 ): boolean {
     try {
         return row.ri_topic_id === entry.key.topicId &&
@@ -1122,18 +1113,19 @@ function hasMatchingImmutableResourceInboxContent(
             row.created_by === entry.audit.createdBy &&
             isSamePostgresTimestamp6(row.created_ts, entry.audit.createdTs) &&
             isSamePostgresTimestamp6(row.expire_ts, entry.audit.expiryTs);
-    } catch {
+    }
+    catch {
         return false;
     }
 }
 
 function isSamePostgresTimestamp6(
     persisted: string,
-    candidate: Temporal.PlainDateTime | Temporal.Instant,
+    candidate: Temporal.PlainDateTime | Temporal.Instant
 ): boolean {
     return Temporal.PlainDateTime.compare(
         parsePostgresTimestamp6(persisted),
-        toPostgresTimestamp6(candidate),
+        toPostgresTimestamp6(candidate)
     ) === 0;
 }
 
@@ -1150,7 +1142,7 @@ function parsePostgresTimestamp6(value: string): Temporal.PlainDateTime {
 }
 
 function toPostgresTimestamp6(
-    value: Temporal.PlainDateTime | Temporal.Instant,
+    value: Temporal.PlainDateTime | Temporal.Instant
 ): Temporal.PlainDateTime {
     const timestamp = value instanceof Temporal.Instant
         ? value.toZonedDateTimeISO('UTC').toPlainDateTime()
@@ -1158,6 +1150,6 @@ function toPostgresTimestamp6(
 
     return timestamp.round({
         smallestUnit: 'microsecond',
-        roundingMode: 'halfEven',
+        roundingMode: 'halfEven'
     });
 }

@@ -1,11 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ObservableLoanedRepository } from '@shared/cache/ObservableLoanedRepository.ts';
 import { ObservableLoanedValue } from '@shared/cache/ObservableLoanedValue.ts';
-import {
-    type ObservableKeyedValueEvent,
-    type ObservableValueEvent,
-    ObservableValueEventType,
-} from '@shared/cache/RepositoryInterfaces.ts';
+import { ObservableValueEventType, type ObservableKeyedValueEvent, type ObservableValueEvent } from '@shared/cache/RepositoryInterfaces.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('ObservableLoanedValue', () => {
     afterEach(() => {
@@ -16,7 +12,7 @@ describe('ObservableLoanedValue', () => {
     it('emits created, updated, refreshed, and deleted events for observed refreshes', async () => {
         const refreshValues = [1, 2, 2];
         const value = new ObservableLoanedValue<number>(
-            async () => refreshValues.shift() ?? 2,
+            async () => refreshValues.shift() ?? 2
         );
         const events: Array<ObservableValueEvent<number>> = [];
 
@@ -35,25 +31,25 @@ describe('ObservableLoanedValue', () => {
             ObservableValueEventType.Created,
             ObservableValueEventType.Updated,
             ObservableValueEventType.Refreshed,
-            ObservableValueEventType.Deleted,
+            ObservableValueEventType.Deleted
         ]);
         expect(events[0]).toMatchObject({
             type: ObservableValueEventType.Created,
-            value: 1,
+            value: 1
         });
         expect(events[1]).toMatchObject({
             type: ObservableValueEventType.Updated,
             value: 2,
-            previous: 1,
+            previous: 1
         });
         expect(events[2]).toMatchObject({
             type: ObservableValueEventType.Refreshed,
             value: 2,
-            previous: 2,
+            previous: 2
         });
         expect(events[3]).toMatchObject({
             type: ObservableValueEventType.Deleted,
-            previous: 2,
+            previous: 2
         });
     });
 
@@ -91,7 +87,7 @@ describe('ObservableLoanedValue', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const value = new ObservableLoanedValue<number>(async () => 1, {
-            ttlMs: 100,
+            ttlMs: 100
         });
         const events: ObservableValueEventType[] = [];
 
@@ -108,7 +104,7 @@ describe('ObservableLoanedValue', () => {
 
         expect(events).toEqual([
             ObservableValueEventType.Created,
-            ObservableValueEventType.Deleted,
+            ObservableValueEventType.Deleted
         ]);
     });
 });
@@ -122,7 +118,7 @@ describe('ObservableLoanedRepository', () => {
     it('re-emits keyed events and keeps cache hits quiet', async () => {
         let next = 1;
         const repository = new ObservableLoanedRepository<string, number>(
-            async (_key, current) => current ?? next++,
+            async (_key, current) => current ?? next++
         );
         const events: Array<ObservableKeyedValueEvent<string, number>> = [];
 
@@ -139,7 +135,7 @@ describe('ObservableLoanedRepository', () => {
         expect(events.map((event) => [event.key, event.type])).toEqual([
             ['room-a', ObservableValueEventType.Created],
             ['room-a', ObservableValueEventType.Refreshed],
-            ['room-a', ObservableValueEventType.Deleted],
+            ['room-a', ObservableValueEventType.Deleted]
         ]);
     });
 
@@ -150,7 +146,7 @@ describe('ObservableLoanedRepository', () => {
             async (key, current) => {
                 defaultCalls.push([key, current]);
                 return (current ?? key.length) + 1;
-            },
+            }
         );
 
         expect(await repository.get('aa')).toBe(3);
@@ -158,7 +154,7 @@ describe('ObservableLoanedRepository', () => {
             await repository.refreshWith('aa', async (key, current) => {
                 overrideCalls.push([key, current]);
                 return (current ?? 0) + 5;
-            }),
+            })
         ).toBe(8);
 
         expect(defaultCalls).toEqual([['aa', undefined]]);
@@ -180,8 +176,8 @@ describe('ObservableLoanedRepository', () => {
                 return deferred.promise;
             },
             {
-                ttlMs: 5,
-            },
+                ttlMs: 5
+            }
         );
         const events: ObservableValueEventType[] = [];
 
@@ -209,7 +205,7 @@ describe('ObservableLoanedRepository', () => {
         expect(events).toEqual([
             ObservableValueEventType.Created,
             ObservableValueEventType.Updated,
-            ObservableValueEventType.Deleted,
+            ObservableValueEventType.Deleted
         ]);
         expect(repository.has('job')).toBe(false);
     });
@@ -226,7 +222,7 @@ describe('ObservableLoanedRepository', () => {
                 }
 
                 return deferred.promise;
-            },
+            }
         );
         const events: Array<ObservableKeyedValueEvent<string, number>> = [];
 
@@ -253,18 +249,18 @@ describe('ObservableLoanedRepository', () => {
         expect(events[0]).toMatchObject({
             key: 'room-a',
             type: ObservableValueEventType.Created,
-            value: 2,
+            value: 2
         });
     });
 
     it('deletes only the exact observed loaned value', async () => {
-        type Snapshot = Readonly<{ revision: number }>;
+        type Snapshot = Readonly<{ revision: number; }>;
         type ConditionallyDeletable = Readonly<{
             compareAndDelete?: (key: string, expected: Snapshot) => boolean;
         }>;
         let current: Snapshot = { revision: 1 };
         const repository = new ObservableLoanedRepository<string, Snapshot>(
-            async () => current,
+            async () => current
         );
         const deleted = vi.fn();
         const conditionallyDeletable = repository as ConditionallyDeletable;
@@ -274,20 +270,20 @@ describe('ObservableLoanedRepository', () => {
         expect(
             conditionallyDeletable.compareAndDelete?.(
                 'room',
-                { revision: first.revision },
-            ) ?? false,
+                { revision: first.revision }
+            ) ?? false
         ).toBe(false);
         expect(repository.peek('room')).toBe(first);
 
         current = { revision: 2 };
         const newer = await repository.refresh('room');
         expect(
-            conditionallyDeletable.compareAndDelete?.('room', first) ?? false,
+            conditionallyDeletable.compareAndDelete?.('room', first) ?? false
         ).toBe(false);
         expect(repository.peek('room')).toBe(newer);
 
         expect(
-            conditionallyDeletable.compareAndDelete?.('room', newer) ?? false,
+            conditionallyDeletable.compareAndDelete?.('room', newer) ?? false
         ).toBe(true);
         await repository.whenIdle();
 
@@ -295,7 +291,7 @@ describe('ObservableLoanedRepository', () => {
         expect(deleted).toHaveBeenCalledTimes(1);
         expect(deleted.mock.calls[0]?.[0]).toMatchObject({
             key: 'room',
-            previous: newer,
+            previous: newer
         });
     });
 });
@@ -312,6 +308,6 @@ function createDeferred<T>() {
     return {
         promise,
         resolve,
-        reject,
+        reject
     };
 }

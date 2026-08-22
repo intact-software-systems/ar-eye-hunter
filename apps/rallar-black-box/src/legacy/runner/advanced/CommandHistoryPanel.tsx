@@ -1,14 +1,11 @@
 import type { RallarBlackBoxTestResult } from '@shared-test/rallar-bb-test/types.ts';
-import {
-    resultSummary,
-    statusTone,
-} from '../../shared/command-presentation.ts';
+import { resultSummary, statusTone } from '../../shared/command-presentation.ts';
 import { formatDuration } from '../../shared/time-format.ts';
 
 export function CommandHistoryPanel({
     history,
     selectedCommandId,
-    onSelect,
+    onSelect
 }: {
     history: readonly RallarBlackBoxTestResult[];
     selectedCommandId?: string;

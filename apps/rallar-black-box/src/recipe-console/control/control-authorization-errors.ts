@@ -11,7 +11,7 @@ export class RecipeConsoleControlAuthorizationError extends Error {
 
     constructor(
         controlError: ControlRunManagerHttpError,
-        brokerError: unknown,
+        brokerError: unknown
     ) {
         super(controlAuthorizationErrorMessage(brokerError));
         this.name = 'RecipeConsoleControlAuthorizationError';
@@ -23,15 +23,14 @@ export class RecipeConsoleControlAuthorizationError extends Error {
     }
 }
 
-export class RecipeConsoleControlCredentialTrustError
-    extends ControlRunManagerHttpError {
+export class RecipeConsoleControlCredentialTrustError extends ControlRunManagerHttpError {
     readonly reachable = true;
     readonly authorizationRequired = true;
     readonly credentialTrustRequired = true;
 
     constructor(
         controlError: ControlRunManagerHttpError,
-        message: string,
+        message: string
     ) {
         super(message, controlError.status, controlError.statusText);
         this.name = 'RecipeConsoleControlCredentialTrustError';

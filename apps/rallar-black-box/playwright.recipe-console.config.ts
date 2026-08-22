@@ -5,7 +5,7 @@ const RECIPE_CONSOLE_TEST_ENV = {
     VITE_RALLAR_APPLICATION_ID: '',
     VITE_RALLAR_CONTROL_URL: '',
     VITE_RALLAR_ROOM_ID: '',
-    VITE_RALLAR_WORKSPACE_ID: '',
+    VITE_RALLAR_WORKSPACE_ID: ''
 };
 
 export default defineConfig({
@@ -18,13 +18,13 @@ export default defineConfig({
             animations: 'disabled',
             caret: 'hide',
             maxDiffPixelRatio: 0.01,
-            scale: 'css',
-        },
+            scale: 'css'
+        }
     },
     use: {
         baseURL: 'http://127.0.0.1:5176',
         screenshot: 'only-on-failure',
-        trace: 'retain-on-failure',
+        trace: 'retain-on-failure'
     },
     webServer: [
         {
@@ -32,7 +32,7 @@ export default defineConfig({
             cwd: '.',
             url: 'http://127.0.0.1:5176',
             reuseExistingServer: false,
-            env: RECIPE_CONSOLE_TEST_ENV,
+            env: RECIPE_CONSOLE_TEST_ENV
         },
         {
             command: 'npm run build && npm run preview -- --host 127.0.0.1 --port 4176 --strictPort',
@@ -40,8 +40,8 @@ export default defineConfig({
             url: 'http://127.0.0.1:4176',
             reuseExistingServer: false,
             timeout: 120_000,
-            env: RECIPE_CONSOLE_TEST_ENV,
-        },
+            env: RECIPE_CONSOLE_TEST_ENV
+        }
     ],
     projects: [
         {
@@ -51,8 +51,8 @@ export default defineConfig({
                 colorScheme: 'light',
                 deviceScaleFactor: 1,
                 locale: 'en-US',
-                timezoneId: 'UTC',
-            },
-        },
-    ],
+                timezoneId: 'UTC'
+            }
+        }
+    ]
 });

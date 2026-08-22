@@ -2,7 +2,7 @@ import type { RtcPerformancePhaseSpan } from '../../../../rtc-diagnostics.ts';
 import { formatDuration } from '../../../shared/time-format.ts';
 
 export function RtcPhaseWaterfall({
-    spans,
+    spans
 }: {
     spans: readonly RtcPerformancePhaseSpan[];
 }) {
@@ -21,7 +21,7 @@ export function RtcPhaseWaterfall({
                             className={span.tone}
                             style={{
                                 marginLeft: `${(span.startMs / max) * 100}%`,
-                                width: `${Math.max(2, (span.durationMs / max) * 100)}%`,
+                                width: `${Math.max(2, (span.durationMs / max) * 100)}%`
                             }}
                         />
                     </div>

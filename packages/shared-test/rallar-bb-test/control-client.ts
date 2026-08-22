@@ -1,3 +1,14 @@
+import {
+    parseControlServerMessage,
+    RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
+    toControlEventEnvelope,
+    type ControlClientEnvelope,
+    type ControlCommandEnvelope,
+    type ControlResultEnvelope
+} from './control-protocol.ts';
+import type { RallarBlackBoxControlAgentIdentity, RallarBlackBoxGeoLocation } from './distributed-run.ts';
+import { toControlAgentCapabilities } from './distributed/control-agent-capabilities.ts';
+import { redactRallarBlackBoxValue } from './redaction.ts';
 import type {
     RallarBlackBoxTestCommand,
     RallarBlackBoxTestEvent,
@@ -5,22 +16,8 @@ import type {
     RallarBlackBoxTestResult,
     RallarBlackBoxTestRuntime,
     RallarBlackBoxTestState,
-    RallarBlackBoxTestStatsSnapshot,
+    RallarBlackBoxTestStatsSnapshot
 } from './types.ts';
-import type {
-    RallarBlackBoxControlAgentIdentity,
-    RallarBlackBoxGeoLocation,
-} from './distributed-run.ts';
-import { toControlAgentCapabilities } from './distributed/control-agent-capabilities.ts';
-import { redactRallarBlackBoxValue } from './redaction.ts';
-import {
-    type ControlClientEnvelope,
-    type ControlCommandEnvelope,
-    type ControlResultEnvelope,
-    parseControlServerMessage,
-    RALLAR_BLACK_BOX_CONTROL_PROTOCOL_VERSION,
-    toControlEventEnvelope,
-} from './control-protocol.ts';
 
 export type RallarBlackBoxControlConnectionState =
     | 'idle'
@@ -61,12 +58,12 @@ type WebSocketLike = {
 };
 
 export type RallarBlackBoxControlWebSocketFactory = (
-    url: string,
+    url: string
 ) => WebSocketLike;
 
 export type RallarBlackBoxControlFetch = (
     input: RequestInfo | URL,
-    init?: RequestInit,
+    init?: RequestInit
 ) => Promise<Response>;
 
 export type RallarBlackBoxControlClientOptions = Readonly<{
@@ -99,17 +96,14 @@ const DEFAULT_RECONNECT_MAX_MS = 5_000;
 function addSocketListener(
     socket: WebSocketLike,
     type: 'open' | 'message' | 'close' | 'error',
-    listener: (event: unknown) => void,
+    listener: (event: unknown) => void
 ): () => void {
     if (socket.addEventListener && socket.removeEventListener) {
         socket.addEventListener(type, listener);
         return () => socket.removeEventListener?.(type, listener);
     }
 
-    const property = `on${type}` as keyof Pick<
-        WebSocketLike,
-        'onopen' | 'onmessage' | 'onclose' | 'onerror'
-    >;
+    const property = `on${type}` as keyof Pick<WebSocketLike, 'onopen' | 'onmessage' | 'onclose' | 'onerror'>;
     const previous = socket[property];
     const next = (event: unknown) => {
         previous?.(event);
@@ -125,7 +119,7 @@ function addSocketListener(
 
 function eventData(event: unknown): unknown {
     return event && typeof event === 'object' && 'data' in event
-        ? (event as { data: unknown }).data
+        ? (event as { data: unknown; }).data
         : event;
 }
 
@@ -139,7 +133,7 @@ function toErrorMessage(error: unknown): string {
     }
 
     if (error && typeof error === 'object' && 'message' in error) {
-        return String((error as { message: unknown }).message);
+        return String((error as { message: unknown; }).message);
     }
 
     return String(error);
@@ -149,7 +143,7 @@ function commandForEnvelope(envelope: ControlCommandEnvelope): RallarBlackBoxTes
     return {
         ...envelope.command,
         commandId: envelope.commandId,
-        deadlineEpochMs: envelope.deadlineEpochMs ?? envelope.command.deadlineEpochMs,
+        deadlineEpochMs: envelope.deadlineEpochMs ?? envelope.command.deadlineEpochMs
     } as RallarBlackBoxTestCommand;
 }
 
@@ -171,13 +165,13 @@ function firstString(...values: readonly unknown[]): string | undefined {
 
 function toControlAgentIdentity(
     state: RallarBlackBoxTestState,
-    agentId: string,
+    agentId: string
 ): RallarBlackBoxControlAgentIdentity | undefined {
     const config = state.currentConfig;
     if (!config) {
         return {
             sessionLabel: agentId,
-            updatedAtEpochMs: Date.now(),
+            updatedAtEpochMs: Date.now()
         };
     }
 
@@ -205,7 +199,7 @@ function toControlAgentIdentity(
         sessionLabel: firstString(
             browser.sessionLabel,
             sessionId && principalId ? `${principalId}:${sessionId}` : undefined,
-            agentId,
+            agentId
         ),
         region: firstString(fleet.region),
         provider: firstString(fleet.provider),
@@ -221,12 +215,12 @@ function toControlAgentIdentity(
         capabilities: toControlAgentCapabilities({
             config,
             providerMode,
-            apiBaseUrl,
+            apiBaseUrl
         }),
-        updatedAtEpochMs: Date.now(),
+        updatedAtEpochMs: Date.now()
     };
 
-    return Object.values(identity).some(value => value !== undefined)
+    return Object.values(identity).some((value) => value !== undefined)
         ? identity
         : undefined;
 }
@@ -237,7 +231,7 @@ function stringArray(value: unknown): readonly string[] | undefined {
     }
     const entries = value
         .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
-        .map(entry => entry.trim());
+        .map((entry) => entry.trim());
     return entries.length > 0 ? entries : undefined;
 }
 
@@ -263,19 +257,19 @@ function geoLocation(value: unknown): RallarBlackBoxGeoLocation | undefined {
         latitude,
         longitude,
         label: firstString(record.label),
-        precision,
+        precision
     };
 }
 
 function toStatsSnapshot(
     state: RallarBlackBoxTestState,
-    atEpochMs: number,
+    atEpochMs: number
 ): RallarBlackBoxTestStatsSnapshot {
     const events = state.events;
     const config = state.currentConfig;
-    const durations = state.commandHistory.map(result => result.durationMs);
+    const durations = state.commandHistory.map((result) => result.durationMs);
     const lastRallarDiagnostic = events
-        .filter(event =>
+        .filter((event) =>
             event.topic.includes('rtc.connected') ||
             event.topic.includes('rallar.bb.fake.rtc.connected') ||
             event.topic.includes('rallar.browser.connect_completed')
@@ -294,9 +288,7 @@ function toStatsSnapshot(
             failures: state.failures.length,
             messages: events.filter((event) => event.kind === 'message').length,
             diagnostics: events.filter((event) => event.kind === 'diagnostic').length,
-            reconnects: events.filter((event) =>
-                event.topic.toLowerCase().includes('reconnect')
-            ).length,
+            reconnects: events.filter((event) => event.topic.toLowerCase().includes('reconnect')).length
         },
         lastCommandId: state.commandHistory.at(-1)?.commandId,
         lastEventAtEpochMs: events.at(-1)?.atEpochMs,
@@ -307,7 +299,7 @@ function toStatsSnapshot(
             averageMs: durations.length > 0
                 ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length)
                 : undefined,
-            lastMs: durations.at(-1),
+            lastMs: durations.at(-1)
         },
         rallar: {
             connected: lastRallarDiagnostic !== undefined,
@@ -318,8 +310,8 @@ function toStatsSnapshot(
             peerCount: typeof lastRallarPayload.peerCount === 'number'
                 ? lastRallarPayload.peerCount
                 : undefined,
-            laneHealth: lastRallarPayload.laneHealth,
-        },
+            laneHealth: lastRallarPayload.laneHealth
+        }
     };
 }
 
@@ -330,7 +322,7 @@ function toReportSummary(state: RallarBlackBoxTestState): unknown {
         events: state.events.length,
         failures: state.failures.length,
         latestCommandId: state.commandHistory.at(-1)?.commandId,
-        latestEventAtEpochMs: state.events.at(-1)?.atEpochMs,
+        latestEventAtEpochMs: state.events.at(-1)?.atEpochMs
     };
 }
 
@@ -344,7 +336,8 @@ function cleanupBrowserStorage(): Readonly<{
             globalThis.localStorage.clear();
             localStorage = 'cleared';
         }
-    } catch (_error) {
+    }
+    catch (_error) {
         localStorage = 'failed';
     }
 
@@ -354,13 +347,14 @@ function cleanupBrowserStorage(): Readonly<{
             globalThis.sessionStorage.clear();
             sessionStorage = 'cleared';
         }
-    } catch (_error) {
+    }
+    catch (_error) {
         sessionStorage = 'failed';
     }
 
     return {
         localStorage,
-        sessionStorage,
+        sessionStorage
     };
 }
 
@@ -392,7 +386,7 @@ export class RallarBlackBoxControlClient {
         state: 'idle',
         reconnectAttempt: 0,
         sentCount: 0,
-        receivedCount: 0,
+        receivedCount: 0
     };
 
     constructor(options: RallarBlackBoxControlClientOptions) {
@@ -407,7 +401,7 @@ export class RallarBlackBoxControlClient {
         this.reconnectBaseMs = options.reconnectBaseMs ?? DEFAULT_RECONNECT_BASE_MS;
         this.reconnectMaxMs = options.reconnectMaxMs ?? DEFAULT_RECONNECT_MAX_MS;
         this.onSnapshot = options.onSnapshot;
-        this.unsubscribeRuntime = this.runtime.subscribe(state => {
+        this.unsubscribeRuntime = this.runtime.subscribe((state) => {
             this.streamNewEvents(state);
             this.maybeSendTerminalReport(state);
         });
@@ -437,7 +431,7 @@ export class RallarBlackBoxControlClient {
         this.closeSocket(1000, 'manual disconnect');
         this.setSnapshot({
             state: 'disconnected',
-            lastError: undefined,
+            lastError: undefined
         });
     }
 
@@ -454,7 +448,7 @@ export class RallarBlackBoxControlClient {
             url: options.url,
             runId: options.runId,
             agentId: options.agentId,
-            lastError: undefined,
+            lastError: undefined
         });
 
         try {
@@ -462,16 +456,17 @@ export class RallarBlackBoxControlClient {
             this.socket = socket;
             this.disposers = [
                 addSocketListener(socket, 'open', () => this.onOpen()),
-                addSocketListener(socket, 'message', event => {
+                addSocketListener(socket, 'message', (event) => {
                     void this.onMessage(eventData(event));
                 }),
                 addSocketListener(socket, 'close', () => this.onClose()),
-                addSocketListener(socket, 'error', event => this.onError(event)),
+                addSocketListener(socket, 'error', (event) => this.onError(event))
             ];
-        } catch (error) {
+        }
+        catch (error) {
             this.setSnapshot({
                 state: 'failed',
-                lastError: toErrorMessage(error),
+                lastError: toErrorMessage(error)
             });
             this.scheduleReconnect();
         }
@@ -482,7 +477,7 @@ export class RallarBlackBoxControlClient {
             state: 'registered',
             connectedAtEpochMs: Date.now(),
             reconnectAttempt: 0,
-            lastError: undefined,
+            lastError: undefined
         });
         this.sendRegister();
         this.replayCompletedResults();
@@ -497,17 +492,17 @@ export class RallarBlackBoxControlClient {
         const options = this.requireOptions();
         this.setSnapshot({
             receivedCount: this.snapshot.receivedCount + 1,
-            lastMessageAtEpochMs: Date.now(),
+            lastMessageAtEpochMs: Date.now()
         });
 
         const parsed = parseControlServerMessage(data, {
             runId: options.runId,
-            agentId: options.agentId,
+            agentId: options.agentId
         });
         if (!parsed.ok) {
             this.recordDiagnostic('rallar.bb.control.protocol_error', 'error', {
                 error: parsed.error,
-                data,
+                data
             });
             return;
         }
@@ -524,17 +519,17 @@ export class RallarBlackBoxControlClient {
         }
 
         this.setSnapshot({
-            state: 'disconnected',
+            state: 'disconnected'
         });
         this.scheduleReconnect();
     }
 
     private onError(event: unknown): void {
         this.setSnapshot({
-            lastError: toErrorMessage(event),
+            lastError: toErrorMessage(event)
         });
         this.recordDiagnostic('rallar.bb.control.socket_error', 'error', {
-            event,
+            event
         });
     }
 
@@ -546,11 +541,11 @@ export class RallarBlackBoxControlClient {
         const attempt = this.snapshot.reconnectAttempt + 1;
         const delayMs = Math.min(
             this.reconnectMaxMs,
-            this.reconnectBaseMs * 2 ** Math.max(0, attempt - 1),
+            this.reconnectBaseMs * 2 ** Math.max(0, attempt - 1)
         );
         this.setSnapshot({
             state: 'reconnecting',
-            reconnectAttempt: attempt,
+            reconnectAttempt: attempt
         });
         this.reconnectTimer = window.setTimeout(() => {
             this.reconnectTimer = undefined;
@@ -568,7 +563,7 @@ export class RallarBlackBoxControlClient {
 
         this.recordDiagnostic('rallar.bb.control.command_received', 'info', {
             commandId: envelope.commandId,
-            command: envelope.command,
+            command: envelope.command
         }, envelope.commandId);
 
         if (command.kind === 'reset') {
@@ -576,7 +571,7 @@ export class RallarBlackBoxControlClient {
                 'rallar.bb.control.browser_storage_cleaned',
                 'info',
                 cleanupBrowserStorage(),
-                envelope.commandId,
+                envelope.commandId
             );
         }
 
@@ -597,8 +592,8 @@ export class RallarBlackBoxControlClient {
             atEpochMs: Date.now(),
             identity,
             resume: {
-                completedCommandIds: Object.keys(this.runtime.state().resultCache),
-            },
+                completedCommandIds: Object.keys(this.runtime.state().resultCache)
+            }
         });
     }
 
@@ -615,11 +610,11 @@ export class RallarBlackBoxControlClient {
             status: state.status,
             identity,
             lastCommandId: state.commandHistory.at(-1)?.commandId,
-            lastEventAtEpochMs: state.events.at(-1)?.atEpochMs,
+            lastEventAtEpochMs: state.events.at(-1)?.atEpochMs
         });
         this.setSnapshot({
             lastHeartbeatAtEpochMs: Date.now(),
-            identity,
+            identity
         });
     }
 
@@ -640,7 +635,7 @@ export class RallarBlackBoxControlClient {
             topic: 'rallar.bb.stats',
             atEpochMs,
             severity: 'info',
-            payload: stats,
+            payload: stats
         };
 
         this.sendEnvelope({
@@ -650,10 +645,10 @@ export class RallarBlackBoxControlClient {
             agentId: options.agentId,
             atEpochMs,
             eventId: event.eventId,
-            payload: event,
+            payload: event
         });
         this.setSnapshot({
-            lastStatsAtEpochMs: atEpochMs,
+            lastStatsAtEpochMs: atEpochMs
         });
     }
 
@@ -679,9 +674,9 @@ export class RallarBlackBoxControlClient {
             atEpochMs,
             summary: {
                 ...asRecord(toReportSummary(state)),
-                reason,
+                reason
             },
-            stats: toStatsSnapshot(state, atEpochMs),
+            stats: toStatsSnapshot(state, atEpochMs)
         };
 
         return redactRallarBlackBoxValue(report, state.currentConfig?.redaction);
@@ -701,7 +696,7 @@ export class RallarBlackBoxControlClient {
             topic: 'rallar.bb.report.final',
             atEpochMs,
             severity: 'info',
-            payload: report,
+            payload: report
         };
         const envelope: ControlClientEnvelope = {
             kind: 'report',
@@ -710,13 +705,13 @@ export class RallarBlackBoxControlClient {
             agentId: options.agentId,
             atEpochMs,
             eventId: event.eventId,
-            payload: event,
+            payload: event
         };
 
         this.sendEnvelope(envelope);
         this.uploadFinalReport(envelope);
         this.setSnapshot({
-            lastReportAtEpochMs: atEpochMs,
+            lastReportAtEpochMs: atEpochMs
         });
     }
 
@@ -734,32 +729,32 @@ export class RallarBlackBoxControlClient {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                ...this.authorizationHeader(),
+                ...this.authorizationHeader()
             },
-            body: JSON.stringify(envelope),
+            body: JSON.stringify(envelope)
         })
-            .then(response => {
+            .then((response) => {
                 if (!response.ok) {
                     throw new Error(`Final report upload failed: ${response.status} ${response.statusText}`);
                 }
                 this.setSnapshot({
-                    lastReportUploadAtEpochMs: Date.now(),
+                    lastReportUploadAtEpochMs: Date.now()
                 });
             })
-            .catch(error => {
+            .catch((error) => {
                 this.setSnapshot({
-                    lastError: toErrorMessage(error),
+                    lastError: toErrorMessage(error)
                 });
                 this.recordDiagnostic('rallar.bb.control.report_upload_failed', 'warning', {
                     error: toErrorMessage(error),
-                    uploadUrl,
+                    uploadUrl
                 });
             });
     }
 
     private replayCompletedResults(): void {
         Object.values(this.runtime.state().resultCache)
-            .forEach(result => this.sendResult(result, true));
+            .forEach((result) => this.sendResult(result, true));
     }
 
     private sendResult(result: RallarBlackBoxTestResult, replayed = false): void {
@@ -777,9 +772,9 @@ export class RallarBlackBoxControlClient {
                 : {
                     code: result.error?.code ?? 'RALLAR_BLACK_BOX_COMMAND_FAILED',
                     message: result.error?.message ?? 'Command failed.',
-                    details: result.error?.details,
+                    details: result.error?.details
                 },
-            replayed,
+            replayed
         };
         this.sendEnvelope(envelope);
     }
@@ -823,14 +818,14 @@ export class RallarBlackBoxControlClient {
         topic: string,
         severity: 'info' | 'warning' | 'error',
         payload: unknown,
-        commandId?: string,
+        commandId?: string
     ): void {
         this.runtime.recordEvent({
             kind: 'diagnostic',
             topic,
             commandId,
             severity,
-            payload,
+            payload
         });
     }
 
@@ -841,7 +836,7 @@ export class RallarBlackBoxControlClient {
 
         this.socket?.send(JSON.stringify(envelope));
         this.setSnapshot({
-            sentCount: this.snapshot.sentCount + 1,
+            sentCount: this.snapshot.sentCount + 1
         });
     }
 
@@ -853,20 +848,21 @@ export class RallarBlackBoxControlClient {
         const token = this.options?.token ?? this.token;
         return token
             ? {
-                Authorization: `Bearer ${token}`,
+                Authorization: `Bearer ${token}`
             }
             : {};
     }
 
     private closeSocket(code?: number, reason?: string): void {
-        this.disposers.forEach(dispose => dispose());
+        this.disposers.forEach((dispose) => dispose());
         this.disposers = [];
         const socket = this.socket;
         this.socket = undefined;
         if (socket) {
             try {
                 socket.close(code, reason);
-            } catch (_error) {
+            }
+            catch (_error) {
                 // Closing is best-effort during reconnect/disconnect cleanup.
             }
         }
@@ -904,7 +900,7 @@ export class RallarBlackBoxControlClient {
     private setSnapshot(patch: Partial<RallarBlackBoxControlSnapshot>): void {
         this.snapshot = {
             ...this.snapshot,
-            ...patch,
+            ...patch
         };
         this.onSnapshot?.(this.snapshot);
     }

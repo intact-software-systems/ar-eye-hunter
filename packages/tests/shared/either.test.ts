@@ -1,13 +1,13 @@
+import { Computers, Either, EitherCollectors, Try } from '@shared/resilience/Either.ts';
 import { describe, expect, it } from 'vitest';
-import { Computers, Either, EitherCollectors, Try, } from '@shared/resilience/Either.ts';
 
 describe('Either', () => {
     it('enforces the invariant that exactly one side is present', () => {
         expect(() => new Either<string, number>()).toThrow(
-            'Either must contain exactly one of left or right',
+            'Either must contain exactly one of left or right'
         );
         expect(() => new Either('left', 1)).toThrow(
-            'Either must contain exactly one of left or right',
+            'Either must contain exactly one of left or right'
         );
     });
 
@@ -22,8 +22,8 @@ describe('Either', () => {
         expect(
             right.flatMap(
                 (value) => Either.ofLeft<number, string>(value.length),
-                (value) => Either.ofRight<number, string>(`v${value}`),
-            ).right,
+                (value) => Either.ofRight<number, string>(`v${value}`)
+            ).right
         ).toBe('v2');
     });
 
@@ -31,30 +31,30 @@ describe('Either', () => {
         const eithers = new Map<string, Either<string, number>>([
             ['a', Either.ofLeft('bad')],
             ['b', Either.ofRight(2)],
-            ['c', Either.ofRight(3)],
+            ['c', Either.ofRight(3)]
         ]);
 
         expect(
-            Array.from(EitherCollectors.toMapFoldLefts(eithers).entries()),
+            Array.from(EitherCollectors.toMapFoldLefts(eithers).entries())
         ).toEqual([['a', 'bad']]);
         expect(
-            Array.from(EitherCollectors.toMapFoldRights(eithers).entries()),
+            Array.from(EitherCollectors.toMapFoldRights(eithers).entries())
         ).toEqual([
             ['b', 2],
-            ['c', 3],
+            ['c', 3]
         ]);
         expect(
             Array.from(
                 Computers.toMapFoldToOneComputer(
                     eithers,
                     (_key, value) => `left:${value}`,
-                    (_key, value) => `right:${value}`,
-                ).entries(),
-            ),
+                    (_key, value) => `right:${value}`
+                ).entries()
+            )
         ).toEqual([
             ['a', 'left:bad'],
             ['b', 'right:2'],
-            ['c', 'right:3'],
+            ['c', 'right:3']
         ]);
     });
 
@@ -74,9 +74,9 @@ describe('Either', () => {
                     'fail',
                     () => {
                         throw new Error('bad');
-                    },
-                ],
-            ]),
+                    }
+                ]
+            ])
         );
 
         expect(all.get('ok')?.right).toBe(1);

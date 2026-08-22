@@ -3,12 +3,18 @@ export function tuningPointerTargetsObject(value: unknown, pointer: string): boo
     for (const token of tuningPointerTokens(pointer)) {
         if (Array.isArray(current)) {
             const index = Number(token);
-            if (!Number.isInteger(index) || index < 0 || index >= current.length) return false;
+            if (!Number.isInteger(index) || index < 0 || index >= current.length) {
+                return false;
+            }
             current = current[index];
-        } else if (current && typeof current === 'object') {
-            if (!Object.prototype.hasOwnProperty.call(current, token)) return false;
+        }
+        else if (current && typeof current === 'object') {
+            if (!Object.prototype.hasOwnProperty.call(current, token)) {
+                return false;
+            }
             current = (current as Record<string, unknown>)[token];
-        } else {
+        }
+        else {
             return false;
         }
     }
@@ -16,21 +22,23 @@ export function tuningPointerTargetsObject(value: unknown, pointer: string): boo
 }
 
 export function tuningPointerTokens(pointer: string): string[] {
-    if (!pointer.startsWith('/')) throw new Error(`Invalid JSON Pointer ${pointer}.`);
-    return pointer.split('/').slice(1).map(token =>
-        token.replaceAll('~1', '/').replaceAll('~0', '~')
-    );
+    if (!pointer.startsWith('/')) {
+        throw new Error(`Invalid JSON Pointer ${pointer}.`);
+    }
+    return pointer.split('/').slice(1).map((token) => token.replaceAll('~1', '/').replaceAll('~0', '~'));
 }
 
 export function tuningSchemaPathToPointer(path: string): string {
-    if (path === '$') return '';
+    if (path === '$') {
+        return '';
+    }
     const tokens: string[] = [];
     const pattern = /\.([^.[\]]+)|\[(\d+)\]|\["((?:\\.|[^"\\])*)"\]|\['((?:\\.|[^'\\])*)'\]/g;
     for (const match of path.slice(1).matchAll(pattern)) {
         const token = match[1] ?? match[2] ?? decodeQuotedToken(match[3], match[4]);
         tokens.push(token);
     }
-    return tokens.map(token => `/${escapePointerToken(token)}`).join('');
+    return tokens.map((token) => `/${escapePointerToken(token)}`).join('');
 }
 
 export function tuningAgentIssuePointer(base: string, message: string): string {
@@ -44,11 +52,11 @@ export function tuningAgentIssuePointer(base: string, message: string): string {
         }
     });
     const fieldMatches = [...message.matchAll(
-        /\b(?:rtc\.stream|rtc|loop|parallel)\.([A-Za-z][A-Za-z0-9]*)/g,
+        /\b(?:rtc\.stream|rtc|loop|parallel)\.([A-Za-z][A-Za-z0-9]*)/g
     )];
     const field = fieldMatches.at(-1)?.[1];
     const suffix = [...structuralTokens, ...(field ? [field] : [])]
-        .map(token => `/${escapePointerToken(token)}`).join('');
+        .map((token) => `/${escapePointerToken(token)}`).join('');
     return `${base}${suffix}`;
 }
 
@@ -65,5 +73,5 @@ function decodeQuotedToken(doubleQuoted?: string, singleQuoted?: string): string
     if (doubleQuoted !== undefined) {
         return JSON.parse(`"${doubleQuoted}"`) as string;
     }
-    return (singleQuoted ?? '').replaceAll("\\'", "'").replaceAll('\\\\', '\\');
+    return (singleQuoted ?? '').replaceAll('\\\'', '\'').replaceAll('\\\\', '\\');
 }

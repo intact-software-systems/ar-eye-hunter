@@ -1,6 +1,5 @@
 export {
     createRallarAiFakeSidecarProvider,
     type CreateRallarAiFakeSidecarProviderOptions,
-    type RallarAiSidecarFetch,
+    type RallarAiSidecarFetch
 } from '@shared/rallar-ai/mod.ts';
-

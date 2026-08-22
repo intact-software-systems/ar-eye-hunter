@@ -10,32 +10,36 @@ export function makeEmptyGraphLike(reference: TreeGraph): TreeGraph {
 export function addMemberVertex(
     graph: TreeGraph,
     globalGraph: TreeGraph,
-    vertexId: VertexId,
+    vertexId: VertexId
 ): void {
-    if (graph.hasNode(vertexId)) return;
+    if (graph.hasNode(vertexId)) {
+        return;
+    }
 
     const attrs = globalGraph.getNodeAttributes(vertexId);
     graph.addNode(vertexId, {
         ...attrs,
         type: VertexType.CLIENT,
         state: VertexState.MEMBER,
-        degreeLimit: graph.getAttributes().degreeLimitMember,
+        degreeLimit: graph.getAttributes().degreeLimitMember
     });
 }
 
 export function addSteinerVertex(
     graph: TreeGraph,
     globalGraph: TreeGraph,
-    vertexId: VertexId,
+    vertexId: VertexId
 ): void {
-    if (graph.hasNode(vertexId)) return;
+    if (graph.hasNode(vertexId)) {
+        return;
+    }
 
     const attrs = globalGraph.getNodeAttributes(vertexId);
     graph.addNode(vertexId, {
         ...attrs,
         type: VertexType.CORE,
         state: VertexState.STEINER,
-        degreeLimit: graph.getAttributes().degreeLimitSteiner,
+        degreeLimit: graph.getAttributes().degreeLimitSteiner
     });
 }
 
@@ -45,7 +49,7 @@ export function makeMember(graph: TreeGraph, vertexId: VertexId): void {
         ...attrs,
         type: VertexType.CLIENT,
         state: VertexState.MEMBER,
-        degreeLimit: graph.getAttributes().degreeLimitMember,
+        degreeLimit: graph.getAttributes().degreeLimitMember
     });
 }
 
@@ -55,7 +59,7 @@ export function makeSteinerAvailable(graph: TreeGraph, vertexId: VertexId): void
         ...attrs,
         type: VertexType.CORE,
         state: VertexState.STEINER,
-        degreeLimit: graph.getAttributes().degreeLimitSteiner,
+        degreeLimit: graph.getAttributes().degreeLimitSteiner
     });
 }
 
@@ -63,10 +67,14 @@ export function insertEdgeFromGlobal(
     graph: TreeGraph,
     globalGraph: TreeGraph,
     a: VertexId,
-    b: VertexId,
+    b: VertexId
 ): void {
-    if (a === b) return;
-    if (graph.hasEdge(a, b)) return;
+    if (a === b) {
+        return;
+    }
+    if (graph.hasEdge(a, b)) {
+        return;
+    }
 
     const edgeKey = globalGraph.edge(a, b);
     if (edgeKey === undefined) {
@@ -76,6 +84,6 @@ export function insertEdgeFromGlobal(
     graph.addEdge(a, b, {
         from: a,
         to: b,
-        weight: globalGraph.getEdgeAttribute(edgeKey, 'weight') as number,
+        weight: globalGraph.getEdgeAttribute(edgeKey, 'weight') as number
     });
 }

@@ -3,7 +3,7 @@ import { statusTone } from '../../shared/command-presentation.ts';
 import { formatTime } from '../../shared/time-format.ts';
 
 export function RunManagerCommandList({
-    rows,
+    rows
 }: {
     rows: readonly ControlRunCommandRow[];
 }) {
@@ -26,14 +26,12 @@ export function RunManagerCommandList({
                     <span>{row.dispatchCount} dispatches</span>
                     <span>
                         {formatTime(
-                            row.completedAtEpochMs ?? row.queuedAtEpochMs,
+                            row.completedAtEpochMs ?? row.queuedAtEpochMs
                         )}
                     </span>
                 </div>
             ))}
-            {rows.length === 0 && (
-                <div className="empty-state">No commands</div>
-            )}
+            {rows.length === 0 && <div className="empty-state">No commands</div>}
         </div>
     );
 }

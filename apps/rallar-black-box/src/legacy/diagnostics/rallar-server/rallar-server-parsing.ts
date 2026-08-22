@@ -1,10 +1,10 @@
 import type {
     RallarServerRestCollection,
-    RallarServerRestCollectionVariables,
+    RallarServerRestCollectionVariables
 } from '../../../rallar-server-workbench.ts';
 
 export function parseRallarServerCollectionText(
-    text: string,
+    text: string
 ): RallarServerRestCollection {
     const value = JSON.parse(text) as unknown;
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -17,14 +17,14 @@ export function parseRallarServerCollectionText(
         !Array.isArray(collection.steps)
     ) {
         throw new Error(
-            'Collection JSON requires collectionId, name, and steps.',
+            'Collection JSON requires collectionId, name, and steps.'
         );
     }
     return collection;
 }
 
 export function parseRallarServerCollectionVariablesText(
-    text: string,
+    text: string
 ): RallarServerRestCollectionVariables {
     const value = JSON.parse(text || '{}') as unknown;
     if (!value || typeof value !== 'object' || Array.isArray(value)) {

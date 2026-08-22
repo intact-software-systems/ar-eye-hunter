@@ -1,5 +1,5 @@
+import { ObservableLatestValue, type ObservableValueEvent } from '@shared/cache/ObservableLatestValue.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ObservableLatestValue, type ObservableValueEvent, } from '@shared/cache/ObservableLatestValue.ts';
 
 describe('ObservableLatestValue', () => {
     afterEach(() => {
@@ -25,31 +25,31 @@ describe('ObservableLatestValue', () => {
             'created',
             'updated',
             'refreshed',
-            'deleted',
+            'deleted'
         ]);
         expect(events[0]).toMatchObject({
             type: 'created',
-            value: 1,
+            value: 1
         });
         expect(events[1]).toMatchObject({
             type: 'updated',
             value: 2,
-            previous: 1,
+            previous: 1
         });
         expect(events[2]).toMatchObject({
             type: 'refreshed',
             value: 2,
-            previous: 2,
+            previous: 2
         });
         expect(events[3]).toMatchObject({
             type: 'deleted',
-            previous: 2,
+            previous: 2
         });
     });
 
     it('uses custom equality to classify refreshed writes', async () => {
-        const latest = new ObservableLatestValue<{ version: number; name: string }>({
-            equals: (left, right) => left.version === right.version,
+        const latest = new ObservableLatestValue<{ version: number; name: string; }>({
+            equals: (left, right) => left.version === right.version
         });
         const events: string[] = [];
 
@@ -70,7 +70,7 @@ describe('ObservableLatestValue', () => {
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
 
         const latest = new ObservableLatestValue<number>({
-            ttlMs: 100,
+            ttlMs: 100
         });
         const events: string[] = [];
 
@@ -106,7 +106,7 @@ describe('ObservableLatestValue', () => {
         expect(updated.mock.calls[0]?.[0]).toMatchObject({
             type: 'updated',
             value: 2,
-            previous: 1,
+            previous: 1
         });
     });
 
@@ -133,7 +133,7 @@ describe('ObservableLatestValue', () => {
         expect(events).toEqual([
             'start-created-1',
             'end-created-1',
-            'start-updated-2',
+            'start-updated-2'
         ]);
 
         await vi.advanceTimersByTimeAsync(10);
@@ -142,7 +142,7 @@ describe('ObservableLatestValue', () => {
             'start-created-1',
             'end-created-1',
             'start-updated-2',
-            'end-updated-2',
+            'end-updated-2'
         ]);
     });
 
@@ -151,7 +151,7 @@ describe('ObservableLatestValue', () => {
         const latest = new ObservableLatestValue<number>({
             onObserverError: (error) => {
                 errors.push(error instanceof Error ? error.message : String(error));
-            },
+            }
         });
         const successful = vi.fn();
 

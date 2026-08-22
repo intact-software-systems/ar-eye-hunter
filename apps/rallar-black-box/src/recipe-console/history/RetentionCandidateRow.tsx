@@ -1,17 +1,14 @@
-import type { RetentionCleanupPreview } from './use-retention-cleanup.ts';
 import { ExactIdentifier } from './ExactIdentifier.tsx';
 import { historyUtcDisplay, historyUtcIso } from './history-utc.ts';
-import {
-    RetentionDisclosure,
-    type RetentionDisclosureController,
-} from './RetentionDisclosure.tsx';
+import { RetentionDisclosure, type RetentionDisclosureController } from './RetentionDisclosure.tsx';
 import styles from './RetentionPanel.module.css';
+import type { RetentionCleanupPreview } from './use-retention-cleanup.ts';
 
 type Candidate = RetentionCleanupPreview['candidates'][number];
 
 export function RetentionCandidateRow({
     candidate,
-    controller,
+    controller
 }: Readonly<{
     candidate: Candidate;
     controller: RetentionDisclosureController;
@@ -25,12 +22,18 @@ export function RetentionCandidateRow({
             <div className={styles.candidateFacts}>
                 <span>{plural(candidate.connectedAgentCount, 'connected agent')}</span>
                 <span>{plural(candidate.issuedRunTokenCount, 'issued run token')}</span>
-                <span>Created <time dateTime={historyUtcIso(candidate.createdAtEpochMs)}>
-                    {historyUtcDisplay(candidate.createdAtEpochMs)}
-                </time></span>
-                <span>Updated <time dateTime={historyUtcIso(candidate.updatedAtEpochMs)}>
-                    {historyUtcDisplay(candidate.updatedAtEpochMs)}
-                </time></span>
+                <span>
+                    Created{' '}
+                    <time dateTime={historyUtcIso(candidate.createdAtEpochMs)}>
+                        {historyUtcDisplay(candidate.createdAtEpochMs)}
+                    </time>
+                </span>
+                <span>
+                    Updated{' '}
+                    <time dateTime={historyUtcIso(candidate.updatedAtEpochMs)}>
+                        {historyUtcDisplay(candidate.updatedAtEpochMs)}
+                    </time>
+                </span>
             </div>
             <RetentionDisclosure
                 className={styles.disclosure}
@@ -38,17 +41,20 @@ export function RetentionCandidateRow({
                 controller={controller}
                 disclosureKey={`${candidate.key}:distributed`}
                 emptyLabel="None linked."
-                itemKey={(run, index) => JSON.stringify([
-                    run.distributedRunId,
-                    index,
-                ])}
+                itemKey={(run, index) =>
+                    JSON.stringify([
+                        run.distributedRunId,
+                        index
+                    ])}
                 itemLabel="linked runs"
                 items={candidate.distributedRuns}
                 label="Linked distributed runs"
-                renderItem={run => <li data-retention-linked-run-row>
-                    <ExactIdentifier value={run.distributedRunId} />
-                    <span>State: {run.state}</span>
-                </li>}
+                renderItem={(run) => (
+                    <li data-retention-linked-run-row>
+                        <ExactIdentifier value={run.distributedRunId} />
+                        <span>State: {run.state}</span>
+                    </li>
+                )}
                 revision={candidate}
             />
             <RetentionDisclosure
@@ -61,9 +67,11 @@ export function RetentionCandidateRow({
                 itemLabel="linked reports"
                 items={candidate.fleetReportIds}
                 label="Linked fleet reports"
-                renderItem={id => <li data-retention-linked-fleet-row>
-                    <ExactIdentifier value={id} />
-                </li>}
+                renderItem={(id) => (
+                    <li data-retention-linked-fleet-row>
+                        <ExactIdentifier value={id} />
+                    </li>
+                )}
                 revision={candidate}
             />
         </li>

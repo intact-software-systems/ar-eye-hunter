@@ -1,12 +1,12 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it, vi } from 'vitest';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('InboxQueueReader', () => {
     it('dispatches app inbox messages to the registered payload type callback', async () => {
@@ -32,7 +32,8 @@ describe('InboxQueueReader', () => {
         try {
             await reader.enqueueIfAbsent(createAppInboxMessage('group-state.create.v1'));
             await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-        } finally {
+        }
+        finally {
             consoleError.mockRestore();
         }
 
@@ -46,8 +47,8 @@ function createAppInboxMessage(typeId: string) {
         newALRoute('app-inbox.group-state', 'group-1', crypto.randomUUID()),
         typeId,
         {
-            requestId: crypto.randomUUID(),
-        },
+            requestId: crypto.randomUUID()
+        }
     );
 }
 
@@ -58,7 +59,7 @@ function createResilience(): ResilienceDto {
         1,
         10,
         1,
-        1,
+        1
     );
 }
 

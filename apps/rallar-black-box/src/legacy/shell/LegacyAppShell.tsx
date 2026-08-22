@@ -1,18 +1,17 @@
+import { LegacyDiagnosticContextBar } from '../diagnostics/context/LegacyDiagnosticContextBar.tsx';
 import { AppModeSwitch } from './AppModeSwitch.tsx';
 import { AppTabs } from './AppTabs.tsx';
 import { GlobalContextBar } from './GlobalContextBar.tsx';
-import { LegacyDiagnosticContextBar } from
-    '../diagnostics/context/LegacyDiagnosticContextBar.tsx';
-import { LegacyDiagnosticDrawer } from './LegacyDiagnosticDrawer.tsx';
-import { Header } from './LegacyRunHeader.tsx';
 import type {
     LegacyShellAuth,
     LegacyShellDiagnosticContext,
     LegacyShellGlobalContext,
     LegacyShellNavigation,
     LegacyShellRunnerSelection,
-    LegacyShellRuntime,
+    LegacyShellRuntime
 } from './legacy-shell-contracts.ts';
+import { LegacyDiagnosticDrawer } from './LegacyDiagnosticDrawer.tsx';
+import { Header } from './LegacyRunHeader.tsx';
 import { DiagnosticEvidenceTabPanels } from './tabs/DiagnosticEvidenceTabPanels.tsx';
 import { DirectConnectionTabPanels } from './tabs/DirectConnectionTabPanels.tsx';
 import { DirectResourceTabPanels } from './tabs/DirectResourceTabPanels.tsx';
@@ -24,7 +23,7 @@ export function LegacyAppShell({
     navigation,
     globalContext,
     runnerSelection,
-    diagnosticContext,
+    diagnosticContext
 }: Readonly<{
     runtime: LegacyShellRuntime;
     auth: LegacyShellAuth;
@@ -59,9 +58,7 @@ export function LegacyAppShell({
                 onChange={globalContext.updateGlobalValue}
                 onReset={globalContext.resetGlobalValues}
             />
-            {diagnosticContext.status !== 'absent' && (
-                <LegacyDiagnosticContextBar parsed={diagnosticContext} />
-            )}
+            {diagnosticContext.status !== 'absent' && <LegacyDiagnosticContextBar parsed={diagnosticContext} />}
             <AppModeSwitch
                 activeMode={navigation.activeMode}
                 onSelect={navigation.selectMode}

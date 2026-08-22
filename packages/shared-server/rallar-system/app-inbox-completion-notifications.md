@@ -17,13 +17,13 @@ For one process, an in-memory notifier is enough:
 
 ```ts
 export type AppInboxCompletion = Readonly<{
-  key: Key;
-  status: EntityStatus.COMPLETED | EntityStatus.FAILED;
+    key: Key;
+    status: EntityStatus.COMPLETED | EntityStatus.FAILED;
 }>;
 
 export interface AppInboxCompletionNotifier {
-  waitFor(key: Key, timeoutMs: number): Promise<AppInboxCompletion | undefined>;
-  notify(completion: AppInboxCompletion): void;
+    waitFor(key: Key, timeoutMs: number): Promise<AppInboxCompletion | undefined>;
+    notify(completion: AppInboxCompletion): void;
 }
 ```
 
@@ -41,8 +41,10 @@ multi-instance version needs a pub/sub adapter:
 
 ```ts
 export interface AppInboxCompletionPubSub {
-  publish(completion: AppInboxCompletion): Promise<void>;
-  subscribe(handler: (completion: AppInboxCompletion) => void): Promise<() => Promise<void> | void>;
+    publish(completion: AppInboxCompletion): Promise<void>;
+    subscribe(
+        handler: (completion: AppInboxCompletion) => void
+    ): Promise<() => Promise<void> | void>;
 }
 ```
 

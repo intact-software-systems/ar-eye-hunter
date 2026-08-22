@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { describe, expect, it } from 'vitest';
 
 import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/\
 AuthSessionRepository.ts';
@@ -11,11 +11,7 @@ ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/\
 GroupStateRepository.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
-import {
-  AppGroupInboxService,
-  AppInboxType,
-  type GroupCreateAppInboxPayload,
-} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { AppGroupInboxService, AppInboxType, type GroupCreateAppInboxPayload } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
 
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/services/\
 auth-credential-issuer.ts';
@@ -23,416 +19,414 @@ auth-credential-issuer.ts';
 import { createAuthMutationService } from '@shared-server/rallar-system/services/\
 auth-state-mutations.ts';
 
+import { hashAuthSecret } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/services/\
 group-state-service.ts';
-import { hashAuthSecret } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import type {
-  JsonWireObject,
-  JsonWireValue,
-} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
-import {
-  createResilience,
-  readEntries,
-  TestResourceInbox,
-  TestResourceInboxResults,
-  waitForQueuedEntry,
-} from './auth/auth-app-inbox-test-runtime.ts';
-import {
-  createClientStatePhaseTestDriver,
-  failNextClientStateTestOutboxWrite,
-} from './client-state/client-state-test-runtime.ts';
+import { createResilience, readEntries, TestResourceInbox, TestResourceInboxResults, waitForQueuedEntry } from './auth/auth-app-inbox-test-runtime.ts';
+import { createClientStatePhaseTestDriver, failNextClientStateTestOutboxWrite } from './client-state/client-state-test-runtime.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 const SCOPE = { applicationId: 'app-1', workspaceId: 'workspace-1' };
 
 describe('AppInbox expired row replacement', () => {
-  it('replaces an expired client session by CAS and rolls back a later failure', async () => {
-    const nowEpochMs = 10_000;
-    const runtime = new FakeRuntimeStateRepository();
-    const service = createClientStatePhaseTestDriver(runtime, () => nowEpochMs);
-    await service.upsertPrincipal(SCOPE, 'alice', {
-      username: 'alice',
-      requestId: 'seed-principal',
-    });
-    await service.upsertInstance(SCOPE, 'alice', 'browser', {
-      platform: 'web',
-      requestId: 'seed-instance',
-    });
-    await service.connectSession(SCOPE, 'alice', 'browser', 'session-1', {
-      generationId: 'generation-1',
-      connectedAtEpochMs: nowEpochMs,
-      expiresAtEpochMs: nowEpochMs + 1_000,
-      requestId: 'seed-session',
-    });
-    const [seeded] = await runtime.findAllEntries('client-state:sessions');
-    if (!seeded) throw new Error('Expected seeded client session');
-    await runtime.upsert('client-state:sessions', seeded.key, seeded.value, nowEpochMs - 1);
-    const expired = await runtime.findEntry('client-state:sessions', seeded.key);
-    expect(expired?.revision).toBe(seeded.revision + 1);
-    await expect(
-      new ClientStateRepository(runtime).findSession({
-        ...SCOPE,
-        principalId: 'alice',
-        clientInstanceId: 'browser',
-        sessionId: 'session-1',
-      }),
-    ).resolves.toBeUndefined();
-
-    failNextClientStateTestOutboxWrite(runtime);
-    const replacement = {
-      generationId: 'generation-2',
-      connectedAtEpochMs: nowEpochMs,
-      expiresAtEpochMs: nowEpochMs + 2_000,
-      requestId: 'replace-session',
-    };
-    await expect(
-      service.connectSession(SCOPE, 'alice', 'browser', 'session-1', replacement),
-    ).rejects.toThrow(/outbox collision/u);
-    expect(await runtime.findEntry('client-state:sessions', seeded.key)).toEqual(expired);
-    await service.connectSession(SCOPE, 'alice', 'browser', 'session-1', replacement);
-
-    const replaced = await runtime.findEntry('client-state:sessions', seeded.key);
-    if (!expired || !replaced) {
-      throw new Error('Expected expired client session replacement');
-    }
-    expect(replaced).toMatchObject({ revision: expired.revision + 1 });
-    expect(readJsonObject(replaced.value, 'Replaced client session')).toMatchObject({
-      generationId: 'generation-2',
-      generationVersion: 1,
-    });
-  });
-
-  it('atomically replaces both expired auth session indexes after a CAS conflict', async () => {
-    const nowEpochMs = Date.now();
-    const runtime = new FakeRuntimeStateRepository();
-    const queue = new TestResourceInbox();
-    const results = new TestResourceInboxResults();
-    const reader = new InboxQueueReader(queue);
-    const credentialIssuer = createHmacAuthCredentialIssuer('expired-auth-secret-0123456789abcdef');
-    let rollbackCount = 0;
-    let rollbackPreservedExpiredIndexes = false;
-    const service = new AppAuthInboxService(
-      {
-        inboxQueueReader: reader,
-        resourceInboxRepository: queue,
-        resourceInboxResultsRepository: results,
-        database: createAppInboxTestDatabase(queue, results, {
-          runtimeRepository: runtime,
-          onTransactionRollback: async () => {
-            rollbackCount += 1;
-            const rolledBack = await Promise.all([
-              runtime.findAllEntries('auth-sessions:by-token'),
-              runtime.findAllEntries('auth-sessions:by-session'),
-            ]);
-            rollbackPreservedExpiredIndexes =
-              rolledBack[0][0]?.revision === 0 && rolledBack[1][0]?.revision === 0;
-          },
-        }),
-        authMutationService: createAuthMutationService({
-          runtimeRepository: runtime,
-          serviceId: 'expired-auth-service',
-        }),
-        credentialIssuer: credentialIssuer,
-      },
-      {
-        serviceId: 'expired-auth-service',
-      },
-    );
-    const requestId = 'replace-expired-auth-session';
-    const sessionId = `session-${(
-      await hashAuthSecret(JSON.stringify(['session', requestId, 'alice', 'client-1']))
-    ).slice(0, 24)}`;
-    const accessToken = await credentialIssuer.issueAccessToken(sessionId);
-    const accessTokenDigest = await hashAuthSecret(accessToken);
-    const oldSession = {
-      clientId: 'client-1',
-      username: 'alice',
-      sessionId,
-      accessTokenDigest,
-      issuedAtEpochMs: nowEpochMs - 10_000,
-      expiresAtEpochMs: nowEpochMs - 1,
-    };
-    const sessions = new AuthSessionRepository(runtime);
-    await sessions.insertSessionByTokenDigest(oldSession);
-    await sessions.insertSessionBySessionId(oldSession);
-    const before = await Promise.all([
-      runtime.findAllEntries('auth-sessions:by-token'),
-      runtime.findAllEntries('auth-sessions:by-session'),
-    ]);
-    expect(before[0][0]?.revision).toBe(0);
-    expect(before[1][0]?.revision).toBe(0);
-
-    let conflictInjected = false;
-    runtime.beforeConditionalWrite = async (operation, namespace, key) => {
-      if (
-        !conflictInjected &&
-        operation === 'upsertIfRevision' &&
-        namespace === 'auth-sessions:by-session'
-      ) {
-        conflictInjected = true;
-        const current = await runtime.findEntry(namespace, key);
-        if (!current) throw new Error('Expected expired auth session index');
-        await runtime.upsert(namespace, key, current.value, current.expireAtTimestamp);
-      }
-    };
-    const pending = service.issueSession({
-      requestId,
-      clientId: 'client-1',
-      username: 'alice',
-      ttlMs: 60_000,
-      authority: {
-        kind: 'static-client',
-        clientId: 'client-1',
-        normalizedUsername: 'alice',
-      },
-    });
-    await waitForQueuedEntry(queue);
-    await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience(1));
-    const [afterFirstDequeue] = await readEntries(queue);
-    if (afterFirstDequeue?.status === EntityStatus.RETRY) {
-      await new Promise((resolve) => setTimeout(resolve, 2));
-      await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-    }
-    await expect(pending).resolves.toMatchObject({
-      right: { sessionId, accessToken },
-    });
-    const after = await Promise.all([
-      runtime.findAllEntries('auth-sessions:by-token'),
-      runtime.findAllEntries('auth-sessions:by-session'),
-    ]);
-    expect(after[0][0]?.revision).toBe(1);
-    expect(after[1][0]?.revision).toBe(1);
-    expect(rollbackCount).toBe(1);
-    expect(rollbackPreservedExpiredIndexes).toBe(true);
-    expect((await readEntries(queue))[0]).toMatchObject({
-      status: EntityStatus.COMPLETED,
-      dequeueAudit: { attempts: 2 },
-    });
-  });
-
-  it(
-    'atomically recreates an expired group and its summary ' + 'after a summary CAS conflict',
-    async () => {
-      const nowEpochMs = Date.now();
-      const runtime = new FakeRuntimeStateRepository();
-      const queue = new TestResourceInbox();
-      const results = new TestResourceInboxResults();
-      const reader = new InboxQueueReader(queue);
-      const sessions = new AuthSessionRepository(runtime);
-      const owner = {
-        clientId: 'owner',
-        username: 'owner',
-        sessionId: 'owner-session',
-        accessToken: 'owner-token',
-        issuedAtEpochMs: nowEpochMs - 1_000,
-        expiresAtEpochMs: nowEpochMs + 60_000,
-      };
-      await sessions.putSession(owner);
-      let expiredGroupRevision = -1;
-      let oldSummaryRevision = -1;
-      let rollbackPreservedPredecessors = false;
-      const database = createAppInboxTestDatabase(queue, results, {
-        runtimeRepository: runtime,
-        onTransactionRollback: async () => {
-          const [group] = await runtime.findAllEntries('group-state:groups');
-          const [summary] = await runtime.findAllEntries('group-state:presence-summaries');
-          rollbackPreservedPredecessors =
-            group?.revision === expiredGroupRevision && summary?.revision === oldSummaryRevision;
-        },
-      });
-      const groupState = createGroupStateService({
-        runtimeRepository: runtime,
-        formationDamping: 'damped',
-        createGroupStateEventStore: () => database.groupEventStore,
-        serviceId: 'expired-group-service',
-        now: () => nowEpochMs,
-        authSessionRepository: sessions,
-      });
-      const service = new AppGroupInboxService(
-        {
-          inboxQueueReader: reader,
-          resourceInboxRepository: queue,
-          resourceInboxResultsRepository: results,
-          database: database,
-          groupStateService: groupState,
-        },
-        {
-          serviceId: 'expired-group-service',
-        },
-      );
-      const create = async (requestId: string, displayName: string) => {
-        const minimumEntries = (await queue.getAllKeys()).length + 1;
-        const pending = service.processAuthenticatedGroupEntryUntilCompletion(
-          {
-            type: AppInboxType.GROUP_CREATE,
-            resourceId: requestId,
-            contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:room-1`,
-            senderId: owner.clientId,
-            data: {
-              scope: SCOPE,
-              request: {
-                groupId: 'room-1',
-                displayName,
-                kind: 'room',
-                joinMode: 'open',
-                createdByPrincipalId: owner.clientId,
-                actorPrincipalId: owner.clientId,
-                actorSessionId: owner.sessionId,
-                requestId,
-              },
-            },
-          },
-          owner,
-        );
-        await waitForQueuedEntry(queue, minimumEntries);
-        return { pending };
-      };
-
-      const seeded = await create('seed-group', 'Old room');
-      await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-      await expect(seeded.pending).resolves.toMatchObject({
-        right: { status: 'created' },
-      });
-      const [groupBeforeExpiry] = await runtime.findAllEntries('group-state:groups');
-      const [summaryBefore] = await runtime.findAllEntries('group-state:presence-summaries');
-      if (!groupBeforeExpiry || !summaryBefore) {
-        throw new Error('Expected seeded group and presence summary');
-      }
-      const [staleWorkEntry] = database.outboxEntries.values();
-      if (!staleWorkEntry) throw new Error('Expected seeded presence-summary work');
-      const staleAcceptedGroupRevision = readStaleAcceptedGroupRevision(staleWorkEntry.resource);
-      await runtime.upsert(
-        'group-state:groups',
-        groupBeforeExpiry.key,
-        groupBeforeExpiry.value,
-        nowEpochMs - 1,
-      );
-      const expiredGroup = await runtime.findEntry('group-state:groups', groupBeforeExpiry.key);
-      if (!expiredGroup) throw new Error('Expected expired group predecessor');
-      expiredGroupRevision = expiredGroup.revision;
-      oldSummaryRevision = summaryBefore.revision;
-      await expect(
-        new GroupStateRepository(runtime).findGroup({
-          ...SCOPE,
-          groupId: 'room-1',
-        }),
-      ).resolves.toBeUndefined();
-
-      let conflictInjected = false;
-      runtime.beforeConditionalWrite = async (operation, namespace, key) => {
-        if (
-          !conflictInjected &&
-          operation === 'upsertIfRevision' &&
-          namespace === 'group-state:presence-summaries'
-        ) {
-          conflictInjected = true;
-          const current = await runtime.findEntry(namespace, key);
-          if (!current) throw new Error('Expected old group presence summary');
-          await runtime.upsert(namespace, key, current.value, current.expireAtTimestamp);
+    it('replaces an expired client session by CAS and rolls back a later failure', async () => {
+        const nowEpochMs = 10_000;
+        const runtime = new FakeRuntimeStateRepository();
+        const service = createClientStatePhaseTestDriver(runtime, () => nowEpochMs);
+        await service.upsertPrincipal(SCOPE, 'alice', {
+            username: 'alice',
+            requestId: 'seed-principal'
+        });
+        await service.upsertInstance(SCOPE, 'alice', 'browser', {
+            platform: 'web',
+            requestId: 'seed-instance'
+        });
+        await service.connectSession(SCOPE, 'alice', 'browser', 'session-1', {
+            generationId: 'generation-1',
+            connectedAtEpochMs: nowEpochMs,
+            expiresAtEpochMs: nowEpochMs + 1_000,
+            requestId: 'seed-session'
+        });
+        const [seeded] = await runtime.findAllEntries('client-state:sessions');
+        if (!seeded) {
+            throw new Error('Expected seeded client session');
         }
-      };
-      const replacement = await create('replace-group', 'New room');
-      await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience(1));
-      const afterFirst = (await readEntries(queue)).find(
-        (entry) => entry.status === EntityStatus.RETRY || entry.dequeueAudit.attempts > 1,
-      );
-      if (afterFirst?.status === EntityStatus.RETRY) {
-        await new Promise((resolve) => setTimeout(resolve, 2));
-        await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
-      }
-      await expect(replacement.pending).resolves.toMatchObject({
-        right: { status: 'created' },
-      });
+        await runtime.upsert('client-state:sessions', seeded.key, seeded.value, nowEpochMs - 1);
+        const expired = await runtime.findEntry('client-state:sessions', seeded.key);
+        expect(expired?.revision).toBe(seeded.revision + 1);
+        await expect(
+            new ClientStateRepository(runtime).findSession({
+                ...SCOPE,
+                principalId: 'alice',
+                clientInstanceId: 'browser',
+                sessionId: 'session-1'
+            })
+        ).resolves.toBeUndefined();
 
-      const [replacedGroup] = await runtime.findAllEntries('group-state:groups');
-      const [replacedSummary] = await runtime.findAllEntries('group-state:presence-summaries');
-      if (!replacedGroup || !replacedSummary) {
-        throw new Error('Expected group and presence summary replacements');
-      }
-      const groupValue = readJsonObject(replacedGroup.value, 'Replaced group');
-      const summaryValue = readJsonObject(replacedSummary.value, 'Replaced presence summary');
-      const snapshotVersion = requireNonNegativeInteger(
-        groupValue.snapshotVersion,
-        'Replaced group snapshotVersion',
-      );
-      const summaryCausalRevision = requireJsonObject(
-        summaryValue.causalRevision,
-        'Replaced presence summary causalRevision',
-      );
-      const replacementReceipt = (await runtime.findAllEntries('group-state:idempotent'))
-        .map((entry) => readJsonObject(entry.value, 'Group idempotency entry'))
-        .find(
-          (entry) =>
-            requireJsonObject(entry.receipt, 'Group idempotency receipt').requestId ===
-            'replace-group',
+        failNextClientStateTestOutboxWrite(runtime);
+        const replacement = {
+            generationId: 'generation-2',
+            connectedAtEpochMs: nowEpochMs,
+            expiresAtEpochMs: nowEpochMs + 2_000,
+            requestId: 'replace-session'
+        };
+        await expect(
+            service.connectSession(SCOPE, 'alice', 'browser', 'session-1', replacement)
+        ).rejects.toThrow(/outbox collision/u);
+        expect(await runtime.findEntry('client-state:sessions', seeded.key)).toEqual(expired);
+        await service.connectSession(SCOPE, 'alice', 'browser', 'session-1', replacement);
+
+        const replaced = await runtime.findEntry('client-state:sessions', seeded.key);
+        if (!expired || !replaced) {
+            throw new Error('Expected expired client session replacement');
+        }
+        expect(replaced).toMatchObject({ revision: expired.revision + 1 });
+        expect(readJsonObject(replaced.value, 'Replaced client session')).toMatchObject({
+            generationId: 'generation-2',
+            generationVersion: 1
+        });
+    });
+
+    it('atomically replaces both expired auth session indexes after a CAS conflict', async () => {
+        const nowEpochMs = Date.now();
+        const runtime = new FakeRuntimeStateRepository();
+        const queue = new TestResourceInbox();
+        const results = new TestResourceInboxResults();
+        const reader = new InboxQueueReader(queue);
+        const credentialIssuer = createHmacAuthCredentialIssuer('expired-auth-secret-0123456789abcdef');
+        let rollbackCount = 0;
+        let rollbackPreservedExpiredIndexes = false;
+        const service = new AppAuthInboxService(
+            {
+                inboxQueueReader: reader,
+                resourceInboxRepository: queue,
+                resourceInboxResultsRepository: results,
+                database: createAppInboxTestDatabase(queue, results, {
+                    runtimeRepository: runtime,
+                    onTransactionRollback: async () => {
+                        rollbackCount += 1;
+                        const rolledBack = await Promise.all([
+                            runtime.findAllEntries('auth-sessions:by-token'),
+                            runtime.findAllEntries('auth-sessions:by-session')
+                        ]);
+                        rollbackPreservedExpiredIndexes = rolledBack[0][0]?.revision === 0 && rolledBack[1][0]?.revision === 0;
+                    }
+                }),
+                authMutationService: createAuthMutationService({
+                    runtimeRepository: runtime,
+                    serviceId: 'expired-auth-service'
+                }),
+                credentialIssuer: credentialIssuer
+            },
+            {
+                serviceId: 'expired-auth-service'
+            }
         );
-      expect(replacedGroup?.revision).toBe(expiredGroupRevision + 1);
-      expect(replacedSummary?.revision).toBe(oldSummaryRevision + 1);
-      expect(groupValue).toMatchObject({ displayName: 'New room' });
-      expect(summaryValue).toMatchObject({
-        activePrincipalIds: [],
-        activeSessionIds: [],
-        causalRevision: { groupRevision: snapshotVersion },
-      });
-      expect(replacementReceipt).toMatchObject({
-        receipt: {
-          requestId: 'replace-group',
-          attemptCount: 2,
-          acceptedStorageRevision: expiredGroupRevision + 1,
-          causalRevision: summaryCausalRevision,
-        },
-      });
-      expect(database.groupEventStore.events.at(-1)).toMatchObject({
-        requestId: 'replace-group',
-        causalRevision: summaryCausalRevision,
-      });
-      expect(rollbackPreservedPredecessors).toBe(true);
-      expect(database.groupEventStore.events).toHaveLength(2);
-      expect(database.outboxEntries.size).toBe(2);
-      expect(
-        (await readEntries(queue)).some(
-          (entry) => entry.status === EntityStatus.COMPLETED && entry.dequeueAudit.attempts === 2,
-        ),
-      ).toBe(true);
-      expect(snapshotVersion).toBeGreaterThan(staleAcceptedGroupRevision);
-    },
-  );
+        const requestId = 'replace-expired-auth-session';
+        const sessionId = `session-${
+            (
+                await hashAuthSecret(JSON.stringify(['session', requestId, 'alice', 'client-1']))
+            ).slice(0, 24)
+        }`;
+        const accessToken = await credentialIssuer.issueAccessToken(sessionId);
+        const accessTokenDigest = await hashAuthSecret(accessToken);
+        const oldSession = {
+            clientId: 'client-1',
+            username: 'alice',
+            sessionId,
+            accessTokenDigest,
+            issuedAtEpochMs: nowEpochMs - 10_000,
+            expiresAtEpochMs: nowEpochMs - 1
+        };
+        const sessions = new AuthSessionRepository(runtime);
+        await sessions.insertSessionByTokenDigest(oldSession);
+        await sessions.insertSessionBySessionId(oldSession);
+        const before = await Promise.all([
+            runtime.findAllEntries('auth-sessions:by-token'),
+            runtime.findAllEntries('auth-sessions:by-session')
+        ]);
+        expect(before[0][0]?.revision).toBe(0);
+        expect(before[1][0]?.revision).toBe(0);
+
+        let conflictInjected = false;
+        runtime.beforeConditionalWrite = async (operation, namespace, key) => {
+            if (
+                !conflictInjected &&
+                operation === 'upsertIfRevision' &&
+                namespace === 'auth-sessions:by-session'
+            ) {
+                conflictInjected = true;
+                const current = await runtime.findEntry(namespace, key);
+                if (!current) {
+                    throw new Error('Expected expired auth session index');
+                }
+                await runtime.upsert(namespace, key, current.value, current.expireAtTimestamp);
+            }
+        };
+        const pending = service.issueSession({
+            requestId,
+            clientId: 'client-1',
+            username: 'alice',
+            ttlMs: 60_000,
+            authority: {
+                kind: 'static-client',
+                clientId: 'client-1',
+                normalizedUsername: 'alice'
+            }
+        });
+        await waitForQueuedEntry(queue);
+        await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience(1));
+        const [afterFirstDequeue] = await readEntries(queue);
+        if (afterFirstDequeue?.status === EntityStatus.RETRY) {
+            await new Promise((resolve) => setTimeout(resolve, 2));
+            await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+        }
+        await expect(pending).resolves.toMatchObject({
+            right: { sessionId, accessToken }
+        });
+        const after = await Promise.all([
+            runtime.findAllEntries('auth-sessions:by-token'),
+            runtime.findAllEntries('auth-sessions:by-session')
+        ]);
+        expect(after[0][0]?.revision).toBe(1);
+        expect(after[1][0]?.revision).toBe(1);
+        expect(rollbackCount).toBe(1);
+        expect(rollbackPreservedExpiredIndexes).toBe(true);
+        expect((await readEntries(queue))[0]).toMatchObject({
+            status: EntityStatus.COMPLETED,
+            dequeueAudit: { attempts: 2 }
+        });
+    });
+
+    it(
+        'atomically recreates an expired group and its summary ' + 'after a summary CAS conflict',
+        async () => {
+            const nowEpochMs = Date.now();
+            const runtime = new FakeRuntimeStateRepository();
+            const queue = new TestResourceInbox();
+            const results = new TestResourceInboxResults();
+            const reader = new InboxQueueReader(queue);
+            const sessions = new AuthSessionRepository(runtime);
+            const owner = {
+                clientId: 'owner',
+                username: 'owner',
+                sessionId: 'owner-session',
+                accessToken: 'owner-token',
+                issuedAtEpochMs: nowEpochMs - 1_000,
+                expiresAtEpochMs: nowEpochMs + 60_000
+            };
+            await sessions.putSession(owner);
+            let expiredGroupRevision = -1;
+            let oldSummaryRevision = -1;
+            let rollbackPreservedPredecessors = false;
+            const database = createAppInboxTestDatabase(queue, results, {
+                runtimeRepository: runtime,
+                onTransactionRollback: async () => {
+                    const [group] = await runtime.findAllEntries('group-state:groups');
+                    const [summary] = await runtime.findAllEntries('group-state:presence-summaries');
+                    rollbackPreservedPredecessors = group?.revision === expiredGroupRevision && summary?.revision === oldSummaryRevision;
+                }
+            });
+            const groupState = createGroupStateService({
+                runtimeRepository: runtime,
+                formationDamping: 'damped',
+                createGroupStateEventStore: () => database.groupEventStore,
+                serviceId: 'expired-group-service',
+                now: () => nowEpochMs,
+                authSessionRepository: sessions
+            });
+            const service = new AppGroupInboxService(
+                {
+                    inboxQueueReader: reader,
+                    resourceInboxRepository: queue,
+                    resourceInboxResultsRepository: results,
+                    database: database,
+                    groupStateService: groupState
+                },
+                {
+                    serviceId: 'expired-group-service'
+                }
+            );
+            const create = async (requestId: string, displayName: string) => {
+                const minimumEntries = (await queue.getAllKeys()).length + 1;
+                const pending = service.processAuthenticatedGroupEntryUntilCompletion(
+                    {
+                        type: AppInboxType.GROUP_CREATE,
+                        resourceId: requestId,
+                        contextId: `${SCOPE.applicationId}:${SCOPE.workspaceId}:room-1`,
+                        senderId: owner.clientId,
+                        data: {
+                            scope: SCOPE,
+                            request: {
+                                groupId: 'room-1',
+                                displayName,
+                                kind: 'room',
+                                joinMode: 'open',
+                                createdByPrincipalId: owner.clientId,
+                                actorPrincipalId: owner.clientId,
+                                actorSessionId: owner.sessionId,
+                                requestId
+                            }
+                        }
+                    },
+                    owner
+                );
+                await waitForQueuedEntry(queue, minimumEntries);
+                return { pending };
+            };
+
+            const seeded = await create('seed-group', 'Old room');
+            await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+            await expect(seeded.pending).resolves.toMatchObject({
+                right: { status: 'created' }
+            });
+            const [groupBeforeExpiry] = await runtime.findAllEntries('group-state:groups');
+            const [summaryBefore] = await runtime.findAllEntries('group-state:presence-summaries');
+            if (!groupBeforeExpiry || !summaryBefore) {
+                throw new Error('Expected seeded group and presence summary');
+            }
+            const [staleWorkEntry] = database.outboxEntries.values();
+            if (!staleWorkEntry) {
+                throw new Error('Expected seeded presence-summary work');
+            }
+            const staleAcceptedGroupRevision = readStaleAcceptedGroupRevision(staleWorkEntry.resource);
+            await runtime.upsert(
+                'group-state:groups',
+                groupBeforeExpiry.key,
+                groupBeforeExpiry.value,
+                nowEpochMs - 1
+            );
+            const expiredGroup = await runtime.findEntry('group-state:groups', groupBeforeExpiry.key);
+            if (!expiredGroup) {
+                throw new Error('Expected expired group predecessor');
+            }
+            expiredGroupRevision = expiredGroup.revision;
+            oldSummaryRevision = summaryBefore.revision;
+            await expect(
+                new GroupStateRepository(runtime).findGroup({
+                    ...SCOPE,
+                    groupId: 'room-1'
+                })
+            ).resolves.toBeUndefined();
+
+            let conflictInjected = false;
+            runtime.beforeConditionalWrite = async (operation, namespace, key) => {
+                if (
+                    !conflictInjected &&
+                    operation === 'upsertIfRevision' &&
+                    namespace === 'group-state:presence-summaries'
+                ) {
+                    conflictInjected = true;
+                    const current = await runtime.findEntry(namespace, key);
+                    if (!current) {
+                        throw new Error('Expected old group presence summary');
+                    }
+                    await runtime.upsert(namespace, key, current.value, current.expireAtTimestamp);
+                }
+            };
+            const replacement = await create('replace-group', 'New room');
+            await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience(1));
+            const afterFirst = (await readEntries(queue)).find(
+                (entry) => entry.status === EntityStatus.RETRY || entry.dequeueAudit.attempts > 1
+            );
+            if (afterFirst?.status === EntityStatus.RETRY) {
+                await new Promise((resolve) => setTimeout(resolve, 2));
+                await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+            }
+            await expect(replacement.pending).resolves.toMatchObject({
+                right: { status: 'created' }
+            });
+
+            const [replacedGroup] = await runtime.findAllEntries('group-state:groups');
+            const [replacedSummary] = await runtime.findAllEntries('group-state:presence-summaries');
+            if (!replacedGroup || !replacedSummary) {
+                throw new Error('Expected group and presence summary replacements');
+            }
+            const groupValue = readJsonObject(replacedGroup.value, 'Replaced group');
+            const summaryValue = readJsonObject(replacedSummary.value, 'Replaced presence summary');
+            const snapshotVersion = requireNonNegativeInteger(
+                groupValue.snapshotVersion,
+                'Replaced group snapshotVersion'
+            );
+            const summaryCausalRevision = requireJsonObject(
+                summaryValue.causalRevision,
+                'Replaced presence summary causalRevision'
+            );
+            const replacementReceipt = (await runtime.findAllEntries('group-state:idempotent'))
+                .map((entry) => readJsonObject(entry.value, 'Group idempotency entry'))
+                .find(
+                    (entry) =>
+                        requireJsonObject(entry.receipt, 'Group idempotency receipt').requestId ===
+                            'replace-group'
+                );
+            expect(replacedGroup?.revision).toBe(expiredGroupRevision + 1);
+            expect(replacedSummary?.revision).toBe(oldSummaryRevision + 1);
+            expect(groupValue).toMatchObject({ displayName: 'New room' });
+            expect(summaryValue).toMatchObject({
+                activePrincipalIds: [],
+                activeSessionIds: [],
+                causalRevision: { groupRevision: snapshotVersion }
+            });
+            expect(replacementReceipt).toMatchObject({
+                receipt: {
+                    requestId: 'replace-group',
+                    attemptCount: 2,
+                    acceptedStorageRevision: expiredGroupRevision + 1,
+                    causalRevision: summaryCausalRevision
+                }
+            });
+            expect(database.groupEventStore.events.at(-1)).toMatchObject({
+                requestId: 'replace-group',
+                causalRevision: summaryCausalRevision
+            });
+            expect(rollbackPreservedPredecessors).toBe(true);
+            expect(database.groupEventStore.events).toHaveLength(2);
+            expect(database.outboxEntries.size).toBe(2);
+            expect(
+                (await readEntries(queue)).some(
+                    (entry) => entry.status === EntityStatus.COMPLETED && entry.dequeueAudit.attempts === 2
+                )
+            ).toBe(true);
+            expect(snapshotVersion).toBeGreaterThan(staleAcceptedGroupRevision);
+        }
+    );
 });
 
 function readStaleAcceptedGroupRevision(resource: string): number {
-  const message = readJsonObject(resource, 'Presence-summary outbox message');
-  const payload = requireJsonObject(message.payload, 'Presence-summary outbox payload');
-  if (typeof payload.resource !== 'string') {
-    throw new TypeError('Presence-summary outbox payload resource must be a string');
-  }
-  const work = readJsonObject(payload.resource, 'Presence-summary work');
-  const data = requireJsonObject(work.data, 'Presence-summary work data');
-  const acceptedCausalRevision = requireJsonObject(
-    data.acceptedCausalRevision,
-    'Presence-summary accepted causal revision',
-  );
-  return requireNonNegativeInteger(
-    acceptedCausalRevision.groupRevision,
-    'Presence-summary accepted group revision',
-  );
+    const message = readJsonObject(resource, 'Presence-summary outbox message');
+    const payload = requireJsonObject(message.payload, 'Presence-summary outbox payload');
+    if (typeof payload.resource !== 'string') {
+        throw new TypeError('Presence-summary outbox payload resource must be a string');
+    }
+    const work = readJsonObject(payload.resource, 'Presence-summary work');
+    const data = requireJsonObject(work.data, 'Presence-summary work data');
+    const acceptedCausalRevision = requireJsonObject(
+        data.acceptedCausalRevision,
+        'Presence-summary accepted causal revision'
+    );
+    return requireNonNegativeInteger(
+        acceptedCausalRevision.groupRevision,
+        'Presence-summary accepted group revision'
+    );
 }
 
 function readJsonObject(value: string, label: string): JsonWireObject {
-  const parsed: JsonWireValue = JSON.parse(value);
-  return requireJsonObject(parsed, label);
+    const parsed: JsonWireValue = JSON.parse(value);
+    return requireJsonObject(parsed, label);
 }
 
 function requireJsonObject(value: JsonWireValue, label: string): JsonWireObject {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new TypeError(`${label} must be an object`);
-  }
-  return value as JsonWireObject;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new TypeError(`${label} must be an object`);
+    }
+    return value as JsonWireObject;
 }
 
 function requireNonNegativeInteger(value: JsonWireValue, label: string): number {
-  if (!Number.isSafeInteger(value) || Number(value) < 0) {
-    throw new TypeError(`${label} must be a non-negative safe integer`);
-  }
-  return Number(value);
+    if (!Number.isSafeInteger(value) || Number(value) < 0) {
+        throw new TypeError(`${label} must be a non-negative safe integer`);
+    }
+    return Number(value);
 }

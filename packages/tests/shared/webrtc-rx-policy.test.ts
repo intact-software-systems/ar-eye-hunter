@@ -1,5 +1,5 @@
-import { beforeAll, describe, expect, it } from 'vitest';
 import { Temporal } from '@js-temporal/polyfill';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 if (!('Temporal' in globalThis)) {
     Object.assign(globalThis, { Temporal });
@@ -21,8 +21,8 @@ describe('WebRtcRxStreamerService QoS receive pipeline', () => {
             new shared.InMemoryQueueBox(new Map()),
             manager as never,
             {
-                sessionId: 'self',
-            },
+                sessionId: 'self'
+            }
         );
 
         const received: string[] = [];
@@ -30,8 +30,8 @@ describe('WebRtcRxStreamerService QoS receive pipeline', () => {
             {
                 onMessage: async (message) => {
                     received.push(message.id.msgId);
-                },
-            },
+                }
+            }
         );
 
         const msg = shared.newALUnicastMessage(
@@ -39,13 +39,13 @@ describe('WebRtcRxStreamerService QoS receive pipeline', () => {
             {
                 topicId: 'chat',
                 resourceId: 'msg-1',
-                contextId: 'conversation-1',
+                contextId: 'conversation-1'
             },
             'self',
             'chat.private-text.v1',
             {
-                text: 'hello',
-            },
+                text: 'hello'
+            }
         );
 
         await (service as any).inboundRuntime.handleIncomingMessage(msg, 'peer-1');
@@ -60,8 +60,8 @@ describe('WebRtcRxStreamerService QoS receive pipeline', () => {
             new shared.InMemoryQueueBox(new Map()),
             manager as never,
             {
-                sessionId: 'self',
-            },
+                sessionId: 'self'
+            }
         );
 
         const receivedByType: string[] = [];
@@ -71,15 +71,15 @@ describe('WebRtcRxStreamerService QoS receive pipeline', () => {
             {
                 onMessage: async (message) => {
                     receivedByType.push(message.id.msgId);
-                },
-            },
+                }
+            }
         );
         service.onAllInboxMessagesDo(
             {
                 onMessage: async (message) => {
                     receivedByWildcard.push(message.id.msgId);
-                },
-            },
+                }
+            }
         );
 
         const msg = shared.newALUnicastMessage(
@@ -87,20 +87,20 @@ describe('WebRtcRxStreamerService QoS receive pipeline', () => {
             {
                 topicId: 'tasks',
                 resourceId: 'job-1',
-                contextId: 'queue-1',
+                contextId: 'queue-1'
             },
             'self',
             'tasks.job.v1',
             {
-                text: 'claim me',
+                text: 'claim me'
             },
             {
                 qos: {
                     ownership: {
-                        algo: 'exclusive',
-                    },
-                },
-            },
+                        algo: 'exclusive'
+                    }
+                }
+            }
         );
 
         await (service as any).inboundRuntime.handleIncomingMessage(msg, 'peer-1');
@@ -115,8 +115,8 @@ describe('WebRtcRxStreamerService QoS receive pipeline', () => {
             new shared.InMemoryQueueBox(new Map()),
             manager as never,
             {
-                sessionId: 'self',
-            },
+                sessionId: 'self'
+            }
         );
 
         const received: string[] = [];
@@ -124,8 +124,8 @@ describe('WebRtcRxStreamerService QoS receive pipeline', () => {
             {
                 onMessage: async (message) => {
                     received.push(message.id.msgId);
-                },
-            },
+                }
+            }
         );
 
         const msg = shared.newALUnicastMessage(
@@ -133,20 +133,20 @@ describe('WebRtcRxStreamerService QoS receive pipeline', () => {
             {
                 topicId: 'tasks',
                 resourceId: 'job-2',
-                contextId: 'queue-1',
+                contextId: 'queue-1'
             },
             'self',
             'tasks.job.v1',
             {
-                text: 'route through wildcard',
+                text: 'route through wildcard'
             },
             {
                 qos: {
                     ownership: {
-                        algo: 'exclusive',
-                    },
-                },
-            },
+                        algo: 'exclusive'
+                    }
+                }
+            }
         );
 
         await (service as any).inboundRuntime.handleIncomingMessage(msg, 'peer-1');
@@ -158,24 +158,24 @@ describe('WebRtcRxStreamerService QoS receive pipeline', () => {
         const manager = createFakeMulticastManager({
             overlayNeighborPeerIds: ['peer-2'],
             connectedPeerIds: ['peer-1', 'peer-2'],
-            groupMemberPeerIds: ['self', 'peer-1', 'peer-2'],
+            groupMemberPeerIds: ['self', 'peer-1', 'peer-2']
         });
         const service = new shared.WebRtcRxStreamerService(
             new shared.InMemoryQueueBox(new Map()),
             manager as never,
             {
-                sessionId: 'self',
-            },
+                sessionId: 'self'
+            }
         );
 
         const deliveredTexts: string[] = [];
         service.onAllInboxMessagesDo(
             {
                 onMessage: async (message) => {
-                    const payload = JSON.parse(message.payload.resource) as { text: string };
+                    const payload = JSON.parse(message.payload.resource) as { text: string; };
                     deliveredTexts.push(payload.text);
-                },
-            },
+                }
+            }
         );
 
         const seq2 = shared.newALMulticastMessage(
@@ -183,17 +183,17 @@ describe('WebRtcRxStreamerService QoS receive pipeline', () => {
             {
                 topicId: 'chat',
                 resourceId: 'msg-2',
-                contextId: 'group-1',
+                contextId: 'group-1'
             },
             groupRef('group-1'),
             'chat.message.v1',
             {
-                text: 'two',
+                text: 'two'
             },
             {
                 seq: 2,
-                reliability: 'at-least-once',
-            },
+                reliability: 'at-least-once'
+            }
         );
 
         const seq1 = shared.newALMulticastMessage(
@@ -201,25 +201,25 @@ describe('WebRtcRxStreamerService QoS receive pipeline', () => {
             {
                 topicId: 'chat',
                 resourceId: 'msg-3',
-                contextId: 'group-1',
+                contextId: 'group-1'
             },
             groupRef('group-1'),
             'chat.message.v1',
             {
-                text: 'one',
+                text: 'one'
             },
             {
                 seq: 1,
-                reliability: 'at-least-once',
-            },
+                reliability: 'at-least-once'
+            }
         );
 
         await (service as any).inboundRuntime.handleIncomingMessage(seq2, 'peer-1');
 
         expect(deliveredTexts).toEqual([]);
-        expect(manager.outboundControlMessages.map(msg => msg.payload.typeId)).toEqual([
+        expect(manager.outboundControlMessages.map((msg) => msg.payload.typeId)).toEqual([
             shared.AL_CONTROL_NACK_TYPE_ID,
-            shared.AL_CONTROL_REPAIR_TYPE_ID,
+            shared.AL_CONTROL_REPAIR_TYPE_ID
         ]);
 
         await (service as any).inboundRuntime.handleIncomingMessage(seq1, 'peer-1');
@@ -235,14 +235,14 @@ describe('WebRtcRxStreamerService QoS receive pipeline', () => {
             new shared.InMemoryQueueBox(new Map()),
             manager as never,
             {
-                sessionId: 'self',
-            },
+                sessionId: 'self'
+            }
         );
 
         service.onAllInboxMessagesDo(
             {
-                onMessage: async () => Promise.resolve(),
-            },
+                onMessage: async () => Promise.resolve()
+            }
         );
 
         const msg = shared.newALUnicastMessage(
@@ -250,48 +250,48 @@ describe('WebRtcRxStreamerService QoS receive pipeline', () => {
             {
                 topicId: 'chat',
                 resourceId: 'msg-4',
-                contextId: 'conversation-1',
+                contextId: 'conversation-1'
             },
             'self',
             'chat.private-text.v1',
             {
-                text: 'ack please',
+                text: 'ack please'
             },
             {
                 qos: {
                     ack: {
                         algo: 'hop',
                         opts: {
-                            timeoutMs: 1_000,
-                        },
-                    },
-                },
-            },
+                            timeoutMs: 1_000
+                        }
+                    }
+                }
+            }
         );
 
         await (service as any).inboundRuntime.handleIncomingMessage(msg, 'peer-1');
 
-        expect(manager.outboundControlMessages.some(control => control.payload.typeId === shared.AL_CONTROL_ACK_TYPE_ID)).toBe(true);
+        expect(manager.outboundControlMessages.some((control) => control.payload.typeId === shared.AL_CONTROL_ACK_TYPE_ID)).toBe(true);
     });
 
     it('aggregates subtree acknowledgements before acking upstream', async () => {
         const manager = createFakeMulticastManager({
             overlayNeighborPeerIds: ['peer-2', 'peer-3'],
             connectedPeerIds: ['peer-1', 'peer-2', 'peer-3'],
-            groupMemberPeerIds: ['self', 'peer-1', 'peer-2', 'peer-3'],
+            groupMemberPeerIds: ['self', 'peer-1', 'peer-2', 'peer-3']
         });
         const service = new shared.WebRtcRxStreamerService(
             new shared.InMemoryQueueBox(new Map()),
             manager as never,
             {
-                sessionId: 'self',
-            },
+                sessionId: 'self'
+            }
         );
 
         service.onAllInboxMessagesDo(
             {
-                onMessage: async () => Promise.resolve(),
-            },
+                onMessage: async () => Promise.resolve()
+            }
         );
 
         const msg = shared.newALMulticastMessage(
@@ -299,17 +299,17 @@ describe('WebRtcRxStreamerService QoS receive pipeline', () => {
             {
                 topicId: 'chat',
                 resourceId: 'msg-5',
-                contextId: 'group-1',
+                contextId: 'group-1'
             },
             groupRef('group-1'),
             'chat.message.v1',
             {
-                text: 'wait for children',
+                text: 'wait for children'
             },
             {
                 reliability: 'at-least-once',
-                ack: 'all-logical-recipients',
-            },
+                ack: 'all-logical-recipients'
+            }
         );
 
         await (service as any).inboundRuntime.handleIncomingMessage(msg, 'peer-1');
@@ -329,7 +329,7 @@ describe('WebRtcRxStreamerService QoS receive pipeline', () => {
         const payload = JSON.parse(manager.outboundControlMessages[0].payload.resource) as {
             status: string;
             toPeerId: string;
-            ackedMsgId: string
+            ackedMsgId: string;
         };
         expect(payload.status).toBe('subtree-complete');
         expect(payload.toPeerId).toBe('peer-1');
@@ -337,11 +337,13 @@ describe('WebRtcRxStreamerService QoS receive pipeline', () => {
     });
 });
 
-function createFakeMulticastManager(options?: Readonly<{
-    connectedPeerIds?: readonly string[];
-    groupMemberPeerIds?: readonly string[];
-    overlayNeighborPeerIds?: readonly string[];
-}>) {
+function createFakeMulticastManager(
+    options?: Readonly<{
+        connectedPeerIds?: readonly string[];
+        groupMemberPeerIds?: readonly string[];
+        overlayNeighborPeerIds?: readonly string[];
+    }>
+) {
     const connectedPeerIds = options?.connectedPeerIds ?? ['peer-1'];
     const groupMemberPeerIds = options?.groupMemberPeerIds ?? ['self', 'peer-1'];
     const overlayNeighborPeerIds = options?.overlayNeighborPeerIds ?? [];
@@ -353,7 +355,7 @@ function createFakeMulticastManager(options?: Readonly<{
         planIncomingMessage: (
             msg: SharedMessage,
             fromPeerId?: string,
-            runtime?: { dedupStore?: unknown; orderingStore?: unknown },
+            runtime?: { dedupStore?: unknown; orderingStore?: unknown; }
         ) => shared.planALMessageHandling(
             msg,
             {
@@ -363,8 +365,8 @@ function createFakeMulticastManager(options?: Readonly<{
                 groupMemberPeerIds,
                 overlayNeighborPeerIds,
                 dedupStore: runtime?.dedupStore as any,
-                orderingStore: runtime?.orderingStore as any,
-            },
+                orderingStore: runtime?.orderingStore as any
+            }
         ),
         enqueueIfAbsent: async (msg: SharedMessage) => {
             outboundControlMessages.push(msg);
@@ -376,7 +378,7 @@ function createFakeMulticastManager(options?: Readonly<{
             return [];
         },
         outboundControlMessages,
-        forwardedMessages,
+        forwardedMessages
     };
 }
 
@@ -384,6 +386,6 @@ function groupRef(groupId: string) {
     return {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',
-        groupId,
+        groupId
     };
 }

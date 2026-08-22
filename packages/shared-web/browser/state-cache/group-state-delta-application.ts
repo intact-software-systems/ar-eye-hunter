@@ -1,20 +1,9 @@
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
-import {
-  compareGroupCausalRevision,
-  toGroupSnapshotStateRevision,
-} from '@shared/api/group-client-views.ts';
-import {
-  type GroupStateDeltaEnvelope,
-  validateGroupStateDeltaEnvelope,
-} from '@shared/api/group-state-delta.ts';
-import type {
-  GroupMember,
-  GroupPresenceSession,
-  GroupSnapshot,
-} from '@shared/api/group-types.ts';
+import { compareGroupCausalRevision, toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
+import { validateGroupStateDeltaEnvelope, type GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
+import type { GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import * as groupStateSnapshotsRepository
-  from '@shared/repository/group-state-snapshots-repository.ts';
+import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
@@ -23,17 +12,17 @@ import { readStateGroupSnapshot } from '../state-read/point-read.ts';
 import { acceptGroupStateSnapshotsOrRecompute } from './state-cache-snapshot-adoption.ts';
 
 export type GroupStateDeltaApplication =
-  | 'applied'
-  | 'no-op'
-  | 'gap-pull'
-  | 'revision-conflict';
+    | 'applied'
+    | 'no-op'
+    | 'gap-pull'
+    | 'revision-conflict';
 
 export type GroupStateDeltaMaterializationGap =
-  | 'missing-session-record'
-  | 'inconsistent-materialization';
+    | 'missing-session-record'
+    | 'inconsistent-materialization';
 
 export type RereadGroupSnapshots = (
-  scope: StateScope,
+    scope: StateScope
 ) => Promise<readonly GroupSnapshot[]>;
 
 /**
@@ -43,46 +32,47 @@ export type RereadGroupSnapshots = (
  * still be in flight across a rolling deploy.
  */
 export function toGroupStateDeltaEnvelope(
-  serialized: string,
-  scope: StateScope,
+    serialized: string,
+    scope: StateScope
 ): GroupStateDeltaEnvelope | undefined {
-  try {
-    const value: unknown = JSON.parse(serialized);
-    validateGroupStateDeltaEnvelope(value, scope);
-    return value;
-  } catch {
-    return undefined;
-  }
+    try {
+        const value: unknown = JSON.parse(serialized);
+        validateGroupStateDeltaEnvelope(value, scope);
+        return value;
+    }
+    catch {
+        return undefined;
+    }
 }
 
 export async function acceptGroupStateDeltaEnvelope(
-  envelope: GroupStateDeltaEnvelope,
-  scope: StateScope,
-  rereadGroupSnapshots?: RereadGroupSnapshots,
+    envelope: GroupStateDeltaEnvelope,
+    scope: StateScope,
+    rereadGroupSnapshots?: RereadGroupSnapshots
 ): Promise<GroupStateDeltaApplication> {
-  const startedAtMs = performance.now();
-  const cached = groupStateSnapshotsRepository.findGroupStateSnapshotByRef(envelope.group);
-  const disposition = resolveGroupStateDeltaDisposition(cached, envelope);
-  if (disposition === 'no-op') {
-    return emitGroupStateDeltaDiagnostic('no-op', startedAtMs);
-  }
-  if (disposition === 'apply' && cached !== undefined) {
-    const materialized = toGroupSnapshotFromDeltaEnvelope(cached, envelope);
-    if (materialized.right !== undefined) {
-      const adoption = await adoptMaterializedGroupSnapshot(
-        materialized.right,
-        scope,
-        rereadGroupSnapshots,
-      );
-      if (adoption === 'adopted') {
-        return emitGroupStateDeltaDiagnostic('applied', startedAtMs);
-      }
-      await readGroupSnapshotAtDeltaFloor(envelope, scope, rereadGroupSnapshots);
-      return emitGroupStateDeltaDiagnostic('revision-conflict', startedAtMs);
+    const startedAtMs = performance.now();
+    const cached = groupStateSnapshotsRepository.findGroupStateSnapshotByRef(envelope.group);
+    const disposition = resolveGroupStateDeltaDisposition(cached, envelope);
+    if (disposition === 'no-op') {
+        return emitGroupStateDeltaDiagnostic('no-op', startedAtMs);
     }
-  }
-  await readGroupSnapshotAtDeltaFloor(envelope, scope, rereadGroupSnapshots);
-  return emitGroupStateDeltaDiagnostic('gap-pull', startedAtMs);
+    if (disposition === 'apply' && cached !== undefined) {
+        const materialized = toGroupSnapshotFromDeltaEnvelope(cached, envelope);
+        if (materialized.right !== undefined) {
+            const adoption = await adoptMaterializedGroupSnapshot(
+                materialized.right,
+                scope,
+                rereadGroupSnapshots
+            );
+            if (adoption === 'adopted') {
+                return emitGroupStateDeltaDiagnostic('applied', startedAtMs);
+            }
+            await readGroupSnapshotAtDeltaFloor(envelope, scope, rereadGroupSnapshots);
+            return emitGroupStateDeltaDiagnostic('revision-conflict', startedAtMs);
+        }
+    }
+    await readGroupSnapshotAtDeltaFloor(envelope, scope, rereadGroupSnapshots);
+    return emitGroupStateDeltaDiagnostic('gap-pull', startedAtMs);
 }
 
 /**
@@ -94,29 +84,29 @@ export async function acceptGroupStateDeltaEnvelope(
  * without a record in either source is a causal gap, not an error.
  */
 export function toGroupSnapshotFromDeltaEnvelope(
-  cached: GroupSnapshot,
-  envelope: GroupStateDeltaEnvelope,
+    cached: GroupSnapshot,
+    envelope: GroupStateDeltaEnvelope
 ): Either<GroupStateDeltaMaterializationGap, GroupSnapshot> {
-  const activeSessions = toDeltaActiveSessions(cached, envelope);
-  if (activeSessions === undefined) {
-    return Either.ofLeft('missing-session-record');
-  }
-  const resulting = envelope.resultingCausalRevision;
-  const snapshot: GroupSnapshot = {
-    stateRevision: toGroupSnapshotStateRevision(
-      resulting.groupRevision,
-      resulting.presenceRevision,
-    ),
-    causalRevision: resulting,
-    group: envelope.group,
-    members: toDeltaMembers(cached.members, envelope.members),
-    activeSessions,
-    memberCount: envelope.memberCount,
-    onlineMemberCount: envelope.onlineMemberCount,
-  };
-  return isAuthoritativeGroupSnapshot(snapshot, envelope.group)
-    ? Either.ofRight(snapshot)
-    : Either.ofLeft('inconsistent-materialization');
+    const activeSessions = toDeltaActiveSessions(cached, envelope);
+    if (activeSessions === undefined) {
+        return Either.ofLeft('missing-session-record');
+    }
+    const resulting = envelope.resultingCausalRevision;
+    const snapshot: GroupSnapshot = {
+        stateRevision: toGroupSnapshotStateRevision(
+            resulting.groupRevision,
+            resulting.presenceRevision
+        ),
+        causalRevision: resulting,
+        group: envelope.group,
+        members: toDeltaMembers(cached.members, envelope.members),
+        activeSessions,
+        memberCount: envelope.memberCount,
+        onlineMemberCount: envelope.onlineMemberCount
+    };
+    return isAuthoritativeGroupSnapshot(snapshot, envelope.group)
+        ? Either.ofRight(snapshot)
+        : Either.ofLeft('inconsistent-materialization');
 }
 
 /**
@@ -125,24 +115,24 @@ export function toGroupSnapshotFromDeltaEnvelope(
  * the cached tuple instead of reaching the apply path.
  */
 function resolveGroupStateDeltaDisposition(
-  cached: GroupSnapshot | undefined,
-  envelope: GroupStateDeltaEnvelope,
+    cached: GroupSnapshot | undefined,
+    envelope: GroupStateDeltaEnvelope
 ): 'no-op' | 'apply' | 'causal-gap' {
-  if (cached === undefined) {
-    return 'causal-gap';
-  }
-  const againstResulting = compareGroupCausalRevision(
-    cached.causalRevision,
-    envelope.resultingCausalRevision,
-  );
-  if (againstResulting === 'equal' || againstResulting === 'dominates') {
-    return 'no-op';
-  }
-  const againstPredecessor = compareGroupCausalRevision(
-    cached.causalRevision,
-    envelope.predecessorCausalRevision,
-  );
-  return againstPredecessor === 'equal' ? 'apply' : 'causal-gap';
+    if (cached === undefined) {
+        return 'causal-gap';
+    }
+    const againstResulting = compareGroupCausalRevision(
+        cached.causalRevision,
+        envelope.resultingCausalRevision
+    );
+    if (againstResulting === 'equal' || againstResulting === 'dominates') {
+        return 'no-op';
+    }
+    const againstPredecessor = compareGroupCausalRevision(
+        cached.causalRevision,
+        envelope.predecessorCausalRevision
+    );
+    return againstPredecessor === 'equal' ? 'apply' : 'causal-gap';
 }
 
 /**
@@ -153,60 +143,63 @@ function resolveGroupStateDeltaDisposition(
  * runtime.
  */
 async function adoptMaterializedGroupSnapshot(
-  snapshot: GroupSnapshot,
-  scope: StateScope,
-  rereadGroupSnapshots?: RereadGroupSnapshots,
+    snapshot: GroupSnapshot,
+    scope: StateScope,
+    rereadGroupSnapshots?: RereadGroupSnapshots
 ): Promise<'adopted' | 'revision-conflict'> {
-  try {
-    await acceptGroupStateSnapshotsOrRecompute([snapshot], scope, rereadGroupSnapshots);
-    return 'adopted';
-  } catch (error) {
-    if (error instanceof StateSnapshotRevisionConflictError) {
-      return 'revision-conflict';
+    try {
+        await acceptGroupStateSnapshotsOrRecompute([snapshot], scope, rereadGroupSnapshots);
+        return 'adopted';
     }
-    throw error;
-  }
+    catch (error) {
+        if (error instanceof StateSnapshotRevisionConflictError) {
+            return 'revision-conflict';
+        }
+        throw error;
+    }
 }
 
 async function readGroupSnapshotAtDeltaFloor(
-  envelope: GroupStateDeltaEnvelope,
-  scope: StateScope,
-  rereadGroupSnapshots?: RereadGroupSnapshots,
+    envelope: GroupStateDeltaEnvelope,
+    scope: StateScope,
+    rereadGroupSnapshots?: RereadGroupSnapshots
 ): Promise<void> {
-  try {
-    const pulled = await readStateGroupSnapshot(envelope.group.groupId, scope, {
-      minCausalRevision: envelope.resultingCausalRevision,
-    });
-    await acceptGroupStateSnapshotsOrRecompute([pulled.snapshot], scope, rereadGroupSnapshots);
-  } catch {
-    await rereadGroupSnapshotsAfterFailedPull(scope, rereadGroupSnapshots);
-  }
+    try {
+        const pulled = await readStateGroupSnapshot(envelope.group.groupId, scope, {
+            minCausalRevision: envelope.resultingCausalRevision
+        });
+        await acceptGroupStateSnapshotsOrRecompute([pulled.snapshot], scope, rereadGroupSnapshots);
+    }
+    catch {
+        await rereadGroupSnapshotsAfterFailedPull(scope, rereadGroupSnapshots);
+    }
 }
 
 async function rereadGroupSnapshotsAfterFailedPull(
-  scope: StateScope,
-  rereadGroupSnapshots?: RereadGroupSnapshots,
+    scope: StateScope,
+    rereadGroupSnapshots?: RereadGroupSnapshots
 ): Promise<void> {
-  if (rereadGroupSnapshots === undefined) {
-    return;
-  }
-  try {
-    const reread = await rereadGroupSnapshots(scope);
-    await acceptGroupStateSnapshotsOrRecompute(reread, scope, rereadGroupSnapshots);
-  } catch {
-    // Convergence falls back to the heartbeat snapshot refresh.
-  }
+    if (rereadGroupSnapshots === undefined) {
+        return;
+    }
+    try {
+        const reread = await rereadGroupSnapshots(scope);
+        await acceptGroupStateSnapshotsOrRecompute(reread, scope, rereadGroupSnapshots);
+    }
+    catch {
+        // Convergence falls back to the heartbeat snapshot refresh.
+    }
 }
 
 function toDeltaMembers(
-  cached: readonly GroupMember[],
-  affected: readonly GroupMember[],
+    cached: readonly GroupMember[],
+    affected: readonly GroupMember[]
 ): readonly GroupMember[] {
-  const merged = new Map(cached.map((member) => [member.principalId, member]));
-  for (const member of affected) {
-    merged.set(member.principalId, member);
-  }
-  return [...merged.values()].sort(compareCanonicalGroupMemberOrder);
+    const merged = new Map(cached.map((member) => [member.principalId, member]));
+    for (const member of affected) {
+        merged.set(member.principalId, member);
+    }
+    return [...merged.values()].sort(compareCanonicalGroupMemberOrder);
 }
 
 /**
@@ -219,54 +212,55 @@ function toDeltaMembers(
  * `groupStateMemberStorageKey` encoding.
  */
 function compareCanonicalGroupMemberOrder(left: GroupMember, right: GroupMember): number {
-  const leftKey = encodeURIComponent(left.principalId);
-  const rightKey = encodeURIComponent(right.principalId);
-  if (leftKey < rightKey) {
-    return -1;
-  }
-  return leftKey > rightKey ? 1 : 0;
+    const leftKey = encodeURIComponent(left.principalId);
+    const rightKey = encodeURIComponent(right.principalId);
+    if (leftKey < rightKey) {
+        return -1;
+    }
+    return leftKey > rightKey ? 1 : 0;
 }
 
 function toDeltaActiveSessions(
-  cached: GroupSnapshot,
-  envelope: GroupStateDeltaEnvelope,
+    cached: GroupSnapshot,
+    envelope: GroupStateDeltaEnvelope
 ): readonly GroupPresenceSession[] | undefined {
-  const affectedBySessionId = new Map(
-    envelope.sessions.map((session) => [session.sessionId, session]),
-  );
-  const cachedBySessionId = new Map(
-    cached.activeSessions.map((session) => [session.sessionId, session]),
-  );
-  const sessions: GroupPresenceSession[] = [];
-  for (const sessionId of envelope.activeSessionIds) {
-    const session = affectedBySessionId.get(sessionId) ?? cachedBySessionId.get(sessionId);
-    if (session === undefined) {
-      return undefined;
+    const affectedBySessionId = new Map(
+        envelope.sessions.map((session) => [session.sessionId, session])
+    );
+    const cachedBySessionId = new Map(
+        cached.activeSessions.map((session) => [session.sessionId, session])
+    );
+    const sessions: GroupPresenceSession[] = [];
+    for (const sessionId of envelope.activeSessionIds) {
+        const session = affectedBySessionId.get(sessionId) ?? cachedBySessionId.get(sessionId);
+        if (session === undefined) {
+            return undefined;
+        }
+        sessions.push(session);
     }
-    sessions.push(session);
-  }
-  return sessions;
+    return sessions;
 }
 
 function isAuthoritativeGroupSnapshot(snapshot: GroupSnapshot, scope: StateScope): boolean {
-  try {
-    validateAuthoritativeGroupSnapshot(snapshot, scope);
-    return true;
-  } catch {
-    return false;
-  }
+    try {
+        validateAuthoritativeGroupSnapshot(snapshot, scope);
+        return true;
+    }
+    catch {
+        return false;
+    }
 }
 
 function emitGroupStateDeltaDiagnostic(
-  application: GroupStateDeltaApplication,
-  startedAtMs: number,
+    application: GroupStateDeltaApplication,
+    startedAtMs: number
 ): GroupStateDeltaApplication {
-  emitBrowserStateReadDiagnostic({
-    name: 'rallar.browser.state-read',
-    feature: 'group',
-    operation: 'delta-apply',
-    result: application,
-    durationMs: performance.now() - startedAtMs,
-  });
-  return application;
+    emitBrowserStateReadDiagnostic({
+        name: 'rallar.browser.state-read',
+        feature: 'group',
+        operation: 'delta-apply',
+        result: application,
+        durationMs: performance.now() - startedAtMs
+    });
+    return application;
 }

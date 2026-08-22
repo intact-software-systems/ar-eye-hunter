@@ -1,27 +1,20 @@
-import {
-    expect,
-    test,
-    type APIRequestContext,
-    type Page,
-    type Route,
-} from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page, type Route } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
     expectFullStackApiReady,
-    type FullStackUser,
     loginThroughUi,
     readFullStackConfig,
     uniqueSuffix,
+    type FullStackUser
 } from './full-stack-helpers.ts';
 
 const config = readFullStackConfig();
 const repoRoot = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
-    '../../..',
+    '../../..'
 );
-const rallarModuleUrl =
-    `/@fs${path.join(repoRoot, 'packages/shared-web/browser/rallar.ts')}`;
+const rallarModuleUrl = `/@fs${path.join(repoRoot, 'packages/shared-web/browser/rallar.ts')}`;
 
 type BrowserAuthSession = Readonly<{
     clientId: string;
@@ -163,10 +156,7 @@ type CapturedMutationRequest = Readonly<{
 test.describe('full-stack Browser Rallar resilience', () => {
     test.skip(!config.enabled, config.skipReason);
 
-    test('retries transient room create and presence connect failures with stable request IDs', async ({
-        page,
-        request,
-    }) => {
+    test('retries transient room create and presence connect failures with stable request IDs', async ({ page, request }) => {
         test.setTimeout(120_000);
         await expectFullStackApiReady(request, config);
 
@@ -178,7 +168,7 @@ test.describe('full-stack Browser Rallar resilience', () => {
 
         await loginThroughUi(page, config, config.userA, {
             suffix: `retry-${suffix}`,
-            tab: 'manual-rallar',
+            tab: 'manual-rallar'
         });
 
         await page.route(
@@ -194,7 +184,7 @@ test.describe('full-stack Browser Rallar resilience', () => {
                 }
 
                 await route.continue();
-            },
+            }
         );
 
         await page.route(
@@ -210,7 +200,7 @@ test.describe('full-stack Browser Rallar resilience', () => {
                 }
 
                 await route.continue();
-            },
+            }
         );
 
         const result = await page.evaluate(
@@ -219,7 +209,7 @@ test.describe('full-stack Browser Rallar resilience', () => {
                 rallar.configure({ apiBaseUrl });
                 rallar.setDefaults({
                     applicationId: 'ar-eye-hunter',
-                    workspaceId: 'default',
+                    workspaceId: 'default'
                 });
 
                 const session = rallar.session();
@@ -230,22 +220,20 @@ test.describe('full-stack Browser Rallar resilience', () => {
                 const snapshot = await rallar.rooms.create({
                     displayName: roomName,
                     maxAttempts: 3,
-                    timeoutMs: 20_000,
+                    timeoutMs: 20_000
                 });
 
                 return {
                     groupId: snapshot.group.groupId,
                     sessionId: session.sessionId,
-                    activeSessionIds: snapshot.activeSessions.map((entry: { sessionId: string }) =>
-                        entry.sessionId
-                    ),
+                    activeSessionIds: snapshot.activeSessions.map((entry: { sessionId: string; }) => entry.sessionId)
                 };
             },
             {
                 apiBaseUrl: config.apiBaseUrl,
                 moduleUrl: rallarModuleUrl,
-                roomName: `Retry Room ${suffix}`,
-            },
+                roomName: `Retry Room ${suffix}`
+            }
         );
 
         expect(createRequests).toHaveLength(2);
@@ -261,22 +249,19 @@ test.describe('full-stack Browser Rallar resilience', () => {
         const persisted = await getGroupSnapshot(
             request,
             result.groupId,
-            session,
+            session
         );
         expect(persisted.group.groupId).toBe(result.groupId);
     });
 
-    test('disconnects WS client state when API logout deletes auth before socket close', async ({
-        page,
-        request,
-    }) => {
+    test('disconnects WS client state when API logout deletes auth before socket close', async ({ page, request }) => {
         test.setTimeout(120_000);
         await expectFullStackApiReady(request, config);
 
         const suffix = uniqueSuffix();
         await loginThroughUi(page, config, config.userA, {
             suffix: `logout-race-${suffix}`,
-            tab: 'manual-rallar',
+            tab: 'manual-rallar'
         });
 
         const connected = await page.evaluate(
@@ -293,13 +278,13 @@ test.describe('full-stack Browser Rallar resilience', () => {
                 return {
                     clientId: session.clientId,
                     sessionId: session.sessionId,
-                    accessToken: session.accessToken,
+                    accessToken: session.accessToken
                 };
             },
             {
                 apiBaseUrl: config.apiBaseUrl,
-                moduleUrl: rallarModuleUrl,
-            },
+                moduleUrl: rallarModuleUrl
+            }
         );
 
         await expect.poll(async () => {
@@ -311,12 +296,12 @@ test.describe('full-stack Browser Rallar resilience', () => {
                     accessToken: connected.accessToken,
                     username: config.userA.username,
                     sessionId: connected.sessionId,
-                    expiresAtEpochMs: Date.now() + 60_000,
-                },
+                    expiresAtEpochMs: Date.now() + 60_000
+                }
             );
             return hasActiveSession(snapshot, connected.sessionId);
         }, {
-            timeout: 30_000,
+            timeout: 30_000
         }).toBe(true);
 
         const logoutStatus = await page.evaluate(
@@ -330,18 +315,18 @@ test.describe('full-stack Browser Rallar resilience', () => {
                 const response = await fetch(
                     `${apiBaseUrl}/api/auth/logout/requests/${requestId}`,
                     {
-                    method: 'POST',
-                    headers: {
-                        'authorization': `Bearer ${session.accessToken}`,
-                        'content-type': 'application/json',
-                        'x-client-id': session.clientId,
-                    },
-                    body: JSON.stringify({}),
-                    },
+                        method: 'POST',
+                        headers: {
+                            authorization: `Bearer ${session.accessToken}`,
+                            'content-type': 'application/json',
+                            'x-client-id': session.clientId
+                        },
+                        body: JSON.stringify({})
+                    }
                 );
                 return response.status;
             },
-            { apiBaseUrl: config.apiBaseUrl },
+            { apiBaseUrl: config.apiBaseUrl }
         );
         expect(logoutStatus).toBe(200);
 
@@ -351,15 +336,15 @@ test.describe('full-stack Browser Rallar resilience', () => {
                 const before = rallar.ws.status();
                 rallar.advanced.middleware().middleware.webSocketQueueBox.close(
                     1000,
-                    'auth-deleted-before-close-test',
+                    'auth-deleted-before-close-test'
                 );
                 localStorage.removeItem('auth.session');
                 return {
                     readyStateBeforeClose: before.readyState,
-                    reconnectEnabledBeforeClose: before.reconnectEnabled,
+                    reconnectEnabledBeforeClose: before.reconnectEnabled
                 };
             },
-            { moduleUrl: rallarModuleUrl },
+            { moduleUrl: rallarModuleUrl }
         );
         expect(closeResult.readyStateBeforeClose).toBe('open');
 
@@ -367,7 +352,7 @@ test.describe('full-stack Browser Rallar resilience', () => {
         await expect.poll(async () => {
             const [snapshot, events] = await Promise.all([
                 getClientSnapshot(request, connected.clientId, freshSession),
-                getClientEvents(request, connected.clientId, freshSession),
+                getClientEvents(request, connected.clientId, freshSession)
             ]);
 
             return {
@@ -375,21 +360,17 @@ test.describe('full-stack Browser Rallar resilience', () => {
                 disconnectedEvent: events.some((event) =>
                     event.eventType === 'session-disconnected' &&
                     event.sessionId === connected.sessionId
-                ),
+                )
             };
         }, {
-            timeout: 45_000,
+            timeout: 45_000
         }).toEqual({
             oldSessionStillActive: false,
-            disconnectedEvent: true,
+            disconnectedEvent: true
         });
     });
 
-    test('recovers missed room events through explicit replay after browser reconnect', async ({
-        browser,
-        page,
-        request,
-    }) => {
+    test('recovers missed room events through explicit replay after browser reconnect', async ({ browser, page, request }) => {
         test.setTimeout(120_000);
         await expectFullStackApiReady(request, config);
 
@@ -400,11 +381,11 @@ test.describe('full-stack Browser Rallar resilience', () => {
         try {
             await loginThroughUi(page, config, config.userA, {
                 suffix: `replay-a-${suffix}`,
-                tab: 'manual-rallar',
+                tab: 'manual-rallar'
             });
             await loginThroughUi(browserBPage, config, config.userB, {
                 suffix: `replay-b-${suffix}`,
-                tab: 'manual-rallar',
+                tab: 'manual-rallar'
             });
 
             const created = await page.evaluate(
@@ -413,7 +394,7 @@ test.describe('full-stack Browser Rallar resilience', () => {
                     rallar.configure({ apiBaseUrl });
                     rallar.setDefaults({
                         applicationId: 'ar-eye-hunter',
-                        workspaceId: 'default',
+                        workspaceId: 'default'
                     });
 
                     const liveEvents: GroupEvent[] = [];
@@ -425,21 +406,21 @@ test.describe('full-stack Browser Rallar resilience', () => {
                         };
                     }).__rallarReplayProbe = {
                         liveEvents,
-                        replayEvents,
+                        replayEvents
                     };
 
                     await rallar.connect({ timeoutMs: 20_000 });
                     const snapshot = await rallar.rooms.create({
                         displayName: roomName,
                         timeoutMs: 20_000,
-                        maxAttempts: 3,
+                        maxAttempts: 3
                     });
                     const groupId = snapshot.group.groupId;
                     const createdEvents = await rallar.rooms.listEvents({
                         roomId: groupId,
                         eventTypes: ['group-created'],
                         limit: 1,
-                        timeoutMs: 20_000,
+                        timeoutMs: 20_000
                     });
                     const createdEvent = createdEvents.at(-1);
                     if (!createdEvent) {
@@ -450,7 +431,7 @@ test.describe('full-stack Browser Rallar resilience', () => {
                         liveEvents.push(event);
                     }, {
                         roomId: groupId,
-                        eventTypes: ['member-joined', 'member-left'],
+                        eventTypes: ['member-joined', 'member-left']
                     });
 
                     return {
@@ -458,15 +439,15 @@ test.describe('full-stack Browser Rallar resilience', () => {
                         createdCursor: {
                             snapshotVersion: createdEvent.snapshotVersion,
                             occurredAtEpochMs: createdEvent.occurredAtEpochMs,
-                            eventId: createdEvent.eventId,
-                        },
+                            eventId: createdEvent.eventId
+                        }
                     };
                 },
                 {
                     apiBaseUrl: config.apiBaseUrl,
                     moduleUrl: rallarModuleUrl,
-                    roomName: `Replay Room ${suffix}`,
-                },
+                    roomName: `Replay Room ${suffix}`
+                }
             ) as {
                 groupId: string;
                 createdCursor: StateEventCursor;
@@ -478,12 +459,12 @@ test.describe('full-stack Browser Rallar resilience', () => {
                     rallar.configure({ apiBaseUrl });
                     rallar.setDefaults({
                         applicationId: 'ar-eye-hunter',
-                        workspaceId: 'default',
+                        workspaceId: 'default'
                     });
 
                     await rallar.rooms.join(groupId, {
                         timeoutMs: 20_000,
-                        maxAttempts: 3,
+                        maxAttempts: 3
                     });
 
                     const session = rallar.session();
@@ -492,25 +473,25 @@ test.describe('full-stack Browser Rallar resilience', () => {
                     }
 
                     return {
-                        clientId: session.clientId,
+                        clientId: session.clientId
                     };
                 },
                 {
                     apiBaseUrl: config.apiBaseUrl,
                     moduleUrl: rallarModuleUrl,
-                    groupId: created.groupId,
-                },
-            ) as { clientId: string };
+                    groupId: created.groupId
+                }
+            ) as { clientId: string; };
 
             await expect.poll(async () => {
                 return await page.evaluate(() =>
                     ((window as unknown as {
-                        __rallarReplayProbe?: { liveEvents: GroupEvent[] };
+                        __rallarReplayProbe?: { liveEvents: GroupEvent[]; };
                     }).__rallarReplayProbe?.liveEvents ?? [])
                         .some((event) => event.eventType === 'member-joined')
                 );
             }, {
-                timeout: 30_000,
+                timeout: 30_000
             }).toBe(true);
 
             await page.evaluate(async ({ moduleUrl }) => {
@@ -525,13 +506,13 @@ test.describe('full-stack Browser Rallar resilience', () => {
                         roomId: groupId,
                         clearCurrent: false,
                         timeoutMs: 20_000,
-                        maxAttempts: 3,
+                        maxAttempts: 3
                     });
                 },
                 {
                     moduleUrl: rallarModuleUrl,
-                    groupId: created.groupId,
-                },
+                    groupId: created.groupId
+                }
             );
 
             const result = await page.evaluate(
@@ -542,10 +523,10 @@ test.describe('full-stack Browser Rallar resilience', () => {
 
                     const roomState = await rallar.rooms.refresh({
                         applicationId: 'ar-eye-hunter',
-                        workspaceId: 'default',
+                        workspaceId: 'default'
                     });
                     const refreshedRoom = roomState.rooms.find(
-                        (room: { roomId: string }) => room.roomId === groupId,
+                        (room: { roomId: string; }) => room.roomId === groupId
                     )?.snapshot as GroupSnapshot | undefined;
 
                     const probe = (window as unknown as {
@@ -564,11 +545,11 @@ test.describe('full-stack Browser Rallar resilience', () => {
                             eventTypes: ['member-joined', 'member-left'],
                             after: createdCursor,
                             limit: 10,
-                            timeoutMs: 20_000,
+                            timeoutMs: 20_000
                         },
                         (event: GroupEvent) => {
                             probe.replayEvents.push(event);
-                        },
+                        }
                     );
 
                     return {
@@ -578,8 +559,8 @@ test.describe('full-stack Browser Rallar resilience', () => {
                         replayEvents: probe.replayEvents,
                         replayResult,
                         refreshedMemberStatus: refreshedRoom?.members.find(
-                            (member) => member.principalId === principalId,
-                        )?.status,
+                            (member) => member.principalId === principalId
+                        )?.status
                     };
                 },
                 {
@@ -587,15 +568,15 @@ test.describe('full-stack Browser Rallar resilience', () => {
                     moduleUrl: rallarModuleUrl,
                     groupId: created.groupId,
                     createdCursor: created.createdCursor,
-                    principalId: joined.clientId,
-                },
+                    principalId: joined.clientId
+                }
             ) as BrowserReplayProbeResult;
 
             expect(result.liveEvents.map((event) => event.eventType)).toContain(
-                'member-joined',
+                'member-joined'
             );
             expect(result.replayEvents.map((event) => event.eventType)).toEqual([
-                'member-left',
+                'member-left'
             ]);
             expect(result.replayResult.duplicateCount).toBeGreaterThanOrEqual(1);
             expect(result.replayResult.replayedCount).toBe(1);
@@ -603,17 +584,15 @@ test.describe('full-stack Browser Rallar resilience', () => {
             expect(result.replayResult.hasMore).toBe(false);
             expect(result.refreshedMemberStatus).toBe('left');
             expect(
-                result.liveEvents.filter((event) => event.eventType === 'member-left'),
+                result.liveEvents.filter((event) => event.eventType === 'member-left')
             ).toHaveLength(0);
-        } finally {
+        }
+        finally {
             await browserBContext.close();
         }
     });
 
-    test('replays missed people events and reports WS lifecycle around reconnect', async ({
-        page,
-        request,
-    }) => {
+    test('replays missed people events and reports WS lifecycle around reconnect', async ({ page, request }) => {
         test.setTimeout(120_000);
         await expectFullStackApiReady(request, config);
 
@@ -622,7 +601,7 @@ test.describe('full-stack Browser Rallar resilience', () => {
         await loginThroughUi(page, config, user, {
             suffix: `people-replay-${suffix}`,
             tab: 'manual-rallar',
-            registerBeforeLogin: true,
+            registerBeforeLogin: true
         });
 
         const connected = await page.evaluate(
@@ -631,7 +610,7 @@ test.describe('full-stack Browser Rallar resilience', () => {
                 rallar.configure({ apiBaseUrl });
                 rallar.setDefaults({
                     applicationId: 'ar-eye-hunter',
-                    workspaceId: 'default',
+                    workspaceId: 'default'
                 });
 
                 const liveEvents: ClientEvent[] = [];
@@ -646,12 +625,12 @@ test.describe('full-stack Browser Rallar resilience', () => {
                 }).__rallarPeopleReplayProbe = {
                     liveEvents,
                     replayEvents,
-                    wsLifecycle,
+                    wsLifecycle
                 };
 
                 rallar.ws.onLifecycle((event: {
                     kind: string;
-                    status: { readyState: string; isOpen: boolean };
+                    status: { readyState: string; isOpen: boolean; };
                     intentional?: boolean;
                     code?: number;
                     reason?: string;
@@ -662,7 +641,7 @@ test.describe('full-stack Browser Rallar resilience', () => {
                         isOpen: event.status.isOpen,
                         intentional: event.intentional,
                         code: event.code,
-                        reason: event.reason,
+                        reason: event.reason
                     });
                 });
 
@@ -675,7 +654,7 @@ test.describe('full-stack Browser Rallar resilience', () => {
                     liveEvents.push(event);
                 }, {
                     principalId: session.clientId,
-                    eventTypes: ['session-connected', 'session-disconnected'],
+                    eventTypes: ['session-connected', 'session-disconnected']
                 });
 
                 await rallar.connect({ timeoutMs: 20_000 });
@@ -685,13 +664,13 @@ test.describe('full-stack Browser Rallar resilience', () => {
                     clientId: session.clientId,
                     sessionId: session.sessionId,
                     wsOpenStatus: wsOpen.status,
-                    wsStatusOpen: wsOpen.wsStatus.isOpen,
+                    wsStatusOpen: wsOpen.wsStatus.isOpen
                 };
             },
             {
                 apiBaseUrl: config.apiBaseUrl,
-                moduleUrl: rallarModuleUrl,
-            },
+                moduleUrl: rallarModuleUrl
+            }
         ) as {
             clientId: string;
             sessionId: string;
@@ -710,30 +689,30 @@ test.describe('full-stack Browser Rallar resilience', () => {
                     const events = await rallar.people.listEvents(clientId, {
                         eventTypes: ['session-connected'],
                         limit: 5,
-                        timeoutMs: 20_000,
+                        timeoutMs: 20_000
                     });
                     const event = [...events].reverse().find(
                         (candidate: ClientEvent) =>
                             candidate.sessionId === sessionId &&
-                            candidate.eventType === 'session-connected',
+                            candidate.eventType === 'session-connected'
                     );
                     return event
                         ? {
                             snapshotVersion: event.snapshotVersion,
                             occurredAtEpochMs: event.occurredAtEpochMs,
-                            eventId: event.eventId,
+                            eventId: event.eventId
                         }
                         : undefined;
                 },
                 {
                     moduleUrl: rallarModuleUrl,
                     clientId: connected.clientId,
-                    sessionId: connected.sessionId,
-                },
+                    sessionId: connected.sessionId
+                }
             ) as StateEventCursor | undefined;
             return connectedCursor !== undefined;
         }, {
-            timeout: 30_000,
+            timeout: 30_000
         }).toBe(true);
         expect(connectedCursor).toBeDefined();
 
@@ -749,7 +728,7 @@ test.describe('full-stack Browser Rallar resilience', () => {
                     const events = await rallar.people.listEvents(clientId, {
                         eventTypes: ['session-disconnected'],
                         limit: 10,
-                        timeoutMs: 20_000,
+                        timeoutMs: 20_000
                     });
                     return events.some((event: ClientEvent) =>
                         event.sessionId === sessionId &&
@@ -759,11 +738,11 @@ test.describe('full-stack Browser Rallar resilience', () => {
                 {
                     moduleUrl: rallarModuleUrl,
                     clientId: connected.clientId,
-                    sessionId: connected.sessionId,
-                },
+                    sessionId: connected.sessionId
+                }
             ) as boolean;
         }, {
-            timeout: 45_000,
+            timeout: 45_000
         }).toBe(true);
 
         const result = await page.evaluate(
@@ -776,7 +755,7 @@ test.describe('full-stack Browser Rallar resilience', () => {
                 const peopleState = await rallar.people.refresh({
                     applicationId: 'ar-eye-hunter',
                     workspaceId: 'default',
-                    timeoutMs: 20_000,
+                    timeoutMs: 20_000
                 });
 
                 const probe = (window as unknown as {
@@ -796,11 +775,11 @@ test.describe('full-stack Browser Rallar resilience', () => {
                         eventTypes: ['session-connected', 'session-disconnected'],
                         after,
                         limit: 10,
-                        timeoutMs: 20_000,
+                        timeoutMs: 20_000
                     },
                     (event: ClientEvent) => {
                         probe.replayEvents.push(event);
-                    },
+                    }
                 );
 
                 const session = rallar.session();
@@ -817,31 +796,31 @@ test.describe('full-stack Browser Rallar resilience', () => {
                     replayEvents: probe.replayEvents,
                     replayResult,
                     peopleStateIncludesSelf: peopleState.people.some(
-                        (person: { principalId: string; isOnline: boolean }) =>
-                            person.principalId === clientId && person.isOnline,
+                        (person: { principalId: string; isOnline: boolean; }) =>
+                            person.principalId === clientId && person.isOnline
                     ),
-                    wsLifecycle: probe.wsLifecycle,
+                    wsLifecycle: probe.wsLifecycle
                 };
             },
             {
                 apiBaseUrl: config.apiBaseUrl,
                 moduleUrl: rallarModuleUrl,
                 clientId: connected.clientId,
-                after: connectedCursor as StateEventCursor,
-            },
+                after: connectedCursor as StateEventCursor
+            }
         ) as BrowserPeopleReplayProbeResult;
 
         expect(result.wsOpenStatus).toBe('open');
         expect(result.wsStatusOpen).toBe(true);
         expect(result.peopleStateIncludesSelf).toBe(true);
         expect(result.replayEvents.map((event) => event.eventType)).toContain(
-            'session-disconnected',
+            'session-disconnected'
         );
         expect(result.replayResult.replayedCount).toBeGreaterThanOrEqual(1);
         expect(result.replayResult.pageCount).toBe(1);
         expect(result.replayResult.hasMore).toBe(false);
         expect(result.wsLifecycle.map((event) => event.kind)).toEqual(
-            expect.arrayContaining(['snapshot', 'connected', 'disconnected']),
+            expect.arrayContaining(['snapshot', 'connected', 'disconnected'])
         );
         expect(result.wsLifecycle.some((event) =>
             event.kind === 'disconnected' &&
@@ -850,11 +829,7 @@ test.describe('full-stack Browser Rallar resilience', () => {
         )).toBe(true);
     });
 
-    test('waits for RTC room lane and delivers realtime JSON through direct Rallar facade', async ({
-        browser,
-        page,
-        request,
-    }) => {
+    test('waits for RTC room lane and delivers realtime JSON through direct Rallar facade', async ({ browser, page, request }) => {
         test.setTimeout(150_000);
         await expectFullStackApiReady(request, config);
 
@@ -868,12 +843,12 @@ test.describe('full-stack Browser Rallar resilience', () => {
             await loginThroughUi(page, config, userA, {
                 suffix: `direct-rtc-a-${suffix}`,
                 tab: 'manual-rallar',
-                registerBeforeLogin: true,
+                registerBeforeLogin: true
             });
             await loginThroughUi(browserBPage, config, userB, {
                 suffix: `direct-rtc-b-${suffix}`,
                 tab: 'manual-rallar',
-                registerBeforeLogin: true,
+                registerBeforeLogin: true
             });
 
             const created = await page.evaluate(
@@ -882,7 +857,7 @@ test.describe('full-stack Browser Rallar resilience', () => {
                     rallar.configure({ apiBaseUrl });
                     rallar.setDefaults({
                         applicationId: 'ar-eye-hunter',
-                        workspaceId: 'default',
+                        workspaceId: 'default'
                     });
 
                     const rtcLifecycle: RtcLifecycleRecord[] = [];
@@ -890,16 +865,16 @@ test.describe('full-stack Browser Rallar resilience', () => {
                         kind: string;
                         peerId?: string;
                         laneId?: string;
-                        status: { readyPeerIds: readonly string[] };
+                        status: { readyPeerIds: readonly string[]; };
                     }) => {
                         rtcLifecycle.push({
                             kind: event.kind,
                             peerId: event.peerId,
                             laneId: event.laneId,
-                            readyPeerIds: event.status.readyPeerIds,
+                            readyPeerIds: event.status.readyPeerIds
                         });
                     }, {
-                        laneId: 'realtime',
+                        laneId: 'realtime'
                     });
 
                     await rallar.connect({ timeoutMs: 20_000 });
@@ -907,7 +882,7 @@ test.describe('full-stack Browser Rallar resilience', () => {
                     const snapshot = await rallar.rooms.create({
                         displayName: roomName,
                         timeoutMs: 20_000,
-                        maxAttempts: 3,
+                        maxAttempts: 3
                     });
                     const session = rallar.session();
                     if (!session) {
@@ -919,19 +894,19 @@ test.describe('full-stack Browser Rallar resilience', () => {
                             rtcLifecycle: RtcLifecycleRecord[];
                         };
                     }).__rallarRealtimeProbe = {
-                        rtcLifecycle,
+                        rtcLifecycle
                     };
 
                     return {
                         roomId: snapshot.group.groupId,
-                        senderSessionId: session.sessionId,
+                        senderSessionId: session.sessionId
                     };
                 },
                 {
                     apiBaseUrl: config.apiBaseUrl,
                     moduleUrl: rallarModuleUrl,
-                    roomName: `Direct RTC Room ${suffix}`,
-                },
+                    roomName: `Direct RTC Room ${suffix}`
+                }
             ) as {
                 roomId: string;
                 senderSessionId: string;
@@ -943,7 +918,7 @@ test.describe('full-stack Browser Rallar resilience', () => {
                     rallar.configure({ apiBaseUrl });
                     rallar.setDefaults({
                         applicationId: 'ar-eye-hunter',
-                        workspaceId: 'default',
+                        workspaceId: 'default'
                     });
 
                     const received: RealtimeProbeMessage[] = [];
@@ -952,16 +927,16 @@ test.describe('full-stack Browser Rallar resilience', () => {
                         kind: string;
                         peerId?: string;
                         laneId?: string;
-                        status: { readyPeerIds: readonly string[] };
+                        status: { readyPeerIds: readonly string[]; };
                     }) => {
                         rtcLifecycle.push({
                             kind: event.kind,
                             peerId: event.peerId,
                             laneId: event.laneId,
-                            readyPeerIds: event.status.readyPeerIds,
+                            readyPeerIds: event.status.readyPeerIds
                         });
                     }, {
-                        laneId: 'realtime',
+                        laneId: 'realtime'
                     });
                     rallar.realtime.onJson(
                         'realtime',
@@ -973,16 +948,16 @@ test.describe('full-stack Browser Rallar resilience', () => {
                             received.push({
                                 peerId: message.peerId,
                                 laneId: message.laneId,
-                                data: message.data,
+                                data: message.data
                             });
-                        },
+                        }
                     );
 
                     await rallar.connect({ timeoutMs: 20_000 });
                     await rallar.ws.waitForOpen({ timeoutMs: 20_000 });
                     const snapshot = await rallar.rooms.join(groupId, {
                         timeoutMs: 20_000,
-                        maxAttempts: 3,
+                        maxAttempts: 3
                     });
                     const session = rallar.session();
                     if (!session) {
@@ -996,21 +971,21 @@ test.describe('full-stack Browser Rallar resilience', () => {
                         };
                     }).__rallarRealtimeProbe = {
                         received,
-                        rtcLifecycle,
+                        rtcLifecycle
                     };
 
                     return {
                         receiverSessionId: session.sessionId,
                         activeSessionIds: snapshot.activeSessions.map(
-                            (entry: { sessionId: string }) => entry.sessionId,
-                        ),
+                            (entry: { sessionId: string; }) => entry.sessionId
+                        )
                     };
                 },
                 {
                     apiBaseUrl: config.apiBaseUrl,
                     moduleUrl: rallarModuleUrl,
-                    groupId: created.roomId,
-                },
+                    groupId: created.roomId
+                }
             ) as {
                 receiverSessionId: string;
                 activeSessionIds: readonly string[];
@@ -1026,15 +1001,15 @@ test.describe('full-stack Browser Rallar resilience', () => {
                     await rallar.rooms.refresh({
                         applicationId: 'ar-eye-hunter',
                         workspaceId: 'default',
-                        timeoutMs: 20_000,
+                        timeoutMs: 20_000
                     });
                     const waitResult = await rallar.rtc.waitForRoomLane(
                         groupId,
                         'realtime',
                         {
                             connect: true,
-                            timeoutMs: 20_000,
-                        },
+                            timeoutMs: 20_000
+                        }
                     );
                     const sendResults = await rallar.realtime.sendJson({
                         roomId: groupId,
@@ -1042,42 +1017,39 @@ test.describe('full-stack Browser Rallar resilience', () => {
                         openTimeoutMs: 20_000,
                         data: {
                             payloadId,
-                            direction: 'a-to-b',
-                        },
+                            direction: 'a-to-b'
+                        }
                     });
 
                     return {
                         waitResult: {
                             status: waitResult.status,
                             readyCount: waitResult.ready.length,
-                            notReadyCount: waitResult.notReady.length,
+                            notReadyCount: waitResult.notReady.length
                         },
                         sendResults,
-                        senderReadyPeerIds: rallar.rtc.readyPeerIds('realtime'),
+                        senderReadyPeerIds: rallar.rtc.readyPeerIds('realtime')
                     };
                 },
                 {
                     moduleUrl: rallarModuleUrl,
                     groupId: created.roomId,
-                    payloadId,
-                },
-            ) as Pick<
-                BrowserRealtimeProbeResult,
-                'waitResult' | 'sendResults' | 'senderReadyPeerIds'
-            >;
+                    payloadId
+                }
+            ) as Pick<BrowserRealtimeProbeResult, 'waitResult' | 'sendResults' | 'senderReadyPeerIds'>;
 
             expect(sent.waitResult).toEqual({
                 status: 'open',
                 readyCount: 1,
-                notReadyCount: 0,
+                notReadyCount: 0
             });
             expect(sent.sendResults).toHaveLength(1);
             expect(sent.sendResults[0]).toMatchObject({
                 peerId: joined.receiverSessionId,
                 laneId: 'realtime',
                 result: {
-                    status: 'sent',
-                },
+                    status: 'sent'
+                }
             });
 
             await expect.poll(async () => {
@@ -1092,10 +1064,10 @@ test.describe('full-stack Browser Rallar resilience', () => {
                                 message.laneId === 'realtime' &&
                                 message.data.payloadId === expectedPayloadId
                             ),
-                    payloadId,
+                    payloadId
                 );
             }, {
-                timeout: 45_000,
+                timeout: 45_000
             }).toBe(true);
 
             const result = await browserBPage.evaluate(
@@ -1114,16 +1086,13 @@ test.describe('full-stack Browser Rallar resilience', () => {
                     return {
                         received: probe.received,
                         receiverReadyPeerIds: rallar.rtc.readyPeerIds('realtime'),
-                        receiverLifecycle: probe.rtcLifecycle,
+                        receiverLifecycle: probe.rtcLifecycle
                     };
                 },
                 {
-                    moduleUrl: rallarModuleUrl,
-                },
-            ) as Pick<
-                BrowserRealtimeProbeResult,
-                'received' | 'receiverReadyPeerIds' | 'receiverLifecycle'
-            >;
+                    moduleUrl: rallarModuleUrl
+                }
+            ) as Pick<BrowserRealtimeProbeResult, 'received' | 'receiverReadyPeerIds' | 'receiverLifecycle'>;
 
             const senderProbe = await page.evaluate(() => {
                 const probe = (window as unknown as {
@@ -1132,7 +1101,7 @@ test.describe('full-stack Browser Rallar resilience', () => {
                     };
                 }).__rallarRealtimeProbe;
                 return {
-                    senderLifecycle: probe?.rtcLifecycle ?? [],
+                    senderLifecycle: probe?.rtcLifecycle ?? []
                 };
             }) as Pick<BrowserRealtimeProbeResult, 'senderLifecycle'>;
 
@@ -1142,9 +1111,9 @@ test.describe('full-stack Browser Rallar resilience', () => {
                     laneId: 'realtime',
                     data: expect.objectContaining({
                         payloadId,
-                        direction: 'a-to-b',
-                    }),
-                }),
+                        direction: 'a-to-b'
+                    })
+                })
             );
             expect(sent.senderReadyPeerIds).toContain(joined.receiverSessionId);
             expect(result.receiverReadyPeerIds).toContain(created.senderSessionId);
@@ -1152,7 +1121,8 @@ test.describe('full-stack Browser Rallar resilience', () => {
                 .toEqual(expect.arrayContaining(['connected', 'peer-created', 'lane-open']));
             expect(result.receiverLifecycle.map((event) => event.kind))
                 .toEqual(expect.arrayContaining(['connected', 'peer-created', 'lane-open']));
-        } finally {
+        }
+        finally {
             await browserBContext.close();
         }
     });
@@ -1169,7 +1139,7 @@ function readJsonBody(raw: string | null): CapturedMutationRequest {
 async function fulfillTransient(
     route: Route,
     status: number,
-    body: string,
+    body: string
 ): Promise<void> {
     const origin = route.request().headers().origin ?? 'http://localhost:5176';
     await route.fulfill({
@@ -1177,9 +1147,9 @@ async function fulfillTransient(
         contentType: 'text/plain',
         headers: {
             'access-control-allow-credentials': 'true',
-            'access-control-allow-origin': origin,
+            'access-control-allow-origin': origin
         },
-        body,
+        body
     });
 }
 
@@ -1194,16 +1164,16 @@ async function readBrowserSession(page: Page): Promise<BrowserAuthSession> {
 }
 
 async function loginViaApi(
-    request: APIRequestContext,
+    request: APIRequestContext
 ): Promise<BrowserAuthSession> {
     const response = await request.post(
         `${config.apiBaseUrl}/api/auth/login/requests/${crypto.randomUUID()}`,
         {
-        data: {
-            username: config.userA.username,
-            password: config.userA.password,
-        },
-        },
+            data: {
+                username: config.userA.username,
+                password: config.userA.password
+            }
+        }
     );
     expect(response.ok()).toBe(true);
     return await response.json() as BrowserAuthSession;
@@ -1212,28 +1182,24 @@ async function loginViaApi(
 async function getGroupSnapshot(
     request: APIRequestContext,
     groupId: string,
-    session: BrowserAuthSession,
-): Promise<{ group: { groupId: string } }> {
+    session: BrowserAuthSession
+): Promise<{ group: { groupId: string; }; }> {
     const response = await request.get(
-        `${config.apiBaseUrl}/api/state/apps/ar-eye-hunter/workspaces/default/groups/${
-            encodeURIComponent(groupId)
-        }`,
-        { headers: authHeaders(session) },
+        `${config.apiBaseUrl}/api/state/apps/ar-eye-hunter/workspaces/default/groups/${encodeURIComponent(groupId)}`,
+        { headers: authHeaders(session) }
     );
     expect(response.ok()).toBe(true);
-    return await response.json() as { group: { groupId: string } };
+    return await response.json() as { group: { groupId: string; }; };
 }
 
 async function getClientSnapshot(
     request: APIRequestContext,
     clientId: string,
-    session: BrowserAuthSession,
+    session: BrowserAuthSession
 ): Promise<ClientSnapshot> {
     const response = await request.get(
-        `${config.apiBaseUrl}/api/state/apps/ar-eye-hunter/workspaces/default/clients/${
-            encodeURIComponent(clientId)
-        }`,
-        { headers: authHeaders(session) },
+        `${config.apiBaseUrl}/api/state/apps/ar-eye-hunter/workspaces/default/clients/${encodeURIComponent(clientId)}`,
+        { headers: authHeaders(session) }
     );
     expect(response.ok()).toBe(true);
     return await response.json() as ClientSnapshot;
@@ -1242,30 +1208,30 @@ async function getClientSnapshot(
 async function getClientEvents(
     request: APIRequestContext,
     clientId: string,
-    session: BrowserAuthSession,
+    session: BrowserAuthSession
 ): Promise<readonly ClientEvent[]> {
     const response = await request.get(
         `${config.apiBaseUrl}/api/state/apps/ar-eye-hunter/workspaces/default/clients/${
             encodeURIComponent(clientId)
         }/events`,
-        { headers: authHeaders(session) },
+        { headers: authHeaders(session) }
     );
     expect(response.ok()).toBe(true);
     return await response.json() as readonly ClientEvent[];
 }
 
 function authHeaders(
-    session: Pick<BrowserAuthSession, 'accessToken' | 'clientId'>,
+    session: Pick<BrowserAuthSession, 'accessToken' | 'clientId'>
 ): Record<string, string> {
     return {
         authorization: `Bearer ${session.accessToken}`,
-        'x-client-id': session.clientId,
+        'x-client-id': session.clientId
     };
 }
 
 function hasActiveSession(
     snapshot: ClientSnapshot,
-    sessionId: string,
+    sessionId: string
 ): boolean {
     return snapshot.activeSessions?.some((session) =>
         session.sessionId === sessionId &&
@@ -1276,16 +1242,16 @@ function hasActiveSession(
 function uniqueRegisteredUser(
     base: FullStackUser,
     label: string,
-    suffix: string,
+    suffix: string
 ): FullStackUser {
     const id = `${base.actor}-${label}-${suffix}`.replace(
         /[^a-zA-Z0-9_.-]/g,
-        '-',
+        '-'
     );
     return {
         username: id,
         password: base.password,
         clientId: id,
-        actor: id,
+        actor: id
     };
 }

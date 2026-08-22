@@ -8,7 +8,7 @@ export class RepositoryToken<R> {
 
     public constructor(
         id: string,
-        create: () => R,
+        create: () => R
     ) {
         this.id = id;
         this.create = create;

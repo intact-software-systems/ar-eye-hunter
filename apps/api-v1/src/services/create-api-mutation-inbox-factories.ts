@@ -1,78 +1,74 @@
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import type {
-  ResourceInboxRepository,
-} from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import type {
-  ResourceInboxResultsRepository,
+    ResourceInboxResultsRepository
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import type {
-  RallarAdminInboxServiceFactory,
-  RallarCrdtInboxServiceFactory,
+    RallarAdminInboxServiceFactory,
+    RallarCrdtInboxServiceFactory
 } from '@shared-server/rallar-system/middleware/rallar-middleware-options.ts';
-import type {
-  AppInboxServiceOptions,
-} from '@shared-server/rallar-system/services/AppInboxService.ts';
+import type { AppInboxServiceOptions } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
 
 import { createApiAdminInboxService } from './create-api-admin-inbox-service.ts';
 
 export interface CurrentAdminMutationSession {
-  readonly clientId: string;
-  readonly sessionId: string;
-  readonly expiresAtEpochMs: number;
+    readonly clientId: string;
+    readonly sessionId: string;
+    readonly expiresAtEpochMs: number;
 }
 
 export interface CurrentAdminMutationAuthority {
-  readSession(
-    sessionId: string,
-  ): Promise<CurrentAdminMutationSession | null | undefined>;
-  readonly adminClientIds: readonly string[];
+    readSession(
+        sessionId: string
+    ): Promise<CurrentAdminMutationSession | null | undefined>;
+    readonly adminClientIds: readonly string[];
 }
 
 export interface CreateApiMutationInboxFactoriesInput {
-  readonly createAppCrdtInboxService: RallarCrdtInboxServiceFactory;
-  readonly resourceInboxRepository: ResourceInboxRepository;
-  readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
-  readonly database: PSqlSql;
-  readonly serviceId: string;
-  readonly timing: RallarTimingSink | undefined;
-  readonly options: AppInboxServiceOptions;
-  readonly currentAuthority: CurrentAdminMutationAuthority;
+    readonly createAppCrdtInboxService: RallarCrdtInboxServiceFactory;
+    readonly resourceInboxRepository: ResourceInboxRepository;
+    readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
+    readonly database: PSqlSql;
+    readonly serviceId: string;
+    readonly timing: RallarTimingSink | undefined;
+    readonly options: AppInboxServiceOptions;
+    readonly currentAuthority: CurrentAdminMutationAuthority;
 }
 
 export interface ApiMutationInboxFactories {
-  readonly createAppCrdtInboxService: RallarCrdtInboxServiceFactory;
-  readonly createAppAdminInboxService: RallarAdminInboxServiceFactory;
+    readonly createAppCrdtInboxService: RallarCrdtInboxServiceFactory;
+    readonly createAppAdminInboxService: RallarAdminInboxServiceFactory;
 }
 
 export function createApiMutationInboxFactories(
-  input: CreateApiMutationInboxFactoriesInput,
+    input: CreateApiMutationInboxFactoriesInput
 ): ApiMutationInboxFactories {
-  return {
-    createAppCrdtInboxService: input.createAppCrdtInboxService,
-    createAppAdminInboxService: ({
-      inboxQueueReader,
-      outboxQueueReader,
-      wakeQueueEngine,
-    }) =>
-      createApiAdminInboxService({
-        inboxQueueReader,
-        outboxQueueReader,
-        wakeQueueEngine,
-        resourceInboxRepository: input.resourceInboxRepository,
-        resourceInboxResultsRepository: input.resourceInboxResultsRepository,
-        database: input.database,
-        serviceId: input.serviceId,
-        timing: input.timing,
-        options: input.options,
-        currentAuthority: input.currentAuthority,
-      }),
-  };
+    return {
+        createAppCrdtInboxService: input.createAppCrdtInboxService,
+        createAppAdminInboxService: ({
+            inboxQueueReader,
+            outboxQueueReader,
+            wakeQueueEngine
+        }) =>
+            createApiAdminInboxService({
+                inboxQueueReader,
+                outboxQueueReader,
+                wakeQueueEngine,
+                resourceInboxRepository: input.resourceInboxRepository,
+                resourceInboxResultsRepository: input.resourceInboxResultsRepository,
+                database: input.database,
+                serviceId: input.serviceId,
+                timing: input.timing,
+                options: input.options,
+                currentAuthority: input.currentAuthority
+            })
+    };
 }
 
 export function readConfiguredAdminClientIds(): readonly string[] {
-  return (Deno.env.get('AUTH_ADMIN_CLIENT_IDS') ?? 'admin')
-    .split(',')
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0);
+    return (Deno.env.get('AUTH_ADMIN_CLIENT_IDS') ?? 'admin')
+        .split(',')
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0);
 }

@@ -2,8 +2,8 @@ import type { AnalyzeArtifactProjection } from './analyze-worker-contract.ts';
 import styles from './AnalyzeEvidence.module.css';
 
 export function AnalyzePerformance({
-    model,
-}: Readonly<{ model: AnalyzeArtifactProjection }>) {
+    model
+}: Readonly<{ model: AnalyzeArtifactProjection; }>) {
     const performance = model.analysis.performance;
     const timing = performance?.commandTiming;
     const stream = performance?.streamTiming;
@@ -21,18 +21,32 @@ export function AnalyzePerformance({
                 <Metric label="P50 command" value={formatMs(timing?.p50Ms)} />
                 <Metric label="P95 command" value={formatMs(timing?.p95Ms)} warn={(timing?.p95Ms ?? 0) > 1_000} />
                 <Metric label="P99 command" value={formatMs(timing?.p99Ms)} warn={(timing?.p99Ms ?? 0) > 2_000} />
-                <Metric label="Reconnects" value={String(performance?.reconnectCount ?? 0)} warn={(performance?.reconnectCount ?? 0) > 0} />
-                <Metric label="Diagnostics" value={String(performance?.diagnosticCount ?? 0)} warn={(performance?.errorDiagnosticCount ?? 0) > 0} />
+                <Metric
+                    label="Reconnects"
+                    value={String(performance?.reconnectCount ?? 0)}
+                    warn={(performance?.reconnectCount ?? 0) > 0}
+                />
+                <Metric
+                    label="Diagnostics"
+                    value={String(performance?.diagnosticCount ?? 0)}
+                    warn={(performance?.errorDiagnosticCount ?? 0) > 0}
+                />
                 <Metric
                     label="Stream frames"
                     value={stream ? `${stream.completedFrames}/${stream.plannedFrames}` : 'Not available'}
                     warn={Boolean(stream && stream.completedFrames < stream.plannedFrames)}
                 />
-                <Metric label="Backpressure" value={String(stream?.backpressureCount ?? 0)} warn={(stream?.backpressureCount ?? 0) > 0} />
+                <Metric
+                    label="Backpressure"
+                    value={String(stream?.backpressureCount ?? 0)}
+                    warn={(stream?.backpressureCount ?? 0) > 0}
+                />
             </dl>
             <p className={styles.summaryLine}>
                 {performance
-                    ? `${performance.agentCount} agents · ${Math.round(performance.passRate * 100)}% pass · ${performance.exportedEventCount} exported events`
+                    ? `${performance.agentCount} agents · ${
+                        Math.round(performance.passRate * 100)
+                    }% pass · ${performance.exportedEventCount} exported events`
                     : 'No performance evidence was available in this bundle.'}
             </p>
         </section>
@@ -42,8 +56,8 @@ export function AnalyzePerformance({
 function Metric({
     label,
     value,
-    warn = false,
-}: Readonly<{ label: string; value: string; warn?: boolean }>) {
+    warn = false
+}: Readonly<{ label: string; value: string; warn?: boolean; }>) {
     return (
         <div data-tone={warn ? 'warn' : 'neutral'}>
             <dt>{label}</dt>
@@ -53,7 +67,11 @@ function Metric({
 }
 
 function formatMs(value: number | undefined): string {
-    if (value === undefined) return 'Not available';
-    if (value >= 1_000) return `${(value / 1_000).toFixed(value >= 10_000 ? 1 : 2)}s`;
+    if (value === undefined) {
+        return 'Not available';
+    }
+    if (value >= 1_000) {
+        return `${(value / 1_000).toFixed(value >= 10_000 ? 1 : 2)}s`;
+    }
     return `${Math.round(value)}ms`;
 }

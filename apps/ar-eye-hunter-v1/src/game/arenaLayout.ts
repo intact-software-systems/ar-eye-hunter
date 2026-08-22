@@ -1,10 +1,4 @@
-import type {
-    ArenaLayoutProp,
-    ArenaLayoutSign,
-    ArenaLayoutSpec,
-    ArenaPickupAnchor,
-    Vec3Tuple,
-} from './types.ts';
+import type { ArenaLayoutProp, ArenaLayoutSign, ArenaLayoutSpec, ArenaPickupAnchor, Vec3Tuple } from './types.ts';
 
 export const DEFAULT_ARENA_HALF_SIZE = 60;
 export const DEFAULT_ARENA_SIZE = DEFAULT_ARENA_HALF_SIZE * 2;
@@ -29,7 +23,7 @@ export const FALLBACK_ARENA_LAYOUT: ArenaLayoutSpec = {
         grid: '#49ff86',
         accent: '#00e5ff',
         warning: '#ff3df2',
-        reward: '#ffe66d',
+        reward: '#ffe66d'
     },
     spawnPoints: [
         [-45, 1.72, -45],
@@ -37,7 +31,7 @@ export const FALLBACK_ARENA_LAYOUT: ArenaLayoutSpec = {
         [-45, 1.72, 45],
         [45, 1.72, -45],
         [0, 1.72, -52],
-        [0, 1.72, 52],
+        [0, 1.72, 52]
     ],
     pickupAnchors: [
         { id: 'pickup-north', position: [0, 1.05, 42], weight: 1.2 },
@@ -48,7 +42,7 @@ export const FALLBACK_ARENA_LAYOUT: ArenaLayoutSpec = {
         { id: 'pickup-tax-office', position: [-32, 1.05, 32], weight: 1 },
         { id: 'pickup-hr-portal', position: [32, 1.05, -32], weight: 1 },
         { id: 'pickup-compliance', position: [47, 1.05, 38], weight: 0.75 },
-        { id: 'pickup-committee', position: [-47, 1.05, -38], weight: 0.75 },
+        { id: 'pickup-committee', position: [-47, 1.05, -38], weight: 0.75 }
     ],
     props: [
         {
@@ -58,7 +52,7 @@ export const FALLBACK_ARENA_LAYOUT: ArenaLayoutSpec = {
             size: [6.8, 2.8, 1.2],
             rotationY: 0.2,
             blocksShots: true,
-            label: 'Audit Wall',
+            label: 'Audit Wall'
         },
         {
             id: 'cover-audit-2',
@@ -67,7 +61,7 @@ export const FALLBACK_ARENA_LAYOUT: ArenaLayoutSpec = {
             size: [6.8, 2.8, 1.2],
             rotationY: 0.2,
             blocksShots: true,
-            label: 'Audit Wall',
+            label: 'Audit Wall'
         },
         {
             id: 'cover-policy-1',
@@ -76,7 +70,7 @@ export const FALLBACK_ARENA_LAYOUT: ArenaLayoutSpec = {
             size: [1.35, 2.4, 7.4],
             rotationY: -0.35,
             blocksShots: true,
-            label: 'Policy Pillar',
+            label: 'Policy Pillar'
         },
         {
             id: 'cover-policy-2',
@@ -85,7 +79,7 @@ export const FALLBACK_ARENA_LAYOUT: ArenaLayoutSpec = {
             size: [1.35, 2.4, 7.4],
             rotationY: -0.35,
             blocksShots: true,
-            label: 'Policy Pillar',
+            label: 'Policy Pillar'
         },
         {
             id: 'bounce-morale',
@@ -93,7 +87,7 @@ export const FALLBACK_ARENA_LAYOUT: ArenaLayoutSpec = {
             position: [0, 0.08, 24],
             size: [7.2, 0.12, 7.2],
             blocksShots: false,
-            label: 'Morale Launcher',
+            label: 'Morale Launcher'
         },
         {
             id: 'hazard-late-fee',
@@ -101,7 +95,7 @@ export const FALLBACK_ARENA_LAYOUT: ArenaLayoutSpec = {
             position: [0, 0.1, -24],
             size: [10.2, 0.12, 2.8],
             blocksShots: false,
-            label: 'Late Fee Zone',
+            label: 'Late Fee Zone'
         },
         {
             id: 'portal-exit-interview-a',
@@ -109,7 +103,7 @@ export const FALLBACK_ARENA_LAYOUT: ArenaLayoutSpec = {
             position: [-52, 2.1, 0],
             size: [4.4, 4.4, 0.4],
             blocksShots: false,
-            label: 'Exit Interview',
+            label: 'Exit Interview'
         },
         {
             id: 'portal-exit-interview-b',
@@ -117,8 +111,8 @@ export const FALLBACK_ARENA_LAYOUT: ArenaLayoutSpec = {
             position: [52, 2.1, 0],
             size: [4.4, 4.4, 0.4],
             blocksShots: false,
-            label: 'Re-entry Interview',
-        },
+            label: 'Re-entry Interview'
+        }
     ],
     signs: [
         {
@@ -126,28 +120,28 @@ export const FALLBACK_ARENA_LAYOUT: ArenaLayoutSpec = {
             title: 'TERMS UPDATED',
             detail: 'you agreed by blinking',
             position: [-32, 3.4, 57.2],
-            rotationY: Math.PI,
+            rotationY: Math.PI
         },
         {
             id: 'sign-audit',
             title: 'FUN AUDIT',
             detail: 'noncompliance looks expensive',
             position: [32, 3.4, -57.2],
-            rotationY: 0,
+            rotationY: 0
         },
         {
             id: 'sign-hr',
             title: 'HR PORTAL',
             detail: 'respawn paperwork waived',
             position: [57.2, 3.2, 24],
-            rotationY: -Math.PI / 2,
-        },
-    ],
+            rotationY: -Math.PI / 2
+        }
+    ]
 };
 
 export type ArenaLayoutValidation =
-    | Readonly<{ ok: true; layout: ArenaLayoutSpec }>
-    | Readonly<{ ok: false; reason: string; layout: ArenaLayoutSpec }>;
+    | Readonly<{ ok: true; layout: ArenaLayoutSpec; }>
+    | Readonly<{ ok: false; reason: string; layout: ArenaLayoutSpec; }>;
 
 export function validateArenaLayoutSpec(value: unknown): ArenaLayoutValidation {
     if (!isRecord(value)) {
@@ -177,7 +171,7 @@ export function validateArenaLayoutSpec(value: unknown): ArenaLayoutValidation {
         spawnPoints,
         pickupAnchors,
         props: readProps(value['props'], halfSize),
-        signs: readSigns(value['signs'], halfSize),
+        signs: readSigns(value['signs'], halfSize)
     };
 
     return { ok: true, layout };
@@ -191,7 +185,7 @@ export function assertArenaLayoutSpec(value: unknown): ArenaLayoutSpec {
 export function pickSpawnPoint(
     layout: ArenaLayoutSpec,
     sessionId: string,
-    salt = 0,
+    salt = 0
 ): Vec3Tuple {
     const index = Math.abs(hashString(`${sessionId}:${salt}:${layout.revision}`)) %
         layout.spawnPoints.length;
@@ -200,7 +194,7 @@ export function pickSpawnPoint(
 
 export function pickPickupAnchor(
     layout: ArenaLayoutSpec,
-    sequence: number,
+    sequence: number
 ): ArenaPickupAnchor {
     const anchors = layout.pickupAnchors.length > 0
         ? layout.pickupAnchors
@@ -220,7 +214,7 @@ export function pickPickupAnchor(
 export function blocksShot(
     layout: ArenaLayoutSpec,
     origin: Vec3Tuple,
-    impact: Vec3Tuple,
+    impact: Vec3Tuple
 ): boolean {
     return layout.props.some((prop) =>
         prop.blocksShots && segmentIntersectsAabb(origin, impact, prop.position, prop.size)
@@ -236,7 +230,7 @@ function readTheme(value: unknown): ArenaLayoutSpec['theme'] {
         grid: readHex(value['grid'], FALLBACK_ARENA_LAYOUT.theme.grid),
         accent: readHex(value['accent'], FALLBACK_ARENA_LAYOUT.theme.accent),
         warning: readHex(value['warning'], FALLBACK_ARENA_LAYOUT.theme.warning),
-        reward: readHex(value['reward'], FALLBACK_ARENA_LAYOUT.theme.reward),
+        reward: readHex(value['reward'], FALLBACK_ARENA_LAYOUT.theme.reward)
     };
 }
 
@@ -259,7 +253,7 @@ function readProps(value: unknown, halfSize: number): readonly ArenaLayoutProp[]
             blocksShots: typeof item['blocksShots'] === 'boolean'
                 ? item['blocksShots']
                 : kind === 'cover',
-            label: readString(item['label'], defaultPropLabel(kind)).slice(0, 44),
+            label: readString(item['label'], defaultPropLabel(kind)).slice(0, 44)
         };
         return [prop];
     });
@@ -278,7 +272,7 @@ function readSigns(value: unknown, halfSize: number): readonly ArenaLayoutSign[]
             title: readString(item['title'], 'COMPLIANCE NOTICE').slice(0, 24),
             detail: readString(item['detail'], 'optimism requires approval').slice(0, 44),
             position: clampPosition(readVec3(item['position'], [0, 3, halfSize - 2]), halfSize),
-            rotationY: clamp(toFiniteNumber(item['rotationY'], 0), -Math.PI, Math.PI),
+            rotationY: clamp(toFiniteNumber(item['rotationY'], 0), -Math.PI, Math.PI)
         }];
     });
 }
@@ -294,7 +288,7 @@ function readPickupAnchors(value: unknown, halfSize: number): readonly ArenaPick
         return [{
             id: readString(item['id'], `pickup-${index}`).slice(0, 64),
             position: clampPosition(readVec3(item['position'], [0, 1.05, 0]), halfSize),
-            weight: clamp(toFiniteNumber(item['weight'], 1), 0.25, 4),
+            weight: clamp(toFiniteNumber(item['weight'], 1), 0.25, 4)
         }];
     });
 }
@@ -314,7 +308,7 @@ function readVec3(
     value: unknown,
     fallback: Vec3Tuple,
     min?: Vec3Tuple,
-    max?: Vec3Tuple,
+    max?: Vec3Tuple
 ): Vec3Tuple {
     if (!Array.isArray(value)) {
         return fallback;
@@ -322,7 +316,7 @@ function readVec3(
     const tuple: Vec3Tuple = [
         toFiniteNumber(value[0], fallback[0]),
         toFiniteNumber(value[1], fallback[1]),
-        toFiniteNumber(value[2], fallback[2]),
+        toFiniteNumber(value[2], fallback[2])
     ];
     if (!min || !max) {
         return tuple;
@@ -330,7 +324,7 @@ function readVec3(
     return [
         clamp(tuple[0], min[0], max[0]),
         clamp(tuple[1], min[1], max[1]),
-        clamp(tuple[2], min[2], max[2]),
+        clamp(tuple[2], min[2], max[2])
     ];
 }
 
@@ -339,7 +333,7 @@ function clampPosition(value: Vec3Tuple, halfSize: number): Vec3Tuple {
     return [
         clamp(value[0], -halfSize + margin, halfSize - margin),
         clamp(value[1], 0.08, 9),
-        clamp(value[2], -halfSize + margin, halfSize - margin),
+        clamp(value[2], -halfSize + margin, halfSize - margin)
     ];
 }
 
@@ -358,17 +352,17 @@ function segmentIntersectsAabb(
     start: Vec3Tuple,
     end: Vec3Tuple,
     center: Vec3Tuple,
-    size: Vec3Tuple,
+    size: Vec3Tuple
 ): boolean {
     const min: Vec3Tuple = [
         center[0] - size[0] / 2,
         center[1] - size[1] / 2,
-        center[2] - size[2] / 2,
+        center[2] - size[2] / 2
     ];
     const max: Vec3Tuple = [
         center[0] + size[0] / 2,
         center[1] + size[1] / 2,
-        center[2] + size[2] / 2,
+        center[2] + size[2] / 2
     ];
     let tMin = 0;
     let tMax = 1;

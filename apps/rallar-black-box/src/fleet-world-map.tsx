@@ -4,16 +4,10 @@ import type {
     FleetWorldMapLayerState,
     FleetWorldMapRegion,
     FleetWorldMapRoute,
-    FleetWorldMapViewModel,
+    FleetWorldMapViewModel
 } from './world-map-model.ts';
-import {
-    FLEET_WORLD_MAP_LAYER_IDS,
-} from './world-map-model.ts';
-import {
-    projectWorldCoordinate,
-    WORLD_MAP_VIEWBOX,
-    worldMapArcPath,
-} from './world-map-projection.ts';
+import { FLEET_WORLD_MAP_LAYER_IDS } from './world-map-model.ts';
+import { projectWorldCoordinate, WORLD_MAP_VIEWBOX, worldMapArcPath } from './world-map-projection.ts';
 
 export type FleetWorldMapProps = Readonly<{
     model: FleetWorldMapViewModel;
@@ -28,7 +22,7 @@ const LAYER_LABELS: Readonly<Record<FleetWorldMapLayerId, string>> = {
     'live-agents': 'Live agents',
     'historical-regions': 'Historical regions',
     failures: 'Failures',
-    'observed-routes': 'Observed routes',
+    'observed-routes': 'Observed routes'
 };
 
 const LANDMASSES = [
@@ -37,7 +31,7 @@ const LANDMASSES = [
     'M 490 136 L 566 108 L 666 144 L 708 218 L 650 266 L 540 244 L 474 198 Z',
     'M 564 254 L 626 280 L 654 362 L 616 438 L 552 392 L 532 306 Z',
     'M 712 202 L 806 170 L 892 216 L 876 290 L 788 308 L 716 262 Z',
-    'M 792 336 L 884 350 L 918 406 L 854 440 L 780 408 Z',
+    'M 792 336 L 884 350 L 918 406 L 854 440 L 780 408 Z'
 ] as const;
 
 export function FleetWorldMap({
@@ -46,7 +40,7 @@ export function FleetWorldMap({
     selectedAgentId,
     onLayerChange,
     onSelectAgent,
-    onSelectRegion,
+    onSelectRegion
 }: FleetWorldMapProps) {
     const visibleAgents = layers['live-agents']
         ? model.liveAgents.filter((agent) => agent.location)
@@ -108,12 +102,14 @@ export function FleetWorldMap({
                             onSelectRegion={onSelectRegion}
                         />
                     ))}
-                    {visibleRoutes.map((route) => (
-                        <FleetRouteArc route={route} key={route.routeId} />
-                    ))}
-                    {layers.failures && failedAgents.map((agent) => (
-                        <FleetFailureHalo agent={agent} key={`failure-${agent.agentId}`} />
-                    ))}
+                    {visibleRoutes.map((route) => <FleetRouteArc route={route} key={route.routeId} />)}
+                    {layers.failures &&
+                        failedAgents.map((agent) => (
+                            <FleetFailureHalo
+                                agent={agent}
+                                key={`failure-${agent.agentId}`}
+                            />
+                        ))}
                     {visibleAgents.map((agent) => (
                         <FleetAgentMarker
                             agent={agent}
@@ -139,11 +135,9 @@ export function FleetWorldMap({
                             No observed routes with map-ready endpoints.
                         </div>
                     )}
-                    {selectedAgent ? (
-                        <FleetSelectedAgent agent={selectedAgent} />
-                    ) : (
-                        <FleetMapRegionSummary regions={model.regions} />
-                    )}
+                    {selectedAgent
+                        ? <FleetSelectedAgent agent={selectedAgent} />
+                        : <FleetMapRegionSummary regions={model.regions} />}
                 </aside>
             </div>
         </section>
@@ -153,7 +147,7 @@ export function FleetWorldMap({
 function FleetAgentMarker({
     agent,
     selected,
-    onSelectAgent,
+    onSelectAgent
 }: Readonly<{
     agent: FleetWorldMapAgent;
     selected: boolean;
@@ -185,8 +179,8 @@ function FleetAgentMarker({
 }
 
 function FleetFailureHalo({
-    agent,
-}: Readonly<{ agent: FleetWorldMapAgent }>) {
+    agent
+}: Readonly<{ agent: FleetWorldMapAgent; }>) {
     if (!agent.location) {
         return null;
     }
@@ -203,7 +197,7 @@ function FleetFailureHalo({
 
 function FleetRegionMarker({
     region,
-    onSelectRegion,
+    onSelectRegion
 }: Readonly<{
     region: FleetWorldMapRegion;
     onSelectRegion: (region: FleetWorldMapRegion) => void;
@@ -232,8 +226,8 @@ function FleetRegionMarker({
 }
 
 function FleetRouteArc({
-    route,
-}: Readonly<{ route: FleetWorldMapRoute }>) {
+    route
+}: Readonly<{ route: FleetWorldMapRoute; }>) {
     const source = projectWorldCoordinate(route.source);
     const target = projectWorldCoordinate(route.target);
     return (
@@ -245,8 +239,8 @@ function FleetRouteArc({
 }
 
 function FleetSelectedAgent({
-    agent,
-}: Readonly<{ agent: FleetWorldMapAgent }>) {
+    agent
+}: Readonly<{ agent: FleetWorldMapAgent; }>) {
     return (
         <dl className="fleet-map-detail-list">
             <div>
@@ -270,8 +264,8 @@ function FleetSelectedAgent({
 }
 
 function FleetMapRegionSummary({
-    regions,
-}: Readonly<{ regions: readonly FleetWorldMapRegion[] }>) {
+    regions
+}: Readonly<{ regions: readonly FleetWorldMapRegion[]; }>) {
     const topRegions = regions.slice(0, 4);
     return (
         <div className="fleet-map-region-list">
@@ -282,9 +276,7 @@ function FleetMapRegionSummary({
                     <small>{region.agentCount} agents</small>
                 </div>
             ))}
-            {topRegions.length === 0 && (
-                <div className="fleet-map-empty">No historical regions mapped.</div>
-            )}
+            {topRegions.length === 0 && <div className="fleet-map-empty">No historical regions mapped.</div>}
         </div>
     );
 }
@@ -301,7 +293,7 @@ function gridLines() {
                 y1="0"
                 y2={WORLD_MAP_VIEWBOX.height}
                 key={`lon-${longitude}`}
-            />,
+            />
         );
     }
     for (let latitude = -60; latitude <= 60; latitude += 30) {
@@ -314,7 +306,7 @@ function gridLines() {
                 y1={y}
                 y2={y}
                 key={`lat-${latitude}`}
-            />,
+            />
         );
     }
     return lines;

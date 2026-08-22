@@ -1,16 +1,6 @@
-import type { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
-import {
-    ConnectionContext,
-    type EncodedJsonWebSocketMessage,
-    JsonWebSocketServer,
-} from '../websocket/JsonWebSocketServer.ts';
-import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
-import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
-import { OnWebSocketServerMessageCallback } from './InboxOutboxContracts.ts';
+import { Either } from '@shared/resilience/Either.ts';
 import { ALMessage, isRoomScopedALMessage } from '../al-contracts/al-contract.ts';
-import {
-    validatePersistedALMessage,
-} from '../al-contracts/al-message-persistence-validation.ts';
+import { validatePersistedALMessage } from '../al-contracts/al-message-persistence-validation.ts';
 import {
     ALMessageHandlingPlan,
     ALQosInputProvider,
@@ -18,16 +8,14 @@ import {
     planALMessageHandling,
     resolveALQosNormalizationInput,
     resolveSupersedenceKey,
-    shouldPersistOutbox,
+    shouldPersistOutbox
 } from '../al-contracts/al-policy.ts';
-import { QueueBoxUtilities } from './QueueBoxUtilities.ts';
-import { EnqueuedType } from '../api/api-config.ts';
 import type { ALInboundRuntimeStores } from '../alm/ALInboundMessageRuntime.ts';
 import { ALInboundMessageRuntime } from '../alm/ALInboundMessageRuntime.ts';
 import type {
     ALOutboundEnqueueResult,
     ALOutboundRuntimeDiagnosticsSink,
-    ALOutboundRuntimeStores,
+    ALOutboundRuntimeStores
 } from '../alm/ALOutboundMessageRuntime.ts';
 import {
     ALOutboundAckTrackingPlan,
@@ -35,9 +23,19 @@ import {
     ALOutboundMessageRuntime,
     ALOutboundRepairRequest,
     ALOutboundRepairTrackingPlan,
-    ALOutboundSupersedenceTrackingPlan,
+    ALOutboundSupersedenceTrackingPlan
 } from '../alm/ALOutboundMessageRuntime.ts';
-import { Either } from '@shared/resilience/Either.ts';
+import { EnqueuedType } from '../api/api-config.ts';
+import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
+import type { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
+import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
+import {
+    ConnectionContext,
+    JsonWebSocketServer,
+    type EncodedJsonWebSocketMessage
+} from '../websocket/JsonWebSocketServer.ts';
+import { OnWebSocketServerMessageCallback } from './InboxOutboxContracts.ts';
+import { QueueBoxUtilities } from './QueueBoxUtilities.ts';
 
 import {
     type WsDeliveryDiagnosticsEvent,
@@ -47,7 +45,7 @@ import {
     type WsServerLiveSendResult,
     type WsServerLiveSendStatus,
     type WsServerResolvedRecipient,
-    type WsServerTargetResolver,
+    type WsServerTargetResolver
 } from './ws-queue-box-server-contracts.ts';
 
 export type WsQueueBoxServerServiceOptions = Readonly<{
@@ -70,8 +68,8 @@ export type WsQueueBoxServerServiceOptions = Readonly<{
 }>;
 
 type WsServerPreparedMessage = Readonly<
-    | { kind: 'recipient'; peerId: string; connectionId: string; message: ALMessage }
-    | { kind: 'cluster-local-complete'; message: ALMessage }
+    | { kind: 'recipient'; peerId: string; connectionId: string; message: ALMessage; }
+    | { kind: 'cluster-local-complete'; message: ALMessage; }
 >;
 
 export class WsQueueBoxServerService {
@@ -79,25 +77,25 @@ export class WsQueueBoxServerService {
 
     public static readonly OUTBOX_ENQUEUE_TYPE = EnqueuedType.WS_OUTBOX;
     public static readonly OUTBOX_DEQUEUE_TYPES = new Set<string>([
-        this.OUTBOX_ENQUEUE_TYPE,
+        this.OUTBOX_ENQUEUE_TYPE
     ]);
 
     public static readonly INBOX_ENQUEUE_TYPE = EnqueuedType.WS_INBOX;
     public static readonly INBOX_DEQUEUE_TYPES = new Set<string>([
-        this.INBOX_ENQUEUE_TYPE,
+        this.INBOX_ENQUEUE_TYPE
     ]);
 
-    private readonly onInboxWebSocketMessageCallbacks =
-        new Map<string, OnWebSocketServerMessageCallback<ALMessage>>();
+    private readonly onInboxWebSocketMessageCallbacks = new Map<string, OnWebSocketServerMessageCallback<ALMessage>>();
 
-    private readonly onAnyInboxWebSocketMessageCallbacks =
-        new Map<string, OnWebSocketServerMessageCallback<ALMessage>>();
+    private readonly onAnyInboxWebSocketMessageCallbacks = new Map<
+        string,
+        OnWebSocketServerMessageCallback<ALMessage>
+    >();
 
-    private readonly onOutboxWebSocketMessageCallbacks =
-        new Map<string, OnWebSocketServerMessageCallback<ALMessage>>();
+    private readonly onOutboxWebSocketMessageCallbacks = new Map<string, OnWebSocketServerMessageCallback<ALMessage>>();
     private outboxClusterPublisher?: (
         message: ALMessage,
-        entry: ResourceEntry,
+        entry: ResourceEntry
     ) => Promise<void>;
     private readonly inboundRuntime: ALInboundMessageRuntime;
     private readonly outboundRuntime: ALOutboundMessageRuntime<WsServerPreparedMessage>;
@@ -116,7 +114,7 @@ export class WsQueueBoxServerService {
         outbox: QueueBoxResourceEntryRepository,
         socket: JsonWebSocketServer,
         name: string,
-        options: WsQueueBoxServerServiceOptions = {},
+        options: WsQueueBoxServerServiceOptions = {}
     ) {
         this.inbox = inbox;
         this.outbox = outbox;
@@ -128,9 +126,7 @@ export class WsQueueBoxServerService {
         this.deliveryDiagnostics = options.deliveryDiagnostics;
         this.forwardsRoomScopedMessages = options.forwardsRoomScopedMessages ?? true;
 
-        this.outboundRuntime = new ALOutboundMessageRuntime<
-            WsServerPreparedMessage
-        >(
+        this.outboundRuntime = new ALOutboundMessageRuntime<WsServerPreparedMessage>(
             {
                 stores: options.outboundStores,
                 diagnostics: options.outboundDiagnostics,
@@ -138,24 +134,21 @@ export class WsQueueBoxServerService {
                 toOutboxEntry: (message: ALMessage) =>
                     QueueBoxUtilities.toResourceEntryFromMsg(
                         message,
-                        WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE,
+                        WsQueueBoxServerService.OUTBOX_ENQUEUE_TYPE
                     ),
-                readMessageFromEntry: (entry) =>
-                    JSON.parse(entry.resource) as ALMessage,
-                planOutgoingMessage: (message) =>
-                    this.planOutgoingMessage(message, 'immediate'),
-                planDequeuedMessage: (message) =>
-                    this.planOutgoingMessage(message, 'dequeue'),
+                readMessageFromEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
+                planOutgoingMessage: (message) => this.planOutgoingMessage(message, 'immediate'),
+                planDequeuedMessage: (message) => this.planOutgoingMessage(message, 'dequeue'),
                 beforeDequeueDispatch: (message, entry) => {
                     const publisher = this.outboxClusterPublisher;
-                    if (!publisher) return false;
+                    if (!publisher) {
+                        return false;
+                    }
                     return publisher(message, entry).then(() => message.targets !== undefined);
                 },
-                sendPreparedMessage: async (prepared, _phase) =>
-                    await this.sendPreparedMessage(prepared),
-                planRepairMessage: async (message, request) =>
-                    await this.planRepairMessage(message, request),
-            },
+                sendPreparedMessage: async (prepared, _phase) => await this.sendPreparedMessage(prepared),
+                planRepairMessage: async (message, request) => await this.planRepairMessage(message, request)
+            }
         );
 
         this.inboundRuntime = new ALInboundMessageRuntime(
@@ -176,24 +169,24 @@ export class WsQueueBoxServerService {
                             overlayNeighborPeerIds: recipientPeerIds,
                             dedupStore: runtime.dedupStore,
                             orderingStore: runtime.orderingStore,
-                            supersedenceStore: runtime.supersedenceStore,
+                            supersedenceStore: runtime.supersedenceStore
                         },
                         resolveALQosNormalizationInput(
                             msg,
                             {
                                 selfPeerId: this.name,
                                 fromPeerId,
-                                direction: 'inbound',
+                                direction: 'inbound'
                             },
-                            this.qosProvider,
-                        ),
+                            this.qosProvider
+                        )
                     );
                 },
                 readStoredEntry: (entry) => JSON.parse(entry.resource) as ALMessage,
                 toInboxEntry: (msg) =>
                     QueueBoxUtilities.toResourceEntryFromMsg(
                         msg,
-                        WsQueueBoxServerService.INBOX_ENQUEUE_TYPE,
+                        WsQueueBoxServerService.INBOX_ENQUEUE_TYPE
                     ),
                 dispatchInboxEntry: async (entry, plan) => {
                     await this.dispatchInboxEntry(entry, plan);
@@ -205,7 +198,7 @@ export class WsQueueBoxServerService {
 
                     if (!toPeerId) {
                         console.warn(
-                            `Cannot send WS server control message without unicast target: ${msg.payload.typeId}`,
+                            `Cannot send WS server control message without unicast target: ${msg.payload.typeId}`
                         );
                         return Promise.resolve();
                     }
@@ -213,7 +206,7 @@ export class WsQueueBoxServerService {
                     const sent = this.sendToResolvedPeer(toPeerId, msg);
                     if (sent === 0) {
                         console.warn(
-                            `Cannot resolve WS server control target ${toPeerId} for ${msg.payload.typeId}`,
+                            `Cannot resolve WS server control target ${toPeerId} for ${msg.payload.typeId}`
                         );
                     }
                     return Promise.resolve();
@@ -224,9 +217,8 @@ export class WsQueueBoxServerService {
                 forwardMessage: async (msg, fromPeerId, plan) => {
                     await this.forwardIncomingMessage(msg, fromPeerId, plan);
                 },
-                canForwardMessage: (msg) =>
-                    this.forwardsRoomScopedMessages || !isRoomScopedALMessage(msg),
-            },
+                canForwardMessage: (msg) => this.forwardsRoomScopedMessages || !isRoomScopedALMessage(msg)
+            }
         );
 
         this.socket.onMessageDo(
@@ -235,14 +227,14 @@ export class WsQueueBoxServerService {
                 onMessage: async (ctx: ConnectionContext, data: unknown, _) => {
                     const message = data as ALMessage;
                     await this.handleIncomingServerMessage(message, ctx.id);
-                },
-            },
+                }
+            }
         );
     }
 
     onAllOutboxMessagesDo(
         callback: OnWebSocketServerMessageCallback<ALMessage>,
-        forceUpdate: boolean = false,
+        forceUpdate: boolean = false
     ): WsQueueBoxServerService {
         if (
             !forceUpdate &&
@@ -253,14 +245,14 @@ export class WsQueueBoxServerService {
 
         this.onOutboxWebSocketMessageCallbacks.set(
             WsQueueBoxServerService.ALL_IN,
-            callback,
+            callback
         );
         return this;
     }
 
     onOutboxMessageDo(
         id: string,
-        callback: OnWebSocketServerMessageCallback<ALMessage>,
+        callback: OnWebSocketServerMessageCallback<ALMessage>
     ): WsQueueBoxServerService {
         this.onOutboxWebSocketMessageCallbacks.set(id, callback);
         return this;
@@ -271,7 +263,7 @@ export class WsQueueBoxServerService {
     }
 
     onOutboxClusterPublishDo(
-        publisher: (message: ALMessage, entry: ResourceEntry) => Promise<void>,
+        publisher: (message: ALMessage, entry: ResourceEntry) => Promise<void>
     ): WsQueueBoxServerService {
         this.outboxClusterPublisher = publisher;
         return this;
@@ -279,7 +271,7 @@ export class WsQueueBoxServerService {
 
     onAllInboxMessagesDo(
         callback: OnWebSocketServerMessageCallback<ALMessage>,
-        forceUpdate: boolean = false,
+        forceUpdate: boolean = false
     ): WsQueueBoxServerService {
         if (
             !forceUpdate &&
@@ -290,14 +282,14 @@ export class WsQueueBoxServerService {
 
         this.onInboxWebSocketMessageCallbacks.set(
             WsQueueBoxServerService.ALL_IN,
-            callback,
+            callback
         );
         return this;
     }
 
     onAnyInboxMessageDo(
         id: string,
-        callback: OnWebSocketServerMessageCallback<ALMessage>,
+        callback: OnWebSocketServerMessageCallback<ALMessage>
     ): WsQueueBoxServerService {
         this.onAnyInboxWebSocketMessageCallbacks.set(id, callback);
         return this;
@@ -305,7 +297,7 @@ export class WsQueueBoxServerService {
 
     onInboxMessageDo(
         id: string,
-        callback: OnWebSocketServerMessageCallback<ALMessage>,
+        callback: OnWebSocketServerMessageCallback<ALMessage>
     ): WsQueueBoxServerService {
         this.onInboxWebSocketMessageCallbacks.set(id, callback);
         return this;
@@ -327,20 +319,20 @@ export class WsQueueBoxServerService {
 
         const result = await this.outboundRuntime.enqueueIfAbsent(
             message,
-            dispatchPlan,
+            dispatchPlan
         );
         if (
             result.status === 'no-route' &&
             result.reason &&
             WsQueueBoxServerService.isBroadcastWithoutRecipients(
                 message,
-                result.reason,
+                result.reason
             )
         ) {
             return {
                 ...result,
                 entries: [],
-                entry: undefined,
+                entry: undefined
             };
         }
 
@@ -357,14 +349,14 @@ export class WsQueueBoxServerService {
             typesToDequeue,
             resilience,
             QueueBoxUtilities.withRetryDisposition(
-                async (entry) => await this.inboundRuntime.dispatchStoredEntry(entry),
-            ),
+                async (entry) => await this.inboundRuntime.dispatchStoredEntry(entry)
+            )
         );
     }
 
     private async handleIncomingServerMessage(
         message: ALMessage,
-        connectionId: string,
+        connectionId: string
     ): Promise<void> {
         const fromPeerId = this.targetResolver.resolvePeerIdForConnection?.(connectionId, message) ??
             connectionId;
@@ -376,7 +368,7 @@ export class WsQueueBoxServerService {
 
     private async dispatchInboxEntry(
         entry: ResourceEntry,
-        plan?: ALMessageHandlingPlan,
+        plan?: ALMessageHandlingPlan
     ): Promise<void> {
         const message = JSON.parse(entry.resource) as ALMessage;
 
@@ -384,21 +376,21 @@ export class WsQueueBoxServerService {
         let wildcard = undefined;
 
         if (plan?.ownership.exclusive) {
-            exclusiveCallback =
-                this.onInboxWebSocketMessageCallbacks.get(message.payload.typeId) ??
+            exclusiveCallback = this.onInboxWebSocketMessageCallbacks.get(message.payload.typeId) ??
                 this.onInboxWebSocketMessageCallbacks.get(
-                    WsQueueBoxServerService.ALL_IN,
+                    WsQueueBoxServerService.ALL_IN
                 );
 
             await this.onMessageIfPresent(exclusiveCallback, message, entry);
-        } else {
+        }
+        else {
             exclusiveCallback = this.onInboxWebSocketMessageCallbacks.get(
-                message.payload.typeId,
+                message.payload.typeId
             );
             await this.onMessageIfPresent(exclusiveCallback, message, entry);
 
             wildcard = this.onInboxWebSocketMessageCallbacks.get(
-                WsQueueBoxServerService.ALL_IN,
+                WsQueueBoxServerService.ALL_IN
             );
             await this.onMessageIfPresent(wildcard, message, entry);
         }
@@ -425,7 +417,7 @@ export class WsQueueBoxServerService {
         if (recipients.length === 0) {
             this.recordDeliveryDiagnostics({
                 kind: 'no-local-recipient',
-                topicId: message.route.topicId,
+                topicId: message.route.topicId
             });
             return {
                 status: 'no-recipients',
@@ -434,18 +426,19 @@ export class WsQueueBoxServerService {
                 recipientCount: 0,
                 sentCount: 0,
                 failedCount: 0,
-                failures: [],
+                failures: []
             };
         }
 
         let encoded: EncodedJsonWebSocketMessage;
         try {
             encoded = this.socket.encode(message);
-        } catch (error) {
+        }
+        catch (error) {
             const reason = errorToReason(error);
             console.error(
                 `Error encoding WS server message ${message.id.msgId}`,
-                error,
+                error
             );
             return {
                 status: 'failed',
@@ -457,8 +450,8 @@ export class WsQueueBoxServerService {
                 failures: recipients.map((recipient) => ({
                     peerId: recipient.peerId,
                     connectionId: recipient.connectionId,
-                    reason,
-                })),
+                    reason
+                }))
             };
         }
         let sent = 0;
@@ -467,15 +460,16 @@ export class WsQueueBoxServerService {
             try {
                 this.socket.sendEncoded(recipient.connectionId, encoded);
                 sent += 1;
-            } catch (error) {
+            }
+            catch (error) {
                 failures.push({
                     peerId: recipient.peerId,
                     connectionId: recipient.connectionId,
-                    reason: errorToReason(error),
+                    reason: errorToReason(error)
                 });
                 console.error(
                     `Error sending WS server message to ${recipient.connectionId}`,
-                    error,
+                    error
                 );
             }
         }
@@ -485,26 +479,26 @@ export class WsQueueBoxServerService {
             topicId: message.route.topicId,
             recipientCount: recipients.length,
             sentCount: sent,
-            payloadBytes: encoded.text.length,
+            payloadBytes: encoded.text.length
         });
         return {
             status: toWsServerLiveSendStatus(
                 recipients.length,
                 sent,
-                failures.length,
+                failures.length
             ),
             message,
             recipients,
             recipientCount: recipients.length,
             sentCount: sent,
             failedCount: failures.length,
-            failures,
+            failures
         };
     }
 
     private planOutgoingMessage(
         message: ALMessage,
-        phase: 'immediate' | 'dequeue',
+        phase: 'immediate' | 'dequeue'
     ) {
         const normalized = this.normalizeOutgoingPolicy(message);
         const effective = normalized.effective;
@@ -512,12 +506,12 @@ export class WsQueueBoxServerService {
 
         return this.validateMessage(message, {
             resolveRecipients: phase === 'dequeue' || !persist,
-            representNoCurrentRecipient: phase === 'dequeue',
+            representNoCurrentRecipient: phase === 'dequeue'
         })
             .fold(
                 (error: string) => {
                     return WsQueueBoxServerService.toNoRouteDispatchPlan(
-                        `Invalid WS server outbound message ${message.id.msgId}: ${error}`,
+                        `Invalid WS server outbound message ${message.id.msgId}: ${error}`
                     );
                 },
                 (recipients: readonly WsServerResolvedRecipient[]) => ({
@@ -528,15 +522,15 @@ export class WsQueueBoxServerService {
                             kind: 'recipient' as const,
                             peerId: recipient.peerId,
                             connectionId: recipient.connectionId,
-                            message,
+                            message
                         })),
                     ackTracking: this.toAckTrackingPlan(effective, recipients),
                     repairTracking: this.toRepairTrackingPlan(effective),
                     supersedenceTracking: this.toSupersedenceTrackingPlan(
                         effective,
-                        message,
-                    ),
-                }),
+                        message
+                    )
+                })
             );
     }
 
@@ -545,12 +539,12 @@ export class WsQueueBoxServerService {
         options: Readonly<{
             resolveRecipients: boolean;
             representNoCurrentRecipient: boolean;
-        }>,
+        }>
     ): Either<string, readonly WsServerResolvedRecipient[]> {
         const targets = message.targets;
         if (!targets) {
             return Either.ofLeft(
-                `Cannot route WS server outbound message ${message.id.msgId} without explicit targets`,
+                `Cannot route WS server outbound message ${message.id.msgId} without explicit targets`
             );
         }
 
@@ -563,18 +557,18 @@ export class WsQueueBoxServerService {
             if (options.representNoCurrentRecipient) {
                 this.recordOutboundDeliveryOutcome({
                     status: 'no-current-recipient',
-                    messageId: message.id.msgId,
+                    messageId: message.id.msgId
                 });
                 this.recordDeliveryDiagnostics({
                     kind: 'no-local-recipient',
-                    topicId: message.route.topicId,
+                    topicId: message.route.topicId
                 });
             }
             return Either.ofLeft(
                 WsQueueBoxServerService.toNoResolvedRecipientsReason(
                     targets.mode,
-                    message.id.msgId,
-                ),
+                    message.id.msgId
+                )
             );
         }
 
@@ -583,14 +577,13 @@ export class WsQueueBoxServerService {
 
     private static isBroadcastWithoutRecipients(
         message: ALMessage,
-        error: string,
+        error: string
     ): boolean {
         const noRecipientsReason = WsQueueBoxServerService.toNoResolvedRecipientsReason(
             'broadcast',
-            message.id.msgId,
+            message.id.msgId
         );
-        const invalidMessageReason =
-            `Invalid WS server outbound message ${message.id.msgId}: ${noRecipientsReason}`;
+        const invalidMessageReason = `Invalid WS server outbound message ${message.id.msgId}: ${noRecipientsReason}`;
 
         return message.targets?.mode === 'broadcast' &&
             (
@@ -601,18 +594,18 @@ export class WsQueueBoxServerService {
 
     private static toNoResolvedRecipientsReason(
         mode: NonNullable<ALMessage['targets']>['mode'],
-        msgId: string,
+        msgId: string
     ): string {
         return `Cannot resolve WS server recipients for ${mode} message ${msgId}`;
     }
 
     static toNoRouteDispatchPlan(
-        dropReason: string,
+        dropReason: string
     ): ALOutboundDispatchPlan<WsServerPreparedMessage> {
         return {
             dropReason,
             persist: false,
-            preparedMessages: [],
+            preparedMessages: []
         };
     }
 
@@ -623,16 +616,16 @@ export class WsQueueBoxServerService {
                 message,
                 {
                     direction: 'outbound',
-                    selfPeerId: this.name,
+                    selfPeerId: this.name
                 },
-                this.qosProvider,
-            ),
+                this.qosProvider
+            )
         );
     }
 
     private planRepairMessage(
         message: ALMessage,
-        request: ALOutboundRepairRequest,
+        request: ALOutboundRepairRequest
     ): Promise<ALOutboundDispatchPlan<WsServerPreparedMessage> | undefined> {
         const normalized = this.normalizeOutgoingPolicy(message);
         const recipients = request.requestedByPeerId
@@ -649,50 +642,54 @@ export class WsQueueBoxServerService {
                 kind: 'recipient' as const,
                 peerId: recipient.peerId,
                 connectionId: recipient.connectionId,
-                message,
+                message
             })),
             ackTracking: this.toAckTrackingPlan(
                 normalized.effective,
                 recipients,
-                'replace',
+                'replace'
             ),
-            repairTracking: request.repair,
+            repairTracking: request.repair
         });
     }
 
     private async sendPreparedMessage(
-        prepared: WsServerPreparedMessage,
-    ): Promise<Readonly<{ status: 'sent' | 'no-targets' }>> {
-        if (prepared.kind === 'cluster-local-complete') return { status: 'sent' };
+        prepared: WsServerPreparedMessage
+    ): Promise<Readonly<{ status: 'sent' | 'no-targets'; }>> {
+        if (prepared.kind === 'cluster-local-complete') {
+            return { status: 'sent' };
+        }
         try {
             const encoded = this.socket.encode(prepared.message);
             this.socket.sendEncoded(prepared.connectionId, encoded);
             this.recordOutboundDeliveryOutcome({
                 status: 'sent',
-                messageId: prepared.message.id.msgId,
+                messageId: prepared.message.id.msgId
             });
             this.recordDeliveryDiagnostics({
                 kind: 'outbox-send',
                 topicId: prepared.message.route.topicId,
-                payloadBytes: encoded.text.length,
+                payloadBytes: encoded.text.length
             });
             return { status: 'sent' };
-        } catch (error) {
+        }
+        catch (error) {
             this.recordOutboundDeliveryOutcome({
                 status: 'retryable-transport-failure',
                 messageId: prepared.message.id.msgId,
-                reason: errorToReason(error),
+                reason: errorToReason(error)
             });
             throw error;
         }
     }
 
     private recordOutboundDeliveryOutcome(
-        outcome: WsOutboxDeliveryOutcome,
+        outcome: WsOutboxDeliveryOutcome
     ): void {
         try {
             this.outboundDeliveryOutcome?.(outcome);
-        } catch (error) {
+        }
+        catch (error) {
             console.error('WS outbox delivery outcome sink failed', error);
         }
     }
@@ -700,7 +697,8 @@ export class WsQueueBoxServerService {
     private recordDeliveryDiagnostics(event: WsDeliveryDiagnosticsEvent): void {
         try {
             this.deliveryDiagnostics?.(event);
-        } catch {
+        }
+        catch {
             // Delivery diagnostics must never affect WS send behavior.
         }
     }
@@ -708,7 +706,7 @@ export class WsQueueBoxServerService {
     private forwardIncomingMessage(
         message: ALMessage,
         fromPeerId: string,
-        plan: ALMessageHandlingPlan,
+        plan: ALMessageHandlingPlan
     ): Promise<void> {
         const nextHopPeerIds = plan.forwarding.nextHopPeerIds
             .filter((peerId) => peerId !== fromPeerId);
@@ -718,7 +716,9 @@ export class WsQueueBoxServerService {
         }
 
         console.log(
-            `Forwarding WS server message ${message.id.msgId} (${message.payload.typeId}) from ${fromPeerId} to ${nextHopPeerIds.join(', ')}`,
+            `Forwarding WS server message ${message.id.msgId} (${message.payload.typeId}) from ${fromPeerId} to ${
+                nextHopPeerIds.join(', ')
+            }`
         );
 
         let sent = 0;
@@ -732,7 +732,9 @@ export class WsQueueBoxServerService {
 
         if (sent === 0) {
             console.warn(
-                `No resolved WS server recipients for forwarded message ${message.id.msgId} to ${nextHopPeerIds.join(', ')}`,
+                `No resolved WS server recipients for forwarded message ${message.id.msgId} to ${
+                    nextHopPeerIds.join(', ')
+                }`
             );
         }
 
@@ -742,17 +744,18 @@ export class WsQueueBoxServerService {
     private async onMessageIfPresent(
         callback: OnWebSocketServerMessageCallback<ALMessage> | undefined,
         message: ALMessage,
-        entry: ResourceEntry,
+        entry: ResourceEntry
     ) {
         try {
             await callback?.onMessage(message, entry, this.socket);
-        } catch (e) {
+        }
+        catch (e) {
             console.error('Error calling onMessage callback', e);
         }
     }
 
     private resolveRecipients(
-        message: ALMessage,
+        message: ALMessage
     ): readonly WsServerResolvedRecipient[] {
         const targets = message.targets;
         if (!targets) {
@@ -764,39 +767,37 @@ export class WsQueueBoxServerService {
                 if (this.targetResolver.resolvePeerRecipients) {
                     return dedupRecipients(this.targetResolver.resolvePeerRecipients(
                         targets.toPeerId,
-                        message,
+                        message
                     ));
                 }
 
                 return [{
                     peerId: targets.toPeerId,
-                    connectionId: targets.toPeerId,
+                    connectionId: targets.toPeerId
                 }];
             }
             case 'multicast': {
                 const resolved = this.targetResolver.resolveGroupRecipients?.(
                     targets.groupRef.groupId,
-                    message,
+                    message
                 ) ?? [];
                 return dedupRecipients(resolved);
             }
             case 'broadcast': {
                 const resolved = this.targetResolver.resolveBroadcastRecipients?.(
-                        targets.scope,
-                        message,
-                    ) ??
+                    targets.scope,
+                    message
+                ) ??
                     this.toDefaultBroadcastRecipients(targets.exceptPeerIds);
                 return dedupRecipients(
-                    resolved.filter((recipient) =>
-                        !targets.exceptPeerIds?.includes(recipient.peerId)
-                    ),
+                    resolved.filter((recipient) => !targets.exceptPeerIds?.includes(recipient.peerId))
                 );
             }
         }
     }
 
     private resolveInboundRecipients(
-        message: ALMessage,
+        message: ALMessage
     ): readonly WsServerResolvedRecipient[] {
         const targets = message.targets;
         if (!targets) {
@@ -808,31 +809,29 @@ export class WsQueueBoxServerService {
                 return dedupRecipients(
                     this.targetResolver.resolvePeerRecipients?.(
                         targets.toPeerId,
-                        message,
-                    ) ?? [],
+                        message
+                    ) ?? []
                 );
             case 'multicast':
                 return dedupRecipients(
                     this.targetResolver.resolveGroupRecipients?.(
                         targets.groupRef.groupId,
-                        message,
-                    ) ?? [],
+                        message
+                    ) ?? []
                 );
             case 'broadcast':
                 return dedupRecipients(
                     this.targetResolver.resolveBroadcastRecipients?.(
                         targets.scope,
-                        message,
-                    ).filter((recipient) =>
-                        !targets.exceptPeerIds?.includes(recipient.peerId)
-                    ) ?? [],
+                        message
+                    ).filter((recipient) => !targets.exceptPeerIds?.includes(recipient.peerId)) ?? []
                 );
         }
     }
 
     private resolveRepairRecipients(
         message: ALMessage,
-        peerIds: readonly string[],
+        peerIds: readonly string[]
     ): readonly WsServerResolvedRecipient[] {
         if (peerIds.length === 0) {
             return [];
@@ -844,7 +843,7 @@ export class WsQueueBoxServerService {
             }
             return [{
                 peerId,
-                connectionId: peerId,
+                connectionId: peerId
             }];
         });
 
@@ -852,7 +851,7 @@ export class WsQueueBoxServerService {
     }
 
     private toDefaultBroadcastRecipients(
-        exceptPeerIds?: readonly string[],
+        exceptPeerIds?: readonly string[]
     ): readonly WsServerResolvedRecipient[] {
         if (!(this.socket.connections instanceof Map)) {
             return [];
@@ -862,20 +861,20 @@ export class WsQueueBoxServerService {
             .filter((ctx) => ctx.isOpen && !exceptPeerIds?.includes(ctx.id))
             .map((ctx) => ({
                 peerId: ctx.id,
-                connectionId: ctx.id,
+                connectionId: ctx.id
             }));
     }
 
     private sendToResolvedPeer(
         peerId: string,
         message: ALMessage,
-        encoded?: EncodedJsonWebSocketMessage,
+        encoded?: EncodedJsonWebSocketMessage
     ): number {
         const deduped = this.targetResolver.resolvePeerRecipients
             ? dedupRecipients(this.targetResolver.resolvePeerRecipients(peerId, message))
             : [{
                 peerId,
-                connectionId: peerId,
+                connectionId: peerId
             }];
 
         const encodedMessage = encoded ?? this.tryEncodeDirectMessage(message);
@@ -888,10 +887,11 @@ export class WsQueueBoxServerService {
             try {
                 this.socket.sendEncoded(recipient.connectionId, encodedMessage);
                 sent += 1;
-            } catch (error) {
+            }
+            catch (error) {
                 console.error(
                     `Error sending WS server message to ${recipient.connectionId}`,
-                    error,
+                    error
                 );
             }
         }
@@ -900,14 +900,15 @@ export class WsQueueBoxServerService {
     }
 
     private tryEncodeDirectMessage(
-        message: ALMessage,
+        message: ALMessage
     ): EncodedJsonWebSocketMessage | undefined {
         try {
             return this.socket.encode(message);
-        } catch (error) {
+        }
+        catch (error) {
             console.error(
                 `Error encoding WS server message ${message.id.msgId}`,
-                error,
+                error
             );
             return undefined;
         }
@@ -916,7 +917,7 @@ export class WsQueueBoxServerService {
     private toAckTrackingPlan(
         effective: ReturnType<typeof normalizeALQosPolicy>['effective'],
         recipients: readonly WsServerResolvedRecipient[],
-        mode?: 'merge' | 'replace',
+        mode?: 'merge' | 'replace'
     ): ALOutboundAckTrackingPlan | undefined {
         if (effective.ack.algo === 'none' || recipients.length === 0) {
             return undefined;
@@ -929,14 +930,14 @@ export class WsQueueBoxServerService {
                 ? 0
                 : effective.retry.opts.maxAttempts,
             expectedPeerIds: [
-                ...new Set(recipients.map((recipient) => recipient.peerId)),
+                ...new Set(recipients.map((recipient) => recipient.peerId))
             ],
-            mode,
+            mode
         };
     }
 
     private toRepairTrackingPlan(
-        effective: ReturnType<typeof normalizeALQosPolicy>['effective'],
+        effective: ReturnType<typeof normalizeALQosPolicy>['effective']
     ): ALOutboundRepairTrackingPlan | undefined {
         if (effective.repair.algo === 'none') {
             return undefined;
@@ -945,13 +946,13 @@ export class WsQueueBoxServerService {
         return {
             enabled: true,
             algo: effective.repair.algo,
-            maxAttempts: effective.repair.opts.maxRepairs,
+            maxAttempts: effective.repair.opts.maxRepairs
         };
     }
 
     private toSupersedenceTrackingPlan(
         effective: ReturnType<typeof normalizeALQosPolicy>['effective'],
-        message: ALMessage,
+        message: ALMessage
     ): ALOutboundSupersedenceTrackingPlan | undefined {
         if (effective.supersedence.algo === 'none') {
             return undefined;
@@ -961,13 +962,13 @@ export class WsQueueBoxServerService {
             enabled: true,
             algo: effective.supersedence.algo,
             key: resolveSupersedenceKey(message, effective),
-            replacesMsgId: effective.supersedence.opts.replacesMsgId,
+            replacesMsgId: effective.supersedence.opts.replacesMsgId
         };
     }
 }
 
 function dedupRecipients(
-    recipients: readonly WsServerResolvedRecipient[],
+    recipients: readonly WsServerResolvedRecipient[]
 ): readonly WsServerResolvedRecipient[] {
     const byConnectionId = new Map<string, WsServerResolvedRecipient>();
 
@@ -981,7 +982,7 @@ function dedupRecipients(
 function toWsServerLiveSendStatus(
     recipientCount: number,
     sentCount: number,
-    failedCount: number,
+    failedCount: number
 ): WsServerLiveSendStatus {
     if (recipientCount === 0) {
         return 'no-recipients';
@@ -1006,5 +1007,5 @@ export type {
     WsServerLiveSendResult,
     WsServerLiveSendStatus,
     WsServerResolvedRecipient,
-    WsServerTargetResolver,
+    WsServerTargetResolver
 } from './ws-queue-box-server-contracts.ts';

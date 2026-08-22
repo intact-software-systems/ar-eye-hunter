@@ -2,7 +2,7 @@ import type { RallarBlackBoxDistributedRunManifest } from './distributed-run.ts'
 import {
     RALLAR_BLACK_BOX_TEST_COMPOSITE_LIMITS,
     type RallarBlackBoxTestRecipe,
-    type RallarBlackBoxTestRtcStreamCommand,
+    type RallarBlackBoxTestRtcStreamCommand
 } from './types.ts';
 
 export const RECIPE_CONSOLE_TUNE_SCALE_DEFAULT_COMMAND_COUNT = 2_000;
@@ -33,20 +33,18 @@ export type RecipeConsoleTuneScaleFixture = Readonly<{
 }>;
 
 export function createRecipeConsoleTuneScaleFixture(
-    options: RecipeConsoleTuneScaleFixtureOptions = {},
+    options: RecipeConsoleTuneScaleFixtureOptions = {}
 ): RecipeConsoleTuneScaleFixture {
     const commandCount = boundedCommandCount(
-        options.commandCount ?? RECIPE_CONSOLE_TUNE_SCALE_DEFAULT_COMMAND_COUNT,
+        options.commandCount ?? RECIPE_CONSOLE_TUNE_SCALE_DEFAULT_COMMAND_COUNT
     );
     const positions = scalePositions(commandCount);
-    const commands = Array.from({ length: commandCount }, (_, ordinal) =>
-        streamCommand(ordinal, positions.longBidi)
-    );
+    const commands = Array.from({ length: commandCount }, (_, ordinal) => streamCommand(ordinal, positions.longBidi));
     const recipe: RallarBlackBoxTestRecipe = {
         schemaVersion: 1,
         recipeId: 'recipe-console-tune-scale-streams',
         name: 'Recipe Console Tune deterministic scale streams',
-        commands,
+        commands
     };
     const manifest: RallarBlackBoxDistributedRunManifest = {
         schemaVersion: 1,
@@ -56,21 +54,21 @@ export function createRecipeConsoleTuneScaleFixture(
         group: {
             applicationId: 'rallar-server',
             workspaceId: 'recipe-console-scale',
-            groupId: 'recipe-console-tune-scale',
+            groupId: 'recipe-console-tune-scale'
         },
         recipes: [{
             recipeId: recipe.recipeId,
             profile: 'scale',
-            recipe,
+            recipe
         }],
         targetPolicy: {
             mode: 'selected-agents',
             expectedParticipantCount: 1,
-            agentIds: ['recipe-console-tune-scale-agent'],
+            agentIds: ['recipe-console-tune-scale-agent']
         },
         ackTimeoutMs: 15_000,
         barrier: { enabled: true, timeoutMs: 20_000 },
-        startMode: 'manual',
+        startMode: 'manual'
     };
     const expectedKnobs = GLOBAL_TUNING_KNOB_COUNT +
         commandCount * RECIPE_CONSOLE_TUNE_SCALE_KNOBS_PER_COMMAND;
@@ -83,20 +81,20 @@ export function createRecipeConsoleTuneScaleFixture(
                 first: commandId(positions.first, positions.longBidi),
                 middle: commandId(positions.middle, positions.longBidi),
                 last: commandId(positions.last, positions.longBidi),
-                longBidi: commandId(positions.longBidi, positions.longBidi),
-            },
+                longBidi: commandId(positions.longBidi, positions.longBidi)
+            }
         },
         counts: {
             commands: commandCount,
             expectedKnobs,
-            expectedEditableKnobs: expectedKnobs,
-        },
+            expectedEditableKnobs: expectedKnobs
+        }
     };
 }
 
 function streamCommand(
     ordinal: number,
-    longBidiOrdinal: number,
+    longBidiOrdinal: number
 ): RallarBlackBoxTestRtcStreamCommand {
     return {
         kind: 'rtc.stream',
@@ -120,8 +118,8 @@ function streamCommand(
             maxP99SendDurationMs: 80,
             maxAverageStartDriftMs: 10,
             maxStartDriftMs: 25,
-            maxJitterMs: 12,
-        },
+            maxJitterMs: 12
+        }
     };
 }
 
@@ -131,7 +129,9 @@ function scalePositions(count: number): ScalePositions {
     const last = count - 1;
     const occupied = new Set([first, middle, last]);
     let longBidi = Math.floor(count * 3 / 4);
-    while (occupied.has(longBidi)) longBidi = (longBidi + 1) % count;
+    while (occupied.has(longBidi)) {
+        longBidi = (longBidi + 1) % count;
+    }
     return { first, middle, last, longBidi };
 }
 

@@ -36,14 +36,14 @@ Add a test named `applies universal human-readability doctrine to every human-au
 
 ```ts
 expectAll(agents, [
-  'all human-authored code',
-  'ownership, dataflow, decisions, side effects, failures, and call paths',
+    'all human-authored code',
+    'ownership, dataflow, decisions, side effects, failures, and call paths'
 ]);
 expectAll(codeWriting, ['all human-authored code', 'TypeScript-specific rules']);
 expectAll(canonicalStyle, [
-  'Universal structural rules',
-  'all human-authored code',
-  'TypeScript-specific rules',
+    'Universal structural rules',
+    'all human-authored code',
+    'TypeScript-specific rules'
 ]);
 expectAll(humanGuide, ['all human-authored code', 'TypeScript checker']);
 ```

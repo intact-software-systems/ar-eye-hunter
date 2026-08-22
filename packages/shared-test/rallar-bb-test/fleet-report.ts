@@ -1,7 +1,4 @@
-import type {
-    RallarBlackBoxDistributedRunState,
-    RallarBlackBoxGeoLocation,
-} from './distributed-run.ts';
+import type { RallarBlackBoxDistributedRunState, RallarBlackBoxGeoLocation } from './distributed-run.ts';
 
 export const RALLAR_BLACK_BOX_FLEET_REPORT_SCHEMA_VERSION = 1;
 
@@ -148,10 +145,9 @@ export type ControlFleetAggregateReport = Readonly<{
     failureSignatures: readonly ControlFleetFailureSignature[];
 }>;
 
-export type ControlFleetReportFiles = Readonly<Record<
-    'fleet-report.json' | 'summary.md' | 'agent-results.csv' | 'failure-signatures.csv',
-    string
->>;
+export type ControlFleetReportFiles = Readonly<
+    Record<'fleet-report.json' | 'summary.md' | 'agent-results.csv' | 'failure-signatures.csv', string>
+>;
 
 export type ControlFleetReportBundle = Readonly<{
     fleetReportSchemaVersion: typeof RALLAR_BLACK_BOX_FLEET_REPORT_SCHEMA_VERSION;

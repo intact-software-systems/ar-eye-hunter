@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ControlDistributedRunSnapshot } from '../../../apps/rallar-black-box/src/control-run-manager.ts';
+import type { RecipeConsoleControlConnection } from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
+import { executeConnectionTruth } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-workflow-context.ts';
 import {
     classifyExecuteMutationResponse,
     createExecuteTargetContextKey,
@@ -8,35 +10,29 @@ import {
     filterExecuteRecipeCatalog,
     recipeConsoleExecuteRecipeSelectionPatch,
     reconcileExecuteRunTruth,
-    reconcileExecuteTargetSelection,
+    reconcileExecuteTargetSelection
 } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-workflow-state.ts';
 import {
-    executeConnectionTruth,
-} from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-workflow-context.ts';
-import type {
-    RecipeConsoleControlConnection,
-} from '../../../apps/rallar-black-box/src/recipe-console/control/ControlConnectionProvider.tsx';
-import {
     projectDistributedRecipeCatalog,
-    type DistributedRecipeCatalogEntryProjection,
+    type DistributedRecipeCatalogEntryProjection
 } from '../../../packages/shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
 import type { RallarBlackBoxDistributedRunState } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 
 const catalog = projectDistributedRecipeCatalog().entries;
 
 function catalogEntry(
-    recipeId: string,
+    recipeId: string
 ): DistributedRecipeCatalogEntryProjection {
-    const entry = catalog.find((candidate) =>
-        candidate.item.recipe.recipeId === recipeId
-    );
-    if (!entry) throw new Error(`Missing test recipe ${recipeId}.`);
+    const entry = catalog.find((candidate) => candidate.item.recipe.recipeId === recipeId);
+    if (!entry) {
+        throw new Error(`Missing test recipe ${recipeId}.`);
+    }
     return entry;
 }
 
 function distributedRun(
     state: RallarBlackBoxDistributedRunState,
-    overrides: Partial<ControlDistributedRunSnapshot> = {},
+    overrides: Partial<ControlDistributedRunSnapshot> = {}
 ): ControlDistributedRunSnapshot {
     const distributedRunId = overrides.distributedRunId ?? 'distributed-a';
     return {
@@ -53,15 +49,15 @@ function distributedRun(
             group: {
                 applicationId: 'app-a',
                 workspaceId: 'workspace-a',
-                groupId: 'group-a',
+                groupId: 'group-a'
             },
             recipes: [{ recipeId: DEFAULT_EXECUTE_RECIPE_ID }],
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: ['agent-a'],
-                expectedParticipantCount: 1,
+                expectedParticipantCount: 1
             },
-            startMode: 'manual',
+            startMode: 'manual'
         },
         commandLinks: [],
         rollup: {
@@ -80,11 +76,11 @@ function distributedRun(
                 groupAssertions: 0,
                 passedGroupAssertions: 0,
                 failedGroupAssertions: 0,
-                blockingFailures: state === 'failed' ? 1 : 0,
+                blockingFailures: state === 'failed' ? 1 : 0
             },
-            failures: [],
+            failures: []
         },
-        ...overrides,
+        ...overrides
     };
 }
 
@@ -94,8 +90,8 @@ describe('Recipe Console Execute pure workflow state', () => {
             query: {
                 status: 'offline',
                 reachability: 'reachable',
-                authorization: 'ready',
-            },
+                authorization: 'ready'
+            }
         } as RecipeConsoleControlConnection;
 
         expect(executeConnectionTruth(connection)).toBe('error');
@@ -110,9 +106,9 @@ describe('Recipe Console Execute pure workflow state', () => {
                 lastError: {
                     kind: 'http',
                     message: 'Automatic credentials were withheld.',
-                    credentialTrustRequired: true,
-                },
-            },
+                    credentialTrustRequired: true
+                }
+            }
         } as RecipeConsoleControlConnection;
 
         expect(executeConnectionTruth(connection)).toBe('credential-trust');
@@ -120,16 +116,16 @@ describe('Recipe Console Execute pure workflow state', () => {
 
     it('selects the approved canonical default independent of catalog order', () => {
         const selection = deriveExecuteRecipeSelection({
-            entries: [...catalog].reverse(),
+            entries: [...catalog].reverse()
         });
 
         expect(DEFAULT_EXECUTE_RECIPE_ID).toBe('rtc-realtime-stability');
         expect(selection).toMatchObject({
             source: 'default',
             selected: {
-                item: { recipe: { recipeId: DEFAULT_EXECUTE_RECIPE_ID } },
+                item: { recipe: { recipeId: DEFAULT_EXECUTE_RECIPE_ID } }
             },
-            urlReplacePatch: { recipeId: DEFAULT_EXECUTE_RECIPE_ID },
+            urlReplacePatch: { recipeId: DEFAULT_EXECUTE_RECIPE_ID }
         });
     });
 
@@ -139,34 +135,32 @@ describe('Recipe Console Execute pure workflow state', () => {
             ...selected,
             item: {
                 ...selected.item,
-                itemId: 'duplicate-item-id',
-            },
+                itemId: 'duplicate-item-id'
+            }
         };
-        const first = catalog.find((entry) =>
-            entry.item.recipe.recipeId !== DEFAULT_EXECUTE_RECIPE_ID
-        );
+        const first = catalog.find((entry) => entry.item.recipe.recipeId !== DEFAULT_EXECUTE_RECIPE_ID);
 
         expect(deriveExecuteRecipeSelection({
             entries: catalog,
-            recipeId: 'unknown-recipe',
+            recipeId: 'unknown-recipe'
         })).toMatchObject({
             source: 'explicit',
             selected: undefined,
-            issue: { code: 'unavailable' },
+            issue: { code: 'unavailable' }
         });
         expect(deriveExecuteRecipeSelection({
             entries: [selected, duplicate],
-            recipeId: DEFAULT_EXECUTE_RECIPE_ID,
+            recipeId: DEFAULT_EXECUTE_RECIPE_ID
         })).toMatchObject({
             selected: undefined,
-            issue: { code: 'ambiguous' },
+            issue: { code: 'ambiguous' }
         });
         expect(deriveExecuteRecipeSelection({
-            entries: first ? [first] : [],
+            entries: first ? [first] : []
         })).toMatchObject({
             source: 'none',
             selected: undefined,
-            issue: { code: 'default-unavailable' },
+            issue: { code: 'default-unavailable' }
         });
     });
 
@@ -174,33 +168,37 @@ describe('Recipe Console Execute pure workflow state', () => {
         const selected = catalogEntry(DEFAULT_EXECUTE_RECIPE_ID);
         const entry = {
             ...selected,
-            item: { ...selected.item, itemId: 'different-item-id' },
+            item: { ...selected.item, itemId: 'different-item-id' }
         };
 
-        expect(deriveExecuteRecipeSelection({
-            entries: [entry],
-            recipeId: DEFAULT_EXECUTE_RECIPE_ID,
-        }).selected?.item.itemId).toBe('different-item-id');
-        expect(deriveExecuteRecipeSelection({
-            entries: [entry],
-            recipeId: 'different-item-id',
-        }).selected).toBeUndefined();
+        expect(
+            deriveExecuteRecipeSelection({
+                entries: [entry],
+                recipeId: DEFAULT_EXECUTE_RECIPE_ID
+            }).selected?.item.itemId
+        ).toBe('different-item-id');
+        expect(
+            deriveExecuteRecipeSelection({
+                entries: [entry],
+                recipeId: 'different-item-id'
+            }).selected
+        ).toBeUndefined();
     });
 
     it('filters search and profile together without changing catalog order', () => {
         const filtered = filterExecuteRecipeCatalog({
             entries: catalog,
             query: 'stability stream',
-            profile: 'green',
+            profile: 'green'
         });
 
         expect(filtered.map((entry) => entry.item.recipe.recipeId)).toEqual([
-            DEFAULT_EXECUTE_RECIPE_ID,
+            DEFAULT_EXECUTE_RECIPE_ID
         ]);
         expect(filterExecuteRecipeCatalog({
             entries: catalog,
             query: 'stability stream',
-            profile: 'negative',
+            profile: 'negative'
         })).toEqual([]);
     });
 
@@ -208,7 +206,7 @@ describe('Recipe Console Execute pure workflow state', () => {
         expect(recipeConsoleExecuteRecipeSelectionPatch('recipe-next')).toEqual({
             recipeId: 'recipe-next',
             distributedRunId: undefined,
-            commandId: undefined,
+            commandId: undefined
         });
     });
 
@@ -218,18 +216,18 @@ describe('Recipe Console Execute pure workflow state', () => {
             group: {
                 applicationId: 'app-a',
                 workspaceId: 'workspace-a',
-                groupId: 'group-a',
+                groupId: 'group-a'
             },
-            recipeId: 'recipe-a',
+            recipeId: 'recipe-a'
         });
         const rows = [
             { agentId: 'agent-b', targetable: true },
             { agentId: 'agent-a', targetable: true },
-            { agentId: 'agent-c', targetable: false },
+            { agentId: 'agent-c', targetable: false }
         ];
         const initial = reconcileExecuteTargetSelection({
             contextKey,
-            rows,
+            rows
         });
         const refreshed = reconcileExecuteTargetSelection({
             contextKey: initial.contextKey,
@@ -237,8 +235,8 @@ describe('Recipe Console Execute pure workflow state', () => {
             rows: [
                 { agentId: 'agent-a', targetable: false },
                 { agentId: 'agent-b', targetable: true },
-                { agentId: 'agent-new', targetable: true },
-            ],
+                { agentId: 'agent-new', targetable: true }
+            ]
         });
         const changed = reconcileExecuteTargetSelection({
             contextKey: createExecuteTargetContextKey({
@@ -246,15 +244,15 @@ describe('Recipe Console Execute pure workflow state', () => {
                 group: {
                     applicationId: 'app-a',
                     workspaceId: 'workspace-a',
-                    groupId: 'group-a',
+                    groupId: 'group-a'
                 },
-                recipeId: 'recipe-b',
+                recipeId: 'recipe-b'
             }),
             previous: refreshed,
             rows: [
                 { agentId: 'agent-new', targetable: true },
-                { agentId: 'agent-b', targetable: true },
-            ],
+                { agentId: 'agent-b', targetable: true }
+            ]
         });
 
         expect(initial.agentIds).toEqual(['agent-a', 'agent-b']);
@@ -268,26 +266,26 @@ describe('Recipe Console Execute pure workflow state', () => {
             group: {
                 applicationId: 'app-a',
                 workspaceId: 'workspace-a',
-                groupId: 'group-a',
+                groupId: 'group-a'
             },
-            recipeId: 'recipe-a',
+            recipeId: 'recipe-a'
         } as const;
         const baseline = createExecuteTargetContextKey(base);
         const variants = [
             createExecuteTargetContextKey({ ...base, controlRunId: 'run-b' }),
             createExecuteTargetContextKey({
                 ...base,
-                group: { ...base.group, applicationId: 'app-b' },
+                group: { ...base.group, applicationId: 'app-b' }
             }),
             createExecuteTargetContextKey({
                 ...base,
-                group: { ...base.group, workspaceId: 'workspace-b' },
+                group: { ...base.group, workspaceId: 'workspace-b' }
             }),
             createExecuteTargetContextKey({
                 ...base,
-                group: { ...base.group, groupId: 'group-b' },
+                group: { ...base.group, groupId: 'group-b' }
             }),
-            createExecuteTargetContextKey({ ...base, recipeId: 'recipe-b' }),
+            createExecuteTargetContextKey({ ...base, recipeId: 'recipe-b' })
         ];
 
         expect(variants.every((key) => key !== baseline)).toBe(true);
@@ -296,35 +294,39 @@ describe('Recipe Console Execute pure workflow state', () => {
 
     it('reconciles only the selected run using timestamp and deterministic tie truth', () => {
         const olderOptimistic = distributedRun('waiting-for-ack', {
-            updatedAtEpochMs: 10,
+            updatedAtEpochMs: 10
         });
         const newerQuery = distributedRun('ready', { updatedAtEpochMs: 11 });
         const terminalTie = distributedRun('failed', {
             updatedAtEpochMs: 11,
-            error: { code: 'ack-failed', message: 'ACK failed.' },
+            error: { code: 'ack-failed', message: 'ACK failed.' }
         });
 
-        expect(reconcileExecuteRunTruth({
-            distributedRunId: 'distributed-a',
-            optimisticRun: olderOptimistic,
-            queriedRun: newerQuery,
-        })?.state).toBe('ready');
-        expect(reconcileExecuteRunTruth({
-            distributedRunId: 'distributed-a',
-            optimisticRun: newerQuery,
-            queriedRun: terminalTie,
-        })?.state).toBe('failed');
+        expect(
+            reconcileExecuteRunTruth({
+                distributedRunId: 'distributed-a',
+                optimisticRun: olderOptimistic,
+                queriedRun: newerQuery
+            })?.state
+        ).toBe('ready');
+        expect(
+            reconcileExecuteRunTruth({
+                distributedRunId: 'distributed-a',
+                optimisticRun: newerQuery,
+                queriedRun: terminalTie
+            })?.state
+        ).toBe('failed');
         expect(reconcileExecuteRunTruth({
             distributedRunId: 'distributed-a',
             optimisticRun: distributedRun('running', {
-                distributedRunId: 'other-run',
+                distributedRunId: 'other-run'
             }),
-            queriedRun: newerQuery,
+            queriedRun: newerQuery
         })).toBe(newerQuery);
         expect(reconcileExecuteRunTruth({
             distributedRunId: 'missing-run',
             optimisticRun: olderOptimistic,
-            queriedRun: newerQuery,
+            queriedRun: newerQuery
         })).toBeUndefined();
     });
 
@@ -332,47 +334,49 @@ describe('Recipe Console Execute pure workflow state', () => {
         const optimistic = distributedRun('running', { updatedAtEpochMs: 20 });
         const queryError = distributedRun('running', {
             updatedAtEpochMs: 20,
-            error: { code: 'runtime-warning', message: 'Runtime warning.' },
+            error: { code: 'runtime-warning', message: 'Runtime warning.' }
         });
         const queryTie = distributedRun('ready', { updatedAtEpochMs: 20 });
 
         expect(reconcileExecuteRunTruth({
             distributedRunId: 'distributed-a',
             optimisticRun: optimistic,
-            queriedRun: queryError,
+            queriedRun: queryError
         })).toBe(optimistic);
         expect(reconcileExecuteRunTruth({
             distributedRunId: 'distributed-a',
             optimisticRun: optimistic,
-            queriedRun: queryTie,
+            queriedRun: queryTie
         })).toBe(optimistic);
     });
 
-    it.each([
-        ['create', 'draft', true],
-        ['stage', 'waiting-for-ack', true],
-        ['stage', 'ready', true],
-        ['start', 'running', true],
-        ['start', 'passed', true],
-        ['cancel', 'cancelled', true],
-        ['stage', 'failed', false],
-        ['start', 'waiting-for-ack', false],
-        ['cancel', 'passed', false],
-    ] as const)('classifies %s HTTP success by authoritative %s state', (
+    it.each(
+        [
+            ['create', 'draft', true],
+            ['stage', 'waiting-for-ack', true],
+            ['stage', 'ready', true],
+            ['start', 'running', true],
+            ['start', 'passed', true],
+            ['cancel', 'cancelled', true],
+            ['stage', 'failed', false],
+            ['start', 'waiting-for-ack', false],
+            ['cancel', 'passed', false]
+        ] as const
+    )('classifies %s HTTP success by authoritative %s state', (
         action,
         state,
-        ok,
+        ok
     ) => {
         const result = classifyExecuteMutationResponse(
             action,
-            distributedRun(state),
+            distributedRun(state)
         );
 
         expect(result.ok).toBe(ok);
         if (!ok) {
             expect(result.reason).toBeTruthy();
             expect(result.code).toBe(
-                state === 'failed' ? 'terminal-failure' : 'unexpected-state',
+                state === 'failed' ? 'terminal-failure' : 'unexpected-state'
             );
         }
     });

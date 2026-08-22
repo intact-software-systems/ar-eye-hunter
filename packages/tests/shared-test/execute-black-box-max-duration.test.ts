@@ -1,10 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import {describe, expect, it} from 'vitest';
-import {executeBlackBox} from '../../shared-test/black-box-runner/execute-black-box.ts';
+import { describe, expect, it } from 'vitest';
+import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
 
 async function tryStartHttpServer(
-    handler: (request: IncomingMessage, response: ServerResponse) => void,
-): Promise<{ url: string, close: () => Promise<void> } | undefined> {
+    handler: (request: IncomingMessage, response: ServerResponse) => void
+): Promise<{ url: string; close: () => Promise<void>; } | undefined> {
     const server = createServer(handler);
 
     try {
@@ -15,9 +15,10 @@ async function tryStartHttpServer(
                 resolve();
             });
         });
-    } catch (error) {
+    }
+    catch (error) {
         const code = typeof error === 'object' && error !== null && 'code' in error
-            ? String((error as { code?: unknown }).code)
+            ? String((error as { code?: unknown; }).code)
             : '';
         if (code === 'EPERM' || code === 'EACCES') {
             return undefined;
@@ -32,9 +33,10 @@ async function tryStartHttpServer(
 
     return {
         url: `http://127.0.0.1:${address.port}`,
-        close: () => new Promise<void>((resolve, reject) => {
-            server.close(error => error ? reject(error) : resolve());
-        }),
+        close: () =>
+            new Promise<void>((resolve, reject) => {
+                server.close((error) => error ? reject(error) : resolve());
+            })
     };
 }
 
@@ -54,11 +56,11 @@ function httpStep(path: string, expectFields: Record<string, unknown>): Record<s
                 method: 'GET',
                 path,
                 scenarioExecutionNumber: 1,
-                interactionExecutionNumber: 1,
+                interactionExecutionNumber: 1
             },
-            response: expectFields,
+            response: expectFields
         },
-        boundedRead: {},
+        boundedRead: {}
     };
 }
 
@@ -74,10 +76,10 @@ describe('executeBlackBox expect.maxDurationMs', () => {
                 [httpStep(`${server.url}/fast`, {
                     status: 200,
                     maxDurationMs: 10000,
-                    body: { ok: true },
+                    body: { ok: true }
                 })],
                 0,
-                { failFast: true },
+                { failFast: true }
             );
 
             expect(report.summary.failure).toBe(0);
@@ -85,7 +87,8 @@ describe('executeBlackBox expect.maxDurationMs', () => {
             expect(result.status).toBe('SUCCESS');
             expect(result.maxDurationMs).toBe(10000);
             expect(result.durationMs).toBeLessThanOrEqual(10000);
-        } finally {
+        }
+        finally {
             await server.close();
         }
     });
@@ -101,10 +104,10 @@ describe('executeBlackBox expect.maxDurationMs', () => {
                 [httpStep(`${server.url}/slow`, {
                     status: 200,
                     maxDurationMs: 50,
-                    body: { ok: true },
+                    body: { ok: true }
                 })],
                 0,
-                { failFast: true },
+                { failFast: true }
             );
 
             expect(report.summary.failure).toBe(1);
@@ -114,7 +117,8 @@ describe('executeBlackBox expect.maxDurationMs', () => {
             expect(result.maxDurationMs).toBe(50);
             expect(result.durationMs).toBeGreaterThan(50);
             expect(result.actual.body.ok).toBe(true);
-        } finally {
+        }
+        finally {
             await server.close();
         }
     });
@@ -130,17 +134,18 @@ describe('executeBlackBox expect.maxDurationMs', () => {
                 [httpStep(`${server.url}/slow`, {
                     status: 200,
                     maxDurationMs: 50,
-                    body: { ok: false },
+                    body: { ok: false }
                 })],
                 0,
-                { failFast: true },
+                { failFast: true }
             );
 
             expect(report.summary.failure).toBe(1);
             const result = report.resultsByName.boundedRead[0];
             expect(result.result).toBe('Expected response not the same as actual response');
             expect(result.maxDurationMs).toBe(50);
-        } finally {
+        }
+        finally {
             await server.close();
         }
     });
@@ -156,7 +161,7 @@ describe('executeBlackBox expect.maxDurationMs', () => {
 
             readyState = InstantOpenWebSocket.CONNECTING;
             onopen: ((event: unknown) => void) | undefined;
-            onmessage: ((event: { data: unknown }) => void) | undefined;
+            onmessage: ((event: { data: unknown; }) => void) | undefined;
             onclose: ((event: unknown) => void) | undefined;
             onerror: ((event: unknown) => void) | undefined;
 
@@ -188,11 +193,11 @@ describe('executeBlackBox expect.maxDurationMs', () => {
                                 connection: 'quietWs',
                                 path: 'ws://example.invalid/quiet',
                                 scenarioExecutionNumber: 1,
-                                interactionExecutionNumber: 1,
+                                interactionExecutionNumber: 1
                             },
-                            response: {},
+                            response: {}
                         },
-                        openQuietWs: {},
+                        openQuietWs: {}
                     },
                     {
                         WS: {
@@ -200,27 +205,28 @@ describe('executeBlackBox expect.maxDurationMs', () => {
                                 action: 'wait',
                                 connection: 'quietWs',
                                 scenarioExecutionNumber: 1,
-                                interactionExecutionNumber: 2,
+                                interactionExecutionNumber: 2
                             },
                             response: {
                                 connection: 'quietWs',
                                 withinMs: 200,
                                 maxDurationMs: 50,
-                                absent: { kind: 'never-sent' },
-                            },
+                                absent: { kind: 'never-sent' }
+                            }
                         },
-                        boundedQuietWait: {},
-                    },
+                        boundedQuietWait: {}
+                    }
                 ],
                 0,
-                { failFast: true },
+                { failFast: true }
             );
 
             expect(report.summary.failure).toBe(1);
             const result = report.resultsByName.boundedQuietWait[0];
             expect(result.status).toBe('FAILURE');
             expect(result.result).toBe('Step duration exceeded expect.maxDurationMs');
-        } finally {
+        }
+        finally {
             (globalThis as any).WebSocket = originalWebSocket;
         }
     });

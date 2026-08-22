@@ -10,7 +10,7 @@ export const DynamicMeshAlgo = {
     K_REMOVE_TRY_REPLACE_PRUNE_MDDL: 'K_REMOVE_TRY_REPLACE_PRUNE_MDDL',
     K_REMOVE_TRY_REPLACE_PRUNE_MC: 'K_REMOVE_TRY_REPLACE_PRUNE_MC',
 
-    NO_DYNAMIC_MESH_ALGO: 'NO_DYNAMIC_MESH_ALGO',
+    NO_DYNAMIC_MESH_ALGO: 'NO_DYNAMIC_MESH_ALGO'
 } as const;
 
 export type DynamicMeshAlgo = (typeof DynamicMeshAlgo)[keyof typeof DynamicMeshAlgo];

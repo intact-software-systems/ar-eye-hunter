@@ -1,19 +1,12 @@
+import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 import type { AppModeId, AppTabId } from './app-tabs.ts';
 import { appModeFromValue, appTabFromValue } from './app-tabs.ts';
-import type {
-    ManualDeliveryMode,
-    ManualWorkbenchTransport,
-    ManualWorkbenchValues,
-} from './manual-workbench.ts';
-import type {
-    RallarServerRestCollection,
-    RallarServerRestCollectionVariables,
-} from './rallar-server-workbench.ts';
+import type { ManualDeliveryMode, ManualWorkbenchTransport, ManualWorkbenchValues } from './manual-workbench.ts';
+import type { RallarServerRestCollection, RallarServerRestCollectionVariables } from './rallar-server-workbench.ts';
 import type {
     RallarServerResponseBodyMode,
-    RallarServerRestMethod,
+    RallarServerRestMethod
 } from './rallar-server-workbench/rallar-server-workbench-contracts.ts';
-import { redactRallarBlackBoxValue } from '@shared-test/rallar-bb-test/redaction.ts';
 
 export type RallarBlackBoxUiStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
@@ -24,7 +17,7 @@ export const UI_STORAGE_KEYS = {
     manualDraft: 'rallar-black-box.ui.manual-draft.v1',
     rallarServerDraft: 'rallar-black-box.ui.rallar-server-draft.v1',
     rallarServerCollectionDraft: 'rallar-black-box.ui.rallar-server-collection-draft.v1',
-    eventFilters: 'rallar-black-box.ui.event-filters.v1',
+    eventFilters: 'rallar-black-box.ui.event-filters.v1'
 } as const;
 
 export type PersistedEventFilters = Readonly<{
@@ -79,7 +72,8 @@ function readJson(storage: RallarBlackBoxUiStorage | undefined, key: string): un
     try {
         const value = storage.getItem(key);
         return value ? JSON.parse(value) as unknown : undefined;
-    } catch {
+    }
+    catch {
         return undefined;
     }
 }
@@ -91,7 +85,8 @@ function writeJson(storage: RallarBlackBoxUiStorage | undefined, key: string, va
 
     try {
         storage.setItem(key, JSON.stringify(value));
-    } catch {
+    }
+    catch {
         // Storage quota, privacy mode, and disabled storage should not break the workbench UI.
     }
 }
@@ -103,7 +98,8 @@ function writeString(storage: RallarBlackBoxUiStorage | undefined, key: string, 
 
     try {
         storage.setItem(key, value);
-    } catch {
+    }
+    catch {
         // Ignore storage failures for the same reason as writeJson.
     }
 }
@@ -115,7 +111,8 @@ function readString(storage: RallarBlackBoxUiStorage | undefined, key: string): 
 
     try {
         return storage.getItem(key) ?? undefined;
-    } catch {
+    }
+    catch {
         return undefined;
     }
 }
@@ -147,7 +144,8 @@ function sanitizeJsonEditorText(text: string, secretValues: readonly string[] = 
     try {
         const value = JSON.parse(trimmed) as unknown;
         return JSON.stringify(redactRallarBlackBoxValue(value, { secretValues }), null, 2);
-    } catch {
+    }
+    catch {
         return '';
     }
 }
@@ -171,14 +169,14 @@ export function writeStoredAppMode(storage: RallarBlackBoxUiStorage | undefined,
 }
 
 export function readStoredSelectedCommandId(
-    storage: RallarBlackBoxUiStorage | undefined,
+    storage: RallarBlackBoxUiStorage | undefined
 ): string | undefined {
     return readString(storage, UI_STORAGE_KEYS.selectedCommandId);
 }
 
 export function writeStoredSelectedCommandId(
     storage: RallarBlackBoxUiStorage | undefined,
-    commandId: string | undefined,
+    commandId: string | undefined
 ): void {
     if (!storage) {
         return;
@@ -187,32 +185,34 @@ export function writeStoredSelectedCommandId(
     try {
         if (commandId) {
             storage.setItem(UI_STORAGE_KEYS.selectedCommandId, commandId);
-        } else {
+        }
+        else {
             storage.removeItem(UI_STORAGE_KEYS.selectedCommandId);
         }
-    } catch {
+    }
+    catch {
         // Non-critical UI persistence.
     }
 }
 
 export function sanitizeManualWorkbenchDraft(
     draft: ManualWorkbenchDraft,
-    secretValues: readonly string[] = [],
+    secretValues: readonly string[] = []
 ): ManualWorkbenchDraft {
     const { rallarPassword: _rallarPassword, ...valuesWithoutPassword } = draft.values;
     return {
         values: {
             ...valuesWithoutPassword,
-            rallarPassword: undefined,
+            rallarPassword: undefined
         },
         payloadPresetId: draft.payloadPresetId,
-        payloadText: sanitizeJsonEditorText(draft.payloadText, secretValues),
+        payloadText: sanitizeJsonEditorText(draft.payloadText, secretValues)
     };
 }
 
 export function readManualWorkbenchDraft(
     storage: RallarBlackBoxUiStorage | undefined,
-    defaults: ManualWorkbenchDraft,
+    defaults: ManualWorkbenchDraft
 ): ManualWorkbenchDraft | undefined {
     const record = asRecord(readJson(storage, UI_STORAGE_KEYS.manualDraft));
     if (Object.keys(record).length === 0) {
@@ -234,7 +234,7 @@ export function readManualWorkbenchDraft(
             roomRefText: stringValue(values.roomRefText, defaults.values.roomRefText),
             minSnapshotVersion: numberValue(
                 values.minSnapshotVersion,
-                defaults.values.minSnapshotVersion,
+                defaults.values.minSnapshotVersion
             ),
             connection: stringValue(values.connection, defaults.values.connection),
             targetClient: stringValue(values.targetClient, defaults.values.targetClient),
@@ -242,12 +242,12 @@ export function readManualWorkbenchDraft(
             transport: oneOf<ManualWorkbenchTransport>(
                 values.transport,
                 ['realtime', 'messages.rtc', 'ws'],
-                defaults.values.transport,
+                defaults.values.transport
             ),
             deliveryMode: oneOf<ManualDeliveryMode>(
                 values.deliveryMode,
                 ['direct', 'multicast', 'broadcast'],
-                defaults.values.deliveryMode,
+                defaults.values.deliveryMode
             ),
             wsUrl: stringValue(values.wsUrl, defaults.values.wsUrl),
             topic: stringValue(values.topic, defaults.values.topic),
@@ -260,45 +260,45 @@ export function readManualWorkbenchDraft(
             rallarRegister: booleanValue(values.rallarRegister, defaults.values.rallarRegister),
             rallarRestoreSession: booleanValue(
                 values.rallarRestoreSession,
-                defaults.values.rallarRestoreSession,
+                defaults.values.rallarRestoreSession
             ),
             rallarLogoutOnClose: booleanValue(
                 values.rallarLogoutOnClose,
-                defaults.values.rallarLogoutOnClose,
+                defaults.values.rallarLogoutOnClose
             ),
             rallarLeaveRoomOnClose: booleanValue(
                 values.rallarLeaveRoomOnClose,
-                defaults.values.rallarLeaveRoomOnClose,
-            ),
+                defaults.values.rallarLeaveRoomOnClose
+            )
         },
         payloadPresetId: stringValue(record.payloadPresetId, defaults.payloadPresetId),
-        payloadText: stringValue(record.payloadText, defaults.payloadText),
+        payloadText: stringValue(record.payloadText, defaults.payloadText)
     };
 }
 
 export function writeManualWorkbenchDraft(
     storage: RallarBlackBoxUiStorage | undefined,
     draft: ManualWorkbenchDraft,
-    secretValues: readonly string[] = [],
+    secretValues: readonly string[] = []
 ): void {
     writeJson(storage, UI_STORAGE_KEYS.manualDraft, sanitizeManualWorkbenchDraft(draft, secretValues));
 }
 
 export function sanitizeRallarServerWorkbenchDraft(
     draft: RallarServerWorkbenchDraft,
-    secretValues: readonly string[] = [],
+    secretValues: readonly string[] = []
 ): RallarServerWorkbenchDraft {
     return {
         ...draft,
         headersText: sanitizeJsonEditorText(draft.headersText, secretValues),
         queryText: sanitizeJsonEditorText(draft.queryText, secretValues),
-        bodyText: sanitizeJsonEditorText(draft.bodyText, secretValues),
+        bodyText: sanitizeJsonEditorText(draft.bodyText, secretValues)
     };
 }
 
 export function readRallarServerWorkbenchDraft(
     storage: RallarBlackBoxUiStorage | undefined,
-    defaults: RallarServerWorkbenchDraft,
+    defaults: RallarServerWorkbenchDraft
 ): RallarServerWorkbenchDraft | undefined {
     const record = asRecord(readJson(storage, UI_STORAGE_KEYS.rallarServerDraft));
     if (Object.keys(record).length === 0) {
@@ -311,7 +311,7 @@ export function readRallarServerWorkbenchDraft(
         method: oneOf<RallarServerRestMethod>(
             record.method,
             ['GET', 'POST', 'PUT', 'DELETE'],
-            defaults.method,
+            defaults.method
         ),
         path: stringValue(record.path, defaults.path),
         headersText: stringValue(record.headersText, defaults.headersText),
@@ -320,28 +320,28 @@ export function readRallarServerWorkbenchDraft(
         responseBodyMode: oneOf<RallarServerResponseBodyMode>(
             record.responseBodyMode,
             ['auto', 'json', 'text', 'none'],
-            defaults.responseBodyMode,
+            defaults.responseBodyMode
         ),
         attachAuth: booleanValue(record.attachAuth, defaults.attachAuth),
-        timeoutMs: numberValue(record.timeoutMs, defaults.timeoutMs),
+        timeoutMs: numberValue(record.timeoutMs, defaults.timeoutMs)
     };
 }
 
 export function writeRallarServerWorkbenchDraft(
     storage: RallarBlackBoxUiStorage | undefined,
     draft: RallarServerWorkbenchDraft,
-    secretValues: readonly string[] = [],
+    secretValues: readonly string[] = []
 ): void {
     writeJson(
         storage,
         UI_STORAGE_KEYS.rallarServerDraft,
-        sanitizeRallarServerWorkbenchDraft(draft, secretValues),
+        sanitizeRallarServerWorkbenchDraft(draft, secretValues)
     );
 }
 
 export function readRallarServerRestCollectionDraft(
     storage: RallarBlackBoxUiStorage | undefined,
-    defaults: RallarServerRestCollectionDraft,
+    defaults: RallarServerRestCollectionDraft
 ): RallarServerRestCollectionDraft | undefined {
     const record = asRecord(readJson(storage, UI_STORAGE_KEYS.rallarServerCollectionDraft));
     if (Object.keys(record).length === 0) {
@@ -357,14 +357,14 @@ export function readRallarServerRestCollectionDraft(
             : defaults.collection,
         variables: Object.keys(variables).length > 0
             ? variables
-            : defaults.variables,
+            : defaults.variables
     };
 }
 
 export function writeRallarServerRestCollectionDraft(
     storage: RallarBlackBoxUiStorage | undefined,
     draft: RallarServerRestCollectionDraft,
-    secretValues: readonly string[] = [],
+    secretValues: readonly string[] = []
 ): void {
     writeJson(
         storage,
@@ -372,14 +372,14 @@ export function writeRallarServerRestCollectionDraft(
         {
             selectedCollectionId: draft.selectedCollectionId,
             collection: redactRallarBlackBoxValue(draft.collection, { secretValues }),
-            variables: redactRallarBlackBoxValue(draft.variables, { secretValues }),
-        },
+            variables: redactRallarBlackBoxValue(draft.variables, { secretValues })
+        }
     );
 }
 
 export function readEventFilters(
     storage: RallarBlackBoxUiStorage | undefined,
-    defaults: PersistedEventFilters,
+    defaults: PersistedEventFilters
 ): PersistedEventFilters {
     const record = asRecord(readJson(storage, UI_STORAGE_KEYS.eventFilters));
     return {
@@ -392,13 +392,13 @@ export function readEventFilters(
         peer: stringValue(record.peer, defaults.peer),
         selector: stringValue(record.selector, defaults.selector),
         topic: stringValue(record.topic, defaults.topic),
-        severity: stringValue(record.severity, defaults.severity),
+        severity: stringValue(record.severity, defaults.severity)
     };
 }
 
 export function writeEventFilters(
     storage: RallarBlackBoxUiStorage | undefined,
-    filters: PersistedEventFilters,
+    filters: PersistedEventFilters
 ): void {
     writeJson(storage, UI_STORAGE_KEYS.eventFilters, filters);
 }

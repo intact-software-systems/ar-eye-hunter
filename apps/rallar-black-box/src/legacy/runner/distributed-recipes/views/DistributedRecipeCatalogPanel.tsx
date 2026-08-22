@@ -1,17 +1,14 @@
 import {
-    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
-    validateJsonSchema,
-} from '@shared-test/rallar-bb-test/schema.ts';
-import {
     distributedRecipeCommandPreview,
     distributedRecipePreflight,
-    type DistributedRecipeCatalogItem,
+    type DistributedRecipeCatalogItem
 } from '@shared-test/rallar-bb-test/distributed-run-monitor.ts';
+import { RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA, validateJsonSchema } from '@shared-test/rallar-bb-test/schema.ts';
 import {
+    normalizeRallarBlackBoxRtcRealtimeDurationSeconds,
     RALLAR_BLACK_BOX_RTC_REALTIME_MAX_DURATION_SECONDS,
     RALLAR_BLACK_BOX_RTC_REALTIME_MIN_DURATION_SECONDS,
-    RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ,
-    normalizeRallarBlackBoxRtcRealtimeDurationSeconds,
+    RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ
 } from '../../../../recipe-fixtures.ts';
 import { validateSchemaAuthoringValue } from '../../../../schema-authoring.ts';
 import { SchemaCapabilitySummary } from '../../../shared/schema/SchemaAuthoringPanel.tsx';
@@ -44,9 +41,7 @@ export function DistributedRecipeCatalogPanel(props: DistributedRecipeCatalogPan
                     <span>Search</span>
                     <input
                         value={props.query}
-                        onChange={(event) =>
-                            props.onQueryChange(event.target.value)
-                        }
+                        onChange={(event) => props.onQueryChange(event.target.value)}
                         placeholder="recipe, profile, command"
                     />
                 </label>
@@ -54,9 +49,7 @@ export function DistributedRecipeCatalogPanel(props: DistributedRecipeCatalogPan
                     <span>Profile</span>
                     <select
                         value={props.profile}
-                        onChange={(event) =>
-                            props.onProfileChange(event.target.value)
-                        }
+                        onChange={(event) => props.onProfileChange(event.target.value)}
                     >
                         <option value="">All profiles</option>
                         {props.profileOptions.map((option) => (
@@ -77,14 +70,13 @@ export function DistributedRecipeCatalogPanel(props: DistributedRecipeCatalogPan
                             onChange={(event) => {
                                 props.onRtcRealtimeDurationChange(
                                     normalizeRallarBlackBoxRtcRealtimeDurationSeconds(
-                                        event.target.value,
-                                    ),
+                                        event.target.value
+                                    )
                                 );
                             }}
                         />
                         <small>
-                            {props.rtcRealtimeFrameCount} position frames at{' '}
-                            {RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ} Hz.
+                            {props.rtcRealtimeFrameCount} position frames at {RALLAR_BLACK_BOX_RTC_REALTIME_RATE_HZ} Hz.
                         </small>
                     </label>
                 )}
@@ -92,18 +84,18 @@ export function DistributedRecipeCatalogPanel(props: DistributedRecipeCatalogPan
             <div className="distributed-recipe-list">
                 {props.filteredRecipes.map((item) => {
                     const selected = props.selectedRecipeIds.includes(
-                        item.itemId,
+                        item.itemId
                     );
                     const validation = validateJsonSchema(
                         RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
-                        item.recipe,
+                        item.recipe
                     );
                     const authoringValidation = validateSchemaAuthoringValue(
                         'recipe',
-                        item.recipe,
+                        item.recipe
                     );
                     const commandPreview = distributedRecipeCommandPreview(
-                        item.recipe,
+                        item.recipe
                     );
                     const preflight = distributedRecipePreflight(item.recipe);
                     return (
@@ -115,15 +107,12 @@ export function DistributedRecipeCatalogPanel(props: DistributedRecipeCatalogPan
                                 <input
                                     type="checkbox"
                                     checked={selected}
-                                    onChange={() =>
-                                        props.onToggleRecipe(item.itemId)
-                                    }
+                                    onChange={() => props.onToggleRecipe(item.itemId)}
                                 />
                                 <span>
                                     <strong>{item.title}</strong>
                                     <small>
-                                        {item.recipe.recipeId} -{' '}
-                                        {commandPreview.label}
+                                        {item.recipe.recipeId} - {commandPreview.label}
                                     </small>
                                 </span>
                             </label>
@@ -142,14 +131,19 @@ export function DistributedRecipeCatalogPanel(props: DistributedRecipeCatalogPan
                                         : 'schema invalid'}
                                 </span>
                                 <span
-                                    className={`pill ${preflight.errors.length > 0 ? 'bad' : preflight.warnings.length > 0 ? 'warn' : 'good'}`}
+                                    className={`pill ${
+                                        preflight.errors.length > 0
+                                            ? 'bad'
+                                            : preflight.warnings.length > 0
+                                            ? 'warn'
+                                            : 'good'
+                                    }`}
                                 >
-                                    preflight{' '}
-                                    {preflight.errors.length > 0
+                                    preflight {preflight.errors.length > 0
                                         ? 'blocked'
                                         : preflight.warnings.length > 0
-                                          ? 'warnings'
-                                          : 'clear'}
+                                        ? 'warnings'
+                                        : 'clear'}
                                 </span>
                                 {item.profiles.map((entry) => (
                                     <span className="pill muted" key={entry}>
@@ -165,19 +159,16 @@ export function DistributedRecipeCatalogPanel(props: DistributedRecipeCatalogPan
                                     </span>
                                 ))}
                                 {commandPreview.effectiveFrameCount !==
-                                    undefined && (
+                                        undefined && (
                                     <span className="pill active">
-                                        {commandPreview.effectiveFrameCount}{' '}
-                                        effective frames
+                                        {commandPreview.effectiveFrameCount} effective frames
                                     </span>
                                 )}
                             </div>
                             <details>
                                 <summary>Prerequisites</summary>
                                 <ul>
-                                    {item.prerequisites.map((requirement) => (
-                                        <li key={requirement}>{requirement}</li>
-                                    ))}
+                                    {item.prerequisites.map((requirement) => <li key={requirement}>{requirement}</li>)}
                                 </ul>
                             </details>
                             <details>

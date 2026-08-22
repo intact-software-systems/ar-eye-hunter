@@ -1,17 +1,11 @@
-import type {
-    ControlFleetReportFilter,
-    ControlFleetRunReport,
-} from '../../../control-run-manager.ts';
+import type { ControlFleetReportFilter, ControlFleetRunReport } from '../../../control-run-manager.ts';
 import {
     DEFAULT_FLEET_WORLD_MAP_LAYER_STATE,
     FLEET_WORLD_MAP_LAYER_IDS,
     type FleetWorldMapLayerId,
-    type FleetWorldMapLayerState,
+    type FleetWorldMapLayerState
 } from '../../../world-map-model.ts';
-import type {
-    FleetFilterState,
-    FleetLabelOverride,
-} from './fleet-types.ts';
+import type { FleetFilterState, FleetLabelOverride } from './fleet-types.ts';
 
 const DEFAULT_FLEET_FILTERS: FleetFilterState = {
     region: '',
@@ -19,7 +13,7 @@ const DEFAULT_FLEET_FILTERS: FleetFilterState = {
     recipeId: '',
     groupId: '',
     state: '',
-    window: '24h',
+    window: '24h'
 };
 
 export function readFleetFiltersFromUrl(): FleetFilterState {
@@ -34,8 +28,8 @@ export function readFleetFiltersFromUrl(): FleetFilterState {
         groupId: params.get('groupId') ?? '',
         state: params.get('state') ?? '',
         window: parseFleetWindow(
-            params.get('window') ?? params.get('timeWindow'),
-        ),
+            params.get('window') ?? params.get('timeWindow')
+        )
     };
 }
 
@@ -50,7 +44,7 @@ export function writeFleetFiltersToUrl(filters: FleetFilterState): void {
 
 export function writeFleetFiltersToSearchParams(
     params: URLSearchParams,
-    filters: FleetFilterState,
+    filters: FleetFilterState
 ): void {
     const entries: ReadonlyArray<[keyof FleetFilterState, string]> = [
         ['region', filters.region],
@@ -58,12 +52,13 @@ export function writeFleetFiltersToSearchParams(
         ['recipeId', filters.recipeId],
         ['groupId', filters.groupId],
         ['state', filters.state],
-        ['window', filters.window],
+        ['window', filters.window]
     ];
     entries.forEach(([key, value]) => {
         if (value && value !== DEFAULT_FLEET_FILTERS[key]) {
             params.set(key, value);
-        } else {
+        }
+        else {
             params.delete(key);
         }
     });
@@ -78,7 +73,7 @@ export function readFleetWorldMapLayersFromUrl(): FleetWorldMapLayerState {
 }
 
 export function writeFleetWorldMapLayersToUrl(
-    layers: FleetWorldMapLayerState,
+    layers: FleetWorldMapLayerState
 ): void {
     if (typeof window === 'undefined') {
         return;
@@ -90,7 +85,7 @@ export function writeFleetWorldMapLayersToUrl(
 
 export function writeFleetWorldMapLayersToSearchParams(
     params: URLSearchParams,
-    layers: FleetWorldMapLayerState,
+    layers: FleetWorldMapLayerState
 ): void {
     if (fleetWorldMapLayersEqual(layers, DEFAULT_FLEET_WORLD_MAP_LAYER_STATE)) {
         params.delete('fleetMapLayers');
@@ -99,7 +94,8 @@ export function writeFleetWorldMapLayersToSearchParams(
     const enabled = FLEET_WORLD_MAP_LAYER_IDS.filter((layerId) => layers[layerId]);
     if (enabled.length === 0) {
         params.set('fleetMapLayers', 'none');
-    } else {
+    }
+    else {
         params.set('fleetMapLayers', enabled.join(','));
     }
 }
@@ -107,7 +103,7 @@ export function writeFleetWorldMapLayersToSearchParams(
 export function buildFleetShareUrl(
     currentHref: string,
     filters: FleetFilterState,
-    layers: FleetWorldMapLayerState,
+    layers: FleetWorldMapLayerState
 ): string {
     const url = new URL(currentHref);
     url.searchParams.set('mode', 'black-box-runner');
@@ -118,7 +114,7 @@ export function buildFleetShareUrl(
 }
 
 function parseFleetWorldMapLayers(
-    value: string | null,
+    value: string | null
 ): FleetWorldMapLayerState {
     if (!value) {
         return DEFAULT_FLEET_WORLD_MAP_LAYER_STATE;
@@ -128,25 +124,25 @@ function parseFleetWorldMapLayers(
             .map((entry) => entry.trim())
             .filter((entry): entry is FleetWorldMapLayerId =>
                 FLEET_WORLD_MAP_LAYER_IDS.includes(entry as FleetWorldMapLayerId)
-            ),
+            )
     );
     return {
         'live-agents': enabled.has('live-agents'),
         'historical-regions': enabled.has('historical-regions'),
         failures: enabled.has('failures'),
-        'observed-routes': enabled.has('observed-routes'),
+        'observed-routes': enabled.has('observed-routes')
     };
 }
 
 function fleetWorldMapLayersEqual(
     left: FleetWorldMapLayerState,
-    right: FleetWorldMapLayerState,
+    right: FleetWorldMapLayerState
 ): boolean {
     return FLEET_WORLD_MAP_LAYER_IDS.every((layerId) => left[layerId] === right[layerId]);
 }
 
 function parseFleetWindow(
-    value: string | null | undefined,
+    value: string | null | undefined
 ): FleetFilterState['window'] {
     return value === '1h' || value === '24h' || value === '7d' ||
             value === 'all'
@@ -155,7 +151,7 @@ function parseFleetWindow(
 }
 
 export function fleetReportFilterFromUi(
-    filters: FleetFilterState,
+    filters: FleetFilterState
 ): ControlFleetReportFilter {
     const filter: {
         region?: string;
@@ -170,14 +166,16 @@ export function fleetReportFilterFromUi(
         provider: filters.provider.trim() || undefined,
         recipeId: filters.recipeId.trim() || undefined,
         groupId: filters.groupId.trim() || undefined,
-        state: filters.state.trim() || undefined,
+        state: filters.state.trim() || undefined
     };
     const now = Date.now();
     if (filters.window === '1h') {
         filter.fromEpochMs = now - 60 * 60 * 1000;
-    } else if (filters.window === '24h') {
+    }
+    else if (filters.window === '24h') {
         filter.fromEpochMs = now - 24 * 60 * 60 * 1000;
-    } else if (filters.window === '7d') {
+    }
+    else if (filters.window === '7d') {
         filter.fromEpochMs = now - 7 * 24 * 60 * 60 * 1000;
     }
     return filter;
@@ -196,7 +194,7 @@ export function parseFleetLabelOverrides(text: string): Readonly<{
         if (!isFleetRecord(parsed)) {
             return {
                 value: {},
-                error: 'Overrides must be an object keyed by agent id.',
+                error: 'Overrides must be an object keyed by agent id.'
             };
         }
         const overrides: Record<string, FleetLabelOverride> = {};
@@ -204,8 +202,7 @@ export function parseFleetLabelOverrides(text: string): Readonly<{
             if (!isFleetRecord(value)) {
                 return;
             }
-            const label: Record<string, string | readonly string[] | undefined> =
-                {};
+            const label: Record<string, string | readonly string[] | undefined> = {};
             [
                 'region',
                 'provider',
@@ -215,7 +212,7 @@ export function parseFleetLabelOverrides(text: string): Readonly<{
                 'deploymentId',
                 'browserName',
                 'browserVersion',
-                'os',
+                'os'
             ].forEach((key) => {
                 const raw = value[key];
                 if (typeof raw === 'string' && raw.trim().length > 0) {
@@ -233,10 +230,11 @@ export function parseFleetLabelOverrides(text: string): Readonly<{
             }
         });
         return { value: overrides };
-    } catch (caught) {
+    }
+    catch (caught) {
         return {
             value: {},
-            error: caught instanceof Error ? caught.message : String(caught),
+            error: caught instanceof Error ? caught.message : String(caught)
         };
     }
 }
@@ -247,7 +245,7 @@ function isFleetRecord(value: unknown): value is Record<string, unknown> {
 
 export function applyFleetLabelOverrides(
     reports: readonly ControlFleetRunReport[],
-    overrides: Readonly<Record<string, FleetLabelOverride>>,
+    overrides: Readonly<Record<string, FleetLabelOverride>>
 ): readonly ControlFleetRunReport[] {
     if (Object.keys(overrides).length === 0) {
         return reports;
@@ -262,10 +260,10 @@ export function applyFleetLabelOverrides(
                     label: {
                         ...agent.label,
                         ...override,
-                        tags: override.tags ?? agent.label.tags,
-                    },
+                        tags: override.tags ?? agent.label.tags
+                    }
                 }
                 : agent;
-        }),
+        })
     }));
 }

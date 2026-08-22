@@ -1,13 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
 import { GraphAlgo } from '@shared-graph/complete-graph/complete-graph-types.ts';
-import { CoreSelectionAlgo } from '@shared-graph/graph/steiner-core-algorithms.ts';
-import {
-    generateRemainingSizeOfSteinerSet,
-    generateSizeNonSteiner,
-    generateSizeOfSteinerSet,
-} from '@shared-graph/graph/graph-size-algorithms.ts';
-import { pruneGraph, PruneGraphAlgo, } from '@shared-graph/graph/prune-graph.ts';
 import { VertexState } from '@shared-graph/graph/graph-props.ts';
+import { generateRemainingSizeOfSteinerSet, generateSizeNonSteiner, generateSizeOfSteinerSet } from '@shared-graph/graph/graph-size-algorithms.ts';
+import { pruneGraph, PruneGraphAlgo } from '@shared-graph/graph/prune-graph.ts';
+import { CoreSelectionAlgo } from '@shared-graph/graph/steiner-core-algorithms.ts';
+import { describe, expect, it, vi } from 'vitest';
 import { createGraph } from './helpers.ts';
 
 describe('shared-graph prune and sizing algorithms', () => {
@@ -21,8 +17,8 @@ describe('shared-graph prune and sizing algorithms', () => {
                 degreeConstraintSP: 2,
                 simPruneAlgo: PruneGraphAlgo.ADD_CORE_LINKS,
                 simGraphAlgo: GraphAlgo.COMPLETE_MEMBER_GRAPH_KEEP_STEINER,
-                isSteinerAlgo: true,
-            }),
+                isSteinerAlgo: true
+            })
         ).toBe(5);
 
         expect(
@@ -34,8 +30,8 @@ describe('shared-graph prune and sizing algorithms', () => {
                 degreeConstraintSP: 2,
                 simPruneAlgo: PruneGraphAlgo.ADD_CORE_LINKS,
                 simGraphAlgo: GraphAlgo.COMPLETE_MEMBER_GRAPH_KEEP_STEINER,
-                isSteinerAlgo: true,
-            }),
+                isSteinerAlgo: true
+            })
         ).toBe(3);
 
         expect(
@@ -47,8 +43,8 @@ describe('shared-graph prune and sizing algorithms', () => {
                 degreeConstraintSP: 2,
                 simPruneAlgo: PruneGraphAlgo.ADD_CORE_LINKS_OPTIMIZED,
                 simGraphAlgo: GraphAlgo.COMPLETE_MEMBER_GRAPH,
-                isSteinerAlgo: false,
-            }),
+                isSteinerAlgo: false
+            })
         ).toBe(4);
 
         expect(
@@ -61,16 +57,16 @@ describe('shared-graph prune and sizing algorithms', () => {
                 degreeConstraintSP: 2,
                 simPruneAlgo: PruneGraphAlgo.ADD_CORE_LINKS,
                 simGraphAlgo: GraphAlgo.COMPLETE_MEMBER_GRAPH_KEEP_STEINER,
-                isSteinerAlgo: true,
-            }),
+                isSteinerAlgo: true
+            })
         ).toBe(5);
 
         expect(
             generateSizeNonSteiner({
                 members: 5,
                 steinerMemberSize: 0,
-                degreeConstraint: 3,
-            }),
+                degreeConstraint: 3
+            })
         ).toBe(4);
     });
 
@@ -79,13 +75,13 @@ describe('shared-graph prune and sizing algorithms', () => {
             [
                 ['member-a', VertexState.MEMBER, 4],
                 ['member-b', VertexState.MEMBER, 4],
-                ['member-c', VertexState.MEMBER, 4],
+                ['member-c', VertexState.MEMBER, 4]
             ],
             [
                 ['member-a', 'member-b', 1],
                 ['member-b', 'member-c', 2],
-                ['member-a', 'member-c', 5],
-            ],
+                ['member-a', 'member-c', 5]
+            ]
         );
 
         const cloned = pruneGraph({
@@ -99,8 +95,8 @@ describe('shared-graph prune and sizing algorithms', () => {
             deps: {
                 findWCNodes: vi.fn(),
                 generateSizeOfSteinerSet: vi.fn(() => 0),
-                generateSizeNonSteiner: vi.fn(() => 0),
-            },
+                generateSizeNonSteiner: vi.fn(() => 0)
+            }
         });
 
         expect(cloned.coreSet).toEqual(new Set());
@@ -118,8 +114,8 @@ describe('shared-graph prune and sizing algorithms', () => {
             deps: {
                 findWCNodes: vi.fn(),
                 generateSizeOfSteinerSet: vi.fn(() => 0),
-                generateSizeNonSteiner: vi.fn(() => 0),
-            },
+                generateSizeNonSteiner: vi.fn(() => 0)
+            }
         });
 
         expect(kBest.graph.hasEdge('member-a', 'member-b')).toBe(true);
@@ -132,7 +128,7 @@ describe('shared-graph prune and sizing algorithms', () => {
                 ['member-a', VertexState.MEMBER, 4],
                 ['member-b', VertexState.MEMBER, 4],
                 ['member-c', VertexState.MEMBER, 4],
-                ['member-d', VertexState.MEMBER, 4],
+                ['member-d', VertexState.MEMBER, 4]
             ],
             [
                 ['member-a', 'member-b', 1],
@@ -140,8 +136,8 @@ describe('shared-graph prune and sizing algorithms', () => {
                 ['member-a', 'member-d', 2],
                 ['member-b', 'member-c', 4],
                 ['member-b', 'member-d', 5],
-                ['member-c', 'member-d', 1],
-            ],
+                ['member-c', 'member-d', 1]
+            ]
         );
         const findWCNodes = vi.fn(() => ['member-a']);
 
@@ -156,8 +152,8 @@ describe('shared-graph prune and sizing algorithms', () => {
             deps: {
                 findWCNodes,
                 generateSizeOfSteinerSet: vi.fn(() => 1),
-                generateSizeNonSteiner: vi.fn(() => 0),
-            },
+                generateSizeNonSteiner: vi.fn(() => 0)
+            }
         });
 
         expect(result.coreSet).toEqual(new Set(['member-a']));
@@ -173,7 +169,7 @@ describe('shared-graph prune and sizing algorithms', () => {
                 ['member-a', VertexState.MEMBER, 4],
                 ['member-b', VertexState.MEMBER, 4],
                 ['member-c', VertexState.MEMBER, 4],
-                ['steiner-1', VertexState.STEINER, 8],
+                ['steiner-1', VertexState.STEINER, 8]
             ],
             [
                 ['member-a', 'member-b', 2],
@@ -181,8 +177,8 @@ describe('shared-graph prune and sizing algorithms', () => {
                 ['member-b', 'member-c', 1],
                 ['member-a', 'steiner-1', 1],
                 ['member-b', 'steiner-1', 1],
-                ['member-c', 'steiner-1', 1],
-            ],
+                ['member-c', 'steiner-1', 1]
+            ]
         );
         const findWCNodes = vi.fn(() => ['member-b']);
 
@@ -197,8 +193,8 @@ describe('shared-graph prune and sizing algorithms', () => {
             deps: {
                 findWCNodes,
                 generateSizeOfSteinerSet: vi.fn(() => 1),
-                generateSizeNonSteiner: vi.fn(() => 1),
-            },
+                generateSizeNonSteiner: vi.fn(() => 1)
+            }
         });
 
         expect(result.coreSet).toEqual(new Set(['member-b', 'steiner-1']));
@@ -208,7 +204,7 @@ describe('shared-graph prune and sizing algorithms', () => {
             new Set(['member-a', 'member-b', 'member-c', 'steiner-1']),
             new Set(['steiner-1']),
             1,
-            CoreSelectionAlgo.CENTER_SELECTION,
+            CoreSelectionAlgo.CENTER_SELECTION
         );
         expect(result.graph.hasNode('steiner-1')).toBe(true);
         expect(result.graph.hasEdge('member-b', 'steiner-1')).toBe(true);

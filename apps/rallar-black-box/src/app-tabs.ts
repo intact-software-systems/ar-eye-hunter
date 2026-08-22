@@ -2,13 +2,13 @@ export const APP_MODES = [
     {
         id: 'rallar',
         label: 'Rallar',
-        description: 'Direct live Rallar operations',
+        description: 'Direct live Rallar operations'
     },
     {
         id: 'black-box-runner',
         label: 'Rallar black-box-runner',
-        description: 'Recipes, control runs, and artifacts',
-    },
+        description: 'Recipes, control runs, and artifacts'
+    }
 ] as const;
 
 export type AppModeId = (typeof APP_MODES)[number]['id'];
@@ -39,7 +39,7 @@ export const APP_TABS = [
     { id: 'runs', label: 'Runs' },
     { id: 'fleet', label: 'Fleet' },
     { id: 'builder', label: 'Builder' },
-    { id: 'advanced', label: 'Advanced' },
+    { id: 'advanced', label: 'Advanced' }
 ] as const;
 
 export type AppTabId = (typeof APP_TABS)[number]['id'];
@@ -53,25 +53,21 @@ export type RunnerAdvancedSurfaceId =
     | 'distributed'
     | 'shared-test';
 
-const LEGACY_RUNNER_ADVANCED_TAB_TARGETS: Partial<
-    Readonly<Record<AppTabId, RunnerAdvancedSurfaceId>>
-> = {
+const LEGACY_RUNNER_ADVANCED_TAB_TARGETS: Partial<Readonly<Record<AppTabId, RunnerAdvancedSurfaceId>>> = {
     'manual-rallar': 'manual',
     'local-workbench': 'workbench',
     'run-manager': 'run-manager',
     'distributed-recipes': 'distributed',
-    'shared-test': 'shared-test',
+    'shared-test': 'shared-test'
 };
 
-const LEGACY_RUNNER_VISIBLE_TAB_TARGETS: Partial<
-    Readonly<Record<AppTabId, AppTabId>>
-> = {
+const LEGACY_RUNNER_VISIBLE_TAB_TARGETS: Partial<Readonly<Record<AppTabId, AppTabId>>> = {
     'manual-rallar': 'advanced',
     'local-workbench': 'advanced',
     'run-manager': 'advanced',
     'distributed-recipes': 'advanced',
     'shared-test': 'advanced',
-    'flow-builder': 'builder',
+    'flow-builder': 'builder'
 };
 
 const RALLAR_MODE_TAB_IDS = [
@@ -87,7 +83,7 @@ const RALLAR_MODE_TAB_IDS = [
     'media',
     'rallar-server',
     'rallar-trace',
-    'event-stream',
+    'event-stream'
 ] as const satisfies readonly AppTabId[];
 
 const BLACK_BOX_RUNNER_MODE_TAB_IDS = [
@@ -96,17 +92,17 @@ const BLACK_BOX_RUNNER_MODE_TAB_IDS = [
     'fleet',
     'builder',
     'event-stream',
-    'advanced',
+    'advanced'
 ] as const satisfies readonly AppTabId[];
 
 const MODE_TAB_IDS: Readonly<Record<AppModeId, readonly AppTabId[]>> = {
     rallar: RALLAR_MODE_TAB_IDS,
-    'black-box-runner': BLACK_BOX_RUNNER_MODE_TAB_IDS,
+    'black-box-runner': BLACK_BOX_RUNNER_MODE_TAB_IDS
 };
 
 const MODE_DEFAULT_TABS: Readonly<Record<AppModeId, AppTabId>> = {
     rallar: 'quick-test',
-    'black-box-runner': 'recipes',
+    'black-box-runner': 'recipes'
 };
 
 const TAB_PRIMARY_MODE: Readonly<Record<AppTabId, AppModeId>> = {
@@ -133,7 +129,7 @@ const TAB_PRIMARY_MODE: Readonly<Record<AppTabId, AppModeId>> = {
     runs: 'black-box-runner',
     fleet: 'black-box-runner',
     builder: 'black-box-runner',
-    advanced: 'black-box-runner',
+    advanced: 'black-box-runner'
 };
 
 const MODE_ALIASES: Readonly<Record<string, AppModeId>> = {
@@ -146,7 +142,7 @@ const MODE_ALIASES: Readonly<Record<string, AppModeId>> = {
     blackbox: 'black-box-runner',
     recipes: 'black-box-runner',
     shared: 'black-box-runner',
-    tests: 'black-box-runner',
+    tests: 'black-box-runner'
 };
 
 const TAB_ALIASES: Readonly<Record<string, AppTabId>> = {
@@ -206,7 +202,7 @@ const TAB_ALIASES: Readonly<Record<string, AppTabId>> = {
     shared: 'shared-test',
     'shared-test-runner': 'shared-test',
     advanced: 'advanced',
-    debug: 'advanced',
+    debug: 'advanced'
 };
 
 export function appModeFromValue(value: string | null | undefined): AppModeId {
@@ -238,7 +234,7 @@ export function appTabFromValue(value: string | null | undefined): AppTabId {
 }
 
 export function appTabsForMode(
-    mode: AppModeId,
+    mode: AppModeId
 ): readonly (typeof APP_TABS)[number][] {
     const tabIds = MODE_TAB_IDS[mode];
     return tabIds
@@ -269,7 +265,7 @@ export function defaultAppTabForMode(mode: AppModeId): AppTabId {
 export function nextAppTab(
     current: AppTabId,
     direction: -1 | 1,
-    mode: AppModeId = appModeForTab(current),
+    mode: AppModeId = appModeForTab(current)
 ): AppTabId {
     const tabs = appTabsForMode(mode);
     const currentIndex = tabs.findIndex((entry) => entry.id === current);

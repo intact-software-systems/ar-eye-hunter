@@ -1,41 +1,36 @@
 import {
     deriveDistributedArtifactEvidenceCollections,
-    searchDistributedArtifactEvidenceWindow,
+    searchDistributedArtifactEvidenceWindow
 } from '@shared-test/rallar-bb-test/mod.ts';
-import {
-    finalizeAnalyzeArtifactModel,
-    prepareAnalyzeArtifactModel,
-} from './analyze-artifact-model.ts';
+import { finalizeAnalyzeArtifactModel, prepareAnalyzeArtifactModel } from './analyze-artifact-model.ts';
 import {
     projectAnalyzeArtifactModel,
     projectAnalyzeEvidenceEntry,
-    projectAnalyzeEvidenceWindow,
+    projectAnalyzeEvidenceWindow
 } from './analyze-artifact-projection.ts';
+import { analyzeControlIdentityMatchesDigest } from './analyze-control-identity-digest.ts';
 import {
     ANALYZE_WORKER_EVIDENCE_WINDOW_SIZE,
     type AnalyzeWorkerArtifactOffer,
     type AnalyzeWorkerEnvelope,
     type AnalyzeWorkerErrorProjection,
     type AnalyzeWorkerRequest,
-    type AnalyzeWorkerResponse,
+    type AnalyzeWorkerResponse
 } from './analyze-worker-contract.ts';
-import { decodeAnalyzeWorkerArtifactOffer } from
-    './analyze-worker-offer-decoder.ts';
+import { decodeAnalyzeWorkerArtifactOffer } from './analyze-worker-offer-decoder.ts';
 import {
     analyzeWorkerRequestIdentity,
     analyzeWorkerRequestStage,
     invalidAnalyzeWorkerRequestStage,
-    isAnalyzeWorkerRequest,
+    isAnalyzeWorkerRequest
 } from './analyze-worker-request-boundary.ts';
-import { analyzeControlIdentityMatchesDigest } from
-    './analyze-control-identity-digest.ts';
 import { createAnalyzeWorkerRpcRuntime } from './analyze-worker-rpc-runtime.ts';
 import {
     AnalyzeControlEnvelopeIdentityError,
     analyzeWorkerDuration,
     analyzeWorkerModelError,
     analyzeWorkerTelemetry,
-    type AnalyzeWorkerActiveModel,
+    type AnalyzeWorkerActiveModel
 } from './analyze-worker-runtime-model.ts';
 
 export type AnalyzeWorkerRuntimeHost = Readonly<{
@@ -50,13 +45,15 @@ export type AnalyzeWorkerRuntime = Readonly<{
 
 export function createAnalyzeWorkerRuntime(
     host: AnalyzeWorkerRuntimeHost,
-    options: Readonly<{ now?: () => number }> = {},
+    options: Readonly<{ now?: () => number; }> = {}
 ): AnalyzeWorkerRuntime {
     const now = options.now ?? performance.now.bind(performance);
-    let offered: Readonly<{
-        generation: number;
-        artifact: AnalyzeWorkerArtifactOffer;
-    }> | undefined;
+    let offered:
+        | Readonly<{
+            generation: number;
+            artifact: AnalyzeWorkerArtifactOffer;
+        }>
+        | undefined;
     let active: AnalyzeWorkerActiveModel | undefined;
     let disposed = false;
     let highestOperationGeneration = -1;
@@ -68,26 +65,27 @@ export function createAnalyzeWorkerRuntime(
 
     const fail = (
         error: AnalyzeWorkerErrorProjection,
-        request?: Readonly<{ operationGeneration?: number; requestId?: number }>,
-    ): void => post({
-        message: {
-            type: 'failed',
-            ...(request?.operationGeneration !== undefined
-                ? { operationGeneration: request.operationGeneration }
-                : {}),
-            ...(request?.requestId !== undefined
-                ? { requestId: request.requestId }
-                : {}),
-            error,
-        },
-    });
+        request?: Readonly<{ operationGeneration?: number; requestId?: number; }>
+    ): void =>
+        post({
+            message: {
+                type: 'failed',
+                ...(request?.operationGeneration !== undefined
+                    ? { operationGeneration: request.operationGeneration }
+                    : {}),
+                ...(request?.requestId !== undefined
+                    ? { requestId: request.requestId }
+                    : {}),
+                error
+            }
+        });
 
     const rpc = createAnalyzeWorkerRpcRuntime({
         getActive: () => active,
         isDisposed: () => disposed,
         now,
         post,
-        fail,
+        fail
     });
 
     const dispose = (): void => {
@@ -102,7 +100,7 @@ export function createAnalyzeWorkerRuntime(
             fail({
                 code: 'invalid-request',
                 stage: invalidAnalyzeWorkerRequestStage(request),
-                recoverable: true,
+                recoverable: true
             });
             return;
         }
@@ -116,7 +114,7 @@ export function createAnalyzeWorkerRuntime(
             fail({
                 code: 'worker-disposed',
                 stage: analyzeWorkerRequestStage(request),
-                recoverable: false,
+                recoverable: false
             }, analyzeWorkerRequestIdentity(request));
             return;
         }
@@ -127,7 +125,9 @@ export function createAnalyzeWorkerRuntime(
                 request.operationGeneration <= highestOperationGeneration
             ) {
                 fail({
-                    code: 'stale-generation', stage: 'offer', recoverable: true,
+                    code: 'stale-generation',
+                    stage: 'offer',
+                    recoverable: true
                 }, { operationGeneration: request.operationGeneration });
                 return;
             }
@@ -135,14 +135,16 @@ export function createAnalyzeWorkerRuntime(
             startedOperationGeneration = -1;
             offered = {
                 generation: request.operationGeneration,
-                artifact: request.artifact,
+                artifact: request.artifact
             };
             active = undefined;
             rpc.reset();
-            post({ message: {
-                type: 'accepted',
-                operationGeneration: request.operationGeneration,
-            } });
+            post({
+                message: {
+                    type: 'accepted',
+                    operationGeneration: request.operationGeneration
+                }
+            });
             return;
         }
         if (request.type === 'start') {
@@ -153,7 +155,7 @@ export function createAnalyzeWorkerRuntime(
             fail({
                 code: 'stale-generation',
                 stage: analyzeWorkerRequestStage(request),
-                recoverable: true,
+                recoverable: true
             }, analyzeWorkerRequestIdentity(request));
             return;
         }
@@ -164,13 +166,17 @@ export function createAnalyzeWorkerRuntime(
         const candidate = offered;
         if (!candidate || candidate.generation !== operationGeneration) {
             fail({
-                code: 'stale-generation', stage: 'model', recoverable: true,
+                code: 'stale-generation',
+                stage: 'model',
+                recoverable: true
             }, { operationGeneration });
             return;
         }
         if (operationGeneration <= startedOperationGeneration) {
             fail({
-                code: 'stale-generation', stage: 'model', recoverable: true,
+                code: 'stale-generation',
+                stage: 'model',
+                recoverable: true
             }, { operationGeneration });
             return;
         }
@@ -185,16 +191,16 @@ export function createAnalyzeWorkerRuntime(
                 label: candidate.artifact.label,
                 generatedAtEpochMs: decoded.generatedAtEpochMs,
                 artifactSchemaVersion: decoded.artifactSchemaVersion,
-                ignoredFiles: candidate.artifact.ignoredFiles,
+                ignoredFiles: candidate.artifact.ignoredFiles
             });
             const parseDurationMs = analyzeWorkerDuration(now(), parseStartedAt);
             const collections = await deriveDistributedArtifactEvidenceCollections(
-                prepared.evidenceInput,
+                prepared.evidenceInput
             );
             const model = finalizeAnalyzeArtifactModel(
                 prepared,
                 collections.index,
-                collections.catalog.entries,
+                collections.catalog.entries
             );
             if (
                 decoded.declaredDistributedRunId !== undefined &&
@@ -205,20 +211,26 @@ export function createAnalyzeWorkerRuntime(
             let controlIdentityValidated: true | undefined;
             if (candidate.artifact.source === 'control') {
                 const expected = candidate.artifact.expectedControlIdentity;
-                if (!expected || !await analyzeControlIdentityMatchesDigest(
-                    model.identity,
-                    expected,
-                )) {
+                if (
+                    !expected || !await analyzeControlIdentityMatchesDigest(
+                        model.identity,
+                        expected
+                    )
+                ) {
                     throw new AnalyzeControlEnvelopeIdentityError();
                 }
                 controlIdentityValidated = true;
             }
             const catalog = collections.catalog;
             const initial = await searchDistributedArtifactEvidenceWindow(catalog, {
-                windowSize: ANALYZE_WORKER_EVIDENCE_WINDOW_SIZE,
+                windowSize: ANALYZE_WORKER_EVIDENCE_WINDOW_SIZE
             });
-            if (!initial.ok) throw new Error('initial-window-unavailable');
-            if (offered !== candidate || disposed) return;
+            if (!initial.ok) {
+                throw new Error('initial-window-unavailable');
+            }
+            if (offered !== candidate || disposed) {
+                return;
+            }
             active = {
                 generation: operationGeneration,
                 model,
@@ -226,20 +238,20 @@ export function createAnalyzeWorkerRuntime(
                 sourceFileCount: decoded.sourceFileCount,
                 sourceBytes: decoded.sourceBytes,
                 parseDurationMs,
-                pipelineTelemetry: prepared.pipelineTelemetry,
+                pipelineTelemetry: prepared.pipelineTelemetry
             };
             rpc.reset(0);
             const exportBytes = new TextEncoder().encode(JSON.stringify(
-                model.portableEnvelope,
+                model.portableEnvelope
             )).buffer;
             const telemetry = analyzeWorkerTelemetry(
                 active,
                 initial.window,
-                analyzeWorkerDuration(now(), startedAt),
+                analyzeWorkerDuration(now(), startedAt)
             );
             const selectedId = model.firstActionableEvidenceId;
             const selected = selectedId
-                ? catalog.entries.find(row => row.id === selectedId)
+                ? catalog.entries.find((row) => row.id === selectedId)
                 : undefined;
             post({
                 message: {
@@ -255,13 +267,16 @@ export function createAnalyzeWorkerRuntime(
                     telemetry,
                     ...(controlIdentityValidated
                         ? { controlIdentityValidated }
-                        : {}),
+                        : {})
                 },
-                transfer: [exportBytes],
+                transfer: [exportBytes]
             });
             offered = undefined;
-        } catch (error) {
-            if (offered !== candidate || disposed) return;
+        }
+        catch (error) {
+            if (offered !== candidate || disposed) {
+                return;
+            }
             fail(analyzeWorkerModelError(error), { operationGeneration });
         }
     }

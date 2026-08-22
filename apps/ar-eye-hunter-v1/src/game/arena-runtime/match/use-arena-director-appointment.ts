@@ -1,13 +1,13 @@
-import { useCallback } from 'react';
-import type { Dispatch, RefObject, SetStateAction } from 'react';
 import { rallar } from '@shared-web/browser/rallar.ts';
 import type { RallarDirectorStatus } from '@shared-web/browser/rallar.ts';
 import type { RallarGameDiagnostics } from '@shared-web/game/mod.ts';
+import { useCallback } from 'react';
+import type { Dispatch, RefObject, SetStateAction } from 'react';
 
+import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 import type { DirectorAttemptSource } from '../arena-connection-contracts.ts';
 import type { DirectorAttemptState } from '../arena-connection-contracts.ts';
 import { toDirectorAttemptState, toErrorMessage } from '../arena-connection-helpers.ts';
-import type { ArenaRallarGameMatchHandle } from '../../rallar-game-match-adapter.ts';
 
 interface ArenaDirectorAppointmentInput {
     readonly arenaMatchRef: RefObject<ArenaRallarGameMatchHandle | undefined>;
@@ -20,7 +20,7 @@ interface ArenaDirectorAppointmentInput {
 }
 
 export function useArenaDirectorAppointment(
-    input: ArenaDirectorAppointmentInput,
+    input: ArenaDirectorAppointmentInput
 ): Readonly<{
     attemptDirectorAppointment: (source: DirectorAttemptSource) => Promise<void>;
 }> {
@@ -31,11 +31,11 @@ export function useArenaDirectorAppointment(
         roomIdRef,
         setDirectorAttempt,
         setDirectorStatus,
-        setGameDiagnostics,
+        setGameDiagnostics
     } = input;
 
     const attemptDirectorAppointment = useCallback(async (
-        source: DirectorAttemptSource,
+        source: DirectorAttemptSource
     ) => {
         const currentRoomId = roomIdRef.current;
         const generation = networkGenerationRef.current;
@@ -43,7 +43,7 @@ export function useArenaDirectorAppointment(
         setDirectorAttempt({
             source,
             status: 'pending',
-            startedAtEpochMs,
+            startedAtEpochMs
         });
 
         if (!currentRoomId) {
@@ -53,7 +53,7 @@ export function useArenaDirectorAppointment(
                 reason: 'Cannot appoint a director without an arena room.',
                 startedAtEpochMs,
                 finishedAtEpochMs: Date.now(),
-                durationMs: Date.now() - startedAtEpochMs,
+                durationMs: Date.now() - startedAtEpochMs
             });
             return;
         }
@@ -66,7 +66,7 @@ export function useArenaDirectorAppointment(
                     source,
                     startedAtEpochMs,
                     resultStatus: 'failed',
-                    reason: 'Rallar Game match is not ready yet.',
+                    reason: 'Rallar Game match is not ready yet.'
                 }));
                 return;
             }
@@ -78,7 +78,8 @@ export function useArenaDirectorAppointment(
             }
             if (result.directorStatus) {
                 setDirectorStatus(result.directorStatus);
-            } else {
+            }
+            else {
                 setDirectorStatus(rallar.director.status(currentRoomId));
             }
             setGameDiagnostics(match.diagnostics());
@@ -86,9 +87,10 @@ export function useArenaDirectorAppointment(
                 source,
                 startedAtEpochMs,
                 resultStatus: result.status,
-                reason: result.reason,
+                reason: result.reason
             }));
-        } catch (err) {
+        }
+        catch (err) {
             if (!isCurrentNetworkGeneration(generation)) {
                 return;
             }
@@ -98,8 +100,8 @@ export function useArenaDirectorAppointment(
                 startedAtEpochMs,
                 resultStatus: 'failed',
                 reason: toErrorMessage(
-                    err instanceof Error ? err : new Error(String(err)),
-                ),
+                    err instanceof Error ? err : new Error(String(err))
+                )
             }));
         }
     }, [isCurrentNetworkGeneration]);

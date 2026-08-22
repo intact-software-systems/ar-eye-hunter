@@ -1,8 +1,4 @@
-import {
-    type JsonSchema,
-    type JsonSchemaValidationResult,
-    validateJsonSchema,
-} from '../rallar-bb-test/schema.ts';
+import { validateJsonSchema, type JsonSchema, type JsonSchemaValidationResult } from '../rallar-bb-test/schema.ts';
 
 export const BLACK_BOX_RUNNER_SCENARIO_SCHEMA_VERSION = 1;
 
@@ -25,8 +21,8 @@ const variableValueSchema: JsonSchema = {
         booleanSchema,
         { type: 'null' },
         { type: 'array', items: {} },
-        recordSchema,
-    ],
+        recordSchema
+    ]
 };
 
 const stepSchema: JsonSchema = {
@@ -63,9 +59,9 @@ const stepSchema: JsonSchema = {
         durationMs: integerOrPlaceholderSchema,
         intervalMs: integerOrPlaceholderSchema,
         delayMs: integerOrPlaceholderSchema,
-        rateHz: numberOrPlaceholderSchema,
+        rateHz: numberOrPlaceholderSchema
     },
-    additionalProperties: true,
+    additionalProperties: true
 };
 
 const trafficPlanSchema: JsonSchema = {
@@ -93,21 +89,21 @@ const trafficPlanSchema: JsonSchema = {
         replayPath: stringSchema,
         expandedPlan: recordSchema,
         replay: recordSchema,
-        plan: recordSchema,
+        plan: recordSchema
     },
-    additionalProperties: true,
+    additionalProperties: true
 };
 
 const postRunAssertionSchema: JsonSchema = {
     type: 'object',
-    additionalProperties: true,
+    additionalProperties: true
 };
 
 const postRunAssertionsSchema: JsonSchema = {
     oneOf: [
         postRunAssertionSchema,
-        { type: 'array', items: postRunAssertionSchema },
-    ],
+        { type: 'array', items: postRunAssertionSchema }
+    ]
 };
 
 const executionSchema: JsonSchema = {
@@ -129,9 +125,9 @@ const executionSchema: JsonSchema = {
         thresholds: postRunAssertionsSchema,
         postRunAssertions: postRunAssertionsSchema,
         correlation: recordSchema,
-        livePreflight: recordSchema,
+        livePreflight: recordSchema
     },
-    additionalProperties: true,
+    additionalProperties: true
 };
 
 export const BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA: JsonSchema = {
@@ -165,22 +161,22 @@ export const BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA: JsonSchema = {
                     url: stringSchema,
                     timeoutMs: integerOrPlaceholderSchema,
                     headers: recordSchema,
-                    resilience: recordSchema,
+                    resilience: recordSchema
                 },
-                additionalProperties: true,
-            },
+                additionalProperties: true
+            }
         },
         steps: {
             type: 'array',
-            items: stepSchema,
-        },
+            items: stepSchema
+        }
     },
-    additionalProperties: true,
+    additionalProperties: true
 };
 
 export const BLACK_BOX_RUNNER_SCHEMA_CATALOG = {
     schemaVersion: BLACK_BOX_RUNNER_SCENARIO_SCHEMA_VERSION,
-    scenarioRecipe: BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA,
+    scenarioRecipe: BLACK_BOX_RUNNER_SCENARIO_RECIPE_SCHEMA
 } as const;
 
 export function validateBlackBoxRunnerScenarioRecipe(value: unknown): JsonSchemaValidationResult {

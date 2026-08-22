@@ -1,10 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import {describe, expect, it} from 'vitest';
-import {executeBlackBox} from '../../shared-test/black-box-runner/execute-black-box.ts';
+import { describe, expect, it } from 'vitest';
+import { executeBlackBox } from '../../shared-test/black-box-runner/execute-black-box.ts';
 
 async function startHttpServer(
-    handler: (request: IncomingMessage, response: ServerResponse) => void,
-): Promise<{ url: string, close: () => Promise<void> }> {
+    handler: (request: IncomingMessage, response: ServerResponse) => void
+): Promise<{ url: string; close: () => Promise<void>; }> {
     const server = createServer(handler);
 
     await new Promise<void>((resolve, reject) => {
@@ -22,27 +22,29 @@ async function startHttpServer(
 
     return {
         url: `http://127.0.0.1:${address.port}`,
-        close: () => new Promise<void>((resolve, reject) => {
-            server.close(error => {
-                if (error) {
-                    reject(error);
-                    return;
-                }
+        close: () =>
+            new Promise<void>((resolve, reject) => {
+                server.close((error) => {
+                    if (error) {
+                        reject(error);
+                        return;
+                    }
 
-                resolve();
-            });
-        }),
+                    resolve();
+                });
+            })
     };
 }
 
 async function tryStartHttpServer(
-    handler: (request: IncomingMessage, response: ServerResponse) => void,
-): Promise<{ url: string, close: () => Promise<void> } | undefined> {
+    handler: (request: IncomingMessage, response: ServerResponse) => void
+): Promise<{ url: string; close: () => Promise<void>; } | undefined> {
     try {
         return await startHttpServer(handler);
-    } catch (error) {
+    }
+    catch (error) {
         const code = typeof error === 'object' && error !== null && 'code' in error
-            ? String((error as { code?: unknown }).code)
+            ? String((error as { code?: unknown; }).code)
             : '';
         if (code === 'EPERM' || code === 'EACCES') {
             return undefined;
@@ -53,7 +55,7 @@ async function tryStartHttpServer(
 
 function json(response: ServerResponse, statusCode: number, body: unknown): void {
     response.writeHead(statusCode, {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json'
     });
     response.end(JSON.stringify(body));
 }
@@ -61,7 +63,7 @@ function json(response: ServerResponse, statusCode: number, body: unknown): void
 describe('executeBlackBox', () => {
     it('reports the explicit rallar-signaling RTC provider alias', async () => {
         const report = await executeBlackBox([], 0, {
-            failFast: true,
+            failFast: true
         });
 
         expect(report.rtcProviderNames).toContain('rallar');
@@ -78,15 +80,15 @@ describe('executeBlackBox', () => {
                             value: {
                                 body: {
                                     token_type: 'Bearer',
-                                    access_token: 'abc-123',
-                                },
+                                    access_token: 'abc-123'
+                                }
                             },
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 1,
+                            interactionExecutionNumber: 1
                         },
-                        response: {},
+                        response: {}
                     },
-                    setAuth: {},
+                    setAuth: {}
                 },
                 {
                     SET: {
@@ -94,17 +96,17 @@ describe('executeBlackBox', () => {
                             output: 'authHeader',
                             value: '{auth.body.token_type} {auth.body.access_token}',
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 2,
+                            interactionExecutionNumber: 2
                         },
-                        response: {},
+                        response: {}
                     },
-                    deriveAuthHeader: {},
-                },
+                    deriveAuthHeader: {}
+                }
             ],
             0,
             {
-                failFast: true,
-            },
+                failFast: true
+            }
         );
 
         expect(report.summary.failure).toBe(0);
@@ -121,15 +123,15 @@ describe('executeBlackBox', () => {
                             value: {
                                 body: {
                                     access_token: 'abc-123',
-                                    token_type: 'Bearer',
-                                },
+                                    token_type: 'Bearer'
+                                }
                             },
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 1,
+                            interactionExecutionNumber: 1
                         },
-                        response: {},
+                        response: {}
                     },
-                    setAuth: {},
+                    setAuth: {}
                 },
                 {
                     SET: {
@@ -137,23 +139,23 @@ describe('executeBlackBox', () => {
                             output: 'authBody',
                             value: '{auth.body}',
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 2,
+                            interactionExecutionNumber: 2
                         },
-                        response: {},
+                        response: {}
                     },
-                    deriveAuthBody: {},
-                },
+                    deriveAuthBody: {}
+                }
             ],
             0,
             {
-                failFast: true,
-            },
+                failFast: true
+            }
         );
 
         expect(report.summary.failure).toBe(0);
         expect(report.outputs.authBody).toEqual({
             access_token: 'abc-123',
-            token_type: 'Bearer',
+            token_type: 'Bearer'
         });
     });
 
@@ -167,36 +169,36 @@ describe('executeBlackBox', () => {
                             value: {
                                 id: 123,
                                 name: 'Alice',
-                                traceId: 'dynamic-value',
+                                traceId: 'dynamic-value'
                             },
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 1,
+                            interactionExecutionNumber: 1
                         },
-                        response: {},
+                        response: {}
                     },
-                    setUser: {},
+                    setUser: {}
                 },
                 {
                     ASSERT: {
                         request: {
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 2,
+                            interactionExecutionNumber: 2
                         },
                         response: {
                             actual: '{user}',
                             body: {
                                 id: 'integer',
-                                name: 'string',
-                            },
-                        },
+                                name: 'string'
+                            }
+                        }
                     },
-                    assertUserShape: {},
-                },
+                    assertUserShape: {}
+                }
             ],
             0,
             {
-                failFast: true,
-            },
+                failFast: true
+            }
         );
 
         expect(report.summary.failure).toBe(0);
@@ -210,24 +212,24 @@ describe('executeBlackBox', () => {
                     ASSERT: {
                         request: {
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 1,
+                            interactionExecutionNumber: 1
                         },
                         response: {
                             actual: {
-                                id: 'not-an-integer',
+                                id: 'not-an-integer'
                             },
                             body: {
-                                id: 'integer',
-                            },
-                        },
+                                id: 'integer'
+                            }
+                        }
                     },
-                    assertUserShape: {},
-                },
+                    assertUserShape: {}
+                }
             ],
             0,
             {
-                failFast: true,
-            },
+                failFast: true
+            }
         );
 
         expect(report.summary.failure).toBe(1);
@@ -242,18 +244,18 @@ describe('executeBlackBox', () => {
                     ASSERT: {
                         request: {
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 1,
+                            interactionExecutionNumber: 1
                         },
                         response: {
                             actual: {
-                                id: 'not-an-integer',
+                                id: 'not-an-integer'
                             },
                             body: {
-                                id: 'integer',
-                            },
-                        },
+                                id: 'integer'
+                            }
+                        }
                     },
-                    firstAssertFails: {},
+                    firstAssertFails: {}
                 },
                 {
                     SET: {
@@ -261,17 +263,17 @@ describe('executeBlackBox', () => {
                             output: 'afterFailure',
                             value: 'still-runs',
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 2,
+                            interactionExecutionNumber: 2
                         },
-                        response: {},
+                        response: {}
                     },
-                    setAfterFailure: {},
-                },
+                    setAfterFailure: {}
+                }
             ],
             0,
             {
-                failFast: false,
-            },
+                failFast: false
+            }
         );
 
         expect(report.summary.failure).toBe(1);
@@ -288,13 +290,13 @@ describe('executeBlackBox', () => {
                             actual: { convergence: 'pending' },
                             nonBlockingFailure: true,
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 1,
+                            interactionExecutionNumber: 1
                         },
                         response: {
-                            body: { convergence: 'ready' },
-                        },
+                            body: { convergence: 'ready' }
+                        }
                     },
-                    pollAttemptOne: {},
+                    pollAttemptOne: {}
                 },
                 {
                     SET: {
@@ -302,28 +304,28 @@ describe('executeBlackBox', () => {
                             output: 'convergenceAttemptTwo',
                             value: 'ready',
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 2,
+                            interactionExecutionNumber: 2
                         },
-                        response: {},
+                        response: {}
                     },
-                    pollAttemptTwo: {},
+                    pollAttemptTwo: {}
                 },
                 {
                     ASSERT: {
                         request: {
                             actual: { convergence: 'ready' },
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 3,
+                            interactionExecutionNumber: 3
                         },
                         response: {
-                            body: { convergence: 'ready' },
-                        },
+                            body: { convergence: 'ready' }
+                        }
                     },
-                    assertFinalBoundedConvergence: {},
-                },
+                    assertFinalBoundedConvergence: {}
+                }
             ],
             0,
-            { failFast: true },
+            { failFast: true }
         );
 
         expect(report.resultsByName.pollAttemptOne).toHaveLength(1);
@@ -342,23 +344,23 @@ describe('executeBlackBox', () => {
                     request: {
                         actual: {
                             causalHistory: {
-                                groupState: [4, 7, 6],
-                            },
+                                groupState: [4, 7, 6]
+                            }
                         },
                         scenarioExecutionNumber: 1,
-                        interactionExecutionNumber: 1,
+                        interactionExecutionNumber: 1
                     },
                     response: {
                         body: {
                             causalHistory: {
-                                groupState: [4, 7, 6],
-                            },
+                                groupState: [4, 7, 6]
+                            }
                         },
-                        monotonicPaths: ['causalHistory.groupState'],
-                    },
+                        monotonicPaths: ['causalHistory.groupState']
+                    }
                 },
-                assertCausalHistoryIsMonotonic: {},
-            },
+                assertCausalHistoryIsMonotonic: {}
+            }
         ]);
 
         expect(report.resultsByName.assertCausalHistoryIsMonotonic[0].status).toBe('FAILURE');
@@ -373,7 +375,7 @@ describe('executeBlackBox', () => {
                 ASSERT: {
                     request: {
                         scenarioExecutionNumber: 1,
-                        interactionExecutionNumber: 1,
+                        interactionExecutionNumber: 1
                     },
                     response: {
                         actual: {
@@ -382,17 +384,17 @@ describe('executeBlackBox', () => {
                                     observed: {
                                         coalesce: [
                                             { path: 'outputs.missingCausalRevision' },
-                                            'MISSING',
-                                        ],
-                                    },
-                                },
-                            },
+                                            'MISSING'
+                                        ]
+                                    }
+                                }
+                            }
                         },
-                        body: { observed: 'MISSING' },
-                    },
+                        body: { observed: 'MISSING' }
+                    }
                 },
-                assertMissingObservationIsRecorded: {},
-            },
+                assertMissingObservationIsRecorded: {}
+            }
         ]);
 
         expect(report.resultsByName.assertMissingObservationIsRecorded[0].status).toBe('SUCCESS');
@@ -406,16 +408,16 @@ describe('executeBlackBox', () => {
                 ASSERT: {
                     request: {
                         scenarioExecutionNumber: 1,
-                        interactionExecutionNumber: 1,
+                        interactionExecutionNumber: 1
                     },
                     response: {
                         actual: { observed: '{outputs.missingCausalRevision}' },
                         missingActualValue: 'MISSING',
-                        body: { observed: 'MISSING' },
-                    },
+                        body: { observed: 'MISSING' }
+                    }
                 },
-                assertMissingDirectObservationIsRecorded: {},
-            },
+                assertMissingDirectObservationIsRecorded: {}
+            }
         ]);
 
         expect(report.resultsByName.assertMissingDirectObservationIsRecorded[0].status).toBe('SUCCESS');
@@ -439,21 +441,21 @@ describe('executeBlackBox', () => {
                                                 request: {
                                                     actual: { convergence: 'pending' },
                                                     scenarioExecutionNumber: 1,
-                                                    interactionExecutionNumber: 2,
+                                                    interactionExecutionNumber: 2
                                                 },
-                                                response: { body: { convergence: 'ready' } },
+                                                response: { body: { convergence: 'ready' } }
                                             },
-                                            pendingCausalRead: {},
-                                        },
-                                    ],
-                                },
+                                            pendingCausalRead: {}
+                                        }
+                                    ]
+                                }
                             ],
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 1,
+                            interactionExecutionNumber: 1
                         },
-                        response: {},
+                        response: {}
                     },
-                    pollAttemptOne: {},
+                    pollAttemptOne: {}
                 },
                 {
                     SET: {
@@ -461,15 +463,15 @@ describe('executeBlackBox', () => {
                             output: 'laterAttemptRan',
                             value: true,
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 3,
+                            interactionExecutionNumber: 3
                         },
-                        response: {},
+                        response: {}
                     },
-                    pollAttemptTwo: {},
-                },
+                    pollAttemptTwo: {}
+                }
             ],
             0,
-            { failFast: true },
+            { failFast: true }
         );
 
         expect(report.resultsByName.pollAttemptOne[0].nonBlockingFailure).toBe(true);
@@ -496,21 +498,21 @@ describe('executeBlackBox', () => {
                                                     outputPath: 'body.missing',
                                                     value: { body: { present: true } },
                                                     scenarioExecutionNumber: 1,
-                                                    interactionExecutionNumber: 2,
+                                                    interactionExecutionNumber: 2
                                                 },
-                                                response: {},
+                                                response: {}
                                             },
-                                            capturePendingCausalRevision: {},
-                                        },
-                                    ],
-                                },
+                                            capturePendingCausalRevision: {}
+                                        }
+                                    ]
+                                }
                             ],
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 1,
+                            interactionExecutionNumber: 1
                         },
-                        response: {},
+                        response: {}
                     },
-                    pollWithMissingCausalOutput: {},
+                    pollWithMissingCausalOutput: {}
                 },
                 {
                     SET: {
@@ -518,15 +520,15 @@ describe('executeBlackBox', () => {
                             output: 'laterAttemptRan',
                             value: true,
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 3,
+                            interactionExecutionNumber: 3
                         },
-                        response: {},
+                        response: {}
                     },
-                    pollAfterMissingCausalOutput: {},
-                },
+                    pollAfterMissingCausalOutput: {}
+                }
             ],
             0,
-            { failFast: true },
+            { failFast: true }
         );
 
         expect(report.resultsByName.capturePendingCausalRevision[0].nonBlockingFailure).toBe(true);
@@ -543,19 +545,19 @@ describe('executeBlackBox', () => {
                             output: 'url',
                             value: '{variables.baseUrl}/users',
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 1,
+                            interactionExecutionNumber: 1
                         },
-                        response: {},
+                        response: {}
                     },
-                    deriveUrl: {},
-                },
+                    deriveUrl: {}
+                }
             ],
             0,
             {
                 variables: {
-                    baseUrl: 'http://localhost:8080',
-                },
-            },
+                    baseUrl: 'http://localhost:8080'
+                }
+            }
         );
 
         expect(report.summary.failure).toBe(0);
@@ -568,8 +570,8 @@ describe('executeBlackBox', () => {
                 code: 'already-exists',
                 group: {
                     id: 'group-1',
-                    name: 'bb-group',
-                },
+                    name: 'bb-group'
+                }
             });
         });
         if (!server) {
@@ -585,35 +587,35 @@ describe('executeBlackBox', () => {
                                 path: `${server.url}/groups`,
                                 method: 'POST',
                                 body: {
-                                    name: 'bb-group',
+                                    name: 'bb-group'
                                 },
                                 output: 'groupName',
                                 outputPath: 'body.group.name',
                                 outputs: {
                                     groupId: 'body.group.id',
-                                    createStatus: 'statusCode',
+                                    createStatus: 'statusCode'
                                 },
                                 scenarioExecutionNumber: 1,
-                                interactionExecutionNumber: 1,
+                                interactionExecutionNumber: 1
                             },
                             response: {
                                 statusCode: [201, 409],
                                 bodyAnyOf: [
                                     {
                                         group: {
-                                            id: 'string',
-                                        },
+                                            id: 'string'
+                                        }
                                     },
                                     {
                                         code: 'already-exists',
                                         group: {
-                                            name: 'bb-group',
-                                        },
-                                    },
-                                ],
-                            },
+                                            name: 'bb-group'
+                                        }
+                                    }
+                                ]
+                            }
                         },
-                        createGroup: {},
+                        createGroup: {}
                     },
                     {
                         SET: {
@@ -621,17 +623,17 @@ describe('executeBlackBox', () => {
                                 output: 'joinPath',
                                 value: '/groups/{groupId}/join/{createStatus}',
                                 scenarioExecutionNumber: 1,
-                                interactionExecutionNumber: 2,
+                                interactionExecutionNumber: 2
                             },
-                            response: {},
+                            response: {}
                         },
-                        deriveJoinPath: {},
-                    },
+                        deriveJoinPath: {}
+                    }
                 ],
                 0,
                 {
-                    failFast: true,
-                },
+                    failFast: true
+                }
             );
 
             expect(report.summary.failure).toBe(0);
@@ -639,7 +641,8 @@ describe('executeBlackBox', () => {
             expect(report.outputs.groupId).toBe('group-1');
             expect(report.outputs.createStatus).toBe(409);
             expect(report.outputs.joinPath).toBe('/groups/group-1/join/409');
-        } finally {
+        }
+        finally {
             await server.close();
         }
     });
@@ -656,7 +659,7 @@ describe('executeBlackBox', () => {
             readyState = FakeWebSocket.CONNECTING;
             bufferedAmount = 0;
             onopen: ((event: unknown) => void) | undefined;
-            onmessage: ((event: { data: unknown }) => void) | undefined;
+            onmessage: ((event: { data: unknown; }) => void) | undefined;
             onclose: ((event: unknown) => void) | undefined;
             onerror: ((event: unknown) => void) | undefined;
 
@@ -667,7 +670,7 @@ describe('executeBlackBox', () => {
                 setTimeout(() => {
                     this.readyState = FakeWebSocket.OPEN;
                     this.onopen?.({
-                        url: this.url,
+                        url: this.url
                     });
                 }, 0);
             }
@@ -676,7 +679,7 @@ describe('executeBlackBox', () => {
                 this.bufferedAmount = String(data).length;
                 setTimeout(() => {
                     this.onmessage?.({
-                        data,
+                        data
                     });
                 }, 0);
             }
@@ -686,7 +689,7 @@ describe('executeBlackBox', () => {
                 this.onclose?.({
                     code,
                     reason,
-                    wasClean: true,
+                    wasClean: true
                 });
             }
         }
@@ -703,11 +706,11 @@ describe('executeBlackBox', () => {
                                 connection: 'echoWs',
                                 path: 'ws://example.invalid/echo',
                                 scenarioExecutionNumber: 1,
-                                interactionExecutionNumber: 1,
+                                interactionExecutionNumber: 1
                             },
-                            response: {},
+                            response: {}
                         },
-                        openEchoWs: {},
+                        openEchoWs: {}
                     },
                     {
                         WS: {
@@ -717,18 +720,18 @@ describe('executeBlackBox', () => {
                                 send: {
                                     kind: 'bb.echo',
                                     payload: {
-                                        text: 'hello ws',
-                                    },
+                                        text: 'hello ws'
+                                    }
                                 },
                                 output: 'wsSendStatus',
                                 outputPath: 'sendResult.status',
                                 outputs: {
                                     wsReadyState: 'sendResult.readyStateName',
                                     wsWirePayload: 'sendResult.wirePayload',
-                                    echoedKind: 'matchedMessage.data.kind',
+                                    echoedKind: 'matchedMessage.data.kind'
                                 },
                                 scenarioExecutionNumber: 1,
-                                interactionExecutionNumber: 2,
+                                interactionExecutionNumber: 2
                             },
                             response: {
                                 connection: 'echoWs',
@@ -736,18 +739,18 @@ describe('executeBlackBox', () => {
                                 message: {
                                     kind: 'bb.echo',
                                     payload: {
-                                        text: 'hello ws',
-                                    },
-                                },
-                            },
+                                        text: 'hello ws'
+                                    }
+                                }
+                            }
                         },
-                        sendEchoWs: {},
-                    },
+                        sendEchoWs: {}
+                    }
                 ],
                 0,
                 {
-                    failFast: true,
-                },
+                    failFast: true
+                }
             );
 
             expect(report.summary.failure).toBe(0);
@@ -756,7 +759,8 @@ describe('executeBlackBox', () => {
             expect(report.outputs.wsWirePayload).toBe('{"kind":"bb.echo","payload":{"text":"hello ws"}}');
             expect(report.outputs.echoedKind).toBe('bb.echo');
             expect(typeof report.resultsByName.sendEchoWs[0].actual.sendLatencyMs).toBe('number');
-        } finally {
+        }
+        finally {
             (globalThis as any).WebSocket = originalWebSocket;
         }
     });
@@ -772,11 +776,11 @@ describe('executeBlackBox', () => {
                             provider: 'rallar-stub',
                             actor: 'alice',
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 1,
+                            interactionExecutionNumber: 1
                         },
-                        response: {},
+                        response: {}
                     },
-                    connectAlice: {},
+                    connectAlice: {}
                 },
                 {
                     RTC: {
@@ -786,27 +790,27 @@ describe('executeBlackBox', () => {
                             provider: 'rallar-stub',
                             send: {
                                 data: {
-                                    text: 'hello bob',
-                                },
+                                    text: 'hello bob'
+                                }
                             },
                             deliverTo: 'bobRtc',
                             output: 'sentText',
                             outputPath: 'deliveredMessages[0].data.text',
                             outputs: {
-                                firstTarget: 'deliverTargets.0',
+                                firstTarget: 'deliverTargets.0'
                             },
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 2,
+                            interactionExecutionNumber: 2
                         },
-                        response: {},
+                        response: {}
                     },
-                    sendAlice: {},
-                },
+                    sendAlice: {}
+                }
             ],
             0,
             {
-                failFast: true,
-            },
+                failFast: true
+            }
         );
 
         expect(report.summary.failure).toBe(0);
@@ -824,15 +828,15 @@ describe('executeBlackBox', () => {
                             outputPath: 'body.missing',
                             value: {
                                 body: {
-                                    present: true,
-                                },
+                                    present: true
+                                }
                             },
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 1,
+                            interactionExecutionNumber: 1
                         },
-                        response: {},
+                        response: {}
                     },
-                    setMissingOutput: {},
+                    setMissingOutput: {}
                 },
                 {
                     SET: {
@@ -840,17 +844,17 @@ describe('executeBlackBox', () => {
                             output: 'afterFailure',
                             value: 'should-not-run',
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 2,
+                            interactionExecutionNumber: 2
                         },
-                        response: {},
+                        response: {}
                     },
-                    afterFailure: {},
-                },
+                    afterFailure: {}
+                }
             ],
             0,
             {
-                failFast: true,
-            },
+                failFast: true
+            }
         );
 
         expect(report.summary.failure).toBe(1);
@@ -867,25 +871,25 @@ describe('executeBlackBox', () => {
                     ASSERT: {
                         request: {
                             actual: {
-                                code: 'already-exists',
+                                code: 'already-exists'
                             },
                             scenarioExecutionNumber: 1,
-                            interactionExecutionNumber: 1,
+                            interactionExecutionNumber: 1
                         },
                         response: {
                             anyOf: [
                                 {
-                                    code: 'created',
+                                    code: 'created'
                                 },
                                 {
-                                    code: 'already-exists',
-                                },
-                            ],
-                        },
+                                    code: 'already-exists'
+                                }
+                            ]
+                        }
                     },
-                    assertIdempotentOutcome: {},
-                },
-            ],
+                    assertIdempotentOutcome: {}
+                }
+            ]
         );
 
         expect(report.summary.failure).toBe(0);

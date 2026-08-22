@@ -8,7 +8,7 @@ import {
     type RuntimeStateConditionalWriteResult,
     type RuntimeStateEntry,
     type RuntimeStateEntryPageOptions,
-    type RuntimeStateRepositoryLike,
+    type RuntimeStateRepositoryLike
 } from './RuntimeStateRepository.ts';
 
 type ScopedRef = Readonly<{
@@ -37,7 +37,7 @@ export class RuntimeStateJsonStore {
         namespace: string,
         key: string,
         value: unknown,
-        expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP,
+        expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP
     ): Promise<void> {
         await this.repository.upsert(namespace, key, JSON.stringify(value), expireAtTimestamp);
     }
@@ -46,7 +46,7 @@ export class RuntimeStateJsonStore {
         namespace: string,
         key: string,
         value: unknown,
-        expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP,
+        expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP
     ): Promise<RuntimeStateConditionalWriteResult> {
         const repository = this.conditionalRepository();
         const serializedValue = JSON.stringify(value);
@@ -54,7 +54,7 @@ export class RuntimeStateJsonStore {
             namespace,
             key,
             serializedValue,
-            expireAtTimestamp,
+            expireAtTimestamp
         );
     }
 
@@ -63,7 +63,7 @@ export class RuntimeStateJsonStore {
         key: string,
         value: unknown,
         expireAtTimestamp: number,
-        expectedRevision: number,
+        expectedRevision: number
     ): Promise<RuntimeStateConditionalWriteResult> {
         const repository = this.conditionalRepository();
         const serializedValue = JSON.stringify(value);
@@ -72,7 +72,7 @@ export class RuntimeStateJsonStore {
             key,
             serializedValue,
             expireAtTimestamp,
-            expectedRevision,
+            expectedRevision
         );
     }
 
@@ -87,7 +87,7 @@ export class RuntimeStateJsonStore {
 
     protected async getEntryValue<T>(
         namespace: string,
-        key: string,
+        key: string
     ): Promise<RuntimeStateEntryValue<T> | undefined> {
         const entry = await this.repository.findEntry(namespace, key);
         if (!entry) {
@@ -99,10 +99,12 @@ export class RuntimeStateJsonStore {
 
     protected async getEntryRead<T>(
         namespace: string,
-        key: string,
+        key: string
     ): Promise<RuntimeStateEntryRead<T>> {
         const entry = await this.repository.findEntry(namespace, key);
-        if (!entry) return { value: undefined, expiredEntry: undefined };
+        if (!entry) {
+            return { value: undefined, expiredEntry: undefined };
+        }
         const value = await this.toLiveEntryValue<T>(namespace, entry);
         return value
             ? { value, expiredEntry: undefined }
@@ -111,7 +113,7 @@ export class RuntimeStateJsonStore {
 
     protected async listEntryValues<T>(
         namespace: string,
-        keyPrefix?: string,
+        keyPrefix?: string
     ): Promise<readonly RuntimeStateEntryValue<T>[]> {
         const entries = await this.listEntries(namespace, keyPrefix);
         const values: RuntimeStateEntryValue<T>[] = [];
@@ -126,7 +128,7 @@ export class RuntimeStateJsonStore {
 
     protected async listEntryValuesByKeys<T>(
         namespace: string,
-        keys: readonly string[],
+        keys: readonly string[]
     ): Promise<readonly RuntimeStateEntryValue<T>[]> {
         if (keys.length === 0) {
             return [];
@@ -135,7 +137,7 @@ export class RuntimeStateJsonStore {
         const entries = isRuntimeStateTransactionalRepositoryLike(this.repository)
             ? await this.repository.findEntriesByKeys(namespace, keys)
             : (await Promise.all(
-                keys.map((key) => this.repository.findEntry(namespace, key)),
+                keys.map((key) => this.repository.findEntry(namespace, key))
             )).filter((entry): entry is RuntimeStateEntry => entry !== undefined);
         const values: RuntimeStateEntryValue<T>[] = [];
         for (const entry of entries) {
@@ -150,7 +152,7 @@ export class RuntimeStateJsonStore {
     protected async listEntriesPage(
         namespace: string,
         keyPrefix: string,
-        options: RuntimeStateEntryPageOptions,
+        options: RuntimeStateEntryPageOptions
     ): Promise<readonly RuntimeStateEntry[]> {
         const limit = Math.max(1, Math.floor(options.limit));
 
@@ -160,8 +162,8 @@ export class RuntimeStateJsonStore {
                 keyPrefix,
                 {
                     afterKey: options.afterKey,
-                    limit,
-                },
+                    limit
+                }
             );
         }
 
@@ -175,7 +177,7 @@ export class RuntimeStateJsonStore {
 
     protected async toLiveValues<T>(
         namespace: string,
-        entries: readonly RuntimeStateEntry[],
+        entries: readonly RuntimeStateEntry[]
     ): Promise<readonly T[]> {
         const values: T[] = [];
 
@@ -196,19 +198,19 @@ export class RuntimeStateJsonStore {
     protected async deleteValueIfRevision(
         namespace: string,
         key: string,
-        expectedRevision: number,
+        expectedRevision: number
     ): Promise<RuntimeStateConditionalDeleteResult> {
         return await this.conditionalRepository().deleteIfRevision(
             namespace,
             key,
-            expectedRevision,
+            expectedRevision
         );
     }
 
     protected scopeKey(scope: ScopedRef): string {
         return [
             this.toKeyPart('app', scope.applicationId),
-            this.toKeyPart('ws', scope.workspaceId),
+            this.toKeyPart('ws', scope.workspaceId)
         ].join(':');
     }
 
@@ -234,7 +236,7 @@ export class RuntimeStateJsonStore {
 
     private async listEntries(
         namespace: string,
-        keyPrefix?: string,
+        keyPrefix?: string
     ): Promise<readonly RuntimeStateEntry[]> {
         if (keyPrefix !== undefined && isRuntimeStateTransactionalRepositoryLike(this.repository)) {
             return await this.repository.findEntriesByPrefix(namespace, keyPrefix);
@@ -250,22 +252,23 @@ export class RuntimeStateJsonStore {
 
     protected async toLiveValue<T>(
         namespace: string,
-        entry: RuntimeStateEntry,
+        entry: RuntimeStateEntry
     ): Promise<T | undefined> {
         return (await this.toLiveEntryValue<T>(namespace, entry))?.value;
     }
 
     protected async toLiveEntryValue<T>(
         _namespace: string,
-        entry: RuntimeStateEntry,
+        entry: RuntimeStateEntry
     ): Promise<RuntimeStateEntryValue<T> | undefined> {
         return entry.expireAtTimestamp > Date.now()
             ? { entry, value: JSON.parse(entry.value) as T }
             : undefined;
     }
 
-    private conditionalRepository(): RuntimeStateRepositoryLike &
-        RuntimeStateConditionalRepositoryLike {
+    private conditionalRepository():
+        & RuntimeStateRepositoryLike
+        & RuntimeStateConditionalRepositoryLike {
         if (!isRuntimeStateConditionalRepositoryLike(this.repository)) {
             throw new Error('A conditional runtime state repository is required');
         }

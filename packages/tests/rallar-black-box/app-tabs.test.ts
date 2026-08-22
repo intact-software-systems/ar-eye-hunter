@@ -1,17 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
     APP_TABS,
-    DEFAULT_APP_MODE_ID,
-    DEFAULT_APP_TAB_ID,
     appModeForTab,
     appModeFromValue,
-    appTabInMode,
     appTabFromValue,
+    appTabInMode,
     appTabsForMode,
+    DEFAULT_APP_MODE_ID,
+    DEFAULT_APP_TAB_ID,
     defaultAppTabForMode,
     nextAppTab,
     runnerAdvancedSurfaceForTab,
-    visibleAppTabForTab,
+    visibleAppTabForTab
 } from '../../../apps/rallar-black-box/src/app-tabs.ts';
 
 describe('rallar-black-box app tabs', () => {
@@ -70,8 +70,8 @@ describe('rallar-black-box app tabs', () => {
     });
 
     it('maps tabs to their workspace modes', () => {
-        expect(APP_TABS.find(tab => tab.id === 'rooms-clients')?.label).toBe('Groups/Clients');
-        expect(APP_TABS.find(tab => tab.id === 'crdt-health')?.label).toBe('CRDT');
+        expect(APP_TABS.find((tab) => tab.id === 'rooms-clients')?.label).toBe('Groups/Clients');
+        expect(APP_TABS.find((tab) => tab.id === 'crdt-health')?.label).toBe('CRDT');
         expect(appModeForTab('quick-test')).toBe('rallar');
         expect(appModeForTab('manual-rallar')).toBe('black-box-runner');
         expect(appModeForTab('rtc-realtime')).toBe('rallar');
@@ -96,7 +96,7 @@ describe('rallar-black-box app tabs', () => {
         expect(appTabInMode('event-stream', 'black-box-runner')).toBe(true);
         expect(appTabInMode('manual-rallar', 'black-box-runner')).toBe(false);
         expect(appTabInMode('run-manager', 'black-box-runner')).toBe(false);
-        expect(appTabsForMode('rallar').map(tab => tab.id)).toEqual([
+        expect(appTabsForMode('rallar').map((tab) => tab.id)).toEqual([
             'quick-test',
             'auth',
             'rooms-clients',
@@ -109,15 +109,15 @@ describe('rallar-black-box app tabs', () => {
             'media',
             'rallar-server',
             'rallar-trace',
-            'event-stream',
+            'event-stream'
         ]);
-        expect(appTabsForMode('black-box-runner').map(tab => tab.id)).toEqual([
+        expect(appTabsForMode('black-box-runner').map((tab) => tab.id)).toEqual([
             'recipes',
             'runs',
             'fleet',
             'builder',
             'event-stream',
-            'advanced',
+            'advanced'
         ]);
     });
 

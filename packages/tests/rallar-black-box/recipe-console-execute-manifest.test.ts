@@ -6,22 +6,22 @@ import {
     currentExecuteTargetResolutionEvidence,
     deriveExecuteManifest,
     executeManifestFingerprint,
-    projectExecuteManifest,
+    projectExecuteManifest
 } from '../../../apps/rallar-black-box/src/recipe-console/execute/execute-manifest.ts';
 import {
     projectDistributedRecipeCatalog,
-    type DistributedRecipeCatalogEntryProjection,
+    type DistributedRecipeCatalogEntryProjection
 } from '../../../packages/shared-test/rallar-bb-test/distributed-recipe-catalog.ts';
 import type {
     RallarBlackBoxDistributedGroupRef,
     RallarBlackBoxDistributedRunManifest,
-    RallarBlackBoxDistributedTargetResolution,
+    RallarBlackBoxDistributedTargetResolution
 } from '../../../packages/shared-test/rallar-bb-test/distributed-run.ts';
 
 const GROUP: RallarBlackBoxDistributedGroupRef = {
     applicationId: 'app-a',
     workspaceId: 'workspace-a',
-    groupId: 'group-a',
+    groupId: 'group-a'
 };
 
 function selectedRecipe(): DistributedRecipeCatalogEntryProjection {
@@ -29,10 +29,12 @@ function selectedRecipe(): DistributedRecipeCatalogEntryProjection {
         configuration: {
             group: GROUP,
             apiBaseUrl: 'https://api.example.test',
-            rtcRealtimeDurationSeconds: 5,
-        },
+            rtcRealtimeDurationSeconds: 5
+        }
     }).entries.find((candidate) => candidate.schema.status === 'valid');
-    if (!entry) throw new Error('The shared catalog needs one schema-valid recipe.');
+    if (!entry) {
+        throw new Error('The shared catalog needs one schema-valid recipe.');
+    }
     return entry;
 }
 
@@ -42,17 +44,16 @@ function manifestDraft() {
         controlRunId: 'control-a',
         group: GROUP,
         selectedRecipe: selectedRecipe(),
-        selectedAgentIds: ['agent-b', 'agent-a', 'agent-b'],
+        selectedAgentIds: ['agent-b', 'agent-a', 'agent-b']
     });
 }
 
 function targetResolution(
     manifest: RallarBlackBoxDistributedRunManifest,
-    overrides: Partial<RallarBlackBoxDistributedTargetResolution> = {},
+    overrides: Partial<RallarBlackBoxDistributedTargetResolution> = {}
 ): RallarBlackBoxDistributedTargetResolution {
     const targetAgentIds = manifest.targetPolicy.agentIds ?? [];
-    const expectedParticipantCount =
-        manifest.targetPolicy.expectedParticipantCount;
+    const expectedParticipantCount = manifest.targetPolicy.expectedParticipantCount;
     return {
         group: manifest.group,
         resolvedAtEpochMs: 10_000,
@@ -73,9 +74,9 @@ function targetResolution(
             agentsWithoutIdentity: 0,
             roleCounts: {},
             regions: {},
-            providers: {},
+            providers: {}
         },
-        ...overrides,
+        ...overrides
     };
 }
 
@@ -85,7 +86,7 @@ describe('Recipe Console Execute manifest', () => {
             controlRunId: 'Control Run / A',
             group: GROUP,
             recipeId: 'RTC Stability / Green',
-            requestedAtEpochMs: 1_725_000_000_123,
+            requestedAtEpochMs: 1_725_000_000_123
         } as const;
 
         const first = createExecuteDistributedRunId(input);
@@ -95,12 +96,14 @@ describe('Recipe Console Execute manifest', () => {
         expect(first).toMatch(/^dist-group-a-rtc-stability-green-control-run-a-1725000000123$/);
         expect(createExecuteDistributedRunId({
             ...input,
-            requestedAtEpochMs: input.requestedAtEpochMs + 1,
+            requestedAtEpochMs: input.requestedAtEpochMs + 1
         })).not.toBe(first);
-        expect(() => createExecuteDistributedRunId({
-            ...input,
-            requestedAtEpochMs: Number.NaN,
-        })).toThrow('requestedAtEpochMs');
+        expect(() =>
+            createExecuteDistributedRunId({
+                ...input,
+                requestedAtEpochMs: Number.NaN
+            })
+        ).toThrow('requestedAtEpochMs');
     });
 
     it('uses the shared builder for one selected recipe and exact safe targets', () => {
@@ -115,14 +118,14 @@ describe('Recipe Console Execute manifest', () => {
             targetPolicy: {
                 mode: 'selected-agents',
                 agentIds: ['agent-a', 'agent-b'],
-                expectedParticipantCount: 2,
+                expectedParticipantCount: 2
             },
             ackTimeoutMs: 15_000,
             startMode: 'manual',
             metadata: {
                 createdBy: 'rallar-black-box-spa',
-                rolePattern: 'all-agents',
-            },
+                rolePattern: 'all-agents'
+            }
         });
         expect(draft.manifest.recipes).toHaveLength(1);
         expect(draft.manifest.recipes[0]?.recipe).toEqual(selectedRecipe().item.recipe);
@@ -140,8 +143,8 @@ describe('Recipe Console Execute manifest', () => {
             targetPolicy: {
                 ...generated.manifest.targetPolicy,
                 agentIds: ['agent-b'],
-                expectedParticipantCount: 1,
-            },
+                expectedParticipantCount: 1
+            }
         };
 
         const projected = projectExecuteManifest(stored);
@@ -155,23 +158,25 @@ describe('Recipe Console Execute manifest', () => {
     it('fingerprints the complete recursive value without key-order or framing collisions', () => {
         const ordered = {
             string: '1',
-            nested: { alpha: true, beta: [1, null, undefined] },
+            nested: { alpha: true, beta: [1, null, undefined] }
         };
         const reordered = {
             nested: { beta: [1, null, undefined], alpha: true },
-            string: '1',
+            string: '1'
         };
 
         expect(executeManifestFingerprint(ordered as never))
             .toBe(executeManifestFingerprint(reordered as never));
-        for (const different of [
-            { string: 1, nested: ordered.nested },
-            { string: '1', nested: { alpha: true, beta: [1, undefined, null] } },
-            { string: '1', nested: { alpha: true, beta: [1, null] } },
-            { string: '1', nested: { alpha: true, beta: [1, null] }, extra: undefined },
-            { a: 'b:c', d: 'e' },
-            { a: 'b', c: 'd:e' },
-        ]) {
+        for (
+            const different of [
+                { string: 1, nested: ordered.nested },
+                { string: '1', nested: { alpha: true, beta: [1, undefined, null] } },
+                { string: '1', nested: { alpha: true, beta: [1, null] } },
+                { string: '1', nested: { alpha: true, beta: [1, null] }, extra: undefined },
+                { a: 'b:c', d: 'e' },
+                { a: 'b', c: 'd:e' }
+            ]
+        ) {
             expect(executeManifestFingerprint(different as never))
                 .not.toBe(executeManifestFingerprint(ordered as never));
         }
@@ -191,10 +196,10 @@ describe('Recipe Console Execute manifest', () => {
         const unrelatedBlocker = {
             agentId: 'agent-unrelated',
             status: 'offline-agent' as const,
-            reason: 'An unrelated known agent is offline.',
+            reason: 'An unrelated known agent is offline.'
         };
         const matching = targetResolution(manifest, {
-            blockers: [unrelatedBlocker],
+            blockers: [unrelatedBlocker]
         });
 
         expect(compareExecuteTargetResolution({ manifest, resolution: matching }))
@@ -204,23 +209,23 @@ describe('Recipe Console Execute manifest', () => {
             string,
             RallarBlackBoxDistributedRunManifest,
             RallarBlackBoxDistributedTargetResolution,
-            string,
+            string
         ][] = [
             [
                 'group drift',
                 manifest,
                 targetResolution(manifest, {
-                    group: { ...GROUP, groupId: 'group-b' },
+                    group: { ...GROUP, groupId: 'group-b' }
                 }),
-                'group-mismatch',
+                'group-mismatch'
             ],
             [
                 'policy drift',
                 manifest,
                 targetResolution(manifest, {
-                    targetPolicyMode: 'all-online-group-members',
+                    targetPolicyMode: 'all-online-group-members'
                 }),
-                'policy-mismatch',
+                'policy-mismatch'
             ],
             [
                 'duplicate selected IDs',
@@ -228,25 +233,25 @@ describe('Recipe Console Execute manifest', () => {
                     ...manifest,
                     targetPolicy: {
                         ...manifest.targetPolicy,
-                        agentIds: ['agent-a', 'agent-a'],
-                    },
+                        agentIds: ['agent-a', 'agent-a']
+                    }
                 },
                 matching,
-                'duplicate-selected-target',
+                'duplicate-selected-target'
             ],
             [
                 'duplicate resolved IDs',
                 manifest,
                 targetResolution(manifest, {
-                    targetAgentIds: ['agent-a', 'agent-a'],
+                    targetAgentIds: ['agent-a', 'agent-a']
                 }),
-                'duplicate-resolved-target',
+                'duplicate-resolved-target'
             ],
             [
                 'target drift',
                 manifest,
                 targetResolution(manifest, { targetAgentIds: ['agent-a'] }),
-                'target-mismatch',
+                'target-mismatch'
             ],
             [
                 'expected count drift',
@@ -254,10 +259,10 @@ describe('Recipe Console Execute manifest', () => {
                 targetResolution(manifest, {
                     summary: {
                         ...matching.summary,
-                        expectedParticipantCount: 3,
-                    },
+                        expectedParticipantCount: 3
+                    }
                 }),
-                'expected-count-mismatch',
+                'expected-count-mismatch'
             ],
             [
                 'missing participants',
@@ -265,10 +270,10 @@ describe('Recipe Console Execute manifest', () => {
                 targetResolution(manifest, {
                     summary: {
                         ...matching.summary,
-                        missingExpectedParticipants: 1,
-                    },
+                        missingExpectedParticipants: 1
+                    }
                 }),
-                'missing-participants',
+                'missing-participants'
             ],
             [
                 'selected blocker',
@@ -277,17 +282,17 @@ describe('Recipe Console Execute manifest', () => {
                     blockers: [{
                         agentId: 'agent-a',
                         status: 'stale-agent',
-                        reason: 'The selected agent became stale.',
-                    }],
+                        reason: 'The selected agent became stale.'
+                    }]
                 }),
-                'selected-target-blocked',
-            ],
+                'selected-target-blocked'
+            ]
         ];
 
         for (const [label, candidateManifest, resolution, issueCode] of cases) {
             const comparison = compareExecuteTargetResolution({
                 manifest: candidateManifest,
-                resolution,
+                resolution
             });
             expect(comparison.ok, label).toBe(false);
             expect(comparison.issues.map((issue) => issue.code), label)
@@ -300,11 +305,11 @@ describe('Recipe Console Execute manifest', () => {
         const resolution = targetResolution(manifest);
         const evidence = createExecuteTargetResolutionEvidence({
             manifest,
-            resolution,
+            resolution
         });
 
         expect(evidence.manifestFingerprint).toBe(
-            executeManifestFingerprint(manifest),
+            executeManifestFingerprint(manifest)
         );
         expect(currentExecuteTargetResolutionEvidence({ manifest, evidence }))
             .toBe(evidence);
@@ -320,17 +325,15 @@ describe('Recipe Console Execute manifest', () => {
             { ...manifest, group: { ...manifest.group, groupId: 'group-b' } },
             {
                 ...manifest,
-                recipes: manifest.recipes.map((recipe, index) =>
-                    index === 0 ? { ...recipe, profile: 'changed-profile' } : recipe
-                ),
+                recipes: manifest.recipes.map((recipe, index) => index === 0 ? { ...recipe, profile: 'changed-profile' } : recipe)
             },
             {
                 ...manifest,
                 targetPolicy: {
                     ...manifest.targetPolicy,
                     agentIds: ['agent-a'],
-                    expectedParticipantCount: 1,
-                },
+                    expectedParticipantCount: 1
+                }
             },
             { ...manifest, variables: { changed: true } },
             { ...manifest, secretRefs: ['changed-secret'] },
@@ -339,16 +342,16 @@ describe('Recipe Console Execute manifest', () => {
                 roleAssignments: [{
                     agentId: 'agent-a',
                     role: 'changed-role',
-                    required: true,
-                }],
+                    required: true
+                }]
             },
             {
                 ...manifest,
                 roleAssignmentPolicy: {
                     mode: 'ordered-targets',
                     pattern: 'sender-receiver',
-                    orderBy: 'agent-id',
-                },
+                    orderBy: 'agent-id'
+                }
             },
             { ...manifest, ackTimeoutMs: 15_001 },
             { ...manifest, barrier: { enabled: true, timeoutMs: 15_000 } },
@@ -358,24 +361,24 @@ describe('Recipe Console Execute manifest', () => {
                 ...manifest,
                 artifactPolicy: {
                     ...manifest.artifactPolicy,
-                    retentionDays: 7,
-                },
+                    retentionDays: 7
+                }
             },
-            { ...manifest, metadata: { ...manifest.metadata, changed: true } },
+            { ...manifest, metadata: { ...manifest.metadata, changed: true } }
         ];
 
         for (const changed of changes) {
             expect(
                 currentExecuteTargetResolutionEvidence({
                     manifest: changed,
-                    evidence,
+                    evidence
                 }),
-                JSON.stringify(changed),
+                JSON.stringify(changed)
             ).toBeUndefined();
         }
         expect(currentExecuteTargetResolutionEvidence({
             manifest,
-            evidence: undefined,
+            evidence: undefined
         })).toBeUndefined();
     });
 });

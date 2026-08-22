@@ -13,14 +13,14 @@ export type IndexedDbStoreDefinition = Readonly<{
 
 export async function openIndexedDbWithStore(
     dbName: string,
-    store: IndexedDbStoreDefinition,
+    store: IndexedDbStoreDefinition
 ): Promise<IDBDatabase> {
     return await openIndexedDbWithStores(dbName, [store]);
 }
 
 export async function openIndexedDbWithStores(
     dbName: string,
-    stores: readonly IndexedDbStoreDefinition[],
+    stores: readonly IndexedDbStoreDefinition[]
 ): Promise<IDBDatabase> {
     if (typeof indexedDB === 'undefined') {
         throw new Error('IndexedDB is not supported in this environment');
@@ -29,7 +29,7 @@ export async function openIndexedDbWithStores(
     const initialDb = await openIndexedDb(
         dbName,
         undefined,
-        (db, transaction) => ensureStores(db, transaction, stores),
+        (db, transaction) => ensureStores(db, transaction, stores)
     );
     if (!hasSchemaMismatch(initialDb, stores)) {
         initialDb.onversionchange = () => initialDb.close();
@@ -42,7 +42,7 @@ export async function openIndexedDbWithStores(
     const upgradedDb = await openIndexedDb(
         dbName,
         nextVersion,
-        (db, transaction) => ensureStores(db, transaction, stores),
+        (db, transaction) => ensureStores(db, transaction, stores)
     );
     upgradedDb.onversionchange = () => upgradedDb.close();
 
@@ -66,7 +66,7 @@ export async function openIndexedDbWithStores(
 async function openIndexedDb(
     dbName: string,
     version?: number,
-    onUpgradeNeeded?: (db: IDBDatabase, transaction: IDBTransaction) => void,
+    onUpgradeNeeded?: (db: IDBDatabase, transaction: IDBTransaction) => void
 ): Promise<IDBDatabase> {
     return await new Promise<IDBDatabase>((resolve, reject) => {
         const request = version === undefined
@@ -93,12 +93,12 @@ async function openIndexedDb(
 function ensureStores(
     db: IDBDatabase,
     transaction: IDBTransaction,
-    stores: readonly IndexedDbStoreDefinition[],
+    stores: readonly IndexedDbStoreDefinition[]
 ): void {
     for (const store of stores) {
         const objectStore = !db.objectStoreNames.contains(store.name)
             ? db.createObjectStore(store.name, {
-                keyPath: store.keyPath,
+                keyPath: store.keyPath
             })
             : transaction.objectStore(store.name);
         for (const index of store.indexes ?? []) {
@@ -112,7 +112,7 @@ function ensureStores(
                 objectStore.createIndex(
                     index.name,
                     Array.isArray(index.keyPath) ? [...index.keyPath] : index.keyPath,
-                    { unique: index.unique ?? false },
+                    { unique: index.unique ?? false }
                 );
             }
         }
@@ -122,7 +122,7 @@ function ensureStores(
 
 function hasSchemaMismatch(
     db: IDBDatabase,
-    stores: readonly IndexedDbStoreDefinition[],
+    stores: readonly IndexedDbStoreDefinition[]
 ): boolean {
     for (const store of stores) {
         if (!db.objectStoreNames.contains(store.name)) {
@@ -140,7 +140,7 @@ function hasSchemaMismatch(
 
 function isMatchingIndex(
     store: IDBObjectStore,
-    definition: IndexedDbIndexDefinition,
+    definition: IndexedDbIndexDefinition
 ): boolean {
     if (!store.indexNames.contains(definition.name)) {
         return false;
@@ -153,7 +153,7 @@ function isMatchingIndex(
 
 function isEqualKeyPath(
     actual: string | string[],
-    expected: string | readonly string[],
+    expected: string | readonly string[]
 ): boolean {
     if (typeof actual === 'string' || typeof expected === 'string') {
         return actual === expected;

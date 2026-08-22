@@ -4,7 +4,7 @@ import type { FleetTimingGroup } from '../fleet-types.ts';
 
 export function FleetTimingGroupList({
     title,
-    groups,
+    groups
 }: {
     title: string;
     groups: readonly FleetTimingGroup[];
@@ -18,21 +18,18 @@ export function FleetTimingGroupList({
                         <span>{group.label}</span>
                         <FleetTimingStrip timing={group.timing} />
                         <small>
-                            {formatFleetDuration(group.timing.p50Ms)} /{' '}
-                            {formatFleetDuration(group.timing.p95Ms)}
+                            {formatFleetDuration(group.timing.p50Ms)} / {formatFleetDuration(group.timing.p95Ms)}
                         </small>
                     </div>
                 ))}
-                {groups.length === 0 && (
-                    <div className="empty-state">No timing samples</div>
-                )}
+                {groups.length === 0 && <div className="empty-state">No timing samples</div>}
             </div>
         </section>
     );
 }
 
 function FleetTimingStrip({
-    timing,
+    timing
 }: {
     timing: ControlFleetTimingDistribution;
 }) {

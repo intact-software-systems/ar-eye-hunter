@@ -1,27 +1,27 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
+import { deriveRecipeConsoleControlSelection, recipeConsoleControlRunSelectionPatch } from './control-selection.ts';
 import { controlCommandStatus } from './ControlCommandContext.tsx';
 import { useControlConnection } from './ControlConnectionProvider.tsx';
-import {
-    deriveRecipeConsoleControlSelection,
-    recipeConsoleControlRunSelectionPatch,
-} from './control-selection.ts';
 
-export function useRecipeConsoleControlWorkspace(input: Readonly<{
-    urlState: RecipeConsoleUrlState;
-    navigate(patch: Partial<RecipeConsoleUrlState>): void;
-    replace(patch: Partial<RecipeConsoleUrlState>): void;
-}>) {
+export function useRecipeConsoleControlWorkspace(
+    input: Readonly<{
+        urlState: RecipeConsoleUrlState;
+        navigate(patch: Partial<RecipeConsoleUrlState>): void;
+        replace(patch: Partial<RecipeConsoleUrlState>): void;
+    }>
+) {
     const connection = useControlConnection();
-    const selection = useMemo(() => deriveRecipeConsoleControlSelection({
-        urlState: input.urlState,
-        snapshot: connection.query.snapshot,
-        bootstrapRunId: connection.bootstrap.bootstrapRunId,
-        bootstrapGroup: connection.bootstrap.bootstrapGroup,
-        queryStatus: connection.query.status,
-        nowEpochMs: Date.now(),
-        selectionIndex: connection.selectionIndex,
-    }), [
+    const selection = useMemo(() =>
+        deriveRecipeConsoleControlSelection({
+            urlState: input.urlState,
+            snapshot: connection.query.snapshot,
+            bootstrapRunId: connection.bootstrap.bootstrapRunId,
+            bootstrapGroup: connection.bootstrap.bootstrapGroup,
+            queryStatus: connection.query.status,
+            nowEpochMs: Date.now(),
+            selectionIndex: connection.selectionIndex
+        }), [
         connection.bootstrap.bootstrapGroup,
         connection.bootstrap.bootstrapRunId,
         connection.query.snapshot,
@@ -29,7 +29,7 @@ export function useRecipeConsoleControlWorkspace(input: Readonly<{
         connection.selectionIndex,
         input.urlState.agentId,
         input.urlState.controlRunId,
-        input.urlState.distributedRunId,
+        input.urlState.distributedRunId
     ]);
     const status = controlCommandStatus(connection.query);
 
@@ -43,14 +43,14 @@ export function useRecipeConsoleControlWorkspace(input: Readonly<{
     }, [
         connection.query.status,
         input.replace,
-        selection.urlReplacePatch,
+        selection.urlReplacePatch
     ]);
 
     const selectControlRun = useCallback((controlRunId: string) => {
         input.navigate(recipeConsoleControlRunSelectionPatch({
             state: input.urlState,
             controlRunId,
-            distributedRuns: connection.query.snapshot?.distributedRuns ?? [],
+            distributedRuns: connection.query.snapshot?.distributedRuns ?? []
         }));
     }, [connection.query.snapshot?.distributedRuns, input.navigate, input.urlState]);
     const selectAgent = useCallback((agentId: string) => {
@@ -62,6 +62,6 @@ export function useRecipeConsoleControlWorkspace(input: Readonly<{
         selection,
         status,
         selectAgent,
-        selectControlRun,
+        selectControlRun
     } as const;
 }

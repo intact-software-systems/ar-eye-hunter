@@ -1,12 +1,12 @@
 import { expect, it } from 'vitest';
 
 import * as packageRoot from '@shared-server/mod.ts';
+import * as authSessionCompatibility from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import * as authUserCompatibility from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
+import * as appAuthInboxCompatibility from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
 import * as authCredentialCompatibility from '@shared-server/rallar-system/services/auth-credential-issuer.ts';
 import * as authLoginCompatibility from '@shared-server/rallar-system/services/auth-login-service.ts';
 import * as authMutationCompatibility from '@shared-server/rallar-system/services/auth-state-mutations.ts';
-import * as appAuthInboxCompatibility from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
-import * as authSessionCompatibility from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import * as authUserCompatibility from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
 
 import * as authMutationService from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import * as authCredential from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
@@ -25,123 +25,121 @@ import * as authSessionRepository from '@shared-server/rallar-system/auth/persis
 import * as authUserRepository from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 
 interface CanonicalRuntimeGroup {
-  readonly module: ModuleRecord;
-  readonly names: readonly string[];
+    readonly module: ModuleRecord;
+    readonly names: readonly string[];
 }
 
 interface RuntimeIdentityContract {
-  readonly compatibilityPath: string;
-  readonly compatibility: ModuleRecord;
-  readonly canonicalGroups: readonly CanonicalRuntimeGroup[];
+    readonly compatibilityPath: string;
+    readonly compatibility: ModuleRecord;
+    readonly canonicalGroups: readonly CanonicalRuntimeGroup[];
 }
 
 type ModuleRecord = Readonly<Record<string, unknown>>;
 
-const compatibilityIdentityCase =
-  'catches compatibility modules that do not resolve to canonical runtime identities';
-const credentialCompatibilityCase =
-  'catches compatibility exports that no longer resolve to the canonical runtime owners';
+const compatibilityIdentityCase = 'catches compatibility modules that do not resolve to canonical runtime identities';
+const credentialCompatibilityCase = 'catches compatibility exports that no longer resolve to the canonical runtime owners';
 const runtimeContracts: readonly RuntimeIdentityContract[] = [
-  contract('services/AppAuthInboxService.ts', appAuthInboxCompatibility, [
-    group(appAuthInbox, ['AppAuthInboxService']),
-    group(authAppInboxRouting, ['AUTH_STATE_APP_INBOX_TOPIC', 'toAuthAppInboxType']),
-  ]),
-  contract('services/auth-state-mutations.ts', authMutationCompatibility, [
-    group(authMutationService, ['createAuthMutationService']),
-    group(decodeAuthMutationCommand, ['decodeAuthMutationCommand']),
-    group(decodeAuthMutationResult, ['decodeAuthMutationResult']),
-    group(authMutationRejected, ['AuthMutationRejectedError']),
-    group(captureAuthMutationFacts, ['captureAuthMutationFacts']),
-  ]),
-  contract('services/auth-login-service.ts', authLoginCompatibility, [
-    group(authenticateAuthUser, ['authenticateAuthUser']),
-    group(prepareAuthUserRegistration, ['prepareAuthUserRegistration']),
-  ]),
-  contract('services/auth-credential-issuer.ts', authCredentialCompatibility, [
-    group(authCredential, ['createHmacAuthCredentialIssuer', 'isValidAuthCredentialSecret']),
-  ]),
-  contract('repositories/AuthSessionRepository.ts', authSessionCompatibility, [
-    group(authSessionRepository, ['AuthSessionRepository']),
-    group(authPersistenceContracts, [
-      'decodePersistedAgentSessionTicket',
-      'decodePersistedAuthSession',
-      'decodePersistedWebSocketTicket',
+    contract('services/AppAuthInboxService.ts', appAuthInboxCompatibility, [
+        group(appAuthInbox, ['AppAuthInboxService']),
+        group(authAppInboxRouting, ['AUTH_STATE_APP_INBOX_TOPIC', 'toAuthAppInboxType'])
     ]),
-    group(authLegacy, [
-      'AUTH_LEGACY_PLAINTEXT_COMPATIBILITY_DEADLINE_EPOCH_MS',
-      'AUTH_LEGACY_PLAINTEXT_SCAN_LIMIT',
+    contract('services/auth-state-mutations.ts', authMutationCompatibility, [
+        group(authMutationService, ['createAuthMutationService']),
+        group(decodeAuthMutationCommand, ['decodeAuthMutationCommand']),
+        group(decodeAuthMutationResult, ['decodeAuthMutationResult']),
+        group(authMutationRejected, ['AuthMutationRejectedError']),
+        group(captureAuthMutationFacts, ['captureAuthMutationFacts'])
     ]),
-    group(authSecretHash, ['hashAuthSecret']),
-  ]),
-  contract('repositories/AuthUserRepository.ts', authUserCompatibility, [
-    group(authUserRepository, ['AuthUserRepository', 'normalizeUsername']),
-  ]),
+    contract('services/auth-login-service.ts', authLoginCompatibility, [
+        group(authenticateAuthUser, ['authenticateAuthUser']),
+        group(prepareAuthUserRegistration, ['prepareAuthUserRegistration'])
+    ]),
+    contract('services/auth-credential-issuer.ts', authCredentialCompatibility, [
+        group(authCredential, ['createHmacAuthCredentialIssuer', 'isValidAuthCredentialSecret'])
+    ]),
+    contract('repositories/AuthSessionRepository.ts', authSessionCompatibility, [
+        group(authSessionRepository, ['AuthSessionRepository']),
+        group(authPersistenceContracts, [
+            'decodePersistedAgentSessionTicket',
+            'decodePersistedAuthSession',
+            'decodePersistedWebSocketTicket'
+        ]),
+        group(authLegacy, [
+            'AUTH_LEGACY_PLAINTEXT_COMPATIBILITY_DEADLINE_EPOCH_MS',
+            'AUTH_LEGACY_PLAINTEXT_SCAN_LIMIT'
+        ]),
+        group(authSecretHash, ['hashAuthSecret'])
+    ]),
+    contract('repositories/AuthUserRepository.ts', authUserCompatibility, [
+        group(authUserRepository, ['AuthUserRepository', 'normalizeUsername'])
+    ])
 ];
 
 it(compatibilityIdentityCase, () => {
-  for (const { compatibilityPath, compatibility, canonicalGroups } of runtimeContracts) {
-    const expectedRuntimeExports = canonicalGroups.flatMap(({ names }) => names).toSorted();
+    for (const { compatibilityPath, compatibility, canonicalGroups } of runtimeContracts) {
+        const expectedRuntimeExports = canonicalGroups.flatMap(({ names }) => names).toSorted();
 
-    expect(Object.keys(compatibility).toSorted(), compatibilityPath).toEqual(
-      expectedRuntimeExports,
-    );
-    for (const { module, names } of canonicalGroups) {
-      for (const name of names) {
-        expect(compatibility[name], `${compatibilityPath}:${name}`).toBe(module[name]);
-      }
+        expect(Object.keys(compatibility).toSorted(), compatibilityPath).toEqual(
+            expectedRuntimeExports
+        );
+        for (const { module, names } of canonicalGroups) {
+            for (const name of names) {
+                expect(compatibility[name], `${compatibilityPath}:${name}`).toBe(module[name]);
+            }
+        }
     }
-  }
 });
 
 it(credentialCompatibilityCase, () => {
-  expect(authCredentialCompatibility.createHmacAuthCredentialIssuer).toBe(
-    authCredential.createHmacAuthCredentialIssuer,
-  );
-  expect(authLoginCompatibility.authenticateAuthUser).toBe(
-    authenticateAuthUser.authenticateAuthUser,
-  );
-  expect(authLoginCompatibility.prepareAuthUserRegistration).toBe(
-    prepareAuthUserRegistration.prepareAuthUserRegistration,
-  );
-  expect(authSessionCompatibility.hashAuthSecret).toBe(authSecretHash.hashAuthSecret);
+    expect(authCredentialCompatibility.createHmacAuthCredentialIssuer).toBe(
+        authCredential.createHmacAuthCredentialIssuer
+    );
+    expect(authLoginCompatibility.authenticateAuthUser).toBe(
+        authenticateAuthUser.authenticateAuthUser
+    );
+    expect(authLoginCompatibility.prepareAuthUserRegistration).toBe(
+        prepareAuthUserRegistration.prepareAuthUserRegistration
+    );
+    expect(authSessionCompatibility.hashAuthSecret).toBe(authSecretHash.hashAuthSecret);
 });
 
 it('keeps the supported compatibility path on the canonical facts owner', () => {
-  expect(authMutationCompatibility.captureAuthMutationFacts).toBe(
-    captureAuthMutationFacts.captureAuthMutationFacts,
-  );
+    expect(authMutationCompatibility.captureAuthMutationFacts).toBe(
+        captureAuthMutationFacts.captureAuthMutationFacts
+    );
 });
 
 it('keeps the supported compatibility path on the canonical service owner', () => {
-  expect(authMutationCompatibility.createAuthMutationService).toBe(
-    authMutationService.createAuthMutationService,
-  );
+    expect(authMutationCompatibility.createAuthMutationService).toBe(
+        authMutationService.createAuthMutationService
+    );
 });
 
 it('keeps package auth inbox exports directly on their canonical owners', () => {
-  expect(packageRoot.AppAuthInboxService).toBe(appAuthInbox.AppAuthInboxService);
-  expect(packageRoot.AUTH_STATE_APP_INBOX_TOPIC).toBe(
-    authAppInboxRouting.AUTH_STATE_APP_INBOX_TOPIC,
-  );
-  expect(packageRoot.toAuthAppInboxType).toBe(authAppInboxRouting.toAuthAppInboxType);
+    expect(packageRoot.AppAuthInboxService).toBe(appAuthInbox.AppAuthInboxService);
+    expect(packageRoot.AUTH_STATE_APP_INBOX_TOPIC).toBe(
+        authAppInboxRouting.AUTH_STATE_APP_INBOX_TOPIC
+    );
+    expect(packageRoot.toAuthAppInboxType).toBe(authAppInboxRouting.toAuthAppInboxType);
 });
 
 it('does not expose direct mutation or credential-minting compatibility APIs', () => {
-  expect(authLoginCompatibility).not.toHaveProperty('registerAuthUser');
-  expect(authLoginCompatibility).not.toHaveProperty('loginAuthUser');
-  expect(packageRoot).not.toHaveProperty('registerAuthUser');
-  expect(packageRoot).not.toHaveProperty('loginAuthUser');
-  expect(packageRoot).toHaveProperty('AppAuthInboxService');
+    expect(authLoginCompatibility).not.toHaveProperty('registerAuthUser');
+    expect(authLoginCompatibility).not.toHaveProperty('loginAuthUser');
+    expect(packageRoot).not.toHaveProperty('registerAuthUser');
+    expect(packageRoot).not.toHaveProperty('loginAuthUser');
+    expect(packageRoot).toHaveProperty('AppAuthInboxService');
 });
 
 function contract(
-  compatibilityPath: string,
-  compatibility: ModuleRecord,
-  canonicalGroups: readonly CanonicalRuntimeGroup[],
+    compatibilityPath: string,
+    compatibility: ModuleRecord,
+    canonicalGroups: readonly CanonicalRuntimeGroup[]
 ): RuntimeIdentityContract {
-  return { compatibilityPath, compatibility, canonicalGroups };
+    return { compatibilityPath, compatibility, canonicalGroups };
 }
 
 function group(module: ModuleRecord, names: readonly string[]): CanonicalRuntimeGroup {
-  return { module, names };
+    return { module, names };
 }

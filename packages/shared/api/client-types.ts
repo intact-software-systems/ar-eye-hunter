@@ -55,104 +55,123 @@ export type ClientScope = Readonly<{
     workspaceId: WorkspaceId;
 }>;
 
-export type ClientPrincipalRef = ClientScope & Readonly<{
-    principalId: PrincipalId;
-}>;
+export type ClientPrincipalRef =
+    & ClientScope
+    & Readonly<{
+        principalId: PrincipalId;
+    }>;
 
-export type ClientInstanceRef = ClientPrincipalRef & Readonly<{
-    clientInstanceId: ClientInstanceId;
-}>;
+export type ClientInstanceRef =
+    & ClientPrincipalRef
+    & Readonly<{
+        clientInstanceId: ClientInstanceId;
+    }>;
 
-export type ClientSessionRef = ClientInstanceRef & Readonly<{
-    sessionId: SessionId;
-}>;
+export type ClientSessionRef =
+    & ClientInstanceRef
+    & Readonly<{
+        sessionId: SessionId;
+    }>;
 
-type ClientPrincipalBase = ClientPrincipalRef & Readonly<{
-    username: string;
-    displayName: string | null;
-    avatarUrl: string | null;
-    authProvider: string | null;
-    externalSubjectId: string | null;
-    roles: readonly string[];
-    metadata: Record<string, unknown>;
+type ClientPrincipalBase =
+    & ClientPrincipalRef
+    & Readonly<{
+        username: string;
+        displayName: string | null;
+        avatarUrl: string | null;
+        authProvider: string | null;
+        externalSubjectId: string | null;
+        roles: readonly string[];
+        metadata: Record<string, unknown>;
 
-    snapshotVersion: number;
-    profileVersion: number;
-    presenceVersion: number;
+        snapshotVersion: number;
+        profileVersion: number;
+        presenceVersion: number;
 
-    created: AuditStamp;
-    updated: AuditStamp;
-    lastSeenAtEpochMs: number | null;
-}>;
+        created: AuditStamp;
+        updated: AuditStamp;
+        lastSeenAtEpochMs: number | null;
+    }>;
 
-export type ClientPrincipal = ClientPrincipalBase & (
-    | Readonly<{
-        status: 'active';
-        disabled: null;
-        deleted: null;
-    }>
-    | Readonly<{
-        status: 'disabled';
-        disabled: AuditStamp;
-        deleted: null;
-    }>
-    | Readonly<{
-        status: 'deleted';
-        disabled: AuditStamp | null;
-        deleted: AuditStamp;
-    }>
-);
+export type ClientPrincipal =
+    & ClientPrincipalBase
+    & (
+        | Readonly<{
+            status: 'active';
+            disabled: null;
+            deleted: null;
+        }>
+        | Readonly<{
+            status: 'disabled';
+            disabled: AuditStamp;
+            deleted: null;
+        }>
+        | Readonly<{
+            status: 'deleted';
+            disabled: AuditStamp | null;
+            deleted: AuditStamp;
+        }>
+    );
 
-type ClientInstanceBase = ClientInstanceRef & Readonly<{
-    platform: ClientPlatform;
-    deviceLabel: string | null;
-    appVersion: string | null;
-    userAgent: string | null;
-    capabilities: readonly string[];
+type ClientInstanceBase =
+    & ClientInstanceRef
+    & Readonly<{
+        platform: ClientPlatform;
+        deviceLabel: string | null;
+        appVersion: string | null;
+        userAgent: string | null;
+        capabilities: readonly string[];
 
-    registered: AuditStamp;
-    updated: AuditStamp;
-}>;
+        registered: AuditStamp;
+        updated: AuditStamp;
+    }>;
 
-export type ClientInstance = ClientInstanceBase & (
-    | Readonly<{ status: 'active'; revoked: null }>
-    | Readonly<{ status: 'revoked' | 'retired'; revoked: AuditStamp }>
-);
+export type ClientInstance =
+    & ClientInstanceBase
+    & (
+        | Readonly<{ status: 'active'; revoked: null; }>
+        | Readonly<{ status: 'revoked' | 'retired'; revoked: AuditStamp; }>
+    );
 
-type ClientSessionBase = ClientSessionRef & Readonly<{
-    generationId: string;
-    generationVersion: number;
-    presenceState: ClientPresenceState;
-    transport: ClientTransport;
-    connectionId: string | null;
+type ClientSessionBase =
+    & ClientSessionRef
+    & Readonly<{
+        generationId: string;
+        generationVersion: number;
+        presenceState: ClientPresenceState;
+        transport: ClientTransport;
+        connectionId: string | null;
 
-    authenticatedAtEpochMs: number;
-    connectedAtEpochMs: number;
-    lastHeartbeatAtEpochMs: number;
-    expiresAtEpochMs: number;
+        authenticatedAtEpochMs: number;
+        connectedAtEpochMs: number;
+        lastHeartbeatAtEpochMs: number;
+        expiresAtEpochMs: number;
+    }>;
 
-}>;
+export type ClientSession =
+    & ClientSessionBase
+    & (
+        | Readonly<{
+            status: 'active';
+            disconnectedAtEpochMs: null;
+            disconnectReason: null;
+        }>
+        | Readonly<{
+            status: 'disconnected' | 'expired';
+            disconnectedAtEpochMs: number;
+            disconnectReason: string;
+        }>
+    );
 
-export type ClientSession = ClientSessionBase & (
-    | Readonly<{
-        status: 'active';
-        disconnectedAtEpochMs: null;
-        disconnectReason: null;
-    }>
-    | Readonly<{
-        status: 'disconnected' | 'expired';
-        disconnectedAtEpochMs: number;
-        disconnectReason: string;
-    }>
-);
-
-export type ClientPresenceSnapshot = ClientPrincipalRef & Readonly<{
-    presenceVersion: number;
-    isOnline: boolean;
-    presenceState: ClientPresenceState;
-    activeSessions: readonly ClientSession[];
-    lastSeenAtEpochMs: number | null;
-}>;
+export type ClientPresenceSnapshot =
+    & ClientPrincipalRef
+    & Readonly<{
+        presenceVersion: number;
+        isOnline: boolean;
+        presenceState: ClientPresenceState;
+        activeSessions: readonly ClientSession[];
+        lastSeenAtEpochMs: number | null;
+    }>;
 
 export type ClientSnapshot = Readonly<{
     stateRevision: number;
@@ -179,16 +198,18 @@ export type ClientEventType =
     | 'session-disconnected'
     | 'session-expired';
 
-export type ClientEvent = ClientPrincipalRef & Readonly<{
-    eventId: string;
-    eventType: ClientEventType;
-    snapshotVersion: number;
-    clientInstanceId: ClientInstanceId | null;
-    sessionId: SessionId | null;
-    occurredAtEpochMs: number;
-    actor: MutationActor;
-    reason: string | null;
-    traceId: string | null;
-    requestId: string | null;
-    payload: Record<string, unknown>;
-}>;
+export type ClientEvent =
+    & ClientPrincipalRef
+    & Readonly<{
+        eventId: string;
+        eventType: ClientEventType;
+        snapshotVersion: number;
+        clientInstanceId: ClientInstanceId | null;
+        sessionId: SessionId | null;
+        occurredAtEpochMs: number;
+        actor: MutationActor;
+        reason: string | null;
+        traceId: string | null;
+        requestId: string | null;
+        payload: Record<string, unknown>;
+    }>;

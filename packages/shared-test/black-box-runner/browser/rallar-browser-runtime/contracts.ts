@@ -1,13 +1,13 @@
-import type { AuthSession } from '@shared/api/api-config.ts';
-import type { RallarCrdtOperation, RallarCrdtOperationBatch, RallarCrdtTransportStrategy } from '@shared/crdt/mod.ts';
-import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
 import type {
     RallarDirectorStatus,
     RallarFacade,
     RallarRealtimeLaneHealth,
     RallarRealtimeSendResult,
-    RallarRtcDiagnostics,
+    RallarRtcDiagnostics
 } from '@shared-web/browser/rallar.ts';
+import type { AuthSession } from '@shared/api/api-config.ts';
+import type { RallarCrdtOperation, RallarCrdtOperationBatch, RallarCrdtTransportStrategy } from '@shared/crdt/mod.ts';
+import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
 
 export type BlackBoxRallarTransport = 'realtime' | 'messages.rtc';
 
@@ -50,9 +50,9 @@ export type BlackBoxRallarConfig = Readonly<{
     messageSelector?:
         | string
         | Readonly<{
-              topicId?: string;
-              typeId?: string;
-          }>;
+            topicId?: string;
+            typeId?: string;
+        }>;
     ttlHops?: number;
     ttlMs?: number;
     reliability?: 'best-effort' | 'at-least-once';
@@ -293,13 +293,15 @@ export type BlackBoxRallarCrdtHandleInput = Readonly<{
     timeoutMs?: number;
 }>;
 
-export type BlackBoxRallarCrdtApplyInput = BlackBoxRallarCrdtHandleInput &
-    Readonly<{
+export type BlackBoxRallarCrdtApplyInput =
+    & BlackBoxRallarCrdtHandleInput
+    & Readonly<{
         batch: RallarCrdtOperationBatch;
     }>;
 
-export type BlackBoxRallarCrdtSyncInput = BlackBoxRallarCrdtHandleInput &
-    Readonly<{
+export type BlackBoxRallarCrdtSyncInput =
+    & BlackBoxRallarCrdtHandleInput
+    & Readonly<{
         reason?: string;
         transport?: RallarCrdtTransportStrategy;
     }>;
@@ -313,21 +315,23 @@ export type BlackBoxRallarCrdtWaitCondition = Readonly<{
     expected?: unknown;
 }>;
 
-export type BlackBoxRallarCrdtWaitInput = BlackBoxRallarCrdtHandleInput &
-    Readonly<{
+export type BlackBoxRallarCrdtWaitInput =
+    & BlackBoxRallarCrdtHandleInput
+    & Readonly<{
         intervalMs?: number;
         stableForMs?: number;
         sync?:
             | false
             | Readonly<{
-                  reason?: string;
-                  transport?: RallarCrdtTransportStrategy;
-              }>;
+                reason?: string;
+                transport?: RallarCrdtTransportStrategy;
+            }>;
         conditions: readonly BlackBoxRallarCrdtWaitCondition[];
     }>;
 
-export type BlackBoxRallarCrdtUndoRedoInput = BlackBoxRallarCrdtHandleInput &
-    Readonly<{
+export type BlackBoxRallarCrdtUndoRedoInput =
+    & BlackBoxRallarCrdtHandleInput
+    & Readonly<{
         targetOperationGroupId: string;
         operations: readonly RallarCrdtOperation[];
         operationGroupId?: string;
@@ -393,19 +397,22 @@ export type BlackBoxRallarDirectorRoomInput = Readonly<{
     timeoutMs?: number;
 }>;
 
-export type BlackBoxRallarDirectorAppointInput = BlackBoxRallarDirectorRoomInput &
-    Readonly<{
+export type BlackBoxRallarDirectorAppointInput =
+    & BlackBoxRallarDirectorRoomInput
+    & Readonly<{
         heartbeatTtlMs?: number;
     }>;
 
-export type BlackBoxRallarDirectorStatusInput = BlackBoxRallarDirectorRoomInput &
-    Readonly<{
+export type BlackBoxRallarDirectorStatusInput =
+    & BlackBoxRallarDirectorRoomInput
+    & Readonly<{
         refresh?: boolean;
         now?: number;
     }>;
 
-export type BlackBoxRallarDirectorRelayStartInput = BlackBoxRallarDirectorRoomInput &
-    Readonly<{
+export type BlackBoxRallarDirectorRelayStartInput =
+    & BlackBoxRallarDirectorRoomInput
+    & Readonly<{
         handle: string;
         laneId?: string;
         topicId?: string;
@@ -424,13 +431,15 @@ export type BlackBoxRallarDirectorHandleInput = Readonly<{
     timeoutMs?: number;
 }>;
 
-export type BlackBoxRallarDirectorIntentInput = BlackBoxRallarDirectorHandleInput &
-    Readonly<{
+export type BlackBoxRallarDirectorIntentInput =
+    & BlackBoxRallarDirectorHandleInput
+    & Readonly<{
         intent: unknown;
     }>;
 
-export type BlackBoxRallarDirectorSyncRequestInput = BlackBoxRallarDirectorHandleInput &
-    Readonly<{
+export type BlackBoxRallarDirectorSyncRequestInput =
+    & BlackBoxRallarDirectorHandleInput
+    & Readonly<{
         payload?: unknown;
     }>;
 
@@ -486,11 +495,11 @@ export type BlackBoxRallarDirectorRuntime = Readonly<{
     resign(input: BlackBoxRallarDirectorRoomInput | unknown): Promise<BlackBoxRallarDirectorCommandDiagnostics>;
     status(input: BlackBoxRallarDirectorStatusInput | unknown): Promise<BlackBoxRallarDirectorCommandDiagnostics>;
     relayStart(
-        input: BlackBoxRallarDirectorRelayStartInput | unknown,
+        input: BlackBoxRallarDirectorRelayStartInput | unknown
     ): Promise<BlackBoxRallarDirectorCommandDiagnostics>;
     intent(input: BlackBoxRallarDirectorIntentInput | unknown): Promise<BlackBoxRallarDirectorCommandDiagnostics>;
     syncRequest(
-        input: BlackBoxRallarDirectorSyncRequestInput | unknown,
+        input: BlackBoxRallarDirectorSyncRequestInput | unknown
     ): Promise<BlackBoxRallarDirectorCommandDiagnostics>;
     relayStop(input: BlackBoxRallarDirectorHandleInput | unknown): Promise<BlackBoxRallarDirectorCommandDiagnostics>;
 }>;

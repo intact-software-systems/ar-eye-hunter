@@ -1,20 +1,32 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 
 const MESSAGE_SECTIONS = [
-    'id', 'route', 'targets', 'forwarding', 'constraints', 'ordering',
-    'delivery', 'actions', 'qos', 'payload', 'audit', 'diagnostics',
+    'id',
+    'route',
+    'targets',
+    'forwarding',
+    'constraints',
+    'ordering',
+    'delivery',
+    'actions',
+    'qos',
+    'payload',
+    'audit',
+    'diagnostics'
 ] as const;
 
 /** Validates the complete persisted AL envelope without imposing topic semantics. */
 export function validatePersistedALMessage(
-    value: unknown,
+    value: unknown
 ): asserts value is ALMessage {
     const message = record(value, 'Persisted AL message');
     exactAllowedRequired(message, MESSAGE_SECTIONS, ['id', 'route', 'payload']);
     validateId(message.id);
     validateRoute(message.route);
     validatePayload(message.payload);
-    if (message.targets !== undefined) validateTargets(message.targets);
+    if (message.targets !== undefined) {
+        validateTargets(message.targets);
+    }
     if (message.forwarding !== undefined) {
         const section = sectionRecord(message.forwarding, 'forwarding');
         exactAllowedRequired(section, ['nextHopPeerIds', 'overlayId', 'fanoutLimit'], []);
@@ -35,14 +47,18 @@ export function validatePersistedALMessage(
         optionalSafeInteger(section.epoch, 0, 'ordering epoch');
         optionalSafeInteger(section.seq, 0, 'ordering sequence');
     }
-    if (message.delivery !== undefined) validateDelivery(message.delivery);
+    if (message.delivery !== undefined) {
+        validateDelivery(message.delivery);
+    }
     if (message.actions !== undefined) {
         const section = sectionRecord(message.actions, 'actions');
         exactAllowedRequired(section, ['corrId', 'replyToMsgId'], []);
         optionalNonEmptyString(section.corrId, 'action correlation id');
         optionalNonEmptyString(section.replyToMsgId, 'action reply id');
     }
-    if (message.qos !== undefined) validateQos(message.qos);
+    if (message.qos !== undefined) {
+        validateQos(message.qos);
+    }
     if (message.audit !== undefined) {
         const section = sectionRecord(message.audit, 'audit');
         exactAllowedRequired(section, ['createdBy', 'createdTs'], []);
@@ -61,9 +77,11 @@ function validateId(value: unknown): void {
     exactAllowedRequired(
         id,
         ['v', 'msgId', 'ts', 'senderId', 'sessionId', 'traceId'],
-        ['v', 'msgId', 'ts', 'senderId'],
+        ['v', 'msgId', 'ts', 'senderId']
     );
-    if (id.v !== 2) throw new TypeError('Persisted AL id version is invalid');
+    if (id.v !== 2) {
+        throw new TypeError('Persisted AL id version is invalid');
+    }
     nonEmptyString(id.msgId, 'id message id');
     safeInteger(id.ts, 0, 'id timestamp');
     nonEmptyString(id.senderId, 'id sender');
@@ -76,7 +94,7 @@ function validateRoute(value: unknown): void {
     exactAllowedRequired(
         route,
         ['topicId', 'resourceId', 'contextId'],
-        ['topicId', 'resourceId', 'contextId'],
+        ['topicId', 'resourceId', 'contextId']
     );
     nonEmptyString(route.topicId, 'route topic');
     nonEmptyString(route.resourceId, 'route resource');
@@ -88,7 +106,7 @@ function validatePayload(value: unknown): void {
     exactAllowedRequired(
         payload,
         ['typeId', 'contentType', 'resource'],
-        ['typeId', 'resource'],
+        ['typeId', 'resource']
     );
     nonEmptyString(payload.typeId, 'payload type');
     nonEmptyString(payload.resource, 'payload resource');
@@ -108,7 +126,7 @@ function validateTargets(value: unknown): void {
         exactAllowedRequired(
             targets,
             ['mode', 'groupRef', 'membershipEpoch', 'minSnapshotVersion'],
-            ['mode', 'groupRef'],
+            ['mode', 'groupRef']
         );
         validateCanonicalGroupRef(targets.groupRef);
         optionalSafeInteger(targets.membershipEpoch, 0, 'membership epoch');
@@ -121,10 +139,14 @@ function validateTargets(value: unknown): void {
     exactAllowedRequired(
         targets,
         [
-            'mode', 'scope', 'groupRef', 'exceptPeerIds',
-            'minSnapshotVersion', 'recipientPeerIds',
+            'mode',
+            'scope',
+            'groupRef',
+            'exceptPeerIds',
+            'minSnapshotVersion',
+            'recipientPeerIds'
         ],
-        ['mode', 'scope'],
+        ['mode', 'scope']
     );
     if (
         typeof targets.scope !== 'string' ||
@@ -138,7 +160,9 @@ function validateTargets(value: unknown): void {
     if (targets.recipientPeerIds !== undefined && targets.scope !== 'room') {
         throw new TypeError('Persisted AL fixed recipient audience requires room scope');
     }
-    if (targets.groupRef !== undefined) validateCanonicalGroupRef(targets.groupRef);
+    if (targets.groupRef !== undefined) {
+        validateCanonicalGroupRef(targets.groupRef);
+    }
     optionalStringArray(targets.exceptPeerIds, 'broadcast exclusions');
     optionalUniqueStringArray(targets.recipientPeerIds, 'broadcast fixed recipients');
     optionalSafeInteger(targets.minSnapshotVersion, 1, 'minimum snapshot version');
@@ -149,7 +173,7 @@ function validateDelivery(value: unknown): void {
     exactAllowedRequired(
         delivery,
         ['ownership', 'reliability', 'ack'],
-        ['reliability', 'ack'],
+        ['reliability', 'ack']
     );
     if (
         delivery.ownership !== undefined &&
@@ -157,7 +181,9 @@ function validateDelivery(value: unknown): void {
             typeof delivery.ownership !== 'string' ||
             !['shared', 'exclusive'].includes(delivery.ownership)
         )
-    ) throw new TypeError('Persisted AL delivery ownership is invalid');
+    ) {
+        throw new TypeError('Persisted AL delivery ownership is invalid');
+    }
     if (
         typeof delivery.reliability !== 'string' ||
         !['best-effort', 'at-least-once'].includes(delivery.reliability)
@@ -167,9 +193,11 @@ function validateDelivery(value: unknown): void {
     if (
         typeof delivery.ack !== 'string' ||
         !['none', 'receiver', 'all-logical-recipients', 'group-leader'].includes(
-            delivery.ack,
+            delivery.ack
         )
-    ) throw new TypeError('Persisted AL delivery ack is invalid');
+    ) {
+        throw new TypeError('Persisted AL delivery ack is invalid');
+    }
 }
 
 function validateQos(value: unknown): void {
@@ -186,41 +214,64 @@ function validateQos(value: unknown): void {
         fanout: ['all', 'limit', 'random-k'],
         congestion: ['drop-low', 'defer', 'reject'],
         durability: ['volatile', 'local-outbox', 'local-inbox'],
-        ownership: ['shared', 'exclusive'],
+        ownership: ['shared', 'exclusive']
     };
     exactAllowedRequired(qos, Object.keys(algorithms), []);
     for (const [aspect, allowed] of Object.entries(algorithms)) {
         const request = qos[aspect];
-        if (request === undefined) continue;
+        if (request === undefined) {
+            continue;
+        }
         const requestRecord = sectionRecord(request, `qos ${aspect}`);
         exactAllowedRequired(requestRecord, ['algo', 'opts'], ['algo']);
         const algorithm = requestRecord.algo;
         if (typeof algorithm !== 'string' || !allowed.includes(algorithm)) {
             throw new TypeError(`Persisted AL qos ${aspect} algorithm is invalid`);
         }
-        if (requestRecord.opts !== undefined) validateQosOptions(aspect, requestRecord.opts);
+        if (requestRecord.opts !== undefined) {
+            validateQosOptions(aspect, requestRecord.opts);
+        }
     }
 }
 
 function validateQosOptions(aspect: string, value: unknown): void {
     const options = sectionRecord(value, `qos ${aspect} options`);
     const keys: Record<string, readonly string[]> = {
-        delivery: [], forwarding: ['overlayId'], repair: ['maxRepairs'],
-        ack: ['timeoutMs'], expiry: ['ttlHops', 'expiresAtMs', 'maxStalenessMs'],
-        retry: ['maxAttempts'], dedup: ['windowMs', 'semanticKey'],
-        supersedence: ['supersedenceKey', 'replacesMsgId'], fanout: ['limit'],
-        congestion: ['priority'], durability: [], ownership: [],
+        delivery: [],
+        forwarding: ['overlayId'],
+        repair: ['maxRepairs'],
+        ack: ['timeoutMs'],
+        expiry: ['ttlHops', 'expiresAtMs', 'maxStalenessMs'],
+        retry: ['maxAttempts'],
+        dedup: ['windowMs', 'semanticKey'],
+        supersedence: ['supersedenceKey', 'replacesMsgId'],
+        fanout: ['limit'],
+        congestion: ['priority'],
+        durability: [],
+        ownership: []
     };
     exactAllowedRequired(options, keys[aspect] ?? [], []);
     for (const field of ['overlayId', 'semanticKey', 'supersedenceKey', 'replacesMsgId']) {
         optionalNonEmptyString(options[field], `qos ${field}`);
     }
-    for (const field of [
-        'maxRepairs', 'timeoutMs', 'ttlHops', 'expiresAtMs', 'maxStalenessMs',
-        'maxAttempts', 'windowMs', 'limit',
-    ]) optionalSafeInteger(options[field], 0, `qos ${field}`);
-    if (options.priority !== undefined &&
-        (typeof options.priority !== 'number' || !Number.isFinite(options.priority))) {
+    for (
+        const field of [
+            'maxRepairs',
+            'timeoutMs',
+            'ttlHops',
+            'expiresAtMs',
+            'maxStalenessMs',
+            'maxAttempts',
+            'windowMs',
+            'limit'
+        ]
+    ) {
+        optionalSafeInteger(options[field], 0, `qos ${field}`);
+    }
+    if (
+        options.priority !== undefined &&
+        (typeof options.priority !== 'number' || !Number.isFinite(options.priority))
+    ) {
         throw new TypeError('Persisted AL qos priority is invalid');
     }
 }
@@ -233,7 +284,7 @@ function validateCanonicalGroupRef(value: unknown): void {
     exactAllowedRequired(
         ref,
         ['applicationId', 'workspaceId', 'groupId'],
-        ['applicationId', 'workspaceId', 'groupId'],
+        ['applicationId', 'workspaceId', 'groupId']
     );
     nonEmptyString(ref.applicationId, 'group application id');
     nonEmptyString(ref.workspaceId, 'group workspace id');
@@ -254,7 +305,7 @@ function record(value: unknown, label: string): Record<string, unknown> {
 function exactAllowedRequired(
     value: Record<string, unknown>,
     allowed: readonly string[],
-    required: readonly string[],
+    required: readonly string[]
 ): void {
     if (Object.keys(value).some((key) => !allowed.includes(key))) {
         throw new TypeError('Persisted AL section has unknown fields');
@@ -271,7 +322,9 @@ function nonEmptyString(value: unknown, label: string): void {
 }
 
 function optionalNonEmptyString(value: unknown, label: string): void {
-    if (value !== undefined) nonEmptyString(value, label);
+    if (value !== undefined) {
+        nonEmptyString(value, label);
+    }
 }
 
 function safeInteger(value: unknown, minimum: number, label: string): void {
@@ -281,14 +334,18 @@ function safeInteger(value: unknown, minimum: number, label: string): void {
 }
 
 function optionalSafeInteger(value: unknown, minimum: number, label: string): void {
-    if (value !== undefined) safeInteger(value, minimum, label);
+    if (value !== undefined) {
+        safeInteger(value, minimum, label);
+    }
 }
 
 function optionalStringArray(value: unknown, label: string): void {
-    if (value === undefined) return;
-    if (!Array.isArray(value) || value.some((item) =>
-        typeof item !== 'string' || item.length === 0
-    )) throw new TypeError(`Persisted AL ${label} is invalid`);
+    if (value === undefined) {
+        return;
+    }
+    if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || item.length === 0)) {
+        throw new TypeError(`Persisted AL ${label} is invalid`);
+    }
 }
 
 function optionalUniqueStringArray(value: unknown, label: string): void {

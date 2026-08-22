@@ -1,17 +1,14 @@
-import type { ControlFleetReportBundle } from
-    '@shared-test/rallar-bb-test/fleet-report.ts';
-import {
-    validateControlFleetReportBundle,
-} from '@shared-test/rallar-bb-test/fleet-report-validation.ts';
+import { validateControlFleetReportBundle } from '@shared-test/rallar-bb-test/fleet-report-validation.ts';
+import type { ControlFleetReportBundle } from '@shared-test/rallar-bb-test/fleet-report.ts';
 import { fetchFleetReportBundleBytes } from '../../control-run-manager.ts';
-import type { ControlAuthorizedEndpoint } from './control-authorized-transport.ts';
 import { throwIfControlAborted } from './control-authorized-fetch.ts';
+import type { ControlAuthorizedEndpoint } from './control-authorized-transport.ts';
 
-type FleetSelectionSignal = Readonly<{ signal?: AbortSignal }>;
+type FleetSelectionSignal = Readonly<{ signal?: AbortSignal; }>;
 
 export type RecipeConsoleControlFleetApi = Readonly<{
     selectReportBundle(
-        input: FleetSelectionSignal & Readonly<{ distributedRunId: string }>,
+        input: FleetSelectionSignal & Readonly<{ distributedRunId: string; }>
     ): Promise<ControlFleetReportBundle>;
     getSelectedReportBundle(): ControlFleetReportBundle | undefined;
     clearSelectedReportBundle(): void;
@@ -22,7 +19,7 @@ export function createRecipeConsoleControlFleetApi(
         baseUrl: string;
         endpoint: ControlAuthorizedEndpoint;
         contextSignal: AbortSignal;
-    }>,
+    }>
 ): RecipeConsoleControlFleetApi {
     let selectedBundle: ControlFleetReportBundle | undefined;
     let selectionGeneration = 0;
@@ -37,24 +34,25 @@ export function createRecipeConsoleControlFleetApi(
             const linked = linkFleetSelectionSignals([
                 input.contextSignal,
                 request.signal,
-                selectionController.signal,
+                selectionController.signal
             ]);
             try {
                 throwIfControlAborted(linked.signal);
                 const pending = input.endpoint.response(
-                    async fetchFn => parseFleetReportBundleBytes(
-                        await fetchFleetReportBundleBytes({
-                            baseUrl: input.baseUrl,
-                            distributedRunId: request.distributedRunId,
-                            fetchFn,
-                        }),
-                        request.distributedRunId,
-                    ),
-                    linked.signal,
+                    async (fetchFn) =>
+                        parseFleetReportBundleBytes(
+                            await fetchFleetReportBundleBytes({
+                                baseUrl: input.baseUrl,
+                                distributedRunId: request.distributedRunId,
+                                fetchFn
+                            }),
+                            request.distributedRunId
+                        ),
+                    linked.signal
                 );
                 const result = await settleFleetSelection(
                     pending,
-                    linked.signal,
+                    linked.signal
                 );
                 throwIfControlAborted(linked.signal);
                 if (generation !== selectionGeneration) {
@@ -62,7 +60,8 @@ export function createRecipeConsoleControlFleetApi(
                 }
                 selectedBundle = result.value;
                 return result.value;
-            } finally {
+            }
+            finally {
                 linked.dispose();
                 if (activeSelection === selectionController) {
                     activeSelection = undefined;
@@ -77,24 +76,24 @@ export function createRecipeConsoleControlFleetApi(
             activeSelection?.abort(clearedSelectionError());
             activeSelection = undefined;
             selectedBundle = undefined;
-        },
+        }
     };
 }
 
 function parseFleetReportBundleBytes(
     bytes: ArrayBuffer,
-    requestedDistributedRunId: string,
+    requestedDistributedRunId: string
 ): ControlFleetReportBundle {
     const value: unknown = JSON.parse(
-        new TextDecoder('utf-8', { fatal: true }).decode(bytes),
+        new TextDecoder('utf-8', { fatal: true }).decode(bytes)
     );
     const validation = validateControlFleetReportBundle(
         value,
-        requestedDistributedRunId,
+        requestedDistributedRunId
     );
     if (!validation.ok || !validation.bundle) {
         const details = validation.issues
-            .map(issue => `${issue.code} at ${issue.path}: ${issue.message}`)
+            .map((issue) => `${issue.code} at ${issue.path}: ${issue.message}`)
             .join('; ');
         const omitted = validation.omittedIssueCount > 0
             ? `; ${validation.omittedIssueCount} additional issues omitted`
@@ -106,7 +105,7 @@ function parseFleetReportBundleBytes(
 
 async function settleFleetSelection<Value>(
     pending: Promise<Value>,
-    signal: AbortSignal,
+    signal: AbortSignal
 ): Promise<Value> {
     throwIfControlAborted(signal);
     return new Promise<Value>((resolve, reject) => {
@@ -117,35 +116,36 @@ async function settleFleetSelection<Value>(
         const onAbort = () => finish(() => reject(controlAbortError(signal)));
         signal.addEventListener('abort', onAbort, { once: true });
         pending.then(
-            value => finish(() => resolve(value)),
-            error => finish(() => reject(error)),
+            (value) => finish(() => resolve(value)),
+            (error) => finish(() => reject(error))
         );
     });
 }
 
 function linkFleetSelectionSignals(
-    sources: readonly (AbortSignal | undefined)[],
-): Readonly<{ signal: AbortSignal; dispose(): void }> {
+    sources: readonly (AbortSignal | undefined)[]
+): Readonly<{ signal: AbortSignal; dispose(): void; }> {
     const controller = new AbortController();
     const activeSources = sources.filter(
-        (source): source is AbortSignal => source !== undefined,
+        (source): source is AbortSignal => source !== undefined
     );
     const onAbort = (event: Event) => {
         const source = event.currentTarget as AbortSignal;
-        if (!controller.signal.aborted) controller.abort(source.reason);
+        if (!controller.signal.aborted) {
+            controller.abort(source.reason);
+        }
     };
     for (const source of activeSources) {
         if (source.aborted && !controller.signal.aborted) {
             controller.abort(source.reason);
-        } else {
+        }
+        else {
             source.addEventListener('abort', onAbort, { once: true });
         }
     }
     return {
         signal: controller.signal,
-        dispose: () => activeSources.forEach(source =>
-            source.removeEventListener('abort', onAbort)
-        ),
+        dispose: () => activeSources.forEach((source) => source.removeEventListener('abort', onAbort))
     };
 }
 
@@ -158,13 +158,13 @@ function controlAbortError(signal: AbortSignal): Error {
 function supersededSelectionError(): DOMException {
     return new DOMException(
         'The Fleet report selection was superseded.',
-        'AbortError',
+        'AbortError'
     );
 }
 
 function clearedSelectionError(): DOMException {
     return new DOMException(
         'The Fleet report selection was cleared.',
-        'AbortError',
+        'AbortError'
     );
 }

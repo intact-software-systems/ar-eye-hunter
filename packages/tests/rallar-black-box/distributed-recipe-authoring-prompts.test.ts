@@ -5,23 +5,23 @@ import {
     distributedRecipeSchemaSnippets,
     redactDistributedRecipePromptVariables,
     renderDistributedRecipePromptTemplate,
-    renderDistributedRecipeValidationFeedback,
+    renderDistributedRecipeValidationFeedback
 } from '../../../apps/rallar-black-box/src/distributed-recipe-authoring-prompts.ts';
 
 describe('distributed recipe authoring prompts', () => {
     it('exposes the expected distributed recipe prompt templates', () => {
-        expect(DISTRIBUTED_RECIPE_PROMPT_TEMPLATES.map(template => template.id)).toEqual([
+        expect(DISTRIBUTED_RECIPE_PROMPT_TEMPLATES.map((template) => template.id)).toEqual([
             'live-group-ack',
             'ws-send-receive',
             'rtc-realtime-position',
             'looped-rtc-load',
             'parallel-ws-rtc-smoke',
-            'wait-assert-evidence',
+            'wait-assert-evidence'
         ]);
 
-        expect(DISTRIBUTED_RECIPE_PROMPT_TEMPLATES.find(template =>
-            template.id === 'parallel-ws-rtc-smoke'
-        )?.commandKinds).toEqual(expect.arrayContaining(['parallel', 'ws.send', 'rtc.send']));
+        expect(DISTRIBUTED_RECIPE_PROMPT_TEMPLATES.find((template) => template.id === 'parallel-ws-rtc-smoke')?.commandKinds).toEqual(
+            expect.arrayContaining(['parallel', 'ws.send', 'rtc.send'])
+        );
     });
 
     it('renders schema and capability context for browser-agent and distributed manifests', () => {
@@ -47,9 +47,9 @@ describe('distributed recipe authoring prompts', () => {
             sessionId: 'session-secret',
             token: 'token-secret',
             headers: {
-                Authorization: 'Bearer abc.def.ghi',
+                Authorization: 'Bearer abc.def.ghi'
             },
-            selectedAgentIds: ['agent-a', 'agent-b'],
+            selectedAgentIds: ['agent-a', 'agent-b']
         });
 
         expect(variables.applicationId).toBe('rallar-server');
@@ -67,7 +67,7 @@ describe('distributed recipe authoring prompts', () => {
                 workspaceId: 'default',
                 groupId: 'bb-group',
                 sessionId: 'session-secret',
-                controlRunId: 'demo-run',
+                controlRunId: 'demo-run'
             },
             validationFeedback: {
                 target: 'distributed-run-manifest',
@@ -75,8 +75,8 @@ describe('distributed recipe authoring prompts', () => {
                 ok: false,
                 parseOk: true,
                 schemaErrorText: '$.recipes[0].recipe: Missing required property commands',
-                preflightWarnings: ['recipes[0] uses live RTC traffic'],
-            },
+                preflightWarnings: ['recipes[0] uses live RTC traffic']
+            }
         });
 
         expect(prompt).toContain('Template: RTC Position Stream');
@@ -95,7 +95,7 @@ describe('distributed recipe authoring prompts', () => {
             ok: false,
             parseOk: true,
             schemaErrorText: '$.commands: Missing required property commands',
-            preflightErrors: ['recipes[0].commands[0] has no loop child commands.'],
+            preflightErrors: ['recipes[0].commands[0] has no loop child commands.']
         });
 
         expect(feedback).toContain('Target: Recipe JSON');

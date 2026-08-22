@@ -1,30 +1,30 @@
-import { describe, expect, it } from 'vitest';
-import type { ClientEvent } from '@shared/api/client-types.ts';
-import type { GroupEvent } from '@shared/api/group-types.ts';
 import {
     DEFAULT_STATE_EVENT_LIST_LIMIT,
     filterStateEventsForList,
     listRecentStateEvents,
     listStateEventsPage,
     MAX_STATE_EVENT_LIST_LIMIT,
-    readStateEventListQuery,
+    readStateEventListQuery
 } from '@shared-server/rallar-system/state-event-listing.ts';
+import type { ClientEvent } from '@shared/api/client-types.ts';
+import type { GroupEvent } from '@shared/api/group-types.ts';
+import { describe, expect, it } from 'vitest';
 
 describe('state event listing', () => {
     it('filters events by repeated eventType query params', () => {
         const events = [
             createGroupEvent('event-1', 'group-created', 1_000),
             createGroupEvent('event-2', 'member-joined', 2_000),
-            createGroupEvent('event-3', 'member-left', 3_000),
+            createGroupEvent('event-3', 'member-left', 3_000)
         ];
         const query = readStateEventListQuery(
             new URLSearchParams(
-                'eventType=member-joined&eventType=member-left',
-            ),
+                'eventType=member-joined&eventType=member-left'
+            )
         );
 
         expect(
-            filterStateEventsForList(events, query).map((event) => event.eventId),
+            filterStateEventsForList(events, query).map((event) => event.eventId)
         ).toEqual(['event-2', 'event-3']);
     });
 
@@ -32,12 +32,12 @@ describe('state event listing', () => {
         const events = [
             createClientEvent('event-1', 'principal-created', 1_000),
             createClientEvent('event-2', 'principal-updated', 2_000),
-            createClientEvent('event-3', 'session-connected', 3_000),
+            createClientEvent('event-3', 'session-connected', 3_000)
         ];
         const query = readStateEventListQuery(new URLSearchParams('limit=2'));
 
         expect(
-            filterStateEventsForList(events, query).map((event) => event.eventId),
+            filterStateEventsForList(events, query).map((event) => event.eventId)
         ).toEqual(['event-2', 'event-3']);
     });
 
@@ -45,16 +45,16 @@ describe('state event listing', () => {
         const events = [
             createClientEvent('event-1', 'principal-created', 1_000),
             createClientEvent('event-2', 'principal-updated', 2_000),
-            createClientEvent('event-3', 'session-connected', 3_000),
+            createClientEvent('event-3', 'session-connected', 3_000)
         ];
         const query = readStateEventListQuery(
             new URLSearchParams(
-                'afterSnapshotVersion=2000&afterOccurredAtEpochMs=2000&afterEventId=event-2&limit=2',
-            ),
+                'afterSnapshotVersion=2000&afterOccurredAtEpochMs=2000&afterEventId=event-2&limit=2'
+            )
         );
 
         expect(
-            listRecentStateEvents(events, query).map((event) => event.eventId),
+            listRecentStateEvents(events, query).map((event) => event.eventId)
         ).toEqual(['event-2', 'event-3']);
     });
 
@@ -65,23 +65,23 @@ describe('state event listing', () => {
                 createGroupEvent(
                     `event-${index + 1}`,
                     'member-joined',
-                    index + 1,
-                ),
+                    index + 1
+                )
         );
         const query = readStateEventListQuery(new URLSearchParams());
 
         expect(query.limit).toBe(DEFAULT_STATE_EVENT_LIST_LIMIT);
         expect(filterStateEventsForList(events, query)).toHaveLength(
-            DEFAULT_STATE_EVENT_LIST_LIMIT,
+            DEFAULT_STATE_EVENT_LIST_LIMIT
         );
         expect(filterStateEventsForList(events, query)[0]?.eventId).toBe(
-            'event-3',
+            'event-3'
         );
     });
 
     it('clamps overly large limit values', () => {
         const query = readStateEventListQuery(
-            new URLSearchParams(`limit=${MAX_STATE_EVENT_LIST_LIMIT + 1}`),
+            new URLSearchParams(`limit=${MAX_STATE_EVENT_LIST_LIMIT + 1}`)
         );
 
         expect(query.limit).toBe(MAX_STATE_EVENT_LIST_LIMIT);
@@ -90,10 +90,10 @@ describe('state event listing', () => {
     it('uses the default limit for invalid limit values and empty event types', () => {
         const events = [
             createGroupEvent('event-1', 'group-created', 1_000),
-            createGroupEvent('event-2', 'member-joined', 2_000),
+            createGroupEvent('event-2', 'member-joined', 2_000)
         ];
         const query = readStateEventListQuery(
-            new URLSearchParams('eventType=&limit=-1'),
+            new URLSearchParams('eventType=&limit=-1')
         );
 
         expect(query.limit).toBe(DEFAULT_STATE_EVENT_LIST_LIMIT);
@@ -105,37 +105,37 @@ describe('state event listing', () => {
             createGroupEvent('event-1', 'group-created', 1_000),
             createGroupEvent('event-2', 'member-joined', 2_000),
             createGroupEvent('event-3', 'member-left', 3_000),
-            createGroupEvent('event-4', 'member-joined', 4_000),
+            createGroupEvent('event-4', 'member-joined', 4_000)
         ];
         const firstQuery = readStateEventListQuery(
             new URLSearchParams(
-                'afterSnapshotVersion=1000&afterOccurredAtEpochMs=1000&afterEventId=event-1&limit=2',
-            ),
+                'afterSnapshotVersion=1000&afterOccurredAtEpochMs=1000&afterEventId=event-1&limit=2'
+            )
         );
 
         const firstPage = listStateEventsPage(events, firstQuery);
         const secondPage = listStateEventsPage(events, {
             after: firstPage.nextCursor,
-            limit: 2,
+            limit: 2
         });
 
         expect(firstQuery.after).toEqual({
             snapshotVersion: 1_000,
             occurredAtEpochMs: 1_000,
-            eventId: 'event-1',
+            eventId: 'event-1'
         });
         expect(firstPage.events.map((event) => event.eventId)).toEqual([
             'event-2',
-            'event-3',
+            'event-3'
         ]);
         expect(firstPage.nextCursor).toEqual({
             snapshotVersion: 3_000,
             occurredAtEpochMs: 3_000,
-            eventId: 'event-3',
+            eventId: 'event-3'
         });
         expect(firstPage.hasMore).toBe(true);
         expect(secondPage.events.map((event) => event.eventId)).toEqual([
-            'event-4',
+            'event-4'
         ]);
         expect(secondPage.hasMore).toBe(false);
     });
@@ -144,7 +144,7 @@ describe('state event listing', () => {
 function createGroupEvent(
     eventId: string,
     eventType: GroupEvent['eventType'],
-    occurredAtEpochMs: number,
+    occurredAtEpochMs: number
 ): GroupEvent {
     return {
         applicationId: 'app-1',
@@ -155,21 +155,21 @@ function createGroupEvent(
         snapshotVersion: occurredAtEpochMs,
         causalRevision: {
             groupRevision: occurredAtEpochMs,
-            presenceRevision: occurredAtEpochMs,
+            presenceRevision: occurredAtEpochMs
         },
         occurredAtEpochMs,
         actor: { kind: 'service', serviceId: 'test' },
         reason: null,
         traceId: null,
         requestId: null,
-        payload: {},
+        payload: {}
     };
 }
 
 function createClientEvent(
     eventId: string,
     eventType: ClientEvent['eventType'],
-    occurredAtEpochMs: number,
+    occurredAtEpochMs: number
 ): ClientEvent {
     return {
         applicationId: 'app-1',
@@ -185,6 +185,6 @@ function createClientEvent(
         requestId: null,
         clientInstanceId: null,
         sessionId: null,
-        payload: {},
+        payload: {}
     };
 }

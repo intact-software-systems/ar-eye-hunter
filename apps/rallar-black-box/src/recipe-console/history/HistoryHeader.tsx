@@ -1,11 +1,6 @@
-import { createAnalyzeLegacyRunsHref } from
-    '../analyze/analyze-legacy-links.ts';
-import type { RecipeConsoleUrlState } from
-    '../routing/url-state-contract.ts';
-import {
-    StatusMark,
-    type OperationalStatus,
-} from '../ui/StatusMark.tsx';
+import { createAnalyzeLegacyRunsHref } from '../analyze/analyze-legacy-links.ts';
+import type { RecipeConsoleUrlState } from '../routing/url-state-contract.ts';
+import { StatusMark, type OperationalStatus } from '../ui/StatusMark.tsx';
 import type { RecipeConsoleHistoryProvenance } from './history-model.ts';
 import { historyUtcDisplay } from './history-utc.ts';
 import styles from './HistoryWorkspace.module.css';
@@ -13,7 +8,7 @@ import styles from './HistoryWorkspace.module.css';
 export function HistoryHeader({
     provenance,
     urlState,
-    onCopyLink,
+    onCopyLink
 }: Readonly<{
     provenance: RecipeConsoleHistoryProvenance;
     urlState: RecipeConsoleUrlState;
@@ -23,7 +18,7 @@ export function HistoryHeader({
     const legacyRunsHref = createAnalyzeLegacyRunsHref({
         v: 1,
         experience: 'recipe-console',
-        view: 'tune',
+        view: 'tune'
     }, sourceSearch);
     const notice = historyNotice(provenance);
     return (
@@ -59,10 +54,18 @@ function provenanceLabel(value: RecipeConsoleHistoryProvenance): string {
 }
 
 function provenanceTone(value: RecipeConsoleHistoryProvenance): OperationalStatus {
-    if (value.status === 'offline') return 'failed';
-    if (value.freshness === 'unavailable') return 'disabled';
-    if (value.freshness === 'last-known') return 'stale';
-    if (value.completeness === 'partial') return 'partial';
+    if (value.status === 'offline') {
+        return 'failed';
+    }
+    if (value.freshness === 'unavailable') {
+        return 'disabled';
+    }
+    if (value.freshness === 'last-known') {
+        return 'stale';
+    }
+    if (value.completeness === 'partial') {
+        return 'partial';
+    }
     return value.status === 'live' ? 'passed' : 'running';
 }
 
@@ -85,7 +88,7 @@ function filterSummary(state: RecipeConsoleUrlState): string {
         state.failureCategory && `Failure ${state.failureCategory}`,
         state.status && `Status ${state.status}`,
         state.from !== undefined && `From ${historyUtcDisplay(state.from)}`,
-        state.to !== undefined && `To ${historyUtcDisplay(state.to)}`,
+        state.to !== undefined && `To ${historyUtcDisplay(state.to)}`
     ].filter((part): part is string => Boolean(part));
     return parts.length > 0 ? parts.join(' · ') : 'All server runs';
 }

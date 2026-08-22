@@ -38,13 +38,13 @@ readiness record. What is being decided is whether **per-edge confirmation gates
 The decision is often framed as "keep the design we already have, or replace it." That framing is
 wrong, and it is the single most important input here:
 
-| Component | Status |
-| --- | --- |
-| `group_batch` | **Not implemented.** No table, no type, no reference in `packages/**` or `apps/**`. |
-| `ASYNC_REMOTE_QUEUE` | **Not implemented.** Same. |
-| RTC activation status projection (`INITIALISING` / `RECONFIGURING` / `ACTIVE` / `DEGRADED`) | **Not implemented.** No occurrence of `INITIALISING` anywhere in the codebase. |
-| Retained-peer machinery in `WebRtcGroupManager` | **Exists.** `retainedPeerConnections`, `retainedOrder`, `disconnectExpiredRetainedPeers`, budget-preserving eviction. |
-| RTT / liveness reporting | **Exists.** `RttMeasurementInfo` flows through the RTT topic and refinement service. |
+| Component                                                                                   | Status                                                                                                                |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `group_batch`                                                                               | **Not implemented.** No table, no type, no reference in `packages/**` or `apps/**`.                                   |
+| `ASYNC_REMOTE_QUEUE`                                                                        | **Not implemented.** Same.                                                                                            |
+| RTC activation status projection (`INITIALISING` / `RECONFIGURING` / `ACTIVE` / `DEGRADED`) | **Not implemented.** No occurrence of `INITIALISING` anywhere in the codebase.                                        |
+| Retained-peer machinery in `WebRtcGroupManager`                                             | **Exists.** `retainedPeerConnections`, `retainedOrder`, `disconnectExpiredRetainedPeers`, budget-preserving eviction. |
+| RTT / liveness reporting                                                                    | **Exists.** `RttMeasurementInfo` flows through the RTT topic and refinement service.                                  |
 
 The activation design is 1,638 lines of specification with **zero** implementation. Choosing per-edge
 confirm means building Flows 1–7 plus the abort sweep, the five-lane work table, conditional remote
@@ -66,7 +66,7 @@ to 13.2 MB under `delta-primary`, a 19.3× reduction, and `delta-primary` is now
 idle formed group produces 0 expansions, 0 broadcasts and 0 recomputes.
 
 **Republishing is now stable.** This is the decisive one. Before Phase 4, planning was a function of
-*arrival order*, not of the member set: a same-set reorder at N=50 churned 180 edges, about 93% of
+_arrival order_, not of the member set: a same-set reorder at N=50 churned 180 edges, about 93% of
 the combined edge slots of the two plans, and the tree tier full-rebuilt on every join in the 5–15
 band. Observed convergence against a plan that reshuffles on reorder would have thrashed
 indefinitely. M6 made planning a function of the member set, which is what makes "publish desired and
@@ -84,7 +84,7 @@ design assumed exists."
 
 **What it buys.** Far less machinery to build, and one fewer distributed-consistency surface. It also
 **eliminates two mandatory browser-side rules**: the design requires commanded-edge retention and
-command-origin validation *only because* it deliberately keeps the planned topology out of the
+command-origin validation _only because_ it deliberately keeps the planned topology out of the
 accepted store. If planned equals accepted, there is no divergence window, so there is nothing to
 retain against and no command channel to authenticate. The design states plainly that without those
 rules "the reconciler closes commanded connections on the next presence-triggered reconcile and

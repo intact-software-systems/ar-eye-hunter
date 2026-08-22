@@ -8,13 +8,13 @@ type Config = Readonly<{
 
 function createController() {
     return createBlackBoxRallarLifecycleController<Config, string, string, string>({
-        authenticationKey: config => config.key,
+        authenticationKey: (config) => config.key,
         mergeAuthenticationConfig: (active, next) => ({
             ...next,
-            logoutOnClose: active.logoutOnClose || next.logoutOnClose,
+            logoutOnClose: active.logoutOnClose || next.logoutOnClose
         }),
         authenticationClosedError: () => new Error('authentication closed'),
-        connectionClosedError: () => new Error('connection closed'),
+        connectionClosedError: () => new Error('connection closed')
     });
 }
 
@@ -24,24 +24,24 @@ describe('browser Rallar lifecycle controller', () => {
         let resolveAuthentication!: (session: string) => void;
         const effect = vi.fn(
             () =>
-                new Promise<string>(resolve => {
+                new Promise<string>((resolve) => {
                     resolveAuthentication = resolve;
-                }),
+                })
         );
 
         const first = controller.runAuthentication({ key: 'alice' }, effect);
         const second = controller.runAuthentication(
             {
                 key: 'alice',
-                logoutOnClose: true,
+                logoutOnClose: true
             },
-            effect,
+            effect
         );
 
         expect(effect).toHaveBeenCalledTimes(1);
         expect(controller.authenticationConfig()).toEqual({
             key: 'alice',
-            logoutOnClose: true,
+            logoutOnClose: true
         });
         resolveAuthentication('session-1');
         await expect(Promise.all([first, second])).resolves.toEqual(['session-1', 'session-1']);
@@ -52,9 +52,9 @@ describe('browser Rallar lifecycle controller', () => {
         let resolveConnect!: (value: string) => void;
         const effect = vi.fn(
             () =>
-                new Promise<string>(resolve => {
+                new Promise<string>((resolve) => {
                     resolveConnect = resolve;
-                }),
+                })
         );
 
         const first = controller.runConnect('target-a', effect);
@@ -70,15 +70,16 @@ describe('browser Rallar lifecycle controller', () => {
         let resolveConnect!: (value: string) => void;
         const connecting = controller.runConnect(
             'target-a',
-            () => new Promise<string>(resolve => {
-                resolveConnect = resolve;
-            }),
+            () =>
+                new Promise<string>((resolve) => {
+                    resolveConnect = resolve;
+                })
         );
         const authenticationEffect = vi.fn(async () => 'session-b');
 
         const authenticating = controller.runAuthentication(
             { key: 'bob' },
-            authenticationEffect,
+            authenticationEffect
         );
         expect(authenticationEffect).not.toHaveBeenCalled();
 
@@ -92,16 +93,14 @@ describe('browser Rallar lifecycle controller', () => {
         const controller = createController();
         let resolveAuthentication!: (session: string) => void;
         let signal: AbortSignal | undefined;
-        const authentication = controller.runAuthentication({ key: 'alice', logoutOnClose: true }, controllerSignal => {
+        const authentication = controller.runAuthentication({ key: 'alice', logoutOnClose: true }, (controllerSignal) => {
             signal = controllerSignal;
-            return new Promise(resolve => {
+            return new Promise((resolve) => {
                 resolveAuthentication = resolve;
             });
         });
         const authenticationResult = expect(authentication).rejects.toThrow('authentication closed');
-        const cleanup = vi.fn(async context =>
-            context.authenticationConfig?.logoutOnClose ? 'logged-out' : 'disconnected',
-        );
+        const cleanup = vi.fn(async (context) => context.authenticationConfig?.logoutOnClose ? 'logged-out' : 'disconnected');
 
         const firstClose = controller.close(cleanup);
         const secondClose = controller.close(cleanup);
@@ -118,7 +117,7 @@ describe('browser Rallar lifecycle controller', () => {
         const controller = createController();
         const activeSignal = controller.operationSignal();
         let releasePending!: () => void;
-        const pending = new Promise<void>(resolve => {
+        const pending = new Promise<void>((resolve) => {
             releasePending = resolve;
         });
         const cleanup = vi.fn(async () => 'closed');
@@ -137,8 +136,8 @@ describe('browser Rallar lifecycle controller', () => {
     it('fences connect completion after close starts', async () => {
         const controller = createController();
         let resolveConnect!: (value: string) => void;
-        const connecting = controller.runConnect('target-a', async context => {
-            const value = await new Promise<string>(resolve => {
+        const connecting = controller.runConnect('target-a', async (context) => {
+            const value = await new Promise<string>((resolve) => {
                 resolveConnect = resolve;
             });
             context.assertCurrent();

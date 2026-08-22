@@ -2,14 +2,14 @@ import type {
     ControlCommandEnvelope,
     ControlEventEnvelope,
     ControlHeartbeatEnvelope,
-    ControlResultEnvelope,
+    ControlResultEnvelope
 } from './control-protocol.ts';
 import type {
     RallarBlackBoxControlAgentIdentity,
     RallarBlackBoxDistributedRunManifest,
     RallarBlackBoxDistributedRunRollup,
     RallarBlackBoxDistributedRunState,
-    RallarBlackBoxDistributedTargetResolution,
+    RallarBlackBoxDistributedTargetResolution
 } from './distributed-run.ts';
 import type {
     ControlFleetAgentRunOutcome,
@@ -18,7 +18,7 @@ import type {
     ControlFleetReportBundle,
     ControlFleetReportsResponse,
     ControlFleetRunReport,
-    ControlFleetTimingDistribution,
+    ControlFleetTimingDistribution
 } from './fleet-report.ts';
 
 export type ControlQueuedCommandSnapshot = Readonly<{
@@ -159,8 +159,8 @@ export type ControlDistributedRunArtifactBundle = Readonly<{
     distributedRunId: string;
     generatedAtEpochMs: number;
     files: Readonly<
-        Record<ControlDistributedRunArtifactBaseFileName, string> &
-            Partial<Record<ControlDistributedRunArtifactFileName, string>>
+        & Record<ControlDistributedRunArtifactBaseFileName, string>
+        & Partial<Record<ControlDistributedRunArtifactFileName, string>>
     >;
 }>;
 
@@ -197,5 +197,5 @@ export type {
     ControlFleetReportBundle,
     ControlFleetReportsResponse,
     ControlFleetRunReport,
-    ControlFleetTimingDistribution,
+    ControlFleetTimingDistribution
 };

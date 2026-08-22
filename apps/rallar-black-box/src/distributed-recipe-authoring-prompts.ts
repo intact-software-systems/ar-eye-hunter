@@ -1,7 +1,7 @@
 import {
     RALLAR_BLACK_BOX_COMMAND_CAPABILITIES,
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
-    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA,
+    RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA
 } from '@shared-test/rallar-bb-test/schema.ts';
 
 export type DistributedRecipePromptTemplateId =
@@ -55,15 +55,16 @@ export const DISTRIBUTED_RECIPE_PROMPT_TEMPLATES: readonly DistributedRecipeProm
     {
         id: 'live-group-ack',
         title: 'Live Group ACK',
-        description: 'Stage a lightweight browser-agent recipe across the live group and require ACK/readiness evidence.',
+        description:
+            'Stage a lightweight browser-agent recipe across the live group and require ACK/readiness evidence.',
         outputTarget: 'distributed run manifest with one inline browser-agent recipe',
         request: [
             'Create a distributed run manifest that targets every online browser agent in the current group.',
             'The inline recipe should prove the agent is reachable with a health command and any readiness/ACK evidence that fits the schema.',
-            'Use conservative ACK and command timeouts so slow remote browsers can still report readiness.',
+            'Use conservative ACK and command timeouts so slow remote browsers can still report readiness.'
         ].join(' '),
         requiredInputs: ['applicationId', 'workspaceId', 'groupId', 'controlRunId', 'expectedParticipantCount'],
-        commandKinds: ['health', 'recipe.load', 'recipe.run'],
+        commandKinds: ['health', 'recipe.load', 'recipe.run']
     },
     {
         id: 'ws-send-receive',
@@ -73,10 +74,16 @@ export const DISTRIBUTED_RECIPE_PROMPT_TEMPLATES: readonly DistributedRecipeProm
         request: [
             'Create a distributed run manifest that sends a room-scoped WebSocket payload from one sender browser.',
             'Receivers should wait for evidence that the payload arrived and assert the expected topic or message id.',
-            'Use non-reserved room.* or app.* topics, never rallar.* system topics.',
+            'Use non-reserved room.* or app.* topics, never rallar.* system topics.'
         ].join(' '),
-        requiredInputs: ['applicationId', 'workspaceId', 'groupId', 'sender role or agent id', 'receiver roles or agent ids'],
-        commandKinds: ['ws.open', 'ws.send', 'wait', 'assert'],
+        requiredInputs: [
+            'applicationId',
+            'workspaceId',
+            'groupId',
+            'sender role or agent id',
+            'receiver roles or agent ids'
+        ],
+        commandKinds: ['ws.open', 'ws.send', 'wait', 'assert']
     },
     {
         id: 'rtc-realtime-position',
@@ -86,10 +93,16 @@ export const DISTRIBUTED_RECIPE_PROMPT_TEMPLATES: readonly DistributedRecipeProm
         request: [
             'Create a distributed run manifest that connects RTC/realtime for all online group members.',
             'Then send a realtime position payload from a sender role and have receivers wait for matching runtime evidence.',
-            'Include roomRef/application/workspace/group context on RTC commands and use live-friendly timeouts.',
+            'Include roomRef/application/workspace/group context on RTC commands and use live-friendly timeouts.'
         ].join(' '),
-        requiredInputs: ['applicationId', 'workspaceId', 'groupId', 'sender role or agent id', 'expected participant count'],
-        commandKinds: ['rtc.connect', 'rtc.send', 'wait', 'assert'],
+        requiredInputs: [
+            'applicationId',
+            'workspaceId',
+            'groupId',
+            'sender role or agent id',
+            'expected participant count'
+        ],
+        commandKinds: ['rtc.connect', 'rtc.send', 'wait', 'assert']
     },
     {
         id: 'looped-rtc-load',
@@ -99,10 +112,10 @@ export const DISTRIBUTED_RECIPE_PROMPT_TEMPLATES: readonly DistributedRecipeProm
         request: [
             'Create a distributed run manifest for a bounded RTC load test.',
             'The recipe should connect RTC, then loop rtc.send position frames at a fixed interval with maxCommands or count limits.',
-            'Include thresholds for achieved send rate or success ratio when the schema allows it.',
+            'Include thresholds for achieved send rate or success ratio when the schema allows it.'
         ].join(' '),
         requiredInputs: ['applicationId', 'workspaceId', 'groupId', 'frame count or duration', 'send rate or interval'],
-        commandKinds: ['rtc.connect', 'loop', 'rtc.send', 'wait', 'assert'],
+        commandKinds: ['rtc.connect', 'loop', 'rtc.send', 'wait', 'assert']
     },
     {
         id: 'parallel-ws-rtc-smoke',
@@ -112,10 +125,16 @@ export const DISTRIBUTED_RECIPE_PROMPT_TEMPLATES: readonly DistributedRecipeProm
         request: [
             'Create a distributed run manifest that runs WebSocket and RTC smoke checks in parallel.',
             'One branch should send a WS payload, and another branch should connect/send RTC with a comparable payload.',
-            'Add waits/asserts so the artifact explains whether each transport produced evidence.',
+            'Add waits/asserts so the artifact explains whether each transport produced evidence.'
         ].join(' '),
-        requiredInputs: ['applicationId', 'workspaceId', 'groupId', 'sender role or agent id', 'expected receiver count'],
-        commandKinds: ['parallel', 'ws.open', 'ws.send', 'rtc.connect', 'rtc.send', 'wait', 'assert'],
+        requiredInputs: [
+            'applicationId',
+            'workspaceId',
+            'groupId',
+            'sender role or agent id',
+            'expected receiver count'
+        ],
+        commandKinds: ['parallel', 'ws.open', 'ws.send', 'rtc.connect', 'rtc.send', 'wait', 'assert']
     },
     {
         id: 'wait-assert-evidence',
@@ -125,14 +144,14 @@ export const DISTRIBUTED_RECIPE_PROMPT_TEMPLATES: readonly DistributedRecipeProm
         request: [
             'Create a recipe that waits for runtime evidence and asserts a specific condition.',
             'The evidence can be a message, diagnostic, result, stats sample, or report row.',
-            'Prefer clear commandId values and include timeoutMs on waits so failures are actionable.',
+            'Prefer clear commandId values and include timeoutMs on waits so failures are actionable.'
         ].join(' '),
         requiredInputs: ['evidence kind', 'topic or source path', 'expected value', 'timeoutMs'],
-        commandKinds: ['wait', 'assert'],
-    },
+        commandKinds: ['wait', 'assert']
+    }
 ];
 
-const TEMPLATE_BY_ID = new Map(DISTRIBUTED_RECIPE_PROMPT_TEMPLATES.map(template => [template.id, template]));
+const TEMPLATE_BY_ID = new Map(DISTRIBUTED_RECIPE_PROMPT_TEMPLATES.map((template) => [template.id, template]));
 
 const BROWSER_AGENT_RECIPE_SKELETON = {
     schemaVersion: 1,
@@ -141,9 +160,9 @@ const BROWSER_AGENT_RECIPE_SKELETON = {
     commands: [
         {
             kind: 'health',
-            commandId: '{{stable-command-id}}',
-        },
-    ],
+            commandId: '{{stable-command-id}}'
+        }
+    ]
 };
 
 const DISTRIBUTED_RUN_MANIFEST_SKELETON = {
@@ -154,26 +173,26 @@ const DISTRIBUTED_RUN_MANIFEST_SKELETON = {
     group: {
         applicationId: '{{applicationId}}',
         workspaceId: '{{workspaceId}}',
-        groupId: '{{groupId}}',
+        groupId: '{{groupId}}'
     },
     recipes: [
         {
             recipeId: '{{recipeId}}',
             role: '{{optional-role}}',
             required: true,
-            recipe: BROWSER_AGENT_RECIPE_SKELETON,
-        },
+            recipe: BROWSER_AGENT_RECIPE_SKELETON
+        }
     ],
     targetPolicy: {
         mode: 'all-online-group-members',
-        expectedParticipantCount: 2,
+        expectedParticipantCount: 2
     },
     ackTimeoutMs: 30_000,
-    startMode: 'manual',
+    startMode: 'manual'
 };
 
 export function distributedRecipePromptTemplateById(
-    id: DistributedRecipePromptTemplateId,
+    id: DistributedRecipePromptTemplateId
 ): DistributedRecipePromptTemplate {
     const template = TEMPLATE_BY_ID.get(id);
     if (!template) {
@@ -187,14 +206,15 @@ export function distributedRecipeSchemaSnippets(): readonly DistributedRecipeSch
         {
             snippetId: 'browser-agent-recipe',
             title: 'Browser-Agent Recipe',
-            description: 'Inline recipes used by browser control agents. Commands must come from the rallar-bb-test command schema.',
+            description:
+                'Inline recipes used by browser control agents. Commands must come from the rallar-bb-test command schema.',
             text: json({
                 schema: {
                     constantName: 'RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA',
-                    ...schemaSnippet(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA),
+                    ...schemaSnippet(RALLAR_BLACK_BOX_TEST_RECIPE_SCHEMA)
                 },
-                skeleton: BROWSER_AGENT_RECIPE_SKELETON,
-            }),
+                skeleton: BROWSER_AGENT_RECIPE_SKELETON
+            })
         },
         {
             snippetId: 'distributed-run-manifest',
@@ -203,41 +223,43 @@ export function distributedRecipeSchemaSnippets(): readonly DistributedRecipeSch
             text: json({
                 schema: {
                     constantName: 'RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA',
-                    ...schemaSnippet(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA),
+                    ...schemaSnippet(RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA)
                 },
-                skeleton: DISTRIBUTED_RUN_MANIFEST_SKELETON,
-            }),
-        },
+                skeleton: DISTRIBUTED_RUN_MANIFEST_SKELETON
+            })
+        }
     ];
 }
 
 export function distributedRecipeSchemaContextText(): string {
     const snippets = distributedRecipeSchemaSnippets()
-        .map(snippet => [
-            `## ${snippet.title}`,
-            snippet.description,
-            '```json',
-            snippet.text,
-            '```',
-        ].join('\n'))
+        .map((snippet) =>
+            [
+                `## ${snippet.title}`,
+                snippet.description,
+                '```json',
+                snippet.text,
+                '```'
+            ].join('\n')
+        )
         .join('\n\n');
 
     return [
         snippets,
         '## Relevant Command Capabilities',
-        commandCapabilityContextText(),
+        commandCapabilityContextText()
     ].join('\n\n');
 }
 
 export function redactDistributedRecipePromptVariables(
-    variables: DistributedRecipePromptVariables,
+    variables: DistributedRecipePromptVariables
 ): DistributedRecipePromptVariables {
     return redactPromptValue('', variables) as DistributedRecipePromptVariables;
 }
 
 export function renderDistributedRecipePromptTemplate(
     id: DistributedRecipePromptTemplateId,
-    input: DistributedRecipePromptRenderInput = {},
+    input: DistributedRecipePromptRenderInput = {}
 ): string {
     const template = distributedRecipePromptTemplateById(id);
     const variables = redactDistributedRecipePromptVariables(input.variables ?? {});
@@ -257,7 +279,7 @@ export function renderDistributedRecipePromptTemplate(
         template.request,
         '',
         'Required inputs to preserve or ask for if missing:',
-        ...template.requiredInputs.map(inputName => `- ${inputName}`),
+        ...template.requiredInputs.map((inputName) => `- ${inputName}`),
         '',
         'Current optional prompt variables. Use these when they fit the request; do not invent secrets.',
         '```json',
@@ -276,20 +298,20 @@ export function renderDistributedRecipePromptTemplate(
         '- Prefer targetPolicy.mode all-online-group-members for whole-group checks and role-map for sender-only commands.',
         '- Include applicationId, workspaceId, groupId, roomRef, and roomId where group-scoped WS or RTC delivery needs them.',
         '- Use room.* or app.* topics for test traffic. Do not use rallar.* system topics.',
-        '- Do not include bearer tokens, passwords, session IDs, tickets, or long-lived secrets.',
+        '- Do not include bearer tokens, passwords, session IDs, tickets, or long-lived secrets.'
     ].join('\n');
 }
 
 export function renderDistributedRecipeValidationFeedback(
-    feedback: DistributedRecipePromptValidationFeedback,
+    feedback: DistributedRecipePromptValidationFeedback
 ): string {
     const issueLines = [
         ...(feedback.schemaErrorText
             ? feedback.schemaErrorText.split('\n').filter(Boolean)
             : []),
         ...(feedback.issues ?? []),
-        ...(feedback.preflightErrors ?? []).map(issue => `Preflight error: ${issue}`),
-        ...(feedback.preflightWarnings ?? []).map(issue => `Preflight warning: ${issue}`),
+        ...(feedback.preflightErrors ?? []).map((issue) => `Preflight error: ${issue}`),
+        ...(feedback.preflightWarnings ?? []).map((issue) => `Preflight warning: ${issue}`)
     ];
     const status = feedback.ok && issueLines.length === 0 ? 'valid' : 'needs changes';
 
@@ -298,27 +320,35 @@ export function renderDistributedRecipeValidationFeedback(
         `JSON parse: ${feedback.parseOk === false ? 'failed' : 'ok'}`,
         `Validation status: ${status}`,
         issueLines.length > 0
-            ? ['Issues to fix:', ...issueLines.map(issue => `- ${issue}`)].join('\n')
-            : 'No schema or preflight issues found.',
+            ? ['Issues to fix:', ...issueLines.map((issue) => `- ${issue}`)].join('\n')
+            : 'No schema or preflight issues found.'
     ].join('\n');
 }
 
 function commandCapabilityContextText(): string {
     const capabilityKinds = new Set(
-        DISTRIBUTED_RECIPE_PROMPT_TEMPLATES.flatMap(template => template.commandKinds),
+        DISTRIBUTED_RECIPE_PROMPT_TEMPLATES.flatMap((template) => template.commandKinds)
     );
 
     return RALLAR_BLACK_BOX_COMMAND_CAPABILITIES
-        .filter(capability => capabilityKinds.has(capability.kind))
-        .map(capability => [
-            `- ${capability.kind}: ${capability.title}`,
-            `  Description: ${capability.description}`,
-            `  Required fields: ${capability.requiredFields.length > 0 ? capability.requiredFields.join(', ') : 'none'}`,
-            `  Optional fields: ${capability.optionalFields.join(', ')}`,
-            `  Runtime surfaces: ${capability.runtimeSurfaces.join(', ')}`,
-            `  Live requirements: ${capability.liveServiceRequirements.length > 0 ? capability.liveServiceRequirements.join(', ') : 'none'}`,
-            `  Example: ${json(capability.example)}`,
-        ].join('\n'))
+        .filter((capability) => capabilityKinds.has(capability.kind))
+        .map((capability) =>
+            [
+                `- ${capability.kind}: ${capability.title}`,
+                `  Description: ${capability.description}`,
+                `  Required fields: ${
+                    capability.requiredFields.length > 0 ? capability.requiredFields.join(', ') : 'none'
+                }`,
+                `  Optional fields: ${capability.optionalFields.join(', ')}`,
+                `  Runtime surfaces: ${capability.runtimeSurfaces.join(', ')}`,
+                `  Live requirements: ${
+                    capability.liveServiceRequirements.length > 0
+                        ? capability.liveServiceRequirements.join(', ')
+                        : 'none'
+                }`,
+                `  Example: ${json(capability.example)}`
+            ].join('\n')
+        )
         .join('\n');
 }
 
@@ -329,7 +359,7 @@ function schemaSnippet(schema: Readonly<Record<string, unknown>>): Readonly<Reco
         description: schema.description,
         required: schema.required,
         additionalProperties: schema.additionalProperties,
-        properties: schemaPropertySummary(schema.properties),
+        properties: schemaPropertySummary(schema.properties)
     };
 }
 
@@ -339,7 +369,7 @@ function schemaPropertySummary(properties: unknown): Readonly<Record<string, unk
     }
 
     return Object.fromEntries(
-        Object.entries(properties).map(([key, value]) => [key, summarizeSchemaProperty(value)]),
+        Object.entries(properties).map(([key, value]) => [key, summarizeSchemaProperty(value)])
     );
 }
 
@@ -351,7 +381,7 @@ function summarizeSchemaProperty(value: unknown): unknown {
     return Object.fromEntries(
         Object.entries(value).filter(([key]) =>
             ['$id', 'title', 'description', 'type', 'const', 'enum', 'required', 'minimum'].includes(key)
-        ),
+        )
     );
 }
 
@@ -378,7 +408,7 @@ function redactPromptValue(key: string, value: unknown): unknown {
         return Object.fromEntries(
             Object.entries(value)
                 .filter(([, entry]) => entry !== undefined)
-                .map(([entryKey, entry]) => [entryKey, redactPromptValue(entryKey, entry)]),
+                .map(([entryKey, entry]) => [entryKey, redactPromptValue(entryKey, entry)])
         );
     }
 

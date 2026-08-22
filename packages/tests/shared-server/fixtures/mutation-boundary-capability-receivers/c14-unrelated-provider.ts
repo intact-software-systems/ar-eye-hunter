@@ -1,3 +1,3 @@
-export function createRepository(): { readonly read: () => void } {
-  return { read: () => undefined };
+export function createRepository(): { readonly read: () => void; } {
+    return { read: () => undefined };
 }

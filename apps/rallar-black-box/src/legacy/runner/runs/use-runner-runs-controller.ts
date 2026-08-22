@@ -1,14 +1,13 @@
-import { type ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
-import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import type { DistributedRunAnalysis } from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed-run.ts';
 import {
     selectRallarBlackBoxCommandHistory,
     selectRallarBlackBoxFailures,
-    selectRallarBlackBoxLatestStats,
+    selectRallarBlackBoxLatestStats
 } from '@shared-test/rallar-bb-test/selectors.ts';
-import { isDistributedRunTerminalState } from '@shared-test/rallar-bb-test/distributed-run.ts';
-import type {
-    DistributedRunAnalysis,
-} from '@shared-test/rallar-bb-test/distributed-artifact-analysis.ts';
+import type { RallarBlackBoxTestState } from '@shared-test/rallar-bb-test/types.ts';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { deriveControlAgentBoardRows, summarizeControlAgentBoardRows } from '../../../control-agent-board.ts';
 import type { RallarBlackBoxControlSnapshot } from '../../../control-client.ts';
 import {
     controlHttpBaseUrlFromWsUrl,
@@ -18,28 +17,21 @@ import {
     fetchDistributedRuns,
     type ControlDistributedRunArtifactBundle,
     type ControlDistributedRunSnapshot,
-    type ControlRunSnapshot,
+    type ControlRunSnapshot
 } from '../../../control-run-manager.ts';
-import {
-    deriveControlAgentBoardRows,
-    summarizeControlAgentBoardRows,
-} from '../../../control-agent-board.ts';
 import {
     compareDistributedRuns,
     deriveDistributedRunAnalysisReport,
     deriveDistributedRunMonitor,
-    deriveRunVerdictView,
+    deriveRunVerdictView
 } from '../../../distributed-recipes.ts';
 import {
     createSyntheticDistributedRunSeed,
     distributedRunSeedIdFromValue,
     type DistributedRunSeedId,
-    type SyntheticDistributedRunSeed,
+    type SyntheticDistributedRunSeed
 } from '../../../distributed-run-seeds.ts';
-import {
-    deriveRtcDiagnostics,
-    deriveRtcPerformanceView,
-} from '../../../rtc-diagnostics.ts';
+import { deriveRtcDiagnostics, deriveRtcPerformanceView } from '../../../rtc-diagnostics.ts';
 import { runnerFriendlyErrorMessage } from '../../../runner-readiness.ts';
 import type { RallarBlackBoxBootstrapConfig } from '../../../runtime-store.ts';
 import { json } from '../../shared/json-presentation.ts';
@@ -47,18 +39,12 @@ import type { RunnerDistributedRunSelection } from '../runner-contracts.ts';
 import { useLatestRequestGuard } from '../shared/use-latest-request-guard.ts';
 import {
     distributedArtifactImportStatus,
-    type DistributedArtifactImportStatus,
+    type DistributedArtifactImportStatus
 } from './distributed-artifact-import.ts';
-import {
-    readDistributedRunSeedFromUrl,
-    writeDistributedRunSeedToUrl,
-} from './distributed-run-seed-url.ts';
-import { readDistributedArtifactFiles } from './read-distributed-artifact-files.ts';
+import { readDistributedRunSeedFromUrl, writeDistributedRunSeedToUrl } from './distributed-run-seed-url.ts';
 import { readLegacyRunsUrlSelection } from './legacy-run-url-selection.ts';
-import {
-    DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS,
-    RUNNER_DISTRIBUTED_POLL_MS,
-} from './runner-runs-constants.ts';
+import { readDistributedArtifactFiles } from './read-distributed-artifact-files.ts';
+import { DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS, RUNNER_DISTRIBUTED_POLL_MS } from './runner-runs-constants.ts';
 
 export type UseRunnerRunsControllerInput = Readonly<{
     state: RallarBlackBoxTestState;
@@ -71,7 +57,7 @@ export function useRunnerRunsController({
     state,
     bootstrap,
     control,
-    preferredDistributedRun,
+    preferredDistributedRun
 }: UseRunnerRunsControllerInput) {
     const history = selectRallarBlackBoxCommandHistory(state);
     const failures = selectRallarBlackBoxFailures(state);
@@ -84,62 +70,59 @@ export function useRunnerRunsController({
                 ? createSyntheticDistributedRunSeed(distributedRunSeed)
                 : undefined;
         },
-        [],
+        []
     );
     const [controlBaseUrl, setControlBaseUrl] = useState(() =>
         preferredDistributedRun?.controlBaseUrl ??
             controlHttpBaseUrlFromWsUrl(control.url ?? bootstrap.controlUrl)
     );
     const [controlToken, setControlToken] = useState(
-        preferredDistributedRun?.controlToken ?? bootstrap.controlToken ?? '',
+        preferredDistributedRun?.controlToken ?? bootstrap.controlToken ?? ''
     );
     const [controlRunId, setControlRunId] = useState(() =>
         initialSyntheticSeed?.controlRun.runId ??
             readLegacyRunsUrlSelection()?.controlRunId ??
             preferredDistributedRun?.controlRunId ?? control.runId ??
-            bootstrap.runId ?? '',
+            bootstrap.runId ?? ''
     );
-    const [distributedRuns, setDistributedRuns] = useState<
-        readonly ControlDistributedRunSnapshot[]
-    >(() => initialSyntheticSeed ? [initialSyntheticSeed.distributedRun] : []);
+    const [distributedRuns, setDistributedRuns] = useState<readonly ControlDistributedRunSnapshot[]>(() =>
+        initialSyntheticSeed ? [initialSyntheticSeed.distributedRun] : []
+    );
     const [selectedDistributedRunId, setSelectedDistributedRunId] = useState(() =>
         initialSyntheticSeed?.distributedRun.distributedRunId ??
             readLegacyRunsUrlSelection()?.distributedRunId ??
-            preferredDistributedRun?.distributedRunId ?? '',
+            preferredDistributedRun?.distributedRunId ?? ''
     );
-    const [selectedDistributedRun, setSelectedDistributedRun] = useState<
-        ControlDistributedRunSnapshot | undefined
-    >(initialSyntheticSeed?.distributedRun);
-    const [distributedControlRun, setDistributedControlRun] = useState<
-        ControlRunSnapshot | undefined
-    >(initialSyntheticSeed?.controlRun);
-    const [artifactBundle, setArtifactBundle] = useState<
-        ControlDistributedRunArtifactBundle | undefined
-    >(initialSyntheticSeed?.artifactBundle);
-    const [importedArtifactAnalysis, setImportedArtifactAnalysis] = useState<
-        DistributedRunAnalysis | undefined
-    >();
-    const [importedArtifactStatus, setImportedArtifactStatus] = useState<
-        DistributedArtifactImportStatus | undefined
-    >();
-    const [selectedSyntheticSeedId, setSelectedSyntheticSeedId] = useState<
-        DistributedRunSeedId | ''
-    >(initialSyntheticSeed?.id ?? '');
-    const [activeSyntheticSeed, setActiveSyntheticSeed] = useState<
-        SyntheticDistributedRunSeed | undefined
-    >(initialSyntheticSeed);
+    const [selectedDistributedRun, setSelectedDistributedRun] = useState<ControlDistributedRunSnapshot | undefined>(
+        initialSyntheticSeed?.distributedRun
+    );
+    const [distributedControlRun, setDistributedControlRun] = useState<ControlRunSnapshot | undefined>(
+        initialSyntheticSeed?.controlRun
+    );
+    const [artifactBundle, setArtifactBundle] = useState<ControlDistributedRunArtifactBundle | undefined>(
+        initialSyntheticSeed?.artifactBundle
+    );
+    const [importedArtifactAnalysis, setImportedArtifactAnalysis] = useState<DistributedRunAnalysis | undefined>();
+    const [importedArtifactStatus, setImportedArtifactStatus] = useState<DistributedArtifactImportStatus | undefined>();
+    const [selectedSyntheticSeedId, setSelectedSyntheticSeedId] = useState<DistributedRunSeedId | ''>(
+        initialSyntheticSeed?.id ?? ''
+    );
+    const [activeSyntheticSeed, setActiveSyntheticSeed] = useState<SyntheticDistributedRunSeed | undefined>(
+        initialSyntheticSeed
+    );
     const [distributedBusy, setDistributedBusy] = useState<string | undefined>();
     const [distributedError, setDistributedError] = useState<string | undefined>();
-    const [lastDistributedRefresh, setLastDistributedRefresh] =
-        useState<number | undefined>(initialSyntheticSeed?.generatedAtEpochMs);
+    const [lastDistributedRefresh, setLastDistributedRefresh] = useState<number | undefined>(
+        initialSyntheticSeed?.generatedAtEpochMs
+    );
     const [compareLeftId, setCompareLeftId] = useState(
-        initialSyntheticSeed?.distributedRun.distributedRunId ?? '',
+        initialSyntheticSeed?.distributedRun.distributedRunId ?? ''
     );
     const [compareRightId, setCompareRightId] = useState('');
     const distributedRefreshRequests = useLatestRequestGuard();
     const manualDistributedRefreshActive = useRef(false);
     const activeSyntheticSeedRef = useRef<SyntheticDistributedRunSeed | undefined>(
-        initialSyntheticSeed,
+        initialSyntheticSeed
     );
     const selectedMonitor = useMemo(
         () =>
@@ -147,10 +130,10 @@ export function useRunnerRunsController({
                 ? deriveDistributedRunMonitor({
                     distributedRun: selectedDistributedRun,
                     controlRun: distributedControlRun,
-                    artifactBundle,
+                    artifactBundle
                 })
                 : undefined,
-        [artifactBundle, distributedControlRun, selectedDistributedRun],
+        [artifactBundle, distributedControlRun, selectedDistributedRun]
     );
     const runParticipantRows = useMemo(
         () =>
@@ -162,19 +145,19 @@ export function useRunnerRunsController({
                     distributedRuns,
                     selectedDistributedRun,
                     monitorAgentProgress: selectedMonitor?.agentProgress ?? [],
-                    nowEpochMs: Date.now(),
+                    nowEpochMs: Date.now()
                 })
                 : [],
         [
             distributedControlRun,
             distributedRuns,
             selectedDistributedRun,
-            selectedMonitor?.agentProgress,
-        ],
+            selectedMonitor?.agentProgress
+        ]
     );
     const runParticipantSummary = useMemo(
         () => summarizeControlAgentBoardRows(runParticipantRows),
-        [runParticipantRows],
+        [runParticipantRows]
     );
     const analysisReport = useMemo(
         () =>
@@ -184,10 +167,10 @@ export function useRunnerRunsController({
                     controlRun: distributedControlRun,
                     artifactBundle,
                     snapshotBounds: DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS,
-                    monitor: selectedMonitor,
+                    monitor: selectedMonitor
                 })
                 : undefined,
-        [artifactBundle, distributedControlRun, selectedDistributedRun, selectedMonitor],
+        [artifactBundle, distributedControlRun, selectedDistributedRun, selectedMonitor]
     );
     const runVerdict = useMemo(
         () =>
@@ -196,15 +179,15 @@ export function useRunnerRunsController({
                 monitor: selectedMonitor,
                 report: analysisReport,
                 artifactBundle,
-                refreshedAtEpochMs: lastDistributedRefresh,
+                refreshedAtEpochMs: lastDistributedRefresh
             }),
         [
             analysisReport,
             artifactBundle,
             lastDistributedRefresh,
             selectedDistributedRun,
-            selectedMonitor,
-        ],
+            selectedMonitor
+        ]
     );
     const rtcDiagnostics = useMemo(() => deriveRtcDiagnostics(state), [state]);
     const rtcPerformance = useMemo(
@@ -212,23 +195,23 @@ export function useRunnerRunsController({
             deriveRtcPerformanceView({
                 diagnostics: rtcDiagnostics,
                 state,
-                distributedMonitor: selectedMonitor,
+                distributedMonitor: selectedMonitor
             }),
-        [rtcDiagnostics, selectedMonitor, state],
+        [rtcDiagnostics, selectedMonitor, state]
     );
     const compareLeftRun = useMemo(
         () =>
             distributedRuns.find(
-                (item) => item.distributedRunId === compareLeftId,
+                (item) => item.distributedRunId === compareLeftId
             ),
-        [compareLeftId, distributedRuns],
+        [compareLeftId, distributedRuns]
     );
     const compareRightRun = useMemo(
         () =>
             distributedRuns.find(
-                (item) => item.distributedRunId === compareRightId,
+                (item) => item.distributedRunId === compareRightId
             ),
-        [compareRightId, distributedRuns],
+        [compareRightId, distributedRuns]
     );
     const compareSummary = useMemo(
         () =>
@@ -236,22 +219,20 @@ export function useRunnerRunsController({
                 ? compareDistributedRuns({
                     left: compareLeftRun,
                     right: compareRightRun,
-                    leftControlRun:
-                        compareLeftRun.controlRunId === distributedControlRun?.runId
-                            ? distributedControlRun
-                            : undefined,
-                    rightControlRun:
-                        compareRightRun.controlRunId === distributedControlRun?.runId
-                            ? distributedControlRun
-                            : undefined,
+                    leftControlRun: compareLeftRun.controlRunId === distributedControlRun?.runId
+                        ? distributedControlRun
+                        : undefined,
+                    rightControlRun: compareRightRun.controlRunId === distributedControlRun?.runId
+                        ? distributedControlRun
+                        : undefined
                 })
                 : undefined,
-        [compareLeftRun, compareRightRun, distributedControlRun],
+        [compareLeftRun, compareRightRun, distributedControlRun]
     );
 
     const refreshDistributedAnalysis = async (
         override?: RunnerDistributedRunSelection,
-        options: Readonly<{ loadArtifact?: boolean; quiet?: boolean }> = {},
+        options: Readonly<{ loadArtifact?: boolean; quiet?: boolean; }> = {}
     ): Promise<void> => {
         if (activeSyntheticSeedRef.current && !override) {
             return;
@@ -262,8 +243,7 @@ export function useRunnerRunsController({
         const request = distributedRefreshRequests.begin();
         const baseUrl = override?.controlBaseUrl ?? controlBaseUrl;
         const token = override?.controlToken ?? controlToken;
-        const preferredRunId =
-            override?.distributedRunId ?? selectedDistributedRunId;
+        const preferredRunId = override?.distributedRunId ?? selectedDistributedRunId;
         if (!options.quiet) {
             manualDistributedRefreshActive.current = true;
             setDistributedBusy(options.loadArtifact ? 'artifact' : 'refresh');
@@ -271,9 +251,11 @@ export function useRunnerRunsController({
         setDistributedError(undefined);
         try {
             const fetchedRuns = await fetchDistributedRuns({ baseUrl, token });
-            if (!request.isCurrent()) return;
+            if (!request.isCurrent()) {
+                return;
+            }
             const list = [...fetchedRuns].sort(
-                (left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs,
+                (left, right) => right.updatedAtEpochMs - left.updatedAtEpochMs
             );
             const selectedFromList = preferredRunId
                 ? list.find((item) => item.distributedRunId === preferredRunId)
@@ -282,32 +264,35 @@ export function useRunnerRunsController({
                 ? await fetchDistributedRun({
                     baseUrl,
                     token,
-                    distributedRunId: preferredRunId,
+                    distributedRunId: preferredRunId
                 }).catch(() => selectedFromList)
                 : list[0];
-            if (!request.isCurrent()) return;
-            const nextControlRunId =
-                nextDistributedRun?.controlRunId ?? override?.controlRunId ??
-                    controlRunId;
+            if (!request.isCurrent()) {
+                return;
+            }
+            const nextControlRunId = nextDistributedRun?.controlRunId ?? override?.controlRunId ??
+                controlRunId;
             const nextControlRun = nextControlRunId
                 ? await fetchControlRunSnapshot({
                     baseUrl,
                     token,
                     runId: nextControlRunId,
-                    bounds: DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS,
+                    bounds: DISTRIBUTED_ANALYSIS_SNAPSHOT_BOUNDS
                 }).catch(() => undefined)
                 : undefined;
-            if (!request.isCurrent()) return;
+            if (!request.isCurrent()) {
+                return;
+            }
             const shouldLoadArtifact = Boolean(
                 nextDistributedRun &&
                     (options.loadArtifact ||
-                        isDistributedRunTerminalState(nextDistributedRun.state)),
+                        isDistributedRunTerminalState(nextDistributedRun.state))
             );
             const nextArtifact = shouldLoadArtifact && nextDistributedRun
                 ? await fetchDistributedRunArtifactBundle({
                     baseUrl,
                     token,
-                    distributedRunId: nextDistributedRun.distributedRunId,
+                    distributedRunId: nextDistributedRun.distributedRunId
                 }).catch(() => undefined)
                 : preferredRunId === selectedDistributedRunId
                 ? artifactBundle
@@ -330,9 +315,7 @@ export function useRunnerRunsController({
             setImportedArtifactAnalysis(undefined);
             setImportedArtifactStatus(undefined);
             setLastDistributedRefresh(Date.now());
-            setCompareLeftId((current) =>
-                current || nextDistributedRun?.distributedRunId || '',
-            );
+            setCompareLeftId((current) => current || nextDistributedRun?.distributedRunId || '');
             setCompareRightId((current) => {
                 if (current) {
                     return current;
@@ -340,15 +323,17 @@ export function useRunnerRunsController({
                 const otherRun = list.find(
                     (item) =>
                         item.distributedRunId !==
-                            nextDistributedRun?.distributedRunId,
+                            nextDistributedRun?.distributedRunId
                 );
                 return otherRun?.distributedRunId ?? '';
             });
-        } catch (error) {
+        }
+        catch (error) {
             if (request.isCurrent()) {
                 setDistributedError(runnerFriendlyErrorMessage(error));
             }
-        } finally {
+        }
+        finally {
             if (request.isCurrent() && !options.quiet) {
                 manualDistributedRefreshActive.current = false;
                 setDistributedBusy(undefined);
@@ -357,7 +342,7 @@ export function useRunnerRunsController({
     };
 
     const applySyntheticDistributedRunSeed = (
-        seedId: DistributedRunSeedId,
+        seedId: DistributedRunSeedId
     ): void => {
         const seed = createSyntheticDistributedRunSeed(seedId);
         activeSyntheticSeedRef.current = seed;
@@ -412,12 +397,12 @@ export function useRunnerRunsController({
             return;
         }
         await refreshDistributedAnalysis(undefined, {
-            loadArtifact: true,
+            loadArtifact: true
         });
     };
 
     const handleDistributedArtifactFiles = async (
-        event: ChangeEvent<HTMLInputElement>,
+        event: ChangeEvent<HTMLInputElement>
     ): Promise<void> => {
         const fileInput = event.currentTarget;
         const selectedFiles = Array.from(fileInput.files ?? []);
@@ -432,10 +417,10 @@ export function useRunnerRunsController({
                 artifactFiles,
                 analysis,
                 snapshots,
-                artifactBundle,
+                artifactBundle
             } = await readDistributedArtifactFiles(
                 selectedFiles,
-                generatedAtEpochMs,
+                generatedAtEpochMs
             );
             activeSyntheticSeedRef.current = undefined;
             setActiveSyntheticSeed(undefined);
@@ -443,13 +428,11 @@ export function useRunnerRunsController({
             setImportedArtifactAnalysis(analysis);
             setImportedArtifactStatus(distributedArtifactImportStatus(
                 artifactFiles,
-                analysis.parseWarnings.length,
+                analysis.parseWarnings.length
             ));
             setDistributedRuns((current) => [
                 snapshots.distributedRun,
-                ...current.filter((item) =>
-                    item.distributedRunId !== snapshots.distributedRun.distributedRunId
-                ),
+                ...current.filter((item) => item.distributedRunId !== snapshots.distributedRun.distributedRunId)
             ]);
             setSelectedDistributedRun(snapshots.distributedRun);
             setSelectedDistributedRunId(snapshots.distributedRun.distributedRunId);
@@ -460,9 +443,11 @@ export function useRunnerRunsController({
             setCompareLeftId(snapshots.distributedRun.distributedRunId);
             setCompareRightId('');
             writeDistributedRunSeedToUrl(undefined);
-        } catch (error) {
+        }
+        catch (error) {
             setDistributedError(runnerFriendlyErrorMessage(error));
-        } finally {
+        }
+        finally {
             setDistributedBusy(undefined);
             fileInput.value = '';
         }
@@ -488,7 +473,7 @@ export function useRunnerRunsController({
         preferredDistributedRun?.controlBaseUrl,
         preferredDistributedRun?.controlRunId,
         preferredDistributedRun?.controlToken,
-        preferredDistributedRun?.distributedRunId,
+        preferredDistributedRun?.distributedRunId
     ]);
 
     useEffect(() => {
@@ -521,7 +506,7 @@ export function useRunnerRunsController({
         controlBaseUrl,
         controlToken,
         selectedDistributedRun?.distributedRunId,
-        selectedDistributedRun?.state,
+        selectedDistributedRun?.state
     ]);
 
     useEffect(() => {
@@ -535,14 +520,14 @@ export function useRunnerRunsController({
         }
         void refreshDistributedAnalysis(undefined, {
             loadArtifact: true,
-            quiet: true,
+            quiet: true
         });
         // Terminal runs should pull artifacts automatically.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
         artifactBundle,
         selectedDistributedRun?.distributedRunId,
-        selectedDistributedRun?.state,
+        selectedDistributedRun?.state
     ]);
 
     const selectDistributedRun = (distributedRunId: string): void => {
@@ -551,13 +536,13 @@ export function useRunnerRunsController({
         setImportedArtifactAnalysis(undefined);
         setImportedArtifactStatus(undefined);
         const selected = distributedRuns.find(
-            (item) => item.distributedRunId === distributedRunId,
+            (item) => item.distributedRunId === distributedRunId
         );
         void refreshDistributedAnalysis({
             distributedRunId,
             controlRunId: selected?.controlRunId ?? controlRunId,
             controlBaseUrl,
-            controlToken,
+            controlToken
         });
     };
 
@@ -607,10 +592,8 @@ export function useRunnerRunsController({
         history,
         failures,
         latestStats,
-        recentHistory,
+        recentHistory
     };
 }
 
-export type RunnerRunsControllerModel = ReturnType<
-    typeof useRunnerRunsController
->;
+export type RunnerRunsControllerModel = ReturnType<typeof useRunnerRunsController>;

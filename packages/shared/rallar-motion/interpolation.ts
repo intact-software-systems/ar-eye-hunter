@@ -5,21 +5,21 @@ import {
     lerpRallarMotionVec3,
     scaleRallarMotionVec3,
     shortestRallarMotionWrappedVec3Delta,
-    wrapRallarMotionAngle,
+    wrapRallarMotionAngle
 } from './math.ts';
 import type {
     RallarMotionEstimate,
     RallarMotionEstimateMode,
     RallarMotionInterpolationOptions,
     RallarMotionSample,
-    RallarMotionVec3,
+    RallarMotionVec3
 } from './types.ts';
 
 export function interpolateRallarMotion<TMetadata>(
     source: RallarMotionSample<TMetadata>,
     target: RallarMotionSample<TMetadata>,
     atEpochMs: number,
-    options: RallarMotionInterpolationOptions = {},
+    options: RallarMotionInterpolationOptions = {}
 ): RallarMotionEstimate<TMetadata> {
     const t = interpolationRatio(source, target, atEpochMs);
     const metadata = newestRallarMotionSample(source, target).metadata;
@@ -33,17 +33,17 @@ export function interpolateRallarMotion<TMetadata>(
             source.rotation,
             target.rotation,
             t,
-            options,
+            options
         ),
         velocity: interpolateOptionalRallarMotionVec3(
             source.velocity,
             target.velocity,
-            t,
+            t
         ),
         angularVelocity: interpolateOptionalRallarMotionVec3(
             source.angularVelocity,
             target.angularVelocity,
-            t,
+            t
         ),
         metadata,
         mode: 'interpolated',
@@ -53,7 +53,7 @@ export function interpolateRallarMotion<TMetadata>(
         targetObservedAtEpochMs: target.observedAtEpochMs,
         ageMs: Math.max(0, atEpochMs - target.observedAtEpochMs),
         extrapolationMs: 0,
-        confidence: 1,
+        confidence: 1
     };
 }
 
@@ -61,10 +61,9 @@ export function interpolateRallarMotionHermite<TMetadata>(
     source: RallarMotionSample<TMetadata>,
     target: RallarMotionSample<TMetadata>,
     atEpochMs: number,
-    options: RallarMotionInterpolationOptions = {},
+    options: RallarMotionInterpolationOptions = {}
 ): RallarMotionEstimate<TMetadata> {
-    const durationSeconds =
-        (target.observedAtEpochMs - source.observedAtEpochMs) / 1_000;
+    const durationSeconds = (target.observedAtEpochMs - source.observedAtEpochMs) / 1_000;
     if (durationSeconds <= 0) {
         return interpolateRallarMotion(source, target, atEpochMs, options);
     }
@@ -83,7 +82,7 @@ export function interpolateRallarMotionHermite<TMetadata>(
                 source.velocity,
                 target.velocity,
                 durationSeconds,
-                t,
+                t
             )
             : lerpRallarMotionVec3(source.position, target.position, t),
         rotation: interpolateOptionalRallarMotionHermiteRotation(
@@ -91,17 +90,17 @@ export function interpolateRallarMotionHermite<TMetadata>(
             target,
             durationSeconds,
             t,
-            options,
+            options
         ),
         velocity: interpolateOptionalRallarMotionVec3(
             source.velocity,
             target.velocity,
-            t,
+            t
         ),
         angularVelocity: interpolateOptionalRallarMotionVec3(
             source.angularVelocity,
             target.angularVelocity,
-            t,
+            t
         ),
         metadata,
         mode: 'interpolated',
@@ -111,14 +110,14 @@ export function interpolateRallarMotionHermite<TMetadata>(
         targetObservedAtEpochMs: target.observedAtEpochMs,
         ageMs: Math.max(0, atEpochMs - target.observedAtEpochMs),
         extrapolationMs: 0,
-        confidence: 1,
+        confidence: 1
     };
 }
 
 export function deadReckonRallarMotion<TMetadata>(
     sample: RallarMotionSample<TMetadata>,
     atEpochMs: number,
-    maxExtrapolationMs: number,
+    maxExtrapolationMs: number
 ): RallarMotionEstimate<TMetadata> {
     const requestedMs = Math.max(0, atEpochMs - sample.observedAtEpochMs);
     const canExtrapolate = sample.velocity &&
@@ -136,7 +135,7 @@ export function deadReckonRallarMotion<TMetadata>(
         position: canExtrapolate
             ? addRallarMotionVec3(
                 sample.position,
-                scaleRallarMotionVec3(sample.velocity, extrapolationSeconds),
+                scaleRallarMotionVec3(sample.velocity, extrapolationSeconds)
             )
             : sample.position,
         rotation: sample.rotation && sample.angularVelocity && canExtrapolate
@@ -144,8 +143,8 @@ export function deadReckonRallarMotion<TMetadata>(
                 sample.rotation,
                 scaleRallarMotionVec3(
                     sample.angularVelocity,
-                    extrapolationSeconds,
-                ),
+                    extrapolationSeconds
+                )
             )
             : sample.rotation,
         velocity: sample.velocity,
@@ -161,15 +160,15 @@ export function deadReckonRallarMotion<TMetadata>(
         confidence: confidenceForDeadReckoning(
             requestedMs,
             maxExtrapolationMs,
-            mode,
-        ),
+            mode
+        )
     };
 }
 
 function interpolationRatio<TMetadata>(
     source: RallarMotionSample<TMetadata>,
     target: RallarMotionSample<TMetadata>,
-    atEpochMs: number,
+    atEpochMs: number
 ): number {
     const durationMs = target.observedAtEpochMs - source.observedAtEpochMs;
     return durationMs <= 0
@@ -179,7 +178,7 @@ function interpolationRatio<TMetadata>(
 
 function newestRallarMotionSample<TMetadata>(
     source: RallarMotionSample<TMetadata>,
-    target: RallarMotionSample<TMetadata>,
+    target: RallarMotionSample<TMetadata>
 ): RallarMotionSample<TMetadata> {
     return source.observedAtEpochMs > target.observedAtEpochMs ? source : target;
 }
@@ -188,7 +187,7 @@ function interpolateOptionalRallarMotionVec3(
     source: RallarMotionVec3 | undefined,
     target: RallarMotionVec3 | undefined,
     t: number,
-    options: RallarMotionInterpolationOptions = {},
+    options: RallarMotionInterpolationOptions = {}
 ): RallarMotionVec3 | undefined {
     if (!source && !target) {
         return undefined;
@@ -204,7 +203,7 @@ function interpolateOptionalRallarMotionVec3(
             source,
             target,
             t,
-            options.rotationWrap,
+            options.rotationWrap
         );
     }
 
@@ -216,7 +215,7 @@ function interpolateOptionalRallarMotionHermiteRotation<TMetadata>(
     target: RallarMotionSample<TMetadata>,
     durationSeconds: number,
     t: number,
-    options: RallarMotionInterpolationOptions,
+    options: RallarMotionInterpolationOptions
 ): RallarMotionVec3 | undefined {
     if (!source.rotation && !target.rotation) {
         return undefined;
@@ -232,7 +231,7 @@ function interpolateOptionalRallarMotionHermiteRotation<TMetadata>(
             source.rotation,
             target.rotation,
             t,
-            options,
+            options
         );
     }
 
@@ -242,8 +241,8 @@ function interpolateOptionalRallarMotionHermiteRotation<TMetadata>(
             shortestRallarMotionWrappedVec3Delta(
                 source.rotation,
                 target.rotation,
-                options.rotationWrap,
-            ),
+                options.rotationWrap
+            )
         )
         : target.rotation;
     const interpolated = hermiteRallarMotionVec3(
@@ -252,7 +251,7 @@ function interpolateOptionalRallarMotionHermiteRotation<TMetadata>(
         source.angularVelocity,
         target.angularVelocity,
         durationSeconds,
-        t,
+        t
     );
 
     if (!options.rotationWrap) {
@@ -262,16 +261,16 @@ function interpolateOptionalRallarMotionHermiteRotation<TMetadata>(
     return [
         wrapRallarMotionAngle(
             interpolated[0],
-            periodAt(options.rotationWrap.period, 0),
+            periodAt(options.rotationWrap.period, 0)
         ),
         wrapRallarMotionAngle(
             interpolated[1],
-            periodAt(options.rotationWrap.period, 1),
+            periodAt(options.rotationWrap.period, 1)
         ),
         wrapRallarMotionAngle(
             interpolated[2],
-            periodAt(options.rotationWrap.period, 2),
-        ),
+            periodAt(options.rotationWrap.period, 2)
+        )
     ];
 }
 
@@ -281,7 +280,7 @@ function hermiteRallarMotionVec3(
     sourceVelocity: RallarMotionVec3,
     targetVelocity: RallarMotionVec3,
     durationSeconds: number,
-    t: number,
+    t: number
 ): RallarMotionVec3 {
     return [
         hermiteRallarMotionNumber(
@@ -289,22 +288,22 @@ function hermiteRallarMotionVec3(
             target[0],
             sourceVelocity[0] * durationSeconds,
             targetVelocity[0] * durationSeconds,
-            t,
+            t
         ),
         hermiteRallarMotionNumber(
             source[1],
             target[1],
             sourceVelocity[1] * durationSeconds,
             targetVelocity[1] * durationSeconds,
-            t,
+            t
         ),
         hermiteRallarMotionNumber(
             source[2],
             target[2],
             sourceVelocity[2] * durationSeconds,
             targetVelocity[2] * durationSeconds,
-            t,
-        ),
+            t
+        )
     ];
 }
 
@@ -313,7 +312,7 @@ function hermiteRallarMotionNumber(
     target: number,
     sourceTangent: number,
     targetTangent: number,
-    t: number,
+    t: number
 ): number {
     const tt = t * t;
     const ttt = tt * t;
@@ -329,7 +328,7 @@ function hermiteRallarMotionNumber(
 function confidenceForDeadReckoning(
     requestedMs: number,
     maxExtrapolationMs: number,
-    mode: RallarMotionEstimateMode,
+    mode: RallarMotionEstimateMode
 ): number {
     if (requestedMs === 0) {
         return 1;

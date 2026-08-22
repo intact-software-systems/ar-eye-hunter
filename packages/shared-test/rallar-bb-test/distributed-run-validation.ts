@@ -1,12 +1,12 @@
 import {
     validateDistributedRunManifestContract,
     type RallarBlackBoxDistributedRunManifest,
-    type RallarBlackBoxDistributedRunValidationResult,
+    type RallarBlackBoxDistributedRunValidationResult
 } from './distributed-run.ts';
 import {
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
     validateJsonSchema,
-    type JsonSchemaValidationResult,
+    type JsonSchemaValidationResult
 } from './schema.ts';
 
 export type DistributedRunManifestValidationIssue = Readonly<{
@@ -23,11 +23,11 @@ export type DistributedRunManifestValidationResult = Readonly<{
 }>;
 
 export function validateDistributedRunManifest(
-    value: unknown,
+    value: unknown
 ): DistributedRunManifestValidationResult {
     const schemaValidation = validateJsonSchema(
         RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
-        value,
+        value
     );
     if (!schemaValidation.ok) {
         return {
@@ -36,13 +36,13 @@ export function validateDistributedRunManifest(
             errors: schemaValidation.errors.map((error) => ({
                 source: 'schema' as const,
                 path: error.path,
-                message: error.message,
-            })),
+                message: error.message
+            }))
         };
     }
 
     const contractValidation = validateDistributedRunManifestContract(
-        value as RallarBlackBoxDistributedRunManifest,
+        value as RallarBlackBoxDistributedRunManifest
     );
     if (!contractValidation.ok) {
         return {
@@ -52,8 +52,8 @@ export function validateDistributedRunManifest(
             errors: contractValidation.errors.map((error) => ({
                 source: 'contract' as const,
                 path: error.path,
-                message: error.message,
-            })),
+                message: error.message
+            }))
         };
     }
 
@@ -61,12 +61,12 @@ export function validateDistributedRunManifest(
         ok: true,
         schemaValidation,
         contractValidation,
-        errors: [],
+        errors: []
     };
 }
 
 export function formatDistributedRunManifestValidationErrors(
-    errors: readonly DistributedRunManifestValidationIssue[],
+    errors: readonly DistributedRunManifestValidationIssue[]
 ): string {
     return errors.map((error) => `${error.path}: ${error.message}`).join('\n');
 }

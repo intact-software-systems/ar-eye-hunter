@@ -131,7 +131,7 @@ const doc = await rallar.crdt.open<SharedChecklist>('room-checklist', {
     documentType: 'checklist',
     scope: { kind: 'room', roomRef },
     transport: 'ws-then-rtc',
-    persist: true,
+    persist: true
 });
 
 const unsubscribe = doc.subscribe((snapshot) => {
@@ -144,8 +144,8 @@ await doc.applyLocal({
     elementId: crypto.randomUUID(),
     value: {
         text: 'Inspect north entrance',
-        done: false,
-    },
+        done: false
+    }
 });
 ```
 
@@ -157,7 +157,7 @@ rallar.crdt.defineDocument({
     scope: 'room',
     authorizeRead: isRoomMember,
     authorizeWrite: canEditRoomDocument,
-    maxUpdateBytes: 16 * 1024,
+    maxUpdateBytes: 16 * 1024
 });
 ```
 
@@ -206,22 +206,21 @@ support is deferred unless explicitly implemented.
 Core update envelope:
 
 ```ts
-export type RallarCrdtUpdateEnvelope<TPayload = RallarCrdtOperationBatch> =
-    Readonly<{
-        protocolVersion: 1;
-        document: RallarCrdtDocumentRef;
-        updateId: string;
-        replicaId: string;
-        actorId?: string;
-        sessionId?: string;
-        lamport: number;
-        parents: readonly string[];
-        schemaVersion: number;
-        operationVersion: number;
-        createdAtEpochMs: number;
-        payload: TPayload;
-        hash?: string;
-    }>;
+export type RallarCrdtUpdateEnvelope<TPayload = RallarCrdtOperationBatch> = Readonly<{
+    protocolVersion: 1;
+    document: RallarCrdtDocumentRef;
+    updateId: string;
+    replicaId: string;
+    actorId?: string;
+    sessionId?: string;
+    lamport: number;
+    parents: readonly string[];
+    schemaVersion: number;
+    operationVersion: number;
+    createdAtEpochMs: number;
+    payload: TPayload;
+    hash?: string;
+}>;
 ```
 
 Core snapshot envelope:
@@ -415,10 +414,7 @@ crdt:metadata
 Browser document API:
 
 ```ts
-export type RallarCrdtDocument<
-    TValue,
-    TPayload = RallarCrdtOperationBatch,
-> = Readonly<{
+export type RallarCrdtDocument<TValue, TPayload = RallarCrdtOperationBatch> = Readonly<{
     ref: RallarCrdtDocumentRef;
     read(): TValue;
     subscribe(listener: RallarCrdtSnapshotListener<TValue>): RallarUnsubscribe;
@@ -557,15 +553,15 @@ Suggested contracts:
 export type RallarCrdtUpdateLogRepository = Readonly<{
     append(input: RallarCrdtAppendUpdateInput): Promise<RallarCrdtAppendResult>;
     appendBatch(
-        input: RallarCrdtAppendBatchInput,
+        input: RallarCrdtAppendBatchInput
     ): Promise<RallarCrdtAppendBatchResult>;
     listAfter(input: RallarCrdtListUpdatesInput): Promise<RallarCrdtUpdatePage>;
     readSnapshot(
-        ref: RallarCrdtDocumentRef,
+        ref: RallarCrdtDocumentRef
     ): Promise<RallarCrdtSnapshotEnvelope | undefined>;
     writeSnapshot(input: RallarCrdtWriteSnapshotInput): Promise<void>;
     updateDocumentLifecycle(
-        input: RallarCrdtLifecycleInput,
+        input: RallarCrdtLifecycleInput
     ): Promise<RallarCrdtDocumentMetadata>;
 }>;
 ```
@@ -683,10 +679,10 @@ Work:
 
 - Add docs note: CRDT is explicit and not `rallar.data`.
 - Add or preserve tests proving `rallar.data` remains latest-value:
-    - `set` replaces whole values
-    - tab sync applies `set/delete/clear`
-    - incompatible open options still throw
-    - `compareAndSet` is not a distributed lock
+  - `set` replaces whole values
+  - tab sync applies `set/delete/clear`
+  - incompatible open options still throw
+  - `compareAndSet` is not a distributed lock
 
 Acceptance:
 

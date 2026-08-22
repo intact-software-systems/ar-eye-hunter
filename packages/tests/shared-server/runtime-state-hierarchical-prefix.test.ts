@@ -1,19 +1,10 @@
-import { describe, expect, it } from 'vitest';
 import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
-import type {
-    ClientInstance,
-    ClientPrincipal,
-    ClientSession,
-} from '@shared/api/client-types.ts';
-import type {
-    AuditStamp,
-    Group,
-    GroupMember,
-    GroupPresenceSession,
-} from '@shared/api/group-types.ts';
+import type { ClientInstance, ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
+import type { AuditStamp, Group, GroupMember, GroupPresenceSession } from '@shared/api/group-types.ts';
+import { describe, expect, it } from 'vitest';
 import { createTestGroup } from '../create-test-group.ts';
+import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('runtime-state hierarchical prefix isolation', () => {
     it('keeps sibling workspace identifiers isolated', async () => {
@@ -75,7 +66,7 @@ const groupRef = (groupId: string) => ({ ...scope('workspace'), groupId });
 
 function clientPrincipal(
     workspaceId: string,
-    principalId: string,
+    principalId: string
 ): ClientPrincipal {
     return {
         ...scope(workspaceId),
@@ -95,13 +86,13 @@ function clientPrincipal(
         updated: auditStamp,
         disabled: null,
         deleted: null,
-        lastSeenAtEpochMs: null,
+        lastSeenAtEpochMs: null
     };
 }
 
 function clientInstance(
     principalId: string,
-    clientInstanceId: string,
+    clientInstanceId: string
 ): ClientInstance {
     return {
         ...instanceRef(principalId, clientInstanceId),
@@ -113,14 +104,14 @@ function clientInstance(
         status: 'active',
         registered: auditStamp,
         updated: auditStamp,
-        revoked: null,
+        revoked: null
     };
 }
 
 function clientSession(
     principalId: string,
     clientInstanceId: string,
-    sessionId: string,
+    sessionId: string
 ): ClientSession {
     return {
         ...instanceRef(principalId, clientInstanceId),
@@ -136,7 +127,7 @@ function clientSession(
         lastHeartbeatAtEpochMs: 1,
         expiresAtEpochMs: 4_102_444_800_000,
         disconnectedAtEpochMs: null,
-        disconnectReason: null,
+        disconnectReason: null
     };
 }
 
@@ -152,14 +143,14 @@ function group(workspaceId: string, groupId: string): Group {
         rosterVersion: 1,
         presenceVersion: 0,
         created: auditStamp,
-        updated: auditStamp,
+        updated: auditStamp
     });
 }
 
 function groupMember(
     groupId: string,
     principalId: string,
-    workspaceId = 'workspace',
+    workspaceId = 'workspace'
 ): GroupMember {
     return {
         ...scope(workspaceId),
@@ -173,7 +164,7 @@ function groupMember(
         removed: null,
         banned: null,
         invitedByPrincipalId: null,
-        invitationExpiresAtEpochMs: null,
+        invitationExpiresAtEpochMs: null
     };
 }
 
@@ -189,7 +180,7 @@ function groupSession(groupId: string, sessionId: string): GroupPresenceSession 
         lastHeartbeatAtEpochMs: 1,
         expiresAtEpochMs: 4_102_444_800_000,
         disconnectedAtEpochMs: null,
-        disconnectReason: null,
+        disconnectReason: null
     };
 }
 
@@ -198,5 +189,5 @@ const auditStamp: AuditStamp = {
     actor: { kind: 'service', serviceId: 'hierarchy-prefix-test' },
     reason: null,
     traceId: null,
-    requestId: null,
+    requestId: null
 };

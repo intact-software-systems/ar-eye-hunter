@@ -17,7 +17,7 @@ export const DEFAULT_STATE_EVENT_LIST_LIMIT = 100;
 export const MAX_STATE_EVENT_LIST_LIMIT = 500;
 
 export function readStateEventListQuery(
-    searchParams: URLSearchParams,
+    searchParams: URLSearchParams
 ): StateEventListQuery {
     const eventTypes = searchParams.getAll('eventType')
         .map((eventType) => eventType.trim())
@@ -28,7 +28,7 @@ export function readStateEventListQuery(
     return {
         ...(eventTypes.length > 0 ? { eventTypes } : {}),
         limit,
-        ...(after ? { after } : {}),
+        ...(after ? { after } : {})
     };
 }
 
@@ -37,7 +37,7 @@ export function filterStateEventsForList<
     TEventType extends string = string,
 >(
     events: readonly TEvent[],
-    query: StateEventListQuery<TEventType> = {},
+    query: StateEventListQuery<TEventType> = {}
 ): readonly TEvent[] {
     return listRecentStateEvents(events, query);
 }
@@ -47,7 +47,7 @@ export function listRecentStateEvents<
     TEventType extends string = string,
 >(
     events: readonly TEvent[],
-    query: StateEventListQuery<TEventType> = {},
+    query: StateEventListQuery<TEventType> = {}
 ): readonly TEvent[] {
     const eventTypes = query.eventTypes && query.eventTypes.length > 0
         ? new Set<string>(query.eventTypes)
@@ -60,12 +60,9 @@ export function listRecentStateEvents<
     return filtered.slice(-limit);
 }
 
-export function listStateEventsPage<
-    TEvent extends StateEventListable<TEventType>,
-    TEventType extends string = string,
->(
+export function listStateEventsPage<TEvent extends StateEventListable<TEventType>, TEventType extends string = string>(
     events: readonly TEvent[],
-    query: StateEventListQuery<TEventType> = {},
+    query: StateEventListQuery<TEventType> = {}
 ): StateEventPage<TEvent> {
     const eventTypes = query.eventTypes && query.eventTypes.length > 0
         ? new Set<string>(query.eventTypes)
@@ -85,7 +82,7 @@ export function listStateEventsPage<
     return {
         events: pageEvents,
         ...(lastEvent ? { nextCursor: toCursor(lastEvent) } : {}),
-        hasMore: eventsPlusOne.length > limit,
+        hasMore: eventsPlusOne.length > limit
     };
 }
 
@@ -103,13 +100,13 @@ function toEventListLimit(value: string | null): number {
 }
 
 function toStateEventCursor(
-    searchParams: URLSearchParams,
+    searchParams: URLSearchParams
 ): StateEventCursor | undefined {
     const snapshotVersion = toSafeInteger(
-        searchParams.get('afterSnapshotVersion'),
+        searchParams.get('afterSnapshotVersion')
     );
     const occurredAtEpochMs = toSafeInteger(
-        searchParams.get('afterOccurredAtEpochMs'),
+        searchParams.get('afterOccurredAtEpochMs')
     );
     const eventId = searchParams.get('afterEventId')?.trim();
     if (
@@ -123,7 +120,7 @@ function toStateEventCursor(
     return {
         snapshotVersion,
         occurredAtEpochMs,
-        eventId,
+        eventId
     };
 }
 
@@ -138,7 +135,7 @@ function toSafeInteger(value: string | null): number | undefined {
 
 function compareEventToCursor(
     event: StateEventListable,
-    cursor: StateEventCursor,
+    cursor: StateEventCursor
 ): number {
     return event.snapshotVersion - cursor.snapshotVersion ||
         event.occurredAtEpochMs - cursor.occurredAtEpochMs ||
@@ -149,6 +146,6 @@ function toCursor(event: StateEventListable): StateEventCursor {
     return {
         snapshotVersion: event.snapshotVersion,
         occurredAtEpochMs: event.occurredAtEpochMs,
-        eventId: event.eventId,
+        eventId: event.eventId
     };
 }

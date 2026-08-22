@@ -122,23 +122,29 @@ Use this structure:
 # Performance audit
 
 ## Executive summary
+
 - Top 5 risks, ranked by expected impact and confidence.
 
 ## Hot path map
+
 - Entry point -> critical flow -> likely expensive modules.
 
 ## Findings
-| Severity | Confidence | Category | Location | Why costly | Complexity/memory impact | Validation | Suggested fix |
-|---|---:|---|---|---|---|---|---|
-| High | Strong suspicion | Algorithmic complexity | `path/file.ext:123` | ... | ... | ... | ... |
+
+| Severity |       Confidence | Category               | Location            | Why costly | Complexity/memory impact | Validation | Suggested fix |
+| -------- | ---------------: | ---------------------- | ------------------- | ---------- | ------------------------ | ---------- | ------------- |
+| High     | Strong suspicion | Algorithmic complexity | `path/file.ext:123` | ...        | ...                      | ...        | ...           |
 
 ## False-positive risks
+
 - Findings that may be harmless depending on workload.
 
 ## Measurement plan
+
 - Benchmarks, profilers, fixtures, and instrumentation needed next.
 
 ## Do first
+
 1. Highest-impact next action.
 2. Second action.
 3. Third action.
@@ -148,10 +154,11 @@ Use this structure:
 
 Use this structure:
 
-```md
+````md
 # Runtime performance validation
 
 ## Environment
+
 - Branch/commit:
 - Hardware/container notes:
 - Runtime versions:
@@ -159,31 +166,39 @@ Use this structure:
 - Input sizes:
 
 ## Commands run
+
 ```sh
 # exact commands
 ```
+````
 
 ## Results
+
 | Hypothesis | Result | Evidence | Confirmed/refuted/inconclusive | Notes |
-|---|---|---|---|---|
+| ---------- | ------ | -------- | ------------------------------ | ----- |
 
 ## CPU profile interpretation
+
 - Hot functions, call paths, and likely causes.
 
 ## Memory profile interpretation
+
 - Allocation sites, retained memory, peak heap/RSS, GC pressure.
 
 ## Leak findings
+
 - Evidence for or against leak-like growth over repeated/long-running workloads.
 
 ## Recommendations
+
 | Rank | Fix | Expected impact | Confidence | Risk | Validation |
-|---:|---|---|---|---|---|
+| ---: | --- | --------------- | ---------- | ---- | ---------- |
 
 ## Next step
-- One small, safe optimization to attempt first.
-```
 
+- One small, safe optimization to attempt first.
+
+````
 ## Report format: optimization result
 
 Use this structure:
@@ -209,7 +224,7 @@ Use this structure:
 
 ## Follow-up opportunities
 - Additional fixes that should be separate changes.
-```
+````
 
 ## Done when
 

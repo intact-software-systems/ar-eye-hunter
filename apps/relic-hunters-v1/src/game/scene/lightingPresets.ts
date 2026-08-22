@@ -55,8 +55,8 @@ export const RELIC_LIGHTING_PRESETS: Readonly<Record<RelicLightingPresetId, Reli
             contrast: 1.00,
             vignetteWeight: 0.03,
             bloomWeight: 0.42,
-            grainIntensity: 0.02,
-        },
+            grainIntensity: 0.02
+        }
     },
     sunset: {
         id: 'sunset',
@@ -82,8 +82,8 @@ export const RELIC_LIGHTING_PRESETS: Readonly<Record<RelicLightingPresetId, Reli
             contrast: 1.00,
             vignetteWeight: 0.04,
             bloomWeight: 0.46,
-            grainIntensity: 0.02,
-        },
+            grainIntensity: 0.02
+        }
     },
     night: {
         id: 'night',
@@ -109,8 +109,8 @@ export const RELIC_LIGHTING_PRESETS: Readonly<Record<RelicLightingPresetId, Reli
             contrast: 1.01,
             vignetteWeight: 0.04,
             bloomWeight: 0.48,
-            grainIntensity: 0.02,
-        },
+            grainIntensity: 0.02
+        }
     },
     lantern: {
         id: 'lantern',
@@ -136,9 +136,9 @@ export const RELIC_LIGHTING_PRESETS: Readonly<Record<RelicLightingPresetId, Reli
             contrast: 1.00,
             vignetteWeight: 0.03,
             bloomWeight: 0.46,
-            grainIntensity: 0.02,
-        },
-    },
+            grainIntensity: 0.02
+        }
+    }
 };
 
 export const RELIC_ROOM_LIGHTING_PRESETS: Readonly<Record<RelicRoom['kind'], RelicLightingPresetId>> = {
@@ -149,12 +149,12 @@ export const RELIC_ROOM_LIGHTING_PRESETS: Readonly<Record<RelicRoom['kind'], Rel
     trap: 'lantern',
     treasure: 'lantern',
     monster: 'lantern',
-    exit: 'sunset',
+    exit: 'sunset'
 };
 
 export function selectRelicLightingPreset({
     snapshot,
-    currentRoom,
+    currentRoom
 }: Readonly<{
     snapshot?: RelicPublicSnapshot;
     currentRoom?: RelicRoom;

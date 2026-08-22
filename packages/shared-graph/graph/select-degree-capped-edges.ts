@@ -22,7 +22,7 @@ export interface DegreeCappedEdgeSelectionInput {
  * indices, which is why callers must pass nodes in a canonical order.
  */
 export function selectDegreeCappedEdges(
-    input: DegreeCappedEdgeSelectionInput,
+    input: DegreeCappedEdgeSelectionInput
 ): readonly DegreeCappedEdge[] {
     if (input.nodeCount < 2 || input.degreeLimit < 1) {
         return [];
@@ -66,7 +66,7 @@ function createCandidateHeap(input: DegreeCappedEdgeSelectionInput): CandidateHe
         weights: new Float64Array(pairCount),
         sources: new Uint32Array(pairCount),
         targets: new Uint32Array(pairCount),
-        size: pairCount,
+        size: pairCount
     };
     let index = 0;
     for (let source = 0; source < input.nodeCount; source++) {
@@ -89,7 +89,7 @@ function popCheapestCandidate(heap: CandidateHeap): DegreeCappedEdge {
     const cheapest: DegreeCappedEdge = {
         sourceIndex: heap.sources[0],
         targetIndex: heap.targets[0],
-        weight: heap.weights[0],
+        weight: heap.weights[0]
     };
     heap.size -= 1;
     if (heap.size > 0) {

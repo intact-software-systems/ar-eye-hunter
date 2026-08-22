@@ -5,8 +5,8 @@ observe, transform, or suppress browser room traffic. Define explicit room
 topics for app protocols; leave built-in Rallar topics to the middleware.
 
 ```ts
-import type { RallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
 import type { RallarServerRuntime } from '@shared-server/rallar-facade/RallarServer.ts';
+import type { RallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
 
 type Ping = {
     roomId: string;
@@ -20,7 +20,7 @@ type Pong = {
 };
 
 export function installRoomDiagnosticsTopic(
-    rallar: RallarServerApplication<RallarServerRuntime, unknown>,
+    rallar: RallarServerApplication<RallarServerRuntime, unknown>
 ) {
     rallar.ws.defineTopic<Ping>({
         topicId: 'room.demo.ping',
@@ -34,46 +34,48 @@ export function installRoomDiagnosticsTopic(
             value.roomId === context.roomId,
         authorize: (_message, context) =>
             context.roomId !== undefined &&
-            context.senderId.length > 0,
+            context.senderId.length > 0
     });
 
     rallar.ws.proxy<Ping>({
         from: {
             topicId: 'room.demo.ping',
-            typeId: 'room.demo.ping.v1',
+            typeId: 'room.demo.ping.v1'
         },
         suppressDefaultFanout: true,
         transform: (message) => ({
             ...message.raw,
             route: {
                 ...message.raw.route,
-                topicId: 'room.demo.pong',
+                topicId: 'room.demo.pong'
             },
             payload: {
                 ...message.raw.payload,
                 typeId: 'room.demo.pong.v1',
-                resource: JSON.stringify({
-                    roomId: message.payload.roomId,
-                    nonce: message.payload.nonce,
-                    serverAtEpochMs: Date.now(),
-                } satisfies Pong),
-            },
+                resource: JSON.stringify(
+                    {
+                        roomId: message.payload.roomId,
+                        nonce: message.payload.nonce,
+                        serverAtEpochMs: Date.now()
+                    } satisfies Pong
+                )
+            }
         }),
         targets: (_message, context) => ({
             mode: 'unicast',
-            toPeerId: context.senderId,
+            toPeerId: context.senderId
         }),
-        fanout: 'live-only',
+        fanout: 'live-only'
     });
 
     rallar.ws.on<Ping>(
         {
             topicId: 'room.demo.ping',
-            typeId: 'room.demo.ping.v1',
+            typeId: 'room.demo.ping.v1'
         },
         (message, context) => {
             recordRoomPing(context.roomId, context.senderId, message.payload.nonce);
-        },
+        }
     );
 }
 
@@ -90,7 +92,7 @@ function isPing(value: unknown): value is Ping {
 function recordRoomPing(
     roomId: string | undefined,
     senderId: string,
-    nonce: string,
+    nonce: string
 ): void {
     console.debug('room ping', { roomId, senderId, nonce });
 }

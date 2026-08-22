@@ -8,7 +8,7 @@ function appendText(
     parent: HTMLElement,
     tagName: 'h1' | 'p',
     value: unknown,
-    attr?: string,
+    attr?: string
 ): HTMLElement {
     const element = document.createElement(tagName);
     element.textContent = text(value);
@@ -23,7 +23,7 @@ function appendRow(
     list: HTMLDListElement,
     label: string,
     value: unknown,
-    attr: string,
+    attr: string
 ): void {
     const term = document.createElement('dt');
     term.textContent = label;
@@ -37,7 +37,7 @@ function appendRow(
 
 export function renderHeadlessStatus(
     root: HTMLElement,
-    snapshot: RallarBlackBoxBrowserControlAgentSnapshot,
+    snapshot: RallarBlackBoxBrowserControlAgentSnapshot
 ): void {
     const latestCommand = snapshot.state.commandHistory.at(-1);
     const latestEvent = snapshot.state.events.at(-1);
@@ -68,7 +68,7 @@ export function renderHeadlessStatus(
             section,
             'p',
             'Missing global fleet identity; this browser may not be targetable by world-fleet recipes.',
-            'data-fleet-identity-warning',
+            'data-fleet-identity-warning'
         );
         warning.className = 'warning';
     }

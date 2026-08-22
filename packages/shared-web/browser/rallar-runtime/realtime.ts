@@ -22,28 +22,19 @@ import type {
     RallarTargetedChannelDefinition,
     RallarTargetedChannelSendOptions,
     RallarTargetedSendStatus,
-    RallarTargetSelector,
+    RallarTargetSelector
 } from '@shared-web/browser/rallar-realtime-facade.ts';
-import type {
-    RallarRtcFacade,
-    RallarRtcRoomLaneWaitResult,
-} from '@shared-web/browser/rallar-rtc-facade.ts';
+import type { RallarRtcFacade, RallarRtcRoomLaneWaitResult } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import {
-    isGroupActive,
-    isSessionInGroup,
-} from '@shared/api/group-client-views.ts';
+import { isGroupActive, isSessionInGroup } from '@shared/api/group-client-views.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     DEFAULT_RTC_DATA_CHANNEL_LANE_ID,
     type QRtcPeerDto,
-    type WebRtcPeerLaneOpenResult,
+    type WebRtcPeerLaneOpenResult
 } from '@shared/services/WebRtcConnectionService.ts';
-import type {
-    RtcDataChannelSendOptions,
-    RtcDataChannelSendResult,
-} from '@shared/webrtc/QRtcDataChannel.ts';
+import type { RtcDataChannelSendOptions, RtcDataChannelSendResult } from '@shared/webrtc/QRtcDataChannel.ts';
 
 const RALLAR_REALTIME_LIFECYCLE_CALLBACK_ID = 'rallar:realtime:lifecycle';
 
@@ -64,7 +55,7 @@ export type CreateRallarRealtimeControllerOptions = Readonly<{
 export type RallarRealtimeController = Readonly<{
     operations: CreateRallarRealtimeFacadeOptions;
     createTargetedChannel<T>(
-        definition: RallarTargetedChannelDefinition,
+        definition: RallarTargetedChannelDefinition
     ): RallarTargetedChannel<T>;
     resolveTargetPeerIds(input?: RallarTargetSelector): readonly string[];
     attachPeerLifecycle(ctx: ApiMiddleware): void;
@@ -74,30 +65,23 @@ export type RallarRealtimeController = Readonly<{
 }>;
 
 export function createRallarRealtimeController(
-    options: CreateRallarRealtimeControllerOptions,
+    options: CreateRallarRealtimeControllerOptions
 ): RallarRealtimeController {
-    const jsonListeners = new Map<
-        string,
-        Set<RallarRealtimeHandler<unknown>>
-    >();
-    const binaryListeners = new Map<
-        string,
-        Set<RallarRealtimeHandler<ArrayBuffer>>
-    >();
+    const jsonListeners = new Map<string, Set<RallarRealtimeHandler<unknown>>>();
+    const binaryListeners = new Map<string, Set<RallarRealtimeHandler<ArrayBuffer>>>();
 
     const laneIds = (): readonly string[] => [
         ...new Set([
             ...jsonListeners.keys(),
-            ...binaryListeners.keys(),
-        ]),
+            ...binaryListeners.keys()
+        ])
     ];
 
-    const callbackId = (laneId: string): string =>
-        `rallar:realtime:${laneId}`;
+    const callbackId = (laneId: string): string => `rallar:realtime:${laneId}`;
 
     const registerCallbacksForPeer = (
         peer: QRtcPeerDto,
-        laneId?: string,
+        laneId?: string
     ): void => {
         const selectedLaneIds = laneId ? [laneId] : laneIds();
         for (const currentLaneId of selectedLaneIds) {
@@ -112,9 +96,9 @@ export function createRallarRealtimeController(
                         peer.peerId,
                         currentLaneId,
                         data,
-                        event,
+                        event
                     );
-                },
+                }
             });
         }
     };
@@ -135,19 +119,20 @@ export function createRallarRealtimeController(
 
     const notifyListeners = async <T>(
         listeners: Set<RallarRealtimeHandler<T>>,
-        message: RallarRealtimeMessage<T>,
+        message: RallarRealtimeMessage<T>
     ): Promise<void> => {
         await Promise.all(
             [...listeners].map(async (listener) => {
                 try {
                     await listener(message);
-                } catch (error) {
+                }
+                catch (error) {
                     console.error(
                         'Error notifying Rallar realtime listener',
-                        error,
+                        error
                     );
                 }
-            }),
+            })
         );
     };
 
@@ -155,7 +140,7 @@ export function createRallarRealtimeController(
         peerId: string,
         laneId: string,
         data: string,
-        event: MessageEvent,
+        event: MessageEvent
     ): Promise<void> => {
         const listeners = jsonListeners.get(laneId);
         if (!listeners || listeners.size === 0) {
@@ -165,7 +150,8 @@ export function createRallarRealtimeController(
         let parsed: unknown;
         try {
             parsed = JSON.parse(data);
-        } catch (error) {
+        }
+        catch (error) {
             console.error('Error parsing Rallar realtime JSON message', error);
             return;
         }
@@ -175,7 +161,7 @@ export function createRallarRealtimeController(
             laneId,
             data: parsed,
             event,
-            receivedAtEpochMs: Date.now(),
+            receivedAtEpochMs: Date.now()
         });
     };
 
@@ -183,7 +169,7 @@ export function createRallarRealtimeController(
         peerId: string,
         laneId: string,
         data: MessageEvent['data'],
-        event: MessageEvent,
+        event: MessageEvent
     ): Promise<void> => {
         const listeners = binaryListeners.get(laneId);
         if (!listeners || listeners.size === 0) {
@@ -200,7 +186,7 @@ export function createRallarRealtimeController(
             laneId,
             data: bytes,
             event,
-            receivedAtEpochMs: Date.now(),
+            receivedAtEpochMs: Date.now()
         });
     };
 
@@ -208,7 +194,7 @@ export function createRallarRealtimeController(
         peerId: string,
         laneId: string,
         data: MessageEvent['data'],
-        event: MessageEvent,
+        event: MessageEvent
     ): Promise<void> => {
         if (typeof data === 'string') {
             await dispatchJson(peerId, laneId, data, event);
@@ -248,7 +234,7 @@ export function createRallarRealtimeController(
 
     const onJson = <T = unknown>(
         laneId: string,
-        handler: RallarRealtimeHandler<T>,
+        handler: RallarRealtimeHandler<T>
     ): RallarUnsubscribe => {
         const listeners = jsonListeners.get(laneId) ??
             new Set<RallarRealtimeHandler<unknown>>();
@@ -264,7 +250,7 @@ export function createRallarRealtimeController(
 
     const onBinary = (
         laneId: string,
-        handler: RallarRealtimeHandler<ArrayBuffer>,
+        handler: RallarRealtimeHandler<ArrayBuffer>
     ): RallarUnsubscribe => {
         const listeners = binaryListeners.get(laneId) ??
             new Set<RallarRealtimeHandler<ArrayBuffer>>();
@@ -279,7 +265,7 @@ export function createRallarRealtimeController(
     };
 
     const resolveRealtimePeerIds = (
-        input: RallarRealtimeSendOptions,
+        input: RallarRealtimeSendOptions
     ): readonly string[] => {
         const session = options.readSession();
         if (input.peerIds) {
@@ -291,10 +277,10 @@ export function createRallarRealtimeController(
         const room = input.roomRef
             ? options.findGroupSnapshot(input.roomRef)
             : input.roomId
-                ? options.findGroupSnapshot(input.roomId)
-                : defaultRoom
-                    ? options.findGroupSnapshot(defaultRoom)
-                    : options.readCurrentRoomSnapshot();
+            ? options.findGroupSnapshot(input.roomId)
+            : defaultRoom
+            ? options.findGroupSnapshot(defaultRoom)
+            : options.readCurrentRoomSnapshot();
 
         const peerIds = (room?.activeSessions ?? [])
             .map((activeSession) => activeSession.sessionId)
@@ -307,16 +293,16 @@ export function createRallarRealtimeController(
         ctx: ApiMiddleware,
         peerId: string,
         laneId: string,
-        input: RallarRealtimeSendOptions,
+        input: RallarRealtimeSendOptions
     ): Promise<WebRtcPeerLaneOpenResult> =>
         await ctx.middleware.webRtcConnectionService.ensurePeerLaneOpen(
             peerId,
             laneId,
-            { timeoutMs: options.resolveOpenTimeoutMs(input.openTimeoutMs) },
+            { timeoutMs: options.resolveOpenTimeoutMs(input.openTimeoutMs) }
         );
 
     const sendJson = async <T>(
-        input: RallarRealtimeJsonSendInput<T>,
+        input: RallarRealtimeJsonSendInput<T>
     ): Promise<readonly RallarRealtimeSendResult[]> => {
         const ctx = await options.connect();
         const laneId = options.resolveLaneId(input.laneId);
@@ -331,16 +317,16 @@ export function createRallarRealtimeController(
                     result: laneOpen.status === 'open' && laneOpen.channel
                         ? laneOpen.channel.sendJson(
                             input.data,
-                            toRealtimeDataChannelSendOptions(input),
+                            toRealtimeDataChannelSendOptions(input)
                         )
-                        : toClosedRealtimeSendResult(),
+                        : toClosedRealtimeSendResult()
                 };
-            }),
+            })
         );
     };
 
     const sendBinary = async (
-        input: RallarRealtimeBinarySendInput,
+        input: RallarRealtimeBinarySendInput
     ): Promise<readonly RallarRealtimeSendResult[]> => {
         const ctx = await options.connect();
         const laneId = options.resolveLaneId(input.laneId);
@@ -355,48 +341,48 @@ export function createRallarRealtimeController(
                     result: laneOpen.status === 'open' && laneOpen.channel
                         ? laneOpen.channel.sendBinary(
                             input.data,
-                            toRealtimeDataChannelSendOptions(input),
+                            toRealtimeDataChannelSendOptions(input)
                         )
-                        : toClosedRealtimeSendResult(),
+                        : toClosedRealtimeSendResult()
                 };
-            }),
+            })
         );
     };
 
     let operations: CreateRallarRealtimeFacadeOptions;
 
     const createJsonLane = <T>(
-        defaults: RallarRealtimeJsonLaneDefaults,
+        defaults: RallarRealtimeJsonLaneDefaults
     ): RallarRealtimeJsonLane<T> => {
         const laneId = options.resolveLaneId(defaults.laneId);
         return {
             send: async (
                 data,
-                sendOptions: RallarRealtimeJsonLaneSendOptions<T> = {},
+                sendOptions: RallarRealtimeJsonLaneSendOptions<T> = {}
             ) => await operations.sendJson<T>({
                 ...defaults,
                 ...sendOptions,
-                data,
+                data
             }),
-            on: (handler) => operations.onJson<T>(laneId, handler),
+            on: (handler) => operations.onJson<T>(laneId, handler)
         };
     };
 
     const resolveRoomTarget = (
-        defaults: Readonly<{ roomId?: string; roomRef?: GroupRef }>,
-        roomOptions: Readonly<{ roomId?: string; roomRef?: GroupRef }>,
+        defaults: Readonly<{ roomId?: string; roomRef?: GroupRef; }>,
+        roomOptions: Readonly<{ roomId?: string; roomRef?: GroupRef; }>
     ): string | GroupRef | undefined =>
         roomOptions.roomRef ?? roomOptions.roomId ??
-        defaults.roomRef ?? defaults.roomId ??
-        options.readDefaultRoom() ?? options.readCurrentRoomRef();
+            defaults.roomRef ?? defaults.roomId ??
+            options.readDefaultRoom() ?? options.readCurrentRoomRef();
 
     const sendRoomJson = async <T>(
         defaults: RallarRoomRealtimeJsonDefaults,
         data: T,
-        sendOptions: RallarRoomRealtimeJsonSendOptions<T>,
+        sendOptions: RallarRoomRealtimeJsonSendOptions<T>
     ): Promise<RallarRoomRealtimeSendResult> => {
         const laneId = options.resolveLaneId(
-            sendOptions.laneId ?? defaults.laneId,
+            sendOptions.laneId ?? defaults.laneId
         );
         const room = resolveRoomTarget(defaults, sendOptions);
         if (!room) {
@@ -407,14 +393,14 @@ export function createRallarRealtimeController(
                 peerIds: [],
                 desiredPeerIds: [],
                 results: [],
-                reason: 'Cannot send room realtime payload without a room.',
+                reason: 'Cannot send room realtime payload without a room.'
             };
         }
 
         await options.connect();
         let transportStatus = options.rtc.roomStatus(room, {
             laneId,
-            minReadyPeers: sendOptions.minReadyPeers ?? defaults.minReadyPeers,
+            minReadyPeers: sendOptions.minReadyPeers ?? defaults.minReadyPeers
         });
         let readiness: RallarRtcRoomLaneWaitResult | undefined;
         let readyPeerIds = transportStatus.rtc.readyPeerIds;
@@ -428,14 +414,14 @@ export function createRallarRealtimeController(
                     defaults.waitTimeoutMs ??
                     sendOptions.openTimeoutMs ?? defaults.openTimeoutMs,
                 signal: sendOptions.signal,
-                roomRef: typeof room === 'string' ? undefined : room,
+                roomRef: typeof room === 'string' ? undefined : room
             });
             readyPeerIds = uniquePeerIds(
-                readiness.ready.map((ready) => ready.peerId),
+                readiness.ready.map((ready) => ready.peerId)
             );
             transportStatus = options.rtc.roomStatus(room, {
                 laneId,
-                minReadyPeers: sendOptions.minReadyPeers ?? defaults.minReadyPeers,
+                minReadyPeers: sendOptions.minReadyPeers ?? defaults.minReadyPeers
             });
         }
 
@@ -452,7 +438,7 @@ export function createRallarRealtimeController(
                 readiness,
                 transportStatus,
                 results: [],
-                reason: 'Room has no RTC peer targets.',
+                reason: 'Room has no RTC peer targets.'
             };
         }
 
@@ -470,7 +456,7 @@ export function createRallarRealtimeController(
                 results: [],
                 reason: readiness?.status
                     ? `Room RTC wait ended with ${readiness.status}.`
-                    : 'Room RTC has no ready peers.',
+                    : 'Room RTC has no ready peers.'
             };
         }
 
@@ -496,7 +482,7 @@ export function createRallarRealtimeController(
             roomId: transportStatus.roomRef ? undefined : transportStatus.roomId,
             roomRef: transportStatus.roomRef,
             peerIds: readyPeerIds,
-            data,
+            data
         });
 
         return {
@@ -504,7 +490,7 @@ export function createRallarRealtimeController(
             status: toRoomRealtimeSendStatus(
                 desiredPeerIds,
                 readyPeerIds,
-                results,
+                results
             ),
             laneId,
             roomId: transportStatus.roomId,
@@ -513,59 +499,59 @@ export function createRallarRealtimeController(
             desiredPeerIds,
             readiness,
             transportStatus,
-            results,
+            results
         };
     };
 
     const createRoomChannel = <T>(
-        defaults: RallarRoomRealtimeJsonDefaults,
+        defaults: RallarRoomRealtimeJsonDefaults
     ): RallarRoomRealtimeJsonChannel<T> => {
         const laneId = options.resolveLaneId(defaults.laneId);
         return {
             send: async (
                 data,
-                sendOptions: RallarRoomRealtimeJsonSendOptions<T> = {},
+                sendOptions: RallarRoomRealtimeJsonSendOptions<T> = {}
             ) => await sendRoomJson(defaults, data, sendOptions),
             on: (handler) => operations.onJson<T>(laneId, handler),
             status: (roomOptions: RallarRoomRealtimeTransportOptions = {}) => {
                 const room = resolveRoomTarget(defaults, roomOptions);
                 if (!room) {
                     throw new Error(
-                        'Cannot read room realtime status without a room.',
+                        'Cannot read room realtime status without a room.'
                     );
                 }
                 return options.rtc.roomStatus(room, {
                     ...roomOptions,
                     laneId: options.resolveLaneId(
-                        roomOptions.laneId ?? defaults.laneId,
-                    ),
+                        roomOptions.laneId ?? defaults.laneId
+                    )
                 });
             },
             wait: async (
-                roomOptions: RallarRoomRealtimeTransportOptions = {},
+                roomOptions: RallarRoomRealtimeTransportOptions = {}
             ) => {
                 const room = resolveRoomTarget(defaults, roomOptions);
                 if (!room) {
                     throw new Error(
-                        'Cannot wait for room realtime without a room.',
+                        'Cannot wait for room realtime without a room.'
                     );
                 }
                 return await options.rtc.waitForRoom(room, {
                     ...roomOptions,
                     laneId: options.resolveLaneId(
-                        roomOptions.laneId ?? defaults.laneId,
+                        roomOptions.laneId ?? defaults.laneId
                     ),
                     connect: roomOptions.connect ?? defaults.connect ?? true,
                     timeoutMs: roomOptions.timeoutMs ?? defaults.waitTimeoutMs,
                     minReadyPeers: roomOptions.minReadyPeers ??
-                        defaults.minReadyPeers,
+                        defaults.minReadyPeers
                 });
-            },
+            }
         };
     };
 
     const resolveTargetPeerIds = (
-        input: RallarTargetSelector = {},
+        input: RallarTargetSelector = {}
     ): readonly string[] => {
         const session = options.readSession();
         const explicitPeerIds = input.peerIds ??
@@ -581,14 +567,14 @@ export function createRallarRealtimeController(
     };
 
     const createTargetedChannel = <T>(
-        definition: RallarTargetedChannelDefinition,
+        definition: RallarTargetedChannelDefinition
     ): RallarTargetedChannel<T> => {
         const fixedPeerIds = definition.membership === 'live'
             ? undefined
             : resolveTargetPeerIds(definition);
         const defaultLaneId = options.resolveLaneId(definition.laneId);
         const resolvePeerIds = (
-            targetOptions: RallarTargetSelector = {},
+            targetOptions: RallarTargetSelector = {}
         ): readonly string[] => {
             if (fixedPeerIds && !hasTargetSelectorOverride(targetOptions)) {
                 return fixedPeerIds;
@@ -599,10 +585,10 @@ export function createRallarRealtimeController(
         return {
             send: async (
                 data,
-                sendOptions: RallarTargetedChannelSendOptions<T> = {},
+                sendOptions: RallarTargetedChannelSendOptions<T> = {}
             ) => {
                 const laneId = options.resolveLaneId(
-                    sendOptions.laneId ?? definition.laneId,
+                    sendOptions.laneId ?? definition.laneId
                 );
                 const peerIds = resolvePeerIds(sendOptions);
                 if (peerIds.length === 0) {
@@ -612,7 +598,7 @@ export function createRallarRealtimeController(
                         laneId,
                         peerIds,
                         results: [],
-                        reason: 'No target RTC peers resolved.',
+                        reason: 'No target RTC peers resolved.'
                     };
                 }
 
@@ -621,18 +607,18 @@ export function createRallarRealtimeController(
                     ...sendOptions,
                     laneId,
                     peerIds,
-                    data,
+                    data
                 });
                 return {
                     transport: 'rtc',
                     status: toTargetedSendStatus(peerIds, results),
                     laneId,
                     peerIds,
-                    results,
+                    results
                 };
             },
             on: (handler) => operations.onJson<T>(defaultLaneId, handler),
-            peerIds: resolvePeerIds,
+            peerIds: resolvePeerIds
         };
     };
 
@@ -643,8 +629,7 @@ export function createRallarRealtimeController(
         onBinary,
         json: createJsonLane,
         room: createRoomChannel,
-        health: (healthOptions: RallarRealtimeHealthOptions = {}):
-            readonly RallarRealtimeLaneHealth[] => {
+        health: (healthOptions: RallarRealtimeHealthOptions = {}): readonly RallarRealtimeLaneHealth[] => {
             const ctx = options.readMiddleware();
             if (!ctx) {
                 return [];
@@ -661,10 +646,10 @@ export function createRallarRealtimeController(
                 return selectedLaneIds.map((laneId) => ({
                     peerId,
                     laneId,
-                    channel: peer.channels.get(laneId)?.readHealth(),
+                    channel: peer.channels.get(laneId)?.readHealth()
                 }));
             });
-        },
+        }
     };
 
     return {
@@ -680,11 +665,11 @@ export function createRallarRealtimeController(
                         for (const laneId of laneIds()) {
                             peer.channels.get(laneId)
                                 ?.removeOnRawMessageCallbackById(
-                                    callbackId(laneId),
+                                    callbackId(laneId)
                                 );
                         }
-                    },
-                },
+                    }
+                }
             );
         },
         detachPeerLifecycle: (ctx = options.readMiddleware()) => {
@@ -692,7 +677,7 @@ export function createRallarRealtimeController(
                 return;
             }
             ctx.middleware.webRtcConnectionService.removeRtcPeerLifecycleById(
-                RALLAR_REALTIME_LIFECYCLE_CALLBACK_ID,
+                RALLAR_REALTIME_LIFECYCLE_CALLBACK_ID
             );
         },
         attachLaneCallbacks: () => {
@@ -714,17 +699,17 @@ export function createRallarRealtimeController(
                         ?.removeOnRawMessageCallbackById(callbackId(laneId));
                 }
             }
-        },
+        }
     };
 }
 
 function toRealtimeDataChannelSendOptions(
-    input: RallarRealtimeSendOptions,
+    input: RallarRealtimeSendOptions
 ): RtcDataChannelSendOptions {
     return {
         key: input.key,
         maxAgeMs: input.maxAgeMs,
-        now: input.now,
+        now: input.now
     };
 }
 
@@ -732,12 +717,12 @@ function toClosedRealtimeSendResult(): RtcDataChannelSendResult {
     return {
         status: 'closed',
         reason: 'Realtime lane not connected',
-        bufferedAmount: 0,
+        bufferedAmount: 0
     };
 }
 
 async function toArrayBuffer(
-    data: MessageEvent['data'],
+    data: MessageEvent['data']
 ): Promise<ArrayBuffer | undefined> {
     if (data instanceof ArrayBuffer) {
         return data;
@@ -746,7 +731,7 @@ async function toArrayBuffer(
         const bytes = new Uint8Array(
             data.buffer,
             data.byteOffset,
-            data.byteLength,
+            data.byteLength
         );
         return bytes.slice().buffer;
     }
@@ -764,14 +749,12 @@ function hasTargetSelectorOverride(input: RallarTargetSelector): boolean {
 
 function toTargetedSendStatus(
     peerIds: readonly string[],
-    results: readonly RallarRealtimeSendResult[],
+    results: readonly RallarRealtimeSendResult[]
 ): RallarTargetedSendStatus {
     if (peerIds.length === 0) {
         return 'no-targets';
     }
-    const sentCount = results.filter((result) =>
-        isAcceptedRealtimeSendStatus(result.result.status)
-    ).length;
+    const sentCount = results.filter((result) => isAcceptedRealtimeSendStatus(result.result.status)).length;
     if (sentCount === peerIds.length) {
         return 'sent';
     }
@@ -781,7 +764,7 @@ function toTargetedSendStatus(
 function toRoomRealtimeSendStatus(
     desiredPeerIds: readonly string[],
     peerIds: readonly string[],
-    results: readonly RallarRealtimeSendResult[],
+    results: readonly RallarRealtimeSendResult[]
 ): RallarRoomRealtimeSendStatus {
     if (desiredPeerIds.length === 0) {
         return 'no-targets';
@@ -789,9 +772,7 @@ function toRoomRealtimeSendStatus(
     if (peerIds.length === 0) {
         return 'not-ready';
     }
-    const sentCount = results.filter((result) =>
-        isAcceptedRealtimeSendStatus(result.result.status)
-    ).length;
+    const sentCount = results.filter((result) => isAcceptedRealtimeSendStatus(result.result.status)).length;
     if (sentCount === 0) {
         return 'failed';
     }
@@ -803,14 +784,14 @@ function uniquePeerIds(peerIds: readonly string[]): readonly string[] {
 }
 
 function isAcceptedRealtimeSendStatus(
-    status: RtcDataChannelSendResult['status'],
+    status: RtcDataChannelSendResult['status']
 ): boolean {
     return status === 'sent' || status === 'queued' || status === 'replaced';
 }
 
 export function resolveActiveRoomPeerIds(
     session: AuthSession | undefined,
-    snapshot: GroupSnapshot | undefined,
+    snapshot: GroupSnapshot | undefined
 ): readonly string[] {
     if (
         !session || !snapshot || !isGroupActive(snapshot) ||
@@ -818,11 +799,13 @@ export function resolveActiveRoomPeerIds(
     ) {
         return [];
     }
-    return [...new Set(
-        snapshot.activeSessions
-            .map((activeSession) => activeSession.sessionId)
-            .filter((sessionId) => sessionId !== session.sessionId),
-    )];
+    return [
+        ...new Set(
+            snapshot.activeSessions
+                .map((activeSession) => activeSession.sessionId)
+                .filter((sessionId) => sessionId !== session.sessionId)
+        )
+    ];
 }
 
 export { DEFAULT_RTC_DATA_CHANNEL_LANE_ID };

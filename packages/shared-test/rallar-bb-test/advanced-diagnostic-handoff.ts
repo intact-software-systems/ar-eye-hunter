@@ -28,23 +28,23 @@ type DiagnosticHandoffSignals = Readonly<{
 
 const AUTH_TARGET: AdvancedDiagnosticHandoffTarget = {
     surface: 'auth',
-    label: 'Auth',
+    label: 'Auth'
 };
 const WEBSOCKET_TARGET: AdvancedDiagnosticHandoffTarget = {
     surface: 'websocket',
-    label: 'WebSocket',
+    label: 'WebSocket'
 };
 const RTC_TARGET: AdvancedDiagnosticHandoffTarget = {
     surface: 'rtc-diagnostics',
-    label: 'RTC Diagnostics',
+    label: 'RTC Diagnostics'
 };
 const MEMBERSHIP_TARGET: AdvancedDiagnosticHandoffTarget = {
     surface: 'rooms-clients',
-    label: 'Groups/Clients',
+    label: 'Groups/Clients'
 };
 const SERVER_TARGET: AdvancedDiagnosticHandoffTarget = {
     surface: 'rallar-server',
-    label: 'Rallar Server',
+    label: 'Rallar Server'
 };
 
 const FAILURE_SIGNAL_FIELDS = ['code', 'message'] as const;
@@ -54,11 +54,11 @@ const DIAGNOSTIC_SIGNAL_FIELDS = [
     'topic',
     'message',
     'summary',
-    'payloadSummary',
+    'payloadSummary'
 ] as const;
 
 export function deriveAdvancedDiagnosticHandoffTargets(
-    input: unknown,
+    input: unknown
 ): readonly AdvancedDiagnosticHandoffTarget[] {
     const root = asRecord(input);
     const failure = asRecord(read(root, 'failure'));
@@ -76,7 +76,7 @@ export function deriveAdvancedDiagnosticHandoffTargets(
             correlatedDiagnosticSignals.some(isRtcSignal),
         membership: allSignals.some(isMissingMembershipSignal),
         server: failureCode === 'HTTP_SERVICE_UNAVAILABLE' ||
-            allSignals.some(isExplicitServerStatusFailure),
+            allSignals.some(isExplicitServerStatusFailure)
     };
     const targets: AdvancedDiagnosticHandoffTarget[] = [];
     if (matches.auth) {
@@ -116,7 +116,7 @@ function hasCorrelatedFailureKey(value: unknown, failureKey: string): boolean {
     }
     const limit = Math.min(
         value.length,
-        ADVANCED_DIAGNOSTIC_HANDOFF_MAX_CORRELATED_FAILURE_KEYS,
+        ADVANCED_DIAGNOSTIC_HANDOFF_MAX_CORRELATED_FAILURE_KEYS
     );
     for (let index = 0; index < limit; index += 1) {
         if (cleanIdentity(readIndex(value, index)) === failureKey) {
@@ -128,7 +128,7 @@ function hasCorrelatedFailureKey(value: unknown, failureKey: string): boolean {
 
 function textSignals(
     record: Readonly<Record<string, unknown>>,
-    fields: readonly string[],
+    fields: readonly string[]
 ): readonly string[] {
     const signals: string[] = [];
     for (const field of fields) {
@@ -155,23 +155,23 @@ function isRtcSignal(signal: string): boolean {
 function isMissingMembershipSignal(signal: string): boolean {
     return boundedPatternTest(
         signal,
-        /(?:^|[^a-z0-9])(?:missing|no)[_ -]+(?:group|member)(?:$|[^a-z0-9])/,
+        /(?:^|[^a-z0-9])(?:missing|no)[_ -]+(?:group|member)(?:$|[^a-z0-9])/
     ) || boundedPatternTest(
         signal,
-        /(?:^|[^a-z0-9])(?:group|member)[_ -]+(?:(?:is|was)[_ -]+)?(?:missing|not[_ -]+found)(?:$|[^a-z0-9])/,
+        /(?:^|[^a-z0-9])(?:group|member)[_ -]+(?:(?:is|was)[_ -]+)?(?:missing|not[_ -]+found)(?:$|[^a-z0-9])/
     );
 }
 
 function isExplicitServerStatusFailure(signal: string): boolean {
     return boundedPatternTest(
         signal,
-        /(?:^|[^a-z0-9])http[_ -]+service[_ -]+unavailable(?:$|[^a-z0-9])/,
+        /(?:^|[^a-z0-9])http[_ -]+service[_ -]+unavailable(?:$|[^a-z0-9])/
     ) || boundedPatternTest(
         signal,
-        /(?:^|[^a-z0-9])http[_ -]+status[_ -]+(?:5[0-9]{2}|failed|failure|error)(?:$|[^a-z0-9])/,
+        /(?:^|[^a-z0-9])http[_ -]+status[_ -]+(?:5[0-9]{2}|failed|failure|error)(?:$|[^a-z0-9])/
     ) || boundedPatternTest(
         signal,
-        /(?:^|[^a-z0-9])(?:rallar[_ -]+)?server[_ -]+status[_ -]+(?:5[0-9]{2}|failed|failure|error)(?:$|[^a-z0-9])/,
+        /(?:^|[^a-z0-9])(?:rallar[_ -]+)?server[_ -]+status[_ -]+(?:5[0-9]{2}|failed|failure|error)(?:$|[^a-z0-9])/
     );
 }
 
@@ -204,7 +204,8 @@ function asRecord(value: unknown): Readonly<Record<string, unknown>> {
 function read(record: Readonly<Record<string, unknown>>, key: string): unknown {
     try {
         return record[key];
-    } catch {
+    }
+    catch {
         return undefined;
     }
 }
@@ -212,7 +213,8 @@ function read(record: Readonly<Record<string, unknown>>, key: string): unknown {
 function readIndex(values: readonly unknown[], index: number): unknown {
     try {
         return values[index];
-    } catch {
+    }
+    catch {
         return undefined;
     }
 }

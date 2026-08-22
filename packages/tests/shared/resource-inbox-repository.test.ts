@@ -1,9 +1,8 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { EntityStatus, type Key, type ResourceEntry, } from '@shared/queuebox/ResourceEntry.ts';
 
-type ResourceInboxRepositoryModule =
-    typeof import('@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts');
+type ResourceInboxRepositoryModule = typeof import('@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts');
 
 type ResourceInboxRow = {
     ri_row_id: bigint;
@@ -28,7 +27,7 @@ let repositoryModule: ResourceInboxRepositoryModule;
 beforeAll(async () => {
     repositoryModule = await import(
         '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts'
-        );
+    );
 });
 
 afterEach(() => {
@@ -45,12 +44,12 @@ describe('ResourceInboxRepository', () => {
         await repo.findEntriesSkipLocked(
             new Set(['APP_INBOX']),
             new Set([EntityStatus.RETRY, EntityStatus.FAILED]),
-            7,
+            7
         );
 
         expect(capture.queries).toHaveLength(1);
         expect(capture.queries[0]?.query).toContain('ri_status <>');
-        expect(capture.queries[0]?.query).toContain("expire_ts > (now() at time zone 'utc')");
+        expect(capture.queries[0]?.query).toContain('expire_ts > (now() at time zone \'utc\')');
         expect(capture.queries[0]?.query).toContain('next_ts <=');
         expect(capture.queries[0]?.query).toContain('ri_attempts <');
         expect(capture.queries[0]?.query).toContain('for update skip locked');
@@ -65,12 +64,12 @@ describe('ResourceInboxRepository', () => {
         await repo.findOverdueRetryEntriesSkipLocked(
             new Set(['APP_INBOX']),
             overdueBeforeEpochMs,
-            3,
+            3
         );
 
         expect(capture.queries).toHaveLength(1);
         expect(capture.queries[0]?.query).toContain('ri_status =');
-        expect(capture.queries[0]?.query).toContain("expire_ts > (now() at time zone 'utc')");
+        expect(capture.queries[0]?.query).toContain('expire_ts > (now() at time zone \'utc\')');
         expect(capture.queries[0]?.query).toContain('next_ts <=');
         expect(capture.queries[0]?.query).toContain('ri_attempts <');
         expect(capture.queries[0]?.query).toContain('order by next_ts asc, ri_row_id asc');
@@ -87,7 +86,7 @@ describe('ResourceInboxRepository', () => {
         await repo.findEntriesSkipLocked(
             new Set(['APP_INBOX']),
             new Set([EntityStatus.RETRY]),
-            { maxToReserve: 1, maxAttempts: 2 },
+            { maxToReserve: 1, maxAttempts: 2 }
         );
 
         expect(capture.queries).toHaveLength(1);
@@ -102,14 +101,14 @@ describe('ResourceInboxRepository', () => {
         await repo.isEntriesToLock(
             new Set(['APP_INBOX']),
             new Set([EntityStatus.RETRY]),
-            2,
+            2
         );
 
         expect(capture.queries).toHaveLength(1);
-        expect(capture.queries[0]?.query).toContain("expire_ts > (now() at time zone 'utc')");
-        expect(capture.queries[0]?.query).toContain("next_ts <= (now() at time zone 'utc')");
+        expect(capture.queries[0]?.query).toContain('expire_ts > (now() at time zone \'utc\')');
+        expect(capture.queries[0]?.query).toContain('next_ts <= (now() at time zone \'utc\')');
         expect(capture.queries[0]?.values).toContain(2);
-        expect(capture.queries[0]?.values.some(value => value instanceof Date)).toBe(false);
+        expect(capture.queries[0]?.values.some((value) => value instanceof Date)).toBe(false);
     });
 
     it('uses a safely bound database interval for timeout work advertisement', async () => {
@@ -119,16 +118,16 @@ describe('ResourceInboxRepository', () => {
         await repo.isTimeoutOnReservedEntries(
             new Set(['APP_INBOX']),
             Temporal.Duration.from({ seconds: 30 }),
-            2,
+            2
         );
 
         expect(capture.queries).toHaveLength(1);
-        expect(capture.queries[0]?.query).toContain("expire_ts > (now() at time zone 'utc')");
+        expect(capture.queries[0]?.query).toContain('expire_ts > (now() at time zone \'utc\')');
         expect(capture.queries[0]?.query).toContain('start_ts < (now() -');
-        expect(capture.queries[0]?.query).toContain("interval '1 millisecond'");
+        expect(capture.queries[0]?.query).toContain('interval \'1 millisecond\'');
         expect(capture.queries[0]?.values).toContain(30_000);
         expect(capture.queries[0]?.values).toContain(2);
-        expect(capture.queries[0]?.values.some(value => value instanceof Date)).toBe(false);
+        expect(capture.queries[0]?.values.some((value) => value instanceof Date)).toBe(false);
     });
 
     it('uses a safely bound database interval for timeout claiming', async () => {
@@ -138,16 +137,16 @@ describe('ResourceInboxRepository', () => {
         await repo.findTimedOutReservedEntriesSkipLocked(
             new Set(['APP_INBOX']),
             30_000,
-            { maxToReserve: 3, maxAttempts: 2 },
+            { maxToReserve: 3, maxAttempts: 2 }
         );
 
         expect(capture.queries).toHaveLength(1);
-        expect(capture.queries[0]?.query).toContain("expire_ts > (now() at time zone 'utc')");
+        expect(capture.queries[0]?.query).toContain('expire_ts > (now() at time zone \'utc\')');
         expect(capture.queries[0]?.query).toContain('start_ts < (now() -');
-        expect(capture.queries[0]?.query).toContain("interval '1 millisecond'");
+        expect(capture.queries[0]?.query).toContain('interval \'1 millisecond\'');
         expect(capture.queries[0]?.values).toContain(30_000);
         expect(capture.queries[0]?.values).toContain(2);
-        expect(capture.queries[0]?.values.some(value => value instanceof Date)).toBe(false);
+        expect(capture.queries[0]?.values.some((value) => value instanceof Date)).toBe(false);
     });
 
     it.each([-1, 1.5, Number.MAX_SAFE_INTEGER + 1, Number.NaN])(
@@ -159,10 +158,10 @@ describe('ResourceInboxRepository', () => {
             await expect(repo.findTimedOutReservedEntriesSkipLocked(
                 new Set(['APP_INBOX']),
                 timeSinceStartMs,
-                1,
+                1
             )).rejects.toThrow(/non-negative safe integer/u);
             expect(capture.queries).toHaveLength(0);
-        },
+        }
     );
 
     it('uses database time for the persisted reservation start timestamp', async () => {
@@ -170,14 +169,14 @@ describe('ResourceInboxRepository', () => {
         const repo = new repositoryModule.ResourceInboxRepository(capture.sql);
         const entry = createEntry(createKey('db-clock-start'), {
             text: 'db clock',
-            expiryTs: Temporal.Instant.from('9999-01-01T00:00:00Z'),
+            expiryTs: Temporal.Instant.from('9999-01-01T00:00:00Z')
         });
 
         await repo.startProcessingEntity(entry, 2);
 
         expect(capture.queries).toHaveLength(1);
         expect(capture.queries[0]?.query).toContain('start_ts = now()');
-        expect(capture.queries[0]?.values.some(value => value instanceof Date)).toBe(false);
+        expect(capture.queries[0]?.values.some((value) => value instanceof Date)).toBe(false);
     });
 
     it('selects only live stale exhausted AppInbox reservations with the database clock', async () => {
@@ -187,23 +186,23 @@ describe('ResourceInboxRepository', () => {
         await repo.findRetryExhaustionFinalizationsSkipLocked(
             new Set(['APP_INBOX', 'APP_OUTBOX']),
             300_000,
-            { processingAttempts: 20, maxToReserve: 3 },
+            { processingAttempts: 20, maxToReserve: 3 }
         );
 
         const query = capture.queries[0]!;
         expect(query.query).toContain('ri_type_id =');
         expect(query.query).toContain('ri_status =');
-        expect(query.query).toContain("expire_ts > (now() at time zone 'utc')");
+        expect(query.query).toContain('expire_ts > (now() at time zone \'utc\')');
         expect(query.query).toContain('ri_attempts >=');
         expect(query.query).toContain('ri_attempts <');
         expect(query.query).toContain('start_ts <= (now() -');
-        expect(query.query).toContain("interval '1 millisecond'");
+        expect(query.query).toContain('interval \'1 millisecond\'');
         expect(query.query).toContain('for update skip locked');
         expect(query.values).toContain('APP_INBOX');
         expect(query.values).not.toContain('APP_OUTBOX');
         expect(query.values).toContain(20);
         expect(query.values).toContain(300_000);
-        expect(query.values.some(value => value instanceof Date)).toBe(false);
+        expect(query.values.some((value) => value instanceof Date)).toBe(false);
     });
 
     it('advances finalization generation with exact attempt and live reservation fences', async () => {
@@ -212,14 +211,14 @@ describe('ResourceInboxRepository', () => {
         const entry = {
             ...createEntry(createKey('finalization-generation'), {
                 text: 'recover',
-                expiryTs: Temporal.Instant.from('9999-01-01T00:00:00Z'),
+                expiryTs: Temporal.Instant.from('9999-01-01T00:00:00Z')
             }),
             typeId: 'APP_INBOX',
             status: EntityStatus.RESERVED,
             dequeueAudit: {
                 attempts: 21,
-                startTs: Temporal.Instant.from('2026-01-01T00:00:00Z'),
-            },
+                startTs: Temporal.Instant.from('2026-01-01T00:00:00Z')
+            }
         };
 
         await repo.startFinalizationRecovery(entry, 20);
@@ -227,7 +226,7 @@ describe('ResourceInboxRepository', () => {
         const query = capture.queries[0]!;
         expect(query.query).toContain('ri_attempts = ri_attempts + 1');
         expect(query.query).toContain('start_ts = now()');
-        expect(query.query).toContain("expire_ts > (now() at time zone 'utc')");
+        expect(query.query).toContain('expire_ts > (now() at time zone \'utc\')');
         expect(query.query).toContain('ri_attempts =');
         expect(query.query).toContain('ri_attempts >=');
         expect(query.query).toContain('ri_type_id =');
@@ -235,7 +234,7 @@ describe('ResourceInboxRepository', () => {
         expect(query.values).toContain(21);
         expect(query.values).toContain(20);
         expect(query.values).toContain('APP_INBOX');
-        expect(query.values.some(value => value instanceof Date)).toBe(false);
+        expect(query.values.some((value) => value instanceof Date)).toBe(false);
     });
 
     it('advertises stale finalization recovery using only the database clock', async () => {
@@ -245,16 +244,16 @@ describe('ResourceInboxRepository', () => {
         await repo.isRetryExhaustionFinalizationRequired(
             new Set(['APP_INBOX']),
             300_000,
-            20,
+            20
         );
 
         const query = capture.queries[0]!;
-        expect(query.query).toContain("expire_ts > (now() at time zone 'utc')");
+        expect(query.query).toContain('expire_ts > (now() at time zone \'utc\')');
         expect(query.query).toContain('start_ts <= (now() -');
         expect(query.query).toContain('ri_attempts >=');
         expect(query.values).toContain(300_000);
         expect(query.values).toContain(20);
-        expect(query.values.some(value => value instanceof Date)).toBe(false);
+        expect(query.values.some((value) => value instanceof Date)).toBe(false);
     });
 
     it('inserts immutable outbox content once and matches an operationally advanced replay', async () => {
@@ -267,13 +266,15 @@ describe('ResourceInboxRepository', () => {
             text: 'immutable',
             createdBy: 'alice',
             createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00'),
-            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z'),
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z')
         });
 
         await expect(repo.writeIfAbsentOrMatch(entry)).resolves.toBe('inserted');
 
         const stored = findStoredRow(harness.rows, entry.key);
-        if (!stored) throw new Error('Expected inserted resource inbox row');
+        if (!stored) {
+            throw new Error('Expected inserted resource inbox row');
+        }
         stored.created_ts = '2026-01-01 00:00:00.000000';
         stored.expire_ts = '2026-01-01 00:05:00.000000';
         stored.ri_status = EntityStatus.COMPLETED;
@@ -288,15 +289,15 @@ describe('ResourceInboxRepository', () => {
     it.each([
         ['creation timestamp', {
             createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00.000002'),
-            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00.000001Z'),
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00.000001Z')
         }],
         ['expiry', {
             createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00.000001'),
-            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00.000002Z'),
-        }],
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00.000002Z')
+        }]
     ])('rejects a replay whose immutable %s differs by one microsecond', async (
         _field,
-        replayTimestamps,
+        replayTimestamps
     ) => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
@@ -307,18 +308,18 @@ describe('ResourceInboxRepository', () => {
         const original = createEntry(key, {
             text: 'immutable',
             createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00.000001'),
-            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00.000001Z'),
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00.000001Z')
         });
         const replay = createEntry(key, {
             text: 'immutable',
             createdTs: replayTimestamps.createdTs,
-            expiryTs: replayTimestamps.expiryTs,
+            expiryTs: replayTimestamps.expiryTs
         });
 
         await repo.writeIfAbsentOrMatch(original);
 
         await expect(repo.writeIfAbsentOrMatch(replay)).rejects.toBeInstanceOf(
-            repositoryModule.ResourceInboxInvariantCorruptionError,
+            repositoryModule.ResourceInboxInvariantCorruptionError
         );
     });
 
@@ -327,67 +328,67 @@ describe('ResourceInboxRepository', () => {
             'creation',
             'below half',
             '2026-06-01T12:00:00.0000004',
-            '2026-06-01 12:00:00.000000',
+            '2026-06-01 12:00:00.000000'
         ],
         [
             'creation',
             'half even down',
             '2026-06-01T12:00:00.0000005',
-            '2026-06-01 12:00:00.000000',
+            '2026-06-01 12:00:00.000000'
         ],
         [
             'creation',
             'half even up',
             '2026-06-01T12:00:00.0000015',
-            '2026-06-01 12:00:00.000002',
+            '2026-06-01 12:00:00.000002'
         ],
         [
             'creation',
             'above half',
             '2026-06-01T12:00:00.0000006',
-            '2026-06-01 12:00:00.000001',
+            '2026-06-01 12:00:00.000001'
         ],
         [
             'creation',
             'second rollover',
             '2026-06-01T12:00:00.9999995',
-            '2026-06-01 12:00:01.000000',
+            '2026-06-01 12:00:01.000000'
         ],
         [
             'expiry',
             'below half',
             '2026-06-01T13:00:00.0000004Z',
-            '2026-06-01 13:00:00.000000',
+            '2026-06-01 13:00:00.000000'
         ],
         [
             'expiry',
             'half even down',
             '2026-06-01T13:00:00.0000005Z',
-            '2026-06-01 13:00:00.000000',
+            '2026-06-01 13:00:00.000000'
         ],
         [
             'expiry',
             'half even up',
             '2026-06-01T13:00:00.0000015Z',
-            '2026-06-01 13:00:00.000002',
+            '2026-06-01 13:00:00.000002'
         ],
         [
             'expiry',
             'above half',
             '2026-06-01T13:00:00.0000006Z',
-            '2026-06-01 13:00:00.000001',
+            '2026-06-01 13:00:00.000001'
         ],
         [
             'expiry',
             'second rollover',
             '2026-06-01T13:00:00.9999995Z',
-            '2026-06-01 13:00:01.000000',
-        ],
+            '2026-06-01 13:00:01.000000'
+        ]
     ])('matches PostgreSQL timestamp(6) %s %s rounding', async (
         field,
         _scenario,
         candidate,
-        persisted,
+        persisted
     ) => {
         const harness = createSqlHarness();
         const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
@@ -399,15 +400,18 @@ describe('ResourceInboxRepository', () => {
                 : Temporal.PlainDateTime.from('2026-06-01T12:00:00'),
             expiryTs: field === 'expiry'
                 ? Temporal.Instant.from(candidate)
-                : Temporal.Instant.from('2026-06-01T13:00:00Z'),
+                : Temporal.Instant.from('2026-06-01T13:00:00Z')
         });
 
         await repo.writeIfAbsentOrMatch(entry);
         const stored = findStoredRow(harness.rows, key);
-        if (!stored) throw new Error('Expected inserted resource inbox row');
+        if (!stored) {
+            throw new Error('Expected inserted resource inbox row');
+        }
         if (field === 'creation') {
             stored.created_ts = persisted;
-        } else {
+        }
+        else {
             stored.expire_ts = persisted;
         }
 
@@ -415,20 +419,30 @@ describe('ResourceInboxRepository', () => {
     });
 
     it.each([
-        ['topic key', (row: ResourceInboxRow) => { row.ri_topic_id = 'other-topic'; }],
-        ['resource key', (row: ResourceInboxRow) => { row.ri_resource_id = 'other-resource'; }],
-        ['context key', (row: ResourceInboxRow) => { row.fk_ext_bank_id = 'other-context'; }],
-        ['queue type', (row: ResourceInboxRow) => { row.ri_type_id = 'app.outbox'; }],
+        ['topic key', (row: ResourceInboxRow) => {
+            row.ri_topic_id = 'other-topic';
+        }],
+        ['resource key', (row: ResourceInboxRow) => {
+            row.ri_resource_id = 'other-resource';
+        }],
+        ['context key', (row: ResourceInboxRow) => {
+            row.fk_ext_bank_id = 'other-context';
+        }],
+        ['queue type', (row: ResourceInboxRow) => {
+            row.ri_type_id = 'app.outbox';
+        }],
         ['persisted resource representation', (row: ResourceInboxRow) => {
             row.ri_resource = '{ "text": "immutable" }';
         }],
-        ['creator', (row: ResourceInboxRow) => { row.created_by = 'mallory'; }],
+        ['creator', (row: ResourceInboxRow) => {
+            row.created_by = 'mallory';
+        }],
         ['creation timestamp', (row: ResourceInboxRow) => {
             row.created_ts = '2026-01-01T00:00:01.000Z';
         }],
         ['expiry', (row: ResourceInboxRow) => {
             row.expire_ts = '2026-01-01T00:06:00.000Z';
-        }],
+        }]
     ])('rejects a replay whose immutable %s differs', async (_field, mutate) => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
@@ -439,16 +453,18 @@ describe('ResourceInboxRepository', () => {
             text: 'immutable',
             createdBy: 'alice',
             createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00'),
-            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z'),
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z')
         });
 
         await repo.writeIfAbsentOrMatch(entry);
         const stored = findStoredRow(harness.rows, entry.key);
-        if (!stored) throw new Error('Expected inserted resource inbox row');
+        if (!stored) {
+            throw new Error('Expected inserted resource inbox row');
+        }
         mutate(stored);
 
         await expect(repo.writeIfAbsentOrMatch(entry)).rejects.toBeInstanceOf(
-            repositoryModule.ResourceInboxInvariantCorruptionError,
+            repositoryModule.ResourceInboxInvariantCorruptionError
         );
     });
 
@@ -460,16 +476,18 @@ describe('ResourceInboxRepository', () => {
         const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
         const entry = createEntry(createKey('invalid-lifecycle'), {
             text: 'immutable',
-            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z'),
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z')
         });
 
         await repo.writeIfAbsentOrMatch(entry);
         const stored = findStoredRow(harness.rows, entry.key);
-        if (!stored) throw new Error('Expected inserted resource inbox row');
+        if (!stored) {
+            throw new Error('Expected inserted resource inbox row');
+        }
         stored.ri_status = 'NOT_A_STATUS';
 
         await expect(repo.writeIfAbsentOrMatch(entry)).rejects.toBeInstanceOf(
-            repositoryModule.ResourceInboxInvariantCorruptionError,
+            repositoryModule.ResourceInboxInvariantCorruptionError
         );
     });
 
@@ -539,10 +557,10 @@ describe('ResourceInboxRepository', () => {
             row.start_ts = '2026-01-01 00:01:00.000000';
             row.end_ts = '2026-01-01 00:01:01.000000';
             row.next_ts = '2026-01-01 00:01:00.999999';
-        }],
+        }]
     ])('rejects an enum-valid but impossible lifecycle: %s', async (
         _scenario,
-        mutate,
+        mutate
     ) => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
@@ -552,16 +570,18 @@ describe('ResourceInboxRepository', () => {
         const entry = createEntry(createKey(`invalid-${_scenario}`), {
             text: 'immutable',
             createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00'),
-            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z'),
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z')
         });
 
         await repo.writeIfAbsentOrMatch(entry);
         const stored = findStoredRow(harness.rows, entry.key);
-        if (!stored) throw new Error('Expected inserted resource inbox row');
+        if (!stored) {
+            throw new Error('Expected inserted resource inbox row');
+        }
         mutate(stored);
 
         await expect(repo.writeIfAbsentOrMatch(entry)).rejects.toBeInstanceOf(
-            repositoryModule.ResourceInboxInvariantCorruptionError,
+            repositoryModule.ResourceInboxInvariantCorruptionError
         );
     });
 
@@ -574,13 +594,13 @@ describe('ResourceInboxRepository', () => {
         const entry = createEntry(createKey('invalid-created-expiry-order'), {
             text: 'immutable',
             createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00.000001'),
-            expiryTs: Temporal.Instant.from('2026-01-01T00:00:00.000001Z'),
+            expiryTs: Temporal.Instant.from('2026-01-01T00:00:00.000001Z')
         });
 
         await repo.writeIfAbsentOrMatch(entry);
 
         await expect(repo.writeIfAbsentOrMatch(entry)).rejects.toBeInstanceOf(
-            repositoryModule.ResourceInboxInvariantCorruptionError,
+            repositoryModule.ResourceInboxInvariantCorruptionError
         );
     });
 
@@ -591,7 +611,7 @@ describe('ResourceInboxRepository', () => {
             0n,
             null,
             null,
-            '2026-01-01 00:01:00.000000',
+            '2026-01-01 00:01:00.000000'
         ],
         [
             'active reservation',
@@ -599,7 +619,7 @@ describe('ResourceInboxRepository', () => {
             1n,
             '2026-01-01 00:01:00.000000',
             null,
-            null,
+            null
         ],
         [
             'processed retry',
@@ -607,7 +627,7 @@ describe('ResourceInboxRepository', () => {
             1n,
             '2026-01-01 00:01:00.000000',
             '2026-01-01 00:01:01.000000',
-            '2026-01-01 00:01:02.000000',
+            '2026-01-01 00:01:02.000000'
         ],
         [
             'terminal failure',
@@ -615,7 +635,7 @@ describe('ResourceInboxRepository', () => {
             1n,
             '2026-01-01 00:01:00.000000',
             '2026-01-01 00:01:01.000000',
-            null,
+            null
         ],
         [
             'delayed failure',
@@ -623,15 +643,15 @@ describe('ResourceInboxRepository', () => {
             1n,
             '2026-01-01 00:01:00.000000',
             '2026-01-01 00:01:01.000000',
-            '2026-01-01 00:01:02.000000',
-        ],
+            '2026-01-01 00:01:02.000000'
+        ]
     ])('matches immutable content after a valid %s lifecycle advance', async (
         _scenario,
         status,
         attempts,
         startTs,
         endTs,
-        nextTs,
+        nextTs
     ) => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
@@ -641,12 +661,14 @@ describe('ResourceInboxRepository', () => {
         const entry = createEntry(createKey(`valid-${_scenario}`), {
             text: 'immutable',
             createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00'),
-            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z'),
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z')
         });
 
         await repo.writeIfAbsentOrMatch(entry);
         const stored = findStoredRow(harness.rows, entry.key);
-        if (!stored) throw new Error('Expected inserted resource inbox row');
+        if (!stored) {
+            throw new Error('Expected inserted resource inbox row');
+        }
         stored.ri_status = status;
         stored.ri_attempts = attempts;
         stored.start_ts = startTs;
@@ -665,11 +687,13 @@ describe('ResourceInboxRepository', () => {
         const completedAt = new Date('2026-01-01T00:01:00.000Z');
         const entry = createEntry(createKey('reserved-finish'), {
             text: 'reserved',
-            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z'),
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z')
         });
         await repo.write(entry);
         const stored = findStoredRow(harness.rows, entry.key);
-        if (!stored) throw new Error('Expected inserted resource inbox row');
+        if (!stored) {
+            throw new Error('Expected inserted resource inbox row');
+        }
         stored.ri_status = EntityStatus.RESERVED;
         stored.ri_attempts = 2n;
 
@@ -677,13 +701,13 @@ describe('ResourceInboxRepository', () => {
             entry.key,
             1,
             EntityStatus.COMPLETED,
-            completedAt,
+            completedAt
         )).resolves.toBe(false);
         await expect(repo.finishReserved(
             entry.key,
             2,
             EntityStatus.COMPLETED,
-            completedAt,
+            completedAt
         )).resolves.toBe(true);
 
         expect(stored.ri_status).toBe(EntityStatus.COMPLETED);
@@ -693,7 +717,7 @@ describe('ResourceInboxRepository', () => {
             entry.key,
             2,
             EntityStatus.FAILED,
-            completedAt,
+            completedAt
         )).resolves.toBe(false);
     });
 
@@ -706,24 +730,26 @@ describe('ResourceInboxRepository', () => {
         const releasedAt = Temporal.Instant.from('2026-01-01T00:01:00.123Z');
         const entry = createEntry(createKey('reserved-release'), {
             text: 'reserved',
-            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z'),
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z')
         });
         await repo.write(entry);
         const stored = findStoredRow(harness.rows, entry.key);
-        if (!stored) throw new Error('Expected inserted resource inbox row');
+        if (!stored) {
+            throw new Error('Expected inserted resource inbox row');
+        }
         stored.ri_status = EntityStatus.RESERVED;
         stored.ri_attempts = 2n;
 
         await expect(repo.releaseReserved(entry.key, {
             expectedAttempts: 1,
             releasedAt,
-            disposition: { status: EntityStatus.RETRY, delayMs: 37 },
+            disposition: { status: EntityStatus.RETRY, delayMs: 37 }
         })).resolves.toBeNull();
 
         const released = await repo.releaseReserved(entry.key, {
             expectedAttempts: 2,
             releasedAt,
-            disposition: { status: EntityStatus.RETRY, delayMs: 37 },
+            disposition: { status: EntityStatus.RETRY, delayMs: 37 }
         });
 
         expect(released?.dequeueAudit.endTs?.toString()).toBe(releasedAt.toString());
@@ -733,15 +759,17 @@ describe('ResourceInboxRepository', () => {
         expect(stored.ri_attempts).toBe(2n);
     });
 
-    it.each([
-        ['retry without delay', { status: EntityStatus.RETRY, delayMs: null }],
-        ['retry with zero delay', { status: EntityStatus.RETRY, delayMs: 0 }],
-        ['retry with fractional delay', { status: EntityStatus.RETRY, delayMs: 1.5 }],
-        ['terminal with delay', { status: EntityStatus.COMPLETED, delayMs: 1 }],
-        ['unsupported status', { status: EntityStatus.RESERVED, delayMs: null }],
-    ] as const)('rejects invalid repository release disposition before SQL: %s', async (
+    it.each(
+        [
+            ['retry without delay', { status: EntityStatus.RETRY, delayMs: null }],
+            ['retry with zero delay', { status: EntityStatus.RETRY, delayMs: 0 }],
+            ['retry with fractional delay', { status: EntityStatus.RETRY, delayMs: 1.5 }],
+            ['terminal with delay', { status: EntityStatus.COMPLETED, delayMs: 1 }],
+            ['unsupported status', { status: EntityStatus.RESERVED, delayMs: null }]
+        ] as const
+    )('rejects invalid repository release disposition before SQL: %s', async (
         _scenario,
-        disposition,
+        disposition
     ) => {
         const capture = createQueryCapture();
         const repo = new repositoryModule.ResourceInboxRepository(capture.sql);
@@ -749,9 +777,9 @@ describe('ResourceInboxRepository', () => {
         await expect(repo.releaseReserved(createKey(`invalid-${_scenario}`), {
             expectedAttempts: 1,
             releasedAt: Temporal.Instant.from('2026-01-01T00:00:00Z'),
-            disposition,
+            disposition
         } as never)).rejects.toMatchObject({
-            code: 'resource-inbox-invalid-release-disposition',
+            code: 'resource-inbox-invalid-release-disposition'
         });
 
         expect(capture.queries).toHaveLength(0);
@@ -766,7 +794,7 @@ describe('ResourceInboxRepository', () => {
             createKey('invalid-finish-status'),
             1,
             EntityStatus.RETRY as typeof EntityStatus.COMPLETED,
-            new Date('2026-01-01T00:01:00.000Z'),
+            new Date('2026-01-01T00:01:00.000Z')
         )).rejects.toThrow('COMPLETED or FAILED');
         expect(harness.sqlCalls).toHaveLength(sqlCallsBefore);
     });
@@ -783,17 +811,17 @@ describe('ResourceInboxRepository', () => {
         const activeOriginal = createEntry(activeKey, {
             text: 'active-original',
             expiryTs: Temporal.Now.instant().add({ minutes: 5 }),
-            createdBy: 'alice',
+            createdBy: 'alice'
         });
         const activeReplacement = createEntry(activeKey, {
             text: 'active-replacement',
             expiryTs: Temporal.Now.instant().add({ minutes: 10 }),
-            createdBy: 'bob',
+            createdBy: 'bob'
         });
 
         await repo.write(activeOriginal);
         await expect(repo.write(activeReplacement)).rejects.toMatchObject({
-            code: '23505',
+            code: '23505'
         });
 
         const returnedExisting = await repo.writeIfAbsentOrReplaceExpired(activeReplacement);
@@ -801,23 +829,23 @@ describe('ResourceInboxRepository', () => {
         expect(JSON.parse(returnedExisting.resource)).toEqual({ text: 'active-original' });
         expect(returnedExisting.audit.createdBy).toBe('alice');
         expect(JSON.parse(findStoredRow(harness.rows, activeKey)?.ri_resource ?? '{}')).toEqual({
-            text: 'active-original',
+            text: 'active-original'
         });
 
         const expiredOriginal = createEntry(expiredKey, {
             text: 'expired-original',
             expiryTs: Temporal.Now.instant().subtract({ seconds: 1 }),
-            createdBy: 'carol',
+            createdBy: 'carol'
         });
         const expiredReplacement = createEntry(expiredKey, {
             text: 'expired-replacement',
             expiryTs: Temporal.Now.instant().add({ minutes: 1 }),
-            createdBy: 'dave',
+            createdBy: 'dave'
         });
 
         await repo.write(expiredOriginal);
         await expect(repo.write(expiredReplacement)).rejects.toMatchObject({
-            code: '23505',
+            code: '23505'
         });
 
         const replaced = await repo.writeIfAbsentOrReplaceExpired(expiredReplacement);
@@ -825,7 +853,7 @@ describe('ResourceInboxRepository', () => {
         expect(JSON.parse(replaced.resource)).toEqual({ text: 'expired-replacement' });
         expect(replaced.audit.createdBy).toBe('dave');
         expect(findStoredRow(harness.rows, expiredKey)?.expire_ts).toBe(
-            toStoredTimestamp(expiredReplacement.audit.expiryTs),
+            toStoredTimestamp(expiredReplacement.audit.expiryTs)
         );
     });
 
@@ -839,13 +867,13 @@ describe('ResourceInboxRepository', () => {
         const original = createEntry(key, {
             text: 'original',
             expiryTs: Temporal.Now.instant().add({ minutes: 5 }),
-            createdBy: 'alice',
+            createdBy: 'alice'
         });
         const replacement = createEntry(key, {
             text: 'replacement',
             expiryTs: Temporal.Now.instant().add({ minutes: 10 }),
             createdBy: 'bob',
-            createdTs: Temporal.PlainDateTime.from('2026-01-01T00:01:00'),
+            createdTs: Temporal.PlainDateTime.from('2026-01-01T00:01:00')
         });
 
         const storedOriginal = await repo.write(original);
@@ -855,10 +883,10 @@ describe('ResourceInboxRepository', () => {
         expect(JSON.parse(replaced.resource)).toEqual({ text: 'replacement' });
         expect(replaced.audit.createdBy).toBe('bob');
         expect(findStoredRow(harness.rows, key)?.created_ts).toBe(
-            toStoredTimestamp(replacement.audit.createdTs),
+            toStoredTimestamp(replacement.audit.createdTs)
         );
         expect(findStoredRow(harness.rows, key)?.expire_ts).toBe(
-            toStoredTimestamp(replacement.audit.expiryTs),
+            toStoredTimestamp(replacement.audit.expiryTs)
         );
     });
 
@@ -870,11 +898,11 @@ describe('ResourceInboxRepository', () => {
         const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
         const active = createEntry(createKey('active-1'), {
             text: 'active',
-            expiryTs: Temporal.Now.instant().add({ minutes: 5 }),
+            expiryTs: Temporal.Now.instant().add({ minutes: 5 })
         });
         const expired = createEntry(createKey('expired-1'), {
             text: 'expired',
-            expiryTs: Temporal.Now.instant().subtract({ seconds: 1 }),
+            expiryTs: Temporal.Now.instant().subtract({ seconds: 1 })
         });
 
         await repo.write(active);
@@ -884,7 +912,7 @@ describe('ResourceInboxRepository', () => {
         expect(await repo.findByKey(expired.key)).toBeNull();
         expect((await repo.startProcessingEntity(expired)).left).toEqual({
             kind: 'expired-or-missing',
-            key: expired.key,
+            key: expired.key
         });
 
         const reserved = await repo.startProcessingEntity(active);
@@ -905,7 +933,7 @@ describe('ResourceInboxRepository', () => {
             text: 'original',
             createdBy: 'alice',
             createdTs: Temporal.PlainDateTime.from('2026-01-01T00:00:00'),
-            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z'),
+            expiryTs: Temporal.Instant.from('2026-01-01T00:05:00Z')
         });
 
         const storedOriginal = await repo.write(original);
@@ -918,20 +946,20 @@ describe('ResourceInboxRepository', () => {
                 ...original.audit,
                 createdBy: 'bob',
                 createdTs: Temporal.PlainDateTime.from('2026-01-01T00:01:00'),
-                expiryTs: Temporal.Instant.from('2026-01-01T00:10:00Z'),
+                expiryTs: Temporal.Instant.from('2026-01-01T00:10:00Z')
             },
             dequeueAudit: {
                 attempts: 4,
-                nextTs: Temporal.Instant.from('2026-01-01T00:02:00Z'),
-            },
+                nextTs: Temporal.Instant.from('2026-01-01T00:02:00Z')
+            }
         });
 
         expect(updated.audit.createdBy).toBe(storedOriginal.audit.createdBy);
         expect(updated.audit.createdTs.toString()).toBe(
-            storedOriginal.audit.createdTs.toString(),
+            storedOriginal.audit.createdTs.toString()
         );
         expect(updated.audit.expiryTs.toString()).toBe(
-            storedOriginal.audit.expiryTs.toString(),
+            storedOriginal.audit.expiryTs.toString()
         );
         expect(updated.status).toBe(EntityStatus.RETRY);
         expect(updated.dequeueAudit.attempts).toBe(4);
@@ -947,11 +975,11 @@ describe('ResourceInboxRepository', () => {
         const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
         const active = createEntry(createKey('active-1'), {
             text: 'active',
-            expiryTs: Temporal.Now.instant().add({ minutes: 5 }),
+            expiryTs: Temporal.Now.instant().add({ minutes: 5 })
         });
         const expired = createEntry(createKey('expired-1'), {
             text: 'expired',
-            expiryTs: Temporal.Now.instant().subtract({ seconds: 1 }),
+            expiryTs: Temporal.Now.instant().subtract({ seconds: 1 })
         });
 
         await repo.write(active);
@@ -964,7 +992,7 @@ describe('ResourceInboxRepository', () => {
 });
 
 function createQueryCapture() {
-    const queries: Array<{ query: string; values: readonly unknown[] }> = [];
+    const queries: Array<{ query: string; values: readonly unknown[]; }> = [];
     const sql = ((
         stringsOrValues: TemplateStringsArray | readonly unknown[],
         ...values: unknown[]
@@ -975,7 +1003,7 @@ function createQueryCapture() {
 
         queries.push({
             query: normalizeQuery(stringsOrValues),
-            values,
+            values
         });
         return [];
     }) as {
@@ -989,7 +1017,7 @@ function createQueryCapture() {
 
     return {
         queries,
-        sql: sql as never,
+        sql: sql as never
     };
 }
 
@@ -1044,7 +1072,7 @@ function createSqlHarness() {
 
         if (
             query.includes('insert into resource_inbox') &&
-            query.includes("where resource_inbox.expire_ts <= (now() at time zone 'utc')")
+            query.includes('where resource_inbox.expire_ts <= (now() at time zone \'utc\')')
         ) {
             const incoming = toRowFromInsert(values, nextRowId);
             const key = toCompositeKey(incoming);
@@ -1059,7 +1087,7 @@ function createSqlHarness() {
             if (isExpired(existing.expire_ts)) {
                 const replacement = {
                     ...incoming,
-                    ri_row_id: existing.ri_row_id,
+                    ri_row_id: existing.ri_row_id
                 };
                 rows.set(key, replacement);
                 return [cloneRow(replacement)];
@@ -1072,7 +1100,7 @@ function createSqlHarness() {
             query.includes('insert into resource_inbox') &&
             query.includes('on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id)') &&
             query.includes('created_by = excluded.created_by') &&
-            !query.includes("where resource_inbox.expire_ts <= (now() at time zone 'utc')")
+            !query.includes('where resource_inbox.expire_ts <= (now() at time zone \'utc\')')
         ) {
             const incoming = toRowFromInsert(values, nextRowId);
             const key = toCompositeKey(incoming);
@@ -1086,7 +1114,7 @@ function createSqlHarness() {
 
             const updated: ResourceInboxRow = {
                 ...incoming,
-                ri_row_id: existing.ri_row_id,
+                ri_row_id: existing.ri_row_id
             };
             rows.set(key, updated);
             return [cloneRow(updated)];
@@ -1095,7 +1123,7 @@ function createSqlHarness() {
         if (
             query.includes('insert into resource_inbox') &&
             query.includes('on conflict (fk_ext_bank_id, ri_resource_id, ri_topic_id)') &&
-            !query.includes("where resource_inbox.expire_ts <= (now() at time zone 'utc')")
+            !query.includes('where resource_inbox.expire_ts <= (now() at time zone \'utc\')')
         ) {
             const incoming = toRowFromInsert(values, nextRowId);
             const key = toCompositeKey(incoming);
@@ -1115,7 +1143,7 @@ function createSqlHarness() {
                 start_ts: incoming.start_ts,
                 end_ts: incoming.end_ts,
                 next_ts: incoming.next_ts,
-                ri_attempts: incoming.ri_attempts,
+                ri_attempts: incoming.ri_attempts
             };
             rows.set(key, updated);
             return [cloneRow(updated)];
@@ -1150,8 +1178,7 @@ function createSqlHarness() {
             query.includes('next_ts') &&
             query.includes('returning *')
         ) {
-            const [status, endTs, nextTs, topicId, resourceId, contextId, reserved, expectedAttempts] =
-                values;
+            const [status, endTs, nextTs, topicId, resourceId, contextId, reserved, expectedAttempts] = values;
             const row = rows.get(`${contextId}::${topicId}::${resourceId}`);
             if (
                 !row ||
@@ -1170,12 +1197,11 @@ function createSqlHarness() {
 
         if (
             query.includes('update resource_inbox') &&
-            query.includes("ri_status = 'reserved'") &&
+            query.includes('ri_status = \'reserved\'') &&
             query.includes('ri_attempts =') &&
             query.includes('returning ri_row_id')
         ) {
-            const [status, completedAt, topicId, resourceId, contextId, expectedAttempts] =
-                values;
+            const [status, completedAt, topicId, resourceId, contextId, expectedAttempts] = values;
             const row = rows.get(`${contextId}::${topicId}::${resourceId}`);
             if (
                 !row ||
@@ -1196,7 +1222,7 @@ function createSqlHarness() {
             query.includes('update resource_inbox') &&
             query.includes('set ri_status =') &&
             query.includes('ri_attempts =') &&
-            query.includes("expire_ts > (now() at time zone 'utc')")
+            query.includes('expire_ts > (now() at time zone \'utc\')')
         ) {
             const usesDatabaseStart = query.includes('start_ts = now()');
             const [status, attempts, ...remaining] = values;
@@ -1216,7 +1242,7 @@ function createSqlHarness() {
                 ri_attempts: BigInt(attempts as number),
                 start_ts: toOptionalString(startTs),
                 end_ts: toOptionalString(endTs),
-                next_ts: toOptionalString(nextTs),
+                next_ts: toOptionalString(nextTs)
             };
             rows.set(key, updated);
             return [cloneRow(updated)];
@@ -1224,9 +1250,9 @@ function createSqlHarness() {
 
         if (
             query.includes('delete from resource_inbox') &&
-            query.includes("where expire_ts <= (now() at time zone 'utc')")
+            query.includes('where expire_ts <= (now() at time zone \'utc\')')
         ) {
-            const deleted: Array<{ ri_row_id: bigint }> = [];
+            const deleted: Array<{ ri_row_id: bigint; }> = [];
 
             for (const [key, row] of rows.entries()) {
                 if (!isExpired(row.expire_ts)) {
@@ -1254,7 +1280,7 @@ function createSqlHarness() {
     return {
         rows,
         sqlCalls,
-        sql: sql as never,
+        sql: sql as never
     };
 }
 
@@ -1281,7 +1307,7 @@ function toRowFromInsert(values: readonly unknown[], rowId: bigint): ResourceInb
         startTs,
         endTs,
         nextTs,
-        attempts,
+        attempts
     ] = values;
 
     return {
@@ -1299,7 +1325,7 @@ function toRowFromInsert(values: readonly unknown[], rowId: bigint): ResourceInb
         start_ts: toOptionalString(startTs),
         end_ts: toOptionalString(endTs),
         next_ts: toOptionalString(nextTs),
-        ri_attempts: BigInt((attempts as number) ?? 0),
+        ri_attempts: BigInt((attempts as number) ?? 0)
     };
 }
 
@@ -1309,14 +1335,14 @@ function toCompositeKey(row: Pick<ResourceInboxRow, 'fk_ext_bank_id' | 'ri_topic
 
 function cloneRow(row: ResourceInboxRow): ResourceInboxRow {
     return {
-        ...row,
+        ...row
     };
 }
 
-function duplicateKeyError(key: string): Error & { code: string } {
+function duplicateKeyError(key: string): Error & { code: string; } {
     const error = new Error(
-        `duplicate key value violates unique constraint resource_inbox_unique_k: ${key}`,
-    ) as Error & { code: string };
+        `duplicate key value violates unique constraint resource_inbox_unique_k: ${key}`
+    ) as Error & { code: string; };
     error.code = '23505';
     return error;
 }
@@ -1325,7 +1351,7 @@ function createKey(resourceId: string): Key {
     return {
         topicId: 'chat.message.v1',
         resourceId,
-        contextId: 'room-1',
+        contextId: 'room-1'
     };
 }
 
@@ -1336,7 +1362,7 @@ function createEntry(
         createdBy?: string;
         createdTs?: Temporal.PlainDateTime;
         expiryTs: Temporal.Instant;
-    }>,
+    }>
 ): ResourceEntry {
     return {
         key,
@@ -1345,20 +1371,19 @@ function createEntry(
         audit: {
             date: Temporal.PlainTime.from('00:00:00'),
             createdBy: options.createdBy ?? 'test-user',
-            createdTs:
-                options.createdTs ?? Temporal.PlainDateTime.from('2026-01-01T00:00:00'),
-            expiryTs: options.expiryTs,
+            createdTs: options.createdTs ?? Temporal.PlainDateTime.from('2026-01-01T00:00:00'),
+            expiryTs: options.expiryTs
         },
         status: EntityStatus.NEW,
         dequeueAudit: {
-            attempts: 0,
-        },
+            attempts: 0
+        }
     };
 }
 
 function findStoredRow(
     rows: ReadonlyMap<string, ResourceInboxRow>,
-    key: Key,
+    key: Key
 ): ResourceInboxRow | undefined {
     return rows.get(`${key.contextId}::${key.topicId}::${key.resourceId}`);
 }

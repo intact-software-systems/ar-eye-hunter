@@ -1,4 +1,4 @@
-import type { WeightedGraph, VertexId } from './graph-props.ts';
+import type { VertexId, WeightedGraph } from './graph-props.ts';
 
 export type GroupTopologyValidationIssue = Readonly<{
     code:
@@ -34,7 +34,7 @@ export type GroupTopologyValidationResult = Readonly<{
 }>;
 
 export function validateGroupTopology(
-    input: GroupTopologyValidationInput,
+    input: GroupTopologyValidationInput
 ): GroupTopologyValidationResult {
     const requireConnected = input.requireConnected ?? true;
     const graphSessionIds = new Set(input.graph.nodes() as VertexId[]);
@@ -48,7 +48,7 @@ export function validateGroupTopology(
             missingSessionIds.push(sessionId);
             issues.push({
                 code: 'missing-active-session',
-                sessionId,
+                sessionId
             });
         }
     }
@@ -58,7 +58,7 @@ export function validateGroupTopology(
             inactiveSessionIds.push(sessionId);
             issues.push({
                 code: 'inactive-session-present',
-                sessionId,
+                sessionId
             });
         }
 
@@ -72,7 +72,7 @@ export function validateGroupTopology(
                 code: 'degree-limit-exceeded',
                 sessionId,
                 degree,
-                maxDegree,
+                maxDegree
             });
         }
     }
@@ -83,7 +83,7 @@ export function validateGroupTopology(
         !isConnected(input.graph)
     ) {
         issues.push({
-            code: 'disconnected',
+            code: 'disconnected'
         });
     }
 
@@ -92,12 +92,12 @@ export function validateGroupTopology(
         issues,
         missingSessionIds,
         inactiveSessionIds,
-        overDegreeSessionIds,
+        overDegreeSessionIds
     };
 }
 
 export function validateGroupTopologyNextHops(
-    input: GroupTopologyNextHopValidationInput,
+    input: GroupTopologyNextHopValidationInput
 ): GroupTopologyValidationResult {
     const requireConnected = input.requireConnected ?? true;
     const topologySessionIds = new Set<VertexId>();
@@ -137,13 +137,13 @@ export function validateGroupTopologyNextHops(
     for (const sessionId of missingSessionIds) {
         issues.push({
             code: 'missing-active-session',
-            sessionId,
+            sessionId
         });
     }
     for (const sessionId of inactiveSessionIds) {
         issues.push({
             code: 'inactive-session-present',
-            sessionId,
+            sessionId
         });
     }
     for (const sessionId of overDegreeSessionIds) {
@@ -151,7 +151,7 @@ export function validateGroupTopologyNextHops(
             code: 'degree-limit-exceeded',
             sessionId,
             degree: adjacency.get(sessionId)?.size ?? 0,
-            maxDegree: input.maxDegree,
+            maxDegree: input.maxDegree
         });
     }
 
@@ -161,7 +161,7 @@ export function validateGroupTopologyNextHops(
         !isNextHopMapConnected(input.activeSessionIds, adjacency)
     ) {
         issues.push({
-            code: 'disconnected',
+            code: 'disconnected'
         });
     }
 
@@ -170,7 +170,7 @@ export function validateGroupTopologyNextHops(
         issues,
         missingSessionIds,
         inactiveSessionIds,
-        overDegreeSessionIds,
+        overDegreeSessionIds
     };
 }
 
@@ -187,7 +187,9 @@ function isConnected(graph: WeightedGraph): boolean {
     while (queue.length > 0) {
         const current = queue.shift()!;
         for (const neighbor of graph.neighbors(current) as VertexId[]) {
-            if (visited.has(neighbor)) continue;
+            if (visited.has(neighbor)) {
+                continue;
+            }
             visited.add(neighbor);
             queue.push(neighbor);
         }
@@ -198,7 +200,7 @@ function isConnected(graph: WeightedGraph): boolean {
 
 function getOrCreateSet(
     map: Map<VertexId, Set<VertexId>>,
-    key: VertexId,
+    key: VertexId
 ): Set<VertexId> {
     const existing = map.get(key);
     if (existing) {
@@ -212,7 +214,7 @@ function getOrCreateSet(
 
 function isNextHopMapConnected(
     activeSessionIds: ReadonlySet<VertexId>,
-    adjacency: ReadonlyMap<VertexId, ReadonlySet<VertexId>>,
+    adjacency: ReadonlyMap<VertexId, ReadonlySet<VertexId>>
 ): boolean {
     const first = activeSessionIds.values().next().value as VertexId | undefined;
     if (first === undefined) {
@@ -226,7 +228,9 @@ function isNextHopMapConnected(
     while (queue.length > 0) {
         const current = queue.shift()!;
         for (const neighbor of adjacency.get(current) ?? []) {
-            if (!activeSessionIds.has(neighbor) || visited.has(neighbor)) continue;
+            if (!activeSessionIds.has(neighbor) || visited.has(neighbor)) {
+                continue;
+            }
             visited.add(neighbor);
             queue.push(neighbor);
         }

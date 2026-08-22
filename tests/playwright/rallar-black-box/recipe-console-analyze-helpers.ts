@@ -7,19 +7,20 @@ export const ANALYZE_SECTION_ORDER = [
     'quality',
     'performance',
     'search',
-    'markdown',
+    'markdown'
 ] as const;
 
 export async function chooseAnalyzeFiles(
     page: Page,
-    files: readonly AnalyzeUploadFile[] | readonly string[],
+    files: readonly AnalyzeUploadFile[] | readonly string[]
 ): Promise<void> {
     const chooserPromise = page.waitForEvent('filechooser');
     await page.getByText('Choose files', { exact: true }).click();
     const chooser = await chooserPromise;
     if (files.every((file): file is string => typeof file === 'string')) {
         await chooser.setFiles([...files]);
-    } else {
+    }
+    else {
         await chooser.setFiles([...files] as AnalyzeUploadFile[]);
     }
 }
@@ -42,13 +43,13 @@ export function analyzePoliteAnnouncement(page: Page): Locator {
 
 export function analyzeLegacyRunsLink(page: Page): Locator {
     return analyzeSource(page).getByRole('link', {
-        name: 'Open selected run in legacy Runs',
+        name: 'Open selected run in legacy Runs'
     });
 }
 
 export async function dropAnalyzeFilesWithReadProbe(
     page: Page,
-    files: readonly AnalyzeUploadFile[],
+    files: readonly AnalyzeUploadFile[]
 ): Promise<void> {
     await page.evaluate(() => {
         const trackedWindow = window as typeof window & {
@@ -56,9 +57,8 @@ export async function dropAnalyzeFilesWithReadProbe(
         };
         const originalArrayBuffer = File.prototype.arrayBuffer;
         trackedWindow.__analyzeDroppedFileReadCount = 0;
-        File.prototype.arrayBuffer = function trackedArrayBuffer(): Promise<ArrayBuffer> {
-            trackedWindow.__analyzeDroppedFileReadCount =
-                (trackedWindow.__analyzeDroppedFileReadCount ?? 0) + 1;
+        File.prototype.arrayBuffer = function trackedArrayBuffer (): Promise<ArrayBuffer> {
+            trackedWindow.__analyzeDroppedFileReadCount = (trackedWindow.__analyzeDroppedFileReadCount ?? 0) + 1;
             return originalArrayBuffer.call(this);
         };
     });
@@ -67,33 +67,42 @@ export async function dropAnalyzeFilesWithReadProbe(
 
 export async function dropAnalyzeFiles(
     page: Page,
-    files: readonly AnalyzeUploadFile[],
+    files: readonly AnalyzeUploadFile[]
 ): Promise<void> {
-    await page.locator('[data-analyze-dropzone]').evaluate((dropzone, payloads) => {
-        const transfer = new DataTransfer();
-        for (const payload of payloads) {
-            transfer.items.add(new File(
-                [payload.contents],
-                payload.name,
-                { type: payload.mimeType },
-            ));
-        }
-        dropzone.dispatchEvent(new DragEvent('drop', {
-            bubbles: true,
-            cancelable: true,
-            dataTransfer: transfer,
-        }));
-    }, files.map(file => ({
-        name: file.name,
-        mimeType: file.mimeType,
-        contents: file.buffer.toString('utf8'),
-    })));
+    await page.locator('[data-analyze-dropzone]').evaluate(
+        (dropzone, payloads) => {
+            const transfer = new DataTransfer();
+            for (const payload of payloads) {
+                transfer.items.add(
+                    new File(
+                        [payload.contents],
+                        payload.name,
+                        { type: payload.mimeType }
+                    )
+                );
+            }
+            dropzone.dispatchEvent(
+                new DragEvent('drop', {
+                    bubbles: true,
+                    cancelable: true,
+                    dataTransfer: transfer
+                })
+            );
+        },
+        files.map((file) => ({
+            name: file.name,
+            mimeType: file.mimeType,
+            contents: file.buffer.toString('utf8')
+        }))
+    );
 }
 
 export async function analyzeDroppedFileReadCount(page: Page): Promise<number> {
-    return page.evaluate(() => (
-        window as typeof window & { __analyzeDroppedFileReadCount?: number }
-    ).__analyzeDroppedFileReadCount ?? 0);
+    return page.evaluate(() =>
+        (
+            window as typeof window & { __analyzeDroppedFileReadCount?: number; }
+        ).__analyzeDroppedFileReadCount ?? 0
+    );
 }
 
 export async function installDeferredAnalyzeFileRead(page: Page): Promise<void> {
@@ -107,13 +116,15 @@ export async function installDeferredAnalyzeFileRead(page: Page): Promise<void> 
         };
         const originalArrayBuffer = File.prototype.arrayBuffer;
         let release = (): void => {};
-        const gate = new Promise<void>(resolve => { release = resolve; });
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
         tracked.__analyzeDeferredRead = {
             started: false,
             readCount: 0,
-            release,
+            release
         };
-        File.prototype.arrayBuffer = async function deferredArrayBuffer(): Promise<ArrayBuffer> {
+        File.prototype.arrayBuffer = async function deferredArrayBuffer (): Promise<ArrayBuffer> {
             const state = tracked.__analyzeDeferredRead;
             if (state) {
                 state.readCount += 1;
@@ -128,32 +139,38 @@ export async function installDeferredAnalyzeFileRead(page: Page): Promise<void> 
 }
 
 export async function waitForDeferredAnalyzeFileRead(page: Page): Promise<void> {
-    await page.waitForFunction(() => (
-        window as typeof window & {
-            __analyzeDeferredRead?: { started: boolean };
-        }
-    ).__analyzeDeferredRead?.started === true);
+    await page.waitForFunction(() =>
+        (
+            window as typeof window & {
+                __analyzeDeferredRead?: { started: boolean; };
+            }
+        ).__analyzeDeferredRead?.started === true
+    );
 }
 
 export async function releaseDeferredAnalyzeFileRead(page: Page): Promise<void> {
-    await page.evaluate(() => (
-        window as typeof window & {
-            __analyzeDeferredRead?: { release(): void };
-        }
-    ).__analyzeDeferredRead?.release());
+    await page.evaluate(() =>
+        (
+            window as typeof window & {
+                __analyzeDeferredRead?: { release(): void; };
+            }
+        ).__analyzeDeferredRead?.release()
+    );
 }
 
 export async function deferredAnalyzeFileReadCount(page: Page): Promise<number> {
-    return page.evaluate(() => (
-        window as typeof window & {
-            __analyzeDeferredRead?: { readCount: number };
-        }
-    ).__analyzeDeferredRead?.readCount ?? 0);
+    return page.evaluate(() =>
+        (
+            window as typeof window & {
+                __analyzeDeferredRead?: { readCount: number; };
+            }
+        ).__analyzeDeferredRead?.readCount ?? 0
+    );
 }
 
 export async function pushAnalyzeContext(
     page: Page,
-    identity: Readonly<{ controlRunId: string; distributedRunId: string }>,
+    identity: Readonly<{ controlRunId: string; distributedRunId: string; }>
 ): Promise<void> {
     await page.evaluate((nextIdentity) => {
         const url = new URL(location.href);

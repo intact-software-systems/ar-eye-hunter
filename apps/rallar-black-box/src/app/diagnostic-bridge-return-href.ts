@@ -8,7 +8,7 @@ import {
     type DiagnosticBridgeLegacySurfaceId,
     type DiagnosticBridgeProvider,
     type DiagnosticBridgeSourceView,
-    type DiagnosticBridgeTransport,
+    type DiagnosticBridgeTransport
 } from './diagnostic-bridge-url-contract.ts';
 
 const SELECTION_FIELDS = [
@@ -16,7 +16,7 @@ const SELECTION_FIELDS = [
     'distributedRunId',
     'agentId',
     'recipeId',
-    'commandId',
+    'commandId'
 ] as const satisfies readonly (keyof DiagnosticBridgeReturnInput)[];
 
 export type DiagnosticBridgeReturnInput = Readonly<{
@@ -33,14 +33,14 @@ export type DiagnosticBridgeReturnInput = Readonly<{
 }>;
 
 export function buildDiagnosticBridgeReturnHref(
-    input: DiagnosticBridgeReturnInput | undefined,
+    input: DiagnosticBridgeReturnInput | undefined
 ): string | undefined {
     if (
-        input?.version !== 1
-        || !input.view
-        || !includes(DIAGNOSTIC_BRIDGE_SOURCE_VIEWS, input.view)
-        || (input.provider
-            && !includes(DIAGNOSTIC_BRIDGE_PROVIDERS, input.provider))
+        input?.version !== 1 ||
+        !input.view ||
+        !includes(DIAGNOSTIC_BRIDGE_SOURCE_VIEWS, input.view) ||
+        (input.provider &&
+            !includes(DIAGNOSTIC_BRIDGE_PROVIDERS, input.provider))
     ) {
         return undefined;
     }
@@ -51,11 +51,11 @@ export function buildDiagnosticBridgeReturnHref(
     params.set('experience', 'recipe-console');
     params.set('view', input.view);
     if (
-        input.view === 'advanced'
-        && input.legacySurface
-        && includes(
+        input.view === 'advanced' &&
+        input.legacySurface &&
+        includes(
             DIAGNOSTIC_BRIDGE_LEGACY_SURFACE_IDS,
-            input.legacySurface,
+            input.legacySurface
         )
     ) {
         appendAllowed(params, 'legacySurface', input.legacySurface);
@@ -64,8 +64,8 @@ export function buildDiagnosticBridgeReturnHref(
         appendBounded(params, field, input[field]);
     }
     if (
-        input.transport
-        && includes(DIAGNOSTIC_BRIDGE_TRANSPORTS, input.transport)
+        input.transport &&
+        includes(DIAGNOSTIC_BRIDGE_TRANSPORTS, input.transport)
     ) {
         appendAllowed(params, 'transport', input.transport);
     }
@@ -75,24 +75,28 @@ export function buildDiagnosticBridgeReturnHref(
 function appendAllowed(
     params: URLSearchParams,
     field: string,
-    value: string | undefined,
+    value: string | undefined
 ): void {
-    if (value !== undefined) appendIfQueryFits(params, field, value);
+    if (value !== undefined) {
+        appendIfQueryFits(params, field, value);
+    }
 }
 
 function appendBounded(
     params: URLSearchParams,
     field: string,
-    value: unknown,
+    value: unknown
 ): void {
-    if (typeof value !== 'string' || !safeValue(value)) return;
+    if (typeof value !== 'string' || !safeValue(value)) {
+        return;
+    }
     appendIfQueryFits(params, field, value);
 }
 
 function appendIfQueryFits(
     params: URLSearchParams,
     field: string,
-    value: string,
+    value: string
 ): void {
     const candidate = new URLSearchParams(params);
     candidate.set(field, value);
@@ -102,14 +106,14 @@ function appendIfQueryFits(
 }
 
 function safeValue(value: string): boolean {
-    return value.length > 0
-        && utf8Bytes(value) <= DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES
-        && !/[\u0000-\u001f\u007f-\u009f]/u.test(value);
+    return value.length > 0 &&
+        utf8Bytes(value) <= DIAGNOSTIC_BRIDGE_URL_STRING_MAX_BYTES &&
+        !/[\u0000-\u001f\u007f-\u009f]/u.test(value);
 }
 
 function includes<const Value extends string>(
     values: readonly Value[],
-    value: string,
+    value: string
 ): value is Value {
     return (values as readonly string[]).includes(value);
 }

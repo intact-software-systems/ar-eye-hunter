@@ -1,10 +1,10 @@
 import {
+    toALGroupTargetKey,
     type ALConstraints,
     type ALDelivery,
     type ALForwarding,
     type ALMessage,
-    type ALTargets,
-    toALGroupTargetKey,
+    type ALTargets
 } from './al-contract.ts';
 import type {
     ALDedupStoreLike,
@@ -12,7 +12,7 @@ import type {
     ALOrderingStoreLike,
     ALSupersedenceInput,
     ALSupersedenceObservation,
-    ALSupersedenceStoreLike,
+    ALSupersedenceStoreLike
 } from './al-runtime.ts';
 
 export type ALRequestedAlgorithm<TAlgo extends string, TOpts extends Record<string, unknown>> = Readonly<{
@@ -170,19 +170,19 @@ export type ALQosMessageContext = Readonly<{
 export type ALQosInputProvider = Readonly<{
     defaultsForMessage?: (
         msg: ALMessage,
-        context: ALQosMessageContext,
+        context: ALQosMessageContext
     ) => Partial<ALQosEffectivePolicy> | undefined;
     capabilitiesForMessage?: (
         msg: ALMessage,
-        context: ALQosMessageContext,
+        context: ALQosMessageContext
     ) => Partial<ALQosCapabilities> | undefined;
     authorizationForMessage?: (
         msg: ALMessage,
-        context: ALQosMessageContext,
+        context: ALQosMessageContext
     ) => ALQosAuthorization | undefined;
     liveForMessage?: (
         msg: ALMessage,
-        context: ALQosMessageContext,
+        context: ALQosMessageContext
     ) => ALQosNormalizationInput['live'] | undefined;
 }>;
 
@@ -281,13 +281,13 @@ export const DEFAULT_AL_QOS_CAPABILITIES: ALQosCapabilities = {
     maxFanout: 16,
     maxRetryAttempts: 8,
     maxAckTimeoutMs: 30_000,
-    maxDedupWindowMs: 5 * 60_000,
+    maxDedupWindowMs: 5 * 60_000
 };
 
 const DURABILITY_ORDER: readonly ALDurabilityAlgo[] = [
     'volatile',
     'local-outbox',
-    'local-inbox',
+    'local-inbox'
 ];
 
 const LOW_PRIORITY_OVERLOAD_THRESHOLD = 0;
@@ -301,7 +301,7 @@ export function deriveALQosPolicyRequest(msg: ALMessage): ALQosPolicyRequest {
         repair: msg.delivery?.reliability === 'at-least-once'
             ? {
                 algo: msg.targets?.mode === 'unicast' ? 'none' : 'retransmit',
-                opts: { maxRepairs: 1 },
+                opts: { maxRepairs: 1 }
             }
             : undefined,
         ack: deriveAckRequest(msg.delivery),
@@ -310,21 +310,21 @@ export function deriveALQosPolicyRequest(msg: ALMessage): ALQosPolicyRequest {
             ? {
                 algo: 'exp-backoff',
                 opts: {
-                    maxAttempts: 3,
-                },
+                    maxAttempts: 3
+                }
             }
             : undefined,
         dedup: {
             algo: 'msg-id',
             opts: {
                 windowMs: 60_000,
-                semanticKey: toDefaultSemanticKey(msg),
-            },
+                semanticKey: toDefaultSemanticKey(msg)
+            }
         },
         fanout: msg.forwarding?.fanoutLimit !== undefined
             ? {
                 algo: 'limit',
-                opts: { limit: msg.forwarding.fanoutLimit },
+                opts: { limit: msg.forwarding.fanoutLimit }
             }
             : undefined,
         durability: msg.delivery?.reliability === 'at-least-once'
@@ -332,52 +332,88 @@ export function deriveALQosPolicyRequest(msg: ALMessage): ALQosPolicyRequest {
             : undefined,
         ownership: msg.delivery?.ownership
             ? { algo: msg.delivery.ownership }
-            : undefined,
+            : undefined
     };
 }
 
 export function normalizeALQosPolicy(
     msg: ALMessage,
-    input: ALQosNormalizationInput = {},
+    input: ALQosNormalizationInput = {}
 ): ALQosNormalizationResult {
     const notes: ALQosNormalizationNote[] = [];
     const unmetRequirements: string[] = [];
 
     const capabilities: ALQosCapabilities = {
         ...DEFAULT_AL_QOS_CAPABILITIES,
-        ...(input.capabilities ?? {}),
+        ...(input.capabilities ?? {})
     };
 
     const live = {
         overloaded: input.live?.overloaded ?? false,
         connectedNeighborCount: input.live?.connectedNeighborCount,
-        hasAlternateRoute: input.live?.hasAlternateRoute ?? false,
+        hasAlternateRoute: input.live?.hasAlternateRoute ?? false
     };
 
     const requested = mergePolicyRequests(
         deriveALQosPolicyRequest(msg),
         msg.qos,
-        input.request,
+        input.request
     );
 
     const defaultPolicy = mergeEffectivePolicy(
         toDefaultEffectivePolicy(msg),
-        input.defaults,
+        input.defaults
     );
 
     let effective: ALQosEffectivePolicy = {
-        delivery: normalizeAspect('delivery', requested.delivery, defaultPolicy.delivery, capabilities.supportedDelivery, notes),
-        forwarding: normalizeAspect('forwarding', requested.forwarding, defaultPolicy.forwarding, capabilities.supportedForwarding, notes),
+        delivery: normalizeAspect(
+            'delivery',
+            requested.delivery,
+            defaultPolicy.delivery,
+            capabilities.supportedDelivery,
+            notes
+        ),
+        forwarding: normalizeAspect(
+            'forwarding',
+            requested.forwarding,
+            defaultPolicy.forwarding,
+            capabilities.supportedForwarding,
+            notes
+        ),
         repair: normalizeAspect('repair', requested.repair, defaultPolicy.repair, capabilities.supportedRepair, notes),
         ack: normalizeAspect('ack', requested.ack, defaultPolicy.ack, capabilities.supportedAck, notes),
         expiry: normalizeAspect('expiry', requested.expiry, defaultPolicy.expiry, capabilities.supportedExpiry, notes),
         retry: normalizeAspect('retry', requested.retry, defaultPolicy.retry, capabilities.supportedRetry, notes),
         dedup: normalizeAspect('dedup', requested.dedup, defaultPolicy.dedup, capabilities.supportedDedup, notes),
-        supersedence: normalizeAspect('supersedence', requested.supersedence, defaultPolicy.supersedence, capabilities.supportedSupersedence, notes),
+        supersedence: normalizeAspect(
+            'supersedence',
+            requested.supersedence,
+            defaultPolicy.supersedence,
+            capabilities.supportedSupersedence,
+            notes
+        ),
         fanout: normalizeAspect('fanout', requested.fanout, defaultPolicy.fanout, capabilities.supportedFanout, notes),
-        congestion: normalizeAspect('congestion', requested.congestion, defaultPolicy.congestion, capabilities.supportedCongestion, notes),
-        durability: normalizeAspect('durability', requested.durability, defaultPolicy.durability, capabilities.supportedDurability, notes),
-        ownership: normalizeAspect('ownership', requested.ownership, defaultPolicy.ownership, capabilities.supportedOwnership, notes),
+        congestion: normalizeAspect(
+            'congestion',
+            requested.congestion,
+            defaultPolicy.congestion,
+            capabilities.supportedCongestion,
+            notes
+        ),
+        durability: normalizeAspect(
+            'durability',
+            requested.durability,
+            defaultPolicy.durability,
+            capabilities.supportedDurability,
+            notes
+        ),
+        ownership: normalizeAspect(
+            'ownership',
+            requested.ownership,
+            defaultPolicy.ownership,
+            capabilities.supportedOwnership,
+            notes
+        )
     };
 
     effective = alignDurabilityWithRequestedStrength(effective, requested, capabilities, notes);
@@ -390,27 +426,27 @@ export function normalizeALQosPolicy(
         requested,
         effective,
         notes,
-        unmetRequirements,
+        unmetRequirements
     };
 }
 
 export function resolveALQosNormalizationInput(
     msg: ALMessage,
     context: ALQosMessageContext,
-    provider?: ALQosInputProvider,
+    provider?: ALQosInputProvider
 ): Omit<ALQosNormalizationInput, 'nowMs'> {
     return {
         defaults: provider?.defaultsForMessage?.(msg, context),
         capabilities: provider?.capabilitiesForMessage?.(msg, context),
         authorization: provider?.authorizationForMessage?.(msg, context),
-        live: provider?.liveForMessage?.(msg, context),
+        live: provider?.liveForMessage?.(msg, context)
     };
 }
 
 export function planALMessageHandling(
     msg: ALMessage,
     context: ALMessagePlanningContext,
-    input: Omit<ALQosNormalizationInput, 'nowMs'> = {},
+    input: Omit<ALQosNormalizationInput, 'nowMs'> = {}
 ): ALMessageHandlingPlan {
     const nowMs = context.nowMs ?? Date.now();
     const connectedPeerIds = new Set(context.connectedPeerIds ?? []);
@@ -425,22 +461,22 @@ export function planALMessageHandling(
             live: {
                 overloaded,
                 connectedNeighborCount: overlayNeighborPeerIds.length,
-                hasAlternateRoute: overlayNeighborPeerIds.length > 1,
-            },
-        },
+                hasAlternateRoute: overlayNeighborPeerIds.length > 1
+            }
+        }
     );
 
     const dedupKey = toDedupKey(msg, result.effective);
     const supersedenceRuntime = context.supersedenceStore?.peek(
         toSupersedenceInput(msg, result.effective),
-        nowMs,
+        nowMs
     ) ?? {
-        status: 'untracked',
+        status: 'untracked'
     };
     const orderingRuntime = context.orderingStore?.peek(msg, nowMs) ?? {
         status: 'untracked',
         missingSeqs: [],
-        releasableSeqs: [],
+        releasableSeqs: []
     };
     const congestion = planCongestion(result.effective, overloaded);
     const ownership = planOwnership(result.effective);
@@ -449,19 +485,26 @@ export function planALMessageHandling(
 
     if (result.unmetRequirements.length > 0) {
         dropReason = `Unmet requirements: ${result.unmetRequirements.join(', ')}`;
-    } else if (context.seenDedupKeys?.has(dedupKey)) {
+    }
+    else if (context.seenDedupKeys?.has(dedupKey)) {
         dropReason = `Duplicate message for dedup key ${dedupKey}`;
-    } else if (context.dedupStore?.has(dedupKey, nowMs)) {
+    }
+    else if (context.dedupStore?.has(dedupKey, nowMs)) {
         dropReason = `Duplicate message for dedup key ${dedupKey}`;
-    } else if (supersedenceRuntime.status === 'superseded') {
+    }
+    else if (supersedenceRuntime.status === 'superseded') {
         dropReason = `Message superseded by ${supersedenceRuntime.latestMsgId ?? 'a newer message'}`;
-    } else if (orderingRuntime.status === 'duplicate' || orderingRuntime.status === 'stale') {
+    }
+    else if (orderingRuntime.status === 'duplicate' || orderingRuntime.status === 'stale') {
         dropReason = `Ordering runtime rejected message as ${orderingRuntime.status}`;
-    } else if (isExpired(msg, result.effective, nowMs)) {
+    }
+    else if (isExpired(msg, result.effective, nowMs)) {
         dropReason = 'Message expired or is too stale';
-    } else if (congestion.action === 'reject') {
+    }
+    else if (congestion.action === 'reject') {
         dropReason = 'Node overloaded and congestion policy rejects handling';
-    } else if (congestion.action === 'drop-low' && congestion.priority <= LOW_PRIORITY_OVERLOAD_THRESHOLD) {
+    }
+    else if (congestion.action === 'drop-low' && congestion.priority <= LOW_PRIORITY_OVERLOAD_THRESHOLD) {
         dropReason = 'Node overloaded and congestion policy drops low-priority message';
     }
 
@@ -470,9 +513,9 @@ export function planALMessageHandling(
     const localDeliveryReason = localDeliveryDeferred
         ? `Waiting for missing seqs ${orderingRuntime.missingSeqs.join(', ')}`
         : undefined;
-    const shouldDeliverLocally = !dropReason
-        && !localDeliveryDeferred
-        && isRecipient;
+    const shouldDeliverLocally = !dropReason &&
+        !localDeliveryDeferred &&
+        isRecipient;
     const nextHopPeerIds = dropReason
         ? []
         : resolveNextHopPeerIds(msg, result.effective, context, connectedPeerIds, groupMemberPeerIds);
@@ -493,12 +536,12 @@ export function planALMessageHandling(
             enabled: shouldDeliverLocally,
             persist: shouldPersistInbox(result.effective),
             deferred: localDeliveryDeferred,
-            reason: localDeliveryReason,
+            reason: localDeliveryReason
         },
         forwarding: {
             enabled: shouldForward,
             nextHopPeerIds,
-            persist: shouldPersistOutbox(result.effective),
+            persist: shouldPersistOutbox(result.effective)
         },
         ack,
         nack,
@@ -509,11 +552,11 @@ export function planALMessageHandling(
             key: resolveSupersedenceKey(msg, result.effective),
             replacesMsgId: result.effective.supersedence.opts.replacesMsgId,
             status: supersedenceRuntime.status,
-            latestMsgId: supersedenceRuntime.latestMsgId,
+            latestMsgId: supersedenceRuntime.latestMsgId
         },
         congestion,
         ownership,
-        orderingRuntime,
+        orderingRuntime
     };
 }
 
@@ -527,7 +570,7 @@ function deriveDeliveryAlgo(delivery: ALDelivery): ALDeliveryAlgo {
 
 function deriveForwardingRequest(
     targets: ALTargets | undefined,
-    forwarding: ALForwarding | undefined,
+    forwarding: ALForwarding | undefined
 ): ALQosPolicyRequest['forwarding'] {
     if (!targets) {
         return undefined;
@@ -537,8 +580,8 @@ function deriveForwardingRequest(
         algo: 'target',
         opts: {
             overlayId: forwarding?.overlayId ??
-                (targets.mode === 'multicast' ? targets.groupRef.groupId : undefined),
-        },
+                (targets.mode === 'multicast' ? targets.groupRef.groupId : undefined)
+        }
     };
 }
 
@@ -550,14 +593,14 @@ function deriveAckRequest(delivery: ALDelivery | undefined): ALQosPolicyRequest[
     return {
         algo: toAckAlgo(delivery.ack),
         opts: {
-            timeoutMs: delivery.reliability === 'at-least-once' ? 2_000 : 250,
-        },
+            timeoutMs: delivery.reliability === 'at-least-once' ? 2_000 : 250
+        }
     };
 }
 
 function deriveExpiryRequest(
     constraints: ALConstraints | undefined,
-    msg: ALMessage,
+    msg: ALMessage
 ): ALQosPolicyRequest['expiry'] {
     if (!constraints) {
         return undefined;
@@ -569,8 +612,8 @@ function deriveExpiryRequest(
             opts: {
                 ttlHops: constraints.ttlHops,
                 expiresAtMs: constraints.expiresAtMs,
-                maxStalenessMs: toDefaultMaxStalenessMs(msg),
-            },
+                maxStalenessMs: toDefaultMaxStalenessMs(msg)
+            }
         };
     }
 
@@ -579,8 +622,8 @@ function deriveExpiryRequest(
             algo: 'ttl-only',
             opts: {
                 ttlHops: constraints.ttlHops,
-                maxStalenessMs: toDefaultMaxStalenessMs(msg),
-            },
+                maxStalenessMs: toDefaultMaxStalenessMs(msg)
+            }
         };
     }
 
@@ -588,10 +631,12 @@ function deriveExpiryRequest(
 }
 
 function toDefaultEffectivePolicy(msg: ALMessage): ALQosEffectivePolicy {
-    const deliveryAlgo = deriveDeliveryAlgo(msg.delivery ?? {
-        reliability: 'best-effort',
-        ack: 'none',
-    });
+    const deliveryAlgo = deriveDeliveryAlgo(
+        msg.delivery ?? {
+            reliability: 'best-effort',
+            ack: 'none'
+        }
+    );
 
     return {
         delivery: { algo: deliveryAlgo, opts: {} },
@@ -601,71 +646,71 @@ function toDefaultEffectivePolicy(msg: ALMessage): ALQosEffectivePolicy {
                 overlayId: msg.forwarding?.overlayId ??
                     (msg.targets?.mode === 'multicast'
                         ? msg.targets.groupRef.groupId
-                        : msg.route.contextId),
-            },
+                        : msg.route.contextId)
+            }
         },
         repair: {
             algo: deliveryAlgo === 'at-least-once'
                 ? (msg.targets?.mode === 'unicast' ? 'none' : 'retransmit')
                 : 'none',
             opts: {
-                maxRepairs: 1,
-            },
+                maxRepairs: 1
+            }
         },
         ack: {
             algo: deliveryAlgo === 'at-least-once' ? 'hop' : 'none',
             opts: {
-                timeoutMs: deliveryAlgo === 'at-least-once' ? 2_000 : 250,
-            },
+                timeoutMs: deliveryAlgo === 'at-least-once' ? 2_000 : 250
+            }
         },
         expiry: {
             algo: msg.constraints?.expiresAtMs !== undefined ? 'expires-at' : 'ttl-only',
             opts: {
                 ttlHops: msg.constraints?.ttlHops,
                 expiresAtMs: msg.constraints?.expiresAtMs,
-                maxStalenessMs: toDefaultMaxStalenessMs(msg),
-            },
+                maxStalenessMs: toDefaultMaxStalenessMs(msg)
+            }
         },
         retry: {
             algo: deliveryAlgo === 'at-least-once' ? 'exp-backoff' : 'none',
             opts: {
-                maxAttempts: 3,
-            },
+                maxAttempts: 3
+            }
         },
         dedup: {
             algo: 'msg-id',
             opts: {
                 windowMs: 60_000,
-                semanticKey: toDefaultSemanticKey(msg),
-            },
+                semanticKey: toDefaultSemanticKey(msg)
+            }
         },
         supersedence: {
             algo: 'none',
             opts: {
                 supersedenceKey: undefined,
-                replacesMsgId: undefined,
-            },
+                replacesMsgId: undefined
+            }
         },
         fanout: {
             algo: msg.forwarding?.fanoutLimit !== undefined ? 'limit' : 'all',
             opts: {
-                limit: msg.forwarding?.fanoutLimit,
-            },
+                limit: msg.forwarding?.fanoutLimit
+            }
         },
         congestion: {
             algo: 'drop-low',
             opts: {
-                priority: deliveryAlgo === 'at-least-once' ? 5 : 0,
-            },
+                priority: deliveryAlgo === 'at-least-once' ? 5 : 0
+            }
         },
         durability: {
             algo: deliveryAlgo === 'at-least-once' ? 'local-outbox' : 'volatile',
-            opts: {},
+            opts: {}
         },
         ownership: {
             algo: msg.delivery?.ownership ?? 'shared',
-            opts: {},
-        },
+            opts: {}
+        }
     };
 }
 
@@ -689,7 +734,7 @@ function mergePolicyRequests(...requests: Array<ALQosPolicyRequest | undefined>)
             fanout: mergeRequestedAlgorithm(current.fanout, request.fanout),
             congestion: mergeRequestedAlgorithm(current.congestion, request.congestion),
             durability: mergeRequestedAlgorithm(current.durability, request.durability),
-            ownership: mergeRequestedAlgorithm(current.ownership, request.ownership),
+            ownership: mergeRequestedAlgorithm(current.ownership, request.ownership)
         };
     }
 
@@ -698,7 +743,7 @@ function mergePolicyRequests(...requests: Array<ALQosPolicyRequest | undefined>)
 
 function mergeRequestedAlgorithm<TAlgo extends string, TOpts extends Record<string, unknown>>(
     base: ALRequestedAlgorithm<TAlgo, TOpts> | undefined,
-    override: ALRequestedAlgorithm<TAlgo, TOpts> | undefined,
+    override: ALRequestedAlgorithm<TAlgo, TOpts> | undefined
 ): ALRequestedAlgorithm<TAlgo, TOpts> | undefined {
     if (!base) {
         return override;
@@ -712,14 +757,14 @@ function mergeRequestedAlgorithm<TAlgo extends string, TOpts extends Record<stri
         algo: override.algo,
         opts: ({
             ...(base.opts ?? {}),
-            ...(override.opts ?? {}),
-        }) as Readonly<Partial<TOpts>>,
+            ...(override.opts ?? {})
+        }) as Readonly<Partial<TOpts>>
     };
 }
 
 function mergeEffectivePolicy(
     base: ALQosEffectivePolicy,
-    overrides: Partial<ALQosEffectivePolicy> | undefined,
+    overrides: Partial<ALQosEffectivePolicy> | undefined
 ): ALQosEffectivePolicy {
     if (!overrides) {
         return base;
@@ -737,13 +782,13 @@ function mergeEffectivePolicy(
         fanout: mergeEffectiveAlgorithm(base.fanout, overrides.fanout),
         congestion: mergeEffectiveAlgorithm(base.congestion, overrides.congestion),
         durability: mergeEffectiveAlgorithm(base.durability, overrides.durability),
-        ownership: mergeEffectiveAlgorithm(base.ownership, overrides.ownership),
+        ownership: mergeEffectiveAlgorithm(base.ownership, overrides.ownership)
     };
 }
 
 function mergeEffectiveAlgorithm<TAlgo extends string, TOpts extends Record<string, unknown>>(
     base: ALEffectiveAlgorithm<TAlgo, TOpts>,
-    override: ALEffectiveAlgorithm<TAlgo, TOpts> | undefined,
+    override: ALEffectiveAlgorithm<TAlgo, TOpts> | undefined
 ): ALEffectiveAlgorithm<TAlgo, TOpts> {
     if (!override) {
         return base;
@@ -753,8 +798,8 @@ function mergeEffectiveAlgorithm<TAlgo extends string, TOpts extends Record<stri
         algo: override.algo,
         opts: {
             ...base.opts,
-            ...override.opts,
-        },
+            ...override.opts
+        }
     };
 }
 
@@ -763,14 +808,14 @@ function normalizeAspect<TAlgo extends string, TOpts extends Record<string, unkn
     requested: ALRequestedAlgorithm<TAlgo, TOpts> | undefined,
     fallback: ALEffectiveAlgorithm<TAlgo, TOpts>,
     supported: readonly TAlgo[],
-    notes: ALQosNormalizationNote[],
+    notes: ALQosNormalizationNote[]
 ): ALEffectiveAlgorithm<TAlgo, TOpts> {
     if (!requested) {
         notes.push({
             aspect,
             kind: 'defaulted',
             reason: 'No explicit policy requested for aspect',
-            effective: fallback.algo,
+            effective: fallback.algo
         });
         return fallback;
     }
@@ -778,13 +823,13 @@ function normalizeAspect<TAlgo extends string, TOpts extends Record<string, unkn
     const requestedAlgo = requested.algo;
     const requestedOpts = {
         ...fallback.opts,
-        ...(requested.opts ?? {}),
+        ...(requested.opts ?? {})
     } as TOpts;
 
     if (supported.includes(requestedAlgo)) {
         return {
             algo: requestedAlgo,
-            opts: requestedOpts,
+            opts: requestedOpts
         };
     }
 
@@ -797,18 +842,18 @@ function normalizeAspect<TAlgo extends string, TOpts extends Record<string, unkn
         kind: 'downgraded',
         reason: 'Requested algorithm is not supported locally',
         requested: requestedAlgo,
-        effective: effectiveAlgo,
+        effective: effectiveAlgo
     });
 
     return {
         algo: effectiveAlgo,
-        opts: requestedOpts,
+        opts: requestedOpts
     };
 }
 
 function pickFallbackAlgorithm<TAlgo extends string>(
     aspect: keyof ALQosEffectivePolicy,
-    supported: readonly TAlgo[],
+    supported: readonly TAlgo[]
 ): TAlgo {
     if (supported.length === 0) {
         throw new Error(`No supported algorithms configured for aspect ${aspect}`);
@@ -826,11 +871,11 @@ function pickFallbackAlgorithm<TAlgo extends string>(
         fanout: ['limit', 'all', 'random-k'],
         congestion: ['drop-low', 'defer', 'reject'],
         durability: ['local-inbox', 'local-outbox', 'volatile'],
-        ownership: ['shared', 'exclusive'],
+        ownership: ['shared', 'exclusive']
     };
 
     const preferred = preferredByAspect[aspect] ?? [];
-    const preferredSupported = preferred.find(candidate => supported.includes(candidate as TAlgo));
+    const preferredSupported = preferred.find((candidate) => supported.includes(candidate as TAlgo));
 
     return (preferredSupported as TAlgo | undefined) ?? supported[0];
 }
@@ -838,7 +883,7 @@ function pickFallbackAlgorithm<TAlgo extends string>(
 function clampEffectivePolicy(
     effective: ALQosEffectivePolicy,
     capabilities: ALQosCapabilities,
-    notes: ALQosNormalizationNote[],
+    notes: ALQosNormalizationNote[]
 ): ALQosEffectivePolicy {
     const ttlHops = effective.expiry.opts.ttlHops;
     const clampedTtlHops = ttlHops !== undefined
@@ -851,7 +896,7 @@ function clampEffectivePolicy(
             kind: 'clamped',
             reason: 'ttlHops clamped to local maximum',
             requested: ttlHops?.toString(),
-            effective: clampedTtlHops?.toString(),
+            effective: clampedTtlHops?.toString()
         });
     }
 
@@ -866,7 +911,7 @@ function clampEffectivePolicy(
             kind: 'clamped',
             reason: 'fanout limit clamped to local maximum',
             requested: fanoutLimit?.toString(),
-            effective: clampedFanout?.toString(),
+            effective: clampedFanout?.toString()
         });
     }
 
@@ -877,7 +922,7 @@ function clampEffectivePolicy(
             kind: 'clamped',
             reason: 'Ack timeout clamped to local maximum',
             requested: effective.ack.opts.timeoutMs.toString(),
-            effective: ackTimeoutMs.toString(),
+            effective: ackTimeoutMs.toString()
         });
     }
 
@@ -889,7 +934,7 @@ function clampEffectivePolicy(
             kind: 'clamped',
             reason: 'Retry attempts clamped to local maximum',
             requested: effective.retry.opts.maxAttempts.toString(),
-            effective: retryAttempts.toString(),
+            effective: retryAttempts.toString()
         });
     }
 
@@ -900,7 +945,7 @@ function clampEffectivePolicy(
             kind: 'clamped',
             reason: 'Dedup window clamped to local maximum',
             requested: effective.dedup.opts.windowMs.toString(),
-            effective: dedupWindowMs.toString(),
+            effective: dedupWindowMs.toString()
         });
     }
 
@@ -910,37 +955,37 @@ function clampEffectivePolicy(
             ...effective.expiry,
             opts: {
                 ...effective.expiry.opts,
-                ttlHops: clampedTtlHops,
-            },
+                ttlHops: clampedTtlHops
+            }
         },
         fanout: {
             ...effective.fanout,
             opts: {
                 ...effective.fanout.opts,
-                limit: clampedFanout,
-            },
+                limit: clampedFanout
+            }
         },
         ack: {
             ...effective.ack,
             opts: {
                 ...effective.ack.opts,
-                timeoutMs: ackTimeoutMs,
-            },
+                timeoutMs: ackTimeoutMs
+            }
         },
         retry: {
             ...effective.retry,
             opts: {
                 ...effective.retry.opts,
-                maxAttempts: retryAttempts,
-            },
+                maxAttempts: retryAttempts
+            }
         },
         dedup: {
             ...effective.dedup,
             opts: {
                 ...effective.dedup.opts,
-                windowMs: dedupWindowMs,
-            },
-        },
+                windowMs: dedupWindowMs
+            }
+        }
     };
 }
 
@@ -949,7 +994,7 @@ function applyAuthorization(
     capabilities: ALQosCapabilities,
     authorization: ALQosAuthorization | undefined,
     notes: ALQosNormalizationNote[],
-    unmetRequirements: string[],
+    unmetRequirements: string[]
 ): ALQosEffectivePolicy {
     if (!authorization) {
         return effective;
@@ -957,64 +1002,74 @@ function applyAuthorization(
 
     let ownership = effective.ownership;
     if (authorization.allowedOwnerships && !authorization.allowedOwnerships.includes(ownership.algo)) {
-        const replacement = authorization.allowedOwnerships.find(candidate => capabilities.supportedOwnership.includes(candidate));
+        const replacement = authorization.allowedOwnerships.find((candidate) =>
+            capabilities.supportedOwnership.includes(candidate)
+        );
         if (!replacement) {
             unmetRequirements.push(`No authorized ownership available for ${ownership.algo}`);
-        } else {
+        }
+        else {
             notes.push({
                 aspect: 'ownership',
                 kind: 'downgraded',
                 reason: 'Requested ownership is not authorized',
                 requested: ownership.algo,
-                effective: replacement,
+                effective: replacement
             });
             ownership = {
                 algo: replacement,
-                opts: {},
+                opts: {}
             };
         }
     }
 
     let repair = effective.repair;
     if (authorization.allowedRepairs && !authorization.allowedRepairs.includes(repair.algo)) {
-        const replacement = authorization.allowedRepairs.find(candidate => capabilities.supportedRepair.includes(candidate));
+        const replacement = authorization.allowedRepairs.find((candidate) =>
+            capabilities.supportedRepair.includes(candidate)
+        );
         if (!replacement) {
             unmetRequirements.push(`No authorized repair strategy available for ${repair.algo}`);
-        } else {
+        }
+        else {
             notes.push({
                 aspect: 'repair',
                 kind: 'downgraded',
                 reason: 'Requested repair strategy is not authorized',
                 requested: repair.algo,
-                effective: replacement,
+                effective: replacement
             });
             repair = {
                 algo: replacement,
-                opts: repair.opts,
+                opts: repair.opts
             };
         }
     }
 
     let durability = effective.durability;
-    if (authorization.maxDurability !== undefined && durabilityRank(durability.algo) > durabilityRank(authorization.maxDurability)) {
+    if (
+        authorization.maxDurability !== undefined &&
+        durabilityRank(durability.algo) > durabilityRank(authorization.maxDurability)
+    ) {
         const replacement = pickHighestAvailableDurability(
             capabilities.supportedDurability,
-            authorization.maxDurability,
+            authorization.maxDurability
         );
 
         if (!replacement) {
             unmetRequirements.push(`No authorized durability available for ${durability.algo}`);
-        } else {
+        }
+        else {
             notes.push({
                 aspect: 'durability',
                 kind: 'downgraded',
                 reason: 'Requested durability exceeds authorization',
                 requested: durability.algo,
-                effective: replacement,
+                effective: replacement
             });
             durability = {
                 algo: replacement,
-                opts: {},
+                opts: {}
             };
         }
     }
@@ -1023,7 +1078,7 @@ function applyAuthorization(
         ...effective,
         ownership,
         repair,
-        durability,
+        durability
     };
 }
 
@@ -1031,7 +1086,7 @@ function alignDurabilityWithRequestedStrength(
     effective: ALQosEffectivePolicy,
     requested: ALQosPolicyRequest,
     capabilities: ALQosCapabilities,
-    notes: ALQosNormalizationNote[],
+    notes: ALQosNormalizationNote[]
 ): ALQosEffectivePolicy {
     const requestedDurability = requested.durability?.algo;
     if (!requestedDurability) {
@@ -1040,7 +1095,7 @@ function alignDurabilityWithRequestedStrength(
 
     const replacement = pickHighestAvailableDurability(
         capabilities.supportedDurability,
-        requestedDurability,
+        requestedDurability
     );
 
     if (!replacement || durabilityRank(replacement) <= durabilityRank(effective.durability.algo)) {
@@ -1052,15 +1107,15 @@ function alignDurabilityWithRequestedStrength(
         kind: 'downgraded',
         reason: 'Durability normalized to the strongest supported level under the requested policy',
         requested: requestedDurability,
-        effective: replacement,
+        effective: replacement
     });
 
     return {
         ...effective,
         durability: {
             algo: replacement,
-            opts: {},
-        },
+            opts: {}
+        }
     };
 }
 
@@ -1068,7 +1123,7 @@ function applyLiveState(
     effective: ALQosEffectivePolicy,
     live: NonNullable<ALQosNormalizationInput['live']>,
     capabilities: ALQosCapabilities,
-    notes: ALQosNormalizationNote[],
+    notes: ALQosNormalizationNote[]
 ): ALQosEffectivePolicy {
     let next = effective;
 
@@ -1082,7 +1137,7 @@ function applyLiveState(
                 kind: 'clamped',
                 reason: 'Fanout clamped to currently connected neighbors',
                 requested: currentLimit.toString(),
-                effective: clampedLimit.toString(),
+                effective: clampedLimit.toString()
             });
         }
 
@@ -1092,9 +1147,9 @@ function applyLiveState(
                 ...next.fanout,
                 opts: {
                     ...next.fanout.opts,
-                    limit: clampedLimit,
-                },
-            },
+                    limit: clampedLimit
+                }
+            }
         };
     }
 
@@ -1103,7 +1158,7 @@ function applyLiveState(
 
 function enforceCrossAspectConsistency(
     effective: ALQosEffectivePolicy,
-    notes: ALQosNormalizationNote[],
+    notes: ALQosNormalizationNote[]
 ): ALQosEffectivePolicy {
     let next = effective;
 
@@ -1113,14 +1168,14 @@ function enforceCrossAspectConsistency(
             kind: 'downgraded',
             reason: 'Best-effort delivery disables retries',
             requested: next.retry.algo,
-            effective: 'none',
+            effective: 'none'
         });
         next = {
             ...next,
             retry: {
                 ...next.retry,
-                algo: 'none',
-            },
+                algo: 'none'
+            }
         };
     }
 
@@ -1132,8 +1187,8 @@ export function shouldPersistInbox(effective: ALQosEffectivePolicy): boolean {
 }
 
 export function shouldPersistOutbox(effective: ALQosEffectivePolicy): boolean {
-    return effective.durability.algo === 'local-outbox'
-        || effective.retry.algo !== 'none';
+    return effective.durability.algo === 'local-outbox' ||
+        effective.retry.algo !== 'none';
 }
 
 function planAck(
@@ -1141,13 +1196,13 @@ function planAck(
     effective: ALQosEffectivePolicy,
     context: ALMessagePlanningContext,
     shouldDeliverLocally: boolean,
-    shouldForward: boolean,
+    shouldForward: boolean
 ): ALMessageHandlingPlan['ack'] {
     if (effective.ack.algo === 'none') {
         return {
             enabled: false,
             algo: 'none',
-            deferred: false,
+            deferred: false
         };
     }
 
@@ -1155,7 +1210,7 @@ function planAck(
         return {
             enabled: false,
             algo: effective.ack.algo,
-            deferred: effective.ack.algo === 'subtree' && shouldForward,
+            deferred: effective.ack.algo === 'subtree' && shouldForward
         };
     }
 
@@ -1163,7 +1218,7 @@ function planAck(
         enabled: shouldDeliverLocally || shouldForward,
         algo: effective.ack.algo,
         toPeerId: context.fromPeerId,
-        deferred: effective.ack.algo === 'subtree' && shouldForward,
+        deferred: effective.ack.algo === 'subtree' && shouldForward
     };
 }
 
@@ -1171,12 +1226,12 @@ function planNack(
     effective: ALQosEffectivePolicy,
     context: ALMessagePlanningContext,
     orderingRuntime: ALOrderingObservation,
-    dropReason?: string,
+    dropReason?: string
 ): ALMessageHandlingPlan['nack'] {
     if (!context.fromPeerId) {
         return {
             enabled: false,
-            missingSeqs: [],
+            missingSeqs: []
         };
     }
 
@@ -1185,7 +1240,7 @@ function planNack(
             enabled: true,
             toPeerId: context.fromPeerId,
             reason: 'gap',
-            missingSeqs: orderingRuntime.missingSeqs,
+            missingSeqs: orderingRuntime.missingSeqs
         };
     }
 
@@ -1194,7 +1249,7 @@ function planNack(
             enabled: true,
             toPeerId: context.fromPeerId,
             reason: 'expired',
-            missingSeqs: [],
+            missingSeqs: []
         };
     }
 
@@ -1203,25 +1258,25 @@ function planNack(
             enabled: true,
             toPeerId: context.fromPeerId,
             reason: 'overloaded',
-            missingSeqs: [],
+            missingSeqs: []
         };
     }
 
     return {
         enabled: false,
-        missingSeqs: [],
+        missingSeqs: []
     };
 }
 
 function planRepair(
     effective: ALQosEffectivePolicy,
     shouldForward: boolean,
-    targets: ALTargets | undefined,
+    targets: ALTargets | undefined
 ): ALMessageHandlingPlan['repair'] {
     if (effective.repair.algo === 'none') {
         return {
             enabled: false,
-            algo: 'none',
+            algo: 'none'
         };
     }
 
@@ -1229,7 +1284,7 @@ function planRepair(
         return {
             enabled: true,
             algo: effective.repair.algo,
-            reason: 'No immediate next hop resolved for unicast message',
+            reason: 'No immediate next hop resolved for unicast message'
         };
     }
 
@@ -1237,25 +1292,25 @@ function planRepair(
         return {
             enabled: true,
             algo: effective.repair.algo,
-            reason: 'No downstream forwarding candidates resolved for group message',
+            reason: 'No downstream forwarding candidates resolved for group message'
         };
     }
 
     return {
         enabled: false,
-        algo: effective.repair.algo,
+        algo: effective.repair.algo
     };
 }
 
 function planCongestion(
     effective: ALQosEffectivePolicy,
-    overloaded: boolean,
+    overloaded: boolean
 ): ALMessageHandlingPlan['congestion'] {
     if (!overloaded) {
         return {
             overloaded: false,
             action: 'none',
-            priority: effective.congestion.opts.priority,
+            priority: effective.congestion.opts.priority
         };
     }
 
@@ -1264,48 +1319,48 @@ function planCongestion(
             return {
                 overloaded: true,
                 action: 'reject',
-                priority: effective.congestion.opts.priority,
+                priority: effective.congestion.opts.priority
             };
         case 'defer':
             return {
                 overloaded: true,
                 action: 'defer',
-                priority: effective.congestion.opts.priority,
+                priority: effective.congestion.opts.priority
             };
         default:
             return {
                 overloaded: true,
                 action: 'drop-low',
-                priority: effective.congestion.opts.priority,
+                priority: effective.congestion.opts.priority
             };
     }
 }
 
 function planOwnership(
-    effective: ALQosEffectivePolicy,
+    effective: ALQosEffectivePolicy
 ): ALMessageHandlingPlan['ownership'] {
     return {
         algo: effective.ownership.algo,
-        exclusive: effective.ownership.algo === 'exclusive',
+        exclusive: effective.ownership.algo === 'exclusive'
     };
 }
 
 function toSupersedenceInput(
     msg: ALMessage,
-    effective: ALQosEffectivePolicy,
+    effective: ALQosEffectivePolicy
 ): ALSupersedenceInput {
     return {
         key: resolveSupersedenceKey(msg, effective),
         msgId: msg.id.msgId,
         replacesMsgId: effective.supersedence.opts.replacesMsgId,
         seq: msg.ordering?.seq,
-        ts: msg.audit?.createdTs ?? msg.id.ts,
+        ts: msg.audit?.createdTs ?? msg.id.ts
     };
 }
 
 export function resolveSupersedenceKey(
     msg: ALMessage,
-    effective: ALQosEffectivePolicy,
+    effective: ALQosEffectivePolicy
 ): string | undefined {
     if (effective.supersedence.algo === 'none') {
         return undefined;
@@ -1319,7 +1374,7 @@ function resolveNextHopPeerIds(
     effective: ALQosEffectivePolicy,
     context: ALMessagePlanningContext,
     connectedPeerIds: ReadonlySet<string>,
-    groupMemberPeerIds: ReadonlySet<string>,
+    groupMemberPeerIds: ReadonlySet<string>
 ): readonly string[] {
     if (!msg.targets) {
         return [];
@@ -1344,7 +1399,7 @@ function resolveNextHopPeerIds(
         : new Set<string>();
     const hintedNextHops = new Set(msg.forwarding?.nextHopPeerIds ?? []);
 
-    const candidates = (context.overlayNeighborPeerIds ?? []).filter(peerId => {
+    const candidates = (context.overlayNeighborPeerIds ?? []).filter((peerId) => {
         if (peerId === context.selfPeerId || peerId === context.fromPeerId) {
             return false;
         }
@@ -1369,7 +1424,7 @@ function resolveNextHopPeerIds(
 function applyFanoutSelection(
     candidates: readonly string[],
     effective: ALQosEffectivePolicy,
-    msgId: string,
+    msgId: string
 ): readonly string[] {
     switch (effective.fanout.algo) {
         case 'all':
@@ -1390,7 +1445,7 @@ function applyFanoutSelection(
 function isLogicalRecipient(
     targets: ALTargets | undefined,
     selfPeerId: string,
-    groupMemberPeerIds: ReadonlySet<string>,
+    groupMemberPeerIds: ReadonlySet<string>
 ): boolean {
     if (!targets) {
         return true;
@@ -1409,7 +1464,7 @@ function isLogicalRecipient(
 function isExpired(
     msg: ALMessage,
     effective: ALQosEffectivePolicy,
-    nowMs: number,
+    nowMs: number
 ): boolean {
     const ttlHops = msg.constraints?.ttlHops ?? effective.expiry.opts.ttlHops;
     if (ttlHops !== undefined && ttlHops <= 0) {
@@ -1426,7 +1481,7 @@ function isExpired(
 
 export function resolveALMessageExpireAtMs(
     msg: ALMessage,
-    effective?: ALQosEffectivePolicy,
+    effective?: ALQosEffectivePolicy
 ): number | undefined {
     const candidates: number[] = [];
     const ttlHops = msg.constraints?.ttlHops ?? effective?.expiry.opts.ttlHops;
@@ -1451,7 +1506,7 @@ export function resolveALMessageExpireAtMs(
 
 function toDedupKey(
     msg: ALMessage,
-    effective: ALQosEffectivePolicy,
+    effective: ALQosEffectivePolicy
 ): string {
     switch (effective.dedup.algo) {
         case 'msg-id':
@@ -1481,7 +1536,7 @@ function toAckAlgo(ack: 'none' | 'receiver' | 'all-logical-recipients' | 'group-
 
 function inferOrderingKeyFromTargets(
     targets: ALTargets | undefined,
-    msg: ALMessage,
+    msg: ALMessage
 ): string {
     if (!targets) {
         return msg.id.senderId;
@@ -1507,7 +1562,7 @@ function durabilityRank(algo: ALDurabilityAlgo): number {
 
 function pickHighestAvailableDurability(
     supportedDurability: readonly ALDurabilityAlgo[],
-    maxDurability: ALDurabilityAlgo,
+    maxDurability: ALDurabilityAlgo
 ): ALDurabilityAlgo | undefined {
     const maxRank = durabilityRank(maxDurability);
     let candidate: ALDurabilityAlgo | undefined;

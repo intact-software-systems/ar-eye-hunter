@@ -30,8 +30,8 @@ export type JsonSchemaValidationIssue = Readonly<{
 }>;
 
 export type JsonSchemaValidationResult =
-    | Readonly<{ ok: true; errors: readonly [] }>
-    | Readonly<{ ok: false; errors: readonly JsonSchemaValidationIssue[] }>;
+    | Readonly<{ ok: true; errors: readonly []; }>
+    | Readonly<{ ok: false; errors: readonly JsonSchemaValidationIssue[]; }>;
 
 export function validateJsonSchema(schema: JsonSchema, value: unknown): JsonSchemaValidationResult {
     const errors: JsonSchemaValidationIssue[] = [];
@@ -42,24 +42,24 @@ export function validateJsonSchema(schema: JsonSchema, value: unknown): JsonSche
 }
 
 export function formatJsonSchemaValidationErrors(
-    errors: readonly JsonSchemaValidationIssue[],
+    errors: readonly JsonSchemaValidationIssue[]
 ): string {
-    return errors.map(error => `${error.path}: ${error.message}`).join('\n');
+    return errors.map((error) => `${error.path}: ${error.message}`).join('\n');
 }
 
 function validateNode(
     schema: JsonSchema,
     value: unknown,
     path: string,
-    errors: JsonSchemaValidationIssue[],
+    errors: JsonSchemaValidationIssue[]
 ): void {
     if (schema.const !== undefined && !sameJsonValue(schema.const, value)) {
         errors.push({ path, message: `Expected ${JSON.stringify(schema.const)}.` });
         return;
     }
 
-    if (schema.enum && !schema.enum.some(candidate => sameJsonValue(candidate, value))) {
-        const enumText = schema.enum.map(candidate => JSON.stringify(candidate)).join(', ');
+    if (schema.enum && !schema.enum.some((candidate) => sameJsonValue(candidate, value))) {
+        const enumText = schema.enum.map((candidate) => JSON.stringify(candidate)).join(', ');
         errors.push({ path, message: `Expected one of ${enumText}.` });
         return;
     }
@@ -72,12 +72,12 @@ function validateNode(
         }
 
         const matches = schema.oneOf
-            .map(candidate => validationErrors(candidate, value, path).length === 0)
+            .map((candidate) => validationErrors(candidate, value, path).length === 0)
             .filter(Boolean).length;
         if (matches !== 1) {
             errors.push({
                 path,
-                message: `Expected value to match exactly one schema, matched ${matches}.`,
+                message: `Expected value to match exactly one schema, matched ${matches}.`
             });
         }
         return;
@@ -85,7 +85,7 @@ function validateNode(
 
     if (schema.anyOf) {
         const matches = schema.anyOf
-            .some(candidate => validationErrors(candidate, value, path).length === 0);
+            .some((candidate) => validationErrors(candidate, value, path).length === 0);
         if (!matches) {
             errors.push({ path, message: 'Expected value to match at least one schema.' });
         }
@@ -137,7 +137,7 @@ function validateNode(
 
     if (schema.requiredAnyOf && isJsonRecordValue(value)) {
         for (const requirement of schema.requiredAnyOf) {
-            if (!requirement.properties.some(property => value[property] !== undefined)) {
+            if (!requirement.properties.some((property) => value[property] !== undefined)) {
                 errors.push({ path, message: requirement.message });
             }
         }
@@ -170,7 +170,7 @@ function validateNode(
                 schema.additionalProperties,
                 propertyValue,
                 childPath(path, property),
-                errors,
+                errors
             );
         }
     }
@@ -179,7 +179,7 @@ function validateNode(
 function validationErrors(
     schema: JsonSchema,
     value: unknown,
-    path: string,
+    path: string
 ): JsonSchemaValidationIssue[] {
     const errors: JsonSchemaValidationIssue[] = [];
     validateNode(schema, value, path, errors);
@@ -188,7 +188,7 @@ function validationErrors(
 
 function discriminatedOneOfSchema(
     candidates: readonly JsonSchema[],
-    value: unknown,
+    value: unknown
 ): JsonSchema | undefined {
     if (!isJsonRecordValue(value)) {
         return undefined;
@@ -196,12 +196,12 @@ function discriminatedOneOfSchema(
 
     const kind = value.kind;
     if (typeof kind === 'string') {
-        return candidates.find(candidate => candidate.properties?.kind?.const === kind);
+        return candidates.find((candidate) => candidate.properties?.kind?.const === kind);
     }
 
     const aggregate = value.aggregate;
     if (typeof aggregate === 'string') {
-        return candidates.find(candidate => candidate.properties?.aggregate?.const === aggregate);
+        return candidates.find((candidate) => candidate.properties?.aggregate?.const === aggregate);
     }
 
     return undefined;
@@ -209,7 +209,7 @@ function discriminatedOneOfSchema(
 
 function matchesType(value: unknown, expected: string | readonly string[]): boolean {
     if (Array.isArray(expected)) {
-        return expected.some(type => matchesType(value, type));
+        return expected.some((type) => matchesType(value, type));
     }
 
     switch (expected) {

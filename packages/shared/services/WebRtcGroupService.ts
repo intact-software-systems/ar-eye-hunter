@@ -1,13 +1,13 @@
-import { WebRtcConnectionService } from './WebRtcConnectionService.ts';
-import { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
-import type { GroupRef } from '../api/group-types.ts';
+import { isSameGroupScope, toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import {
-    type AnyGroupPresence,
     readGroupId,
     readGroupMemberSessionIds,
     readGroupVersion,
+    type AnyGroupPresence
 } from '../api/group-client-views.ts';
-import { isSameGroupScope, toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
+import type { GroupRef } from '../api/group-types.ts';
+import { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
+import { WebRtcConnectionService } from './WebRtcConnectionService.ts';
 
 type PeerId = string;
 type GroupUpdateSource = 'push' | 'pull';
@@ -32,7 +32,7 @@ export class WebRtcGroupService {
         (
             state: WebRtcGroupServiceState,
             diff: GroupMembershipDiff,
-            source: GroupUpdateSource,
+            source: GroupUpdateSource
         ) => Promise<void>
     >();
 
@@ -43,7 +43,7 @@ export class WebRtcGroupService {
     constructor(
         rtcQBox: WebRtcConnectionService,
         groupRef: GroupRef,
-        groupCache: ReadableKeyedValues<string, AnyGroupPresence>,
+        groupCache: ReadableKeyedValues<string, AnyGroupPresence>
     ) {
         this.rtcQBox = rtcQBox;
         this.groupRef = groupRef;
@@ -56,8 +56,8 @@ export class WebRtcGroupService {
         callback: (
             state: WebRtcGroupServiceState,
             diff: GroupMembershipDiff,
-            source: GroupUpdateSource,
-        ) => Promise<void>,
+            source: GroupUpdateSource
+        ) => Promise<void>
     ): WebRtcGroupService {
         this.onStateCallbacks.set(id, callback);
         return this;
@@ -84,7 +84,7 @@ export class WebRtcGroupService {
         return {
             groupRef: this.groupRef,
             snapshot,
-            targetPeerIds: this.computeTargetPeerIds(snapshot),
+            targetPeerIds: this.computeTargetPeerIds(snapshot)
         };
     }
 
@@ -94,7 +94,7 @@ export class WebRtcGroupService {
             !isSameGroupScope(snapshot.group, this.groupRef)
         ) {
             throw new Error(
-                `Received update for wrong room ${readGroupId(snapshot)}, expected ${this.groupRef.groupId}`,
+                `Received update for wrong room ${readGroupId(snapshot)}, expected ${this.groupRef.groupId}`
             );
         }
 
@@ -105,11 +105,11 @@ export class WebRtcGroupService {
         if (incomingVersion < currentVersion) {
             console.warn(
                 `Ignoring stale group snapshot for ${readGroupId(snapshot)}. ` +
-                `Incoming version=${incomingVersion}, current=${currentVersion}`,
+                    `Incoming version=${incomingVersion}, current=${currentVersion}`
             );
             return {
                 joinedPeerIds: [],
-                leftPeerIds: [],
+                leftPeerIds: []
             };
         }
 
@@ -137,14 +137,15 @@ export class WebRtcGroupService {
 
     private async notify(
         diff: GroupMembershipDiff,
-        source: GroupUpdateSource,
+        source: GroupUpdateSource
     ): Promise<void> {
         const state = this.state();
 
         for (const callback of this.onStateCallbacks.values()) {
             try {
                 await callback(state, diff, source);
-            } catch (error) {
+            }
+            catch (error) {
                 console.error('Error in WebRtcGroupService callback', error);
             }
         }
@@ -156,7 +157,7 @@ export class WebRtcGroupService {
         }
 
         return readGroupMemberSessionIds(snapshot).filter(
-            (peerId) => peerId !== this.rtcQBox.input.sessionId,
+            (peerId) => peerId !== this.rtcQBox.input.sessionId
         );
     }
 
@@ -175,7 +176,7 @@ export class WebRtcGroupService {
 
     private readDirectCachedGroup(
         mode: 'read' | 'peek',
-        key: string,
+        key: string
     ): AnyGroupPresence | undefined {
         return mode === 'read'
             ? this.groupCache.read(key)
@@ -183,7 +184,7 @@ export class WebRtcGroupService {
     }
 
     private findLatestMatchingCachedGroup(
-        snapshots: readonly AnyGroupPresence[],
+        snapshots: readonly AnyGroupPresence[]
     ): AnyGroupPresence | undefined {
         let latest: AnyGroupPresence | undefined;
         let latestVersion = Number.NEGATIVE_INFINITY;
@@ -208,14 +209,14 @@ export class WebRtcGroupService {
 
     private computeDiff(
         before: readonly PeerId[],
-        after: readonly PeerId[],
+        after: readonly PeerId[]
     ): GroupMembershipDiff {
         const beforeSet = new Set(before);
         const afterSet = new Set(after);
 
         return {
             joinedPeerIds: after.filter((peerId) => !beforeSet.has(peerId)),
-            leftPeerIds: before.filter((peerId) => !afterSet.has(peerId)),
+            leftPeerIds: before.filter((peerId) => !afterSet.has(peerId))
         };
     }
 }

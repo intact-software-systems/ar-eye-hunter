@@ -1,10 +1,6 @@
-import type {
-    RallarBlackBoxTestRecipe,
-} from '../types.ts';
+import type { RallarBlackBoxTestRecipe } from '../types.ts';
 
-import type {
-    RallarBlackBoxCompositeConformanceRecipeOptions,
-} from '../composite-conformance.ts';
+import type { RallarBlackBoxCompositeConformanceRecipeOptions } from '../composite-conformance.ts';
 import {
     commandMetadata,
     configureCommand,
@@ -14,11 +10,11 @@ import {
     recipeMetadata,
     rtcConnectCommand,
     scopeFields,
-    timeoutMs,
+    timeoutMs
 } from '../conformance/composite-conformance-command-fixtures.ts';
 
 export function assertShapeCompleteViolatedRecipe(
-    options: RallarBlackBoxCompositeConformanceRecipeOptions,
+    options: RallarBlackBoxCompositeConformanceRecipeOptions
 ): RallarBlackBoxTestRecipe {
     const connection = options.connection ?? DEFAULT_CONNECTION;
     const roomId = options.roomId ?? DEFAULT_ROOM_ID;
@@ -36,7 +32,7 @@ export function assertShapeCompleteViolatedRecipe(
                 connection,
                 roomId,
                 transport,
-                options,
+                options
             ),
             {
                 kind: 'rtc.send',
@@ -47,15 +43,15 @@ export function assertShapeCompleteViolatedRecipe(
                 send: {
                     data: {
                         topic: 'rallar.conformance.assert-shape',
-                        items: ['expected-item', 'unexpected-item'],
+                        items: ['expected-item', 'unexpected-item']
                     },
                     roomId,
-                    ...scopeFields(options),
+                    ...scopeFields(options)
                 },
                 metadata: commandMetadata(
                     'assert-shape-complete-violated',
-                    'assert-shape-violated-send',
-                ),
+                    'assert-shape-violated-send'
+                )
             },
             {
                 kind: 'wait',
@@ -65,12 +61,12 @@ export function assertShapeCompleteViolatedRecipe(
                     kind: 'message',
                     topic: 'rallar.conformance.message',
                     payloadPath: 'data.topic',
-                    equals: 'rallar.conformance.assert-shape',
+                    equals: 'rallar.conformance.assert-shape'
                 },
                 metadata: commandMetadata(
                     'assert-shape-complete-violated',
-                    'assert-shape-violated-wait',
-                ),
+                    'assert-shape-violated-wait'
+                )
             },
             {
                 kind: 'assert',
@@ -79,13 +75,13 @@ export function assertShapeCompleteViolatedRecipe(
                 operator: 'matchesShapeComplete',
                 expected: {
                     topic: 'rallar.conformance.assert-shape',
-                    items: ['expected-item'],
+                    items: ['expected-item']
                 },
                 metadata: commandMetadata(
                     'assert-shape-complete-violated',
-                    'assert-shape-violated-complete',
-                ),
-            },
-        ],
+                    'assert-shape-violated-complete'
+                )
+            }
+        ]
     };
 }
