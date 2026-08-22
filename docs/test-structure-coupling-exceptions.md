@@ -2,16 +2,21 @@
 
 `npm run check:test-structure-coupling` is a full-tree advisory review aid. It detects
 tests coupled to production source text, file topology, ASTs, symbol spelling,
-source hashes or snapshots, line counts, call/import order, and migration or
-compatibility topology. A clean report does not prove that every test is
-semantic; a candidate is a prompt for human review, not an automatic failure.
+source hashes or snapshots, line counts, call/import order, mock invocation
+counts or order, hidden browser call logs, browser primitive probes, generated
+asset identity, and migration or compatibility topology. A clean report does
+not prove that every test is semantic; a candidate is a prompt for human
+review, not an automatic failure.
 
 Production code remains the primary design artifact. Delete or replace an
 incidental structural test with semantic coverage when production design
 improves. Retain one only when it protects an independently stated durable
-public, security, or compatibility boundary, or when it is a temporary ratchet
-with a named owner and removal condition. Do not use this registry as a blanket
-baseline or automatic grandfathering mechanism.
+public, security, compatibility, or interaction boundary, or when it is a
+temporary ratchet with a named owner and removal condition. An `interaction`
+contract additionally states why its count, absence, or order is independently
+observable and required, such as exactly-once payment, idempotency, retry,
+cache-suppression, or protocol-order behavior. Do not use this registry as a
+blanket baseline or automatic grandfathering mechanism.
 
 The `contracts` section states each independently meaningful domain contract
 in human language and links it to the exact executable assertion that proves
@@ -30,9 +35,14 @@ in what an occurrence _asserts_ re-keys it, a change in where it _sits_ does not
 The checker report still prints the live `path:line:column` for navigation.
 
 Every entry has a named `owner`. A `durable-boundary` entry additionally
-declares `boundary` as `public`, `security`, or `compatibility`. A
-`temporary-ratchet` entry additionally declares an assertion-specific
-`removalCondition`. Placeholder, escaped control-only, or vague values such as
+declares `boundary` as `public`, `security`, `compatibility`, or `interaction`.
+The linked contract for an `interaction` boundary additionally declares a
+structured `interactionRequirement` with `interactionKind` (`count`, `absence`,
+or `order`), `ownedPort`, `observableEffect`, `requiredConstraint`, and
+`failureRationale`. A
+`temporary-ratchet` entry additionally
+declares an assertion-specific `removalCondition`. Placeholder, escaped
+control-only, or vague values such as
 `TODO`, `none`, `later`, `...`, `-`, `semantic coverage`, or bracketed
 placeholders are not valid evidence. A contract with no current candidates is
 also invalid, so this document cannot accumulate orphan approvals.

@@ -509,31 +509,19 @@ test('shows the exact visible fallback for an invalid view', async ({ context, p
     expect(copied.searchParams.get('roomId')).toBe('room-safe');
 });
 
-test('canonicalizes initial and popstate URLs with replaceState', async ({ page }) => {
-    await page.addInitScript(() => {
-        const calls: string[] = [];
-        const replaceState = history.replaceState.bind(history);
-        history.replaceState = (data: unknown, unused: string, url?: string | URL | null): void => {
-            calls.push(String(url ?? ''));
-            replaceState(data, unused, url);
-        };
-        Object.defineProperty(window, '__recipeConsoleReplaceCalls', {
-            value: calls
-        });
-    });
+test('canonicalizes initial and popstate URLs without adding navigation entries', async ({ page }) => {
+    await page.goto(
+        '/?provider=simulated&experience=legacy&workspace=black-box-runner&tab=recipes'
+    );
+    await expect(page.locator('.app-shell')).toBeVisible();
+    const legacyHistoryLength = await page.evaluate(() => history.length);
 
     await page.goto('/?provider=simulated&futureField=keep&experience=recipe-console&view=execute');
     await expectVisibleView(page, 'execute');
-    const initialLength = await page.evaluate(() => history.length);
     await expect.poll(() => currentUrl(page).searchParams.get('v')).toBe('1');
-    await expect.poll(() =>
-        page.evaluate(() =>
-            (window as Window & { __recipeConsoleReplaceCalls: string[]; })
-                .__recipeConsoleReplaceCalls.length
-        )
-    ).toBe(1);
     await expect.poll(() => currentUrl(page).searchParams.get('recipeId'))
         .toBe('rtc-realtime-stability');
+    expect(await page.evaluate(() => history.length)).toBe(legacyHistoryLength + 1);
 
     await page.evaluate(() => {
         history.pushState(
@@ -549,74 +537,22 @@ test('canonicalizes initial and popstate URLs with replaceState', async ({ page 
         { exact: true }
     )).toBeVisible();
     await expect.poll(() => currentUrl(page).searchParams.get('view')).toBe('execute');
-    await expect.poll(() =>
-        page.evaluate(() =>
-            (window as Window & { __recipeConsoleReplaceCalls: string[]; })
-                .__recipeConsoleReplaceCalls.length
-        )
-    ).toBe(3);
-    expect(await page.evaluate(() => history.length)).toBe(initialLength + 1);
+    expect(await page.evaluate(() => history.length)).toBe(legacyHistoryLength + 2);
     expect(currentUrl(page).searchParams.get('futureField')).toBe('keep');
-});
 
-test('mounts the legacy 250ms clock only for the active legacy experience', async ({ page }) => {
-    await page.addInitScript(() => {
-        const active = new Map<number, number>();
-        const nativeSetInterval = window.setInterval.bind(window);
-        const nativeClearInterval = window.clearInterval.bind(window);
+    await page.goBack();
+    await expectVisibleView(page, 'execute');
+    await expect.poll(() => currentUrl(page).searchParams.get('recipeId'))
+        .toBe('rtc-realtime-stability');
+    await expect(page.getByText(
+        'view is not a supported Recipe Console view.',
+        { exact: true }
+    )).toHaveCount(0);
 
-        Object.defineProperty(window, 'setInterval', {
-            configurable: true,
-            value: (handler: TimerHandler, timeout?: number, ...args: unknown[]): number => {
-                const id = nativeSetInterval(handler, timeout, ...args);
-                active.set(id, timeout ?? 0);
-                return id;
-            },
-            writable: true
-        });
-        Object.defineProperty(window, 'clearInterval', {
-            configurable: true,
-            value: (id?: number): void => {
-                if (id !== undefined) {
-                    active.delete(id);
-                    nativeClearInterval(id);
-                }
-            },
-            writable: true
-        });
-        Object.defineProperty(window, '__recipeConsoleIntervalProbe', {
-            value: {
-                active250: (): number => [...active.values()].filter((timeout) => timeout === 250).length
-            }
-        });
-    });
-
-    const active250 = (): Promise<number> =>
-        page.evaluate(() =>
-            (window as Window & {
-                __recipeConsoleIntervalProbe: { active250(): number; };
-            }).__recipeConsoleIntervalProbe.active250()
-        );
-
-    await page.goto('/?provider=simulated&v=1&experience=recipe-console&view=execute');
-    await expect(page.locator('.recipe-console')).toBeVisible();
-    await expect.poll(active250).toBe(0);
-
-    await page.goto('/?provider=simulated&experience=legacy&workspace=black-box-runner&tab=recipes');
+    await page.goBack();
     await expect(page.locator('.app-shell')).toBeVisible();
-    await expect.poll(active250).toBeGreaterThanOrEqual(1);
-
-    await page.evaluate(() => {
-        history.pushState(
-            {},
-            '',
-            '/?provider=simulated&v=1&experience=recipe-console&view=monitor'
-        );
-        dispatchEvent(new PopStateEvent('popstate'));
-    });
-    await expectVisibleView(page, 'monitor');
-    await expect(page.locator('.app-shell')).toHaveCount(0);
-    await expect.poll(active250).toBe(0);
+    await expect.poll(() => currentUrl(page).searchParams.get('experience'))
+        .toBe('legacy');
 });
 
 test('preserves runner-agent launch ticket semantics in legacy', async ({ context, page }) => {

@@ -68,6 +68,7 @@ function scanBlock({ file, source, block, context }) {
         candidates.push(...readSourceFlowCandidates(callEvidence));
         candidates.push(...readStructureCandidates(callEvidence));
         candidates.push(...readAssertionCandidates(callEvidence));
+        candidates.push(...readHighSignalTestCouplingCandidates(callEvidence));
     });
     return candidates;
 }
@@ -221,6 +222,139 @@ function readAssertionCandidates(evidence) {
         );
     }
     return candidates;
+}
+
+function readHighSignalTestCouplingCandidates(evidence) {
+    const { node, source } = evidence;
+    const matcher = memberPropertyName(node.callee);
+    const callSource = source.slice(node.start, node.end);
+    const browserEvaluation = isBrowserEvaluationCall(node);
+    const detections = [
+        {
+            matches: isMockInvocationMatcher(matcher) ||
+                isNegatedMockPayloadAssertion(node, matcher) ||
+                isMockCallsCountAssertion(matcher, callSource) ||
+                isCompleteMockCallsAssertion(matcher, callSource) ||
+                isInvocationOrderAssertion(matcher, callSource),
+            kind: 'mock-invocation-count-or-order',
+            reason: 'pins mock invocation count or order'
+        },
+        {
+            matches: browserEvaluation && hasHiddenBrowserCallLog(callSource),
+            kind: 'browser-call-log',
+            reason: 'uses a hidden browser call log to reconstruct collaborator execution'
+        },
+        {
+            matches: browserEvaluation && monkeypatchesPlatformPrimitive(callSource),
+            kind: 'platform-scheduling-or-history-probe',
+            reason: 'monkeypatches browser history, scheduling, or worker topology'
+        },
+        {
+            matches: isGeneratedArtifactIdentityAssertion(matcher, callSource),
+            kind: 'generated-artifact-identity',
+            reason: 'pins generated chunk or worker asset identity'
+        }
+    ];
+    return detections
+        .filter(({ matches }) => matches)
+        .map(({ kind, reason }) => createCandidate({ ...evidence, location: node.callee, kind, reason }));
+}
+
+function isNegatedMockPayloadAssertion(node, matcher) {
+    return (
+        ['toBeCalledWith', 'toHaveBeenCalledWith'].includes(matcher) &&
+        node.callee.type === 'MemberExpression' &&
+        memberPropertyName(node.callee.object) === 'not'
+    );
+}
+
+function isMockCallsCountAssertion(matcher, callSource) {
+    if (matcher === 'toHaveLength') {
+        return /\.mock\s*\.\s*calls\b/u.test(callSource);
+    }
+    return (
+        [
+            'toBe',
+            'toEqual',
+            'toStrictEqual',
+            'toBeGreaterThan',
+            'toBeGreaterThanOrEqual',
+            'toBeLessThan',
+            'toBeLessThanOrEqual'
+        ].includes(
+            matcher
+        ) &&
+        /\.mock\s*\.\s*calls\s*\.\s*length\b/u.test(callSource)
+    );
+}
+
+function isMockInvocationMatcher(matcher) {
+    return [
+        'toBeCalled',
+        'toBeCalledTimes',
+        'toHaveBeenCalled',
+        'toHaveBeenCalledAfter',
+        'toHaveBeenCalledBefore',
+        'toHaveBeenCalledExactlyOnceWith',
+        'toHaveBeenCalledOnce',
+        'toHaveBeenCalledTimes',
+        'toHaveBeenLastCalledWith',
+        'toHaveBeenNthCalledWith'
+    ].includes(matcher);
+}
+
+function isCompleteMockCallsAssertion(matcher, callSource) {
+    return (
+        ['toEqual', 'toStrictEqual'].includes(matcher) &&
+        /\.mock\s*\.\s*calls\b/u.test(callSource)
+    );
+}
+
+function isInvocationOrderAssertion(matcher, callSource) {
+    return (
+        ['toBeLessThan', 'toBeLessThanOrEqual', 'toBeGreaterThan', 'toBeGreaterThanOrEqual'].includes(
+            matcher
+        ) &&
+        /\.mock\s*\.\s*invocationCallOrder\b/u.test(callSource)
+    );
+}
+
+function isBrowserEvaluationCall(node) {
+    return ['addInitScript', 'evaluate', 'evaluateHandle'].includes(memberPropertyName(node.callee));
+}
+
+function hasHiddenBrowserCallLog(source) {
+    return /(?:window|globalThis)\s*(?:\.\s*|\[\s*['"])__[A-Za-z0-9_$]*(?:CallLog|Calls|Invocations)\b/u.test(
+        source
+    );
+}
+
+function monkeypatchesPlatformPrimitive(source) {
+    const replacesPrimitive = /history\s*\.\s*(?:pushState|replaceState)\s*=/u.test(source) ||
+        /Object\s*\.\s*defineProperty\s*\(\s*(?:window\s*\.\s*)?history\s*,\s*['"](?:pushState|replaceState)['"]/u.test(
+            source
+        ) ||
+        /(?:window|globalThis)\s*\.\s*(?:setTimeout|setInterval|clearTimeout|clearInterval|requestAnimationFrame|cancelAnimationFrame|Worker)\s*=/u
+            .test(
+                source
+            ) ||
+        /Object\s*\.\s*defineProperty\s*\(\s*(?:window|globalThis)\s*,\s*['"](?:setTimeout|setInterval|clearTimeout|clearInterval|requestAnimationFrame|cancelAnimationFrame|Worker)['"]/u
+            .test(
+                source
+            );
+    return replacesPrimitive &&
+        /(?:__[A-Za-z0-9_$]*(?:Probe|CallLog|Calls|Invocations)|\b(?:activeTimers?|activeIntervals?|callLog|invocationOrder|scheduledCalls?)\b)/iu
+            .test(source);
+}
+
+function isGeneratedArtifactIdentityAssertion(matcher, source) {
+    if (!['toBe', 'toContain', 'toEqual', 'toMatch', 'toStrictEqual'].includes(matcher)) {
+        return false;
+    }
+    return /['"][^'"]*(?:(?:worker|chunk)[^'"]*\.m?js|(?:index|main|app)[.-][a-z0-9_-]{5,}\.m?js)(?:[?#][^'"]*)?['"]/iu
+        .test(
+            source
+        );
 }
 
 function isTreeCall(name) {

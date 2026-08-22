@@ -10,6 +10,12 @@
 
 <!-- List observable conditions that prove the outcome. -->
 
+**Test design evidence**
+
+- Behavior protected and observation boundary:
+- Retained interaction assertions (registry reference and rationale): None
+- Coupled or redundant tests removed or replaced: None
+
 ## Validation
 
 <!-- List passed, failed, and skipped validation with reasons. -->

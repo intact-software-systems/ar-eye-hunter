@@ -1,6 +1,11 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 
+import {
+    hasConcreteText,
+    hasMeaningfulText,
+    isConcreteInteractionRequirement
+} from './test-structure-coupling-interaction-requirement.mjs';
 import { readRevisionFile } from './test-structure-coupling-range-evidence.mjs';
 
 const registryPath = 'docs/test-structure-coupling-exceptions.md';
@@ -73,13 +78,23 @@ export function validateRegistry(registry, candidates) {
                 errors.push(`registry entry ${entry.id} has stale ${field}`);
             }
         }
-        if (!hasMeaningfulText(entry.contract) || !contracts.has(entry.contract)) {
+        const semanticContract = contracts.get(entry.contract);
+        if (!hasMeaningfulText(entry.contract) || !semanticContract) {
             errors.push(`registry entry ${entry.id} links unknown contract: ${entry.contract ?? ''}`);
         }
         else {
             linkedContracts.add(entry.contract);
-            if (entry.semanticCoverage !== contracts.get(entry.contract).semanticCoverage) {
+            if (entry.semanticCoverage !== semanticContract.semanticCoverage) {
                 errors.push(`registry entry ${entry.id} semanticCoverage does not match linked contract`);
+            }
+            if (
+                entry.disposition === 'durable-boundary' &&
+                entry.boundary === 'interaction' &&
+                !isConcreteInteractionRequirement(semanticContract.interactionRequirement)
+            ) {
+                errors.push(
+                    `interaction boundary contract requires an independently observable interaction requirement: ${entry.id}`
+                );
             }
         }
         validateDisposition(errors, entry);
@@ -209,9 +224,9 @@ function validateDisposition(errors, entry) {
         errors.push(`registry entry ${entry.id} uses a generated rationale formula`);
     }
     if (entry.disposition === 'durable-boundary') {
-        if (!['public', 'security', 'compatibility'].includes(entry.boundary)) {
+        if (!['public', 'security', 'compatibility', 'interaction'].includes(entry.boundary)) {
             errors.push(
-                `durable boundary entry requires public, security, or compatibility boundary: ${entry.id}`
+                `durable boundary entry requires public, security, compatibility, or interaction boundary: ${entry.id}`
             );
         }
     }
@@ -339,34 +354,6 @@ function evidenceStatus(entry) {
         return 'temporary-ratchet';
     }
     return 'invalid-registration';
-}
-
-function hasMeaningfulText(value) {
-    if (typeof value !== 'string') {
-        return false;
-    }
-    const text = value.trim();
-    return (
-        text.length > 0 && !/^(?:tbd|todo|none|later|\.\.\.|-)|^\[[^\]]*\]$|^<[^>]*>$/iu.test(text)
-    );
-}
-
-function hasConcreteText(value) {
-    if (!hasMeaningfulText(value)) {
-        return false;
-    }
-    const text = value.trim();
-    const visibleWords = text
-        .replace(/\\(?:[nrtbfv0]|u\{?[0-9a-f]{1,6}\}?)/giu, ' ')
-        .replace(/[\p{Cc}\p{Cf}\p{P}\p{S}]+/gu, ' ')
-        .trim()
-        .split(/\s+/u)
-        .filter(Boolean);
-    if (visibleWords.join('').length < 12) {
-        return false;
-    }
-    const vagueEvidence = /^(?:semantic coverage|runtime behavior|same file|supporting contract|source check)$/iu;
-    return !vagueEvidence.test(visibleWords.join(' '));
 }
 
 function hasSpecificSemanticCoverage(value) {

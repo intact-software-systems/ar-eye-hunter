@@ -1,6 +1,6 @@
 ---
 name: rallar-testing
-description: Use when deciding which Vitest, Deno, Vite, Playwright, package build, or black-box validation commands to run for Rallar package/app changes.
+description: Use when creating, modifying, reviewing, diagnosing, replacing, or deleting Rallar tests, mocks, fixtures, test support, or validation commands.
 ---
 
 # Rallar Testing
@@ -10,6 +10,38 @@ description: Use when deciding which Vitest, Deno, Vite, Playwright, package bui
 Read `references/test-commands.md` when choosing commands. Prefer targeted checks first, then broader builds or suites based on blast radius.
 
 `adaptive-plan-execution` owns working-plan and proportional-validation judgment.
+
+## Semantic Test Design Gate
+
+Before writing or retaining a test:
+
+1. Name the independent production break the test must catch.
+2. Exercise the lowest stable public or owned boundary that proves that break.
+3. Assert return values, errors, public state readback, artifacts, visible state,
+   or effects captured at an owned external port.
+4. Derive expectations independently of production helpers, builders, and
+   catalogs.
+5. Require behaviorally equivalent implementations to pass unchanged.
+6. Reuse, merge, replace, or delete coverage so each retained test protects a
+   distinct behavior or risk. Prefer fewer complete tests over overlapping
+   examples.
+
+Call count, absence, or order is evidence only when the interaction itself is
+the requirement: retry policy, idempotency, cache suppression, exactly-once
+effects, or prescribed protocol order. State the independently observable
+failure and assert at the owned port. If the coupling checker reports it, use a
+narrow `interaction` boundary whose semantic contract explains why that count,
+absence, or order is required. An ordinary outbound payload assertion such as
+`toHaveBeenCalledWith` is permitted at an owned port; it does not by itself pin
+invocation topology. Permission does not earn the assertion a place: retain it
+only when the payload is itself an independent contract that the result or
+captured effect does not already prove.
+
+When a test fails after a structure-only production change, classify the
+failure before editing production. If public behavior and independent contracts
+still hold, delete the obsolete test or replace it with semantic coverage.
+Never reshape production code to restore private helper calls, sequence,
+timing, asset names, or other incidental topology.
 
 ## AppInbox Mutation Gate
 

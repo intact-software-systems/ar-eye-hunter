@@ -1,3 +1,4 @@
+import { isConcreteInteractionRequirement } from '../test-structure-coupling-interaction-requirement.mjs';
 import { computeSha256, toCanonicalJson } from './canonical-json.mjs';
 
 const commonKeys = [
@@ -315,14 +316,25 @@ function validateTestCouplingProjection(projection, candidateHead) {
 }
 
 function validateSemanticContract(contract) {
-    const optionalKeys = contract?.sharedCoverageGroup === undefined ? [] : ['sharedCoverageGroup'];
+    const optionalKeys = [
+        ...(contract?.sharedCoverageGroup === undefined ? [] : ['sharedCoverageGroup']),
+        ...(contract?.interactionRequirement === undefined ? [] : ['interactionRequirement'])
+    ];
     requireExactKeys(
         contract,
         ['id', 'domain', 'owner', 'summary', 'semanticCoverage', 'coverageRelation', ...optionalKeys],
         'test-structure-coupling semanticContract'
     );
-    for (const field of Object.keys(contract)) {
+    for (const field of Object.keys(contract).filter((field) => field !== 'interactionRequirement')) {
         requireNonEmptyText(contract[field], `test-structure-coupling semanticContract.${field}`);
+    }
+    if (
+        contract.interactionRequirement !== undefined &&
+        !isConcreteInteractionRequirement(contract.interactionRequirement)
+    ) {
+        throw new Error(
+            'test-structure-coupling interactionRequirement must define interactionKind, ownedPort, observableEffect, requiredConstraint, and failureRationale'
+        );
     }
 }
 
@@ -333,8 +345,16 @@ function validateTestCouplingDisposition(disposition, semanticContract) {
             ['kind', 'boundary', 'owner', 'rationale', 'semanticCoverage'],
             'test-structure-coupling durable disposition'
         );
-        if (!['public', 'security', 'compatibility'].includes(disposition.boundary)) {
+        if (!['public', 'security', 'compatibility', 'interaction'].includes(disposition.boundary)) {
             throw new Error('test-structure-coupling durable disposition boundary is unsupported');
+        }
+        if (
+            disposition.boundary === 'interaction' &&
+            semanticContract.interactionRequirement === undefined
+        ) {
+            throw new Error(
+                'test-structure-coupling interaction boundary requires semanticContract.interactionRequirement'
+            );
         }
     }
     else if (disposition?.kind === 'temporary-ratchet') {

@@ -128,6 +128,76 @@ describe('governance decision exception contracts', () => {
         }
     });
 
+    it('accepts an authenticated interaction boundary with an explicit observable requirement', () => {
+        const projection = interactionTestCouplingProjection();
+        const request = decodeGovernanceDecisionRequest(
+            exceptionApprovalRequest('test-structure-coupling', projection)
+        );
+
+        expect(request.payload).toEqual({ projection });
+    });
+
+    it('rejects an authenticated interaction boundary without its interaction requirement', () => {
+        const projection = interactionTestCouplingProjection();
+        const { interactionRequirement, ...semanticContract } = projection.semanticContract;
+
+        expect(interactionRequirement.interactionKind).toBe('count');
+
+        expect(() =>
+            decodeGovernanceDecisionRequest(
+                exceptionApprovalRequest('test-structure-coupling', {
+                    ...projection,
+                    semanticContract
+                })
+            )
+        ).toThrow(
+            'test-structure-coupling interaction boundary requires semanticContract.interactionRequirement'
+        );
+    });
+
+    it('rejects a vague authenticated interaction requirement', () => {
+        const projection = interactionTestCouplingProjection();
+
+        expect(() =>
+            decodeGovernanceDecisionRequest(
+                exceptionApprovalRequest('test-structure-coupling', {
+                    ...projection,
+                    semanticContract: {
+                        ...projection.semanticContract,
+                        interactionRequirement: 'Visible external gateway count must be preserved exactly once.'
+                    }
+                })
+            )
+        ).toThrow(
+            'test-structure-coupling interactionRequirement must define interactionKind, ownedPort, observableEffect, requiredConstraint, and failureRationale'
+        );
+    });
+
+    it('rejects placeholder-filled authenticated interaction evidence', () => {
+        const projection = interactionTestCouplingProjection();
+        const placeholderEvidence = 'TODO TODO TODO';
+
+        expect(() =>
+            decodeGovernanceDecisionRequest(
+                exceptionApprovalRequest('test-structure-coupling', {
+                    ...projection,
+                    semanticContract: {
+                        ...projection.semanticContract,
+                        interactionRequirement: {
+                            interactionKind: 'count',
+                            ownedPort: placeholderEvidence,
+                            observableEffect: placeholderEvidence,
+                            requiredConstraint: placeholderEvidence,
+                            failureRationale: placeholderEvidence
+                        }
+                    }
+                })
+            )
+        ).toThrow(
+            'test-structure-coupling interactionRequirement must define interactionKind, ownedPort, observableEffect, requiredConstraint, and failureRationale'
+        );
+    });
+
     it('revokes exactly one prior approval decision without accepting a projection', () => {
         const priorDecisionId = 'a'.repeat(64);
         const request = decodeGovernanceDecisionRequest({
@@ -253,6 +323,42 @@ function testCouplingProjection() {
             owner: 'Example maintainers',
             rationale: 'The source read protects a published ownership boundary.',
             semanticCoverage: 'packages/tests/example/public.test.ts#keeps the public contract callable'
+        },
+        candidateHead
+    };
+}
+
+function interactionTestCouplingProjection() {
+    const semanticCoverage = 'packages/tests/example/payment.test.ts#does not charge twice for one idempotency key';
+    return {
+        candidate: {
+            id: 'test-structure-coupling-payment-count',
+            path: 'packages/tests/example/payment.test.ts',
+            line: 24,
+            column: 5,
+            kind: 'mock-invocation-count-or-order'
+        },
+        semanticContract: {
+            id: 'payment-idempotency-contract',
+            domain: 'Payment idempotency',
+            owner: 'Payment maintainers',
+            summary: 'One idempotency key creates at most one external charge.',
+            semanticCoverage,
+            coverageRelation: 'The test retries the same payment command and observes the receipt and gateway effect.',
+            interactionRequirement: {
+                interactionKind: 'count',
+                ownedPort: 'PaymentGateway.charge',
+                observableEffect: 'A gateway charge appears on the customer payment account.',
+                requiredConstraint: 'No more than one charge may occur for each idempotency key.',
+                failureRationale: 'A duplicate gateway call bills the same customer twice.'
+            }
+        },
+        disposition: {
+            kind: 'durable-boundary',
+            boundary: 'interaction',
+            owner: 'Payment maintainers',
+            rationale: 'The invocation count prevents a duplicate external financial effect.',
+            semanticCoverage
         },
         candidateHead
     };

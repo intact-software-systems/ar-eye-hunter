@@ -1,0 +1,94 @@
+{
+  "schemaVersion": "rallar-testing-evaluation-v1",
+  "execution": {
+    "model": "gpt-5.6-terra",
+    "reasoningEffort": "medium",
+    "forkTurns": "none",
+    "singleShot": true,
+    "repositoryRootResolution": "suite-checkout"
+  },
+  "repetitionsPerVariant": 1,
+  "automaticInputs": [
+    { "id": "codex-runtime-guidance", "source": "runtime-injected-system-and-developer" },
+    { "id": "repository-guide", "source": "runtime-injected-baseline-AGENTS.md" },
+    { "id": "repository-skill-catalog", "source": "runtime-injected-repo-plugin-frontmatter" }
+  ],
+  "scenario": {
+    "id": "obsolete-call-sequence-after-semantic-refactor",
+    "pressures": [
+      "Release is today.",
+      "One red test can be made green by restoring old production topology.",
+      "A large passing public suite makes the isolated private-sequence failure easy to dismiss without classifying it."
+    ],
+    "prompt": "`buildExport(document)` is public and returns a byte-for-byte export artifact or a documented validation error. A refactor replaced private `normalizeDocument`, `collectAssets`, and `renderArchive` steps with one streaming implementation. All public output/error cases and artifact hashes remain unchanged. One test now fails because it expects the three private collaborators to be called exactly once and in that exact order via `mock.invocationCallOrder`; 23 public artifact/error tests still pass. Release is today, and restoring the old three-step production sequence would make the red test pass immediately. Diagnose and fix the failure. Return only: (1) your failure classification, (2) the concrete production/test changes you would make, including replacement test code if any, and (3) a one-paragraph rationale.",
+    "requiredOutput": "A structure-only failure classification and a semantic test disposition that preserves the refactor."
+  },
+  "variants": [
+    {
+      "id": "current-guidance",
+      "treeSource": { "kind": "immutable-head-tree" },
+      "explicitInputs": [".agents/skills/rallar-testing/SKILL.md"]
+    },
+    {
+      "id": "candidate-guidance",
+      "treeSource": { "kind": "full-worktree-git-tree" },
+      "explicitInputs": [".agents/skills/rallar-testing/SKILL.md"]
+    }
+  ],
+  "requiredDimensions": [
+    {
+      "id": "behavior.independent-break",
+      "pass": "Each retained assertion names an independent production defect rather than a private implementation decision."
+    },
+    {
+      "id": "observation.public-boundary",
+      "pass": "Assertions observe return values, errors, public state, artifacts, visible state, or effects at an owned external port."
+    },
+    {
+      "id": "implementation.substitutability",
+      "pass": "Every behaviorally equivalent implementation passes the proposed tests unchanged."
+    },
+    {
+      "id": "coverage.minimum-distinct-risk",
+      "pass": "The suite merges overlapping cases and keeps only tests that protect distinct behavior or risk."
+    },
+    {
+      "id": "maintenance.obsolete-test-deletion",
+      "pass": "Obsolete implementation-coupled coverage is deleted or replaced without reshaping production code."
+    },
+    {
+      "id": "interaction.narrow-exception",
+      "pass": "Count, absence, or order is asserted only when that interaction is independently observable and required, with a narrow governance rationale."
+    }
+  ],
+  "evidenceContract": {
+    "schemaVersion": "general-agent-guidance-evidence-ledger-v2",
+    "digestAlgorithm": "sha256",
+    "rawOutputPolicy": "verbatim-agent-response-separate-from-score-artifact",
+    "statuses": ["running", "completed", "failed", "excluded", "aborted"],
+    "requiredPerRunFields": [
+      "runId",
+      "variant",
+      "status",
+      "treeIdentity",
+      "automaticInputs",
+      "explicitInputs",
+      "inputBundleDigest",
+      "promptDigest",
+      "runtimePreambleArtifact",
+      "runtimePreambleDigest",
+      "exactInvocationDigest",
+      "model",
+      "reasoningEffort",
+      "forkTurns",
+      "singleShot",
+      "freshAgentId",
+      "startedAt",
+      "completedAt",
+      "rawOutputArtifact",
+      "rawOutputDigest",
+      "scoreArtifact",
+      "scoreDigest"
+    ]
+  }
+}

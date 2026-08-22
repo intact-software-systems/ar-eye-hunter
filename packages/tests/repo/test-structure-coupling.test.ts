@@ -70,6 +70,93 @@ describe('test structure-coupling review', () => {
         expect(result.stdout).toContain('migration-or-compatibility-topology');
     });
 
+    it('reports high-signal mock, browser topology, platform probe, and asset identity candidates', () => {
+        const fixture = createGitFixture({
+            'packages/tests/example/high-signal.test.ts': [
+                'import { expect, vi } from \'vitest\';',
+                '',
+                'const collaborator = vi.fn();',
+                'expect(collaborator).toHaveBeenCalledTimes(2);',
+                'expect(collaborator).toHaveBeenNthCalledWith(1, \'first\');',
+                'expect(collaborator.mock.calls).toEqual([[\'first\'], [\'second\']]);',
+                'expect(collaborator.mock.invocationCallOrder[0]).toBeLessThan(',
+                '  collaborator.mock.invocationCallOrder[1],',
+                ');',
+                'await page.addInitScript(() => {',
+                '  window.__rallarCallLog = [];',
+                '  const replaceState = history.replaceState.bind(history);',
+                '  history.replaceState = (...args) => {',
+                '    window.__rallarCallLog.push(args);',
+                '    return replaceState(...args);',
+                '  };',
+                '});',
+                'await page.addInitScript(() => {',
+                '  Object.defineProperty(window, \'setInterval\', { value: () => 17 });',
+                '  window.Worker = class WorkerProbe extends Worker {};',
+                '});',
+                'expect(workerUrl).toBe(\'/assets/export-worker-a1b2c3.js\');',
+                'expect(chunkUrl).toEqual(\'/assets/index-d4e5f6.js\');'
+            ].join('\n')
+        });
+
+        const result = runChecker(fixture);
+
+        expect(result.status, result.stdout).toBe(0);
+        for (
+            const kind of [
+                'mock-invocation-count-or-order',
+                'browser-call-log',
+                'platform-scheduling-or-history-probe',
+                'generated-artifact-identity'
+            ]
+        ) {
+            expect(result.stdout).toContain(kind);
+        }
+    });
+
+    it('does not report ordinary owned-port payloads, boundary fakes, or browser state assertions', () => {
+        const fixture = createGitFixture({
+            'packages/tests/example/public-boundary.test.ts': [
+                'import { expect, vi } from \'vitest\';',
+                '',
+                'const paymentGateway = { charge: vi.fn() };',
+                'expect(paymentGateway.charge).toHaveBeenCalledWith({ amountOre: 2_500 });',
+                'expect(fakePaymentGateway.charges).toEqual([{ amountOre: 2_500 }]);',
+                'await page.goBack();',
+                'expect(page.url()).toContain(\'receiptId=receipt-1\');',
+                'await page.addInitScript(() => {',
+                '  window.Worker = class OwnedBoundaryWorker {};',
+                '  Object.defineProperty(window, \'setTimeout\', { value: callback => callback() });',
+                '});',
+                'expect(workerResponse.headers()[\'content-type\']).toContain(\'javascript\');'
+            ].join('\n')
+        });
+
+        const result = runChecker(fixture);
+
+        expect(result.status, result.stdout).toBe(0);
+        expect(result.stdout).toContain('PASS: no current structure-coupled test candidates');
+    });
+
+    it('reports negated payload absence and mock call-array count assertions', () => {
+        const fixture = createGitFixture({
+            'packages/tests/example/interaction-topology.test.ts': [
+                'import { expect, vi } from \'vitest\';',
+                'const paymentGateway = { charge: vi.fn() };',
+                'expect(paymentGateway.charge).not.toHaveBeenCalledWith({ amountOre: 2_500 });',
+                'expect(paymentGateway.charge.mock.calls).toHaveLength(1);',
+                'expect(paymentGateway.charge.mock.calls.length).toBe(1);'
+            ].join('\n')
+        });
+
+        const result = runChecker(fixture);
+        const candidates = readCandidates(result.stdout);
+
+        expect(result.status, result.stdout).toBe(0);
+        expect(candidates).toHaveLength(3);
+        expect(candidates.every(({ kind }) => kind === 'mock-invocation-count-or-order')).toBe(true);
+    });
+
     it('does not flag governance tests that read canonical guidance rather than production source', () => {
         const fixture = createGitFixture({
             'docs/repo-human-style-guide.md': '# Canonical guidance\n',
@@ -203,6 +290,83 @@ describe('test structure-coupling review', () => {
             'PASS: all 3 current structure-coupling candidates are individually classified'
         );
         expect(result.stdout).toContain('PASS: registry entries are complete and current');
+    });
+
+    it('accepts a durable interaction boundary with an independently observable requirement', () => {
+        const fixture = createGitFixture({
+            'packages/tests/example/payment-idempotency.test.ts': [
+                'import { expect, vi } from \'vitest\';',
+                'const paymentGateway = { charge: vi.fn() };',
+                'expect(paymentGateway.charge).toHaveBeenCalledTimes(1);'
+            ].join('\n')
+        });
+        const candidates = readCandidates(runChecker(fixture).stdout);
+        writeRegistry(
+            fixture.root,
+            candidates.map(interactionEntry),
+            [interactionContract()]
+        );
+
+        const result = runChecker(fixture);
+
+        expect(result.status, result.stdout).toBe(0);
+        expect(result.stdout).toContain('evidence=durable-interaction-boundary');
+        expect(result.stdout).toContain('PASS: registry entries are complete and current');
+    });
+
+    it('rejects an interaction boundary whose semantic contract omits the interaction requirement', () => {
+        const fixture = createGitFixture({
+            'packages/tests/example/payment-idempotency.test.ts': [
+                'import { expect, vi } from \'vitest\';',
+                'const paymentGateway = { charge: vi.fn() };',
+                'expect(paymentGateway.charge).toHaveBeenCalledTimes(1);'
+            ].join('\n')
+        });
+        const candidates = readCandidates(runChecker(fixture).stdout);
+        writeRegistry(
+            fixture.root,
+            candidates.map(interactionEntry),
+            [exampleContract('payment-idempotency-contract')]
+        );
+
+        const result = runChecker(fixture);
+
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain(
+            'interaction boundary contract requires an independently observable interaction requirement'
+        );
+    });
+
+    it('rejects a vague interaction requirement even when it is nonempty', () => {
+        const fixture = createGitFixture({
+            'packages/tests/example/payment-idempotency.test.ts': [
+                'import { expect, vi } from \'vitest\';',
+                'const paymentGateway = { charge: vi.fn() };',
+                'expect(paymentGateway.charge).toHaveBeenCalledTimes(1);'
+            ].join('\n')
+        });
+        const candidates = readCandidates(runChecker(fixture).stdout);
+        writeRegistry(
+            fixture.root,
+            candidates.map(interactionEntry),
+            [{
+                ...interactionContract(),
+                interactionRequirement: {
+                    interactionKind: 'count',
+                    ownedPort: 'TODO TODO TODO',
+                    observableEffect: 'TODO TODO TODO',
+                    requiredConstraint: 'TODO TODO TODO',
+                    failureRationale: 'TODO TODO TODO'
+                }
+            }]
+        );
+
+        const result = runChecker(fixture);
+
+        expect(result.status).toBe(1);
+        expect(result.stdout).toContain(
+            'interaction boundary contract requires an independently observable interaction requirement'
+        );
     });
 
     it('rejects incomplete, duplicate, and stale registrations while keeping unreviewed candidates advisory', () => {
@@ -488,6 +652,44 @@ describe('test structure-coupling review', () => {
         expect(result.stdout).toContain(
             'semanticCoverage is reused by multiple contracts without an explicit shared coverage group'
         );
+    });
+
+    it('blocks an unchanged high-signal finding anywhere in a touched test file', () => {
+        const fixture = createGitFixture({
+            'packages/tests/example/payment-idempotency.test.ts': [
+                'import { expect, it, vi } from \'vitest\';',
+                'const paymentGateway = { charge: vi.fn() };',
+                'it(\'charges once\', () => {',
+                '  expect(paymentGateway.charge).toHaveBeenCalledTimes(1);',
+                '});',
+                'it(\'returns the receipt\', () => expect(receipt.id).toBe(\'receipt-1\'));'
+            ].join('\n')
+        });
+        const base = runGit(fixture.root, ['rev-parse', 'HEAD']).trim();
+        writeFileSync(
+            path.join(fixture.root, 'packages/tests/example/payment-idempotency.test.ts'),
+            [
+                'import { expect, it, vi } from \'vitest\';',
+                'const paymentGateway = { charge: vi.fn() };',
+                'it(\'charges once\', () => {',
+                '  expect(paymentGateway.charge).toHaveBeenCalledTimes(1);',
+                '});',
+                'it(\'returns the receipt identifier\', () => expect(receipt.id).toBe(\'receipt-1\'));'
+            ].join('\n')
+        );
+        const head = commitFixture(fixture.root, 'rename unrelated semantic test');
+
+        expect(runGit(fixture.root, ['diff', '--name-status', base, head])).toContain(
+            'M\tpackages/tests/example/payment-idempotency.test.ts'
+        );
+        expect(runChecker(fixture).stdout).toContain('mock-invocation-count-or-order');
+
+        const result = runChecker(fixture, ['--changed', base, head]);
+
+        expect(result.status, result.stdout).toBe(1);
+        expect(result.stdout).toContain('mock-invocation-count-or-order');
+        expect(result.stdout).toContain('change=touched');
+        expect(result.stdout).toContain('FAIL: changed candidate lacks individual classification');
     });
 
     it('reports changed-range candidate deletion neutrally rather than claiming a semantic replacement', () => {
@@ -919,8 +1121,8 @@ function createGitFixture(files: Record<string, string>): { readonly root: strin
 
 function writeRegistry(
     root: string,
-    entries: readonly Record<string, unknown>[],
-    contracts: readonly Record<string, unknown>[] = entries.length > 0 ? [exampleContract()] : []
+    entries: readonly RegistryEntry[],
+    contracts: readonly SemanticContract[] = entries.length > 0 ? [exampleContract()] : []
 ) {
     const registryPath = path.join(root, 'docs/test-structure-coupling-exceptions.md');
     mkdirSync(path.dirname(registryPath), { recursive: true });
@@ -961,7 +1163,7 @@ function readCandidates(output: string): readonly TestCandidate[] {
     });
 }
 
-function durableEntry(candidate: TestCandidate): Record<string, unknown> {
+function durableEntry(candidate: TestCandidate): RegistryEntry {
     return {
         ...candidate,
         contract: 'example-public-contract',
@@ -973,7 +1175,19 @@ function durableEntry(candidate: TestCandidate): Record<string, unknown> {
     };
 }
 
-function temporaryEntry(candidate: TestCandidate): Record<string, unknown> {
+function interactionEntry(candidate: TestCandidate): RegistryEntry {
+    return {
+        ...candidate,
+        contract: 'payment-idempotency-contract',
+        disposition: 'durable-boundary',
+        boundary: 'interaction',
+        owner: 'payments-owner',
+        rationale: 'The charge count proves that an idempotent retry cannot bill the customer twice.',
+        semanticCoverage: 'packages/tests/example/payment-idempotency.test.ts#does not charge twice for one idempotency key'
+    };
+}
+
+function temporaryEntry(candidate: TestCandidate): RegistryEntry {
     return {
         ...candidate,
         contract: 'example-public-contract',
@@ -985,7 +1199,7 @@ function temporaryEntry(candidate: TestCandidate): Record<string, unknown> {
     };
 }
 
-function exampleContract(id = 'example-public-contract'): Record<string, unknown> {
+function exampleContract(id = 'example-public-contract'): SemanticContract {
     return {
         id,
         domain: 'Example package public API',
@@ -993,6 +1207,24 @@ function exampleContract(id = 'example-public-contract'): Record<string, unknown
         summary: 'Consumers can call the public API and observe its documented result.',
         semanticCoverage: 'packages/tests/example/public-contract.test.ts#exposes the public behavior',
         coverageRelation: 'The executable public API assertion observes the consumer result protected by this boundary.'
+    };
+}
+
+function interactionContract(): SemanticContract {
+    return {
+        id: 'payment-idempotency-contract',
+        domain: 'Payment idempotency',
+        owner: 'payments-owner',
+        summary: 'One idempotency key creates at most one external payment charge.',
+        semanticCoverage: 'packages/tests/example/payment-idempotency.test.ts#does not charge twice for one idempotency key',
+        coverageRelation: 'The executable test retries one command and observes both the stable receipt and the payment gateway effect.',
+        interactionRequirement: {
+            interactionKind: 'count',
+            ownedPort: 'PaymentGateway.charge',
+            observableEffect: 'A gateway charge appears on the customer payment account.',
+            requiredConstraint: 'No more than one charge may occur for each idempotency key.',
+            failureRationale: 'A duplicate gateway call bills the same customer twice.'
+        }
     };
 }
 
@@ -1012,4 +1244,31 @@ interface TestCandidate {
     readonly line: number;
     readonly column: number;
     readonly kind: string;
+}
+
+interface RegistryEntry extends TestCandidate {
+    readonly contract?: string;
+    readonly disposition?: string;
+    readonly boundary?: string;
+    readonly owner?: string;
+    readonly rationale?: string;
+    readonly semanticCoverage?: string;
+    readonly removalCondition?: string;
+}
+
+interface SemanticContract {
+    readonly id: string;
+    readonly domain?: string;
+    readonly owner?: string;
+    readonly summary?: string;
+    readonly semanticCoverage?: string;
+    readonly coverageRelation?: string;
+    readonly sharedCoverageGroup?: string;
+    readonly interactionRequirement?: {
+        readonly interactionKind: 'absence' | 'count' | 'order';
+        readonly ownedPort: string;
+        readonly observableEffect: string;
+        readonly requiredConstraint: string;
+        readonly failureRationale: string;
+    };
 }
