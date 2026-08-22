@@ -1,6 +1,10 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 
+import { toDescriptorCommand } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
+import type {
+    GroupMutationDescriptor
+} from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import {
     toGroupMutationDescriptorTargetIdentity
 } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
@@ -8,12 +12,16 @@ import { validateGroupMutationCommand } from '@shared-server/rallar-system/group
 import {
     toScopedGroupMutationCommandIdFromIdentity
 } from '@shared-server/rallar-system/group-state/scoped-group-mutation-command-id.ts';
+import { toGroupAppInboxOperation } from '@shared-server/rallar-system/services/app-inbox-command-wire.ts';
+import { type AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
 import {
     validateGroupMutationIdempotencyRecord,
     type GroupMutationIdempotencyRecord
 } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import {
     decodeJsonWireValue,
+    hashMutationCommand,
+    serializeCanonicalMutationCommand,
     type JsonWireObject,
     type JsonWireValue
 } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
@@ -23,11 +31,12 @@ import type { Sql } from 'postgres';
 export interface ScopedGroupCommandIdentity {
     readonly requestId: string;
     readonly commandId: string;
+    readonly commandHash: string;
 }
 
 export interface ScopedGroupCommandExpectation {
     readonly requestId: string;
-    readonly topicId: string;
+    readonly topicId: AppInboxType;
     readonly logicalContextId: string;
     readonly groupRef: GroupRef;
     readonly actorPrincipalId: string;
@@ -40,15 +49,15 @@ interface PersistedScopedGroupCommandRow {
     readonly ri_resource: string;
 }
 
-interface ReadScopedGroupCommandIdsByRequestIdInput {
+interface ReadScopedGroupCommandsByRequestIdInput {
     readonly sql: Sql;
     readonly expectations: readonly ScopedGroupCommandExpectation[];
 }
 
-export async function readScopedGroupCommandIdsByRequestId({
+export async function readScopedGroupCommandsByRequestId({
     sql,
     expectations
-}: ReadScopedGroupCommandIdsByRequestIdInput): Promise<ReadonlyMap<string, string>> {
+}: ReadScopedGroupCommandsByRequestIdInput): Promise<ReadonlyMap<string, ScopedGroupCommandIdentity>> {
     const expectationByPhysicalKey = new Map<string, ScopedGroupCommandExpectation>();
     for (const expectation of expectations) {
         const physicalKey = toPhysicalKey(toScopedGroupCommandQueueKey(expectation));
@@ -71,7 +80,7 @@ export async function readScopedGroupCommandIdsByRequestId({
         ...new Set(expectations.map((entry) => toScopedGroupCommandQueueKey(entry).contextId))
     ]})
     `;
-    const identities = new Map<string, string>();
+    const identities = new Map<string, ScopedGroupCommandIdentity>();
     for (const row of rows) {
         const expectation = expectationByPhysicalKey.get(toPhysicalKey({
             resourceId: row.ri_resource_id,
@@ -88,12 +97,18 @@ export async function readScopedGroupCommandIdsByRequestId({
             );
         }
         const previous = identities.get(identity.requestId);
-        if (previous !== undefined && previous !== identity.commandId) {
+        if (
+            previous !== undefined &&
+            (
+                previous.commandId !== identity.commandId ||
+                previous.commandHash !== identity.commandHash
+            )
+        ) {
             throw new Error(
                 `Benchmark request ID resolves to multiple scoped group commands: ${identity.requestId}`
             );
         }
-        identities.set(identity.requestId, identity.commandId);
+        identities.set(identity.requestId, identity);
     }
     return identities;
 }
@@ -135,6 +150,7 @@ export async function readScopedGroupCommandIdentity(
     }
     const authorityProof = asJsonWireObject(preparation.authorityProof);
     const descriptor = asJsonWireObject(preparation.descriptor);
+    const facts = asJsonWireObject(preparation.facts);
     const command = preparation.command;
     if (
         authorityProof?.principalId !== expectation.actorPrincipalId ||
@@ -155,6 +171,21 @@ export async function readScopedGroupCommandIdentity(
     catch {
         return undefined;
     }
+    const expectedOperation = toGroupAppInboxOperation(expectation.topicId);
+    let semanticCommand;
+    let commandHash;
+    try {
+        semanticCommand = toDescriptorCommand(
+            descriptor as unknown as GroupMutationDescriptor,
+            () => {
+                throw new TypeError('Benchmark group mutation request ID is required');
+            }
+        );
+        commandHash = await hashMutationCommand(semanticCommand as JsonWireValue);
+    }
+    catch {
+        return undefined;
+    }
     const descriptorScope = asJsonWireObject(descriptor.scope);
     const descriptorRequest = asJsonWireObject(descriptor.request);
     const targetIdentity = toGroupMutationDescriptorTargetIdentity(command);
@@ -166,7 +197,14 @@ export async function readScopedGroupCommandIdentity(
         descriptor.targetPrincipalId !== targetIdentity.targetPrincipalId ||
         descriptor.sessionId !== targetIdentity.sessionId ||
         descriptorRequest?.requestId !== expectation.requestId ||
+        expectedOperation === undefined ||
+        command.operation !== expectedOperation ||
         descriptor.operation !== command.operation ||
+        serializeCanonicalMutationCommand(command) !== serializeCanonicalMutationCommand({
+                ...semanticCommand,
+                commandId: command.commandId
+            } as JsonWireValue) ||
+        facts?.commandHash !== commandHash ||
         command.requestId !== expectation.requestId ||
         command.aggregateRef.applicationId !== expectation.groupRef.applicationId ||
         command.aggregateRef.workspaceId !== expectation.groupRef.workspaceId ||
@@ -187,7 +225,7 @@ export async function readScopedGroupCommandIdentity(
     ) {
         return undefined;
     }
-    return { requestId: expectation.requestId, commandId: command.commandId };
+    return { requestId: expectation.requestId, commandId: command.commandId, commandHash };
 }
 
 function toScopedGroupCommandQueueKey(expectation: ScopedGroupCommandExpectation) {
@@ -201,15 +239,13 @@ function toScopedGroupCommandQueueKey(expectation: ScopedGroupCommandExpectation
 interface IsValidatedGroupReceiptIdentityInput {
     readonly value: Parameters<typeof validateGroupMutationIdempotencyRecord>[0];
     readonly ref: GroupRef;
-    readonly scopedCommandId: string;
-    readonly requestId: string;
+    readonly scopedCommand: ScopedGroupCommandIdentity;
 }
 
 export function readValidatedGroupReceiptIdentity({
     value,
     ref,
-    scopedCommandId,
-    requestId
+    scopedCommand
 }: IsValidatedGroupReceiptIdentityInput): GroupMutationIdempotencyRecord | undefined {
     try {
         validateGroupMutationIdempotencyRecord(value, ref);
@@ -217,9 +253,11 @@ export function readValidatedGroupReceiptIdentity({
     catch {
         return undefined;
     }
-    return value.requestId === scopedCommandId &&
-            value.receipt.commandId === scopedCommandId &&
-            value.receipt.requestId === requestId
+    return value.requestId === scopedCommand.commandId &&
+            value.commandHash === scopedCommand.commandHash &&
+            value.receipt.commandId === scopedCommand.commandId &&
+            value.receipt.requestId === scopedCommand.requestId &&
+            value.receipt.commandHash === scopedCommand.commandHash
         ? value
         : undefined;
 }

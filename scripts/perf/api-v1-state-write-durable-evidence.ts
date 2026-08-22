@@ -22,9 +22,16 @@ topology-config-mutation-boundary.ts';
 import type { Sql } from 'postgres';
 
 import { toPSqlSql } from '../../apps/api-v1/src/db/to-p-sql-sql.ts';
-import { parsePersistedResult, readAppInboxCommandType } from './api-v1-state-write-attempt-evidence.ts';
 import {
-    readScopedGroupCommandIdsByRequestId,
+    readStateWriteAppInboxIdentity,
+    readStateWriteBenchmarkClientIndex,
+    toStateWriteAppInboxExpectations,
+    toStateWriteBenchmarkGroupContextId,
+    type StateWriteAppInboxExpectation
+} from './api-v1-state-write-app-inbox-evidence.ts';
+import { parsePersistedResult } from './api-v1-state-write-attempt-evidence.ts';
+import {
+    readScopedGroupCommandsByRequestId,
     readValidatedGroupReceiptIdentity,
     type ScopedGroupCommandExpectation
 } from './api-v1-state-write-group-receipt-evidence.ts';
@@ -33,7 +40,6 @@ import {
     computeProductionOutboxExpectations,
     createProductionOutboxRepository,
     productionCommandIdsForRaw,
-    readAllCommandIds,
     readReferencedProductionOutboxRecords,
     type StateWriteResourceOutboxEvidence
 } from './api-v1-state-write-outbox-evidence.ts';
@@ -73,6 +79,7 @@ interface AppInboxAttemptEvidence {
     readonly operationId: string;
     readonly resourceId: string;
     readonly topicId: string;
+    readonly contextId: string;
     readonly status: string;
     readonly resultStatus: string;
     readonly attempts: number;
@@ -105,7 +112,12 @@ export async function queryStateWriteDurableEvidence({
     const topology = new GroupTopologyConfigRepository(runtime);
     const outbox = createProductionOutboxRepository(sql);
     const acceptedCommands = commands.filter((command) => command.status === 'accepted');
-    const scopedGroupCommandIds = await readScopedGroupCommandIdsByRequestId({
+    const appInboxExpectations = toStateWriteAppInboxExpectations(
+        acceptedCommands,
+        scope,
+        groupCount
+    );
+    const scopedGroupCommands = await readScopedGroupCommandsByRequestId({
         sql,
         expectations: createScopedGroupCommandExpectations(acceptedCommands, scope, groupCount)
     });
@@ -113,7 +125,7 @@ export async function queryStateWriteDurableEvidence({
         acceptedCommands,
         25,
         async (command): Promise<ProductionReceiptEvidence | undefined> => {
-            const clientIndex = readBenchmarkClientIndex(command.commandId);
+            const clientIndex = readStateWriteBenchmarkClientIndex(command.commandId);
             const productionCommandIds = productionCommandIdsForRaw(command);
 
             if (command.kind === 'profile-instance') {
@@ -143,16 +155,18 @@ export async function queryStateWriteDurableEvidence({
                 return receipt ? projectTopologyReceiptEvidence(command.commandId, receipt) : undefined;
             }
             const groupRef = { ...scope, groupId: `group-${clientIndex % groupCount}` };
-            const scopedCommandId = scopedGroupCommandIds.get(command.commandId);
-            if (scopedCommandId === undefined) {
+            const scopedCommand = scopedGroupCommands.get(command.commandId);
+            if (scopedCommand === undefined) {
                 return undefined;
             }
-            const receipt = await groups.findIdempotentGroupMutationReceipt(groupRef, scopedCommandId);
+            const receipt = await groups.findIdempotentGroupMutationReceipt(
+                groupRef,
+                scopedCommand.commandId
+            );
             const validatedReceipt = readValidatedGroupReceiptIdentity({
                 value: receipt,
                 ref: groupRef,
-                scopedCommandId,
-                requestId: command.commandId
+                scopedCommand
             });
             return validatedReceipt !== undefined
                 ? projectGroupReceiptEvidence(command.commandId, validatedReceipt)
@@ -166,7 +180,11 @@ export async function queryStateWriteDurableEvidence({
         outbox,
         computeProductionOutboxExpectations(commands, receipts)
     );
-    const appInbox = await readAppInboxEvidence({ sql, scope, commands, timingEvents });
+    const appInbox = await readAppInboxEvidence({
+        sql,
+        expectations: appInboxExpectations,
+        timingEvents
+    });
     const resourceOutbox = computeProductionOutboxEvidence({
         commands,
         receipts,
@@ -199,15 +217,13 @@ function createScopedGroupCommandExpectations(
         if (topicId === undefined) {
             return [];
         }
-        const clientIndex = readBenchmarkClientIndex(command.commandId);
+        const clientIndex = readStateWriteBenchmarkClientIndex(command.commandId);
         const groupIndex = clientIndex % groupCount;
         const groupId = `group-${groupIndex}`;
         return [{
             requestId: command.commandId,
             topicId,
-            logicalContextId: [scope.applicationId, scope.workspaceId, groupId]
-                .map(encodeURIComponent)
-                .join(':'),
+            logicalContextId: toStateWriteBenchmarkGroupContextId(scope, groupId),
             groupRef: { ...scope, groupId },
             actorPrincipalId: command.kind === 'config'
                 ? `owner-${groupIndex}`
@@ -216,31 +232,25 @@ function createScopedGroupCommandExpectations(
     });
 }
 
-function readBenchmarkClientIndex(commandId: string): number {
-    const clientIndex = Number(commandId.slice(commandId.lastIndexOf(':') + 1));
-    if (!Number.isSafeInteger(clientIndex) || clientIndex < 0) {
-        throw new Error(`Benchmark command ID has no client index: ${commandId}`);
-    }
-    return clientIndex;
-}
-
 interface ReadAppInboxEvidenceInput {
     readonly sql: Sql;
-    readonly scope: StateScope;
-    readonly commands: readonly StateWriteBenchmarkCommand[];
+    readonly expectations: readonly StateWriteAppInboxExpectation[];
     readonly timingEvents: readonly RallarTimingEvent[];
 }
 
 async function readAppInboxEvidence({
     sql,
-    scope,
-    commands,
+    expectations,
     timingEvents
 }: ReadAppInboxEvidenceInput): Promise<AppInboxAttemptEvidence[]> {
+    if (expectations.length === 0) {
+        return [];
+    }
     const rows = await sql<
         readonly {
             ri_resource_id: string;
             ri_topic_id: string;
+            fk_ext_bank_id: string;
             ri_resource: string;
             ri_status: string;
             ri_attempts: number | string;
@@ -250,7 +260,8 @@ async function readAppInboxEvidence({
             result_resource: string | null;
         }[]
     >`
-    select i.ri_resource_id, i.ri_topic_id, i.ri_resource, i.ri_status, i.ri_attempts,
+    select i.ri_resource_id, i.ri_topic_id, i.fk_ext_bank_id, i.ri_resource,
+           i.ri_status, i.ri_attempts,
            coalesce(
              greatest(0, extract(epoch from (i.next_ts - i.end_ts)) * 1000), 0
            )::float8 as retry_delay_ms,
@@ -264,47 +275,48 @@ async function readAppInboxEvidence({
      and r.ris_resource_id = i.ri_resource_id
      and r.ris_topic_id = i.ri_topic_id
     where i.ri_type_id = 'APP_INBOX'
-      and i.ri_resource like ${`%${scope.applicationId}%`}
+      and i.ri_resource_id = any(${[...new Set(expectations.map((entry) => entry.physicalKey.resourceId))]})
+      and i.ri_topic_id = any(${[...new Set(expectations.map((entry) => entry.physicalKey.topicId))]})
+      and i.fk_ext_bank_id = any(${[...new Set(expectations.map((entry) => entry.physicalKey.contextId))]})
   `;
-    const byProductionId = new Map(
-        commands.flatMap((command) =>
-            productionCommandIdsForRaw(command).map(
-                (productionId, index) =>
-                    [
-                        productionId,
-                        {
-                            commandId: command.commandId,
-                            operationId: command.kind === 'profile-instance'
-                                ? index === 0
-                                    ? 'profile'
-                                    : 'instance'
-                                : 'command'
-                        }
-                    ] as const
-            )
-        )
+    const expectationByPhysicalKey = new Map(
+        expectations.map((expectation) => [toPhysicalKey(expectation.physicalKey), expectation])
     );
 
     return rows.flatMap((row) => {
-        const ids = readAllCommandIds(row.ri_resource);
-        const link = ids.map((id) => byProductionId.get(id)).find((entry) => entry !== undefined);
-        if (!link) {
+        const expectation = expectationByPhysicalKey.get(toPhysicalKey({
+            resourceId: row.ri_resource_id,
+            topicId: row.ri_topic_id,
+            contextId: row.fk_ext_bank_id
+        }));
+        if (expectation === undefined) {
             return [];
+        }
+        const identity = readStateWriteAppInboxIdentity(row, expectation);
+        if (identity === undefined) {
+            throw new TypeError(
+                `Benchmark AppInbox row differs from its expected command identity: ${expectation.commandId}`
+            );
         }
         const transaction = timingEvents
             .filter(
                 (event) =>
                     event.component === 'app-inbox-phase' &&
                     event.operation === 'transaction' &&
-                    (event.requestId === row.ri_resource_id || ids.includes(event.requestId ?? ''))
+                    (
+                        event.requestId === row.ri_resource_id ||
+                        event.requestId === expectation.logicalResourceId
+                    )
             )
             .at(-1);
         const dueAgeMs = Number(transaction?.details?.dueAgeMs ?? row.due_age_ms);
         return [
             {
-                ...link,
+                commandId: identity.commandId,
+                operationId: identity.operationId,
                 resourceId: row.ri_resource_id,
                 topicId: row.ri_topic_id,
+                contextId: row.fk_ext_bank_id,
                 status: row.ri_status,
                 resultStatus: row.result_status ?? 'MISSING',
                 attempts: Number(row.ri_attempts),
@@ -312,11 +324,17 @@ async function readAppInboxEvidence({
                 dueAgeMs,
                 selectedLane: dueAgeMs >= 30_000 ? ('fairness' as const) : ('fast' as const),
                 transactionDurationMs: transaction?.durationMs ?? 0,
-                commandType: readAppInboxCommandType(row.ri_resource),
+                commandType: identity.commandType,
                 durableResult: parsePersistedResult(row.result_resource)
             }
         ];
     });
+}
+
+function toPhysicalKey(
+    input: Readonly<{ resourceId: string; topicId: string; contextId: string; }>
+): string {
+    return [input.resourceId, input.topicId, input.contextId].join('\0');
 }
 
 export function isValidProductionReceipt(

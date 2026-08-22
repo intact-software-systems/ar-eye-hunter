@@ -114,7 +114,6 @@ export * from './rallar-system/rtc-topology/mutation/validate-rtc-rtt-mutation.t
 export * from './rallar-system/rtc-topology/mutation/validate-rtc-rtt-write-candidate.ts';
 export * from './rallar-system/rtc-topology/mutation/write-rtc-rtt-mutation.ts';
 export * from './rallar-system/rtc-topology/persistence/rtc-rtt-persistence-contracts.ts';
-export * from './rallar-system/rtc-topology/persistence/rtc-rtt-persistence-contracts.ts';
 export * from './rallar-system/rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
 export * from './rallar-system/rtc-topology/persistence/rtc-rtt-receipt-cleanup.ts';
 export * from './rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts';

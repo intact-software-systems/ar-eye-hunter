@@ -4,9 +4,16 @@ import { compareStateWriteArtifacts, validateStateWriteArtifact } from '../../..
 import { mutationDescriptor, toDescriptorCommand } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { toGroupMutationDescriptorTargetIdentity } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
 import { toScopedGroupMutationCommandId } from '@shared-server/rallar-system/group-state/scoped-group-mutation-command-id.ts';
+import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
+import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-import { readScopedGroupCommandIdentity } from '../../../scripts/perf/api-v1-state-write-group-receipt-evidence.ts';
+import { readStateWriteAppInboxIdentity, toStateWriteAppInboxExpectations } from '../../../scripts/perf/api-v1-state-write-app-inbox-evidence.ts';
+import {
+    readScopedGroupCommandIdentity,
+    readValidatedGroupReceiptIdentity,
+    type ScopedGroupCommandExpectation
+} from '../../../scripts/perf/api-v1-state-write-group-receipt-evidence.ts';
 import {
     computeProductionOutboxEvidence,
     computeProductionOutboxExpectations,
@@ -31,7 +38,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             workspaceId: 'state-write-workspace-with-a-benchmark-length-identity',
             groupId: 'group-2'
         };
-        const topicId = 'GROUP_UPDATE';
+        const topicId = AppInboxType.GROUP_UPDATE;
         const logicalContextId = [groupRef.applicationId, groupRef.workspaceId, groupRef.groupId]
             .map(encodeURIComponent)
             .join(':');
@@ -54,8 +61,10 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             }
         );
         const commandId = await toScopedGroupMutationCommandId(descriptor, actorPrincipalId);
+        const semanticCommand = toDescriptorCommand(descriptor, () => requestId);
+        const commandHash = await hashMutationCommand(semanticCommand as JsonWireValue);
         const command = {
-            ...toDescriptorCommand(descriptor, () => requestId),
+            ...semanticCommand,
             commandId
         };
         const resource = JSON.stringify({
@@ -77,7 +86,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
                         },
                         descriptor,
                         command,
-                        facts: {},
+                        facts: { commandHash },
                         causalToken: 'causal-token',
                         queueResourceId: 'g-queue-resource'
                     }
@@ -90,7 +99,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             fk_ext_bank_id: physicalKey.contextId,
             ri_resource: resource
         };
-        const expectation = {
+        const expectation: ScopedGroupCommandExpectation = {
             requestId,
             topicId,
             logicalContextId,
@@ -100,7 +109,8 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
 
         await expect(readScopedGroupCommandIdentity(row, expectation)).resolves.toEqual({
             requestId,
-            commandId
+            commandId,
+            commandHash
         });
         await expect(readScopedGroupCommandIdentity(row, {
             ...expectation,
@@ -110,6 +120,56 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             ...expectation,
             actorPrincipalId: 'wrong-actor'
         })).resolves.toBeUndefined();
+
+        const changedHashResource = JSON.parse(resource);
+        changedHashResource.payload.resource = JSON.stringify({
+            ...JSON.parse(changedHashResource.payload.resource),
+            authority: {
+                ...JSON.parse(changedHashResource.payload.resource).authority,
+                facts: { commandHash: `sha256:${'f'.repeat(64)}` }
+            }
+        });
+        await expect(readScopedGroupCommandIdentity({
+            ...row,
+            ri_resource: JSON.stringify(changedHashResource)
+        }, expectation)).resolves.toBeUndefined();
+
+        const wrongTopicId = AppInboxType.GROUP_MEMBER_UPSERT;
+        const wrongTopicKey = toAppQueueKey({
+            resourceId: requestId,
+            topicId: wrongTopicId,
+            contextId: logicalContextId
+        });
+        await expect(readScopedGroupCommandIdentity({
+            ...row,
+            ri_resource_id: wrongTopicKey.resourceId,
+            ri_topic_id: wrongTopicKey.topicId,
+            fk_ext_bank_id: wrongTopicKey.contextId,
+            ri_resource: resource.replaceAll(topicId, wrongTopicId)
+        }, {
+            ...expectation,
+            topicId: wrongTopicId
+        })).resolves.toBeUndefined();
+
+        const scopedCommand = { requestId, commandId, commandHash };
+        const record = groupIdempotencyRecord(scopedCommand, groupRef);
+        expect(readValidatedGroupReceiptIdentity({
+            value: record,
+            ref: groupRef,
+            scopedCommand
+        })).toEqual(record);
+        expect(readValidatedGroupReceiptIdentity({
+            value: {
+                ...record,
+                commandHash: `sha256:${'e'.repeat(64)}`,
+                receipt: {
+                    ...record.receipt,
+                    commandHash: `sha256:${'e'.repeat(64)}`
+                }
+            },
+            ref: groupRef,
+            scopedCommand
+        })).toBeUndefined();
     });
 
     it('uses production presence target identities when validating a scoped group command', async () => {
@@ -121,7 +181,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             workspaceId: 'state-write-workspace-with-a-benchmark-length-identity',
             groupId: 'group-8'
         };
-        const topicId = 'GROUP_PRESENCE_CONNECT';
+        const topicId = AppInboxType.GROUP_PRESENCE_CONNECT;
         const logicalContextId = [groupRef.applicationId, groupRef.workspaceId, groupRef.groupId]
             .map(encodeURIComponent)
             .join(':');
@@ -143,7 +203,9 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             sessionId
         );
         const commandId = await toScopedGroupMutationCommandId(descriptor, actorPrincipalId);
-        const command = { ...toDescriptorCommand(descriptor, () => requestId), commandId };
+        const semanticCommand = toDescriptorCommand(descriptor, () => requestId);
+        const commandHash = await hashMutationCommand(semanticCommand as JsonWireValue);
+        const command = { ...semanticCommand, commandId };
         const physicalKey = toAppQueueKey({ topicId, resourceId: requestId, contextId: logicalContextId });
         const row = {
             ri_resource_id: physicalKey.resourceId,
@@ -168,7 +230,7 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
                             },
                             descriptor,
                             command,
-                            facts: {},
+                            facts: { commandHash },
                             causalToken: 'causal-token',
                             queueResourceId: 'g-queue-resource'
                         }
@@ -183,7 +245,60 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             logicalContextId,
             groupRef,
             actorPrincipalId
-        })).resolves.toEqual({ requestId, commandId });
+        })).resolves.toEqual({ requestId, commandId, commandHash });
+    });
+
+    it('links an AppInbox attempt only through its exact production physical tuple', () => {
+        const scope = {
+            applicationId: 'state-write-run-uncontended-measured-0',
+            workspaceId: 'state-write-workspace-with-a-benchmark-length-identity'
+        };
+        const command = {
+            kind: 'profile-instance',
+            commandId: `${scope.applicationId}:profile-instance:7`
+        } as const;
+        const expectation = toStateWriteAppInboxExpectations([command], scope, 5)
+            .find((candidate) => candidate.operationId === 'profile')!;
+        const resource = queueResource(
+            {
+                type: expectation.topicId,
+                topicId: expectation.topicId,
+                resourceId: expectation.logicalResourceId,
+                contextId: expectation.logicalContextId,
+                data: { request: { requestId: expectation.logicalResourceId } }
+            },
+            undefined,
+            {
+                ...expectation.physicalKey,
+                payloadTypeId: expectation.topicId
+            }
+        );
+        const row = {
+            ri_resource_id: expectation.physicalKey.resourceId,
+            ri_topic_id: expectation.physicalKey.topicId,
+            fk_ext_bank_id: expectation.physicalKey.contextId,
+            ri_resource: resource
+        };
+
+        expect(readStateWriteAppInboxIdentity(row, expectation)).toEqual({
+            commandId: command.commandId,
+            operationId: 'profile',
+            commandType: expectation.topicId
+        });
+        expect(readStateWriteAppInboxIdentity({
+            ...row,
+            fk_ext_bank_id: toAppQueueKey({
+                ...expectation.physicalKey,
+                contextId: `${expectation.logicalContextId}:wrong`
+            }).contextId
+        }, expectation)).toBeUndefined();
+        expect(readStateWriteAppInboxIdentity({
+            ...row,
+            ri_resource_id: toAppQueueKey({
+                ...expectation.physicalKey,
+                resourceId: `${expectation.logicalResourceId}-wrong`
+            }).resourceId
+        }, expectation)).toBeUndefined();
     });
 
     it.each(['joinGroup', 'acceptGroupInvite'] as const)(
@@ -779,6 +894,34 @@ function expectStateWriteArtifactIssues(candidate: unknown, ...messages: readonl
     expect(validateStateWriteArtifact(candidate)).toEqual(
         expect.arrayContaining(messages.map((message) => expect.stringContaining(message)))
     );
+}
+
+function groupIdempotencyRecord(
+    command: Readonly<{ requestId: string; commandId: string; commandHash: string; }>,
+    aggregateRef: Readonly<{ applicationId: string; workspaceId: string; groupId: string; }>
+) {
+    return {
+        aggregateRef,
+        requestId: command.commandId,
+        commandHash: command.commandHash,
+        receipt: {
+            commandId: command.commandId,
+            requestId: command.requestId,
+            commandHash: command.commandHash,
+            aggregateRef,
+            outcome: 'no-op' as const,
+            attemptCount: 1,
+            acceptedStorageRevision: 0,
+            stateRevision: 1,
+            snapshotVersion: 1,
+            causalRevision: { groupRevision: 1, presenceRevision: 0 },
+            eventId: null,
+            outboxIds: [],
+            joinCode: null,
+            joinCodeExpiresAtEpochMs: null,
+            rejection: null
+        }
+    };
 }
 
 const artifactSample = (artifact: any): any => artifact.workloads[0].samples[0];

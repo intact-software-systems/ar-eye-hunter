@@ -6,6 +6,7 @@ type AppInboxEvidence = Readonly<{
     operationId: string;
     resourceId: string;
     topicId: string;
+    contextId: string;
 }>;
 
 type RawCommand = Readonly<{
@@ -52,11 +53,11 @@ export function deriveAppInboxAttemptObservations(
             .map((entry) => entry.commandId)
     );
     const evidenceByKey = new Map(evidence.map((entry) => [
-        `${entry.topicId}\u0000${entry.resourceId}`,
+        toPhysicalKey(entry),
         entry
     ]));
     return releases.flatMap((release) => {
-        const entry = evidenceByKey.get(`${release.key.topicId}\u0000${release.key.resourceId}`);
+        const entry = evidenceByKey.get(toPhysicalKey(release.key));
         if (!entry) {
             return [];
         }
@@ -85,6 +86,12 @@ export function deriveAppInboxAttemptObservations(
         left.commandId.localeCompare(right.commandId) ||
         left.operationId.localeCompare(right.operationId) || left.attempt - right.attempt
     );
+}
+
+function toPhysicalKey(
+    input: Readonly<{ resourceId: string; topicId: string; contextId: string; }>
+): string {
+    return [input.resourceId, input.topicId, input.contextId].join('\0');
 }
 
 export function isOptimisticConflictFailure(

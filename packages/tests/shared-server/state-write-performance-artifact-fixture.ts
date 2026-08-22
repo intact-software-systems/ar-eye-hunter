@@ -156,6 +156,7 @@ function createFinalEvidence(commands: readonly StateWritePerformanceCommand[]):
             operationId,
             resourceId: `${command.commandId}:${operationId}`,
             topicId: 'app-inbox.state',
+            contextId: `app-inbox.state:${command.commandId}`,
             status: 'COMPLETED',
             resultStatus: 'COMPLETED',
             attempts: 1,

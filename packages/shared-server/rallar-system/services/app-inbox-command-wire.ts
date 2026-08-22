@@ -96,7 +96,7 @@ function toStableGroupCommand<Authority>(
     type: AppInboxType,
     authority: Authority
 ): JsonWireValue | undefined {
-    const expectedOperation = GROUP_APP_INBOX_OPERATIONS.get(type);
+    const expectedOperation = toGroupAppInboxOperation(type);
     if (!expectedOperation) {
         return undefined;
     }
@@ -142,6 +142,12 @@ const GROUP_APP_INBOX_OPERATIONS = new Map<AppInboxType, GroupMutationDescriptor
     [AppInboxType.GROUP_PRESENCE_HEARTBEAT, 'heartbeatPresence'],
     [AppInboxType.GROUP_PRESENCE_DISCONNECT, 'disconnectPresence']
 ]);
+
+export function toGroupAppInboxOperation(
+    type: AppInboxType
+): GroupMutationDescriptor['operation'] | undefined {
+    return GROUP_APP_INBOX_OPERATIONS.get(type);
+}
 
 function toStableAuthCommand(type: AppInboxType, value: JsonWireValue): JsonWireValue | undefined {
     if (!type.startsWith('AUTH_')) {

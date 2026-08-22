@@ -27,6 +27,10 @@ import type {
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
 import {
+    toStateWriteBenchmarkGroupContextId,
+    toStateWriteBenchmarkSessionId
+} from './api-v1-state-write-app-inbox-evidence.ts';
+import {
     deriveAppInboxAttemptObservations,
     type AppInboxAttemptObservation
 } from './api-v1-state-write-attempt-evidence.ts';
@@ -167,17 +171,13 @@ export function createBenchmarkAuthSession(
     principalId: string,
     sessionLabel: string
 ): IssuedAuthSession {
-    const scopeIdentity = `${encodeURIComponent(scope.applicationId)}:${
-        encodeURIComponent(
-            scope.workspaceId
-        )
-    }`;
+    const scopeIdentity = [scope.applicationId, scope.workspaceId].map(encodeURIComponent).join(':');
     const principalIdentity = encodeURIComponent(principalId);
     const sessionIdentity = encodeURIComponent(sessionLabel);
     return {
         clientId: principalId,
         username: principalId,
-        sessionId: `${scopeIdentity}:${principalIdentity}:${sessionIdentity}`,
+        sessionId: toStateWriteBenchmarkSessionId(scope, principalId, sessionLabel),
         accessToken: `state-write-benchmark:${scopeIdentity}:${principalIdentity}:${sessionIdentity}`,
         issuedAtEpochMs: BENCHMARK_SESSION_ISSUED_AT_EPOCH_MS,
         expiresAtEpochMs: BENCHMARK_SESSION_EXPIRES_AT_EPOCH_MS
@@ -548,7 +548,7 @@ async function executeMutation({
         callerClientId: command.clientAuthority.clientId,
         callerSessionId: command.clientAuthority.sessionId
     });
-    const groupContextId = inboxContextId(scope.applicationId, scope.workspaceId, command.groupId);
+    const groupContextId = toStateWriteBenchmarkGroupContextId(scope, command.groupId);
     switch (kind) {
         case 'profile-instance': {
             await runAppInboxMutation(runtime, () =>
@@ -832,10 +832,6 @@ async function runAppInboxMutation(
     );
 }
 
-function inboxContextId(...parts: string[]): string {
-    return parts.map(encodeURIComponent).join(':');
-}
-
 async function seedCompleteState(
     sql: Sql,
     scope: StateScope,
@@ -865,7 +861,7 @@ async function seedCompleteState(
                         type: AppInboxType.GROUP_CREATE,
                         topicId: AppInboxType.GROUP_CREATE,
                         resourceId: `seed-group-${groupIndex}`,
-                        contextId: inboxContextId(scope.applicationId, scope.workspaceId, groupId),
+                        contextId: toStateWriteBenchmarkGroupContextId(scope, groupId),
                         senderId: ownerId,
                         data: {
                             scope,
