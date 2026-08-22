@@ -126,7 +126,12 @@ while the retry leg's `startGroupEstablishment` carries none.
 Only `forming` holds topology planning. `isGroupTopologyPlannableAt`
 (`topology/planning/select-group-topology-planning-snapshot.ts`) is the one gate at the planning
 choke point: a forming group takes the same removed-topology branch as an archived one, so no
-overlay is planned, published, or dialled. `establishing`, `active`, and `reconfiguring` all plan.
+overlay is planned or published and the server commands no dials. The browser is another matter:
+with no server overlay, `WebRtcGroupManager.targetPeerIdsForGroup` falls back to the group's online
+members and `bounded-bootstrap` (`computeOutboundDialPlan`) dials up to `maxPeerConnections` of
+them, so a presence-connected forming lobby still makes bounded bootstrap RTC attempts. Holding
+those is not built (see [Not In V1](#not-in-v1)). `establishing`, `active`, and `reconfiguring`
+all plan.
 `api-v1-group-lifecycle-transitions` pins it: `GET …/topology` is `null` or `state: 'removed'`
 while forming, the `overlay.topology` hydration a forming member receives announces `removed`, and
 a plan exists after `start-establishment`. The admin `reconfigureGroupTopology` path bypasses the
@@ -795,6 +800,10 @@ writing this document:
 - **Enforcement of `establishment.transports` and `establishment.maxConcurrentEdgeSetups`.** Both
   are recorded and unread; establishment pacing is the browser dial budget.
 - **A pending-admission TTL.** Parked rows persist until granted, declined, withdrawn, or governed.
+- **Bootstrap suppression while `forming`.** The server plans nothing, but the browser's bounded
+  bootstrap still dials online members whenever no server overlay exists, so discovery is not yet
+  dial-free; the product plan in `playground/rtc-design/2026-08-22-group-activation-product-plan.md`
+  records the held-layout stages that close this.
 - **Distributed (Hetzner) lifecycle artifacts.** The recipes above are api-v1 black-box recipes
   against the real server; the distributed lane carries no lifecycle manifest.
 
