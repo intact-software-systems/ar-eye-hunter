@@ -68,32 +68,37 @@ function repository(
     }> = {}
 ): RtcTopologyDeliveryStreamMaintenancePort {
     return {
-        registerStream: async () =>
-            options.register === 'conflict' ? { status: 'conflict' } : {
-                status: 'registered',
-                stream: {
-                    streamId: STREAM_ID,
-                    headSequence: 0,
-                    retainedFromSequence: 1,
-                    leaseExpiresAtEpochMs: 30_000
+        registerStream: () =>
+            Promise.resolve(
+                options.register === 'conflict' ? { status: 'conflict' } : {
+                    status: 'registered',
+                    stream: {
+                        streamId: STREAM_ID,
+                        headSequence: 0,
+                        retainedFromSequence: 1,
+                        leaseExpiresAtEpochMs: 30_000
+                    }
                 }
-            },
-        renewStreamLease: async () =>
-            options.renewal === 'lease-lost' ? { status: 'lease-lost' } : {
-                status: 'renewed',
-                stream: {
-                    streamId: STREAM_ID,
-                    headSequence: 0,
-                    retainedFromSequence: 1,
-                    leaseExpiresAtEpochMs: 40_000
+            ),
+        renewStreamLease: () =>
+            Promise.resolve(
+                options.renewal === 'lease-lost' ? { status: 'lease-lost' } : {
+                    status: 'renewed',
+                    stream: {
+                        streamId: STREAM_ID,
+                        headSequence: 0,
+                        retainedFromSequence: 1,
+                        leaseExpiresAtEpochMs: 40_000
+                    }
                 }
-            },
-        compactExpiredEntries: async () => ({
-            scannedStreamCount: 1,
-            deletedEntryCount: 0
-        }),
-        retireExpiredConsumerCursors: async () => ({ deletedCursorCount: 0 }),
-        retireEmptyStreams: async () => ({ deletedStreamCount: 0 })
+            ),
+        compactExpiredEntries: () =>
+            Promise.resolve({
+                scannedStreamCount: 1,
+                deletedEntryCount: 0
+            }),
+        retireExpiredConsumerCursors: () => Promise.resolve({ deletedCursorCount: 0 }),
+        retireEmptyStreams: () => Promise.resolve({ deletedStreamCount: 0 })
     };
 }
 
