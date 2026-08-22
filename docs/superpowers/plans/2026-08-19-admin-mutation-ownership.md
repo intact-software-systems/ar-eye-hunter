@@ -232,7 +232,7 @@ apps/api-v1/src/admin-operations/
 ```text
 packages/tests/shared-server/admin-operations/
   admin-operations-service.test.ts
-  inbox/app-admin-inbox-service.test.ts
+  app-admin-inbox-service.test.ts
   prune/admin-prune-page-worker.test.ts
   prune/admin-prune-command-and-progress-invariants.test.ts
   prune/admin-prune-page-persistence-invariants.test.ts

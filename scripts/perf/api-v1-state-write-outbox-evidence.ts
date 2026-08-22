@@ -223,9 +223,16 @@ export function computeProductionOutboxEvidence({
     records
 }: ProjectProductionOutboxEvidenceInput): readonly StateWriteResourceOutboxEvidence[] {
     const rawByProductionId = new Map(
-        commands.flatMap((command) =>
-            productionCommandIdsForRaw(command).map((productionId) => [productionId, command.commandId])
-        )
+        [
+            ...commands.flatMap((command) =>
+                productionCommandIdsForRaw(command).map(
+                    (productionId) => [productionId, command.commandId] as const
+                )
+            ),
+            ...receipts.flatMap((receipt) =>
+                receipt.receiptIds.map((receiptId) => [receiptId, receipt.commandId] as const)
+            )
+        ]
     );
     const receiptByCommand = new Map(receipts.map((receipt) => [receipt.commandId, receipt]));
     const known = new Set(commands.map((command) => command.commandId));

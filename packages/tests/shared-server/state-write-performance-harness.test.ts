@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { compareStateWriteArtifacts, validateStateWriteArtifact } from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
 
+import { readScopedGroupCommandIdentity } from '../../../scripts/perf/api-v1-state-write-group-receipt-evidence.ts';
 import {
     computeProductionOutboxEvidence,
     computeProductionOutboxLookupIds,
@@ -16,6 +17,22 @@ import { createStateWritePerformanceArtifact, refreshStateWritePerformanceWorklo
 import { binding, swapCompleteDurableResults } from './state-write-performance-result-fixture.ts';
 
 describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () => {
+    it('reads the scoped group command identity from the persisted AppInbox resource', () => {
+        const requestId = 'state-write:membership:7';
+        const commandId = `group-app-inbox:${'a'.repeat(64)}`;
+        const resource = JSON.stringify({
+            payload: {
+                resource: JSON.stringify({
+                    resourceId: requestId,
+                    authority: { command: { commandId, requestId } }
+                })
+            }
+        });
+
+        expect(readScopedGroupCommandIdentity(resource)).toEqual({ requestId, commandId });
+        expect(readScopedGroupCommandIdentity('{}')).toBeUndefined();
+    });
+
     it('accepts a complete AppInbox/ResourceInbox artifact for both comparison roles', () => {
         const candidate = createStateWritePerformanceArtifact();
         const sample = artifactSample(candidate);
@@ -26,6 +43,21 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
         expect(sample.durableEvidence.intermediateMutationIntents).toEqual([]);
         expect(sample.correctness.atomicCompletionFailures).toBe(0);
         expect(candidate.features).toBeUndefined();
+        expect(validateStateWriteArtifact(candidate)).toEqual([]);
+    });
+
+    it('accepts scoped physical group receipt identities distinct from public request IDs', () => {
+        const candidate = createStateWritePerformanceArtifact();
+        const sample = artifactSample(candidate);
+        const command = sample.commands.find((entry: any) => entry.kind === 'membership');
+        const receipt = sample.durableEvidence.receipts.find(
+            (entry: any) => entry.commandId === command.commandId
+        );
+        const binding = receipt.resultBindings[0];
+
+        expect(binding.receiptId).toMatch(/^group-app-inbox:[0-9a-f]{64}$/);
+        expect(binding.receiptId).not.toBe(command.commandId);
+        expect(binding.requestId).toBe(command.commandId);
         expect(validateStateWriteArtifact(candidate)).toEqual([]);
     });
 
@@ -342,6 +374,39 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
                 records: [topologyRecord]
             })
         ).toEqual([]);
+        const groupCommand = {
+            kind: 'membership',
+            commandId: 'group-command',
+            stackIndex: 0,
+            latencyMs: 1,
+            status: 'accepted'
+        } as const;
+        const groupBinding = binding(groupCommand, 'command');
+        const groupRecord = {
+            resourceId: groupBinding.outboxIds[0],
+            outboxId: `${groupBinding.receiptId}:group-presence-summary:revision=1`,
+            typeId: 'APP_OUTBOX',
+            topicId: 'app-outbox.group-presence-summary',
+            effectKind: 'group-presence-summary',
+            canonicalCommandId: groupBinding.receiptId,
+            commandIds: [groupBinding.receiptId, groupCommand.commandId]
+        } as const;
+        expect(
+            computeProductionOutboxEvidence({
+                commands: [groupCommand],
+                receipts: [{
+                    commandId: groupCommand.commandId,
+                    receiptIds: [groupBinding.receiptId],
+                    outboxIds: [groupRecord.resourceId],
+                    identityKind: 'physical-resource-id',
+                    resultBindings: [groupBinding]
+                }],
+                records: [groupRecord]
+            })[0]
+        ).toMatchObject({
+            commandId: groupCommand.commandId,
+            effectId: groupRecord.resourceId
+        });
         expect(
             computeProductionOutboxLookupIds({
                 command: {

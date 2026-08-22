@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { PRODUCTION_STATE_WRITE_MUTATION_CONTRACT } from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
 
 type StateWriteMutationKind = keyof typeof PRODUCTION_STATE_WRITE_MUTATION_CONTRACT;
@@ -9,16 +10,19 @@ export interface StateWriteFixtureCommand {
 
 export function binding(command: any, operationId: string): any {
     const topology = command.kind === 'topology-source';
-    const receiptId = command.kind === 'profile-instance'
+    const requestId = command.kind === 'profile-instance'
         ? `${command.commandId}-${operationId}`
         : command.commandId;
+    const receiptId = command.kind === 'profile-instance' || topology
+        ? requestId
+        : `group-app-inbox:${createHash('sha256').update(requestId).digest('hex')}`;
     const aggregateRef = command.kind === 'profile-instance'
         ? { applicationId: 'app', workspaceId: 'workspace', principalId: command.commandId }
         : { applicationId: 'app', workspaceId: 'workspace', groupId: command.commandId };
     return {
         operationId,
         receiptId,
-        requestId: receiptId,
+        requestId,
         commandHash: `sha256:${'a'.repeat(64)}`,
         outcome: 'applied',
         attemptCount: 1,

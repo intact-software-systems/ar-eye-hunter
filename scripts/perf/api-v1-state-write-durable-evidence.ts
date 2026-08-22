@@ -12,11 +12,6 @@ import {
     validateClientMutationIdempotencyRecord,
     type ClientMutationIdempotencyRecord
 } from '@shared-server/rallar-system/services/client-state-mutations.ts';
-import {
-    validateGroupMutationIdempotencyRecord,
-    type GroupMutationIdempotencyRecord
-} from '@shared-server/rallar-system/services/group-state-mutations.ts';
-
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/\
 group-topology-config-repository.ts';
 
@@ -27,6 +22,10 @@ import type { Sql } from 'postgres';
 
 import { toPSqlSql } from '../../apps/api-v1/src/db/to-p-sql-sql.ts';
 import { parsePersistedResult, readAppInboxCommandType } from './api-v1-state-write-attempt-evidence.ts';
+import {
+    readScopedGroupCommandIdsByRequestId,
+    readValidatedGroupReceiptIdentity
+} from './api-v1-state-write-group-receipt-evidence.ts';
 import {
     computeProductionOutboxEvidence,
     computeProductionOutboxLookupIds,
@@ -104,6 +103,7 @@ export async function queryStateWriteDurableEvidence({
     const topology = new GroupTopologyConfigRepository(runtime);
     const outbox = createProductionOutboxRepository(sql);
     const acceptedCommands = commands.filter((command) => command.status === 'accepted');
+    const scopedGroupCommandIds = await readScopedGroupCommandIdsByRequestId({ sql, scope });
     const receiptResults = await mapWithConcurrency(
         acceptedCommands,
         25,
@@ -141,9 +141,19 @@ export async function queryStateWriteDurableEvidence({
                 return receipt ? projectTopologyReceiptEvidence(command.commandId, receipt) : undefined;
             }
             const groupRef = { ...scope, groupId: `group-${clientIndex % groupCount}` };
-            const receipt = await groups.findIdempotentGroupMutationReceipt(groupRef, command.commandId);
-            return isValidatedReceiptIdentity(receipt, groupRef, command.commandId)
-                ? projectGroupReceiptEvidence(command.commandId, receipt)
+            const scopedCommandId = scopedGroupCommandIds.get(command.commandId);
+            if (scopedCommandId === undefined) {
+                return undefined;
+            }
+            const receipt = await groups.findIdempotentGroupMutationReceipt(groupRef, scopedCommandId);
+            const validatedReceipt = readValidatedGroupReceiptIdentity({
+                value: receipt,
+                ref: groupRef,
+                scopedCommandId,
+                requestId: command.commandId
+            });
+            return validatedReceipt !== undefined
+                ? projectGroupReceiptEvidence(command.commandId, validatedReceipt)
                 : undefined;
         }
     );
@@ -279,20 +289,6 @@ export function isValidProductionReceipt(
 ): value is ClientMutationIdempotencyRecord {
     try {
         validateClientMutationIdempotencyRecord(value);
-    }
-    catch {
-        return false;
-    }
-    return value.requestId === requestId && value.receipt.commandId === requestId;
-}
-
-function isValidatedReceiptIdentity(
-    value: Parameters<typeof validateGroupMutationIdempotencyRecord>[0],
-    ref: GroupRef,
-    requestId: string
-): value is GroupMutationIdempotencyRecord {
-    try {
-        validateGroupMutationIdempotencyRecord(value, ref);
     }
     catch {
         return false;

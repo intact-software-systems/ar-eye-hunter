@@ -11,6 +11,7 @@ import process from 'node:process';
 import postgres, { type Sql } from 'postgres';
 
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 import {
     AuthSessionRepository,
     type IssuedAuthSession
@@ -541,11 +542,12 @@ async function executeMutation({
     kind,
     command
 }: ExecuteMutationInput): Promise<void> {
-    const clientContextId = inboxContextId(
-        scope.applicationId,
-        scope.workspaceId,
-        command.principalId
-    );
+    const clientContextId = toAuthenticatedClientMutationContextId({
+        scope,
+        principalId: command.principalId,
+        callerClientId: command.clientAuthority.clientId,
+        callerSessionId: command.clientAuthority.sessionId
+    });
     const groupContextId = inboxContextId(scope.applicationId, scope.workspaceId, command.groupId);
     switch (kind) {
         case 'profile-instance': {
@@ -553,6 +555,7 @@ async function executeMutation({
                 runtime.client.processAuthenticatedEntryUntilCompletion(
                     {
                         type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+                        topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
                         resourceId: `${command.requestId}-profile`,
                         contextId: clientContextId,
                         senderId: command.principalId,
@@ -574,6 +577,7 @@ async function executeMutation({
                 runtime.client.processAuthenticatedEntryUntilCompletion(
                     {
                         type: AppInboxType.CLIENT_INSTANCE_UPSERT,
+                        topicId: AppInboxType.CLIENT_INSTANCE_UPSERT,
                         resourceId: `${command.requestId}-instance`,
                         contextId: clientContextId,
                         senderId: command.principalId,
@@ -600,6 +604,7 @@ async function executeMutation({
                 runtime.group.processAuthenticatedGroupEntryUntilCompletion(
                     {
                         type: AppInboxType.GROUP_MEMBER_UPSERT,
+                        topicId: AppInboxType.GROUP_MEMBER_UPSERT,
                         resourceId: command.requestId,
                         contextId: groupContextId,
                         senderId: command.principalId,
@@ -682,6 +687,7 @@ async function executeMutation({
                 runtime.group.processAuthenticatedGroupEntryUntilCompletion(
                     {
                         type: AppInboxType.GROUP_UPDATE,
+                        topicId: AppInboxType.GROUP_UPDATE,
                         resourceId: command.requestId,
                         contextId: groupContextId,
                         senderId: command.ownerId,
@@ -720,6 +726,7 @@ async function executeMutation({
                 runtime.group.processAuthenticatedTopologyEntryUntilCompletion(
                     {
                         type: AppInboxType.TOPOLOGY_CONFIG_PUT,
+                        topicId: AppInboxType.TOPOLOGY_CONFIG_PUT,
                         resourceId: command.requestId,
                         contextId: groupContextId,
                         senderId: command.ownerId,
@@ -769,6 +776,7 @@ function toGroupPresenceEnqueue(
 ): AuthenticatedGroupMutationEnqueue {
     const command = input.command;
     const shared = {
+        topicId: input.type,
         resourceId: command.requestId,
         contextId: input.contextId,
         senderId: command.principalId
@@ -855,6 +863,7 @@ async function seedCompleteState(
                 runtime.group.processAuthenticatedGroupEntryUntilCompletion(
                     {
                         type: AppInboxType.GROUP_CREATE,
+                        topicId: AppInboxType.GROUP_CREATE,
                         resourceId: `seed-group-${groupIndex}`,
                         contextId: inboxContextId(scope.applicationId, scope.workspaceId, groupId),
                         senderId: ownerId,
@@ -891,11 +900,17 @@ async function seedCompleteState(
                 `client-session-${clientIndex}`
             );
             await authSessionRepository.putSession(authority);
-            const contextId = inboxContextId(scope.applicationId, scope.workspaceId, principalId);
+            const contextId = toAuthenticatedClientMutationContextId({
+                scope,
+                principalId,
+                callerClientId: authority.clientId,
+                callerSessionId: authority.sessionId
+            });
             await runAppInboxMutation(runtime, () =>
                 runtime.client.processAuthenticatedEntryUntilCompletion(
                     {
                         type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+                        topicId: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
                         resourceId: `seed-principal-${clientIndex}`,
                         contextId,
                         senderId: principalId,
@@ -917,6 +932,7 @@ async function seedCompleteState(
                 runtime.client.processAuthenticatedEntryUntilCompletion(
                     {
                         type: AppInboxType.CLIENT_INSTANCE_UPSERT,
+                        topicId: AppInboxType.CLIENT_INSTANCE_UPSERT,
                         resourceId: `seed-instance-${clientIndex}`,
                         contextId,
                         senderId: principalId,
