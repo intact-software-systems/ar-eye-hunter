@@ -351,7 +351,13 @@ describe('test structure-coupling review', () => {
             candidates.map(interactionEntry),
             [{
                 ...interactionContract(),
-                interactionRequirement: 'This interaction is required to protect the expected behavior.'
+                interactionRequirement: {
+                    interactionKind: 'count',
+                    ownedPort: 'gateway',
+                    observableEffect: 'effect',
+                    requiredConstraint: 'exactly once',
+                    failureRationale: 'required'
+                }
             }]
         );
 
@@ -1212,8 +1218,13 @@ function interactionContract(): SemanticContract {
         summary: 'One idempotency key creates at most one external payment charge.',
         semanticCoverage: 'packages/tests/example/payment-idempotency.test.ts#does not charge twice for one idempotency key',
         coverageRelation: 'The executable test retries one command and observes both the stable receipt and the payment gateway effect.',
-        interactionRequirement:
-            'A second payment gateway charge is independently observable on the customer account, and exactly one charge is required for each idempotency key.'
+        interactionRequirement: {
+            interactionKind: 'count',
+            ownedPort: 'PaymentGateway.charge',
+            observableEffect: 'A gateway charge appears on the customer payment account.',
+            requiredConstraint: 'No more than one charge may occur for each idempotency key.',
+            failureRationale: 'A duplicate gateway call bills the same customer twice.'
+        }
     };
 }
 
@@ -1253,5 +1264,11 @@ interface SemanticContract {
     readonly semanticCoverage?: string;
     readonly coverageRelation?: string;
     readonly sharedCoverageGroup?: string;
-    readonly interactionRequirement?: string;
+    readonly interactionRequirement?: {
+        readonly interactionKind: 'absence' | 'count' | 'order';
+        readonly ownedPort: string;
+        readonly observableEffect: string;
+        readonly requiredConstraint: string;
+        readonly failureRationale: string;
+    };
 }

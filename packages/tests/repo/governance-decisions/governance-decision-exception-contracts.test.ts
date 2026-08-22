@@ -141,7 +141,7 @@ describe('governance decision exception contracts', () => {
         const projection = interactionTestCouplingProjection();
         const { interactionRequirement, ...semanticContract } = projection.semanticContract;
 
-        expect(interactionRequirement).toContain('independently observable');
+        expect(interactionRequirement.interactionKind).toBe('count');
 
         expect(() =>
             decodeGovernanceDecisionRequest(
@@ -164,12 +164,12 @@ describe('governance decision exception contracts', () => {
                     ...projection,
                     semanticContract: {
                         ...projection.semanticContract,
-                        interactionRequirement: 'This interaction is required to protect the expected behavior.'
+                        interactionRequirement: 'Visible external gateway count must be preserved exactly once.'
                     }
                 })
             )
         ).toThrow(
-            'test-structure-coupling interactionRequirement must state the observable effect and why count, absence, or order is required'
+            'test-structure-coupling interactionRequirement must define interactionKind, ownedPort, observableEffect, requiredConstraint, and failureRationale'
         );
     });
 
@@ -320,8 +320,13 @@ function interactionTestCouplingProjection() {
             summary: 'One idempotency key creates at most one external charge.',
             semanticCoverage,
             coverageRelation: 'The test retries the same payment command and observes the receipt and gateway effect.',
-            interactionRequirement:
-                'A second charge is independently observable on the customer account, and exactly one gateway charge is required for an idempotency key.'
+            interactionRequirement: {
+                interactionKind: 'count',
+                ownedPort: 'PaymentGateway.charge',
+                observableEffect: 'A gateway charge appears on the customer payment account.',
+                requiredConstraint: 'No more than one charge may occur for each idempotency key.',
+                failureRationale: 'A duplicate gateway call bills the same customer twice.'
+            }
         },
         disposition: {
             kind: 'durable-boundary',

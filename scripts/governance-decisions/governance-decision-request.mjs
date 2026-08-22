@@ -1,4 +1,4 @@
-import { hasConcreteInteractionRequirement } from '../test-structure-coupling-interaction-requirement.mjs';
+import { isConcreteInteractionRequirement } from '../test-structure-coupling-interaction-requirement.mjs';
 import { computeSha256, toCanonicalJson } from './canonical-json.mjs';
 
 const commonKeys = [
@@ -325,8 +325,16 @@ function validateSemanticContract(contract) {
         ['id', 'domain', 'owner', 'summary', 'semanticCoverage', 'coverageRelation', ...optionalKeys],
         'test-structure-coupling semanticContract'
     );
-    for (const field of Object.keys(contract)) {
+    for (const field of Object.keys(contract).filter((field) => field !== 'interactionRequirement')) {
         requireNonEmptyText(contract[field], `test-structure-coupling semanticContract.${field}`);
+    }
+    if (
+        contract.interactionRequirement !== undefined &&
+        !isConcreteInteractionRequirement(contract.interactionRequirement)
+    ) {
+        throw new Error(
+            'test-structure-coupling interactionRequirement must define interactionKind, ownedPort, observableEffect, requiredConstraint, and failureRationale'
+        );
     }
 }
 
@@ -342,15 +350,11 @@ function validateTestCouplingDisposition(disposition, semanticContract) {
         }
         if (
             disposition.boundary === 'interaction' &&
-            (typeof semanticContract.interactionRequirement !== 'string' ||
-                semanticContract.interactionRequirement.trim() === '')
+            semanticContract.interactionRequirement === undefined
         ) {
             throw new Error(
                 'test-structure-coupling interaction boundary requires semanticContract.interactionRequirement'
             );
-        }
-        if (disposition.boundary === 'interaction') {
-            requireConcreteInteractionRequirement(semanticContract.interactionRequirement);
         }
     }
     else if (disposition?.kind === 'temporary-ratchet') {
@@ -368,14 +372,6 @@ function validateTestCouplingDisposition(disposition, semanticContract) {
     }
     if (disposition.semanticCoverage !== semanticContract.semanticCoverage) {
         throw new Error('test-structure-coupling disposition must match semantic contract coverage');
-    }
-}
-
-function requireConcreteInteractionRequirement(value) {
-    if (!hasConcreteInteractionRequirement(value)) {
-        throw new Error(
-            'test-structure-coupling interactionRequirement must state the observable effect and why count, absence, or order is required'
-        );
     }
 }
 
