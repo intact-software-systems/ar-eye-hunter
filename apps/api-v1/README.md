@@ -49,12 +49,13 @@ contracts use mandatory fields by default.
 
 ## Production Hardening
 
-Set `RALLAR_PRODUCTION_HARDENING=1` or `ENVIRONMENT=prod` to make startup fail closed when
-production-only guardrails are missing. The hardened profile requires Postgres, exact HTTPS CORS
-origins, strict state read authorization, admin-only registration,
-`AUTH_STATIC_CLIENTS_MODE=disabled`, a stable `RALLAR_AUTH_CREDENTIAL_SECRET` of at least 32
-characters, Metered TURN, and explicit black-box operator-token settings when control tokens are
-brokered.
+Set `RALLAR_API_CONFIGURATION_PROFILE=prod` to select the hardened production snapshot. It requires
+PostgreSQL and PostgreSQL pub/sub, exact HTTPS/WSS public URLs and CORS origins, strict state read
+authorization, admin-only registration, disabled static clients, non-demo administrator identities,
+a stable `RALLAR_AUTH_CREDENTIAL_SECRET` of at least 32 characters, Metered TURN, and an explicit
+black-box operator-token issuer. API-v1 reads the selected profile, allowlisted overrides, and
+environment-only secrets once, validates the complete object, freezes it, and injects its owned
+sections into runtime consumers. There is no environment-name alias or separate hardening reader.
 
 See [Production Env Hardening Checklist](../../docs/production-env-hardening-checklist.md) and
 [Environment Variables](../../docs/environment-variables.md).

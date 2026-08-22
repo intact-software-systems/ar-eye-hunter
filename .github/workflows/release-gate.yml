@@ -38,9 +38,7 @@ jobs:
           --health-retries 20
     env:
       DATABASE_URL: postgresql://app:app@localhost:5432/appdb
-      RALLAR_AUTH_CREDENTIAL_SECRET: 'release-gate-auth-credential-secret-v1'
-      RALLAR_ICE_MODE: local
-      RALLAR_LOGIN_USER_RATE_LIMIT: '100'
+      RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
 
     steps:
       - name: Checkout repo

@@ -1,5 +1,5 @@
+import { assertBlackBoxControlProductionEnv } from '@shared-server/http/black-box-control-production-env.ts';
 import { verifyRallarBlackBoxOperatorToken } from '@shared-server/http/black-box-operator-token.ts';
-import { assertBlackBoxControlProductionEnv } from '@shared-server/http/production-env-hardening.ts';
 import {
     parseControlClientMessage,
     validateRallarBlackBoxTestCommand,

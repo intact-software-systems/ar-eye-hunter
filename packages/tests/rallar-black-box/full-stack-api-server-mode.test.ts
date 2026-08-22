@@ -3,9 +3,9 @@ import {
     assertFullStackApiConfigEvidence,
     assertFullStackControlHealthEvidence,
     assertFullStackReadinessHttpEvidence,
+    createFullStackApiProfileEnvBlock,
     createFullStackApiUrlEnvBlock,
     createFullStackApiV1WebServer,
-    createFullStackMemoryEnvBlock,
     createFullStackSpaCorsOrigins,
     evaluateFullStackConfiguredServiceEvidence,
     readFullStackApiBaseUrl,
@@ -31,6 +31,9 @@ describe('rallar-black-box full-stack API server mode', () => {
         expect(server.command).toContain('RALLAR_API_BASE_URL=http://localhost:8080');
         expect(server.command).toContain('RALLAR_WS_BASE_URL=ws://localhost:8080');
         expect(server.command).toContain('RALLAR_SQL_BACKEND=postgres');
+        expect(server.command).toContain('RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory');
+        expect(server.command).toContain('RALLAR_PGLITE_SCHEMA_INIT=disabled');
+        expect(server.command).toContain('RALLAR_DB_PUBSUB=postgres');
         expect(server.command).not.toContain('RALLAR_SQL_BACKEND=pglite-memory');
     });
 
@@ -46,13 +49,17 @@ describe('rallar-black-box full-stack API server mode', () => {
         expect(server.command).toContain('PORT=18080');
         expect(server.command).toContain('RALLAR_API_BASE_URL=http://localhost:18080');
         expect(server.command).toContain('RALLAR_WS_BASE_URL=ws://localhost:18080');
-        expect(server.command).toContain('RALLAR_SQL_BACKEND=pglite-memory');
-        expect(server.command).toContain('RALLAR_PGLITE_SCHEMA_INIT=auto');
-        expect(server.command).toContain('RALLAR_DB_PUBSUB=local');
-        expect(server.command).toContain('RALLAR_ICE_MODE=local');
+        expect(server.command).toContain('RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory');
+        expect(server.command).not.toContain('RALLAR_SQL_BACKEND=');
+        expect(server.command).not.toContain('RALLAR_PGLITE_SCHEMA_INIT=');
+        expect(server.command).not.toContain('RALLAR_DB_PUBSUB=');
+        expect(server.command).not.toContain('RALLAR_ICE_MODE=');
         expect(server.command).toContain('RALLAR_LOGIN_USER_RATE_LIMIT=100');
         expect(server.command).toContain(
             'RALLAR_AUTH_CREDENTIAL_SECRET=local-rallar-full-stack-auth-credential-secret-v1'
+        );
+        expect(server.command).toContain(
+            'RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=local-rallar-full-stack-operator-secret-v1'
         );
         expect(server.command).not.toContain('DATABASE_URL');
         expect(server.command).not.toContain('--env-file=');
@@ -195,9 +202,9 @@ describe('rallar-black-box full-stack API server mode', () => {
         })).resolves.toBe('unavailable');
     });
 
-    it('keeps the documented memory env block in one place', () => {
-        expect(createFullStackMemoryEnvBlock()).toBe(
-            'RALLAR_SQL_BACKEND=pglite-memory RALLAR_PGLITE_DATA_DIR=memory:// RALLAR_PGLITE_SCHEMA_INIT=auto RALLAR_DB_PUBSUB=local RALLAR_ICE_MODE=local RALLAR_LOGIN_USER_RATE_LIMIT=100 RALLAR_AUTH_CREDENTIAL_SECRET=local-rallar-full-stack-auth-credential-secret-v1'
+    it('keeps the canonical full-stack API profile and fixture credentials in one place', () => {
+        expect(createFullStackApiProfileEnvBlock()).toBe(
+            'RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory RALLAR_LOGIN_USER_RATE_LIMIT=100 RALLAR_AUTH_CREDENTIAL_SECRET=local-rallar-full-stack-auth-credential-secret-v1 RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=local-rallar-full-stack-operator-secret-v1'
         );
     });
 

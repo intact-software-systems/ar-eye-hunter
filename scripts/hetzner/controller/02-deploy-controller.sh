@@ -122,15 +122,11 @@ if ((${#RALLAR_AUTH_CREDENTIAL_SECRET} < 32)); then
 fi
 
 cat >/etc/rallar/api-v1.env <<EOF
+RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory
 PORT=8080
 CORS_ORIGINS=${RALLAR_API_CORS_ORIGINS}
 RALLAR_API_BASE_URL=https://${RALLAR_API_HOST}
 RALLAR_WS_BASE_URL=wss://${RALLAR_API_HOST}
-RALLAR_SQL_BACKEND=pglite-memory
-RALLAR_PGLITE_DATA_DIR=memory://
-RALLAR_PGLITE_SCHEMA_INIT=auto
-RALLAR_DB_PUBSUB=local
-RALLAR_ICE_MODE=local
 RALLAR_LOGIN_USER_RATE_LIMIT=100
 RALLAR_TIMING_LOGS=0
 RALLAR_AUTH_CREDENTIAL_SECRET=${RALLAR_AUTH_CREDENTIAL_SECRET}
@@ -139,7 +135,7 @@ RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS=${RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS}
 RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS=${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS}
 EOF
 chmod 0600 /etc/rallar/api-v1.env
-echo "WARNING: API-v1 is configured with RALLAR_SQL_BACKEND=pglite-memory; restarting rallar-api-v1 resets auth sessions and runtime state."
+echo "WARNING: API-v1 uses the prod-in-memory profile; restarting rallar-api-v1 resets auth sessions and runtime state."
 
 if [[ -z "${RALLAR_CONTROL_ADMIN_TOKEN:-}" && -r /etc/rallar/control-server.env ]]; then
 	RALLAR_CONTROL_ADMIN_TOKEN="$(

@@ -46,15 +46,16 @@ VITE_RALLAR_AGENT_C_PASSWORD=secret
 The Playwright full-stack config then starts API-v1 with:
 
 ```text
+RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory
 RALLAR_API_BASE_URL=http://localhost:18080
 RALLAR_WS_BASE_URL=ws://localhost:18080
-RALLAR_SQL_BACKEND=pglite-memory
-RALLAR_PGLITE_DATA_DIR=memory://
-RALLAR_PGLITE_SCHEMA_INIT=auto
-RALLAR_DB_PUBSUB=local
-RALLAR_ICE_MODE=local
 RALLAR_LOGIN_USER_RATE_LIMIT=100
 ```
+
+The selected profile owns PGlite memory, automatic schema initialization,
+local pub/sub, local ICE, demo clients, and strict state reads. The harness
+also injects bounded auth and operator-token fixture secrets; it does not load
+them from ambient env files.
 
 `RALLAR_API_BASE_URL` and `RALLAR_WS_BASE_URL` are derived from
 `VITE_RALLAR_API_BASE_URL`, and API CORS is derived from
@@ -103,17 +104,17 @@ the gated three-browser baseline and skipped the exhaustive matrix unless
 
 ## Postgres Versus Memory Notes
 
-| Area                       | Postgres Full Stack                   | PGlite Memory Full Stack                                           |
-| -------------------------- | ------------------------------------- | ------------------------------------------------------------------ |
-| SQL backend                | `postgres.js` with `DATABASE_URL`     | PGlite via the API-v1 `PSqlSql` adapter                            |
-| Runtime API config         | Env URL overrides match Playwright    | Env URL overrides match Playwright                                 |
-| ICE config                 | Metered by default / env controlled   | Local no-cost ICE config                                           |
-| Auth rate limiting         | Default API-v1 limits                 | Relaxed user login limit for repeated smoke logins                 |
-| Schema                     | Prisma migrations / existing DB       | Idempotent `in-memory-schema.sql` bootstrap                        |
-| Queue pub/sub              | Postgres `LISTEN/NOTIFY`              | Local in-process queue pub/sub bridge                              |
-| Data lifetime              | Durable until DB cleanup              | Ephemeral per API-v1 process                                       |
-| Multi-process fidelity     | Suitable for production-like behavior | Single API process only                                            |
-| Performance interpretation | Useful for DB-inclusive behavior      | Useful for middleware/browser load shape, not production DB tuning |
+| Area                       | Postgres Full Stack                      | PGlite Memory Full Stack                                           |
+| -------------------------- | ---------------------------------------- | ------------------------------------------------------------------ |
+| SQL backend                | `postgres.js` with `DATABASE_URL`        | PGlite via the API-v1 `PSqlSql` adapter                            |
+| Runtime API config         | `prod-in-memory` plus Postgres overrides | `prod-in-memory` plus URL/workload overrides                       |
+| ICE config                 | Local unless explicitly overridden       | Local no-cost ICE config                                           |
+| Auth rate limiting         | Default API-v1 limits                    | Relaxed user login limit for repeated smoke logins                 |
+| Schema                     | Prisma migrations / existing DB          | Idempotent `in-memory-schema.sql` bootstrap                        |
+| Queue pub/sub              | Postgres `LISTEN/NOTIFY`                 | Local in-process queue pub/sub bridge                              |
+| Data lifetime              | Durable until DB cleanup                 | Ephemeral per API-v1 process                                       |
+| Multi-process fidelity     | Suitable for production-like behavior    | Single API process only                                            |
+| Performance interpretation | Useful for DB-inclusive behavior         | Useful for middleware/browser load shape, not production DB tuning |
 
 Expected artifacts are the normal Playwright traces/screenshots on failure and,
 for the RTC baseline, the control-server artifact export verified by the live

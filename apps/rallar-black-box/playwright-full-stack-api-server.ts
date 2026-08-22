@@ -185,15 +185,12 @@ export async function evaluateFullStackConfiguredServiceEvidence(
         : 'ready';
 }
 
-export function createFullStackMemoryEnvBlock(): string {
+export function createFullStackApiProfileEnvBlock(): string {
     return [
-        'RALLAR_SQL_BACKEND=pglite-memory',
-        'RALLAR_PGLITE_DATA_DIR=memory://',
-        'RALLAR_PGLITE_SCHEMA_INIT=auto',
-        'RALLAR_DB_PUBSUB=local',
-        'RALLAR_ICE_MODE=local',
+        'RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory',
         'RALLAR_LOGIN_USER_RATE_LIMIT=100',
-        'RALLAR_AUTH_CREDENTIAL_SECRET=local-rallar-full-stack-auth-credential-secret-v1'
+        'RALLAR_AUTH_CREDENTIAL_SECRET=local-rallar-full-stack-auth-credential-secret-v1',
+        'RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=local-rallar-full-stack-operator-secret-v1'
     ].join(' ');
 }
 
@@ -232,13 +229,13 @@ export function portFromBaseUrl(apiBaseUrl: string): number {
 function createMemoryApiCommand(apiBaseUrl: string, spaBaseUrl: string): string {
     return `cd ../.. && CORS_ORIGINS=${createFullStackSpaCorsOrigins(spaBaseUrl)} PORT=${portFromBaseUrl(apiBaseUrl)} ${
         createFullStackApiUrlEnvBlock(apiBaseUrl)
-    } ${createFullStackMemoryEnvBlock()} deno run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
+    } ${createFullStackApiProfileEnvBlock()} deno run --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
 }
 
 function createPostgresApiCommand(apiBaseUrl: string, spaBaseUrl: string): string {
-    return `cd ../.. && RALLAR_SQL_BACKEND=postgres CORS_ORIGINS=${createFullStackSpaCorsOrigins(spaBaseUrl)} PORT=${
-        portFromBaseUrl(apiBaseUrl)
-    } ${
+    return `cd ../.. && ${createFullStackApiProfileEnvBlock()} RALLAR_SQL_BACKEND=postgres RALLAR_PGLITE_SCHEMA_INIT=disabled RALLAR_DB_PUBSUB=postgres CORS_ORIGINS=${
+        createFullStackSpaCorsOrigins(spaBaseUrl)
+    } PORT=${portFromBaseUrl(apiBaseUrl)} ${
         createFullStackApiUrlEnvBlock(apiBaseUrl)
     } deno run --env-file=apps/api-v1/.env.local --env-file=apps/api-v1/.env --env-file=.env --config apps/api-v1/deno.json --allow-net --allow-env --allow-read apps/api-v1/src/main.ts`;
 }

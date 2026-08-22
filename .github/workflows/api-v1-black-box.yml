@@ -33,11 +33,7 @@ jobs:
           --health-retries 20
     env:
       DATABASE_URL: postgresql://app:app@localhost:5432/appdb
-      RALLAR_ICE_MODE: local
-      RALLAR_LOGIN_USER_RATE_LIMIT: '100'
-      RALLAR_STATE_STRICT_READ_AUTH: '1'
-      AUTH_STATIC_CLIENTS_MODE: demo
-      AUTH_REGISTRATION_MODE: public
+      RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -86,11 +82,7 @@ jobs:
           --health-retries 20
     env:
       DATABASE_URL: postgresql://app:app@localhost:5432/appdb
-      RALLAR_ICE_MODE: local
-      RALLAR_LOGIN_USER_RATE_LIMIT: '100'
-      RALLAR_STATE_STRICT_READ_AUTH: '1'
-      AUTH_STATIC_CLIENTS_MODE: demo
-      AUTH_REGISTRATION_MODE: public
+      RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -126,11 +118,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      RALLAR_ICE_MODE: local
-      RALLAR_LOGIN_USER_RATE_LIMIT: '100'
-      RALLAR_STATE_STRICT_READ_AUTH: '1'
-      AUTH_STATIC_CLIENTS_MODE: demo
-      AUTH_REGISTRATION_MODE: public
+      RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

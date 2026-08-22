@@ -1,7 +1,6 @@
 export * from './app-data/AppDataRepository.ts';
 export * from './app-data/RallarServerAppData.ts';
 export * from './game/mod.ts';
-export * from './http/production-env-hardening.ts';
 export * from './http/rate-limit-service.ts';
 export * from './http/request-auth-service.ts';
 export * from './postgres/admin-operations/p-sql-admin-operations-pruner.ts';

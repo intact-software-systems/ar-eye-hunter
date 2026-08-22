@@ -162,14 +162,13 @@ RALLAR_INCLUDE_CADDY=1 ./08-rollout-controller.sh
 Important: these scripts stop or start services on the VM. They do not stop
 Hetzner billing. Delete the VM if you want billing to stop.
 
-Also note that API-v1 uses `pglite-memory`; stopping or restarting
+Also note that API-v1 uses the `prod-in-memory` profile; stopping or restarting
 `rallar-api-v1.service` resets API-v1 in-memory data. Control-server snapshots
 are persisted under `/var/lib/rallar-black-box-control`.
 
-The default controller deployment is a controller/demo profile: API-v1 runs
-with in-memory SQL and local ICE unless Metered TURN is configured. Do not treat
-that default as the hardened production profile. For production, enable the
-guardrails in
+The default controller deployment uses in-memory SQL and local ICE unless
+Metered TURN is configured. Do not treat it as the hardened `prod` profile. For
+production, follow the exact selector and platform-secret guardrails in
 [`docs/production-env-hardening-checklist.md`](../../../docs/production-env-hardening-checklist.md).
 
 ## Controlled Rollout
@@ -434,7 +433,8 @@ RALLAR_WRITE_HEADLESS_ENV=0
 
 ## TURN / STUN Readiness
 
-API-v1 starts with `RALLAR_ICE_MODE=local`, which intentionally returns
+API-v1 selects `RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory`. That profile
+owns local ICE and intentionally returns
 `iceServers: []` from `/api/webrtc/ice`. The Rallar black-box Recipes UI shows
 this as a warning because local/LAN testing can still work, but cross-region
 WebRTC may fail without TURN.
@@ -450,49 +450,24 @@ In GitHub Actions, set both optional secrets `METERED_APP_NAME` and
 `METERED_API_KEY`; the deploy workflow syncs them before rollout. Leaving both
 unset keeps any existing VM secret file in place.
 
-## Hardened Production Profile
+## Controller Configuration Profile
 
-The current deploy scripts optimize for a single controller VM and disposable
-validation. Before using this VM profile as production, replace the controller
-defaults with the fail-closed production env profile:
+The controller scripts own one disposable deployment shape:
 
 ```text
-RALLAR_PRODUCTION_HARDENING=1
-RALLAR_SQL_BACKEND=postgres
-DATABASE_URL=<postgres-secret>
-CORS_ORIGINS=https://blackbox.rallar.intactss.com,https://app.example.test
-RALLAR_STATE_STRICT_READ_AUTH=1
-AUTH_REGISTRATION_MODE=admin
-AUTH_ADMIN_CLIENT_IDS=<runtime-admin-client-ids>
-AUTH_STATIC_CLIENTS_MODE=disabled
-RALLAR_AUTH_CREDENTIAL_SECRET=<stable-high-entropy-secret>
-RALLAR_ICE_MODE=metered
-METERED_APP_NAME=<metered-app>
-METERED_API_KEY=<metered-secret>
-RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET=<shared-secret>
-RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS=<operator-client-ids>
-RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS=900000
-RALLAR_BLACK_BOX_ALLOWED_ORIGINS=https://blackbox.rallar.intactss.com
-RALLAR_BLACK_BOX_REQUIRE_TLS=1
-RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN=1
-RALLAR_BLACK_BOX_REQUIRE_READ_TOKEN=1
-RALLAR_BLACK_BOX_HTTP_ALLOWED_HOSTS=api.rallar.intactss.com
-RALLAR_BLACK_BOX_WS_ALLOWED_HOSTS=api.rallar.intactss.com,control.rallar.intactss.com
-RALLAR_BLACK_BOX_STORAGE_DIR=/var/lib/rallar-black-box-control
-RALLAR_BLACK_BOX_RETENTION_MAX_RUNS=100
-RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_EVENTS=1000
-RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_RESULTS=500
-RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_REPORTS=20
-RALLAR_BLACK_BOX_RUNTIME_RETAIN_COMMANDS=1000
-RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS=1000
-RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS=2000
-RALLAR_BLACK_BOX_RUNTIME_RETAIN_STATS=500
-RALLAR_BLACK_BOX_RUNTIME_RETAIN_REPORTS=20
-RALLAR_BLACK_BOX_RUNTIME_RETAIN_HEARTBEATS=500
+RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory
 ```
 
-Store secrets in root-owned files with mode `0600`, such as
-`/etc/rallar/api-v1.secrets.env` or service-specific systemd environment files.
+`02-deploy-controller.sh` writes that selector plus only controller-specific
+URLs, CORS, workload limits, topology experiment overrides, and API secrets.
+`08-rollout-controller.sh` removes entries outside that subset before updating
+the selected ref. Both keep `/etc/rallar/api-v1.env` root-owned and mode `0600`.
+There is no environment-name selector or repeated database/auth/ICE baseline.
+
+Do not convert this disposable controller into the hardened public API-v1 or
+Relic deployment by accumulating overrides. Those targets select the `prod`
+profile and use the platform settings in the
+[Production Environment Hardening Checklist](../../../docs/production-env-hardening-checklist.md).
 Never put `DATABASE_URL`, `METERED_API_KEY`, `RALLAR_BLACK_BOX_ADMIN_TOKEN`, or
 operator-token secrets into the SPA audit file or any `VITE_*` input.
 

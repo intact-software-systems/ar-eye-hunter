@@ -9,29 +9,36 @@ const { load: loadYaml } = require('js-yaml') as {
     load(source: string): unknown;
 };
 
-type ActionDocument = Readonly<{
-    inputs?: Readonly<Record<string, Readonly<{ default?: unknown; }>>>;
-    runs?: Readonly<{
+interface ActionDocument {
+    readonly inputs?: Readonly<Record<string, Readonly<{ default?: string; }>>>;
+    readonly runs?: Readonly<{
         steps?: readonly Readonly<{ run?: string; }>[];
     }>;
-}>;
+}
 
-type WorkflowStep = Readonly<{
-    name?: string;
-    uses?: string;
-    with?: Readonly<Record<string, unknown>>;
-}>;
+interface WorkflowStep {
+    readonly name?: string;
+    readonly uses?: string;
+    readonly with?: Readonly<Record<string, string>>;
+}
 
-type WorkflowDocument = Readonly<{
-    jobs?: Readonly<
-        Record<
-            string,
-            Readonly<{
-                steps?: readonly WorkflowStep[];
-            }>
-        >
-    >;
-}>;
+interface WorkflowJob {
+    readonly env?: Readonly<Record<string, string>>;
+    readonly steps?: readonly WorkflowStep[];
+}
+
+interface WorkflowDocument {
+    readonly jobs?: Readonly<Record<string, WorkflowJob>>;
+}
+
+const removedApiV1WorkflowOverrides = [
+    'ENVIRONMENT',
+    'API_BASE_URL',
+    'RALLAR_ICE_MODE',
+    'AUTH_REGISTRATION_MODE',
+    'AUTH_STATIC_CLIENTS_MODE',
+    'RALLAR_STATE_STRICT_READ_AUTH'
+] as const;
 
 async function readYaml<T>(relativePath: string): Promise<T> {
     const source = await readFile(path.join(repoRoot, relativePath), 'utf8');
@@ -45,6 +52,26 @@ function blackBoxActionStep(workflow: WorkflowDocument, jobName: string): Workfl
 }
 
 describe('API-v1 black-box workflow', () => {
+    it('selects one canonical API profile without repeating profile-owned settings', async () => {
+        const workflowJobs = [
+            ['.github/workflows/api-v1-black-box.yml', ['postgres', 'topology-replay', 'memory']],
+            ['.github/workflows/api-v1-medium-scale-gate.yml', ['medium-scale']],
+            ['.github/workflows/api-v1-topology-replay-gate.yml', ['topology-replay']],
+            ['.github/workflows/release-gate.yml', ['release-gate']]
+        ] as const;
+
+        for (const [workflowPath, jobNames] of workflowJobs) {
+            const workflow = await readYaml<WorkflowDocument>(workflowPath);
+            for (const jobName of jobNames) {
+                const environment = workflow.jobs?.[jobName]?.env;
+                expect(environment?.RALLAR_API_CONFIGURATION_PROFILE).toBe('prod-in-memory');
+                for (const removedName of removedApiV1WorkflowOverrides) {
+                    expect(environment).not.toHaveProperty(removedName);
+                }
+            }
+        }
+    });
+
     it('requires both managed cluster ports and forwards them to the runner', async () => {
         const action = await readYaml<ActionDocument>(
             '.github/actions/api-v1-black-box-test/action.yml'
