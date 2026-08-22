@@ -21,6 +21,23 @@ The default RTT reporting degree is `5`, matching the default RTC topology
 values back to that default. When the server option is omitted, it falls back
 to the effective topology `degreeLimit`.
 
+On the server that fallback is resolved per group, not once per process. Both
+acceptance paths — the durable AppInbox RTT mutation composed in
+`apps/api-v1/src/composition/create-api-v1-topology-services.ts` and the
+in-memory topic path through the `readGroupRttReportingDegreeLimit` hook in
+`packages/shared-server/rallar-system/ws-system-topics.ts` — and the read-side
+planning filter all call `readRttReportingDegreeLimit` with the group's
+effective topology configuration (server defaults, durable per-group config,
+temporary override) under the server reporting option. An explicitly
+configured `RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT` therefore still wins;
+otherwise a group's effective `degreeLimit` is its reporting limit, and raising
+it through the group's topology config also raises the evidence the server
+will store for that group. A report whose endpoints share several active
+groups is accepted under the largest of those groups' limits. Acceptance and
+planning agreeing per group is what lets formation readiness cover a plan
+whose degree exceeds the server default; see
+`docs/rallar-group-formation-architecture.md`.
+
 API-v1 reads the server runtime option from:
 
 ```text
