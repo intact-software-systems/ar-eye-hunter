@@ -1,6 +1,6 @@
 import { resolvePublicServerUrl, withPublicOpenApiServer } from '@shared-server/http/public-server-url.ts';
-import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
-import { parse } from 'jsr:@std/yaml@1.0.12';
+import { parse } from '@std/yaml';
+import type { Context, Hono } from 'hono';
 
 const OPENAPI_URL = '/api/relic/openapi.json';
 

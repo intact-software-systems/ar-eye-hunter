@@ -1,11 +1,6 @@
 import type { AuditStamp, Group, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
-import {
-    authorizeRelicCommand,
-    authorizeRelicReset,
-    authorizeRelicSnapshotRead,
-    readRelicRestAuthMode
-} from '../../../apps/relic-hunter-server-v1/src/relic-rest-auth.ts';
+import { authorizeRelicCommand, authorizeRelicReset, authorizeRelicSnapshotRead } from '../../../apps/relic-hunter-server-v1/src/relic-rest-auth.ts';
 import { createTestGroup } from '../create-test-group.ts';
 
 const SESSION = {
@@ -14,12 +9,6 @@ const SESSION = {
 };
 
 describe('Relic REST auth policy', () => {
-    it('keeps authenticated mode as the local default', () => {
-        expect(readRelicRestAuthMode(env({}))).toBe('authenticated');
-        expect(readRelicRestAuthMode(env({ RELIC_REST_AUTH_MODE: 'group-policy' })))
-            .toBe('group-policy');
-    });
-
     it('allows authenticated mode without group-policy state', () => {
         expect(() =>
             authorizeRelicSnapshotRead({
@@ -105,14 +94,6 @@ describe('Relic REST auth policy', () => {
         ).toThrow(/owners\/admins/);
     });
 });
-
-function env(values: Record<string, string>): Pick<Deno.Env, 'get'> {
-    return {
-        get(key: string): string | undefined {
-            return values[key];
-        }
-    };
-}
 
 function snapshot(
     options: Readonly<{

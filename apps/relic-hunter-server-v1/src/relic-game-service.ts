@@ -1,7 +1,6 @@
 import type { ApiV1Runtime } from '@api-v1/src/composition/api-v1-runtime.ts';
 import {
     applyRelicCommand,
-    createRelicGame,
     isRelicCommand,
     RELIC_TOPICS,
     RELIC_TYPES,
@@ -18,20 +17,20 @@ import type { RelicInitialStateFactory, RelicInitialStateReason } from './relic-
 
 type RelicRallarServer = RallarServerApplication<ApiV1Runtime, Hono>;
 
-export type RelicHunterGameServiceOptions = Readonly<{
-    createInitialState?: RelicInitialStateFactory;
-}>;
+export interface RelicHunterGameServiceOptions {
+    readonly createInitialState: RelicInitialStateFactory;
+}
 
-export type RelicHunterGameService = Readonly<{
+export interface RelicHunterGameService {
     readSnapshot(gameId: string): Promise<RelicPublicSnapshot | undefined>;
     ensureSnapshot(gameId: string): Promise<RelicPublicSnapshot>;
     applyCommand(command: RelicCommand, senderId: string): Promise<RelicPublicSnapshot>;
     reset(gameId: string): Promise<RelicPublicSnapshot>;
-}>;
+}
 
 export async function installRelicHunterGame(
     rallar: RelicRallarServer,
-    options: RelicHunterGameServiceOptions = {}
+    options: RelicHunterGameServiceOptions
 ): Promise<RelicHunterGameService> {
     const games = await rallar.data.open<RelicGameState>(
         'relic-hunter-games',
@@ -55,10 +54,7 @@ export async function installRelicHunterGame(
         gameId: string,
         reason: RelicInitialStateReason
     ): Promise<RelicGameState> {
-        if (options.createInitialState) {
-            return await options.createInitialState(gameId, reason);
-        }
-        return createRelicGame(gameId, gameId);
+        return await options.createInitialState(gameId, reason);
     }
 
     async function publishSnapshot(state: RelicGameState): Promise<void> {
@@ -103,9 +99,8 @@ export async function installRelicHunterGame(
         });
     }
 
-    // relic-hunters-v1 treats REST as the authoritative browser command path.
-    // Keep the WS command topic registered for server-level compatibility tests
-    // and future transport experiments; browser clients consume WS snapshots.
+    // The browser sends commands over REST and consumes snapshots over WebSocket.
+    // Other clients may send the same validated room command over WebSocket.
     rallar.ws.defineTopic<RelicCommand>({
         topicId: RELIC_TOPICS.command,
         typeId: RELIC_TYPES.command,

@@ -3,33 +3,27 @@ import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 
 import { createDefaultRallarServer } from '@api-v1/src/composition/create-default-rallar-server.ts';
-import { readApiV1Configuration } from '@api-v1/src/configuration/read-api-v1-configuration.ts';
 import { createApiV1DatabaseLifecycle } from '@api-v1/src/db/api-v1-database-lifecycle.ts';
 import { requireApiAuthSession, toAuthErrorResponse } from '@api-v1/src/services/request-auth-service.ts';
 import { isRelicCommand, type RelicCommand } from '@relic-hunters/mod.ts';
-import { assertRelicProductionEnv } from '@shared-server/http/production-env-hardening.ts';
 import { isGroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
-import { configuration } from './config-repo.ts';
-import { createRelicExpeditionInitialStateFactory, readRelicAiExpeditionEnv } from './relic-expedition-ai.ts';
+import { createRelicExpeditionInitialStateFactory } from './relic-expedition-ai.ts';
 import { installRelicHunterGame } from './relic-game-service.ts';
+import { readRelicHunterServerConfiguration } from './relic-hunter-server-configuration.ts';
 import {
     authorizeRelicCommand,
     authorizeRelicReset,
     authorizeRelicSnapshotRead,
-    readRelicRestAuthMode,
     RelicRestGroupNotFoundError
 } from './relic-rest-auth.ts';
 import { initRelicSwaggerRoutes } from './relic-swagger-routes.ts';
 
 loadEnvironment();
-assertRelicProductionEnv(Deno.env);
 
 const app: Hono = new Hono();
-const port = Number(Deno.env.get('PORT') ?? '8090');
-const relicRestAuthMode = readRelicRestAuthMode(Deno.env);
-const apiConfiguration = await readApiV1Configuration({
+const configuration = await readRelicHunterServerConfiguration({
     environment: Deno.env,
     readTextFile: Deno.readTextFile,
     defaultsUrl: new URL('../../api-v1/resources/configuration/defaults-config.json', import.meta.url),
@@ -41,11 +35,11 @@ const apiConfiguration = await readApiV1Configuration({
     staticClientsUrl: new URL('../../api-v1/resources/authorised-clients.json', import.meta.url)
 });
 const databaseLifecycle = await createApiV1DatabaseLifecycle({
-    database: apiConfiguration.database,
-    pgliteEvidence: apiConfiguration.blackBox.pgliteEvidence
+    database: configuration.apiV1.database,
+    pgliteEvidence: configuration.apiV1.blackBox.pgliteEvidence
 });
 const rallar = await createDefaultRallarServer({
-    configuration: apiConfiguration,
+    configuration: configuration.apiV1,
     databaseLifecycle,
     ws: {
         allowImplicitUserTopics: false,
@@ -57,14 +51,10 @@ addEventListener('unload', () => {
         console.error('Failed to stop embedded API-v1 resources:', error);
     });
 });
-const relicAiExpeditionEnv = readRelicAiExpeditionEnv(Deno.env);
 const relicGame = await installRelicHunterGame(rallar, {
     createInitialState: createRelicExpeditionInitialStateFactory({
+        configuration: configuration.expeditionAi,
         rallar,
-        mode: relicAiExpeditionEnv.mode,
-        timeoutMs: relicAiExpeditionEnv.timeoutMs,
-        ollamaBaseUrl: relicAiExpeditionEnv.ollamaBaseUrl,
-        ollamaModel: relicAiExpeditionEnv.ollamaModel,
         onFallback: (event) => {
             console.warn(
                 `[relic-ai] expedition generation fell back for ${event.gameId}: ${event.error}`
@@ -72,14 +62,13 @@ const relicGame = await installRelicHunterGame(rallar, {
         }
     })
 });
-const corsOrigins = readCorsOrigins();
 
 const apiCors = cors({
-    origin: (origin) => resolveCorsOrigin(origin, corsOrigins),
+    origin: (origin) => resolveCorsOrigin(origin, configuration.http.corsOrigins),
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization', 'x-client-id'],
     exposeHeaders: ['Content-Length'],
-    maxAge: 600,
+    maxAge: configuration.http.preflightMaxAgeSeconds,
     credentials: true
 });
 
@@ -92,7 +81,7 @@ app.use('/api/*', async (c, next) => {
     return await apiCors(c, next);
 });
 
-app.get('/api/config', (c) => c.json(configuration));
+app.get('/api/config', (c) => c.json(configuration.browser));
 
 initRelicSwaggerRoutes(app);
 
@@ -111,7 +100,7 @@ app.get('/api/relic/games/:gameId', async (c) => {
         const gameId = c.req.param('gameId');
         const session = await requireApiAuthSession(c.req, rallar.runtime.authSessionRepository);
         authorizeRelicSnapshotRead({
-            mode: relicRestAuthMode,
+            mode: configuration.restAuthorization.mode,
             gameId,
             session,
             snapshot: await readRelicGroupSnapshotForPolicy(gameId)
@@ -128,7 +117,7 @@ app.post('/api/relic/games/:gameId/commands', async (c) => {
         const gameId = c.req.param('gameId');
         const session = await requireApiAuthSession(c.req, rallar.runtime.authSessionRepository);
         authorizeRelicCommand({
-            mode: relicRestAuthMode,
+            mode: configuration.restAuthorization.mode,
             gameId,
             session,
             snapshot: await readRelicGroupSnapshotForPolicy(gameId)
@@ -156,7 +145,7 @@ app.post('/api/relic/games/:gameId/reset', async (c) => {
         const gameId = c.req.param('gameId');
         const session = await requireApiAuthSession(c.req, rallar.runtime.authSessionRepository);
         authorizeRelicReset({
-            mode: relicRestAuthMode,
+            mode: configuration.restAuthorization.mode,
             gameId,
             session,
             snapshot: await readRelicGroupSnapshotForPolicy(gameId)
@@ -174,20 +163,12 @@ rallar.system
     .useWebSocketLifecycle();
 rallar.ws.mount(app);
 rallar.rest.mount(app);
-rallar.start();
-
-Deno.serve({ port }, app.fetch);
-console.log(`Relic Hunter server started on http://localhost:${port}`);
-
-function readCorsOrigins(): readonly string[] {
-    const raw = Deno.env.get('CORS_ORIGINS') ??
-        'http://localhost:5173,http://localhost:5174,http://localhost:5175';
-
-    return raw
-        .split(',')
-        .map((origin) => origin.trim())
-        .filter((origin) => origin.length > 0);
+if (configuration.apiV1.topology.replay.queueWorkers === 'enabled') {
+    rallar.start();
 }
+
+Deno.serve({ port: configuration.http.port }, app.fetch);
+console.log(`Relic Hunter server started on port ${configuration.http.port}.`);
 
 function resolveCorsOrigin(
     origin: string,
@@ -207,7 +188,7 @@ function isWebSocketUpgradeRequest(path: string, upgrade?: string): boolean {
 async function readRelicGroupSnapshotForPolicy(
     gameId: string
 ): Promise<GroupSnapshot | undefined> {
-    if (relicRestAuthMode === 'authenticated') {
+    if (configuration.restAuthorization.mode === 'authenticated') {
         return undefined;
     }
 

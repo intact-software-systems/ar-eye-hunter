@@ -1,7 +1,0 @@
-{
-  "apiBaseUrl": "https://relic-hunters.intact-software-systems.deno.net",
-  "wsBaseUrl": "wss://relic-hunters.intact-software-systems.deno.net",
-  "endpoints": {
-    "createWs": "/api/ws/:id"
-  }
-}

@@ -4,13 +4,12 @@ import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state
 import { canReadGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-
-export type RelicRestAuthMode = 'authenticated' | 'group-policy';
+import type { RelicRestAuthorizationMode } from './relic-hunter-server-configuration.ts';
 
 export type RelicRestAuthSession = Pick<AuthSession, 'clientId' | 'sessionId'>;
 
 type RelicRestAuthInput = Readonly<{
-    mode: RelicRestAuthMode;
+    mode: RelicRestAuthorizationMode;
     gameId: string;
     session: RelicRestAuthSession;
     snapshot?: GroupSnapshot;
@@ -23,18 +22,6 @@ export class RelicRestGroupNotFoundError extends Error {
     public constructor(gameId: string) {
         super(`Relic group not found: ${gameId}`);
     }
-}
-
-export function readRelicRestAuthMode(env: Pick<Deno.Env, 'get'>): RelicRestAuthMode {
-    const raw = env.get('RELIC_REST_AUTH_MODE')?.trim().toLowerCase();
-    if (!raw || raw === 'authenticated') {
-        return 'authenticated';
-    }
-    if (raw === 'group-policy') {
-        return 'group-policy';
-    }
-
-    throw new Error('RELIC_REST_AUTH_MODE must be authenticated or group-policy.');
 }
 
 export function authorizeRelicSnapshotRead(input: RelicRestAuthInput): void {

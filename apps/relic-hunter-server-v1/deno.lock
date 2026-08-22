@@ -93,6 +93,9 @@
     "dependencies": [
       "jsr:@hono/hono@4.11.9",
       "jsr:@std/dotenv@0.225.6",
+      "jsr:@std/expect@1",
+      "jsr:@std/testing@1",
+      "jsr:@std/yaml@1.0.12",
       "npm:@electric-sql/pglite@0.4.1",
       "npm:@js-temporal/polyfill@~0.5.1",
       "npm:graphology@0.26.0",

@@ -34,8 +34,7 @@ import {
     type RallarAiLiveEvaluationEnvironment,
     type RallarAiLiveEvaluationRunResult
 } from '@shared/rallar-ai/mod.ts';
-
-export type RelicAiExpeditionMode = 'off' | 'mock' | 'ollama';
+import type { RelicAiExpeditionConfiguration, RelicAiExpeditionMode } from './relic-hunter-server-configuration.ts';
 
 export type RelicInitialStateReason = 'ensure' | 'reset' | 'command';
 
@@ -44,80 +43,51 @@ export type RelicInitialStateFactory = (
     reason: RelicInitialStateReason
 ) => Promise<RelicGameState>;
 
-export type RelicAiExpeditionEnv = Readonly<{
-    mode: RelicAiExpeditionMode;
-    timeoutMs: number;
-    ollamaBaseUrl: string;
-    ollamaModel: string;
-}>;
+export interface RelicAiExpeditionFallbackEvent {
+    readonly gameId: string;
+    readonly reason: RelicInitialStateReason;
+    readonly mode: RelicAiExpeditionMode;
+    readonly seed: string;
+    readonly error: string;
+}
 
-export type RelicAiExpeditionFallbackEvent = Readonly<{
-    gameId: string;
-    reason: RelicInitialStateReason;
-    mode: RelicAiExpeditionMode;
-    seed: string;
-    error: string;
-}>;
-
-export type CreateRelicExpeditionInitialStateFactoryOptions = Readonly<{
-    rallar?: RallarServerAiRallar;
-    mode?: RelicAiExpeditionMode;
-    timeoutMs?: number;
-    ollamaBaseUrl?: string;
-    ollamaModel?: string;
-    fetch?: RallarAiOllamaFetch;
-    provider?: RallarAiJsonProvider;
-    mockBlueprint?:
+export interface CreateRelicExpeditionInitialStateFactoryOptions {
+    readonly configuration: RelicAiExpeditionConfiguration;
+    readonly rallar?: RallarServerAiRallar;
+    readonly fetch?: RallarAiOllamaFetch;
+    readonly provider?: RallarAiJsonProvider;
+    readonly mockBlueprint?:
         | RelicExpeditionBlueprint
         | ((
             input: Readonly<{ gameId: string; reason: RelicInitialStateReason; seed: string; }>
         ) => RelicExpeditionBlueprint);
-    now?: () => number;
-    diagnostics?: RallarAiDiagnosticsSink;
-    onFallback?: (event: RelicAiExpeditionFallbackEvent) => void;
-}>;
+    readonly now?: () => number;
+    readonly diagnostics?: RallarAiDiagnosticsSink;
+    readonly onFallback?: (event: RelicAiExpeditionFallbackEvent) => void;
+}
 
-export const DEFAULT_RELIC_AI_EXPEDITION_TIMEOUT_MS = 15_000;
-export const DEFAULT_RELIC_AI_EXPEDITION_OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
-export const DEFAULT_RELIC_AI_EXPEDITION_OLLAMA_MODEL = 'llama-test';
 export const RELIC_EXPEDITION_OLLAMA_PROVIDER_ID = 'relic-expedition-ollama';
 export const RELIC_EXPEDITION_LIVE_OLLAMA_EVALUATION_GATE = 'RALLAR_AI_LIVE_OLLAMA';
 export const RELIC_EXPEDITION_OLLAMA_PROVIDER_GOVERNANCE = defineRallarAiProviderGovernanceMetadata(
     {
         providerId: RELIC_EXPEDITION_OLLAMA_PROVIDER_ID,
         adapterVersion: 'relic-hunter-server-v1/ollama-expedition:1',
-        modelId: DEFAULT_RELIC_AI_EXPEDITION_OLLAMA_MODEL,
+        modelId: 'llama-test',
         target: 'server',
         licenseNotes: 'Runs through a private Ollama sidecar; model license follows RELIC_AI_EXPEDITION_OLLAMA_MODEL.',
         productionAllowed: false,
         structuredOutput: true,
         knownLimits: {
             maxOutputTokens: 1_600,
-            recommendedTimeoutMs: DEFAULT_RELIC_AI_EXPEDITION_TIMEOUT_MS
+            recommendedTimeoutMs: 15_000
         }
     }
 );
 
-export function readRelicAiExpeditionEnv(
-    env: Readonly<{ get(name: string): string | undefined; }>
-): RelicAiExpeditionEnv {
-    return {
-        mode: readMode(env.get('RELIC_AI_EXPEDITION_MODE')),
-        timeoutMs: readPositiveInteger(
-            env.get('RELIC_AI_EXPEDITION_TIMEOUT_MS'),
-            DEFAULT_RELIC_AI_EXPEDITION_TIMEOUT_MS
-        ),
-        ollamaBaseUrl: env.get('RELIC_AI_EXPEDITION_OLLAMA_BASE_URL') ??
-            DEFAULT_RELIC_AI_EXPEDITION_OLLAMA_BASE_URL,
-        ollamaModel: env.get('RELIC_AI_EXPEDITION_OLLAMA_MODEL') ??
-            DEFAULT_RELIC_AI_EXPEDITION_OLLAMA_MODEL
-    };
-}
-
 export function createRelicExpeditionInitialStateFactory(
-    options: CreateRelicExpeditionInitialStateFactoryOptions = {}
+    options: CreateRelicExpeditionInitialStateFactoryOptions
 ): RelicInitialStateFactory {
-    const mode = options.mode ?? 'off';
+    const mode = options.configuration.mode;
     const now = options.now ?? (() => Date.now());
 
     if (mode === 'off') {
@@ -135,7 +105,7 @@ export function createRelicExpeditionInitialStateFactory(
         provider,
         policy: {
             mode: 'server-only',
-            timeoutMs: options.timeoutMs ?? DEFAULT_RELIC_AI_EXPEDITION_TIMEOUT_MS
+            timeoutMs: options.configuration.timeoutMs
         },
         diagnostics: options.diagnostics,
         limits: {
@@ -154,7 +124,7 @@ export function createRelicExpeditionInitialStateFactory(
             gameId,
             reason,
             seed,
-            timeoutMs: options.timeoutMs ?? DEFAULT_RELIC_AI_EXPEDITION_TIMEOUT_MS
+            timeoutMs: options.configuration.timeoutMs
         });
 
         try {
@@ -216,19 +186,18 @@ export function createRelicExpeditionInitialStateFactory(
     };
 }
 
-export function createRelicExpeditionAiRequest({
-    gameId,
-    reason,
-    seed,
-    timeoutMs
-}: Readonly<{
-    gameId: string;
-    reason: RelicInitialStateReason;
-    seed: string;
-    timeoutMs: number;
-}>): RallarAiJsonRequest {
+export interface CreateRelicExpeditionAiRequestInput {
+    readonly gameId: string;
+    readonly reason: RelicInitialStateReason;
+    readonly seed: string;
+    readonly timeoutMs: number;
+}
+
+export function createRelicExpeditionAiRequest(
+    input: CreateRelicExpeditionAiRequestInput
+): RallarAiJsonRequest {
     return {
-        requestId: `relic-expedition:${gameId}:${reason}:${seed}`,
+        requestId: `relic-expedition:${input.gameId}:${input.reason}:${input.seed}`,
         schemaId: RELIC_EXPEDITION_BLUEPRINT_SCHEMA_ID,
         schemaVersion: RELIC_EXPEDITION_BLUEPRINT_SCHEMA_VERSION,
         schema: RELIC_EXPEDITION_BLUEPRINT_SCHEMA,
@@ -243,50 +212,48 @@ export function createRelicExpeditionAiRequest({
             'Do not include collapsed or unstable rooms at setup time.'
         ].join(' '),
         context: {
-            gameId,
-            reason,
-            seed,
+            gameId: input.gameId,
+            reason: input.reason,
+            seed: input.seed,
             canonicalIds: ['entrance', 'exit'],
             allowedRoomKinds: RELIC_ROOM_KINDS,
             allowedVisualThemes: RELIC_EXPEDITION_VISUAL_THEMES,
             limits: RELIC_EXPEDITION_BLUEPRINT_LIMITS,
             visualLimits: RELIC_EXPEDITION_VISUAL_LIMITS
         },
-        baseStateRevision: `relic-expedition-setup:${gameId}:${reason}`,
-        dedupeKey: `relic-expedition:${gameId}:${reason}:${seed}`,
+        baseStateRevision: `relic-expedition-setup:${input.gameId}:${input.reason}`,
+        dedupeKey: `relic-expedition:${input.gameId}:${input.reason}:${input.seed}`,
         temperature: 0.65,
         maxOutputTokens: 1_600,
-        timeoutMs
+        timeoutMs: input.timeoutMs
     };
 }
 
-export type CreateRelicExpeditionAiEvaluationCasesOptions = Readonly<{
-    gameId: string;
-    reason: RelicInitialStateReason;
-    seed: string;
-    timeoutMs?: number;
-}>;
+export interface CreateRelicExpeditionAiEvaluationCasesOptions {
+    readonly gameId: string;
+    readonly reason: RelicInitialStateReason;
+    readonly seed: string;
+    readonly timeoutMs: number;
+}
 
-export type RunRelicExpeditionDeterministicAiEvaluationOptions =
-    & CreateRelicExpeditionAiEvaluationCasesOptions
-    & Readonly<{
-        mockBlueprint?:
-            | RelicExpeditionBlueprint
-            | ((
-                input: Readonly<{ gameId: string; reason: RelicInitialStateReason; seed: string; }>
-            ) => RelicExpeditionBlueprint);
-    }>;
+export interface RunRelicExpeditionDeterministicAiEvaluationOptions
+    extends CreateRelicExpeditionAiEvaluationCasesOptions {
+    readonly mockBlueprint?:
+        | RelicExpeditionBlueprint
+        | ((
+            input: Readonly<{ gameId: string; reason: RelicInitialStateReason; seed: string; }>
+        ) => RelicExpeditionBlueprint);
+}
 
-export type RunRelicExpeditionOllamaLiveEvaluationOptions = Readonly<{
-    env: RallarAiLiveEvaluationEnvironment;
-    gate?: string;
-    cases?: readonly RallarAiEvaluationCase[];
-    provider?: RallarAiJsonProvider;
-    fetch?: RallarAiOllamaFetch;
-    ollamaBaseUrl?: string;
-    ollamaModel?: string;
-    allowedBaseUrls?: readonly string[];
-}>;
+export interface RunRelicExpeditionOllamaLiveEvaluationOptions {
+    readonly env: RallarAiLiveEvaluationEnvironment;
+    readonly configuration: RelicAiExpeditionConfiguration;
+    readonly gate?: string;
+    readonly cases?: readonly RallarAiEvaluationCase[];
+    readonly provider?: RallarAiJsonProvider;
+    readonly fetch?: RallarAiOllamaFetch;
+    readonly allowedBaseUrls?: readonly string[];
+}
 
 export function createRelicExpeditionAiEvaluationCases(
     options: CreateRelicExpeditionAiEvaluationCasesOptions
@@ -298,7 +265,7 @@ export function createRelicExpeditionAiEvaluationCases(
                 gameId: options.gameId,
                 reason: options.reason,
                 seed: options.seed,
-                timeoutMs: options.timeoutMs ?? DEFAULT_RELIC_AI_EXPEDITION_TIMEOUT_MS
+                timeoutMs: options.timeoutMs
             }),
             validateResult: (result) => validateExpeditionEvaluationBlueprint(result.value)
         }
@@ -310,9 +277,7 @@ export async function runRelicExpeditionDeterministicAiEvaluation(
 ): Promise<RallarAiEvaluationSuiteResult> {
     return await runRallarAiEvaluationSuite({
         suiteId: 'relic-expedition-ollama-ci',
-        provider: createProvider({
-            mockBlueprint: options.mockBlueprint
-        }, 'mock'),
+        provider: createMockRelicExpeditionProvider(options.mockBlueprint),
         cases: createRelicExpeditionAiEvaluationCases(options)
     });
 }
@@ -329,17 +294,14 @@ export async function runRelicExpeditionOllamaLiveEvaluationIfEnabled(
         };
     }
 
-    const env = readRelicAiExpeditionEnv({
-        get: (name) => options.env[name]
-    });
-    const baseUrl = options.ollamaBaseUrl ?? env.ollamaBaseUrl;
+    const baseUrl = options.configuration.ollamaBaseUrl;
     const provider = options.provider ?? createRallarAiOllamaProvider({
         providerId: RELIC_EXPEDITION_OLLAMA_PROVIDER_ID,
-        model: options.ollamaModel ?? env.ollamaModel,
+        model: options.configuration.ollamaModel,
         baseUrl,
         allowedBaseUrls: options.allowedBaseUrls ?? [
             baseUrl,
-            DEFAULT_RELIC_AI_EXPEDITION_OLLAMA_BASE_URL,
+            'http://127.0.0.1:11434',
             'http://localhost:11434',
             'http://[::1]:11434'
         ],
@@ -357,7 +319,7 @@ export async function runRelicExpeditionOllamaLiveEvaluationIfEnabled(
             gameId: 'relic-expedition-live-evaluation',
             reason: 'ensure',
             seed: 'relic-expedition-live-evaluation',
-            timeoutMs: env.timeoutMs
+            timeoutMs: options.configuration.timeoutMs
         }),
         env: options.env,
         gate,
@@ -370,40 +332,46 @@ function createProvider(
     mode: Exclude<RelicAiExpeditionMode, 'off'>
 ): RallarAiJsonProvider {
     if (mode === 'mock') {
-        return createRallarAiMockProvider({
-            providerId: 'relic-expedition-mock',
-            modelId: 'deterministic-expedition-blueprint-v1',
-            value: (request: RallarAiJsonRequest) => {
-                const context = request.context as {
-                    gameId?: string;
-                    reason?: RelicInitialStateReason;
-                    seed?: string;
-                } | undefined;
-                const input = {
-                    gameId: context?.gameId ?? 'relic-room',
-                    reason: context?.reason ?? 'ensure',
-                    seed: context?.seed ?? 'relic-mock-seed'
-                };
-                return typeof options.mockBlueprint === 'function'
-                    ? options.mockBlueprint(input)
-                    : options.mockBlueprint ??
-                        createProceduralRelicExpeditionBlueprint({
-                            seed: input.seed,
-                            source: 'mock'
-                        });
-            }
-        });
+        return createMockRelicExpeditionProvider(options.mockBlueprint);
     }
 
     return createRallarAiOllamaProvider({
         providerId: RELIC_EXPEDITION_OLLAMA_PROVIDER_ID,
-        model: options.ollamaModel ?? DEFAULT_RELIC_AI_EXPEDITION_OLLAMA_MODEL,
-        baseUrl: options.ollamaBaseUrl ?? DEFAULT_RELIC_AI_EXPEDITION_OLLAMA_BASE_URL,
+        model: options.configuration.ollamaModel,
+        baseUrl: options.configuration.ollamaBaseUrl,
         fetch: options.fetch,
         systemPrompt: [
             'You generate strict JSON for a turn-based multiplayer castle game.',
             'The application will reject unsafe, disconnected, or unbalanced data.'
         ].join(' ')
+    });
+}
+
+function createMockRelicExpeditionProvider(
+    mockBlueprint: CreateRelicExpeditionInitialStateFactoryOptions['mockBlueprint']
+): RallarAiJsonProvider {
+    return createRallarAiMockProvider({
+        providerId: 'relic-expedition-mock',
+        modelId: 'deterministic-expedition-blueprint-v1',
+        value: (request: RallarAiJsonRequest) => {
+            const context = request.context as {
+                gameId?: string;
+                reason?: RelicInitialStateReason;
+                seed?: string;
+            } | undefined;
+            const input = {
+                gameId: context?.gameId ?? 'relic-room',
+                reason: context?.reason ?? 'ensure',
+                seed: context?.seed ?? 'relic-mock-seed'
+            };
+            return typeof mockBlueprint === 'function'
+                ? mockBlueprint(input)
+                : mockBlueprint ??
+                    createProceduralRelicExpeditionBlueprint({
+                        seed: input.seed,
+                        source: 'mock'
+                    });
+        }
     });
 }
 
@@ -424,21 +392,6 @@ function createExpeditionSeed(
     now: number
 ): string {
     return `${gameId}:${reason}:${now}`;
-}
-
-function readMode(value: string | undefined): RelicAiExpeditionMode {
-    if (value === 'mock' || value === 'ollama') {
-        return value;
-    }
-    return 'off';
-}
-
-function readPositiveInteger(value: string | undefined, fallback: number): number {
-    if (!value) {
-        return fallback;
-    }
-    const parsed = Number(value);
-    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function toErrorMessage(error: unknown): string {
