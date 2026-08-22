@@ -33,6 +33,7 @@ export type ApiV1StateWriteEvidenceSpec = Readonly<{
 export type OutboxRow = Readonly<{
     ri_resource_id: string;
     ri_topic_id: string;
+    fk_ext_bank_id: string;
     ri_type_id: string;
     ri_status: string;
     ri_resource: string;

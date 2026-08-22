@@ -22,7 +22,11 @@ import {
     type AdminPruneEnqueueResult
 } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
 import { decodeAdminPruneWork } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
-import { ADMIN_PRUNE_AGGREGATE_TOPIC, toAdminPruneAggregateKey } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
+import {
+    ADMIN_PRUNE_AGGREGATE_TOPIC,
+    decodeAdminPruneAggregate,
+    toAdminPruneAggregateKey
+} from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
 import { AppInboxIdempotencyConflictError, AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
@@ -778,6 +782,84 @@ describe('AppAdminInboxService initial prune command', () => {
             message: expectedMessage
         });
         expect(harness.readWorkCounts()).toEqual(beforeReplay);
+    });
+
+    it('rejects a completed aggregate replay whose identity differs from the stored command', async () => {
+        const harness = createAdminInboxHarness({ waitForResult: false });
+        const adminSession = createAdminSession('admin', 'admin-session');
+        const request = {
+            requestId: 'mismatched-completed-aggregate',
+            categories: ['runtime-state'] as const,
+            dryRun: false
+        };
+        const first = await completePrune(harness, adminSession, request);
+        expect(first.left).toMatchObject({ code: 'app-inbox-unavailable' });
+
+        const command = await readOnlyCommand(harness.queue, request.requestId);
+        const aggregateKey = toAdminPruneAggregateKey(command.jobId);
+        const storedAggregate = await harness.results.findByKey(aggregateKey);
+        if (storedAggregate === undefined) {
+            throw new Error('Expected pending admin prune aggregate');
+        }
+        const aggregate = decodeAdminPruneAggregate(JSON.parse(storedAggregate.resource));
+        await harness.results.replace({
+            ...storedAggregate,
+            status: EntityStatus.COMPLETED,
+            resource: JSON.stringify({
+                ...aggregate,
+                revision: 1,
+                jobId: 'another-completed-admin-prune-job',
+                status: 'completed',
+                completedCategories: ['runtime-state']
+            })
+        });
+
+        await expect(harness.service.pruneExpired({
+            adminSession: createAdminSession('admin', 'renewed-session'),
+            ...toPruneInput(request)
+        })).rejects.toThrow('Admin prune aggregate differs from command');
+    });
+
+    it('accepts a completed aggregate whose page retries renewed its expiry', async () => {
+        const harness = createAdminInboxHarness({ waitForResult: false });
+        const adminSession = createAdminSession('admin', 'admin-session');
+        const request = {
+            requestId: 'renewed-completed-aggregate-expiry',
+            categories: ['runtime-state'] as const,
+            dryRun: false
+        };
+        const first = await completePrune(harness, adminSession, request);
+        expect(first.left).toMatchObject({ code: 'app-inbox-unavailable' });
+
+        const command = await readOnlyCommand(harness.queue, request.requestId);
+        const aggregateKey = toAdminPruneAggregateKey(command.jobId);
+        const storedAggregate = await harness.results.findByKey(aggregateKey);
+        if (storedAggregate === undefined) {
+            throw new Error('Expected pending admin prune aggregate');
+        }
+        const aggregate = decodeAdminPruneAggregate(JSON.parse(storedAggregate.resource));
+        await harness.results.replace({
+            ...storedAggregate,
+            status: EntityStatus.COMPLETED,
+            resource: JSON.stringify({
+                ...aggregate,
+                revision: 1,
+                expireAtEpochMs: command.expireAtEpochMs + 60_000,
+                status: 'completed',
+                completedCategories: ['runtime-state']
+            })
+        });
+
+        await expect(harness.service.pruneExpired({
+            adminSession: createAdminSession('admin', 'renewed-session'),
+            ...toPruneInput(request)
+        })).resolves.toMatchObject({
+            right: {
+                status: 'completed',
+                jobId: command.jobId,
+                results: [{ category: 'runtime-state', dryRun: false }]
+            }
+        });
     });
 
     it('returns the existing unavailable failure when the initial result wait exhausts', async () => {

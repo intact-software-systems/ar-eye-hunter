@@ -36,8 +36,30 @@ export type ReservedAdminPrunePageWork =
     }>;
 
 export function decodeAdminPruneWork(entry: ResourceEntry): ReservedAdminPrunePageWork {
-    if (entry.typeId !== EnqueuedType.APP_OUTBOX || entry.status !== EntityStatus.RESERVED) {
+    if (entry.status !== EntityStatus.RESERVED) {
         throw new TypeError('Admin prune work must be a reserved APP_OUTBOX entry');
+    }
+    const { work, senderId } = decodeAdminPruneOutboxMessage(entry);
+    if (
+        entry.audit.createdBy !== toAppQueueCreatedBy(senderId) ||
+        entry.audit.createdTs.toString() !== toPlainDateTime(work.capturedAtEpochMs).toString() ||
+        Number(entry.audit.expiryTs.epochMilliseconds) !== work.expireAtEpochMs
+    ) {
+        throw new TypeError('Admin prune work route, sender, expiry, or audit identity is invalid');
+    }
+    return { ...work, reservation: entry };
+}
+
+export interface AdminPruneOutboxMessage {
+    readonly work: AdminPrunePageWork;
+    readonly senderId: string;
+}
+
+export function decodeAdminPruneOutboxMessage(
+    entry: Pick<ResourceEntry, 'key' | 'resource' | 'typeId'>
+): AdminPruneOutboxMessage {
+    if (entry.typeId !== EnqueuedType.APP_OUTBOX) {
+        throw new TypeError('Admin prune work must be an APP_OUTBOX entry');
     }
     const outer = readExactRecord(decodeJsonWireValue(JSON.parse(entry.resource), 'Admin prune message'), [
         'id',
@@ -73,14 +95,11 @@ export function decodeAdminPruneWork(entry: ResourceEntry): ReservedAdminPrunePa
         entry.key.resourceId !== route.resourceId || entry.key.contextId !== route.contextId ||
         targets.mode !== 'all' || targets.scope !== 'global' ||
         constraints.expiresAtMs !== work.expireAtEpochMs ||
-        audit.createdBy !== id.senderId || audit.createdTs !== work.capturedAtEpochMs ||
-        entry.audit.createdBy !== toAppQueueCreatedBy(id.senderId) ||
-        entry.audit.createdTs.toString() !== toPlainDateTime(work.capturedAtEpochMs).toString() ||
-        Number(entry.audit.expiryTs.epochMilliseconds) !== work.expireAtEpochMs
+        audit.createdBy !== id.senderId || audit.createdTs !== work.capturedAtEpochMs
     ) {
         throw new TypeError('Admin prune work route, sender, expiry, or audit identity is invalid');
     }
-    return { ...work, reservation: entry };
+    return { work, senderId: id.senderId };
 }
 
 export function toAdminPruneOutbox(work: AdminPrunePageWork, serviceId: string): ResourceEntry {

@@ -27,7 +27,7 @@ import {
     decodeAdminPruneAggregate,
     toAdminPruneAggregateEntry,
     toAdminPruneAggregateKey,
-    toAdminPruneCompletedResult
+    toAdminPruneCompletedResultForCommand
 } from '../prune/admin-prune-progress.ts';
 import {
     createAdminPruneCommand,
@@ -362,21 +362,24 @@ export class AppAdminInboxService extends AppInboxService {
         if (result.left !== undefined || command.dryRun) {
             return result;
         }
-        return await this.waitForAggregate(command.jobId);
+        return await this.waitForAggregate(command);
     }
 
     private async waitForAggregate(
-        jobId: string
+        command: AdminPruneCommand
     ): Promise<Either<AppInboxFailure, AdminPruneEnqueueResult>> {
         try {
-            const result = await tryWithPolicy(async () => {
-                const entry = await this.resourceInboxResults.findByKey(toAdminPruneAggregateKey(jobId));
+            const entry = await tryWithPolicy(async () => {
+                const entry = await this.resourceInboxResults.findByKey(toAdminPruneAggregateKey(command.jobId));
                 if (entry === undefined || entry.status !== EntityStatus.COMPLETED) {
                     throw new Error('Admin prune aggregate is pending');
                 }
-                return toAdminPruneCompletedResult(decodeAdminPruneAggregate(JSON.parse(entry.resource)));
+                return entry;
             }, this.aggregateWaitPolicy);
-            return Either.ofRight(result);
+            return Either.ofRight(toAdminPruneCompletedResultForCommand(
+                decodeAdminPruneAggregate(JSON.parse(entry.resource)),
+                command
+            ));
         }
         catch (error) {
             if (error instanceof TryWithExhaustedError) {

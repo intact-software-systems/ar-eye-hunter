@@ -1,4 +1,7 @@
-import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import {
+    ADMIN_PRUNE_APP_OUTBOX_TOPIC,
+    decodeAdminPruneOutboxMessage
+} from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 import {
     type ApiV1StateWriteEvidence,
     type ApiV1StateWriteEvidenceSpec,
@@ -7,11 +10,7 @@ import {
     type OverdueRecoveryEvidence,
     type ParsedInboxRow
 } from './api-v1-state-write-evidence-contracts.ts';
-import {
-    collectEvidenceNamedStrings,
-    nestedEvidenceJson,
-    parseEvidenceJson
-} from './api-v1-state-write-json-evidence.ts';
+import { collectEvidenceNamedStrings, parseEvidenceJson } from './api-v1-state-write-json-evidence.ts';
 import { readPersistedCommandEvidence, type PersistedCommandEvidence } from './api-v1-state-write-receipt-evidence.ts';
 import { validatePersistedAppInboxResult } from './api-v1-state-write-result-evidence.ts';
 
@@ -39,6 +38,7 @@ export function parseApiV1StateWriteEvidenceRow(
         resultResource: row.result_resource,
         authoritativeReceipt: commandEvidence?.receipt,
         commandScope: commandEvidence?.commandScope,
+        adminPruneCommand: commandEvidence?.adminPruneCommand,
         requireAuthoritativeReceipt: commandEvidence !== undefined
     });
     const iso = (value: Date | string | null): string | null => value ? new Date(value).toISOString() : null;
@@ -77,7 +77,6 @@ function canonicalEffect(row: OutboxRow):
     const envelope = parseEvidenceJson(row.ri_resource) as
         | {
             id?: { msgId?: ParsedEvidenceValue; };
-            route?: { contextId?: ParsedEvidenceValue; };
             payload?: { typeId?: ParsedEvidenceValue; resource?: ParsedEvidenceValue; };
         }
         | undefined;
@@ -110,21 +109,29 @@ function canonicalEffect(row: OutboxRow):
             outboxId: msgId
         };
     }
-    const admin = nestedEvidenceJson(envelope?.payload?.resource) as Record<string, unknown> | undefined;
     if (
         row.ri_type_id === 'APP_OUTBOX' &&
-        row.ri_topic_id === 'rallar.admin.prune-expired' &&
-        envelope?.payload?.typeId === 'ADMIN_PRUNE_EXPIRED' &&
-        admin?.kind === 'page' &&
-        typeof admin.jobId === 'string' &&
-        typeof admin.category === 'string' &&
-        envelope.route?.contextId === toAppQueueKey({
-                topicId: row.ri_topic_id,
-                resourceId: msgId,
-                contextId: admin.jobId
-            }).contextId
+        row.ri_topic_id === ADMIN_PRUNE_APP_OUTBOX_TOPIC
     ) {
-        return { commandId: admin.jobId, effectKind: 'admin-prune-page', outboxId: msgId };
+        try {
+            const { work } = decodeAdminPruneOutboxMessage({
+                key: {
+                    resourceId: row.ri_resource_id,
+                    topicId: row.ri_topic_id,
+                    contextId: row.fk_ext_bank_id
+                },
+                resource: row.ri_resource,
+                typeId: row.ri_type_id
+            });
+            return {
+                commandId: work.jobId,
+                effectKind: 'admin-prune-page',
+                outboxId: row.ri_resource_id
+            };
+        }
+        catch {
+            return undefined;
+        }
     }
     return undefined;
 }

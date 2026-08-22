@@ -4,6 +4,7 @@ import { ADMIN_PRUNE_EXPIRED_CATEGORIES } from '@shared/api/admin-operations-typ
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '../../services/app-inbox-queue-key.ts';
+import type { AdminPruneCommand } from '../inbox/admin-prune-command-codec.ts';
 import type { AdminPrunePageWork } from './admin-prune-page-codec.ts';
 
 export const ADMIN_PRUNE_AGGREGATE_TOPIC = 'admin-prune.aggregate';
@@ -242,6 +243,24 @@ export function toAdminPruneCompletedResult(
         jobId: aggregate.jobId,
         results: aggregate.results
     };
+}
+
+export function toAdminPruneCompletedResultForCommand(
+    aggregate: AdminPruneAggregate,
+    command: AdminPruneCommand
+): AdminPruneCompletedResult {
+    const matches = !command.dryRun &&
+        aggregate.jobId === command.jobId &&
+        aggregate.generatedAtEpochMs === command.capturedAtEpochMs &&
+        aggregate.expireAtEpochMs >= command.expireAtEpochMs &&
+        aggregate.requestedBy === command.requestedBy &&
+        aggregate.requestedSessionId === command.requestedSessionId &&
+        aggregate.results.length === command.categories.length &&
+        aggregate.results.every((result, index) => result.category === command.categories[index]);
+    if (!matches) {
+        throw new TypeError('Admin prune aggregate differs from command');
+    }
+    return toAdminPruneCompletedResult(aggregate);
 }
 
 export function toAdminPruneAggregateKey(jobId: string): Key {

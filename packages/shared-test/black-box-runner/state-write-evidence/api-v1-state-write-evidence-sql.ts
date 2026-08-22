@@ -25,7 +25,7 @@ async function readOutboxRows(
     const rows = await Promise.all(
         [...new Set(matches)].map(async (match) =>
             await sql<OutboxRow[]>`
-                select ri_resource_id, ri_topic_id, ri_type_id, ri_status, ri_resource
+                select ri_resource_id, ri_topic_id, fk_ext_bank_id, ri_type_id, ri_status, ri_resource
                 from resource_inbox
                 where ri_type_id in ('APP_OUTBOX', 'WS_OUTBOX')
                   and position(${match} in ri_resource) > 0
@@ -36,7 +36,13 @@ async function readOutboxRows(
     return [...new Map(rows.flatMap((batch) =>
         batch.map((row) =>
             [
-                [row.ri_type_id, row.ri_topic_id, row.ri_resource_id, row.ri_resource].join('\0'),
+                [
+                    row.ri_type_id,
+                    row.ri_topic_id,
+                    row.ri_resource_id,
+                    row.fk_ext_bank_id,
+                    row.ri_resource
+                ].join('\0'),
                 row
             ] as const
         )

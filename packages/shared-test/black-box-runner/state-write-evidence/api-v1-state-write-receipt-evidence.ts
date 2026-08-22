@@ -1,7 +1,11 @@
 import { GroupTopologyConfigRepository } from '@shared-server/mod.ts';
-import { decodeAdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
+import {
+    decodeAdminPruneCommand,
+    type AdminPruneCommand
+} from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
 import {
     ADMIN_APP_INBOX_TOPIC,
+    assertAdminPruneStoredIdentity,
     LEGACY_ADMIN_APP_INBOX_TOPIC,
     toAdminPruneContextId,
     toAdminPruneJobId
@@ -63,6 +67,7 @@ export interface PersistedCommandEvidence {
         workspaceId: string;
         groupId?: string;
     }>;
+    readonly adminPruneCommand?: AdminPruneCommand;
     readonly receipt?: AuthoritativeReceiptEvidence;
     readonly failure?: string;
 }
@@ -223,7 +228,13 @@ export async function readPersistedCommandEvidence(
         if (commandType === AppInboxType.ADMIN_PRUNE_EXPIRED) {
             return await readAdminPruneEvidence(
                 row,
-                decodeJsonWireValue(identity.command.data, 'Admin prune evidence command'),
+                {
+                    topicId: identity.command.topicId,
+                    resourceId: identity.command.resourceId,
+                    contextId: identity.command.contextId,
+                    senderId: identity.command.senderId,
+                    data: decodeJsonWireValue(identity.command.data, 'Admin prune evidence command')
+                },
                 commandType
             );
         }
@@ -512,10 +523,16 @@ interface InvalidEvidenceInput {
 
 async function readAdminPruneEvidence(
     row: InboxCommandRow,
-    data: Parameters<typeof decodeAdminPruneCommand>[0],
+    enqueue: Readonly<{
+        readonly topicId?: string;
+        readonly resourceId?: string;
+        readonly contextId?: string;
+        readonly senderId?: string;
+        readonly data: Parameters<typeof decodeAdminPruneCommand>[0];
+    }>,
     commandType: AppInboxType
 ): Promise<PersistedCommandEvidence> {
-    const command = decodeAdminPruneCommand(data);
+    const command = decodeAdminPruneCommand(enqueue.data);
     const key = {
         resourceId: row.ri_resource_id,
         topicId: row.ri_topic_id,
@@ -532,15 +549,23 @@ async function readAdminPruneEvidence(
         command.jobId === (await toAdminPruneJobId(key));
     const legacyIdentity = row.ri_topic_id === LEGACY_ADMIN_APP_INBOX_TOPIC &&
         row.fk_ext_bank_id === command.requestedBy &&
-        command.jobId === row.ri_resource_id;
+        command.jobId === row.ri_resource_id &&
+        enqueue.topicId === row.ri_topic_id &&
+        enqueue.resourceId === row.ri_resource_id &&
+        enqueue.contextId === row.fk_ext_bank_id &&
+        enqueue.senderId === command.requestedSessionId;
     if (!currentIdentity && !legacyIdentity) {
         throw new TypeError('Admin prune queue identity differs from physical queue identity');
+    }
+    if (currentIdentity) {
+        await assertAdminPruneStoredIdentity(key, enqueue, command);
     }
     return {
         ...toPersistedCommandIdentity(row),
         valid: true,
         commandType,
-        commandIds: [command.jobId]
+        commandIds: [command.jobId],
+        adminPruneCommand: command
     };
 }
 

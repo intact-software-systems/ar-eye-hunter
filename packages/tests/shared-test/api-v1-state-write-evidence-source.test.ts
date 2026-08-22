@@ -164,21 +164,27 @@ describe('API-v1 PGlite state-write evidence source', () => {
             appData,
             pageSize: 100
         });
+        const enqueue = {
+            type: 'ADMIN_PRUNE_EXPIRED',
+            topicId: physicalKey.topicId,
+            resourceId: physicalKey.resourceId,
+            contextId: physicalKey.contextId,
+            senderId: command.requestedSessionId,
+            data: command
+        };
+        const toInboxResource = (overrides: Partial<typeof enqueue> = {}) =>
+            JSON.stringify({
+                payload: {
+                    typeId: 'ADMIN_PRUNE_EXPIRED',
+                    resource: JSON.stringify({ ...enqueue, ...overrides })
+                }
+            });
         const inbox = {
             ri_row_id: 1,
             ri_resource_id: physicalKey.resourceId,
             ri_topic_id: physicalKey.topicId,
             fk_ext_bank_id: physicalKey.contextId,
-            ri_resource: JSON.stringify({
-                payload: {
-                    typeId: 'ADMIN_PRUNE_EXPIRED',
-                    resource: JSON.stringify({
-                        type: 'ADMIN_PRUNE_EXPIRED',
-                        resourceId: requestId,
-                        data: command
-                    })
-                }
-            }),
+            ri_resource: toInboxResource(),
             ri_status: 'COMPLETED',
             ri_attempts: 1,
             start_ts: null,
@@ -225,6 +231,7 @@ describe('API-v1 PGlite state-write evidence source', () => {
                         ? [{
                             ri_resource_id: page.key.resourceId,
                             ri_topic_id: page.key.topicId,
+                            fk_ext_bank_id: page.key.contextId,
                             ri_type_id: page.typeId,
                             ri_status: page.status,
                             ri_resource: page.resource
@@ -248,6 +255,26 @@ describe('API-v1 PGlite state-write evidence source', () => {
             resourceOutboxCount: 1,
             resourceOutbox: [{ commandId: jobId, effectKind: 'admin-prune-page' }]
         });
+
+        for (
+            const malformedEnqueue of [
+                { topicId: `${physicalKey.topicId}:wrong` },
+                { resourceId: `${physicalKey.resourceId}:wrong` },
+                { contextId: `${physicalKey.contextId}:wrong` },
+                { senderId: `${command.requestedSessionId}:wrong` }
+            ]
+        ) {
+            inbox.ri_resource = toInboxResource(malformedEnqueue);
+            await expect(collectApiV1StateWriteEvidenceFromSql({
+                match: requestId,
+                commandTypes: ['ADMIN_PRUNE_EXPIRED']
+            }, sql as never)).resolves.toMatchObject({
+                atomicCompletionFailures: 1,
+                statusResultFailures: 1,
+                appInbox: [{ durableResultValid: false }]
+            });
+        }
+        inbox.ri_resource = toInboxResource();
 
         inbox.fk_ext_bank_id = toStrictAppInboxQueueKey({
             resourceId: requestId,
@@ -276,16 +303,7 @@ describe('API-v1 PGlite state-write evidence source', () => {
             pageSize: command.pageSize
         });
         inbox.fk_ext_bank_id = physicalKey.contextId;
-        inbox.ri_resource = JSON.stringify({
-            payload: {
-                typeId: 'ADMIN_PRUNE_EXPIRED',
-                resource: JSON.stringify({
-                    type: 'ADMIN_PRUNE_EXPIRED',
-                    resourceId: requestId,
-                    data: arbitraryJobCommand
-                })
-            }
-        });
+        inbox.ri_resource = toInboxResource({ data: arbitraryJobCommand });
         inbox.result_resource = JSON.stringify({
             ...JSON.parse(inbox.result_resource),
             jobId: arbitraryJobId

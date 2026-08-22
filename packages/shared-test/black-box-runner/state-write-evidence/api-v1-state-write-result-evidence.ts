@@ -1,6 +1,9 @@
 import { decodeAuthMutationResult } from '@shared-server/mod.ts';
+import type { AdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
+import { decodeAdminPruneEnqueueResultForCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-codec.ts';
 import * as CrdtResult from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 import { readPersistedAppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
+import type { RallarCrdtJsonValue } from '@shared/crdt/mod.ts';
 
 import {
     publicResultIdentityMatches,
@@ -34,6 +37,7 @@ interface ValidatePersistedAppInboxResultInput {
         workspaceId: string;
         groupId?: string;
     }>;
+    readonly adminPruneCommand?: AdminPruneCommand;
     readonly requireAuthoritativeReceipt?: boolean;
 }
 
@@ -256,9 +260,19 @@ export function validatePersistedAppInboxResult(
         }
     }
     if (input.commandType === 'ADMIN_PRUNE_EXPIRED') {
-        return validateAdminPruneResult(result, input.commandIds)
-            ? { valid: true, result }
-            : invalid(result, 'malformed-admin-prune-result');
+        if (input.adminPruneCommand === undefined) {
+            return invalid(result, 'missing-admin-prune-command');
+        }
+        try {
+            decodeAdminPruneEnqueueResultForCommand(
+                result as RallarCrdtJsonValue,
+                input.adminPruneCommand
+            );
+            return { valid: true, result };
+        }
+        catch {
+            return invalid(result, 'malformed-admin-prune-result');
+        }
     }
     if (input.commandType === 'RTC_RTT_SUBMIT') {
         return validateRtcRttResult(result, input.commandIds)
@@ -321,47 +335,6 @@ function validateClientWritten(value: unknown): boolean {
             record(right.snapshot) &&
             (right.event === null || record(right.event))
     );
-}
-
-function validateAdminPruneResult(result: RecordValue, commandIds: readonly string[]): boolean {
-    if (
-        !exactKeys(result, [
-            'generatedAtEpochMs',
-            'serverId',
-            'warnings',
-            'operation',
-            'status',
-            'changed',
-            'jobId',
-            'results'
-        ])
-    ) {
-        return false;
-    }
-    if (
-        !Number.isSafeInteger(result.generatedAtEpochMs) ||
-        !nonEmptyString(result.serverId) ||
-        !Array.isArray(result.warnings) ||
-        result.warnings.length !== 0 ||
-        result.operation !== 'maintenance.prune-expired' ||
-        !['dry-run', 'queued', 'completed'].includes(String(result.status)) ||
-        typeof result.changed !== 'boolean' ||
-        !readMatchingId(result.jobId, commandIds) ||
-        !Array.isArray(result.results)
-    ) {
-        return false;
-    }
-    return result.results.every((entry) => {
-        const row = record(entry);
-        return Boolean(
-            row &&
-                exactKeys(row, ['category', 'expiredRows', 'deletedRows', 'dryRun']) &&
-                nonEmptyString(row.category) &&
-                Number.isSafeInteger(row.expiredRows) &&
-                Number.isSafeInteger(row.deletedRows) &&
-                typeof row.dryRun === 'boolean'
-        );
-    });
 }
 
 function validateRtcRttResult(result: RecordValue, commandIds: readonly string[]): boolean {

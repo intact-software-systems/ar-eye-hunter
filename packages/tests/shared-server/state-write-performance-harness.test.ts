@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { compareStateWriteArtifacts, validateStateWriteArtifact } from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
 
 import { mutationDescriptor, toDescriptorCommand } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
+import { toGroupMutationDescriptorTargetIdentity } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
 import { toScopedGroupMutationCommandId } from '@shared-server/rallar-system/group-state/scoped-group-mutation-command-id.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
@@ -23,14 +24,14 @@ import { binding, swapCompleteDurableResults } from './state-write-performance-r
 
 describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () => {
     it('reads a scoped group command only from its exact actor, workspace, group, topic, and context', async () => {
-        const requestId = 'state-write:membership:7';
+        const requestId = 'state-write:config:7';
         const actorPrincipalId = 'client-7';
         const groupRef = {
             applicationId: 'state-write-run-uncontended-measured-0',
             workspaceId: 'state-write-workspace-with-a-benchmark-length-identity',
             groupId: 'group-2'
         };
-        const topicId = 'GROUP_MEMBER_UPSERT';
+        const topicId = 'GROUP_UPDATE';
         const logicalContextId = [groupRef.applicationId, groupRef.workspaceId, groupRef.groupId]
             .map(encodeURIComponent)
             .join(':');
@@ -40,18 +41,17 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             contextId: logicalContextId
         });
         const descriptor = mutationDescriptor(
-            'upsertMember',
+            'updateGroup',
             {
                 applicationId: groupRef.applicationId,
                 workspaceId: groupRef.workspaceId
             },
             groupRef.groupId,
             {
-                status: 'active',
+                metadata: { benchmarkConfigSource: requestId },
                 actorPrincipalId,
                 requestId
-            },
-            actorPrincipalId
+            }
         );
         const commandId = await toScopedGroupMutationCommandId(descriptor, actorPrincipalId);
         const command = {
@@ -111,6 +111,106 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
             actorPrincipalId: 'wrong-actor'
         })).resolves.toBeUndefined();
     });
+
+    it('uses production presence target identities when validating a scoped group command', async () => {
+        const requestId = 'state-write:presence-connect:8';
+        const actorPrincipalId = 'client-8';
+        const sessionId = 'state-write:client-8:session-8';
+        const groupRef = {
+            applicationId: 'state-write-run-uncontended-measured-0',
+            workspaceId: 'state-write-workspace-with-a-benchmark-length-identity',
+            groupId: 'group-8'
+        };
+        const topicId = 'GROUP_PRESENCE_CONNECT';
+        const logicalContextId = [groupRef.applicationId, groupRef.workspaceId, groupRef.groupId]
+            .map(encodeURIComponent)
+            .join(':');
+        const descriptor = mutationDescriptor(
+            'connectPresence',
+            { applicationId: groupRef.applicationId, workspaceId: groupRef.workspaceId },
+            groupRef.groupId,
+            {
+                principalId: actorPrincipalId,
+                generationId: `${sessionId}:generation-1`,
+                connectedAtEpochMs: 1_000,
+                lastHeartbeatAtEpochMs: 1_000,
+                expiresAtEpochMs: 61_000,
+                actorPrincipalId,
+                actorSessionId: sessionId,
+                requestId
+            },
+            actorPrincipalId,
+            sessionId
+        );
+        const commandId = await toScopedGroupMutationCommandId(descriptor, actorPrincipalId);
+        const command = { ...toDescriptorCommand(descriptor, () => requestId), commandId };
+        const physicalKey = toAppQueueKey({ topicId, resourceId: requestId, contextId: logicalContextId });
+        const row = {
+            ri_resource_id: physicalKey.resourceId,
+            ri_topic_id: physicalKey.topicId,
+            fk_ext_bank_id: physicalKey.contextId,
+            ri_resource: JSON.stringify({
+                payload: {
+                    typeId: topicId,
+                    resource: JSON.stringify({
+                        type: topicId,
+                        topicId,
+                        resourceId: requestId,
+                        contextId: logicalContextId,
+                        authority: {
+                            authorityProof: {
+                                version: 1,
+                                principalId: actorPrincipalId,
+                                sessionId,
+                                sessionIssuedAtEpochMs: 1,
+                                sessionExpiresAtEpochMs: 2,
+                                commandMac: 'mac'
+                            },
+                            descriptor,
+                            command,
+                            facts: {},
+                            causalToken: 'causal-token',
+                            queueResourceId: 'g-queue-resource'
+                        }
+                    })
+                }
+            })
+        };
+
+        await expect(readScopedGroupCommandIdentity(row, {
+            requestId,
+            topicId,
+            logicalContextId,
+            groupRef,
+            actorPrincipalId
+        })).resolves.toEqual({ requestId, commandId });
+    });
+
+    it.each(['joinGroup', 'acceptGroupInvite'] as const)(
+        'keeps the descriptor target empty for %s after resolving its command principal',
+        (operation) => {
+            const actorPrincipalId = 'client-admission';
+            const descriptor = mutationDescriptor(
+                operation,
+                { applicationId: 'app', workspaceId: 'workspace' },
+                'group',
+                {
+                    actorPrincipalId,
+                    actorSessionId: 'session',
+                    requestId: `request-${operation}`
+                }
+            );
+            const command = toDescriptorCommand(descriptor, () => `command-${operation}`);
+            if (command.operation !== operation) {
+                throw new Error(`Expected ${operation} command`);
+            }
+            expect(command.targetPrincipalId).toBe(actorPrincipalId);
+            expect(toGroupMutationDescriptorTargetIdentity(command)).toEqual({
+                targetPrincipalId: null,
+                sessionId: null
+            });
+        }
+    );
 
     it('matches benchmark-length outbox identities produced by the production queue constructor', async () => {
         const command = {

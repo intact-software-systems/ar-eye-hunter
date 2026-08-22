@@ -1,6 +1,9 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 
+import {
+    toGroupMutationDescriptorTargetIdentity
+} from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
 import { validateGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-command.ts';
 import {
     toScopedGroupMutationCommandIdFromIdentity
@@ -154,15 +157,14 @@ export async function readScopedGroupCommandIdentity(
     }
     const descriptorScope = asJsonWireObject(descriptor.scope);
     const descriptorRequest = asJsonWireObject(descriptor.request);
-    const targetPrincipalId = 'targetPrincipalId' in command ? command.targetPrincipalId : null;
-    const targetSessionId = 'sessionId' in command ? command.sessionId : null;
+    const targetIdentity = toGroupMutationDescriptorTargetIdentity(command);
     if (
         !hasExactKeys(descriptorScope, ['applicationId', 'workspaceId']) ||
         descriptorScope.applicationId !== expectation.groupRef.applicationId ||
         descriptorScope.workspaceId !== expectation.groupRef.workspaceId ||
         descriptor.groupId !== expectation.groupRef.groupId ||
-        descriptor.targetPrincipalId !== targetPrincipalId ||
-        descriptor.sessionId !== targetSessionId ||
+        descriptor.targetPrincipalId !== targetIdentity.targetPrincipalId ||
+        descriptor.sessionId !== targetIdentity.sessionId ||
         descriptorRequest?.requestId !== expectation.requestId ||
         descriptor.operation !== command.operation ||
         command.requestId !== expectation.requestId ||
@@ -177,8 +179,8 @@ export async function readScopedGroupCommandIdentity(
                     workspaceId: command.aggregateRef.workspaceId
                 },
                 groupId: command.aggregateRef.groupId,
-                targetPrincipalId,
-                targetSessionId,
+                targetPrincipalId: targetIdentity.targetPrincipalId,
+                targetSessionId: targetIdentity.sessionId,
                 callerPrincipalId: expectation.actorPrincipalId,
                 requestId: expectation.requestId
             })
