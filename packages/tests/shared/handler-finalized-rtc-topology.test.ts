@@ -51,12 +51,19 @@ const ADAPTERS: readonly ReleaseAdapter[] = [
     {
         name: 'PostgreSQL',
         release: async (reserved, current) => {
-            const transactionRepository = {
-                releaseReserved: vi.fn(async () => null),
-                findAnyByKey: vi.fn(async () => current)
+            const transactionOwners = {
+                reservations: {
+                    releaseReserved: vi.fn(async () => null)
+                },
+                entries: {
+                    findAnyByKey: vi.fn(async () => current)
+                }
             };
             const repository = {
-                begin: vi.fn(async (fn: (value: unknown) => Promise<unknown>) => await fn(transactionRepository))
+                transaction: vi.fn(
+                    async (work: (value: unknown) => Promise<unknown>) =>
+                        await work(transactionOwners)
+                )
             };
             const queue = new PSqlQueueBox(repository as never);
             return firstValue(
