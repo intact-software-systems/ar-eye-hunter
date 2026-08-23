@@ -1770,25 +1770,32 @@ describe('Hetzner distributed recipe workflow', () => {
     });
 
     it('persists control-server snapshots with an atomic temp-file rename', async () => {
-        const source = await readFile(
-            path.join(repoRoot, 'apps/rallar-black-box-control-server/src/main.ts'),
-            'utf8'
+        const controlServerRoot = path.join(repoRoot, 'apps/rallar-black-box-control-server/src');
+        const [configurationSource, mainSource, persistenceSource] = await Promise.all(
+            [
+                'control-server-configuration.ts',
+                'main.ts',
+                'control-snapshot-persistence.ts'
+            ].map((fileName) => readFile(path.join(controlServerRoot, fileName), 'utf8'))
         );
 
-        expect(source).toContain('snapshotPersistenceBounds: ControlRunSnapshotBounds');
-        expect(source).toContain('RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_EVENTS');
-        expect(source).toContain(
-            'controlService.snapshotForPersistence(security.snapshotPersistenceBounds)'
+        expect(configurationSource).toContain(
+            'snapshotPersistenceBounds: ControlRunSnapshotBounds'
         );
-        expect(source).toContain('snapshotPersistDirty');
-        expect(source).toContain('snapshotPersisting');
-        expect(source).toContain('let snapshotPersistSequence = 0');
-        expect(source).toContain(
-            'const tempPath = `${path}.tmp-${Deno.pid}-${Date.now()}-${snapshotPersistSequence += 1}`'
+        expect(configurationSource).toContain('RALLAR_BLACK_BOX_${prefix}_EVENTS');
+        expect(mainSource).toContain('snapshotBounds: security.snapshotPersistenceBounds');
+        expect(persistenceSource).toContain(
+            'input.controlService.snapshotForPersistence(input.snapshotBounds)'
         );
-        expect(source).toContain('await Deno.writeTextFile(tempPath, payload)');
-        expect(source).toContain('Deno.rename(tempPath, path)');
-        expect(source).not.toContain('Deno.writeTextFile(path, payload)');
+        expect(persistenceSource).toContain('let dirty = false');
+        expect(persistenceSource).toContain('let persisting = false');
+        expect(persistenceSource).toContain('let sequence = 0');
+        expect(persistenceSource).toContain(
+            'const tempPath = `${path}.tmp-${Deno.pid}-${Date.now()}-${sequence += 1}`'
+        );
+        expect(persistenceSource).toContain('await Deno.writeTextFile(tempPath, payload)');
+        expect(persistenceSource).toContain('await Deno.rename(tempPath, path)');
+        expect(persistenceSource).not.toContain('Deno.writeTextFile(path, payload)');
     });
 
     it('installs latest Deno but enforces 2.9.0 as the minimum Hetzner runtime version', async () => {
