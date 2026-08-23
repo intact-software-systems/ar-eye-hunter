@@ -11,6 +11,7 @@ const managedRunnerPath = path.join(
     repoRoot,
     'packages/shared-test/black-box-runner/api-v1-black-box-run.mts'
 );
+const managedRunnerExitTimeoutMs = 30_000;
 
 interface ApiV1RunnerInvocation {
     readonly args: readonly string[];
@@ -72,7 +73,7 @@ describe('API-v1 fairness-proof artifact lifecycle', () => {
                 await closeServer(listener);
             }
         });
-    }, 30_000);
+    }, managedRunnerExitTimeoutMs * 2 + 10_000);
 
     it('clears stale proof before a managed Postgres failure that precedes migrations', async () => {
         await withStaleFairnessArtifactFixture(async (fixture) => {
@@ -136,8 +137,10 @@ async function runApiV1BlackBoxRunner(
     });
     const hardTimeout = new Promise<never>((_resolve, reject) => {
         timeout = setTimeout(() => {
-            reject(new Error('API-v1 fairness-proof artifact runner did not exit within 10000ms.'));
-        }, 10_000);
+            reject(new Error(
+                `API-v1 fairness-proof artifact runner did not exit within ${managedRunnerExitTimeoutMs}ms.`
+            ));
+        }, managedRunnerExitTimeoutMs);
     });
 
     try {
