@@ -1,5 +1,6 @@
 import { type GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
+import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-group-state-event-store.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
 import type {
@@ -1568,8 +1569,10 @@ Deno.test('upsertMember and connectPresenceSession ignore unchanged semantic sta
 function createTestGroupStateService():
     & TestAuthenticatedGroupStateService
     & Pick<TestGroupStateMaintenanceService, 'expireExpiredPresenceSessions'> {
+    const eventStore = new InMemoryGroupStateEventStore();
     const runtime = createTestGroupStateRuntime({
         runtimeRepository: new FakeRuntimeStateRepository(),
+        groupStateEventStoreFor: () => eventStore,
         now: () => 1_000,
         serviceId: 'test-service'
     });
