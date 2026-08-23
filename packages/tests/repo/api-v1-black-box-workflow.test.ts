@@ -120,7 +120,8 @@ describe('API-v1 black-box workflow', () => {
             backend: 'postgres',
             'api-port': '18080',
             'secondary-api-port': '18081',
-            'tertiary-api-port': '18082'
+            'tertiary-api-port': '18082',
+            'run-migrations': 'true'
         });
         const topologyReplayStep = Object.values(workflow.jobs ?? {})
             .flatMap((job) => job.steps ?? [])
