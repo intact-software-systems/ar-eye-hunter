@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import assert from 'node:assert/strict';
 import { createResourceEntry, readPGliteDatabaseEpochMs, withPGliteSql } from './pglite-auth-test-harness.ts';
@@ -12,7 +12,7 @@ import { createResourceEntry, readPGliteDatabaseEpochMs, withPGliteSql } from '.
 Deno.test('PGlite scheduled entries stay invisible until next_ts under a skewed session time zone', async () => {
     await withPGliteSql(async (sql) => {
         await sql.exec('set time zone \'Etc/GMT-5\'');
-        const repository = new ResourceInboxRepository(sql);
+        const repository = createPSqlResourceInboxRepository(sql);
         const queueBox = new PSqlQueueBox(repository);
         const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
 
@@ -26,8 +26,8 @@ Deno.test('PGlite scheduled entries stay invisible until next_ts under a skewed 
             attempts: 0,
             nextTs: Temporal.Instant.fromEpochMilliseconds(nowEpochMs - 1_000)
         };
-        await repository.writeIfAbsentOrMatch(future);
-        await repository.writeIfAbsentOrMatch(due);
+        await repository.entries.writeIfAbsentOrMatch(future);
+        await repository.entries.writeIfAbsentOrMatch(due);
 
         const reserved = await queueBox.reserveEntries(
             new Set(['TYPE_A']),
@@ -53,10 +53,10 @@ Deno.test('PGlite scheduled entries stay invisible until next_ts under a skewed 
 Deno.test('PGlite retry release delay is honored under a skewed session time zone', async () => {
     await withPGliteSql(async (sql) => {
         await sql.exec('set time zone \'Etc/GMT-5\'');
-        const repository = new ResourceInboxRepository(sql);
+        const repository = createPSqlResourceInboxRepository(sql);
         const queueBox = new PSqlQueueBox(repository);
 
-        await repository.writeIfAbsentOrMatch(createResourceEntry('retry-delayed'));
+        await repository.entries.writeIfAbsentOrMatch(createResourceEntry('retry-delayed'));
         const reserved = await queueBox.reserveEntries(
             new Set(['TYPE_A']),
             new Set([EntityStatus.NEW]),

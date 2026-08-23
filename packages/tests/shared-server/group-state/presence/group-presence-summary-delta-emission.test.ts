@@ -12,7 +12,7 @@ import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { describe, expect, it } from 'vitest';

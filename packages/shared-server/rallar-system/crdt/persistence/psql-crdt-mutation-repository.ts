@@ -9,7 +9,7 @@ import {
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { ResourceInboxRepository } from '../../../queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '../../../queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import {
     CrdtMutationConflictError,
     type CrdtCanonicalSnapshotEnvelope,
@@ -149,9 +149,9 @@ export class PSqlCrdtMutationRepository implements CrdtMutationRepository {
     }
 
     async writeOutbox(entries: readonly ResourceEntry[]): Promise<void> {
-        const outbox = new ResourceInboxRepository(this.sql);
+        const outbox = createPSqlResourceInboxRepository(this.sql);
         for (const entry of entries) {
-            await outbox.write(entry);
+            await outbox.entries.write(entry);
         }
     }
 }

@@ -7,7 +7,7 @@ import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupPresenceSummary, GroupRef, GroupScope, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { describe, expect, it } from 'vitest';
 import { configureTestCacheRepositories } from '../../../cache-repository-config.ts';

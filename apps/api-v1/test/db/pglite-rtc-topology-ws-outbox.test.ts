@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { computeTopologyMutation } from '@shared-server/rallar-system/topology/mutation/rtc-topology-mutations.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { toRtcTopologyPublicationId, toRtcTopologyPublicationMessageId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
@@ -102,7 +102,7 @@ Deno.test('PGlite atomically publishes stale topology work without regressing la
             ...logicalWorkEntry,
             key: { ...logicalWorkEntry.key, resourceId: 'work-stale-reservation' }
         };
-        await new ResourceInboxRepository(sql).write(workEntry);
+        await createPSqlResourceInboxRepository(sql).entries.write(workEntry);
         await sql`
       update resource_inbox
       set ri_status = 'RESERVED', ri_attempts = 1,
@@ -111,7 +111,7 @@ Deno.test('PGlite atomically publishes stale topology work without regressing la
         and ri_resource_id = ${workEntry.key.resourceId}
         and fk_ext_bank_id = ${workEntry.key.contextId}
     `;
-        const reserved = await new ResourceInboxRepository(sql).findAnyByKey(workEntry.key);
+        const reserved = await createPSqlResourceInboxRepository(sql).entries.findAnyByKey(workEntry.key);
         assert.ok(reserved);
         assert.equal(reserved.status, EntityStatus.RESERVED);
         assert.equal(reserved.dequeueAudit.attempts, 1);
@@ -119,7 +119,7 @@ Deno.test('PGlite atomically publishes stale topology work without regressing la
             await executions.writeTopologyMutation(transaction, computed);
             await writeRtcTopologyPublicationOutbox(transaction, stalePublication);
             assert.equal(
-                await new ResourceInboxRepository(transaction).finishReserved(
+                await createPSqlResourceInboxRepository(transaction).finalization.finishReserved(
                     reserved.key,
                     1,
                     EntityStatus.COMPLETED,
@@ -141,7 +141,7 @@ Deno.test('PGlite atomically publishes stale topology work without regressing la
             stalePublication
         );
         assert.equal(
-            (await new ResourceInboxRepository(sql).findAnyByKey(workEntry.key))?.status,
+            (await createPSqlResourceInboxRepository(sql).entries.findAnyByKey(workEntry.key))?.status,
             EntityStatus.COMPLETED
         );
         const wsRows = await sql<{ count: string; }[]>`

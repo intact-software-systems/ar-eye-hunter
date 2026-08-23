@@ -24,7 +24,7 @@ import {
     type RallarCrdtDocumentRef,
     type RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY, retryAfterAttempt } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';

@@ -1,12 +1,12 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { Reservator } from '@shared/queuebox/DequeueController.ts';
 import { DequeueResourceEntryController, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
     toResourceInboxFairnessReservationOptions,
     toResourceInboxWorkAdvertisementOptions,
     type DequeueResourceEntryRepository
-} from '@shared/queuebox/QueueBoxTypes.ts';
+} from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';

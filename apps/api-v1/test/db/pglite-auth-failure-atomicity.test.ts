@@ -1,5 +1,5 @@
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
@@ -21,7 +21,7 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const runtime = new PSqlRuntimeStateRepository(sql);
-            const resourceInbox = new ResourceInboxRepository(sql);
+            const resourceInbox = createPSqlResourceInboxRepository(sql);
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
             const credentialIssuer = createHmacAuthCredentialIssuer(
@@ -31,7 +31,7 @@ Deno.test(
             const appAuth = new AppAuthInboxService(
                 {
                     inboxQueueReader: inboxReader,
-                    resourceInboxRepository: resourceInbox,
+                    resourceInboxRepository: resourceInbox.entries,
                     resourceInboxResultsRepository: resourceResults,
                     database: sql,
                     authMutationService: createAuthMutationService({
@@ -63,7 +63,7 @@ Deno.test(
                 expiresAtEpochMs: nowEpochMs + 60_000
             };
             await new AuthSessionRepository(runtime).putSession(session);
-            await resourceInbox.writeIfAbsentOrMatch(createResourceEntry(
+            await resourceInbox.entries.writeIfAbsentOrMatch(createResourceEntry(
                 'logout-outbox-collision',
                 {
                     topicId: 'auth.session.logout',
@@ -112,7 +112,7 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const runtime = new PSqlRuntimeStateRepository(sql);
-            const resourceInbox = new ResourceInboxRepository(sql);
+            const resourceInbox = createPSqlResourceInboxRepository(sql);
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
             const credentialIssuer = createHmacAuthCredentialIssuer(
@@ -122,7 +122,7 @@ Deno.test(
             const appAuth = new AppAuthInboxService(
                 {
                     inboxQueueReader: inboxReader,
-                    resourceInboxRepository: resourceInbox,
+                    resourceInboxRepository: resourceInbox.entries,
                     resourceInboxResultsRepository: resourceResults,
                     database: sql,
                     authMutationService: createAuthMutationService({

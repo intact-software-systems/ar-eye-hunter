@@ -2,7 +2,7 @@ import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/stat
 import assert from 'node:assert/strict';
 
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-delivery-repository.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
@@ -176,7 +176,7 @@ export async function createPGliteTopologyWorkFixture(
         60_000,
         () => nowEpochMs
     );
-    const resourceInbox = new ResourceInboxRepository(sql);
+    const resourceInbox = createPSqlResourceInboxRepository(sql);
     const workEntry = await sql.begin((transaction) =>
         writeRtcTopologyOutbox(transaction, {
             commandId,
@@ -201,7 +201,7 @@ export async function createPGliteTopologyWorkFixture(
       and ri_resource_id = ${workEntry.key.resourceId}
       and fk_ext_bank_id = ${workEntry.key.contextId}
   `;
-    const reserved = await resourceInbox.findAnyByKey(workEntry.key);
+    const reserved = await resourceInbox.entries.findAnyByKey(workEntry.key);
     assert.ok(reserved);
     const message = readALMessage(reserved.resource);
     const envelope = readResourceInboxKeyFields(message.payload.resource);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { PSqlAppDataRepository } from '@shared-server/postgres/app-data/PSqlAppDataRepository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { ResourceInboxInvariantCorruptionError, ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, ResourceInboxInvariantCorruptionError, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work-service.ts';
@@ -50,10 +50,10 @@ interface EndTimestampRow {
 }
 
 Deno.test(
-    'ResourceInboxRepository and ResourceInboxResultsRepository run against PGlite SQL adapter',
+    'PSqlResourceInboxRepository and ResourceInboxResultsRepository run against PGlite SQL adapter',
     async () => {
         await withPGliteSql(async (sql) => {
-            const inbox = new ResourceInboxRepository(sql);
+            const inbox = createPSqlResourceInboxRepository(sql);
             const results = new ResourceInboxResultsRepository(sql);
             const active = createResourceEntry('active-1', {
                 payload: { text: 'active' },
@@ -83,13 +83,13 @@ Deno.test(
                 }
             };
 
-            const stored = await inbox.write(active);
+            const stored = await inbox.entries.write(active);
             assert.ok(stored.db?.id);
-            await inbox.write(expired);
-            await inbox.write(exhausted);
-            await inbox.write(exhaustedTimeout);
+            await inbox.entries.write(expired);
+            await inbox.entries.write(exhausted);
+            await inbox.entries.write(exhaustedTimeout);
             assert.equal(
-                await inbox.isEntriesToLock(
+                await inbox.reservations.isEntriesToLock(
                     new Set([exhausted.typeId]),
                     new Set([EntityStatus.NEW]),
                     2
@@ -97,14 +97,14 @@ Deno.test(
                 false
             );
             assert.equal(
-                await inbox.isEntriesToLock(
+                await inbox.reservations.isEntriesToLock(
                     new Set([exhausted.typeId]),
                     new Set([EntityStatus.NEW])
                 ),
                 true
             );
             assert.equal(
-                await inbox.isTimeoutOnReservedEntries(
+                await inbox.reservations.isTimeoutOnReservedEntries(
                     new Set([exhaustedTimeout.typeId]),
                     Temporal.Duration.from({ seconds: 1 }),
                     2
@@ -112,7 +112,7 @@ Deno.test(
                 false
             );
             assert.equal(
-                await inbox.isTimeoutOnReservedEntries(
+                await inbox.reservations.isTimeoutOnReservedEntries(
                     new Set([exhaustedTimeout.typeId]),
                     Temporal.Duration.from({ seconds: 1 })
                 ),
@@ -129,7 +129,7 @@ Deno.test(
                     startTs: Temporal.Instant.from('2020-01-01T00:00:00Z')
                 }
             };
-            await inbox.write(databaseClockTimeout);
+            await inbox.entries.write(databaseClockTimeout);
             await sql`
       update resource_inbox
       set start_ts = (now() - interval '29 seconds') at time zone 'UTC'
@@ -141,8 +141,8 @@ Deno.test(
             Date.now = () => Date.parse('1900-01-01T00:00:00Z');
             try {
                 assert.equal(
-                    (await inbox.begin((transactionInbox) =>
-                        transactionInbox.findTimedOutReservedEntriesSkipLocked(
+                    (await inbox.transaction((transactionInbox) =>
+                        transactionInbox.reservations.findTimedOutReservedEntriesSkipLocked(
                             new Set([databaseClockTimeout.typeId]),
                             30_000,
                             { maxToReserve: 1, maxAttempts: 2 }
@@ -158,8 +158,8 @@ Deno.test(
           and fk_ext_bank_id = ${databaseClockTimeout.key.contextId}
       `;
                 assert.equal(
-                    (await inbox.begin((transactionInbox) =>
-                        transactionInbox.findTimedOutReservedEntriesSkipLocked(
+                    (await inbox.transaction((transactionInbox) =>
+                        transactionInbox.reservations.findTimedOutReservedEntriesSkipLocked(
                             new Set([databaseClockTimeout.typeId]),
                             30_000,
                             { maxToReserve: 1, maxAttempts: 2 }
@@ -184,11 +184,11 @@ Deno.test(
                     expiryTs: Temporal.Instant.from('9999-12-31T23:59:59.000001Z')
                 }
             };
-            assert.equal(await inbox.writeIfAbsentOrMatch(immutable), 'inserted');
-            assert.equal(await inbox.writeIfAbsentOrMatch(immutable), 'matched');
+            assert.equal(await inbox.entries.writeIfAbsentOrMatch(immutable), 'inserted');
+            assert.equal(await inbox.entries.writeIfAbsentOrMatch(immutable), 'matched');
             await assert.rejects(
                 () =>
-                    inbox.writeIfAbsentOrMatch({
+                    inbox.entries.writeIfAbsentOrMatch({
                         ...immutable,
                         audit: {
                             ...immutable.audit,
@@ -220,7 +220,7 @@ Deno.test(
                         )
                     }
                 };
-                assert.equal(await inbox.writeIfAbsentOrMatch(creationEntry), 'inserted');
+                assert.equal(await inbox.entries.writeIfAbsentOrMatch(creationEntry), 'inserted');
                 const creationRows = await sql<CreatedTimestampRow[]>`
         select created_ts::text as created_ts
         from resource_inbox
@@ -232,14 +232,14 @@ Deno.test(
                     creationRows[0]?.created_ts,
                     `2026-06-01 ${expectedTime}`
                 );
-                assert.equal(await inbox.writeIfAbsentOrMatch(creationEntry), 'matched');
+                assert.equal(await inbox.entries.writeIfAbsentOrMatch(creationEntry), 'matched');
 
                 const expiryEntry = createResourceEntry(`round-expiry-${scenario}`, {
                     payload: { scenario },
                     typeId: 'APP_OUTBOX',
                     expiryTs: Temporal.Instant.from(`9998-06-01T12:00:00.${fraction}Z`)
                 });
-                assert.equal(await inbox.writeIfAbsentOrMatch(expiryEntry), 'inserted');
+                assert.equal(await inbox.entries.writeIfAbsentOrMatch(expiryEntry), 'inserted');
                 const expiryRows = await sql<ExpireTimestampRow[]>`
         select expire_ts::text as expire_ts
         from resource_inbox
@@ -251,21 +251,21 @@ Deno.test(
                     expiryRows[0]?.expire_ts,
                     `9998-06-01 ${expectedTime}`
                 );
-                assert.equal(await inbox.writeIfAbsentOrMatch(expiryEntry), 'matched');
+                assert.equal(await inbox.entries.writeIfAbsentOrMatch(expiryEntry), 'matched');
             }
 
-            assert.equal((await inbox.findByKey(active.key))?.key.resourceId, 'active-1');
-            assert.equal(await inbox.findByKey(expired.key), null);
+            assert.equal((await inbox.entries.findByKey(active.key))?.key.resourceId, 'active-1');
+            assert.equal(await inbox.entries.findByKey(expired.key), null);
             assert.equal(
-                await inbox.isEntriesToLock(
+                await inbox.reservations.isEntriesToLock(
                     new Set(['TYPE_A']),
                     new Set([EntityStatus.NEW])
                 ),
                 true
             );
 
-            const locked = await inbox.begin((txInbox) =>
-                txInbox.findEntriesSkipLocked(
+            const locked = await inbox.transaction((txInbox) =>
+                txInbox.reservations.findEntriesSkipLocked(
                     new Set(['TYPE_A']),
                     new Set([EntityStatus.NEW]),
                     10
@@ -274,10 +274,10 @@ Deno.test(
             assert.equal(locked.size, 1);
             assert.equal([...locked.values()][0].key.resourceId, 'active-1');
 
-            const reserved = await inbox.startProcessingEntity(active);
+            const reserved = await inbox.reservations.startProcessingEntity(active);
             assert.equal(reserved.right?.status, EntityStatus.RESERVED);
             assert.equal(reserved.right?.dequeueAudit.attempts, 1);
-            assert.equal(await inbox.writeIfAbsentOrMatch(active), 'matched');
+            assert.equal(await inbox.entries.writeIfAbsentOrMatch(active), 'matched');
 
             const reservedStartRows = await sql<StartTimestampRow[]>`
       select start_ts::text as start_ts
@@ -299,14 +299,14 @@ Deno.test(
                 Number(reservedStartTs.epochMilliseconds) + 123
             );
             assert.equal(
-                await inbox.releaseReserved(active.key, {
+                await inbox.reservations.releaseReserved(active.key, {
                     expectedAttempts: 2,
                     releasedAt,
                     disposition: { status: EntityStatus.COMPLETED, delayMs: null }
                 }),
                 null
             );
-            const released = await inbox.releaseReserved(active.key, {
+            const released = await inbox.reservations.releaseReserved(active.key, {
                 expectedAttempts: 1,
                 releasedAt,
                 disposition: { status: EntityStatus.COMPLETED, delayMs: null }
@@ -324,8 +324,8 @@ Deno.test(
             );
             assert.equal(released?.dequeueAudit.endTs?.toString(), releasedAt.toString());
             assert.equal(released?.dequeueAudit.nextTs, undefined);
-            assert.equal((await inbox.findByKey(active.key))?.status, EntityStatus.COMPLETED);
-            assert.equal(await inbox.writeIfAbsentOrMatch(active), 'matched');
+            assert.equal((await inbox.entries.findByKey(active.key))?.status, EntityStatus.COMPLETED);
+            assert.equal(await inbox.entries.writeIfAbsentOrMatch(active), 'matched');
 
             const batchFirst = createResourceEntry('release-batch-first', {
                 payload: { text: 'first' },
@@ -335,10 +335,10 @@ Deno.test(
                 payload: { text: 'second' },
                 typeId: 'TYPE_A'
             });
-            await inbox.write(batchFirst);
-            await inbox.write(batchSecond);
-            const firstReservation = await inbox.startProcessingEntity(batchFirst);
-            const secondReservation = await inbox.startProcessingEntity(batchSecond);
+            await inbox.entries.write(batchFirst);
+            await inbox.entries.write(batchSecond);
+            const firstReservation = await inbox.reservations.startProcessingEntity(batchFirst);
+            const secondReservation = await inbox.reservations.startProcessingEntity(batchSecond);
             assert.ok(firstReservation.right);
             assert.ok(secondReservation.right);
             const queueBox = new PSqlQueueBox(inbox);
@@ -359,9 +359,9 @@ Deno.test(
                     'code' in error &&
                     error.code === 'resource-inbox-lost-reservation'
             );
-            assert.equal((await inbox.findByKey(batchFirst.key))?.status, EntityStatus.RESERVED);
-            assert.equal((await inbox.findByKey(batchSecond.key))?.status, EntityStatus.RESERVED);
-            assert.equal(await inbox.deleteExpired(), 1);
+            assert.equal((await inbox.entries.findByKey(batchFirst.key))?.status, EntityStatus.RESERVED);
+            assert.equal((await inbox.entries.findByKey(batchSecond.key))?.status, EntityStatus.RESERVED);
+            assert.equal(await inbox.maintenance.deleteExpired(), 1);
 
             const resultEntry = createResourceEntry('result-1', {
                 topicId: 'result-topic',
@@ -392,7 +392,7 @@ Deno.test(
                 })
             );
             assert.equal(await results.deleteExpired(), 1);
-            assert.equal(await inbox.deleteByKey(active.key), true);
+            assert.equal(await inbox.entries.deleteByKey(active.key), true);
         });
     }
 );
@@ -401,7 +401,7 @@ Deno.test(
     'Coalesced APP_OUTBOX RTC topology work fits the durable resource inbox key columns',
     async () => {
         await withPGliteSql(async (sql) => {
-            const queue = new PSqlQueueBox(new ResourceInboxRepository(sql));
+            const queue = new PSqlQueueBox(createPSqlResourceInboxRepository(sql));
             const service = new CoalescedAppOutboxWorkService(
                 new OutboxQueueReader(queue),
                 'rallar-server-instance-with-a-long-identity',
@@ -456,7 +456,7 @@ Deno.test(
     'transaction-bound APP_OUTBOX coalescing fences generation and reserved work',
     async () => {
         await withPGliteSql(async (sql) => {
-            const repository = new ResourceInboxRepository(sql);
+            const repository = createPSqlResourceInboxRepository(sql);
             const queue = new PSqlQueueBox(repository);
             const service = new CoalescedAppOutboxWorkService(
                 new OutboxQueueReader(queue),
@@ -485,7 +485,7 @@ Deno.test(
                 contextId: 'transactional-room',
                 data: { overlayId: 'transactional-status-fence', revision: 1 }
             })).entry;
-            await repository.writeIfAbsentOrMatch(statusFirst);
+            await repository.entries.writeIfAbsentOrMatch(statusFirst);
             await sql`
       update resource_inbox
       set ri_status = ${EntityStatus.RETRY}
@@ -494,7 +494,7 @@ Deno.test(
         and fk_ext_bank_id = ${statusFirst.key.contextId}
     `;
             const statusMismatch = await sql.begin(async (transaction) =>
-                await new ResourceInboxRepository(transaction).replacePendingIfMatch(
+                await createPSqlResourceInboxRepository(transaction).entries.replacePendingIfMatch(
                     statusFirst,
                     advanceCoalescedGeneration(statusFirst, 2),
                     1
@@ -502,7 +502,7 @@ Deno.test(
             );
             assert.equal(statusMismatch, null);
             assert.equal(
-                (await repository.findAnyByKey(statusFirst.key))?.status,
+                (await repository.entries.findAnyByKey(statusFirst.key))?.status,
                 EntityStatus.RETRY
             );
 
@@ -514,7 +514,7 @@ Deno.test(
                 })
             );
             assert.equal(updated.action, 'updated');
-            assert.equal((await repository.findByKey(first.key))?.resource, second.resource);
+            assert.equal((await repository.entries.findByKey(first.key))?.resource, second.resource);
 
             const reserved = await queue.reserveEntries(
                 new Set([first.typeId]),
@@ -535,9 +535,9 @@ Deno.test(
 
             assert.equal(blocked.action, 'successor');
             assert.equal(blocked.blockedByReserved, true);
-            assert.equal((await repository.findAnyByKey(first.key))?.resource, second.resource);
-            assert.equal((await repository.findAnyByKey(first.key))?.status, EntityStatus.RESERVED);
-            assert.equal((await repository.findByKey(successor.key))?.resource, successor.resource);
+            assert.equal((await repository.entries.findAnyByKey(first.key))?.resource, second.resource);
+            assert.equal((await repository.entries.findAnyByKey(first.key))?.status, EntityStatus.RESERVED);
+            assert.equal((await repository.entries.findByKey(successor.key))?.resource, successor.resource);
 
             const replay = await sql.begin(async (transaction) =>
                 await service.write(transaction, {
@@ -547,9 +547,9 @@ Deno.test(
                 })
             );
             assert.equal(replay.action, 'successor');
-            assert.equal((await repository.findAnyByKey(first.key))?.resource, second.resource);
-            assert.equal((await repository.findAnyByKey(first.key))?.status, EntityStatus.RESERVED);
-            assert.equal((await repository.findByKey(successor.key))?.resource, successor.resource);
+            assert.equal((await repository.entries.findAnyByKey(first.key))?.resource, second.resource);
+            assert.equal((await repository.entries.findAnyByKey(first.key))?.status, EntityStatus.RESERVED);
+            assert.equal((await repository.entries.findByKey(successor.key))?.resource, successor.resource);
 
             await assert.rejects(
                 async () => {
@@ -574,7 +574,7 @@ Deno.test(
 
 Deno.test('transaction-bound APP_OUTBOX coalescing revives finished work in place', async () => {
     await withPGliteSql(async (sql) => {
-        const repository = new ResourceInboxRepository(sql);
+        const repository = createPSqlResourceInboxRepository(sql);
         const queue = new PSqlQueueBox(repository);
         const service = new CoalescedAppOutboxWorkService(
             new OutboxQueueReader(queue),
@@ -596,14 +596,14 @@ Deno.test('transaction-bound APP_OUTBOX coalescing revives finished work in plac
         const observedReserved = [...reserved.values()][0];
         assert.ok(observedReserved);
         assert.ok(
-            await repository.finishReserved(
+            await repository.finalization.finishReserved(
                 observedReserved.key,
                 observedReserved.dequeueAudit.attempts,
                 EntityStatus.COMPLETED,
                 new Date(600)
             )
         );
-        const finished = await repository.findAnyByKey(first.key);
+        const finished = await repository.entries.findAnyByKey(first.key);
         assert.equal(finished?.status, EntityStatus.COMPLETED);
 
         const revivedEntry = advanceCoalescedGeneration({ ...first, resource: finished!.resource }, 2);
@@ -621,7 +621,7 @@ Deno.test('transaction-bound APP_OUTBOX coalescing revives finished work in plac
             })
         );
         assert.equal(revived.action, 'updated');
-        const stored = await repository.findByKey(first.key);
+        const stored = await repository.entries.findByKey(first.key);
         assert.equal(stored?.status, EntityStatus.NEW);
         assert.equal(stored?.resource, revivedEntry.resource);
         assert.equal(stored?.dequeueAudit.attempts, 0);
@@ -634,8 +634,8 @@ Deno.test('transaction-bound APP_OUTBOX coalescing revives finished work in plac
             })
         );
         assert.equal(staleExpected.action, 'successor');
-        assert.equal((await repository.findByKey(first.key))?.resource, revivedEntry.resource);
-        assert.equal((await repository.findByKey(successor.key))?.resource, successor.resource);
+        assert.equal((await repository.entries.findByKey(first.key))?.resource, revivedEntry.resource);
+        assert.equal((await repository.entries.findByKey(successor.key))?.resource, successor.resource);
     });
 });
 
@@ -668,7 +668,7 @@ Deno.test(
                 60_000,
                 () => nowEpochMs
             );
-            const resourceInbox = new ResourceInboxRepository(sql);
+            const resourceInbox = createPSqlResourceInboxRepository(sql);
             const queue = new PSqlQueueBox(resourceInbox);
             const coalescedService = new CoalescedAppOutboxWorkService(
                 new OutboxQueueReader(queue),
@@ -709,14 +709,14 @@ Deno.test(
           and ri_resource_id = ${coalescedKey.resourceId}
           and fk_ext_bank_id = ${coalescedKey.contextId}
       `;
-                const reserved = await resourceInbox.findAnyByKey(coalescedKey);
+                const reserved = await resourceInbox.entries.findAnyByKey(coalescedKey);
                 assert.ok(reserved);
                 await handler.onMessage(JSON.parse(reserved.resource) as ALMessage, reserved);
                 return reserved.key;
             };
 
             const firstKey = await runCoalescedIntent(currentSnapshot);
-            assert.equal((await resourceInbox.findAnyByKey(firstKey))?.status, EntityStatus.COMPLETED);
+            assert.equal((await resourceInbox.entries.findAnyByKey(firstKey))?.status, EntityStatus.COMPLETED);
             let metrics = topologyService.readMetrics();
             assert.equal(metrics.topologyPublishedCount, 1);
             assert.equal(metrics.topologyRebuildSkippedFingerprintCount, 0);

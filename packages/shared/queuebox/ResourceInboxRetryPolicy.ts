@@ -1,4 +1,4 @@
-import type { ResourceInboxFairnessSelection } from './QueueBoxTypes.ts';
+import type { ResourceInboxFairnessSelection } from './queue-box-types.ts';
 
 export type ResourceInboxRetryPolicy = Readonly<{
     maxAttempts: number;

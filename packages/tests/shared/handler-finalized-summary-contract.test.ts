@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isIdempotentHandlerFinalizedRelease } from '@shared/queuebox/QueueBoxTypes.ts';
+import { isIdempotentHandlerFinalizedRelease } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import { HANDLER_FINALIZED_SUMMARY_SCENARIOS } from './handler-finalized-summary-test-support.ts';

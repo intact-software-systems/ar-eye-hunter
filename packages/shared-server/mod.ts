@@ -13,7 +13,7 @@ export * from './postgres/app-data/PSqlAppDataRepository.ts';
 export * from './postgres/p-sql-sql.ts';
 export * from './queuebox/postgres/p-sql-queue-box.ts';
 export * from './queuebox/postgres/p-sql-results-queue-box.ts';
-export * from './queuebox/postgres/resource-inbox-repository.ts';
+export * from './queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 export * from './queuebox/postgres/resource-inbox-results-repository.ts';
 export * from './postgres/run-in-p-sql-transaction.ts';
 export * from './rallar-ai/mod.ts';

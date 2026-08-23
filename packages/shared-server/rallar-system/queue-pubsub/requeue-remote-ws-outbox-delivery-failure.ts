@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import {
     EntityStatus,
     isExpiredResourceEntry,
@@ -32,7 +32,7 @@ export async function requeueRemoteWsOutboxDeliveryFailure(
         ? { status: EntityStatus.RETRY, delayMs: decision.delayMs } as const
         : { status: EntityStatus.FAILED, delayMs: null } as const;
     if (repository instanceof PSqlQueueBox) {
-        return await repository.repo.requeueObservedDeliveryFailure(observed, disposition) ??
+        return await repository.resourceInbox.reservations.requeueObservedDeliveryFailure(observed, disposition) ??
             undefined;
     }
     if (!(repository instanceof InMemoryQueueBox)) {

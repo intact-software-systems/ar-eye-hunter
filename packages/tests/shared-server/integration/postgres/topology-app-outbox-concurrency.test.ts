@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { computeRtcTopologyEntry } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
@@ -33,7 +33,7 @@ describe('Postgres topology APP_OUTBOX concurrency', () => {
             const groupRef = { applicationId, workspaceId: 'concurrency', groupId: 'room' };
             const groupSnapshot = topologyGroupSnapshot(groupRef);
             const sql = await createPostgresSql(databaseUrl);
-            const resources = new ResourceInboxRepository(sql);
+            const resources = createPSqlResourceInboxRepository(sql);
             const runtime = new PSqlRuntimeStateRepository(sql);
             const tmpDirPath = await mkdtemp(path.join(tmpdir(), 'rallar-topology-outbox-race-'));
             const releaseFilePath = path.join(tmpDirPath, 'release');
@@ -65,11 +65,11 @@ describe('Postgres topology APP_OUTBOX concurrency', () => {
             const workers: Promise<Awaited<ReturnType<typeof spawnTopologyAppOutboxWorker>>>[] = [];
             try {
                 await seedTopologyGroup(sql, groupSnapshot);
-                expect(await resources.writeIfAbsentOrMatch(entries[0]!)).toBe('inserted');
+                expect(await resources.entries.writeIfAbsentOrMatch(entries[0]!)).toBe('inserted');
                 workers.push(spawnTopologyAppOutboxWorker(databaseUrl, inputs[0]!));
                 await waitForTopologyWorkerParticipants(readyDirectoryPath, 1, workers);
 
-                expect(await resources.writeIfAbsentOrMatch(entries[1]!)).toBe('inserted');
+                expect(await resources.entries.writeIfAbsentOrMatch(entries[1]!)).toBe('inserted');
                 workers.push(spawnTopologyAppOutboxWorker(databaseUrl, inputs[1]!));
                 await waitForTopologyWorkerParticipants(readyDirectoryPath, 2, workers);
                 await writeFile(releaseFilePath, 'release', 'utf8');
@@ -83,7 +83,7 @@ describe('Postgres topology APP_OUTBOX concurrency', () => {
                 expect(traces.every((trace) => trace.barrierWaitCount === 1)).toBe(true);
                 expect(new Set(traces.map((trace) => trace.backendPid)).size).toBe(2);
                 const storedEntries = await Promise.all(
-                    entries.map((entry) => resources.findAnyByKey(entry.key))
+                    entries.map((entry) => resources.entries.findAnyByKey(entry.key))
                 );
                 expect(storedEntries.map((entry) => entry?.dequeueAudit.attempts).sort()).toEqual([1, 2]);
                 const storedSnapshot = await new RtcTopologySnapshotRepository(runtime).findSnapshot(

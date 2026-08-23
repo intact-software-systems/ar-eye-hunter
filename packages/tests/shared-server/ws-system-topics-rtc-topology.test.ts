@@ -241,8 +241,7 @@ describe('Rallar system websocket topics RTC topology', () => {
         expect(
             await appOutbox.isAnyEntryToLock(
                 OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-                resilience.checkReserveTimeouts.isEntryRateLimiter,
-                resilience.checkFairness.isEntryRateLimiter
+                resilience.toWorkAdvertisementOptions()
             )
         ).toBe(false);
     });
@@ -290,8 +289,7 @@ describe('Rallar system websocket topics RTC topology', () => {
         expect(
             await appOutbox.isAnyEntryToLock(
                 OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
-                resilience.checkReserveTimeouts.isEntryRateLimiter,
-                resilience.checkFairness.isEntryRateLimiter
+                resilience.toWorkAdvertisementOptions()
             )
         ).toBe(false);
         expect(countSentTopologyMessages(createSocketsFrom([senderSocket, peerSocket]))).toBe(0);

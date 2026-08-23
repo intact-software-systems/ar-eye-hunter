@@ -2,7 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it } from 'vitest';
 
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { isIdempotentHandlerFinalizedRelease } from '@shared/queuebox/QueueBoxTypes.ts';
+import { isIdempotentHandlerFinalizedRelease } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 const KEY = {

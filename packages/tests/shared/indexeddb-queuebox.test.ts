@@ -4,7 +4,7 @@ import '../setup-browser-indexeddb.ts';
 
 import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { IndexedDbQueueBox } from '@shared/queuebox/IndexedDbQueueBox.ts';
+import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
 import { EntityStatus, NEVER_EXPIRE_TS, ResourceEntry, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
@@ -701,101 +701,6 @@ describe('IndexedDbQueueBox', () => {
         expect(selected.entry.key.resourceId).toBe('a-earlier-key');
     });
 
-    it('upgrades an existing queue store with the ordered fairness index', async () => {
-        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
-        await createLegacyQueueDatabase(dbName);
-        const queue = new IndexedDbQueueBox({ dbName });
-
-        await queue.getAllKeys();
-
-        const db = await openDatabase(dbName);
-        const store = db.transaction(IndexedDbQueueBox.DEFAULT_STORE_NAME, 'readonly')
-            .objectStore(IndexedDbQueueBox.DEFAULT_STORE_NAME);
-        expect([...store.indexNames]).toContain(IndexedDbQueueBox.FAIRNESS_INDEX_NAME);
-        expect(store.index(IndexedDbQueueBox.FAIRNESS_INDEX_NAME).keyPath).toEqual([
-            'typeId',
-            'status',
-            'fairnessDueEpochMs',
-            'keyString'
-        ]);
-        expect(store.index(IndexedDbQueueBox.FAIRNESS_INDEX_NAME).unique).toBe(false);
-        expect(db.version).toBeGreaterThan(1);
-        db.close();
-    });
-
-    it('backfills populated legacy due times before exact-cutoff fairness selection', async () => {
-        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
-        const cutoff = Temporal.Instant.from('2026-01-01T00:00:00Z');
-        const indexedFirst = createEntry('!', 'legacy-indexed-first', {
-            status: EntityStatus.RETRY,
-            attempts: 1,
-            nextTs: cutoff
-        });
-        const localeFirst = createEntry('_', 'legacy-locale-first', {
-            status: EntityStatus.RETRY,
-            attempts: 1,
-            nextTs: cutoff
-        });
-        await createLegacyQueueDatabase(dbName, [
-            toLegacyStoredEntry(indexedFirst, '2026-01-01T00:00:00Z'),
-            toLegacyStoredEntry(localeFirst, '2026-01-01T00:00:00.000000000Z')
-        ]);
-        const queue = new IndexedDbQueueBox({ dbName });
-
-        await queue.getAllKeys();
-        const db = await openDatabase(dbName);
-        const records = await readAllStoredRecords(db);
-        expect(records.map((record) => record.fairnessDueEpochMs)).toEqual([
-            Number(cutoff.epochMilliseconds),
-            Number(cutoff.epochMilliseconds)
-        ]);
-        db.close();
-
-        const selected = firstValue(
-            await queue.reserveOverdueRetryEntries(
-                new Set([indexedFirst.typeId, localeFirst.typeId]),
-                Number(cutoff.epochMilliseconds),
-                { maxToReserve: 1, maxAttempts: 2, maxToScan: 2 }
-            )
-        );
-
-        expect(selected.entry.key.resourceId).toBe(indexedFirst.key.resourceId);
-    });
-
-    it('repairs a same-name wrong fairness index without losing legacy data', async () => {
-        const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
-        const legacy = createEntry('type-a', 'legacy-retained', {
-            status: EntityStatus.RETRY,
-            attempts: 1,
-            nextTs: Temporal.Instant.from('2026-01-01T00:00:00.1Z')
-        });
-        await createLegacyQueueDatabase(
-            dbName,
-            [toLegacyStoredEntry(legacy, '2026-01-01T00:00:00.1Z')],
-            true
-        );
-        const queue = new IndexedDbQueueBox({ dbName });
-
-        expect(await queue.getItem(legacy.key)).toMatchObject({
-            key: legacy.key,
-            resource: legacy.resource
-        });
-
-        const db = await openDatabase(dbName);
-        const index = db.transaction(IndexedDbQueueBox.DEFAULT_STORE_NAME)
-            .objectStore(IndexedDbQueueBox.DEFAULT_STORE_NAME)
-            .index(IndexedDbQueueBox.FAIRNESS_INDEX_NAME);
-        expect(index.keyPath).toEqual([
-            'typeId',
-            'status',
-            'fairnessDueEpochMs',
-            'keyString'
-        ]);
-        expect(index.unique).toBe(false);
-        expect(await readAllStoredRecords(db)).toHaveLength(1);
-        db.close();
-    });
-
     it('validates an empty fairness scan budget before opening IndexedDB cursors', async () => {
         const queue = new IndexedDbQueueBox({
             dbName: `indexeddb-queue-${crypto.randomUUID()}`
@@ -823,12 +728,12 @@ describe('IndexedDbQueueBox', () => {
         )).rejects.toThrow(/at least the number of requested types/u);
     });
 
-    it('expands a legacy numeric fairness budget to cover every requested type', async () => {
+    it('expands a numeric fairness budget to cover every requested type', async () => {
         const dbName = `indexeddb-queue-${crypto.randomUUID()}`;
         const queue = new IndexedDbQueueBox({ dbName });
         const now = Temporal.Now.instant();
         const types = new Set(Array.from({ length: 9 }, (_, index) => `type-${index}`));
-        const entry = createEntry('type-8', 'legacy-budget-entry', {
+        const entry = createEntry('type-8', 'numeric-budget-entry', {
             status: EntityStatus.RETRY,
             attempts: 1,
             nextTs: now.subtract({ minutes: 1 })
@@ -1053,95 +958,4 @@ function createWorkAdvertisementOptions() {
         maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
         finalizationStaleAfterMs: 5 * 60 * 1000
     };
-}
-
-type LegacyStoredResourceEntry = Readonly<{
-    keyString: string;
-    key: ResourceEntry['key'];
-    resource: string;
-    typeId: string;
-    audit: Readonly<{
-        date: string;
-        createdBy: string;
-        createdTs: string;
-        expiryTs: string;
-    }>;
-    status: EntityStatus;
-    dequeueAudit: Readonly<{
-        nextTs?: string;
-        attempts: number;
-    }>;
-}>;
-
-async function createLegacyQueueDatabase(
-    dbName: string,
-    entries: readonly LegacyStoredResourceEntry[] = [],
-    createWrongFairnessIndex = false
-): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-        const request = indexedDB.open(dbName, 1);
-        request.onupgradeneeded = () => {
-            const store = request.result.createObjectStore(IndexedDbQueueBox.DEFAULT_STORE_NAME, {
-                keyPath: 'keyString'
-            });
-            if (createWrongFairnessIndex) {
-                store.createIndex(
-                    IndexedDbQueueBox.FAIRNESS_INDEX_NAME,
-                    ['typeId', 'status', 'keyString'],
-                    { unique: true }
-                );
-            }
-            for (const entry of entries) {
-                store.put(entry);
-            }
-        };
-        request.onsuccess = () => {
-            request.result.close();
-            resolve();
-        };
-        request.onerror = () => reject(request.error ?? new Error('Legacy DB open failed'));
-    });
-}
-
-function toLegacyStoredEntry(
-    entry: ResourceEntry,
-    nextTs: string
-): LegacyStoredResourceEntry {
-    return {
-        keyString: toKeyAsString(entry.key),
-        key: entry.key,
-        resource: entry.resource,
-        typeId: entry.typeId,
-        audit: {
-            date: entry.audit.date.toString(),
-            createdBy: entry.audit.createdBy,
-            createdTs: entry.audit.createdTs.toString(),
-            expiryTs: entry.audit.expiryTs.toString()
-        },
-        status: entry.status,
-        dequeueAudit: {
-            nextTs,
-            attempts: entry.dequeueAudit.attempts
-        }
-    };
-}
-
-async function readAllStoredRecords(
-    db: IDBDatabase
-): Promise<Array<LegacyStoredResourceEntry & { fairnessDueEpochMs?: number; }>> {
-    return await new Promise((resolve, reject) => {
-        const request = db.transaction(IndexedDbQueueBox.DEFAULT_STORE_NAME)
-            .objectStore(IndexedDbQueueBox.DEFAULT_STORE_NAME)
-            .getAll();
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error ?? new Error('Legacy records read failed'));
-    });
-}
-
-async function openDatabase(dbName: string): Promise<IDBDatabase> {
-    return await new Promise<IDBDatabase>((resolve, reject) => {
-        const request = indexedDB.open(dbName);
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error ?? new Error('DB open failed'));
-    });
 }

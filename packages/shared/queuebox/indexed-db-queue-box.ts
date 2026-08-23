@@ -20,7 +20,7 @@ import {
     toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
     toResourceInboxWorkAdvertisementOptions
-} from './QueueBoxTypes.ts';
+} from './queue-box-types.ts';
 import {
     COMPLETED_STATUSES,
     EntityStatus,
@@ -963,8 +963,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                             'keyString'
                         ],
                         unique: false
-                    }],
-                    migrateOnUpgrade: (store) => this.migrateFairnessDueEpochMs(store)
+                    }]
                 }
             ).then((db) => {
                 db.onversionchange = () => {
@@ -976,29 +975,6 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         }
 
         return await this.dbPromise;
-    }
-
-    private migrateFairnessDueEpochMs(store: IDBObjectStore): void {
-        const request = store.openCursor();
-        request.onsuccess = () => {
-            const cursor = request.result;
-            if (!cursor) {
-                return;
-            }
-
-            const stored = cursor.value as StoredResourceEntry;
-            const nextTs = toOptionalInstant(stored.dequeueAudit.nextTs);
-            const fairnessDueEpochMs = nextTs
-                ? Number(nextTs.epochMilliseconds)
-                : undefined;
-            if (stored.fairnessDueEpochMs !== fairnessDueEpochMs) {
-                cursor.update({
-                    ...stored,
-                    fairnessDueEpochMs
-                });
-            }
-            cursor.continue();
-        };
     }
 
     private toStoredEntry(entry: ResourceEntry): StoredResourceEntry {

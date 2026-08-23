@@ -1,4 +1,4 @@
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { WebRtcRxStreamerService, type RttMeasurementCallbacks } from '@shared/services/WebRtcRxStreamerService.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 

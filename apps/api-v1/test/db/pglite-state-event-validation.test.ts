@@ -2,7 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { ResourceInboxInvariantCorruptionError, ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, ResourceInboxInvariantCorruptionError, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { groupStateEventWorkspaceKey } from '@shared-server/rallar-system/state-events/postgres/group-state-event-workspace-key.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
@@ -270,15 +270,15 @@ Deno.test(
     }
 );
 
-Deno.test('ResourceInboxRepository rejects a persisted null attempt count', async () => {
+Deno.test('PSqlResourceInboxRepository rejects a persisted null attempt count', async () => {
     await withPGliteSql(async (sql) => {
-        const inbox = new ResourceInboxRepository(sql);
+        const inbox = createPSqlResourceInboxRepository(sql);
         const nullAttempts = createResourceEntry('null-attempts', {
             payload: { text: 'mandatory attempts' },
             typeId: 'APP_OUTBOX',
             expiryTs: Temporal.Instant.from('9999-12-31T23:59:59Z')
         });
-        assert.equal(await inbox.writeIfAbsentOrMatch(nullAttempts), 'inserted');
+        assert.equal(await inbox.entries.writeIfAbsentOrMatch(nullAttempts), 'inserted');
         await sql`
       update resource_inbox
       set ri_attempts = null
@@ -288,17 +288,17 @@ Deno.test('ResourceInboxRepository rejects a persisted null attempt count', asyn
     `;
 
         await assert.rejects(
-            () => inbox.writeIfAbsentOrMatch(nullAttempts),
+            () => inbox.entries.writeIfAbsentOrMatch(nullAttempts),
             ResourceInboxInvariantCorruptionError
         );
     });
 });
 
-Deno.test('ResourceInboxRepository replay is independent of PostgreSQL DateStyle', async () => {
+Deno.test('PSqlResourceInboxRepository replay is independent of PostgreSQL DateStyle', async () => {
     await withPGliteSql(async (sql) => {
         await sql`set datestyle to 'SQL, DMY'`;
 
-        const inbox = new ResourceInboxRepository(sql);
+        const inbox = createPSqlResourceInboxRepository(sql);
         const base = createResourceEntry('datestyle-replay', {
             payload: { text: 'datestyle independent' },
             typeId: 'APP_OUTBOX',
@@ -312,11 +312,11 @@ Deno.test('ResourceInboxRepository replay is independent of PostgreSQL DateStyle
             }
         };
 
-        assert.equal(await inbox.writeIfAbsentOrMatch(entry), 'inserted');
-        assert.equal(await inbox.writeIfAbsentOrMatch(entry), 'matched');
+        assert.equal(await inbox.entries.writeIfAbsentOrMatch(entry), 'inserted');
+        assert.equal(await inbox.entries.writeIfAbsentOrMatch(entry), 'matched');
         await assert.rejects(
             () =>
-                inbox.writeIfAbsentOrMatch({
+                inbox.entries.writeIfAbsentOrMatch({
                     ...entry,
                     audit: {
                         ...entry.audit,
@@ -327,7 +327,7 @@ Deno.test('ResourceInboxRepository replay is independent of PostgreSQL DateStyle
         );
         await assert.rejects(
             () =>
-                inbox.writeIfAbsentOrMatch({
+                inbox.entries.writeIfAbsentOrMatch({
                     ...entry,
                     audit: {
                         ...entry.audit,
@@ -348,15 +348,15 @@ Deno.test('ResourceInboxRepository replay is independent of PostgreSQL DateStyle
         and ri_resource_id = ${entry.key.resourceId}
         and fk_ext_bank_id = ${entry.key.contextId}
     `;
-        assert.equal(await inbox.writeIfAbsentOrMatch(entry), 'matched');
+        assert.equal(await inbox.entries.writeIfAbsentOrMatch(entry), 'matched');
     });
 });
 
-Deno.test('ResourceInboxRepository preserves supported expanded-year rollover', async () => {
+Deno.test('PSqlResourceInboxRepository preserves supported expanded-year rollover', async () => {
     await withPGliteSql(async (sql) => {
         await sql`set datestyle to 'SQL, DMY'`;
 
-        const inbox = new ResourceInboxRepository(sql);
+        const inbox = createPSqlResourceInboxRepository(sql);
         const base = createResourceEntry('expanded-year-replay', {
             payload: { text: 'expanded year' },
             typeId: 'APP_OUTBOX',
@@ -370,11 +370,11 @@ Deno.test('ResourceInboxRepository preserves supported expanded-year rollover', 
             }
         };
 
-        assert.equal(await inbox.writeIfAbsentOrMatch(entry), 'inserted');
-        assert.equal(await inbox.writeIfAbsentOrMatch(entry), 'matched');
+        assert.equal(await inbox.entries.writeIfAbsentOrMatch(entry), 'inserted');
+        assert.equal(await inbox.entries.writeIfAbsentOrMatch(entry), 'matched');
         await assert.rejects(
             () =>
-                inbox.writeIfAbsentOrMatch({
+                inbox.entries.writeIfAbsentOrMatch({
                     ...entry,
                     audit: {
                         ...entry.audit,
@@ -390,7 +390,7 @@ Deno.test(
     'PGlite reclaims stale AppInbox exhaustion as an exact finalization generation',
     async () => {
         await withPGliteSql(async (sql) => {
-            const inbox = new ResourceInboxRepository(sql);
+            const inbox = createPSqlResourceInboxRepository(sql);
             const queue = new PSqlQueueBox(inbox);
             const exhausted = {
                 ...createResourceEntry('pglite-finalization-recovery', {
@@ -403,7 +403,7 @@ Deno.test(
                     startTs: Temporal.Instant.from('2020-01-01T00:00:00Z')
                 }
             };
-            await inbox.write(exhausted);
+            await inbox.entries.write(exhausted);
 
             const recovered = await queue.reserveRetryExhaustionFinalizations(
                 new Set(['APP_INBOX', 'APP_OUTBOX']),

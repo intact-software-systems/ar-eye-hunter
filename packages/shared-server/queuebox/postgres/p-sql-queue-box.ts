@@ -17,7 +17,7 @@ import {
     toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
     toResourceInboxWorkAdvertisementOptions
-} from '@shared/queuebox/QueueBoxTypes.ts';
+} from '@shared/queuebox/queue-box-types.ts';
 import {
     EntityStatus,
     isExpiredResourceEntry,
@@ -28,15 +28,15 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
-import { ResourceInboxRepository } from './resource-inbox-repository.ts';
+import type { PSqlResourceInboxRepository } from './create-p-sql-resource-inbox-repository.ts';
 
 export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
-    public readonly repo: ResourceInboxRepository;
+    public readonly resourceInbox: PSqlResourceInboxRepository;
 
     constructor(
-        repo: ResourceInboxRepository
+        resourceInbox: PSqlResourceInboxRepository
     ) {
-        this.repo = repo;
+        this.resourceInbox = resourceInbox;
     }
 
     cleanup(): void {
@@ -54,7 +54,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         const isTimedOutReservedEntryToLock: boolean = await RateLimiter.tryToExecuteOrDefault(
             checkTimeout,
             async () =>
-                await this.repo.isTimeoutOnReservedEntries(
+                await this.resourceInbox.reservations.isTimeoutOnReservedEntries(
                     typeIds,
                     TIMEOUT_ON_NON_RESPONSIVE_ENTRY,
                     maxAttempts
@@ -62,7 +62,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
             false
         );
 
-        const isNewAndRetryEntryToLock: boolean = await this.repo.isEntriesToLock(
+        const isNewAndRetryEntryToLock: boolean = await this.resourceInbox.reservations.isEntriesToLock(
             typeIds,
             NEW_AND_RETRY_STATUSES,
             maxAttempts
@@ -73,7 +73,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         const isFinalizationEntryToLock = await RateLimiter.tryToExecuteOrDefault(
             checkFinalization,
             () =>
-                this.repo.isRetryExhaustionFinalizationRequired(
+                this.resourceInbox.finalization.isRetryExhaustionFinalizationRequired(
                     finalizationTypes,
                     finalizationStaleAfterMs,
                     maxAttempts
@@ -93,14 +93,14 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
-        return await this.repo.begin(
-            async (txRepo: ResourceInboxRepository) => {
-                const foundEntries = await txRepo.findEntriesSkipLocked(typeIds, statusIds, options);
+        return await this.resourceInbox.transaction(
+            async (txRepo: PSqlResourceInboxRepository) => {
+                const foundEntries = await txRepo.reservations.findEntriesSkipLocked(typeIds, statusIds, options);
 
                 const reservedEntries = new Map<Key, ResourceEntry>();
 
                 for (const e of foundEntries.values()) {
-                    const reserved = await txRepo.startProcessingEntity(e, options.maxAttempts);
+                    const reserved = await txRepo.reservations.startProcessingEntity(e, options.maxAttempts);
                     reserved.fold(
                         () => undefined,
                         (entry) => {
@@ -124,9 +124,9 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
-        return await this.repo.begin(
-            async (txRepo: ResourceInboxRepository) => {
-                const foundEntries = await txRepo.findTimedOutReservedEntriesSkipLocked(
+        return await this.resourceInbox.transaction(
+            async (txRepo: PSqlResourceInboxRepository) => {
+                const foundEntries = await txRepo.reservations.findTimedOutReservedEntriesSkipLocked(
                     typeIds,
                     timeSinceStartTs.total({ unit: 'milliseconds' }),
                     options
@@ -135,7 +135,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                 const reservedEntries = new Map<Key, ResourceEntry>();
 
                 for (const e of foundEntries.values()) {
-                    const reserved = await txRepo.startProcessingEntity(e, options.maxAttempts);
+                    const reserved = await txRepo.reservations.startProcessingEntity(e, options.maxAttempts);
                     reserved.fold(
                         () => undefined,
                         (entry) => {
@@ -159,9 +159,9 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
             reservationInput,
             DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
         );
-        return await this.repo.begin(
-            async (txRepo: ResourceInboxRepository) => {
-                const foundEntries = await txRepo.findOverdueRetryEntriesSkipLocked(
+        return await this.resourceInbox.transaction(
+            async (txRepo: PSqlResourceInboxRepository) => {
+                const foundEntries = await txRepo.reservations.findOverdueRetryEntriesSkipLocked(
                     typeIds,
                     overdueBeforeEpochMs,
                     {
@@ -173,7 +173,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
 
                 for (const entry of foundEntries.values()) {
                     const selectedNextTs = entry.dequeueAudit.nextTs;
-                    const reserved = await txRepo.startProcessingEntity(
+                    const reserved = await txRepo.reservations.startProcessingEntity(
                         entry,
                         options.maxAttempts
                     );
@@ -208,8 +208,8 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         if (finalizationTypes.size === 0 || options.maxToReserve === 0) {
             return new Map();
         }
-        return await this.repo.begin(async (txRepo) => {
-            const found = await txRepo.findRetryExhaustionFinalizationsSkipLocked(
+        return await this.resourceInbox.transaction(async (txRepo) => {
+            const found = await txRepo.finalization.findRetryExhaustionFinalizationsSkipLocked(
                 finalizationTypes,
                 options.staleAfterMs,
                 {
@@ -223,7 +223,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                 if (!selectedDueTs) {
                     throw new Error('Finalization selector returned an entry without startTs');
                 }
-                const recovery = await txRepo.startFinalizationRecovery(
+                const recovery = await txRepo.finalization.startFinalizationRecovery(
                     entry,
                     options.processingAttempts
                 );
@@ -245,18 +245,18 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     ): Promise<Map<Key, ResourceEntry>> {
         const disposition = toResourceInboxReleaseDisposition(releaseInput);
         const releasedAt = Temporal.Now.instant();
-        return await this.repo.begin(
-            async (txRepo: ResourceInboxRepository) => {
+        return await this.resourceInbox.transaction(
+            async (txRepo: PSqlResourceInboxRepository) => {
                 const releasedEntries = new Map<Key, ResourceEntry>();
 
                 for (const entry of resources) {
-                    const updated = await txRepo.releaseReserved(entry.key, {
+                    const updated = await txRepo.reservations.releaseReserved(entry.key, {
                         expectedAttempts: entry.dequeueAudit.attempts,
                         releasedAt,
                         disposition
                     });
                     if (!updated) {
-                        const current = await txRepo.findAnyByKey(entry.key);
+                        const current = await txRepo.entries.findAnyByKey(entry.key);
                         if (
                             !current || !isIdempotentHandlerFinalizedRelease(
                                 current,
@@ -282,10 +282,10 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async enqueue(resourceEntry: ResourceEntry): Promise<ResourceEntry | undefined> {
-        return await this.repo.begin(
-            async (txRepo: ResourceInboxRepository) => {
-                const previous = await txRepo.findAnyByKey(resourceEntry.key);
-                await txRepo.replace(resourceEntry);
+        return await this.resourceInbox.transaction(
+            async (txRepo: PSqlResourceInboxRepository) => {
+                const previous = await txRepo.entries.findAnyByKey(resourceEntry.key);
+                await txRepo.entries.replace(resourceEntry);
 
                 return previous ?? undefined;
             }
@@ -296,16 +296,16 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         resourceEntry: ResourceEntry,
         enqueueIt: (existing: ResourceEntry) => boolean
     ): Promise<ResourceEntry | undefined> {
-        return await this.repo.begin(
-            async (txRepo: ResourceInboxRepository) => {
-                const previous = await txRepo.findAnyByKey(resourceEntry.key);
+        return await this.resourceInbox.transaction(
+            async (txRepo: PSqlResourceInboxRepository) => {
+                const previous = await txRepo.entries.findAnyByKey(resourceEntry.key);
                 if (!previous || isExpiredResourceEntry(previous)) {
-                    await txRepo.replace(resourceEntry);
+                    await txRepo.entries.replace(resourceEntry);
                     return undefined;
                 }
 
                 if (enqueueIt(previous)) {
-                    await txRepo.replace(resourceEntry);
+                    await txRepo.entries.replace(resourceEntry);
                 }
 
                 return previous;
@@ -317,11 +317,11 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         resourceEntry: ResourceEntry,
         updateExisting: (existing: ResourceEntry) => ResourceEntry | undefined
     ) {
-        return await this.repo.begin(
-            async (txRepo: ResourceInboxRepository) => {
-                const previous = await txRepo.findAnyByKey(resourceEntry.key);
+        return await this.resourceInbox.transaction(
+            async (txRepo: PSqlResourceInboxRepository) => {
+                const previous = await txRepo.entries.findAnyByKey(resourceEntry.key);
                 if (!previous || isExpiredResourceEntry(previous)) {
-                    await txRepo.replace(resourceEntry);
+                    await txRepo.entries.replace(resourceEntry);
                     return {
                         action: 'inserted' as const,
                         entry: resourceEntry,
@@ -338,7 +338,7 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
                     };
                 }
 
-                await txRepo.replace(updated);
+                await txRepo.entries.replace(updated);
                 return {
                     action: 'updated' as const,
                     entry: updated,
@@ -349,15 +349,15 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     }
 
     async enqueueIfAbsent(resourceEntry: ResourceEntry): Promise<ResourceEntry> {
-        return await this.repo.begin(
-            async (txRepo: ResourceInboxRepository) => {
-                return await txRepo.writeIfAbsentOrReplaceExpired(resourceEntry);
+        return await this.resourceInbox.transaction(
+            async (txRepo: PSqlResourceInboxRepository) => {
+                return await txRepo.entries.writeIfAbsentOrReplaceExpired(resourceEntry);
             }
         );
     }
 
     async getItem(key: Key): Promise<ResourceEntry | undefined> {
-        return await this.repo.findByKey(key) ?? undefined;
+        return await this.resourceInbox.entries.findByKey(key) ?? undefined;
     }
 
     async setItem(
@@ -365,21 +365,21 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
         value: ResourceEntry,
         _options: PersistenceSetItemOptions
     ): Promise<void> {
-        await this.repo.upsert({
+        await this.resourceInbox.entries.upsert({
             ...value,
             key
         });
     }
 
     async removeItem(key: Key): Promise<void> {
-        await this.repo.deleteByKey(key);
+        await this.resourceInbox.entries.deleteByKey(key);
     }
 
     async getAllKeys(): Promise<Key[]> {
-        return await this.repo.findAllKeys();
+        return await this.resourceInbox.entries.findAllKeys();
     }
 
     async deleteExpired(): Promise<number> {
-        return await this.repo.deleteExpired();
+        return await this.resourceInbox.maintenance.deleteExpired();
     }
 }

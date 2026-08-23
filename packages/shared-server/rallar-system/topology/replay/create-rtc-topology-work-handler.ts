@@ -9,7 +9,7 @@ import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topolog
 import { hashRtcTopologyExecutionCommand } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import { type RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { ResourceInboxRepository } from '../../../queuebox/postgres/resource-inbox-repository.ts';
+import { PSqlResourceInboxRepository } from '../../../queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';

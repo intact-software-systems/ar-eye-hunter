@@ -15,7 +15,7 @@ import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persist
 
 import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
 
-import { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 
@@ -108,7 +108,7 @@ interface CreateAdminAppCrdtInput {
     readonly outbox: OutboxQueueReader;
     readonly readAuditAttempts: () => number;
     readonly recordAuditAttempt: () => void;
-    readonly resourceInbox: ResourceInboxRepository;
+    readonly resourceInbox: PSqlResourceInboxRepository;
     readonly results: ResourceInboxResultsRepository;
     readonly sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0];
 }
@@ -129,7 +129,7 @@ async function createCrdtAdminRouteHarness(
     sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]
 ): Promise<CrdtAdminRouteHarness> {
     const now = Date.now() + 12 * 60 * 60 * 1_000;
-    const resourceInbox = new ResourceInboxRepository(sql);
+    const resourceInbox = createPSqlResourceInboxRepository(sql);
     const results = new ResourceInboxResultsRepository(sql);
     const queue = new PSqlQueueBox(resourceInbox);
     const inbox = new InboxQueueReader(queue);
@@ -244,7 +244,7 @@ function createAdminAppCrdt(input: CreateAdminAppCrdtInput): AppCrdtInboxService
     return new AppCrdtInboxService(
         {
             inboxQueueReader: input.inbox,
-            resourceInboxRepository: input.resourceInbox,
+            resourceInboxRepository: input.resourceInbox.entries,
             resourceInboxResultsRepository: input.results,
             database: input.sql,
             mutationService: input.mutationService,

@@ -11,7 +11,7 @@ import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
-import { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
 import {
     ResourceInboxResultsRepository
@@ -250,9 +250,9 @@ export class AppAdminInboxService {
         throwOnAdminPruneValidationIssues(issues);
 
         const result = await this.handlers.writeMutation(context, async (transaction) => {
-            const outbox = new ResourceInboxRepository(transaction);
+            const outbox = createPSqlResourceInboxRepository(transaction);
             for (const entry of computed.outboxEntries) {
-                await outbox.write(entry);
+                await outbox.entries.write(entry);
             }
             if (computed.aggregateEntry !== null) {
                 const stored = await new ResourceInboxResultsRepository(

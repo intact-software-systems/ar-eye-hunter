@@ -6,7 +6,7 @@ import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persis
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { Either } from '@shared/resilience/Either.ts';

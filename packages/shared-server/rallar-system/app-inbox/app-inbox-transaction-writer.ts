@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
 import {
@@ -179,7 +179,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         write: (
             transaction: PSqlSql,
             repositories: Readonly<{
-                inbox: ResourceInboxRepository;
+                inbox: PSqlResourceInboxRepository;
                 results: ResourceInboxResultsRepository;
             }>
         ) => Promise<R>
@@ -198,7 +198,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
                     this.options.database,
                     async (transaction) =>
                         await write(transaction, {
-                            inbox: new ResourceInboxRepository(transaction),
+                            inbox: createPSqlResourceInboxRepository(transaction),
                             results: new ResourceInboxResultsRepository(transaction)
                         })
                 )
@@ -225,11 +225,11 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
 
     private async finish(
         context: AppInboxMessageContext,
-        inbox: ResourceInboxRepository,
+        inbox: PSqlResourceInboxRepository,
         status: typeof EntityStatus.COMPLETED | typeof EntityStatus.FAILED,
         completedAtEpochMs: number
     ): Promise<void> {
-        const completed = await inbox.finishReserved(
+        const completed = await inbox.finalization.finishReserved(
             context.entry.key,
             context.entry.dequeueAudit.attempts,
             status,

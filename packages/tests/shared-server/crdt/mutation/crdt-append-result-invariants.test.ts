@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
 import { computeCrdtMutation } from '@shared-server/rallar-system/crdt/mutation/compute-crdt-mutation.ts';
@@ -19,7 +19,7 @@ import {
     type RallarCrdtDocumentRef,
     type RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS, RESOURCE_INBOX_RETRY_PROCESSING_MARGIN_MS } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
@@ -244,7 +244,7 @@ function appCrdt(): AppCrdtInboxService {
     return new AppCrdtInboxService(
         {
             inboxQueueReader: new InboxQueueReader(new InMemoryQueueBox()),
-            resourceInboxRepository: new ResourceInboxRepository(database),
+            resourceInboxRepository: createPSqlResourceInboxRepository(database).entries,
             resourceInboxResultsRepository: new ResourceInboxResultsRepository(database),
             database,
             mutationService: createCrdtMutationService({

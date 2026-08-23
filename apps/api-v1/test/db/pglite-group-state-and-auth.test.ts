@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
@@ -202,7 +202,7 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const runtime = new PSqlRuntimeStateRepository(sql);
-            const resourceInbox = new ResourceInboxRepository(sql);
+            const resourceInbox = createPSqlResourceInboxRepository(sql);
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const queue = new PSqlQueueBox(resourceInbox);
             const inboxReader = new InboxQueueReader(queue);
@@ -228,7 +228,7 @@ Deno.test(
             const appGroup = new GroupStateInboxService(
                 {
                     inboxQueueReader: inboxReader,
-                    resourceInboxRepository: resourceInbox,
+                    resourceInboxRepository: resourceInbox.entries,
                     resourceInboxResultsRepository: resourceResults,
                     database: sql,
                     groupStateService: groupState
@@ -356,7 +356,7 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const runtime = new PSqlRuntimeStateRepository(sql);
-            const resourceInbox = new ResourceInboxRepository(sql);
+            const resourceInbox = createPSqlResourceInboxRepository(sql);
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const queue = new PSqlQueueBox(resourceInbox);
             const inboxReader = new InboxQueueReader(queue);
@@ -381,7 +381,7 @@ Deno.test(
             const appGroup = new GroupStateInboxService(
                 {
                     inboxQueueReader: inboxReader,
-                    resourceInboxRepository: resourceInbox,
+                    resourceInboxRepository: resourceInbox.entries,
                     resourceInboxResultsRepository: resourceResults,
                     database: sql,
                     groupStateService: groupState
@@ -443,7 +443,7 @@ Deno.test(
                 resourceId: summaryKey.ri_resource_id,
                 contextId: summaryKey.fk_ext_bank_id
             };
-            const reserved = await resourceInbox.findAnyByKey(key);
+            const reserved = await resourceInbox.entries.findAnyByKey(key);
             assert.ok(reserved);
             const message = JSON.parse(reserved.resource) as ALMessage;
             const ref = {
@@ -455,7 +455,7 @@ Deno.test(
             const summaryBefore = await repository.findPresenceSummaryEntry(ref);
             const work = new GroupPresenceSummaryWork({
                 outboxQueueReader: new OutboxQueueReader(
-                    new PSqlQueueBox(new ResourceInboxRepository(sql))
+                    new PSqlQueueBox(createPSqlResourceInboxRepository(sql))
                 ),
                 recomputeDebounceMs: 0,
                 runtimeRepository: runtime,
@@ -474,7 +474,7 @@ Deno.test(
             );
 
             assert.deepEqual(await repository.findPresenceSummaryEntry(ref), summaryBefore);
-            const stillReserved = await resourceInbox.findAnyByKey(key);
+            const stillReserved = await resourceInbox.entries.findAnyByKey(key);
             assert.equal(stillReserved?.status, EntityStatus.RESERVED);
             assert.equal(stillReserved?.dequeueAudit.attempts, 1);
             const downstream = await sql<ResourceInboxTopicTypeRow[]>`
@@ -660,9 +660,9 @@ Deno.test(
                 1
             );
             assert.equal((await events.listClientEvents({ ...scope, principalId: 'alice' })).length, 1);
-            const outbox = new ResourceInboxRepository(sql);
+            const outbox = createPSqlResourceInboxRepository(sql);
             for (const entry of committed.outboxEntries) {
-                assert.equal((await outbox.findByKey(entry.key))?.typeId, 'WS_OUTBOX');
+                assert.equal((await outbox.entries.findByKey(entry.key))?.typeId, 'WS_OUTBOX');
             }
 
             const rolledBack = await compute('bob', 'pglite-client-rollback');
@@ -681,7 +681,7 @@ Deno.test(
             );
             assert.equal((await events.listClientEvents({ ...scope, principalId: 'bob' })).length, 0);
             for (const entry of rolledBack.outboxEntries) {
-                assert.equal(await outbox.findByKey(entry.key), null);
+                assert.equal(await outbox.entries.findByKey(entry.key), null);
             }
         });
     }

@@ -7,8 +7,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { IndexedDbQueueBox } from '@shared/queuebox/IndexedDbQueueBox.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 type ReleaseAdapter = Readonly<{

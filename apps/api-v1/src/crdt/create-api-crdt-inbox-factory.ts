@@ -1,5 +1,5 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import type { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import type { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import type {
     ResourceInboxResultsRepository
 } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
@@ -13,7 +13,7 @@ import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import { createApiCrdtInboxService, type CurrentMutationAuthority } from './create-api-crdt-inbox-service.ts';
 
 export interface CreateApiCrdtInboxFactoryInput {
-    readonly resourceInboxRepository: ResourceInboxRepository;
+    readonly resourceInboxRepository: PSqlResourceInboxEntryRepository;
     readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
     readonly database: PSqlSql;
     readonly serviceId: string;

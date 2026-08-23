@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { ResourceInboxInvariantCorruptionError, ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, ResourceInboxInvariantCorruptionError, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
@@ -452,7 +452,7 @@ Deno.test(
             const divergentResource = JSON.stringify({
                 collision: 'preexisting-divergent-summary-work'
             });
-            await new ResourceInboxRepository(sql).write({
+            await createPSqlResourceInboxRepository(sql).entries.write({
                 ...summaryEntry,
                 resource: divergentResource
             });
@@ -477,7 +477,7 @@ Deno.test(
         and event_id = ${preparation.facts.eventId}
     `;
             assert.equal(Number(eventRows?.count ?? 0), 0);
-            const storedCollision = await new ResourceInboxRepository(sql).findAnyByKey(
+            const storedCollision = await createPSqlResourceInboxRepository(sql).entries.findAnyByKey(
                 summaryEntry.key
             );
             assert.equal(storedCollision?.resource, divergentResource);

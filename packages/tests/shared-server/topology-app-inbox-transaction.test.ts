@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 
@@ -307,7 +307,7 @@ describe('topology AppInbox transaction and idempotency', () => {
         expect(collisionEntry.key).toEqual(expectedEntry.key);
         expect(collisionEntry.resource).not.toBe(expectedEntry.resource);
         await harness.database.begin(async (transaction) => {
-            await new ResourceInboxRepository(transaction).writeIfAbsentOrMatch(collisionEntry);
+            await createPSqlResourceInboxRepository(transaction).entries.writeIfAbsentOrMatch(collisionEntry);
         });
         expect(harness.database.outboxEntries.size).toBe(initialOutboxCount + 1);
         const enqueue = await createAuthenticatedTopologyEnqueue({

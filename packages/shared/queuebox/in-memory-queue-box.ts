@@ -20,7 +20,7 @@ import {
     toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
     toResourceInboxWorkAdvertisementOptions
-} from './QueueBoxTypes.ts';
+} from './queue-box-types.ts';
 import {
     COMPLETED_STATUSES,
     EntityStatus,

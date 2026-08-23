@@ -1,5 +1,5 @@
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';

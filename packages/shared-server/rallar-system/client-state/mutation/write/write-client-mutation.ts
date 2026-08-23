@@ -1,5 +1,5 @@
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
-import { ResourceInboxRepository } from '../../../../queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '../../../../queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { requireConditionalWrite } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import { ClientStateRepository } from '../../persistence/client-state-repository.ts';
 import type { ClientMutationComputedWrite, ClientMutationReceipt } from '../client-mutation-contracts.ts';
@@ -85,8 +85,8 @@ async function writeFinalOutboxEntries(
     transaction: PSqlSql,
     computed: Extract<ClientMutationComputedWrite, { outcome: 'write'; }>
 ): Promise<void> {
-    const outbox = new ResourceInboxRepository(transaction);
+    const outbox = createPSqlResourceInboxRepository(transaction);
     for (const entry of computed.outboxEntries) {
-        await outbox.writeIfAbsentOrMatch(entry);
+        await outbox.entries.writeIfAbsentOrMatch(entry);
     }
 }

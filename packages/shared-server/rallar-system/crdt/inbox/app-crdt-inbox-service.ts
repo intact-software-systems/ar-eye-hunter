@@ -6,7 +6,7 @@ import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
 import { toAppQueueKey, toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import type { ResourceInboxRepository } from '../../../queuebox/postgres/resource-inbox-repository.ts';
+import type { PSqlResourceInboxEntryRepository } from '../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import type { ResourceInboxResultsRepository } from '../../../queuebox/postgres/resource-inbox-results-repository.ts';
 import {
     AppInboxIdempotencyConflictError,
@@ -54,7 +54,7 @@ export namespace AppCrdtInboxService {
 
     export interface Dependencies {
         readonly inboxQueueReader: InboxQueueReader;
-        readonly resourceInboxRepository: ResourceInboxRepository;
+        readonly resourceInboxRepository: PSqlResourceInboxEntryRepository;
         readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
         readonly database: PSqlSql;
         readonly mutationService: CrdtMutationService;

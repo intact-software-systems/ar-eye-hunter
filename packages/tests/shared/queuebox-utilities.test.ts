@@ -1,6 +1,6 @@
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { describe, expect, it, vi } from 'vitest';

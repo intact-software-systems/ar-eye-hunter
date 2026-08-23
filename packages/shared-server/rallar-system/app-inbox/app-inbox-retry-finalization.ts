@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
 import type {
@@ -73,7 +73,7 @@ function createFinalizer(
             },
             async () =>
                 await runInPSqlTransaction(options.database, async (transaction) => {
-                    const resourceInbox = new ResourceInboxRepository(transaction);
+                    const resourceInbox = createPSqlResourceInboxRepository(transaction);
                     const results = new ResourceInboxResultsRepository(transaction);
                     await timeRallarAsync(
                         options.timing,
@@ -89,7 +89,7 @@ function createFinalizer(
                                 EntityStatus.FAILED,
                                 diagnostics
                             ));
-                            const finished = await resourceInbox.finishReserved(
+                            const finished = await resourceInbox.finalization.finishReserved(
                                 exhaustion.entry.key,
                                 exhaustion.reservationAttempt,
                                 EntityStatus.FAILED,

@@ -28,7 +28,7 @@ Deno.test('mutation runtime keeps one database identity and performs no construc
     });
 
     assert.equal(mutation.runtimeStateRepository.sql, databaseProbe.database);
-    assert.equal(mutation.queueBox.repo, mutation.resourceInboxRepository);
+    assert.equal(mutation.queueBox.resourceInbox, mutation.resourceInboxRepository);
     assert.equal(databaseProbe.queryCount(), 0);
     assert.equal(databaseProbe.transactionCount(), 0);
 

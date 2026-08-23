@@ -6,7 +6,7 @@ import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.t
 import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
 import {
     ResourceInboxResultsRepository
@@ -87,7 +87,7 @@ export function createStateWriteServiceRuntime({
         timing,
         authSessionRepository
     });
-    const resourceInbox = new ResourceInboxRepository(instrumentedSql);
+    const resourceInbox = createPSqlResourceInboxRepository(instrumentedSql);
     const inbox = new InboxQueueReader(new PSqlQueueBox(resourceInbox), {
         onAttemptReleaseTelemetry: (event) => context.attemptReleases.push(event)
     });
@@ -95,7 +95,7 @@ export function createStateWriteServiceRuntime({
     const client = new AppClientInboxService(
         {
             inboxQueueReader: inbox,
-            resourceInboxRepository: resourceInbox,
+            resourceInboxRepository: resourceInbox.entries,
             resourceInboxResultsRepository: results,
             database: instrumentedSql,
             clientStateService: createClientStateService({
@@ -114,7 +114,7 @@ export function createStateWriteServiceRuntime({
     const group = new GroupStateInboxService(
         {
             inboxQueueReader: inbox,
-            resourceInboxRepository: resourceInbox,
+            resourceInboxRepository: resourceInbox.entries,
             resourceInboxResultsRepository: results,
             database: instrumentedSql,
             groupStateService: groupState
@@ -139,7 +139,7 @@ export function createStateWriteServiceRuntime({
     const topology = new TopologyInboxService(
         {
             inboxQueueReader: inbox,
-            resourceInboxRepository: resourceInbox,
+            resourceInboxRepository: resourceInbox.entries,
             resourceInboxResultsRepository: results,
             database: instrumentedSql,
             groupStateService: groupState,

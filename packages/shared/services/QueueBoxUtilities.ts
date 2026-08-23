@@ -6,7 +6,7 @@ import {
     ResilienceDto,
     type DequeueResourceEntryOptions
 } from '../queuebox/DequeueResourceEntryController.ts';
-import { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
+import { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
 import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry } from '../queuebox/ResourceEntry.ts';
 
 export class QueueBoxUtilities {

@@ -1,7 +1,7 @@
 import {
     toResourceInboxReleaseDisposition,
     type ResourceInboxReleaseDisposition
-} from '@shared/queuebox/QueueBoxTypes.ts';
+} from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { toDomain, type ResourceInboxRow } from './resource-inbox-row-codec.ts';

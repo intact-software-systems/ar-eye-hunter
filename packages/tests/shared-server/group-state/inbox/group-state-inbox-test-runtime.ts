@@ -3,7 +3,7 @@ import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import type { Either } from '@shared/resilience/Either.ts';

@@ -1,7 +1,7 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
+import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import { createQueueMessageReader, type QueueMessageReader } from '@shared/services/QueueMessageReader.ts';

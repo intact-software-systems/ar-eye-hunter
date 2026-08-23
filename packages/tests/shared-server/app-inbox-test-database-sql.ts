@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { ResourceInboxInvariantCorruptionError } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import type { EntityStatus, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';

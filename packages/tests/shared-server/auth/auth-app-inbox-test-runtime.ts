@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, isExpiredResourceEntry, toKeyAsString, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import type { Either } from '@shared/resilience/Either.ts';

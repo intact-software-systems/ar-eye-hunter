@@ -6,7 +6,7 @@ import type { ALOutboundEnqueueResult } from '../alm/ALOutboundMessageRuntime.ts
 import { EnqueuedType, PeerId, RttMeasurementInfo } from '../api/api-config.ts';
 import { WebRtcOverlayMulticastManager } from '../multicast/WebRtcOverlayMulticastManager.ts';
 import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
-import { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
+import { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { OnQRtcMessageCallback, QRtcClientCallbacks } from '../webrtc/QRtcClientCallbacks.ts';
 import { QRtcMediaPolicy } from '../webrtc/QRtcPeerConnection.ts';

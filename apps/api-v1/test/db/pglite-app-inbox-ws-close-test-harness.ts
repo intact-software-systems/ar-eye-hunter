@@ -1,5 +1,5 @@
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
@@ -20,7 +20,7 @@ import { FUTURE_MS } from './pglite-auth-test-harness.ts';
 
 export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql) {
     const runtime = new PSqlRuntimeStateRepository(sql);
-    const resourceInbox = new ResourceInboxRepository(sql);
+    const resourceInbox = createPSqlResourceInboxRepository(sql);
     const resourceResults = new ResourceInboxResultsRepository(sql);
     const reader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
     const secondReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
@@ -55,7 +55,7 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql) {
     const client = new AppClientInboxService(
         {
             inboxQueueReader: reader,
-            resourceInboxRepository: resourceInbox,
+            resourceInboxRepository: resourceInbox.entries,
             resourceInboxResultsRepository: resourceResults,
             database: sql,
             clientStateService: clientState
@@ -69,7 +69,7 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql) {
     const group = new GroupStateInboxService(
         {
             inboxQueueReader: reader,
-            resourceInboxRepository: resourceInbox,
+            resourceInboxRepository: resourceInbox.entries,
             resourceInboxResultsRepository: resourceResults,
             database: sql,
             groupStateService: groupState
@@ -83,7 +83,7 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql) {
     new AppClientInboxService(
         {
             inboxQueueReader: secondReader,
-            resourceInboxRepository: resourceInbox,
+            resourceInboxRepository: resourceInbox.entries,
             resourceInboxResultsRepository: resourceResults,
             database: sql,
             clientStateService: clientState
@@ -97,7 +97,7 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql) {
     new GroupStateInboxService(
         {
             inboxQueueReader: secondReader,
-            resourceInboxRepository: resourceInbox,
+            resourceInboxRepository: resourceInbox.entries,
             resourceInboxResultsRepository: resourceResults,
             database: sql,
             groupStateService: groupState

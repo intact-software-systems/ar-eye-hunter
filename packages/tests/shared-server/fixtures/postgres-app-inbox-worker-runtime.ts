@@ -8,7 +8,7 @@ import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p
 import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import type { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import type { PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
 import type { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 
@@ -71,7 +71,7 @@ export interface PostgresAppInboxWorkerRuntime {
     readonly group: GroupStateInboxService;
     readonly topology: TopologyInboxService;
     readonly authSessions: AuthSessionRepository;
-    readonly resourceInbox: ResourceInboxRepository;
+    readonly resourceInbox: PSqlResourceInboxRepository;
     readonly resourceInboxResults: ResourceInboxResultsRepository;
     armBarrier(): void;
     runUntilCompletion<R>(start: () => Promise<R>): Promise<R>;

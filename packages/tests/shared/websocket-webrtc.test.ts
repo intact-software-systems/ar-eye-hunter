@@ -1,6 +1,6 @@
 import { newALEventRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/ALOutboundMessageRuntime.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import {
     DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
     WsQueueBoxClientService,

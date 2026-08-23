@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { PSqlAdminPruneRepository } from '@shared-server/postgres/admin-operations/p-sql-admin-prune-repository.ts';
-import { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { toAdminPruneOutbox, type AdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 import {
@@ -65,15 +65,15 @@ Deno.test('admin prune PSQL repository reads and deletes one deterministic page'
 Deno.test('admin prune PSQL repository excludes its executing resource row', async () => {
     await withPGliteSql(async (sql) => {
         const now = await readPGliteDatabaseEpochMs(sql);
-        const inbox = new ResourceInboxRepository(sql);
+        const inbox = createPSqlResourceInboxRepository(sql);
         const expiryTs = Temporal.Instant.fromEpochMilliseconds(now - 1);
-        await inbox.write(createResourceEntry('executing', { expiryTs }));
-        await inbox.write(createResourceEntry('executing', {
+        await inbox.entries.write(createResourceEntry('executing', { expiryTs }));
+        await inbox.entries.write(createResourceEntry('executing', {
             topicId: 'other-topic',
             contextId: 'other-context',
             expiryTs
         }));
-        await inbox.write(createResourceEntry('other', { expiryTs }));
+        await inbox.entries.write(createResourceEntry('other', { expiryTs }));
         const repository = new PSqlAdminPruneRepository(sql);
         const read = await repository.readPage({
             category: 'resource-inbox',
@@ -132,7 +132,7 @@ Deno.test('admin prune successor outbox rejects an identical active identity', a
             },
             'server-1'
         );
-        await new ResourceInboxRepository(sql).write(entry);
+        await createPSqlResourceInboxRepository(sql).entries.write(entry);
 
         await assert.rejects(
             () =>

@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { SuccessDto } from '@shared/queuebox/DequeueController.ts';
 import { DequeueResourceEntryController, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { describe, expect, it } from 'vitest';

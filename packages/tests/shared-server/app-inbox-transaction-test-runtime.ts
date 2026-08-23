@@ -14,7 +14,7 @@ import {
     type ResourceInboxRetryExhaustion,
     type ResourceInboxRetryExhaustionRecovery
 } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, toKeyAsString, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';

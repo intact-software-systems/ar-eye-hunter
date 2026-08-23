@@ -3,7 +3,7 @@ import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.t
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 
@@ -49,7 +49,7 @@ export interface PostgresAppInboxWorkerServices {
     readonly group: GroupStateInboxService;
     readonly topology: TopologyInboxService;
     readonly authSessions: AuthSessionRepository;
-    readonly resourceInbox: ResourceInboxRepository;
+    readonly resourceInbox: PSqlResourceInboxRepository;
     readonly resourceInboxResults: ResourceInboxResultsRepository;
     readonly inbox: InboxQueueReader;
 }
@@ -60,7 +60,7 @@ export function createPostgresAppInboxWorkerServices(
     const runtimeRepository = new PSqlRuntimeStateRepository(input.sql);
     const topologyRuntimeRepository = createTopologyRuntimeRepository(input, runtimeRepository);
     const authSessions = new AuthSessionRepository(runtimeRepository);
-    const resourceInbox = new ResourceInboxRepository(input.sql);
+    const resourceInbox = createPSqlResourceInboxRepository(input.sql);
     const inbox = createPostgresAppInboxWorkerInbox(resourceInbox, input.trace);
     const resourceInboxResults = new ResourceInboxResultsRepository(input.sql);
     const waitOptions = createPostgresAppInboxWorkerWaitOptions(input.atEpochMs);
@@ -79,7 +79,7 @@ export function createPostgresAppInboxWorkerServices(
     const client = new AppClientInboxService(
         {
             inboxQueueReader: inbox,
-            resourceInboxRepository: resourceInbox,
+            resourceInboxRepository: resourceInbox.entries,
             resourceInboxResultsRepository: resourceInboxResults,
             database: input.transactionSql,
             clientStateService: clientState
@@ -93,7 +93,7 @@ export function createPostgresAppInboxWorkerServices(
     const group = new GroupStateInboxService(
         {
             inboxQueueReader: inbox,
-            resourceInboxRepository: resourceInbox,
+            resourceInboxRepository: resourceInbox.entries,
             resourceInboxResultsRepository: resourceInboxResults,
             database: input.transactionSql,
             groupStateService: groupState
@@ -121,7 +121,7 @@ export function createPostgresAppInboxWorkerServices(
     const topology = new TopologyInboxService(
         {
             inboxQueueReader: inbox,
-            resourceInboxRepository: resourceInbox,
+            resourceInboxRepository: resourceInbox.entries,
             resourceInboxResultsRepository: resourceInboxResults,
             database: input.transactionSql,
             groupStateService: groupState,
@@ -162,7 +162,7 @@ function createPostgresAppInboxWorkerWaitOptions(atEpochMs: number) {
 }
 
 function createPostgresAppInboxWorkerInbox(
-    resourceInbox: ResourceInboxRepository,
+    resourceInbox: PSqlResourceInboxRepository,
     trace: PostgresAppInboxWorkerTrace
 ): InboxQueueReader {
     return new InboxQueueReader(new PSqlQueueBox(resourceInbox), {

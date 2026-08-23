@@ -18,7 +18,7 @@ import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import {
     replaceFinishedResourceEntryIfMatch
 } from '../../queuebox/postgres/resource-inbox-finished-replacement.ts';
-import { ResourceInboxRepository } from '../../queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '../../queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
 export {
     COALESCED_APP_OUTBOX_WORK_FIELD,
@@ -89,10 +89,10 @@ export class CoalescedAppOutboxWorkService {
         transaction: PSqlSql,
         computed: ComputedCoalescedAppOutboxWork
     ): Promise<CoalescedAppOutboxWorkWriteResult> {
-        const repository = new ResourceInboxRepository(transaction);
+        const repository = createPSqlResourceInboxRepository(transaction);
         const expected = computed.expectedEntry;
         if (expected === null) {
-            const action = await repository.writeIfAbsentOrMatch(computed.entry);
+            const action = await repository.entries.writeIfAbsentOrMatch(computed.entry);
             return {
                 action,
                 entry: computed.entry,
@@ -127,7 +127,7 @@ export class CoalescedAppOutboxWorkService {
         if (!isMutableCoalescedStatus(expected.status)) {
             return await this.writeSuccessor(repository, computed, expected);
         }
-        const updated = await repository.replacePendingIfMatch(
+        const updated = await repository.entries.replacePendingIfMatch(
             expected,
             computed.entry,
             expectedGeneration
@@ -145,7 +145,7 @@ export class CoalescedAppOutboxWorkService {
     }
 
     private async writeSuccessor(
-        repository: ResourceInboxRepository,
+        repository: PSqlResourceInboxRepository,
         computed: ComputedCoalescedAppOutboxWork,
         expected: ResourceEntry
     ): Promise<CoalescedAppOutboxWorkWriteResult> {
@@ -154,7 +154,7 @@ export class CoalescedAppOutboxWorkService {
                 'Coalesced APP_OUTBOX successor must have a distinct queue identity'
             );
         }
-        await repository.writeIfAbsentOrMatch(computed.successorEntry);
+        await repository.entries.writeIfAbsentOrMatch(computed.successorEntry);
         return {
             action: 'successor',
             entry: computed.successorEntry,

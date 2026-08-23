@@ -17,7 +17,7 @@ import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry } from '@shared/queue
  * - dequeueAudit.startTs/endTs/nextTs <-> start_ts/end_ts/next_ts
  * - dequeueAudit.attempts            <-> ri_attempts
  */
-export type ResourceInboxRow = {
+export interface ResourceInboxRow {
     ri_row_id: bigint;
     ri_resource_id: string;
     ri_topic_id: string;
@@ -33,9 +33,9 @@ export type ResourceInboxRow = {
     end_ts: string | null;
     next_ts: string | null;
     ri_attempts: bigint | null;
-};
+}
 
-export type ResourceInboxResultsRow = {
+export interface ResourceInboxResultsRow {
     ris_row_id: bigint;
     ris_resource_id: string;
     ris_topic_id: string;
@@ -47,7 +47,16 @@ export type ResourceInboxResultsRow = {
     created_by: string;
     created_ts: string;
     expire_ts: string;
-};
+}
+
+export class ResourceInboxRowCorruptionError extends Error {
+    readonly code = 'resource-inbox-row-corruption';
+
+    constructor(message: string) {
+        super(message);
+        this.name = 'ResourceInboxRowCorruptionError';
+    }
+}
 
 export function keyToString(k: Key): string {
     return `${k.contextId}::${k.topicId}::${k.resourceId}`;
@@ -65,9 +74,8 @@ export function rowsToMap(
 }
 
 export function toDomain(r: ResourceInboxRow): ResourceEntry {
-    // created_ts/start_ts/end_ts/next_ts are timestamps without TZ; keep as Instant-ish by assuming UTC.
-    // If you prefer local time, adjust parsing here.
-    const attempts = r.ri_attempts == null ? 0 : Number(r.ri_attempts);
+    const status = decodeEntityStatus(r.ri_status);
+    const attempts = decodeResourceInboxAttempts(r.ri_attempts);
 
     return {
         key: {
@@ -90,7 +98,7 @@ export function toDomain(r: ResourceInboxRow): ResourceEntry {
                 ? toInstant(r.expire_ts)
                 : NEVER_EXPIRE_TS
         },
-        status: r.ri_status as EntityStatus,
+        status,
         dequeueAudit: {
             startTs: r.start_ts ? toInstant(r.start_ts) : undefined,
             endTs: r.end_ts ? toInstant(r.end_ts) : undefined,
@@ -104,23 +112,28 @@ export function toDomain(r: ResourceInboxRow): ResourceEntry {
 }
 
 export function toResultsDomain(r: ResourceInboxResultsRow): ResourceEntry {
-    return toDomain({
-        ri_row_id: r.ris_row_id,
-        ri_resource_id: r.ris_resource_id,
-        ri_topic_id: r.ris_topic_id,
-        ri_resource: r.ris_resource,
-        ri_type_id: r.ris_type_id,
-        ri_status: r.ris_status,
-        fk_ext_bank_id: r.fk_ext_bank_id,
-        system_date: r.system_date,
-        created_by: r.created_by,
-        created_ts: r.created_ts,
-        expire_ts: r.expire_ts,
-        start_ts: null,
-        end_ts: null,
-        next_ts: null,
-        ri_attempts: null
-    });
+    return {
+        key: {
+            topicId: r.ris_topic_id,
+            resourceId: r.ris_resource_id,
+            contextId: r.fk_ext_bank_id
+        },
+        resource: r.ris_resource,
+        typeId: r.ris_type_id,
+        audit: {
+            date: parseTemporalPlainDateTime(r.created_ts).toPlainTime(),
+            createdBy: r.created_by,
+            createdTs: parseTemporalPlainDateTime(r.created_ts),
+            expiryTs: toInstant(r.expire_ts)
+        },
+        status: decodeEntityStatus(r.ris_status),
+        dequeueAudit: {
+            attempts: 0
+        },
+        db: {
+            id: r.ris_row_id.toString()
+        }
+    };
 }
 
 export function toSystemDate(entry: ResourceEntry): string {
@@ -162,4 +175,156 @@ export function toInstant(ts: string | Date): Temporal.Instant {
             ? normalized
             : `${normalized}Z`
     );
+}
+
+const RESOURCE_INBOX_STATUSES = new Set<string>(Object.values(EntityStatus));
+
+export function isValidResourceInboxLifecycle(row: ResourceInboxRow): boolean {
+    if (row.ri_attempts === null) {
+        return false;
+    }
+
+    const attempts = Number(row.ri_attempts);
+    if (
+        !RESOURCE_INBOX_STATUSES.has(row.ri_status) ||
+        !Number.isSafeInteger(attempts) ||
+        attempts < 0
+    ) {
+        return false;
+    }
+
+    let createdTs: Temporal.PlainDateTime;
+    let expiryTs: Temporal.PlainDateTime;
+    let startTs: Temporal.PlainDateTime | null;
+    let endTs: Temporal.PlainDateTime | null;
+    let nextTs: Temporal.PlainDateTime | null;
+    try {
+        createdTs = parsePostgresTimestamp6(row.created_ts);
+        expiryTs = parsePostgresTimestamp6(row.expire_ts);
+        startTs = row.start_ts ? parsePostgresTimestamp6(row.start_ts) : null;
+        endTs = row.end_ts ? parsePostgresTimestamp6(row.end_ts) : null;
+        nextTs = row.next_ts ? parsePostgresTimestamp6(row.next_ts) : null;
+    }
+    catch {
+        return false;
+    }
+
+    if (
+        Temporal.PlainDateTime.compare(createdTs, expiryTs) >= 0 ||
+        (startTs && Temporal.PlainDateTime.compare(startTs, createdTs) < 0) ||
+        (endTs && (!startTs || Temporal.PlainDateTime.compare(endTs, startTs) < 0)) ||
+        (nextTs && endTs && Temporal.PlainDateTime.compare(nextTs, endTs) < 0) ||
+        (nextTs && !endTs && Temporal.PlainDateTime.compare(nextTs, createdTs) < 0)
+    ) {
+        return false;
+    }
+
+    switch (row.ri_status) {
+        case EntityStatus.NEW:
+            return attempts === 0 && !startTs && !endTs && !nextTs;
+        case EntityStatus.RETRY:
+            return attempts === 0
+                ? !startTs && !endTs && nextTs !== null
+                : startTs !== null && endTs !== null && nextTs !== null;
+        case EntityStatus.RESERVED:
+            return attempts > 0 && startTs !== null && !endTs && !nextTs;
+        case EntityStatus.FAILED:
+            return attempts > 0 && startTs !== null && endTs !== null;
+        case EntityStatus.COMPLETED:
+        case EntityStatus.ABORTED:
+        case EntityStatus.NON_RETRYABLE:
+        case EntityStatus.PARTITIONED:
+        case EntityStatus.MERGED:
+            return attempts > 0 && startTs !== null && endTs !== null && !nextTs;
+        default:
+            return false;
+    }
+}
+
+export function hasMatchingImmutableResourceInboxContent(
+    row: ResourceInboxRow,
+    entry: ResourceEntry
+): boolean {
+    try {
+        return row.ri_topic_id === entry.key.topicId &&
+            row.ri_resource_id === entry.key.resourceId &&
+            row.fk_ext_bank_id === entry.key.contextId &&
+            row.ri_type_id === entry.typeId &&
+            row.ri_resource === entry.resource &&
+            row.created_by === entry.audit.createdBy &&
+            isSamePostgresTimestamp6(row.created_ts, entry.audit.createdTs) &&
+            isSamePostgresTimestamp6(row.expire_ts, entry.audit.expiryTs);
+    }
+    catch {
+        return false;
+    }
+}
+
+function isSamePostgresTimestamp6(
+    persisted: string,
+    candidate: Temporal.PlainDateTime | Temporal.Instant
+): boolean {
+    return Temporal.PlainDateTime.compare(
+        parsePostgresTimestamp6(persisted),
+        toPostgresTimestamp6(candidate)
+    ) === 0;
+}
+
+function parsePostgresTimestamp6(value: string): Temporal.PlainDateTime {
+    if (/[zZ]$/u.test(value) || /[+-]\d{2}(?::?\d{2})?$/u.test(value)) {
+        throw new RangeError('PostgreSQL timestamp without time zone contains a zone');
+    }
+
+    const timestamp = Temporal.PlainDateTime.from(value.replace(' ', 'T'));
+    if (timestamp.nanosecond !== 0) {
+        throw new RangeError('PostgreSQL timestamp(6) exceeds microsecond precision');
+    }
+    return timestamp;
+}
+
+function toPostgresTimestamp6(
+    value: Temporal.PlainDateTime | Temporal.Instant
+): Temporal.PlainDateTime {
+    const timestamp = value instanceof Temporal.Instant
+        ? value.toZonedDateTimeISO('UTC').toPlainDateTime()
+        : value;
+
+    return timestamp.round({
+        smallestUnit: 'microsecond',
+        roundingMode: 'halfEven'
+    });
+}
+
+function decodeEntityStatus(value: string): EntityStatus {
+    switch (value) {
+        case EntityStatus.NEW:
+        case EntityStatus.RETRY:
+        case EntityStatus.RESERVED:
+        case EntityStatus.FAILED:
+        case EntityStatus.COMPLETED:
+        case EntityStatus.ABORTED:
+        case EntityStatus.NON_RETRYABLE:
+        case EntityStatus.PARTITIONED:
+        case EntityStatus.MERGED:
+            return value;
+        default:
+            throw new ResourceInboxRowCorruptionError(
+                `Resource inbox row has unknown status: ${value}`
+            );
+    }
+}
+
+function decodeResourceInboxAttempts(value: bigint | null): number {
+    if (value === null) {
+        throw new ResourceInboxRowCorruptionError(
+            'Resource inbox row is missing its attempt count'
+        );
+    }
+    const attempts = Number(value);
+    if (!Number.isSafeInteger(attempts) || attempts < 0) {
+        throw new ResourceInboxRowCorruptionError(
+            'Resource inbox row has an invalid attempt count'
+        );
+    }
+    return attempts;
 }

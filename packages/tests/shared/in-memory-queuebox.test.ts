@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '@shared/api/api-config.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, NEVER_EXPIRE_TS, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
 import { describe, expect, it, vi } from 'vitest';

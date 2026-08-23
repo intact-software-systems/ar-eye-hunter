@@ -1,7 +1,7 @@
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
-import { ResourceInboxRepository } from '../../queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '../../queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import {
     computeClientStateSyncEntries,
     computeGroupStateSyncEntries,
@@ -33,11 +33,11 @@ async function writeStateSyncEntries(
     transaction: PSqlSql,
     entries: readonly ResourceEntry[]
 ): Promise<void> {
-    const repository = new ResourceInboxRepository(transaction);
+    const repository = createPSqlResourceInboxRepository(transaction);
     for (const entry of entries) {
         if (entry.typeId !== EnqueuedType.WS_OUTBOX) {
             throw new TypeError('State sync write received a non-WS_OUTBOX entry');
         }
-        await repository.writeIfAbsentOrMatch(entry);
+        await repository.entries.writeIfAbsentOrMatch(entry);
     }
 }

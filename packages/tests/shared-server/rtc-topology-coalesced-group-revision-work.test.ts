@@ -22,7 +22,7 @@ import {
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
-import { isIdempotentHandlerFinalizedRelease } from '@shared/queuebox/QueueBoxTypes.ts';
+import { isIdempotentHandlerFinalizedRelease } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { isCanonicalRtcTopologyWorkEntry } from '@shared/queuebox/RtcTopologyWorkEntryContract.ts';
 import { createTestGroup } from '../create-test-group.ts';

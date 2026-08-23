@@ -14,7 +14,7 @@ describe('Resource inbox expiry eviction', () => {
         const log = vi.spyOn(console, 'log').mockImplementation(() => {
         });
         const { initResourceInboxExpiryEviction } = await import(
-            '@shared-server/queuebox/postgres/resource-inbox-repository.ts'
+            '@shared-server/queuebox/postgres/resource-inbox-maintenance.ts'
         );
 
         await initResourceInboxExpiryEviction(repo as never, 1_000);

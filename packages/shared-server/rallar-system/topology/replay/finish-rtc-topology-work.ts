@@ -1,7 +1,7 @@
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { ResourceInboxRepository } from '../../../queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '../../../queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 
@@ -18,9 +18,9 @@ export async function finishRtcTopologyReservation(
     transaction: PSqlSql,
     entry: ResourceEntry
 ): Promise<void> {
-    const finished = await new ResourceInboxRepository(
+    const finished = await createPSqlResourceInboxRepository(
         transaction
-    ).finishReserved(
+    ).finalization.finishReserved(
         entry.key,
         entry.dequeueAudit.attempts,
         EntityStatus.COMPLETED,

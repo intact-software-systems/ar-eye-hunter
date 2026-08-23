@@ -298,28 +298,32 @@ export function toResourceInboxWorkAdvertisementOptions(
 }
 
 export function toResourceInboxReleaseDisposition(
-    input: ResourceInboxReleaseDisposition
+    input: unknown
 ): ResourceInboxReleaseDisposition {
-    const status = (input as { status?: unknown; } | null)?.status;
-    const delayMs = (input as { delayMs?: unknown; } | null)?.delayMs;
+    if (typeof input !== 'object' || input === null) {
+        throw new ResourceInboxInvalidReleaseDispositionError();
+    }
+    const status = 'status' in input ? input.status : undefined;
+    const delayMs = 'delayMs' in input ? input.delayMs : undefined;
     if (
         status === Resource.EntityStatus.RETRY &&
+        typeof delayMs === 'number' &&
         Number.isSafeInteger(delayMs) &&
-        (delayMs as number) >= 1
+        delayMs >= 1
     ) {
-        return input;
+        return { status, delayMs };
     }
 
-    const terminalStatuses: ReadonlySet<unknown> = new Set([
-        Resource.EntityStatus.COMPLETED,
-        Resource.EntityStatus.FAILED,
-        Resource.EntityStatus.ABORTED,
-        Resource.EntityStatus.NON_RETRYABLE,
-        Resource.EntityStatus.PARTITIONED,
-        Resource.EntityStatus.MERGED
-    ]);
-    if (terminalStatuses.has(status) && delayMs === null) {
-        return input;
+    if (delayMs === null) {
+        switch (status) {
+            case Resource.EntityStatus.COMPLETED:
+            case Resource.EntityStatus.FAILED:
+            case Resource.EntityStatus.ABORTED:
+            case Resource.EntityStatus.NON_RETRYABLE:
+            case Resource.EntityStatus.PARTITIONED:
+            case Resource.EntityStatus.MERGED:
+                return { status, delayMs };
+        }
     }
 
     throw new ResourceInboxInvalidReleaseDispositionError();

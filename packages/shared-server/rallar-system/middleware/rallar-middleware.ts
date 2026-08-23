@@ -3,7 +3,7 @@ import { type RtcTopologyPublicationRepository } from '@shared-server/rallar-sys
 import type { ALInboundRuntimeStores } from '@shared/alm/ALInboundMessageRuntime.ts';
 import type { ALOutboundRuntimeStores } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import type { DequeueResourceEntryOptions, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
+import type { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';

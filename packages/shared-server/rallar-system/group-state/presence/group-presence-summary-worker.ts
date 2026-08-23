@@ -6,7 +6,7 @@ import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenc
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { ResourceInboxRepository } from '../../../queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '../../../queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import { requireConditionalWrite } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
@@ -124,9 +124,9 @@ export class GroupPresenceSummaryWork {
                     )
             );
         }
-        const outbox = new ResourceInboxRepository(transaction);
+        const outbox = createPSqlResourceInboxRepository(transaction);
         for (const entry of computed.downstreamOutboxEntries) {
-            await outbox.writeIfAbsentOrMatch(entry);
+            await outbox.entries.writeIfAbsentOrMatch(entry);
         }
         await this.coalescedTopologyWorkService.write(
             transaction,
@@ -147,7 +147,7 @@ export class GroupPresenceSummaryWork {
         this.validate(work, read, computed);
         await runInPSqlTransaction(this.options.database, async (transaction) => {
             await this.write(transaction, computed);
-            const finished = await new ResourceInboxRepository(transaction).finishReserved(
+            const finished = await createPSqlResourceInboxRepository(transaction).finalization.finishReserved(
                 entry.key,
                 entry.dequeueAudit.attempts,
                 EntityStatus.COMPLETED,

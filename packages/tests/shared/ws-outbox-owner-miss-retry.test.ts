@@ -11,7 +11,7 @@ import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendC
 import { createALOutboundAdmissionStore, createInMemoryALOutboundAdmissionState, type ALOutboundAdmissionStore } from '@shared/alm/ALOutboundAdmissionStore.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';

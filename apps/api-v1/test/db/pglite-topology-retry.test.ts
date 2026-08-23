@@ -3,7 +3,7 @@ import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
-import { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
@@ -42,7 +42,7 @@ Deno.test(
         await withPGliteSql(async (sql) => {
             const nowEpochMs = Date.parse('2026-07-23T00:00:00.000Z');
             const runtime = new PSqlRuntimeStateRepository(sql);
-            const resourceInbox = new ResourceInboxRepository(sql);
+            const resourceInbox = createPSqlResourceInboxRepository(sql);
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
             const authSessions = new AuthSessionRepository(runtime);
@@ -85,7 +85,7 @@ Deno.test(
                 const service = new TopologyInboxService(
                     {
                         inboxQueueReader: inboxReader,
-                        resourceInboxRepository: resourceInbox,
+                        resourceInboxRepository: resourceInbox.entries,
                         resourceInboxResultsRepository: resourceResults,
                         database: sql,
                         groupStateService: groupState,
@@ -242,7 +242,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
     await withPGliteSql(async (sql) => {
         const nowEpochMs = Date.parse('2026-07-23T00:00:00.000Z');
         const runtime = new PSqlRuntimeStateRepository(sql);
-        const resourceInbox = new ResourceInboxRepository(sql);
+        const resourceInbox = createPSqlResourceInboxRepository(sql);
         let onFirstRetryRelease = async () => {};
         let retryReleaseCount = 0;
         class RetryObservedQueueBox extends PSqlQueueBox {
@@ -345,7 +345,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
         const appGroup = new TopologyInboxService(
             {
                 inboxQueueReader: inboxReader,
-                resourceInboxRepository: resourceInbox,
+                resourceInboxRepository: resourceInbox.entries,
                 resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
                 database: sql,
                 groupStateService: groupState,

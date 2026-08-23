@@ -32,9 +32,9 @@ export * from './rtc/rtt-reporting-policy.ts';
 
 export * from './queuebox/DequeueController.ts';
 export * from './queuebox/DequeueResourceEntryController.ts';
-export * from './queuebox/IndexedDbQueueBox.ts';
-export * from './queuebox/InMemoryQueueBox.ts';
-export * from './queuebox/QueueBoxTypes.ts';
+export * from './queuebox/indexed-db-queue-box.ts';
+export * from './queuebox/in-memory-queue-box.ts';
+export * from './queuebox/queue-box-types.ts';
 export * from './queuebox/ResourceEntry.ts';
 
 export * from './persistence/IndexedDbStringPersistenceProvider.ts';
