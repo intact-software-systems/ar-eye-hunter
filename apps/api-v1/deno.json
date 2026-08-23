@@ -30,8 +30,7 @@
     "db:migrate:deploy": "deno task prisma migrate deploy",
     "db:pull": "deno task prisma db pull",
     "db:studio": "deno task prisma studio",
-    "db:status": "deno task prisma migrate status",
-    "rtc:migrate-persisted-state": "deno run --allow-env --allow-net --allow-read --allow-write src/operations/migrate-rtc-persisted-state.ts"
+    "db:status": "deno task prisma migrate status"
   },
   "deploy": {
     "org": "intact-software-systems",
