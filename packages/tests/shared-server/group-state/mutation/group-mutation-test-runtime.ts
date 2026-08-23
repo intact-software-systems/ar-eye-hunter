@@ -9,6 +9,10 @@ import {
 } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { validateRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
 import { validateRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
+import type {
+    RuntimeStateReadBatchSelection,
+    RuntimeStateReadBatchSelector
+} from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntry, RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { GroupEvent, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -86,6 +90,7 @@ export class ApplyingGuardedBatchRepository extends FakeRuntimeStateRepository {
     private outsideTransactionReadCount = 0;
     private readonly forcedConflicts: string[] = [];
     private readonly omittedEffectResults: string[] = [];
+    private batchReadBarrier: BatchReadBarrier | undefined;
 
     get activeTransactionDepth(): number {
         return this.transactionDepth;
@@ -103,6 +108,10 @@ export class ApplyingGuardedBatchRepository extends FakeRuntimeStateRepository {
         this.omittedEffectResults.push(effectId);
     }
 
+    blockMatchingBatchReads(namespace: string, key: string, readers: number): void {
+        this.batchReadBarrier = createBatchReadBarrier(namespace, key, readers);
+    }
+
     resetObservations(): void {
         this.batches.length = 0;
         this.transactionOrder.length = 0;
@@ -114,6 +123,29 @@ export class ApplyingGuardedBatchRepository extends FakeRuntimeStateRepository {
     override async findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {
         this.recordRead();
         return await super.findEntry(namespace, key);
+    }
+
+    override async readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
+        this.recordRead();
+        const selections = await super.readRuntimeStateBatch(selectors);
+        const barrier = this.batchReadBarrier;
+        if (
+            barrier &&
+            selectors.some(
+                (selector) =>
+                    selector.kind === 'key' &&
+                    selector.namespace === barrier.namespace &&
+                    selector.key === barrier.key
+            )
+        ) {
+            await barrier.arrive();
+            if (barrier.complete()) {
+                this.batchReadBarrier = undefined;
+            }
+        }
+        return selections;
     }
 
     override async findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]> {
@@ -216,6 +248,37 @@ export class ApplyingGuardedBatchRepository extends FakeRuntimeStateRepository {
             this.insideTransactionReadCount += 1;
         }
     }
+}
+
+interface BatchReadBarrier {
+    readonly namespace: string;
+    readonly key: string;
+    arrive(): Promise<void>;
+    complete(): boolean;
+}
+
+function createBatchReadBarrier(
+    namespace: string,
+    key: string,
+    readers: number
+): BatchReadBarrier {
+    let arrivals = 0;
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    return {
+        namespace,
+        key,
+        async arrive() {
+            arrivals += 1;
+            if (arrivals === readers) {
+                release();
+            }
+            await released;
+        },
+        complete: () => arrivals >= readers
+    };
 }
 
 export class OrderedGroupEventStore extends InMemoryGroupStateEventStore {

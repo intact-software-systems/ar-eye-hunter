@@ -16,6 +16,7 @@ import { readRtcTopologyWorkEnvelope } from '@shared-server/rallar-system/topolo
 import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupPresenceSummary, GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import { EntityStatus, InMemoryQueueBox, type ALMessage } from '@shared/mod.ts';
@@ -59,7 +60,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         expect(handlerStart).toBeGreaterThanOrEqual(0);
         expect(handler).not.toMatch(/waitForRuntimeStateWriteRetry/);
         expect(handler).not.toMatch(/\bfor\s*\([^)]*attempt/);
-        expect(handler).toMatch(/runInTransaction/);
+        expect(handler).toMatch(/runInPSqlTransaction/);
         expect(handler).toMatch(/writeTopologyMutation\(\s*transaction/);
         expect(handler).toMatch(/appendOrValidate\(\s*transaction/);
         expect(handler).toMatch(/finishRtcTopologyReservation\(transaction, entry\)/);
@@ -75,7 +76,9 @@ describe('RTC topology APP_OUTBOX work', () => {
         );
         expect(completionSource).not.toMatch(/waitForRuntimeStateWriteRetry/);
         expect(completionSource).not.toMatch(/\bfor\s*\([^)]*attempt/);
-        expect(completionSource).toMatch(/new ResourceInboxRepository\(transaction\)\.finishReserved/);
+        expect(completionSource).toMatch(
+            /new ResourceInboxRepository\(\s*transaction\s*\)\.finishReserved\(/
+        );
         expect(completionSource).toMatch(/throw new RuntimeStateWriteConflictError\(\)/);
     });
 
@@ -186,14 +189,16 @@ describe('RTC topology APP_OUTBOX work', () => {
         await runtime.publisher.enqueueForGroupSnapshot(queuedGroup);
         const [entry] = await entriesIn(queue);
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const findGroupSnapshotByRef = vi.fn(
-            (
-                _groupRef: GroupRef,
-                options?: Readonly<{
-                    minCausalRevision?: GroupStateCausalRevision;
-                }>
-            ) => (options?.minCausalRevision ? undefined : incomparableFinderGroup)
-        );
+        const authoritySelections: Array<GroupStateCausalRevision | undefined> = [];
+        const findGroupSnapshotByRef = (
+            _groupRef: GroupRef,
+            options?: Readonly<{
+                minCausalRevision?: GroupStateCausalRevision;
+            }>
+        ) => {
+            authoritySelections.push(options?.minCausalRevision);
+            return options?.minCausalRevision ? undefined : incomparableFinderGroup;
+        };
         const topologyManagement = createGroupTopologyOwners({
             findGroupSnapshotByRef,
             topologyService: new RallarRtcTopologyService({ now: () => 10 }),
@@ -212,7 +217,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         await expect(handler.onMessage(JSON.parse(entry!.resource), entry!)).rejects.toMatchObject({
             name: 'GroupStateSnapshotIncomparableError'
         });
-        expect(findGroupSnapshotByRef).toHaveBeenCalledTimes(2);
+        expect(authoritySelections).toEqual([queuedGroup.causalRevision, undefined]);
     });
 
     it('prefers durable group authority when cache state masks an incomparable tuple', async () => {
@@ -243,9 +248,10 @@ describe('RTC topology APP_OUTBOX work', () => {
         expect(await groupStateRepository.insertPresenceSummary(presenceSummary)).toMatchObject({
             status: 'applied'
         });
-        const findGroupSnapshotByRef = vi.fn(() => queuedGroup);
         const topologyManagement = createGroupTopologyOwners({
-            findGroupSnapshotByRef,
+            findGroupSnapshotByRef: () => {
+                throw new Error('Durable authority must resolve before consulting process cache state');
+            },
             groupStateRepository,
             topologyService: new RallarRtcTopologyService({ now: () => 10 }),
             topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository),
@@ -263,7 +269,6 @@ describe('RTC topology APP_OUTBOX work', () => {
         await expect(handler.onMessage(JSON.parse(entry!.resource), entry!)).rejects.toMatchObject({
             name: 'GroupStateSnapshotIncomparableError'
         });
-        expect(findGroupSnapshotByRef).not.toHaveBeenCalled();
     });
 
     it.each(
@@ -383,15 +388,13 @@ describe('RTC topology APP_OUTBOX work', () => {
         }
         const runtimeRepository = new FakeRuntimeStateRepository();
         const topologyManagement = createGroupTopologyOwners({
-            findGroupSnapshotByRef: () => group,
+            findGroupSnapshotByRef: () => {
+                throw new Error('Malformed topology work must not read mutable authority');
+            },
             topologyService: new RallarRtcTopologyService({ now: () => 10 }),
             topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository),
             processRttReader: () => []
         });
-        const readAuthority = vi.spyOn(
-            topologyManagement.planning,
-            'readTopologyPlanningAuthority'
-        );
         const handler = createRtcTopologyWorkHandler({
             runtime,
             database: createAppInboxTestDatabase(queue, {
@@ -402,7 +405,6 @@ describe('RTC topology APP_OUTBOX work', () => {
         });
 
         await expect(handler.onMessage(corruptMessage, entry)).rejects.toBeInstanceOf(TypeError);
-        expect(readAuthority).not.toHaveBeenCalled();
     });
 
     it('rejects retired RTT group-revision work before reading mutable authority', async () => {
@@ -436,15 +438,13 @@ describe('RTC topology APP_OUTBOX work', () => {
         };
         const runtimeRepository = new FakeRuntimeStateRepository();
         const topologyManagement = createGroupTopologyOwners({
-            findGroupSnapshotByRef: () => group,
+            findGroupSnapshotByRef: () => {
+                throw new Error('Malformed topology work must not read mutable authority');
+            },
             topologyService: new RallarRtcTopologyService({ now: () => 10 }),
             topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository),
             processRttReader: () => []
         });
-        const readAuthority = vi.spyOn(
-            topologyManagement.planning,
-            'readTopologyPlanningAuthority'
-        );
         const handler = createRtcTopologyWorkHandler({
             runtime,
             database: createAppInboxTestDatabase(queue, {
@@ -458,7 +458,6 @@ describe('RTC topology APP_OUTBOX work', () => {
             'RTC topology group-revision work cannot use an RTT durable identity'
         );
         await expect(handler.onMessage(retiredRttMessage, entry)).rejects.toBeInstanceOf(TypeError);
-        expect(readAuthority).not.toHaveBeenCalled();
     });
 
     it('rejects RTT work that combines coalesced metadata with a durable identity', async () => {
@@ -492,15 +491,13 @@ describe('RTC topology APP_OUTBOX work', () => {
         };
         const runtimeRepository = new FakeRuntimeStateRepository();
         const topologyManagement = createGroupTopologyOwners({
-            findGroupSnapshotByRef: () => group,
+            findGroupSnapshotByRef: () => {
+                throw new Error('Malformed topology work must not read mutable authority');
+            },
             topologyService: new RallarRtcTopologyService({ now: () => 10 }),
             topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository),
             processRttReader: () => []
         });
-        const readAuthority = vi.spyOn(
-            topologyManagement.planning,
-            'readTopologyPlanningAuthority'
-        );
         const handler = createRtcTopologyWorkHandler({
             runtime,
             database: createAppInboxTestDatabase(queue, {
@@ -514,7 +511,6 @@ describe('RTC topology APP_OUTBOX work', () => {
             'RTC topology RTT work cannot combine coalesced and durable identity'
         );
         await expect(handler.onMessage(hybridRttMessage, entry)).rejects.toBeInstanceOf(TypeError);
-        expect(readAuthority).not.toHaveBeenCalled();
     });
 
     it('keeps a reserved RTT generation immutable and creates a drainable successor', async () => {
@@ -637,10 +633,12 @@ describe('RTC topology APP_OUTBOX work', () => {
             now: () => 1_000
         });
         let predictedDistanceMs = 0;
-        const observeRtt = vi.fn(() => {
+        const observedRttVersions: number[] = [];
+        const observeRtt = (measurement: RttMeasurementInfo) => {
+            observedRttVersions.push(measurement.version);
             predictedDistanceMs += 4;
             return true;
-        });
+        };
         const refinement = new RtcRttRefinementService({
             gate: new RtcRttRefinementGate({
                 minIntervalMs: 0,
@@ -651,9 +649,9 @@ describe('RTC topology APP_OUTBOX work', () => {
             readPredictedNodeData: () => predictedNodes(predictedDistanceMs)
         });
         const planned = new Error('planned');
-        const readTopologyPlanningAuthority = vi.fn(async () => {
+        const readTopologyPlanningAuthority = async () => {
             throw planned;
-        });
+        };
         const runtimeRepository = new FakeRuntimeStateRepository();
         const handler = createRtcTopologyWorkHandler({
             runtime,
@@ -676,8 +674,6 @@ describe('RTC topology APP_OUTBOX work', () => {
             const entry = await enqueueAndReserveRtt(queue, runtime, group, version);
             await expect(handler.onMessage(JSON.parse(entry.resource), entry)).resolves.toBeUndefined();
         }
-        expect(readTopologyPlanningAuthority).not.toHaveBeenCalled();
-
         const qualifying = await enqueueAndReserveRtt(queue, runtime, group, 3);
         await expect(handler.onMessage(JSON.parse(qualifying.resource), qualifying)).rejects.toBe(
             planned
@@ -685,8 +681,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         await expect(handler.onMessage(JSON.parse(qualifying.resource), qualifying)).rejects.toBe(
             planned
         );
-        expect(readTopologyPlanningAuthority).toHaveBeenCalledTimes(2);
-        expect(observeRtt).toHaveBeenCalledTimes(3);
+        expect(observedRttVersions).toEqual([1, 2, 3]);
     });
 
     // The refinement gate defers the replan, never the activation decision:
@@ -745,17 +740,20 @@ describe('RTC topology APP_OUTBOX work', () => {
             rttMeasurements: [rtt('session-a', 'session-b', 1)],
             nowEpochMs: 1_000
         };
-        const readTopologyPlanningAuthority = vi.fn(async () => authority);
-        const submitCommand = vi.fn(
-            async (_command: GroupMutationCommand, _atEpochMs: number) => {}
-        );
+        const submittedCommands: Array<Readonly<{
+            command: GroupMutationCommand;
+            atEpochMs: number;
+        }>> = [];
+        const submitCommand = async (command: GroupMutationCommand, atEpochMs: number) => {
+            submittedCommands.push({ command, atEpochMs });
+        };
         const handler = createRtcTopologyWorkHandler({
             runtime,
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
             }),
             topologyPlanning: {
-                readTopologyPlanningAuthority,
+                readTopologyPlanningAuthority: async () => authority,
                 computeTopologyFromAuthority: vi.fn(),
                 observeCommittedTopology: vi.fn(),
                 recordTopologyPublication: vi.fn(),
@@ -785,9 +783,9 @@ describe('RTC topology APP_OUTBOX work', () => {
         const entry = await enqueueAndReserveRtt(queue, runtime, group, 1);
         await expect(handler.onMessage(JSON.parse(entry.resource), entry)).resolves.toBeUndefined();
 
-        expect(readTopologyPlanningAuthority).toHaveBeenCalledTimes(1);
-        expect(submitCommand).toHaveBeenCalledTimes(1);
-        expect(submitCommand.mock.calls[0]?.[1]).toBe(1_000);
+        expect(submittedCommands).toEqual([
+            expect.objectContaining({ atEpochMs: 1_000 })
+        ]);
     });
 
     it('claims zero-knob RTT work and reuses its canonical observation on retry', async () => {
@@ -796,7 +794,11 @@ describe('RTC topology APP_OUTBOX work', () => {
             outboxQueueReader: new OutboxQueueReader(queue),
             now: () => 1_000
         });
-        const observeRtt = vi.fn(() => true);
+        const observedRttVersions: number[] = [];
+        const observeRtt = (measurement: RttMeasurementInfo) => {
+            observedRttVersions.push(measurement.version);
+            return true;
+        };
         const refinement = new RtcRttRefinementService({
             gate: new RtcRttRefinementGate({ minIntervalMs: 0, vivaldiDeltaThresholdMs: 0 }),
             nowEpochMs: () => 1_000,
@@ -804,9 +806,9 @@ describe('RTC topology APP_OUTBOX work', () => {
             readPredictedNodeData: () => predictedNodes(0)
         });
         const planned = new Error('planned');
-        const readTopologyPlanningAuthority = vi.fn(async () => {
+        const readTopologyPlanningAuthority = async () => {
             throw planned;
-        });
+        };
         const handler = createRtcTopologyWorkHandler({
             runtime,
             database: createAppInboxTestDatabase(queue, {
@@ -829,7 +831,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         await expect(handler.onMessage(JSON.parse(canonical.resource), canonical)).rejects.toBe(
             planned
         );
-        expect(observeRtt).toHaveBeenCalledOnce();
+        expect(observedRttVersions).toEqual([1]);
     });
 });
 

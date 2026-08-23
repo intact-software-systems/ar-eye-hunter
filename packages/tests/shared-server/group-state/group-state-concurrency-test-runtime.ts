@@ -4,6 +4,10 @@ import type {
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type {
+    RuntimeStateReadBatchSelection,
+    RuntimeStateReadBatchSelector
+} from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 
 export class GroupBarrierRepository extends FakeRuntimeStateRepository {
@@ -127,6 +131,61 @@ export class GroupBarrierRepository extends FakeRuntimeStateRepository {
             await this.waitAtBarrier('admission');
         }
         return value;
+    }
+
+    override async readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
+        const prefixSelectors = selectors.filter(
+            (selector) =>
+                selector.kind === 'prefix' &&
+                (selector.namespace === 'group-state:members' ||
+                    selector.namespace === 'group-state:sessions')
+        );
+        if (prefixSelectors.length > 0) {
+            await this.barrierTransactionTail;
+        }
+        const selections = await super.readRuntimeStateBatch(selectors);
+        const stack = new Error().stack;
+        if (stack?.includes('readGroupMutation')) {
+            this.hotPathListReads += prefixSelectors.length;
+        }
+        if (
+            stack?.includes('readStableStateSnapshot') ||
+            stack?.includes('readGroupStateAuthorityBatch')
+        ) {
+            this.snapshotListReads += prefixSelectors.length;
+        }
+
+        const keySelectors = selectors.filter(
+            (selector): selector is Extract<RuntimeStateReadBatchSelector, { kind: 'key'; }> =>
+                selector.kind === 'key'
+        );
+        this.entryReadKeys.push(...keySelectors.map((selector) => selector.key));
+        const groupSelector = keySelectors.find(
+            (selector) => selector.namespace === 'group-state:groups'
+        );
+        if (groupSelector && this.heldGroupRead?.key === groupSelector.key) {
+            await this.heldGroupRead.arrive();
+        }
+        if (groupSelector && this.groupReadsRemaining > 0) {
+            await this.waitAtBarrier('group');
+        }
+        if (
+            keySelectors.some((selector) => selector.namespace === 'group-state:sessions') &&
+            this.presenceReadsRemaining > 0
+        ) {
+            await this.waitAtBarrier('presence');
+        }
+        if (
+            keySelectors.some(
+                (selector) => selector.namespace === 'group-state:presence-admissions'
+            ) &&
+            this.admissionReadsRemaining > 0
+        ) {
+            await this.waitAtBarrier('admission');
+        }
+        return selections;
     }
 
     override async begin<T>(
