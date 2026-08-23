@@ -4,13 +4,13 @@ import { PSqlOutboundAdmissionBackend } from '@shared-server/al-runtime/postgres
 import {
     ALInboundMessageRuntime,
     ALOutboundMessageRuntime,
-    type ALInboundMessageRuntimeInput,
     createALInboundAdmissionStore,
     createALOutboundAdmissionStore,
     InMemoryQueueBox,
     newALUnicastMessage,
     planALMessageHandling,
-    QueueBoxUtilities
+    QueueBoxUtilities,
+    type ALInboundMessageRuntimeInput
 } from '@shared/mod.ts';
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from './fake-optimistic-runtime-state-repository.ts';
@@ -69,17 +69,16 @@ describe('PSql admission optimistic retry', () => {
             msg,
             fromPeerId,
             stores
-        ) =>
-            planALMessageHandling(msg, {
-                selfPeerId: 'self',
-                fromPeerId,
-                connectedPeerIds: ['peer-1'],
-                groupMemberPeerIds: ['self', 'peer-1'],
-                overlayNeighborPeerIds: [],
-                dedupStore: stores.dedupStore,
-                orderingStore: stores.orderingStore,
-                supersedenceStore: stores.supersedenceStore
-            });
+        ) => planALMessageHandling(msg, {
+            selfPeerId: 'self',
+            fromPeerId,
+            connectedPeerIds: ['peer-1'],
+            groupMemberPeerIds: ['self', 'peer-1'],
+            overlayNeighborPeerIds: [],
+            dedupStore: stores.dedupStore,
+            orderingStore: stores.orderingStore,
+            supersedenceStore: stores.supersedenceStore
+        });
         const runtime = new ALInboundMessageRuntime({
             selfPeerId: 'self',
             inbox: new InMemoryQueueBox(new Map()),

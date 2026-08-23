@@ -112,7 +112,8 @@ function createProvider(
 }
 
 function decodeStoredTestValue(value: JsonWireValue): StoredTestValue {
-    if (!isJsonWireObject(value) ||
+    if (
+        !isJsonWireObject(value) ||
         Object.keys(value).length !== 1 ||
         typeof value.value !== 'number'
     ) {

@@ -35,10 +35,12 @@ describe('runtime-state guarded batches', () => {
         })).toBeDefined();
     });
 
-    const invalidBatches: ReadonlyArray<readonly [
-        string,
-        Parameters<typeof validateRuntimeStateGuardedBatch>[0]
-    ]> = [
+    const invalidBatches: ReadonlyArray<
+        readonly [
+            string,
+            Parameters<typeof validateRuntimeStateGuardedBatch>[0]
+        ]
+    > = [
         ['put guard', {
             guard: {
                 operation: 'put',
