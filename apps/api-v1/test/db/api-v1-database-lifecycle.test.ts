@@ -16,9 +16,10 @@ Deno.test('PostgreSQL client adapter preserves a complete current client', () =>
 
     assert.equal(toApiV1PostgresClient(client), client);
     assert.throws(
-        () => toApiV1PostgresClient(Object.assign(() => Promise.resolve([]), {
-            begin: () => Promise.resolve()
-        })),
+        () =>
+            toApiV1PostgresClient(Object.assign(() => Promise.resolve([]), {
+                begin: () => Promise.resolve()
+            })),
         /required API-v1 capabilities/u
     );
 });

@@ -1,5 +1,8 @@
 import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
-import { createConsoleRallarTimingSink, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import {
+    createConsoleRallarTimingSink,
+    type RallarTimingSink
+} from '@shared-server/rallar-system/observability/timing.ts';
 import type {
     ApiV1AppInboxConfiguration,
     ApiV1ObservabilityConfiguration

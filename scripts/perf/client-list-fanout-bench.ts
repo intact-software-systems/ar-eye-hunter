@@ -1,10 +1,4 @@
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
-import type {
-    AuditStamp,
-    ClientInstance,
-    ClientPrincipal,
-    ClientSession
-} from '@shared/api/client-types.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
@@ -12,6 +6,7 @@ import type {
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { AuditStamp, ClientInstance, ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
 
 const CLIENTS = Number(
     Deno.args.find((arg) => arg.startsWith('--clients='))?.slice('--clients='.length) ??
@@ -126,10 +121,12 @@ class CountingRuntimeStateRepository implements RuntimeStateOptimisticTransactio
 
     findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]> {
         this.findAllEntriesCalls += 1;
-        return Promise.resolve([...this.data.entries()]
-            .filter(([compositeKey]) => this.toNamespace(compositeKey) === namespace)
-            .map(([, entry]) => ({ ...entry }))
-            .sort((left, right) => left.key.localeCompare(right.key)));
+        return Promise.resolve(
+            [...this.data.entries()]
+                .filter(([compositeKey]) => this.toNamespace(compositeKey) === namespace)
+                .map(([, entry]) => ({ ...entry }))
+                .sort((left, right) => left.key.localeCompare(right.key))
+        );
     }
 
     findEntriesByPrefix(
@@ -157,13 +154,15 @@ class CountingRuntimeStateRepository implements RuntimeStateOptimisticTransactio
         keys: readonly string[]
     ): Promise<readonly RuntimeStateEntry[]> {
         const keySet = new Set(keys);
-        return Promise.resolve([...this.data.entries()]
-            .filter(([compositeKey]) =>
-                this.toNamespace(compositeKey) === namespace &&
-                keySet.has(this.toStoreKey(compositeKey))
-            )
-            .map(([, entry]) => ({ ...entry }))
-            .sort((left, right) => left.key.localeCompare(right.key)));
+        return Promise.resolve(
+            [...this.data.entries()]
+                .filter(([compositeKey]) =>
+                    this.toNamespace(compositeKey) === namespace &&
+                    keySet.has(this.toStoreKey(compositeKey))
+                )
+                .map(([, entry]) => ({ ...entry }))
+                .sort((left, right) => left.key.localeCompare(right.key))
+        );
     }
 
     upsert(

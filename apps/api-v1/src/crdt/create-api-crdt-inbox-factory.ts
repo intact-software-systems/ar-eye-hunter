@@ -3,10 +3,10 @@ import type { ResourceInboxRepository } from '@shared-server/postgres/resource-i
 import type {
     ResourceInboxResultsRepository
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type {
     RallarCrdtInboxServiceFactory
 } from '@shared-server/rallar-system/middleware/rallar-middleware-options.ts';
-import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 

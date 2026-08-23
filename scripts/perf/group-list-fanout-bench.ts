@@ -224,10 +224,12 @@ export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTra
 
     findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]> {
         this.findAllEntriesCalls += 1;
-        return Promise.resolve([...this.data.entries()]
-            .filter(([compositeKey]) => this.toNamespace(compositeKey) === namespace)
-            .map(([, entry]) => ({ ...entry }))
-            .sort((left, right) => left.key.localeCompare(right.key)));
+        return Promise.resolve(
+            [...this.data.entries()]
+                .filter(([compositeKey]) => this.toNamespace(compositeKey) === namespace)
+                .map(([, entry]) => ({ ...entry }))
+                .sort((left, right) => left.key.localeCompare(right.key))
+        );
     }
 
     findEntriesByPrefix(
@@ -259,13 +261,15 @@ export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTra
         keys: readonly string[]
     ): Promise<readonly RuntimeStateEntry[]> {
         const keySet = new Set(keys);
-        return Promise.resolve([...this.data.entries()]
-            .filter(([compositeKey]) =>
-                this.toNamespace(compositeKey) === namespace &&
-                keySet.has(this.toStoreKey(compositeKey))
-            )
-            .map(([, entry]) => ({ ...entry }))
-            .sort((left, right) => left.key.localeCompare(right.key)));
+        return Promise.resolve(
+            [...this.data.entries()]
+                .filter(([compositeKey]) =>
+                    this.toNamespace(compositeKey) === namespace &&
+                    keySet.has(this.toStoreKey(compositeKey))
+                )
+                .map(([, entry]) => ({ ...entry }))
+                .sort((left, right) => left.key.localeCompare(right.key))
+        );
     }
 
     upsert(
