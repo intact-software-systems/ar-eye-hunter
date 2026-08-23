@@ -1,21 +1,14 @@
-import {
-    decodeJsonWireValue,
-    type JsonWireObject,
-    type JsonWireValue
-} from '../../rallar-system/protocol/json-wire-identity.ts';
+import { type JsonWireObject, type JsonWireValue } from '../../rallar-system/protocol/json-wire-identity.ts';
 import type { RuntimeStateEntry } from '../runtime-state-repository.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from './runtime-state-read-batch.ts';
 import { validateRuntimeStateReadBatchSelectors } from './validate-runtime-state-read-batch-selectors.ts';
 
 export function validateRuntimeStateReadBatchResult(
     expectedSelectors: readonly RuntimeStateReadBatchSelector[],
-    input: unknown
+    input: JsonWireValue | readonly RuntimeStateReadBatchSelection[]
 ): readonly RuntimeStateReadBatchSelection[] {
     const selectors = validateRuntimeStateReadBatchSelectors(expectedSelectors);
-    const results = requireDenseArray(
-        decodeJsonWireValue(input, 'runtime state read batch result'),
-        'results'
-    );
+    const results = requireDenseArray(input, 'results');
     if (results.length !== selectors.length) {
         throw invalidReadBatch(
             `results expected ${selectors.length} selections, received ${results.length}`
@@ -64,7 +57,10 @@ function validateSelectionEntries(
     }
 }
 
-function validateEntry(input: JsonWireValue, label: string): RuntimeStateEntry {
+function validateEntry(
+    input: JsonWireValue | RuntimeStateReadBatchSelection,
+    label: string
+): RuntimeStateEntry {
     const entry = requireRecord(input, label);
     requireExactKeys(
         entry,
@@ -111,9 +107,9 @@ function validateEntry(input: JsonWireValue, label: string): RuntimeStateEntry {
 }
 
 function requireDenseArray(
-    input: JsonWireValue | undefined,
+    input: JsonWireValue | readonly RuntimeStateReadBatchSelection[] | undefined,
     label: string
-): readonly JsonWireValue[] {
+): readonly (JsonWireValue | RuntimeStateReadBatchSelection)[] {
     if (!Array.isArray(input)) {
         throw invalidReadBatch(`${label} must be an array`);
     }
@@ -126,7 +122,7 @@ function requireDenseArray(
 }
 
 function requireRecord(
-    input: JsonWireValue | undefined,
+    input: JsonWireValue | RuntimeStateReadBatchSelection | undefined,
     label: string
 ): JsonWireObject {
     if (!isJsonWireObject(input)) {
@@ -179,7 +175,7 @@ function compareUtf8(left: string, right: string): number {
 }
 
 function isJsonWireObject(
-    value: JsonWireValue | undefined
+    value: JsonWireValue | RuntimeStateReadBatchSelection | undefined
 ): value is JsonWireObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

@@ -1,8 +1,4 @@
-import {
-    decodeJsonWireValue,
-    type JsonWireObject,
-    type JsonWireValue
-} from '../../rallar-system/protocol/json-wire-identity.ts';
+import { type JsonWireObject, type JsonWireValue } from '../../rallar-system/protocol/json-wire-identity.ts';
 import type {
     RuntimeStateGuardedBatch,
     RuntimeStateGuardedBatchEffect,
@@ -23,11 +19,11 @@ interface ValidateEffectResultInput {
 
 export function validateRuntimeStateGuardedBatchResult(
     expectedBatch: RuntimeStateGuardedBatch,
-    input: unknown
+    input: RuntimeStateGuardedBatchResult | JsonWireValue
 ): RuntimeStateGuardedBatchResult {
     const batch = validateRuntimeStateGuardedBatch(expectedBatch);
     const result = requireResultRecord(
-        decodeJsonWireValue(input, 'runtime state guarded batch result'),
+        input,
         'root'
     );
     requireExactResultKeys(result, ['guard', 'effects'], 'root');
@@ -240,7 +236,7 @@ function requireMatchingResultIdentity(
 }
 
 function requireResultRecord(
-    value: JsonWireValue | undefined,
+    value: JsonWireValue | RuntimeStateGuardedBatchResult | undefined,
     label: string
 ): JsonWireObject {
     if (!isJsonWireObject(value)) {
@@ -303,7 +299,7 @@ function requireResultRevision(value: JsonWireValue | undefined, label: string):
 }
 
 function isJsonWireObject(
-    value: JsonWireValue | undefined
+    value: JsonWireValue | RuntimeStateGuardedBatchResult | undefined
 ): value is JsonWireObject {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

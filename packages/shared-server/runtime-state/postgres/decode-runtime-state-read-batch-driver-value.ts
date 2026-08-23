@@ -5,9 +5,12 @@ import {
 } from '../../rallar-system/protocol/json-wire-identity.ts';
 
 export function decodeRuntimeStateReadBatchDriverValue(
-    input: JsonWireValue
+    input: unknown
 ): JsonWireValue {
-    const parsed = typeof input === 'string' ? parsePayload(input) : input;
+    const parsed = decodeJsonWireValue(
+        typeof input === 'string' ? parsePayload(input) : input,
+        'runtime state read batch database JSON'
+    );
     if (!Array.isArray(parsed)) {
         return parsed;
     }
@@ -31,12 +34,9 @@ export function decodeRuntimeStateReadBatchDriverValue(
     });
 }
 
-function parsePayload(input: string): JsonWireValue {
+function parsePayload(input: string): unknown {
     try {
-        return decodeJsonWireValue(
-            JSON.parse(input),
-            'runtime state read batch database JSON'
-        );
+        return JSON.parse(input);
     }
     catch (caught) {
         const error = caught instanceof Error ? caught : new Error(String(caught));
