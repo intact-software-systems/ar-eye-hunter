@@ -6,7 +6,7 @@ import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenc
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { ResourceInboxRepository } from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
+import { ResourceInboxRepository } from '../../../queuebox/postgres/resource-inbox-repository.ts';
 import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import { requireConditionalWrite } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';

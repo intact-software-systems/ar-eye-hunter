@@ -17,8 +17,8 @@ import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import {
     replaceFinishedResourceEntryIfMatch
-} from '../../postgres/resource-inbox/resource-inbox-finished-replacement.ts';
-import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceInboxRepository.ts';
+} from '../../queuebox/postgres/resource-inbox-finished-replacement.ts';
+import { ResourceInboxRepository } from '../../queuebox/postgres/resource-inbox-repository.ts';
 
 export {
     COALESCED_APP_OUTBOX_WORK_FIELD,

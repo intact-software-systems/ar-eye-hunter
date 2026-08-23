@@ -28,7 +28,7 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
-import { ResourceInboxRepository } from '../resource-inbox/ResourceInboxRepository.ts';
+import { ResourceInboxRepository } from './resource-inbox-repository.ts';
 
 export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
     public readonly repo: ResourceInboxRepository;

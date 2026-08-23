@@ -1,6 +1,6 @@
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-import type { ResourceInboxRepository } from './ResourceInboxRepository.ts';
+import type { ResourceInboxRepository } from './resource-inbox-repository.ts';
 
 export async function writeMaterializedResourceInboxEntry(
     repository: ResourceInboxRepository,

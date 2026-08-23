@@ -2,15 +2,15 @@ import { Temporal } from '@js-temporal/polyfill';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 
-import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
 
 import {
     ResourceInboxResultsRepository
-} from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+} from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 

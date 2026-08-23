@@ -6,8 +6,8 @@ import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
 import { toAppQueueKey, toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import type { ResourceInboxRepository } from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
-import type { ResourceInboxResultsRepository } from '../../../postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import type { ResourceInboxRepository } from '../../../queuebox/postgres/resource-inbox-repository.ts';
+import type { ResourceInboxResultsRepository } from '../../../queuebox/postgres/resource-inbox-results-repository.ts';
 import {
     AppInboxIdempotencyConflictError,
     AppInboxType,

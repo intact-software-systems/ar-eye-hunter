@@ -2,7 +2,7 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvid
 import { GroupLifecyclePolicyRepository } from '../../persistence/group-lifecycle-policy-repository.ts';
 
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
-import { ResourceInboxRepository } from '../../../../postgres/resource-inbox/ResourceInboxRepository.ts';
+import { ResourceInboxRepository } from '../../../../queuebox/postgres/resource-inbox-repository.ts';
 import {
     isRuntimeStateGuardedBatchRepositoryLike,
     type RuntimeStateGuardedBatch,

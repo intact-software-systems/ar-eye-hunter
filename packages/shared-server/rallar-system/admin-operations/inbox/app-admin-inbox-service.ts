@@ -11,11 +11,11 @@ import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
 
 import {
     ResourceInboxResultsRepository
-} from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+} from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import type { AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import { toUnavailableAppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';

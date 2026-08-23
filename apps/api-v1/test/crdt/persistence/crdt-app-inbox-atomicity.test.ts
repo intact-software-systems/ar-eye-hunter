@@ -11,7 +11,7 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
 
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
 
 import {
     CrdtMutationConflictError,

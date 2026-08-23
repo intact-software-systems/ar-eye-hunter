@@ -10,8 +10,8 @@ import {
     toAdminPruneAggregateKey
 } from '../../rallar-system/admin-operations/prune/admin-prune-progress.ts';
 import type { PSqlSql } from '../p-sql-sql.ts';
-import { ResourceInboxRepository } from '../resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from '../resource-inbox/ResourceInboxResultsRepository.ts';
+import { ResourceInboxRepository } from '../../queuebox/postgres/resource-inbox-repository.ts';
+import { ResourceInboxResultsRepository } from '../../queuebox/postgres/resource-inbox-results-repository.ts';
 
 type RuntimeRow = Readonly<{ store_namespace: string; store_key: string; }>;
 type ResourceRow = Readonly<{ ri_row_id: number | string; }>;

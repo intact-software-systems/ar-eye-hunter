@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { toResultsDomain } from '@shared-server/postgres/resource-inbox/repository-utils.ts';
+import { toResultsDomain } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/app-inbox-handler-registry.ts';
 import {
     AppInboxQueueClient,

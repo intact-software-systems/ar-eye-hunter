@@ -9,7 +9,7 @@ import {
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { ResourceInboxRepository } from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
+import { ResourceInboxRepository } from '../../../queuebox/postgres/resource-inbox-repository.ts';
 import {
     CrdtMutationConflictError,
     type CrdtCanonicalSnapshotEnvelope,

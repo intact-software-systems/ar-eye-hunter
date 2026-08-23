@@ -13,7 +13,7 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { ResourceInboxRepository } from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
+import { ResourceInboxRepository } from '../../../queuebox/postgres/resource-inbox-repository.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
 import { toRtcRttMutationReceiptId } from '../../rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { validateRtcRttMeasurement } from '../../rtc-rtt/persistence/rtc-rtt-persistence-validation.ts';

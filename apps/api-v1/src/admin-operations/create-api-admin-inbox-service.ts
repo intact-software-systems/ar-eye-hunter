@@ -6,9 +6,9 @@ import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/p-sql-admin-operations-pruner.ts';
 import { PSqlAdminPruneRepository } from '@shared-server/postgres/admin-operations/p-sql-admin-prune-repository.ts';
 
-import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import type { ResourceInboxRepository } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
 
-import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import type { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import {
     AppAdminInboxService,
     createAdminPruneIdempotencyIdentity

@@ -9,14 +9,14 @@ import {
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import type { PSqlSql } from '../p-sql-sql.ts';
-import { ResourceInboxRow, rowsToMap, toDomain, toPgTimestamp, toSystemDate } from './repository-utils.ts';
+import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
+import { ResourceInboxRow, rowsToMap, toDomain, toPgTimestamp, toSystemDate } from './resource-inbox-row-codec.ts';
 import { requeueObservedResourceInboxDeliveryFailure } from './resource-inbox-delivery-failure.ts';
 import { writeMaterializedResourceInboxEntry } from './write-materialized-resource-inbox-entry.ts';
 export {
     initResourceInboxExpiryEviction,
     RESOURCE_INBOX_EXPIRY_EVICTION_INTERVAL_MS
-} from './ResourceInboxMaintenance.ts';
+} from './resource-inbox-maintenance.ts';
 
 export type StartProcessingEntitySkipped = Readonly<{
     kind: 'expired-or-missing';

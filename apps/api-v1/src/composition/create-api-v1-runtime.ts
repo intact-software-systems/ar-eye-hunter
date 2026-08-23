@@ -4,7 +4,7 @@ import {
     resolveServerWsQBoxALOutboundRuntimeStores
 } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { initResourceInboxExpiryEviction } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { initResourceInboxExpiryEviction } from '@shared-server/queuebox/postgres/resource-inbox-repository.ts';
 import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { initPresenceExpiryReconciliation } from '@shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts';

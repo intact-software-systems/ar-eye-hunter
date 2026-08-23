@@ -12,7 +12,7 @@ import {
     retryAfterAttempt,
     type ResourceInboxRetryPolicy
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { PSqlQueueBox } from '../../postgres/queuebox/PSqlQueueBox.ts';
+import { PSqlQueueBox } from '../../queuebox/postgres/p-sql-queue-box.ts';
 
 export async function requeueRemoteWsOutboxDeliveryFailure(
     repository: QueueBoxResourceEntryRepository,

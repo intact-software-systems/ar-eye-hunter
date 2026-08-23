@@ -6,7 +6,7 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { ResourceInboxRepository } from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
+import { ResourceInboxRepository } from '../../../queuebox/postgres/resource-inbox-repository.ts';
 import type { RtcTopologyPublication } from './rtc-topology-publication.ts';
 import { validateRtcTopologyPublication } from './validate-rtc-topology-publication.ts';
 

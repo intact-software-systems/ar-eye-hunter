@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { PSqlResultsQueueBox } from '@shared-server/postgres/queuebox/PSqlResultsQueueBox.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { PSqlResultsQueueBox } from '@shared-server/queuebox/postgres/p-sql-results-queue-box.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';

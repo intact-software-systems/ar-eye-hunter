@@ -2,7 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-type ResourceInboxRepositoryModule = typeof import('@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts');
+type ResourceInboxRepositoryModule = typeof import('@shared-server/queuebox/postgres/resource-inbox-repository.ts');
 
 type ResourceInboxRow = {
     ri_row_id: bigint;
@@ -26,7 +26,7 @@ let repositoryModule: ResourceInboxRepositoryModule;
 
 beforeAll(async () => {
     repositoryModule = await import(
-        '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts'
+        '@shared-server/queuebox/postgres/resource-inbox-repository.ts'
     );
 });
 
