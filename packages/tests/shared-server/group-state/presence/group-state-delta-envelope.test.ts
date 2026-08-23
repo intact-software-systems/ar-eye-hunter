@@ -1,5 +1,6 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { validateGroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
@@ -181,7 +182,7 @@ async function computeSummaryWork(input: {
     readonly trigger: (event: GroupEvent) => boolean;
 }) {
     const work = createSummaryWorkService(input.runtime);
-    const repository = new GroupStateRepository(input.runtime);
+    const repository = createTestGroupStateRepository(input.runtime);
     const event = (await repository.listEvents(input.ref)).find(input.trigger);
     if (!event) {
         throw new Error(`Missing group event for summary: ${input.ref.groupId}`);

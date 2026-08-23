@@ -22,7 +22,7 @@ import {
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
-import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
+import type { ClientStateEventStore } from '@shared-server/rallar-system/state-events/client-state-event-store.ts';
 
 import { createWsSessionGenerationLifecycleService } from '@shared-server/rallar-system/websocket/ws-session-generation-lifecycle.ts';
 
@@ -215,6 +215,7 @@ export function createClientStateServiceStub(
         readSnapshot: vi.fn(),
         readPresenceSnapshot: vi.fn(),
         listEvents: vi.fn(),
+        listRecentEvents: vi.fn(),
         listEventPage: vi.fn(),
         read: vi.fn(),
         compute: vi.fn(),
@@ -231,12 +232,12 @@ export function createClientStateServiceStub(
 export function createAutoAuthorizingClientStateService(
     runtimeRepository: FakeRuntimeStateRepository,
     database: ReturnType<typeof createAppInboxTestDatabase>,
-    eventStore: InMemoryClientStateEventStore = database.clientEventStore
+    eventStore: ClientStateEventStore = database.clientEventStore
 ): ClientStateService {
     const authSessions = new AuthSessionRepository(runtimeRepository);
     const durable = createClientStateService({
         runtimeRepository,
-        createClientStateEventStore: () => eventStore,
+        clientStateEventStore: eventStore,
         serviceId: 'server-12345678'
     });
     return {

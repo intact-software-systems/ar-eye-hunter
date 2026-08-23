@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict';
 
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
-import { groupEventWorkspaceKey } from '@shared-server/postgres/rallar-system/group-event-workspace-key.ts';
-import { PSqlClientStateEventRepository, PSqlGroupStateEventRepository } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
@@ -18,6 +15,9 @@ import { createGroupStateService } from '@shared-server/rallar-system/group-stat
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
+import { groupStateEventWorkspaceKey } from '@shared-server/rallar-system/state-events/postgres/group-state-event-workspace-key.ts';
+import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
@@ -74,7 +74,7 @@ interface StringValueRow {
 }
 
 Deno.test(
-    'PGlite AppInbox accepts current typed failures and rejects predecessor shapes',
+    'PGlite AppInbox accepts current typed failures and rejects non-current shapes',
     async () => {
         await withPGliteSql(async (sql) => {
             const baseFailure = {
@@ -87,7 +87,7 @@ Deno.test(
                 error: 'Forbidden: Invite required.',
                 code: 'group-invite-required',
                 message: 'Invite required.',
-                details: { groupId: 'predecessor-room' }
+                details: { groupId: 'non-current-room' }
             } as const;
             const canonicalFailure = {
                 type: 'app-inbox-failure',
@@ -99,11 +99,11 @@ Deno.test(
                 denial: null,
                 retry: null
             } as const;
-            const predecessorRetryExhaustion = {
+            const nonCurrentRetryExhaustion = {
                 type: 'app-inbox-retry-exhausted',
                 commandIdentity: {
-                    contextId: 'predecessor-context',
-                    resourceId: 'predecessor-retry',
+                    contextId: 'non-current-context',
+                    resourceId: 'non-current-retry',
                     topicId: 'app-inbox.group-state',
                     operation: 'GROUP_CREATE',
                     operationSource: 'command'
@@ -120,11 +120,11 @@ Deno.test(
                 dueAgeMs: 5,
                 exhaustedAtEpochMs: 1_000
             } as const;
-            const predecessorRetryRecovery = {
+            const nonCurrentRetryRecovery = {
                 type: 'app-inbox-retry-exhausted',
                 commandIdentity: {
-                    contextId: 'predecessor-context',
-                    resourceId: 'predecessor-recovery',
+                    contextId: 'non-current-context',
+                    resourceId: 'non-current-recovery',
                     topicId: 'app-inbox.group-state',
                     operation: 'GROUP_CREATE',
                     operationSource: 'command'
@@ -149,10 +149,10 @@ Deno.test(
             );
             assert.deepEqual(current.left, canonicalFailure);
 
-            const predecessorCases = [
+            const nonCurrentCases = [
                 {
                     name: 'raw-string',
-                    resource: 'predecessor raw failure'
+                    resource: 'non-current raw failure'
                 },
                 {
                     name: 'base-object',
@@ -164,11 +164,11 @@ Deno.test(
                 },
                 {
                     name: 'retry-exhaustion',
-                    resource: predecessorRetryExhaustion
+                    resource: nonCurrentRetryExhaustion
                 },
                 {
                     name: 'retry-recovery',
-                    resource: predecessorRetryRecovery
+                    resource: nonCurrentRetryRecovery
                 },
                 {
                     name: 'malformed',
@@ -176,10 +176,10 @@ Deno.test(
                 }
             ] as const;
 
-            for (const testCase of predecessorCases) {
+            for (const testCase of nonCurrentCases) {
                 const result = await readPGliteAppInboxFailure(
                     sql,
-                    `predecessor-failure-${testCase.name}`,
+                    `non-current-failure-${testCase.name}`,
                     testCase.resource
                 );
                 assert.deepEqual(result.left, {
@@ -220,7 +220,7 @@ Deno.test(
             await authSessions.putSession(authority);
             const groupState = createGroupStateService({
                 runtimeRepository: runtime,
-                createGroupStateEventStore: createGroupStateEventRepository,
+                groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                 authSessionRepository: authSessions,
                 serviceId: 'pglite-group-service',
                 now: () => nowEpochMs
@@ -294,7 +294,7 @@ Deno.test(
                 groupId: 'vertical-group'
             };
             assert.equal(
-                (await new GroupStateRepository(runtime).findGroup(ref))?.displayName,
+                (await new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(runtime.sql)).findGroup(ref))?.displayName,
                 'Vertical Group'
             );
             assert.equal((await new PSqlGroupStateEventRepository(sql).listGroupEvents(ref)).length, 1);
@@ -373,7 +373,7 @@ Deno.test(
             await authSessions.putSession(authority);
             const groupState = createGroupStateService({
                 runtimeRepository: runtime,
-                createGroupStateEventStore: createGroupStateEventRepository,
+                groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                 authSessionRepository: authSessions,
                 serviceId: 'pglite-summary-fence',
                 now: () => nowEpochMs
@@ -451,7 +451,7 @@ Deno.test(
                 workspaceId: 'main',
                 groupId: 'fence-group'
             };
-            const repository = new GroupStateRepository(runtime);
+            const repository = new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(runtime.sql));
             const summaryBefore = await repository.findPresenceSummaryEntry(ref);
             const work = new GroupPresenceSummaryWork({
                 outboxQueueReader: new OutboxQueueReader(
@@ -492,11 +492,11 @@ Deno.test(
     'group event workspace keys encode every required value canonically',
     () => {
         const workspaces = ['_', '%5F', 'main', 'a:b', 'a%3Ab', '＿'];
-        const keys = workspaces.map(groupEventWorkspaceKey);
-        assert.equal(groupEventWorkspaceKey('_'), '_');
-        assert.equal(groupEventWorkspaceKey('main'), 'main');
+        const keys = workspaces.map(groupStateEventWorkspaceKey);
+        assert.equal(groupStateEventWorkspaceKey('_'), '_');
+        assert.equal(groupStateEventWorkspaceKey('main'), 'main');
         assert.equal(new Set(keys).size, workspaces.length);
-        assert.throws(() => groupEventWorkspaceKey(''));
+        assert.throws(() => groupStateEventWorkspaceKey(''));
     }
 );
 
@@ -597,10 +597,10 @@ Deno.test(
             const runtime = new PSqlRuntimeStateRepository(sql);
             const authSessions = new AuthSessionRepository(runtime);
             const events = new PSqlClientStateEventRepository(sql);
-            const repository = new ClientStateRepository(runtime, { events });
+            const repository = new ClientStateRepository(runtime, events);
             const service = createClientStateService({
                 runtimeRepository: runtime,
-                createClientStateEventStore: () => events,
+                clientStateEventStore: events,
                 serviceId: 'pglite-client-service'
             });
             const scope = { applicationId: 'pglite-app', workspaceId: 'pglite-workspace' };

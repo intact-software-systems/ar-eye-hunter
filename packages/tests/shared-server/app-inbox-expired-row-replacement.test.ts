@@ -1,3 +1,4 @@
+import { createTestClientStateRepository, createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { describe, expect, it } from 'vitest';
@@ -52,7 +53,7 @@ describe('AppInbox expired row replacement', () => {
         const expired = await runtime.findEntry('client-state:sessions', seeded.key);
         expect(expired?.revision).toBe(seeded.revision + 1);
         await expect(
-            new ClientStateRepository(runtime).findSession({
+            createTestClientStateRepository(runtime).findSession({
                 ...SCOPE,
                 principalId: 'alice',
                 clientInstanceId: 'browser',
@@ -226,7 +227,7 @@ describe('AppInbox expired row replacement', () => {
             });
             const groupState = createGroupStateService({
                 runtimeRepository: runtime,
-                createGroupStateEventStore: () => database.groupEventStore,
+                groupStateEventStore: database.groupEventStore,
                 serviceId: 'expired-group-service',
                 now: () => nowEpochMs,
                 authSessionRepository: sessions
@@ -299,7 +300,7 @@ describe('AppInbox expired row replacement', () => {
             expiredGroupRevision = expiredGroup.revision;
             oldSummaryRevision = summaryBefore.revision;
             await expect(
-                new GroupStateRepository(runtime).findGroup({
+                createTestGroupStateRepository(runtime).findGroup({
                     ...SCOPE,
                     groupId: 'room-1'
                 })

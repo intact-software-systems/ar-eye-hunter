@@ -1,3 +1,4 @@
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -5,6 +6,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { Group } from '@shared/api/group-types.ts';
@@ -111,7 +113,10 @@ describe('Postgres topology AppInbox concurrency', () => {
             const groupRef = { applicationId, workspaceId: 'concurrency', groupId: 'room' };
             const sql = await createPostgresSql(databaseUrl);
             const runtime = new PSqlRuntimeStateRepository(sql);
-            const groups = new GroupStateRepository(runtime);
+            const groups = createTestGroupStateRepository(
+                runtime,
+                new PSqlGroupStateEventRepository(sql)
+            );
             const topology = new GroupTopologyConfigRepository(runtime);
             const tmpDirPath = await mkdtemp(path.join(tmpdir(), 'rallar-topology-authority-race-'));
             const releaseFilePath = path.join(tmpDirPath, 'release');

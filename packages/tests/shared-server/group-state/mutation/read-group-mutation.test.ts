@@ -9,6 +9,7 @@ import {
     groupStatePresenceSessionStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
@@ -215,9 +216,9 @@ describe('GroupStateService mutation exact reads', () => {
         const requestId = 'expiry-replacement-request';
         const command = updateCommand(ref, requestId);
 
-        const observed = await readGroupMutation(new GroupStateRepository(runtime), command);
+        const observed = await readGroupMutation(createTestGroupStateRepository(runtime), command);
         const expected = await readGroupMutation(
-            new GroupStateRepository(cloneRuntime(runtime)),
+            createTestGroupStateRepository(cloneRuntime(runtime)),
             command
         );
 

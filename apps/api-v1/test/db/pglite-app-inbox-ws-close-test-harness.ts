@@ -1,8 +1,4 @@
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import {
-    createClientStateEventRepository,
-    createGroupStateEventRepository
-} from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
@@ -15,6 +11,8 @@ import { type GroupStateService } from '@shared-server/rallar-system/group-state
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
@@ -42,15 +40,15 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql) {
         waitMaxRetryIntervalMsecs: 4,
         waitJitterRatio: 0
     } as const;
-    const groupEvents = createGroupStateEventRepository(runtime);
+    const groupEvents = new PSqlGroupStateEventRepository(runtime.sql);
     const clientState = createClientStateService({
         runtimeRepository: runtime,
-        createClientStateEventStore: createClientStateEventRepository,
+        clientStateEventStore: new PSqlClientStateEventRepository(sql),
         serviceId: 'pglite-close-test'
     });
     const groupState = createGroupStateService({
         runtimeRepository: runtime,
-        createGroupStateEventStore: createGroupStateEventRepository,
+        groupStateEventStore: groupEvents,
         authSessionRepository: authSessions,
         serviceId: 'pglite-close-test'
     });
@@ -120,10 +118,8 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql) {
         group,
         clientState,
         groupState,
-        clients: new ClientStateRepository(runtime, {
-            events: createClientStateEventRepository(runtime)
-        }),
-        groups: new GroupStateRepository(runtime, { events: groupEvents })
+        clients: new ClientStateRepository(runtime, new PSqlClientStateEventRepository(sql)),
+        groups: new GroupStateRepository(runtime, groupEvents)
     };
 }
 

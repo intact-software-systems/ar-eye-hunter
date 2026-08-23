@@ -1,4 +1,5 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
@@ -34,7 +35,7 @@ async function seedOpenGroup(
 }
 
 async function requireSnapshot(runtime: GroupBarrierRepository, groupId: string) {
-    const snapshot = await new GroupStateRepository(runtime).readSnapshot(groupRef(groupId));
+    const snapshot = await createTestGroupStateRepository(runtime).readSnapshot(groupRef(groupId));
     if (!snapshot) {
         throw new Error(`Missing group snapshot: ${groupId}`);
     }

@@ -61,9 +61,7 @@ export function createCachedGroupStateService(
         readCausalRevision: async (ref) => await options.durable.readCausalRevision(ref),
         readIssuedAuthSession: async (sessionId) => await options.durable.readIssuedAuthSession(sessionId),
         listEvents: async (ref) => await options.durable.listEvents(ref),
-        listRecentEvents: options.durable.listRecentEvents
-            ? async (ref, query) => await options.durable.listRecentEvents!(ref, query)
-            : undefined,
+        listRecentEvents: async (ref, query) => await options.durable.listRecentEvents(ref, query),
         listEventPage: async (ref, query) => await options.durable.listEventPage(ref, query),
         readSnapshot: async (ref) => await options.cache.findOrLoadByRef(ref)
     };

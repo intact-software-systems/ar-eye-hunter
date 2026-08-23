@@ -15,6 +15,7 @@ import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topo
 import { readRtcTopologyWorkEnvelope } from '@shared-server/rallar-system/topology/replay/rtc-topology-work-codec.ts';
 import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
@@ -29,16 +30,6 @@ import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('RTC topology APP_OUTBOX work', () => {
-    /*
-     * Task 7 coverage migration (18 old direct-handler cases):
-     * - 3 authority/causal cases -> 5 pure topology computation and mutation
-     *   comparison cases.
-     * - 9 replay/corruption cases -> 17 retained immutable-envelope tests plus
-     *   the publication repository corruption matrix.
-     * - 5 inner-retry/fanout cases -> 3 PGlite replay/collision/fence tests and
-     *   ResourceInbox retry-policy tests.
-     * - 1 RTT coalescing case -> RTT compute/admission and AppInbox tests.
-     */
     it('lets ResourceInbox retry the handler-owned write and reservation-fenced completion transaction', () => {
         const source = readFileSync(
             new URL(
@@ -230,7 +221,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         await runtime.publisher.enqueueForGroupSnapshot(queuedGroup);
         const [entry] = await entriesIn(queue);
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const groupStateRepository = new GroupStateRepository(runtimeRepository);
+        const groupStateRepository = createTestGroupStateRepository(runtimeRepository);
         await groupStateRepository.putGroup(durableGroup.group);
         await Promise.all(durableGroup.members.map((member) => groupStateRepository.putMember(member)));
         const presenceSummary: GroupPresenceSummary = {

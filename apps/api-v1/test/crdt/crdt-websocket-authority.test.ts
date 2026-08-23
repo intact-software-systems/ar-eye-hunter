@@ -21,9 +21,12 @@ import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/rea
 
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 
-import { createAuthSessionRepository, createClientStateRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 
 import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
 
@@ -152,8 +155,9 @@ Deno.test('production app-scope authorization rejects a foreign application cont
 async function createFixture(
     sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0]
 ) {
-    const auth = createAuthSessionRepository(sql);
-    const clients = createClientStateRepository(sql);
+    const runtime = new PSqlRuntimeStateRepository(sql);
+    const auth = new AuthSessionRepository(runtime);
+    const clients = new ClientStateRepository(runtime, new PSqlClientStateEventRepository(sql));
     await clients.insertPrincipal(principal());
     await clients.insertInstance(instance());
     const resourceInbox = new ResourceInboxRepository(sql);

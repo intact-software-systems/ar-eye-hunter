@@ -1,5 +1,4 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { createClientStateRepository, createGroupStateRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import type { DeleteGroupTopologyConfigInput, PutGroupTopologyConfigInput } from '@shared-server/rallar-system/topology/group-topology-management-contracts.ts';
 import { fromCanonicalGroupTopologyConfigPatch, toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -27,6 +26,9 @@ import {
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import type { ClientMutationCommandInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import { type ClientMutationReceipt } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { GroupStateRepositoryReads } from '@shared-server/rallar-system/group-state/persistence/group-state-repository-reads.ts';
+import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 
 import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 
@@ -274,8 +276,9 @@ async function runClientMutation(
         (value) => value
     );
 
-    const stored = await createClientStateRepository(
-        new PSqlRuntimeStateRepository(sql)
+    const stored = await new ClientStateRepository(
+        new PSqlRuntimeStateRepository(sql),
+        new PSqlClientStateEventRepository(sql)
     ).findIdempotentClientMutationReceipt(
         { ...input.scope, principalId: input.principalId },
         requestId
@@ -436,7 +439,7 @@ async function runGroupMutation(
     const receipt = isGroupPresenceCommand(input.command)
         ? requireGroupMutationReceipt(durableResult)
         : (
-            await createGroupStateRepository(
+            await new GroupStateRepositoryReads(
                 new PSqlRuntimeStateRepository(sql)
             ).findIdempotentGroupMutationReceipt(
                 { ...input.scope, groupId: input.groupId },

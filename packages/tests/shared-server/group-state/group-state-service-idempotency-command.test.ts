@@ -1,6 +1,7 @@
 import { groupStateMaintenanceRequestId } from '@shared-server/rallar-system/group-state/group-presence-mutation-command.ts';
 import { GroupMutationIdempotencyConflictError } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 import { BASE_EPOCH_MS, requireJoinCodeResult } from './group-state-concurrency-test-fixtures.ts';
 import { GroupBarrierRepository } from './group-state-concurrency-test-runtime.ts';
@@ -223,7 +224,7 @@ describe('convergent group and presence state', () => {
             expect(replay, testCase.label).toEqual(first);
             expect(randomCalls, testCase.label).toBe(firstRandomCalls);
             expect(firstRandomCalls, testCase.label).toBe(0);
-            const repository = new GroupStateRepository(runtime);
+            const repository = createTestGroupStateRepository(runtime);
             const idempotency = await repository.findIdempotentGroupMutationReceipt(
                 groupRef(groupId),
                 requestId

@@ -1,4 +1,5 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { createService, requireSnapshot, seedOpenGroup } from '../presence/group-presence-test-runtime.ts';
@@ -29,7 +30,7 @@ describe('convergent group and presence state', () => {
             'ephemeral-no-op-room'
         );
         expect(
-            await new GroupStateRepository(runtime).findIdempotentGroupMutationReceipt(
+            await createTestGroupStateRepository(runtime).findIdempotentGroupMutationReceipt(
                 groupRef('ephemeral-no-op-room'),
                 'retry-after-no-op'
             )

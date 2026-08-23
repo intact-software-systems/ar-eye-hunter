@@ -160,6 +160,7 @@ export function constructApiV1Runtime(
     });
     const topology = operations.createTopologyServices({
         runtimeStateRepository: mutation.runtimeStateRepository,
+        groupStateRepository: mutation.groupsRepository,
         groupStateService: mutation.groupStateService,
         groupFormationRttMutation: mutation.groupFormationMetrics.rttMutation,
         webSocketServer: mutation.webSocketServer,

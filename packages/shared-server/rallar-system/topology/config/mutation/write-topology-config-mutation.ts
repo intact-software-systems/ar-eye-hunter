@@ -1,7 +1,7 @@
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '../../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import { GroupStateRepository } from '../../../group-state/persistence/group-state-repository.ts';
+import { advanceGroupStateAuthorityFence } from '../../../group-state/persistence/group-aggregate-repository.ts';
 import { writeRtcTopologyOutbox } from '../../mutation/rtc-topology-outbox-entry.ts';
 import { GroupTopologyConfigRepository } from '../persistence/group-topology-config-repository.ts';
 import type * as mutationContracts from './group-topology-config-mutation-contracts.ts';
@@ -35,9 +35,7 @@ async function writeTopologyConfigAuthorityFence(
     runtime: PSqlRuntimeStateRepository,
     computed: WritableTopologyConfigMutation
 ): Promise<void> {
-    const authorityFence = await new GroupStateRepository(runtime).advanceAuthorityFence(
-        computed.groupAuthorityGuard
-    );
+    const authorityFence = await advanceGroupStateAuthorityFence(runtime, computed.groupAuthorityGuard);
     if (
         authorityFence.status === 'conflict' ||
         authorityFence.revision !== computed.groupAuthorityGuard.entry.revision + 1

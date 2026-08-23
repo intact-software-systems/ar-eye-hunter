@@ -1,3 +1,4 @@
+import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 
 import { createClientStateService as createClientMutationService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
@@ -7,6 +8,7 @@ import { computeClientMutation } from '@shared-server/rallar-system/client-state
 import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { toClientSessionExpiryCandidate } from '@shared-server/rallar-system/presence/session-expiry.ts';
+import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-client-state-event-store.ts';
 
 import { emptyRead, principalCommand } from './client-mutation-compute-test-fixtures.ts';
 import {
@@ -47,7 +49,7 @@ describe('client mutation stable-read concurrency', () => {
     it('reads the principal guard and snapshot from one stable aggregate observation', async () => {
         const runtime = new PrincipalChangeAfterFirstReadRepository();
         await connect(runtime, 'session-a', 'generation-a', BASE_EPOCH_MS);
-        const repository = new ClientStateRepository(runtime);
+        const repository = createTestClientStateRepository(runtime);
         const session = await repository.findSession({
             ...principalRef('alice'),
             clientInstanceId: 'browser',
@@ -71,6 +73,7 @@ describe('client mutation stable-read concurrency', () => {
         runtime.armPrincipalChangeAfterRead();
         const read = await createClientMutationService({
             runtimeRepository: runtime,
+            clientStateEventStore: new InMemoryClientStateEventStore(),
             serviceId: 'client-service'
         }).read(command);
 

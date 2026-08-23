@@ -23,7 +23,7 @@ describe('authoritative conditional-write structural contract', () => {
             'writeRtcTopologyOutbox(transaction, computed.outbox)'
         ]);
         expectInOrder(topologyConfigAuthorityFence(), [
-            'advanceAuthorityFence(',
+            'advanceGroupStateAuthorityFence(',
             'computed.groupAuthorityGuard',
             'throw new RuntimeStateWriteConflictError()'
         ]);

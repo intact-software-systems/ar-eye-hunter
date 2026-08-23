@@ -1,3 +1,4 @@
+import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 
 import type { ClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
@@ -188,7 +189,7 @@ describe('client mutation durable session ordering', () => {
     it('advances causal state revision for a heartbeat-only snapshot change', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         await seedConnectedSession(runtimeRepository, 'alice', 'alice-browser', 'session-1');
-        const repository = new ClientStateRepository(runtimeRepository);
+        const repository = createTestClientStateRepository(runtimeRepository);
         const principalRef = toClientPrincipalRef('alice');
         const before = await repository.readSnapshot(principalRef);
         const beforeSession = before?.activeSessions[0];
@@ -256,7 +257,7 @@ describe('client mutation session concurrency', () => {
         runtime.releasePrincipalReadBarrier();
         await expiry;
         expect(reconnect.result?.event?.eventType).toBe('session-connected');
-        const stored = await new ClientStateRepository(runtime).findSession({
+        const stored = await createTestClientStateRepository(runtime).findSession({
             ...principalRef('alice'),
             clientInstanceId: 'browser',
             sessionId: 'session-a'
@@ -268,7 +269,7 @@ describe('client mutation session concurrency', () => {
             connectionId: 'connection-2'
         });
         expect(
-            (await new ClientStateRepository(runtime).listEvents(principalRef('alice'))).filter(
+            (await createTestClientStateRepository(runtime).listEvents(principalRef('alice'))).filter(
                 (event) => event.eventType === 'session-expired'
             )
         ).toHaveLength(0);
@@ -350,7 +351,7 @@ async function runHeartbeatDisconnectRace(runtime: AggregateBarrierRepository): 
 }
 
 async function expectTerminalDisconnect(runtime: AggregateBarrierRepository): Promise<void> {
-    const repository = new ClientStateRepository(runtime);
+    const repository = createTestClientStateRepository(runtime);
     const stored = await repository.findSession({
         ...principalRef('alice'),
         clientInstanceId: 'browser',

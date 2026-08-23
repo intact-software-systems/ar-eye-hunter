@@ -1,17 +1,17 @@
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import { describe, expect, it, vi } from 'vitest';
 
-import { GroupStateEventCollisionError } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
 import {
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
-import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
+import { GroupStateEventCollisionError } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
 import { RuntimeStateRetryExhaustedError, RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 import { ApplyingGuardedBatchRepository, OrderedGroupEventStore } from './group-mutation-test-runtime.ts';
 
-class CollidingGroupEventStore extends InMemoryGroupStateEventStore {
+class CollidingGroupEventStore extends TestGroupStateEventStore {
     private readonly runtime: ApplyingGuardedBatchRepository;
 
     constructor(runtime: ApplyingGuardedBatchRepository) {
@@ -46,7 +46,7 @@ describe('GroupStateService guarded batch atomicity', () => {
             runtime.forceNextConflict(conflictTarget);
             const service = createTestGroupStateService({
                 runtimeRepository: runtime,
-                createGroupStateEventStore: () => eventStore,
+                groupStateEventStoreFor: () => eventStore,
                 now: () => 1_000,
                 randomId: () => `retry-${conflictTarget}-id`,
                 sleep,
@@ -85,7 +85,7 @@ describe('GroupStateService guarded batch atomicity', () => {
         let generatedId = 0;
         const service = createTestGroupStateService({
             runtimeRepository: runtime,
-            createGroupStateEventStore: () => eventStore,
+            groupStateEventStoreFor: () => eventStore,
             now: () => nowEpochMs,
             randomId: () => `admission-retry-id-${++generatedId}`,
             sleep,
@@ -158,7 +158,7 @@ describe('GroupStateService guarded batch atomicity', () => {
         runtime.forceNextConflict('guard');
         const service = createTestGroupStateService({
             runtimeRepository: runtime,
-            createGroupStateEventStore: () => eventStore,
+            groupStateEventStoreFor: () => eventStore,
             now: () => 1_000,
             randomId: () => 'guard-exhaustion-id',
             sleep,
@@ -190,7 +190,7 @@ describe('GroupStateService guarded batch atomicity', () => {
         const sleep = vi.fn();
         const service = createTestGroupStateService({
             runtimeRepository: runtime,
-            createGroupStateEventStore: () => eventStore,
+            groupStateEventStoreFor: () => eventStore,
             now: () => 1_000,
             randomId: () => 'event-conflict-id',
             sleep,
@@ -215,7 +215,7 @@ describe('GroupStateService guarded batch atomicity', () => {
         runtime.omitNextEffectResult('member:alice');
         const service = createTestGroupStateService({
             runtimeRepository: runtime,
-            createGroupStateEventStore: () => eventStore,
+            groupStateEventStoreFor: () => eventStore,
             now: () => 1_000,
             randomId: () => 'missing-member-result-id',
             sleep,

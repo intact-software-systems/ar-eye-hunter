@@ -1,10 +1,10 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 
-import { createClientStateEventRepository, createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
@@ -25,6 +25,8 @@ import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbo
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 
 import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
 
@@ -64,12 +66,12 @@ export function createPostgresAppInboxWorkerServices(
     const waitOptions = createPostgresAppInboxWorkerWaitOptions(input.atEpochMs);
     const clientState = createClientStateService({
         runtimeRepository,
-        createClientStateEventStore: createClientStateEventRepository,
+        clientStateEventStore: new PSqlClientStateEventRepository(input.sql),
         serviceId: input.serviceId
     });
     const groupState = createGroupStateService({
         runtimeRepository,
-        createGroupStateEventStore: createGroupStateEventRepository,
+        groupStateEventStore: new PSqlGroupStateEventRepository(input.sql),
         authSessionRepository: authSessions,
         now: () => input.atEpochMs,
         serviceId: input.serviceId
@@ -104,7 +106,10 @@ export function createPostgresAppInboxWorkerServices(
     );
     const topologyOwners = createGroupTopologyOwners({
         findGroupSnapshotByRef: (ref) => groupState.readSnapshot(ref),
-        groupStateRepository: new GroupStateRepository(runtimeRepository),
+        groupStateRepository: createTestGroupStateRepository(
+            runtimeRepository,
+            new PSqlGroupStateEventRepository(input.sql)
+        ),
         configRepository: new GroupTopologyConfigRepository(topologyRuntimeRepository),
         topologyService: new RallarRtcTopologyService(),
         now: () => input.atEpochMs,

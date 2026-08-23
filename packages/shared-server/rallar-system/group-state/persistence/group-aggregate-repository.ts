@@ -8,8 +8,8 @@ import {
     type RuntimeStateConditionalWriteResult,
     type RuntimeStateRepositoryLike
 } from '../../../runtime-state/runtime-state-repository.ts';
-import { filterStateEventsForList, type StateEventListQuery } from '../../state-events/state-event-listing.ts';
-import type { GroupStateEventStore } from '../../state-events/state-event-store.ts';
+import type { GroupStateEventStore } from '../../state-events/group-state-event-store.ts';
+import type { StateEventListQuery } from '../../state-events/state-event-listing.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
 import { validateGroupMutationIdempotencyRecord } from '../mutation/result-validation/validate-group-mutation-result.ts';
 import { decodePersistedGroup } from './group-state-persistence-codec.ts';
@@ -77,17 +77,7 @@ export class GroupAggregateRepository extends RuntimeStateJsonStore {
     async advanceAuthorityFence(
         guard: GroupStateAuthorityGuard
     ): Promise<RuntimeStateConditionalWriteResult> {
-        const descriptor = materializeGroupStateAuthorityGuard(guard);
-        if (!isRuntimeStateConditionalRepositoryLike(this.repository)) {
-            throw new TypeError('Group authority fences require a conditional runtime-state repository');
-        }
-        return await this.repository.upsertIfRevision(
-            descriptor.namespace,
-            descriptor.key,
-            descriptor.value,
-            descriptor.expireAtTimestamp,
-            descriptor.expectedRevision
-        );
+        return await advanceGroupStateAuthorityFence(this.repository, guard);
     }
 
     async putGroup(group: Group): Promise<void> {
@@ -117,9 +107,7 @@ export class GroupAggregateRepository extends RuntimeStateJsonStore {
         ref: GroupRef,
         query: StateEventListQuery = {}
     ): Promise<readonly GroupEvent[]> {
-        return this.events.listRecentGroupEvents
-            ? await this.events.listRecentGroupEvents(ref, query)
-            : filterStateEventsForList(await this.events.listGroupEvents(ref), query);
+        return await this.events.listRecentGroupEvents(ref, query);
     }
 
     async listEventPage(
@@ -128,6 +116,23 @@ export class GroupAggregateRepository extends RuntimeStateJsonStore {
     ): Promise<StateEventPage<GroupEvent>> {
         return await this.events.listGroupEventPage(ref, query);
     }
+}
+
+export async function advanceGroupStateAuthorityFence(
+    repository: RuntimeStateRepositoryLike,
+    guard: GroupStateAuthorityGuard
+): Promise<RuntimeStateConditionalWriteResult> {
+    const descriptor = materializeGroupStateAuthorityGuard(guard);
+    if (!isRuntimeStateConditionalRepositoryLike(repository)) {
+        throw new TypeError('Group authority fences require a conditional runtime-state repository');
+    }
+    return await repository.upsertIfRevision(
+        descriptor.namespace,
+        descriptor.key,
+        descriptor.value,
+        descriptor.expireAtTimestamp,
+        descriptor.expectedRevision
+    );
 }
 
 export function materializeGroupStateAuthorityGuard(

@@ -1,3 +1,4 @@
+import { createTestClientStateRepository, createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
@@ -84,13 +85,13 @@ export async function createAppInboxWsCloseHarness(
     const groupState = createGroupStateService({
         runtimeRepository,
         authSessionRepository: authSessions,
-        createGroupStateEventStore: () => database.groupEventStore,
+        groupStateEventStore: database.groupEventStore,
         serviceId: 'server-12345678',
         now: () => NOW_EPOCH_MS
     });
     const clientState = createClientStateService({
         runtimeRepository,
-        createClientStateEventStore: () => database.clientEventStore,
+        clientStateEventStore: database.clientEventStore,
         serviceId: 'server-12345678'
     });
     const client = new AppClientInboxService(
@@ -150,8 +151,8 @@ export async function createAppInboxWsCloseHarness(
         group,
         clientState,
         groupState,
-        clients: new ClientStateRepository(runtimeRepository),
-        groups: new GroupStateRepository(runtimeRepository, { events: database.groupEventStore })
+        clients: createTestClientStateRepository(runtimeRepository),
+        groups: createTestGroupStateRepository(runtimeRepository, database.groupEventStore)
     };
 }
 

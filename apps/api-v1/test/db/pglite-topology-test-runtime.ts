@@ -1,3 +1,4 @@
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import assert from 'node:assert/strict';
 
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
@@ -509,7 +510,7 @@ export async function createPGliteRemovalPlanningScenario(
         group: currentGroup
     };
     const runtime = new PSqlRuntimeStateRepository(sql);
-    const groups = new GroupStateRepository(runtime);
+    const groups = new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(runtime.sql));
     assert.equal((await groups.insertGroup(current.group)).status, 'applied');
     for (const member of current.members) {
         await groups.putMember(member);

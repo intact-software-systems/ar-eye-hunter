@@ -247,6 +247,7 @@ Deno.test('client mutation routes hydrate the receiving node cache from remotely
             readSnapshot: () => Promise.resolve(cachedSnapshot),
             readPresenceSnapshot: () => Promise.resolve(undefined),
             listEvents: () => Promise.resolve([]),
+            listRecentEvents: () => Promise.resolve([]),
             listEventPage: () => Promise.resolve({ events: [], hasMore: false })
         },
         requireApiAuthSession: () => Promise.resolve(createAuthSession('alice')),

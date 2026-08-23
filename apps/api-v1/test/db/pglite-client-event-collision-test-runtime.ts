@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 
-import { PSqlClientStateEventRepository } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
@@ -10,6 +9,7 @@ import {
     toUpsertPrincipalCommandInput
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import type { TopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 
@@ -138,10 +138,10 @@ export async function createPGliteClientEventCollisionFixture(
     const runtime = new PSqlRuntimeStateRepository(sql);
     const authSessions = new AuthSessionRepository(runtime);
     const events = new PSqlClientStateEventRepository(sql);
-    const repository = new ClientStateRepository(runtime, { events });
+    const repository = new ClientStateRepository(runtime, events);
     const service = createClientStateService({
         runtimeRepository: runtime,
-        createClientStateEventStore: () => events,
+        clientStateEventStore: events,
         serviceId: 'pglite-client-service'
     });
     const scope = {

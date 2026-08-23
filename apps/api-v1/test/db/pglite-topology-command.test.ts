@@ -1,3 +1,4 @@
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import assert from 'node:assert/strict';
 
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
@@ -160,7 +161,7 @@ Deno.test(
                 nowEpochMs
             );
             const runtime = new PSqlRuntimeStateRepository(sql);
-            const groups = new GroupStateRepository(runtime);
+            const groups = new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(runtime.sql));
             assert.equal((await groups.insertGroup(group.group)).status, 'applied');
             for (const member of group.members) {
                 await groups.putMember(member);
@@ -252,7 +253,7 @@ Deno.test(
                 }
             };
             const runtimeRepository = new PSqlRuntimeStateRepository(sql);
-            const groups = new GroupStateRepository(runtimeRepository);
+            const groups = new GroupStateRepository(runtimeRepository, new PSqlGroupStateEventRepository(runtimeRepository.sql));
             assert.equal((await groups.insertGroup(terminal.group)).status, 'applied');
             for (const member of terminal.members) {
                 await groups.putMember(member);

@@ -1,3 +1,4 @@
+import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
@@ -31,7 +32,7 @@ describe('client mutation session replay', () => {
         expect(first.result?.event?.eventType).toBe('session-connected');
         expect(second.result?.event).toEqual(first.result?.event);
 
-        const repository = new ClientStateRepository(runtimeRepository);
+        const repository = createTestClientStateRepository(runtimeRepository);
         expect((await repository.listEvents(principalRef)).map((event) => event.eventType)).toEqual([
             'session-connected'
         ]);
@@ -56,7 +57,7 @@ describe('client mutation session replay', () => {
         expect(first.result?.event?.eventType).toBe('session-disconnected');
         expect(second.result?.event).toEqual(first.result?.event);
 
-        const repository = new ClientStateRepository(runtimeRepository);
+        const repository = createTestClientStateRepository(runtimeRepository);
         expect(
             (
                 await repository.findSession({

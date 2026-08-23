@@ -1,3 +1,4 @@
+import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
@@ -160,7 +161,7 @@ describe('client mutation service idempotency', () => {
             requestId: 'alice-no-op'
         });
 
-        const stored = await new ClientStateRepository(
+        const stored = await createTestClientStateRepository(
             runtimeRepository
         ).findIdempotentClientMutationReceipt(toClientPrincipalRef('alice'), 'alice-no-op');
         expect(stored?.receipt.outcome).toBe('no-op');
@@ -202,7 +203,7 @@ describe('client mutation service idempotency', () => {
         ).rejects.toBeInstanceOf(ClientMutationIdempotencyConflictError);
         expect(first.result?.event?.eventType).toBe('principal-created');
 
-        const repository = new ClientStateRepository(runtimeRepository);
+        const repository = createTestClientStateRepository(runtimeRepository);
         expect((await repository.readSnapshot(principalRef))?.principal.displayName).toBe('Alice');
         expect((await repository.listEvents(principalRef)).map((event) => event.eventType)).toEqual([
             'principal-created'
@@ -233,7 +234,7 @@ describe('client mutation idempotency convergence', () => {
             ]);
 
             expect(second.result?.event).toEqual(first.result?.event);
-            const idempotent = await new ClientStateRepository(
+            const idempotent = await createTestClientStateRepository(
                 runtime
             ).findIdempotentClientMutationReceipt(principalRef('alice'), 'same-request');
             expect(idempotent?.commandHash).toMatch(/^sha256:[0-9a-f]{64}$/);

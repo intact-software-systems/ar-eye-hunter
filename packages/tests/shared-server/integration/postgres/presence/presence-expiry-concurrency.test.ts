@@ -1,8 +1,10 @@
-import {
-    createClientStateRepository,
-    createGroupStateEventRepository,
-    createGroupStateRepository
-} from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { ClientSessionRef } from '@shared/api/client-types.ts';
 import type { AuditStamp, Group, GroupEvent, GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -119,7 +121,7 @@ describe('Postgres presence expiry concurrency', () => {
                 await seedConnectedClientSession({ sql: setupSql, scope, sessionRef, atEpochMs });
                 const setup = createTestGroupStateRuntime({
                     runtimeRepository: toRuntimeRepository(setupSql),
-                    createGroupStateEventStore: createGroupStateEventRepository,
+                    groupStateEventStoreFor: createGroupStateEventRepository,
                     now: () => atEpochMs,
                     sleep: () => Promise.resolve(),
                     serviceId: 'postgres-worker-request-id-setup'
@@ -404,7 +406,7 @@ describe('Postgres presence expiry concurrency', () => {
             try {
                 const setup = createTestGroupStateRuntime({
                     runtimeRepository: toRuntimeRepository(setupSql),
-                    createGroupStateEventStore: createGroupStateEventRepository,
+                    groupStateEventStoreFor: createGroupStateEventRepository,
                     now: () => atEpochMs,
                     sleep: () => Promise.resolve(),
                     serviceId: 'postgres-worker-group-setup'
@@ -481,7 +483,7 @@ describe('Postgres presence expiry concurrency', () => {
             try {
                 const setup = createTestGroupStateRuntime({
                     runtimeRepository: toRuntimeRepository(setupSql),
-                    createGroupStateEventStore: createGroupStateEventRepository,
+                    groupStateEventStoreFor: createGroupStateEventRepository,
                     now: () => atEpochMs,
                     sleep: () => Promise.resolve(),
                     serviceId: 'postgres-worker-presence-setup'
@@ -1113,7 +1115,7 @@ describe('Postgres presence expiry concurrency', () => {
                     })
                 ).toEqual([explicitSentinelGroup]);
 
-                const eventStore = createGroupStateEventRepository(sql);
+                const eventStore = new PSqlGroupStateEventRepository(sql);
                 const eventFor = (ref: GroupRef, reason: string, snapshotVersion: number): GroupEvent => ({
                     applicationId: ref.applicationId,
                     workspaceId: ref.workspaceId,
@@ -1140,7 +1142,7 @@ describe('Postgres presence expiry concurrency', () => {
                 await eventStore.appendGroupEvent(absentEvent);
                 await eventStore.appendGroupEvent(explicitSentinelEvent);
                 expect(await eventStore.listGroupEvents(absentGroup)).toEqual([absentEvent]);
-                expect(await eventStore.listRecentGroupEvents?.(absentGroup, {})).toEqual([absentEvent]);
+                expect(await eventStore.listRecentGroupEvents(absentGroup, {})).toEqual([absentEvent]);
                 expect(
                     (
                         await eventStore.listGroupEventPage(absentGroup, {
@@ -1151,7 +1153,7 @@ describe('Postgres presence expiry concurrency', () => {
                 expect(await eventStore.listGroupEvents(explicitSentinelGroup)).toEqual([
                     explicitSentinelEvent
                 ]);
-                expect(await eventStore.listRecentGroupEvents?.(explicitSentinelGroup, {})).toEqual([
+                expect(await eventStore.listRecentGroupEvents(explicitSentinelGroup, {})).toEqual([
                     explicitSentinelEvent
                 ]);
                 expect(
@@ -1170,6 +1172,29 @@ describe('Postgres presence expiry concurrency', () => {
         60_000
     );
 });
+
+function createClientStateRepository(sql: PSqlSql): ClientStateRepository {
+    return new ClientStateRepository(
+        new PSqlRuntimeStateRepository(sql),
+        new PSqlClientStateEventRepository(sql)
+    );
+}
+
+function createGroupStateRepository(sql: PSqlSql): GroupStateRepository {
+    return new GroupStateRepository(
+        new PSqlRuntimeStateRepository(sql),
+        new PSqlGroupStateEventRepository(sql)
+    );
+}
+
+function createGroupStateEventRepository(
+    runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike
+): PSqlGroupStateEventRepository {
+    if (!(runtimeRepository instanceof PSqlRuntimeStateRepository)) {
+        throw new TypeError('PostgreSQL group tests require PSqlRuntimeStateRepository');
+    }
+    return new PSqlGroupStateEventRepository(runtimeRepository.sql);
+}
 
 function groupFixture(ref: GroupRef, displayName: string): Group {
     const audit: AuditStamp = {

@@ -13,7 +13,9 @@ import {
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import type { GroupStateEventStore } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import { persistAuthSession, type AuthSession, type StoredAuthSession } from '../auth/auth-test-fixtures.ts';
 import { GroupStateTestMutationExecutor } from './group-state-test-mutation-executor.ts';
@@ -48,8 +50,11 @@ export interface AuthSessionInput {
 }
 
 type TestGroupStateServiceDependencies =
-    & Omit<GroupStateServiceDependencies, 'authSessionRepository'>
+    & Omit<GroupStateServiceDependencies, 'authSessionRepository' | 'groupStateEventStore'>
     & Readonly<{
+        groupStateEventStoreFor?: (
+            runtime: RuntimeStateOptimisticTransactionalRepositoryLike
+        ) => GroupStateEventStore;
         sleep?: (delayMs: number) => Promise<void>;
     }>;
 
@@ -75,9 +80,10 @@ export function createTestGroupStateRuntime(
     const issued = new Map<string, StoredAuthSession>();
     const now = dependencies.now ?? (() => Date.now());
     const randomId = dependencies.randomId ?? (() => crypto.randomUUID());
+    const eventStoreFor = resolveGroupStateEventStoreFactory(dependencies);
     const durable = createGroupStateService({
         runtimeRepository: dependencies.runtimeRepository,
-        createGroupStateEventStore: dependencies.createGroupStateEventStore,
+        groupStateEventStore: eventStoreFor(dependencies.runtimeRepository),
         now: dependencies.now,
         randomId: dependencies.randomId,
         serviceId: dependencies.serviceId,
@@ -86,14 +92,11 @@ export function createTestGroupStateRuntime(
             findBySessionId: (sessionId) => Promise.resolve(issued.get(sessionId))
         }
     });
-    const repositoryFor = (runtime: RuntimeStateOptimisticTransactionalRepositoryLike) =>
-        new GroupStateRepository(runtime, {
-            events: dependencies.createGroupStateEventStore?.(runtime)
-        });
+    const repositoryFor = (runtime: RuntimeStateOptimisticTransactionalRepositoryLike) => createTestGroupStateRepository(runtime, eventStoreFor(runtime));
     const mutationExecutor = new GroupStateTestMutationExecutor({
         durableService: durable,
         runtimeRepository: dependencies.runtimeRepository,
-        createGroupStateEventStore: dependencies.createGroupStateEventStore,
+        groupStateEventStoreFor: eventStoreFor,
         serviceId: dependencies.serviceId,
         randomId,
         sleep: dependencies.sleep
@@ -105,6 +108,23 @@ export function createTestGroupStateRuntime(
         mutationExecutor
     );
     return { service, durable, maintenance };
+}
+
+function resolveGroupStateEventStoreFactory(
+    dependencies: TestGroupStateServiceDependencies
+): (runtime: RuntimeStateOptimisticTransactionalRepositoryLike) => GroupStateEventStore {
+    if (dependencies.groupStateEventStoreFor !== undefined) {
+        return dependencies.groupStateEventStoreFor;
+    }
+    const eventStore = (
+        dependencies.runtimeRepository as
+            & RuntimeStateOptimisticTransactionalRepositoryLike
+            & Partial<Readonly<{ groupStateEventStore: GroupStateEventStore; }>>
+    ).groupStateEventStore;
+    if (eventStore === undefined) {
+        throw new TypeError('Test group-state runtime construction requires an explicit event store owner');
+    }
+    return () => eventStore;
 }
 
 function createAuthenticatedTestGroupStateService(

@@ -14,9 +14,9 @@ import {
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import type { ClientMutationComputed } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
-import { defaultClientStateEventStoreFor, type InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
 
 import type { ClientStatePhaseTestDriver } from './client-state-test-driver-contracts.ts';
 import {
@@ -39,7 +39,7 @@ const MAX_TEST_MUTATION_ATTEMPTS = 8;
 type ClientMutationInput = Parameters<typeof toClientMutationCommand>[0];
 interface ClientStateTestExecutorInput {
     readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
-    readonly eventStore: InMemoryClientStateEventStore;
+    readonly eventStore: TestClientStateEventStore;
     readonly authSessions: AuthSessionRepository;
     readonly service: ClientStateService;
     readonly serviceId: string;
@@ -48,25 +48,29 @@ interface ClientStateTestExecutorInput {
 }
 
 interface ClientStateTestDriverDependencies {
-    readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
+    readonly runtimeRepository: ClientStateTestRuntimeRepository;
     readonly now?: () => number;
     readonly serviceId: string;
     readonly timing?: RallarTimingSink;
 }
 
+type ClientStateTestRuntimeRepository =
+    & RuntimeStateOptimisticTransactionalRepositoryLike
+    & Readonly<{ clientStateEventStore: TestClientStateEventStore; }>;
+
 export type { ClientStatePhaseTestDriver } from './client-state-test-driver-contracts.ts';
 export { failNextClientStateTestOutboxWrite, getClientStateTestOutbox };
 
 export function createClientStatePhaseTestDriver(
-    runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike,
+    runtimeRepository: ClientStateTestRuntimeRepository,
     nowEpochMs: () => number,
     options: Readonly<{ serviceId?: string; timing?: RallarTimingSink; }> = {}
 ): ClientStatePhaseTestDriver {
-    const eventStore = defaultClientStateEventStoreFor(runtimeRepository);
+    const eventStore = runtimeRepository.clientStateEventStore;
     const serviceId = options.serviceId ?? 'client-service';
     const service = createClientStateService({
         runtimeRepository,
-        createClientStateEventStore: () => eventStore,
+        clientStateEventStore: eventStore,
         serviceId,
         timing: options.timing
     });

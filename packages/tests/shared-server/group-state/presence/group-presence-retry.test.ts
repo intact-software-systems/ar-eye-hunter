@@ -1,5 +1,6 @@
 import { groupStateMaintenanceRequestId } from '@shared-server/rallar-system/group-state/group-presence-mutation-command.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { createTestGroupStateRuntime, createTestGroupStateService as createGroupStateService } from '../group-state-test-runtime.ts';
@@ -56,7 +57,7 @@ describe('Group presence lifecycle retry', () => {
         expect(first.result?.event?.eventType).toBe('session-disconnected');
         expect(second.result?.event).toEqual(first.result?.event);
 
-        const repository = new GroupStateRepository(runtimeRepository);
+        const repository = createTestGroupStateRepository(runtimeRepository);
         expect(
             (
                 await repository.findPresenceSession({
@@ -148,7 +149,7 @@ describe('Group presence lifecycle retry', () => {
             })
         ).rejects.toThrow(/presence session not found/i);
 
-        const repository = new GroupStateRepository(runtimeRepository);
+        const repository = createTestGroupStateRepository(runtimeRepository);
         expect(
             await repository.findPresenceSession({
                 ...groupRef,
@@ -194,7 +195,7 @@ describe('Group presence lifecycle retry', () => {
             })
         ).rejects.toThrow(/presence session not found/i);
 
-        const repository = new GroupStateRepository(runtimeRepository);
+        const repository = createTestGroupStateRepository(runtimeRepository);
         const session = await repository.findPresenceSession({
             ...groupRef,
             sessionId: 'session-1'
@@ -211,7 +212,7 @@ describe('Group presence lifecycle retry', () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         await seedGroup(runtimeRepository, 'room-heartbeat-revision');
         await seedPresenceSession(runtimeRepository, 'room-heartbeat-revision');
-        const repository = new GroupStateRepository(runtimeRepository);
+        const repository = createTestGroupStateRepository(runtimeRepository);
         const groupRef = toGroupRef('room-heartbeat-revision');
         const before = await repository.readSnapshot(groupRef);
         const service = createGroupStateService({
@@ -263,7 +264,7 @@ describe('Group presence lifecycle retry', () => {
             })
         ).rejects.toThrow(/expiry|expires/i);
 
-        const repository = new GroupStateRepository(runtimeRepository);
+        const repository = createTestGroupStateRepository(runtimeRepository);
         expect(
             await repository.findPresenceSession({
                 ...SCOPE,
@@ -310,7 +311,7 @@ describe('Group presence lifecycle retry', () => {
             })
         ).rejects.toThrow(/principal|session/i);
 
-        const repository = new GroupStateRepository(runtimeRepository);
+        const repository = createTestGroupStateRepository(runtimeRepository);
         expect(
             await repository.findPresenceSession({
                 ...SCOPE,

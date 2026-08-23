@@ -5,7 +5,8 @@ import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import { PSqlRuntimeStateRepository } from '../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import { GroupStateRepository } from '../../group-state/persistence/group-state-repository.ts';
+import { advanceGroupStateAuthorityFence } from '../../group-state/persistence/group-aggregate-repository.ts';
+import type { GroupStateRepository } from '../../group-state/persistence/group-state-repository.ts';
 import { canUpdateGroupSnapshot } from '../../group-state/policy/group-governance-policy.ts';
 import { canMutateActiveGroup } from '../../group-state/policy/group-lifecycle-policy.ts';
 import { GroupPolicyDeniedError } from '../../group-state/policy/group-policy-result.ts';
@@ -104,9 +105,7 @@ export class GroupTopologyReconfigureMutation {
         computed: GroupTopologyReconfigureComputed
     ): Promise<void> {
         const runtime = new PSqlRuntimeStateRepository(transaction);
-        const authority = await new GroupStateRepository(runtime).advanceAuthorityFence(
-            computed.authorityGuard
-        );
+        const authority = await advanceGroupStateAuthorityFence(runtime, computed.authorityGuard);
         if (
             authority.status === 'conflict' ||
             authority.revision !== computed.authorityGuard.entry.revision + 1

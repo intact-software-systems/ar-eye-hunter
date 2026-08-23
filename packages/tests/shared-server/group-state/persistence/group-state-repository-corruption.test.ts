@@ -16,6 +16,7 @@ import {
     groupStatePresenceSummaryStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import { validatePersistedGroupMember } from '@shared-server/rallar-system/group-state/persistence/validate-persisted-group.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceAdmission, GroupPresenceSession, GroupPresenceSummary, GroupRef } from '@shared/api/group-types.ts';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
@@ -63,7 +64,7 @@ describe('GroupStateRepository persistence', () => {
 
     it('fails closed instead of filtering a wrong-scope group from list and page reads', async () => {
         const runtime = new FakeRuntimeStateRepository();
-        const repository = new GroupStateRepository(runtime);
+        const repository = createTestGroupStateRepository(runtime);
         const absentScope = {
             applicationId: 'wrong-scope-list-app',
             workspaceId: 'wrong-scope-list-workspace'
@@ -192,7 +193,7 @@ describe('GroupStateRepository persistence', () => {
                 JSON.stringify(testCase.value),
                 Number.MAX_SAFE_INTEGER
             );
-            const repository = new GroupStateRepository(runtime);
+            const repository = createTestGroupStateRepository(runtime);
             for (const read of testCase.reads(repository)) {
                 await expect(read()).rejects.toMatchObject({
                     code: 'group-state-repository-invariant-corruption'
@@ -223,7 +224,7 @@ describe('GroupStateRepository persistence', () => {
         ) {
             const runtime = new FakeRuntimeStateRepository();
             await runtime.upsert('group-state:groups', key, value, Number.MAX_SAFE_INTEGER);
-            await expect(read(new GroupStateRepository(runtime))).rejects.toMatchObject({
+            await expect(read(createTestGroupStateRepository(runtime))).rejects.toMatchObject({
                 code: 'group-state-repository-invariant-corruption',
                 storageKey: key
             });
@@ -235,11 +236,11 @@ describe('GroupStateRepository persistence', () => {
             .toHaveProperty('aggregateRef')
             .toEqualTypeOf<GroupRef>();
         const ref = {
-            applicationId: 'predecessor-receipt-app',
-            workspaceId: 'predecessor-receipt-workspace',
-            groupId: 'predecessor-receipt-group'
+            applicationId: 'identity-free-receipt-app',
+            workspaceId: 'identity-free-receipt-workspace',
+            groupId: 'identity-free-receipt-group'
         };
-        const requestId = 'predecessor-request';
+        const requestId = 'identity-free-request';
         const receipt = {
             commandId: requestId,
             commandHash: `sha256:${'1'.repeat(64)}`,
@@ -252,7 +253,7 @@ describe('GroupStateRepository persistence', () => {
             joinCodeExpiresAtEpochMs: null,
             rejection: null
         } as const;
-        const predecessorRecord = {
+        const identityFreeRecord = {
             requestId,
             commandHash: receipt.commandHash,
             receipt
@@ -263,10 +264,10 @@ describe('GroupStateRepository persistence', () => {
             await runtime.upsert(
                 'group-state:idempotent',
                 groupStateIdempotencyStorageKey(ref, requestId),
-                JSON.stringify(predecessorRecord),
+                JSON.stringify(identityFreeRecord),
                 Number.MAX_SAFE_INTEGER
             );
-            const repository = new GroupStateRepository(runtime);
+            const repository = createTestGroupStateRepository(runtime);
             const result = read === 'value'
                 ? repository.findIdempotentGroupMutationReceipt(ref, requestId)
                 : repository.findIdempotentGroupMutationReceiptEntry(ref, requestId);
@@ -278,7 +279,7 @@ describe('GroupStateRepository persistence', () => {
 
     it('rejects a compact idempotency write whose identity differs from its slot', async () => {
         const runtime = new FakeRuntimeStateRepository();
-        const repository = new GroupStateRepository(runtime);
+        const repository = createTestGroupStateRepository(runtime);
         const command = createMutationCommand({
             commandId: 'receipt-write-command',
             requestId: 'receipt-write-command'

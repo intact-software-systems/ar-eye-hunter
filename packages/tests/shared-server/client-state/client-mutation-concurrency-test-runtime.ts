@@ -5,6 +5,7 @@ import type {
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 import { CLIENT_MUTATION_TEST_SCOPE as SCOPE, clientMutationPrincipalRef as principalRef } from './client-mutation-validation-test-fixtures.ts';
@@ -193,7 +194,7 @@ export async function connect(
 }
 
 export async function snapshot(runtime: AggregateBarrierRepository, principalId: string) {
-    const value = await new ClientStateRepository(runtime).readSnapshot(principalRef(principalId));
+    const value = await createTestClientStateRepository(runtime).readSnapshot(principalRef(principalId));
     if (!value) {
         throw new Error(`missing snapshot for ${principalId}`);
     }

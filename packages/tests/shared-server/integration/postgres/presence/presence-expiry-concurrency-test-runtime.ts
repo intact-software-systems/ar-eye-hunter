@@ -1,11 +1,11 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type { RuntimeStateEntry, RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { ClientSessionRef } from '@shared/api/client-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { createRequire } from 'node:module';
 
-import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { createTestGroupStateRuntime } from '../../../group-state/group-state-test-runtime.ts';
@@ -72,7 +72,7 @@ export async function seedExpiredGroupPresenceSession(
 ): Promise<void> {
     const service = createTestGroupStateRuntime({
         runtimeRepository: toRuntimeRepository(input.sql),
-        createGroupStateEventStore: createGroupStateEventRepository,
+        groupStateEventStoreFor: createPostgresGroupStateEventStore,
         now: () => input.atEpochMs - 10_000,
         serviceId: 'postgres-expiry-test-setup'
     }).service;
@@ -161,11 +161,20 @@ export function createPostgresGroupRuntime(input: CreatePostgresGroupRuntimeInpu
             input.barrierNamespace,
             input.applicationId
         ),
-        createGroupStateEventStore: createGroupStateEventRepository,
+        groupStateEventStoreFor: createPostgresGroupStateEventStore,
         now: () => input.atEpochMs,
         sleep: () => Promise.resolve(),
         serviceId: 'postgres-group-cas-worker'
     });
+}
+
+function createPostgresGroupStateEventStore(
+    runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike
+): PSqlGroupStateEventRepository {
+    if (!(runtimeRepository instanceof PSqlRuntimeStateRepository)) {
+        throw new TypeError('PostgreSQL group tests require PSqlRuntimeStateRepository');
+    }
+    return new PSqlGroupStateEventRepository(runtimeRepository.sql);
 }
 
 class BarrierPSqlRuntimeStateRepository extends PSqlRuntimeStateRepository {

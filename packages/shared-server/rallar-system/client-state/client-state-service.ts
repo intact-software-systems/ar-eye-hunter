@@ -19,9 +19,7 @@ export function createClientStateService(
     const runtimeRepository = dependencies.runtimeRepository;
     const authSessionRepository = new AuthSessionRepository(runtimeRepository);
     const repositoryFor = (runtime: typeof runtimeRepository) =>
-        new ClientStateRepository(runtime, {
-            events: dependencies.createClientStateEventStore?.(runtime)
-        });
+        new ClientStateRepository(runtime, dependencies.clientStateEventStore);
     const service: ClientStateService = {
         sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(runtimeRepository),
         listSnapshots: async (scope) => await repositoryFor(runtimeRepository).listSnapshots(scope),

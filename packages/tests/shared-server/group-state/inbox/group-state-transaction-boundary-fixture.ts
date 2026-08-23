@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { CreateGroupRequest } from '@shared/api/state-types.ts';
@@ -101,9 +102,10 @@ export async function createGroupStateTransactionBoundaryHarness(
         handler,
         queue: storage.queue,
         results: storage.results,
-        repository: new GroupStateRepository(storage.runtimeRepository, {
-            events: storage.database.groupEventStore
-        }),
+        repository: createTestGroupStateRepository(
+            storage.runtimeRepository,
+            storage.database.groupEventStore
+        ),
         outboxEntries: storage.database.outboxEntries,
         reachedStages: storage.reachedStages,
         observedSnapshots: groupState.observedSnapshots,
@@ -147,7 +149,7 @@ async function createTransactionBoundaryGroupStateService(
     await authSessions.putSession(authority);
     const groupStateService = createGroupStateService({
         runtimeRepository: storage.runtimeRepository,
-        createGroupStateEventStore: () => storage.database.groupEventStore,
+        groupStateEventStore: storage.database.groupEventStore,
         serviceId: 'server-12345678',
         now: () => NOW_EPOCH_MS,
         randomId: () => 'fixed-random-id',

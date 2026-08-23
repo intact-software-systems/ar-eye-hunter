@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 import { ApplyingGuardedBatchRepository, OrderedGroupEventStore } from './group-mutation-test-runtime.ts';
@@ -17,7 +17,7 @@ describe('GroupStateService guarded batch fallback equivalence', () => {
         const guardedRuntime = new ApplyingGuardedBatchRepository();
         const guardedEvents = new OrderedGroupEventStore(guardedRuntime);
         const fallbackRuntime = new FakeRuntimeStateRepository();
-        const fallbackEvents = new InMemoryGroupStateEventStore();
+        const fallbackEvents = new TestGroupStateEventStore();
 
         const guardedResults = await runScenario(guardedRuntime, guardedEvents);
         const fallbackResults = await runScenario(fallbackRuntime, fallbackEvents);
@@ -33,13 +33,13 @@ describe('GroupStateService guarded batch fallback equivalence', () => {
 
 async function runScenario(
     runtime: RuntimeStateOptimisticTransactionalRepositoryLike,
-    eventStore: InMemoryGroupStateEventStore
+    eventStore: TestGroupStateEventStore
 ) {
     let nowEpochMs = BASE_EPOCH_MS;
     let generatedId = 0;
     const service = createTestGroupStateService({
         runtimeRepository: runtime,
-        createGroupStateEventStore: () => eventStore,
+        groupStateEventStoreFor: () => eventStore,
         now: () => nowEpochMs,
         randomId: () => `equivalence-id-${++generatedId}`,
         serviceId: 'equivalence-service'

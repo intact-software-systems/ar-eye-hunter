@@ -1,6 +1,7 @@
 import { GroupMutationIdempotencyConflictError } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { RuntimeStateRetryExhaustedError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { BASE_EPOCH_MS, requireJoinCodeResult } from './group-state-concurrency-test-fixtures.ts';
 import { GroupBarrierRepository } from './group-state-concurrency-test-runtime.ts';
@@ -30,7 +31,7 @@ describe('convergent group and presence state', () => {
         expect(second).toEqual(first);
         expect(
             (
-                await new GroupStateRepository(runtime).findIdempotentGroupMutationReceipt(
+                await createTestGroupStateRepository(runtime).findIdempotentGroupMutationReceipt(
                     groupRef('concurrent-default-code-room'),
                     'concurrent-default-code'
                 )
@@ -38,7 +39,7 @@ describe('convergent group and presence state', () => {
         ).toHaveLength(1);
         expect(
             (
-                await new GroupStateRepository(runtime).listEvents(groupRef('concurrent-default-code-room'))
+                await createTestGroupStateRepository(runtime).listEvents(groupRef('concurrent-default-code-room'))
             ).filter((event) => event.requestId === 'concurrent-default-code')
         ).toHaveLength(1);
     });
@@ -60,7 +61,7 @@ describe('convergent group and presence state', () => {
                 requestId: 'retry-default-code'
             })
         );
-        const idempotency = await new GroupStateRepository(runtime).findIdempotentGroupMutationReceipt(
+        const idempotency = await createTestGroupStateRepository(runtime).findIdempotentGroupMutationReceipt(
             groupRef('retry-default-code-room'),
             'retry-default-code'
         );
@@ -96,7 +97,7 @@ describe('convergent group and presence state', () => {
             })
         ).rejects.toBeInstanceOf(GroupMutationIdempotencyConflictError);
 
-        const repository = new GroupStateRepository(runtime);
+        const repository = createTestGroupStateRepository(runtime);
         const stored = await repository.findIdempotentGroupMutationReceipt(
             groupRef('digest-room'),
             'same-request'

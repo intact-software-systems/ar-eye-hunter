@@ -42,6 +42,7 @@ export interface ApiV1TopologyReplayMetrics {
 
 export interface CreateApiV1TopologyServicesInput {
     readonly runtimeStateRepository: RuntimeStateRepositoryLike;
+    readonly groupStateRepository: GroupStateRepository;
     readonly groupStateService: Pick<CachedGroupStateService, 'readSnapshotAtLeast'>;
     readonly groupFormationRttMutation: GroupFormationRttMutationSink;
     readonly webSocketServer: JsonWebSocketServer;
@@ -93,7 +94,7 @@ export function createApiV1TopologyServices(
     const topologyConfigRepository = new GroupTopologyConfigRepository(
         input.runtimeStateRepository
     );
-    const groupStateRepository = new GroupStateRepository(input.runtimeStateRepository);
+    const groupStateRepository = input.groupStateRepository;
     const topologySnapshotRepository = new RtcTopologySnapshotRepository(
         input.runtimeStateRepository
     );

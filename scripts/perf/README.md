@@ -14,7 +14,7 @@ The background reports live in:
 
 The static audit produced several performance hypotheses around:
 
-- legacy state event listing loading full histories;
+- eager state event listing loading full histories;
 - broad runtime/app-data prefix scans;
 - expired latest-value cache entries staying retained;
 - per-recipient WebSocket JSON serialization;

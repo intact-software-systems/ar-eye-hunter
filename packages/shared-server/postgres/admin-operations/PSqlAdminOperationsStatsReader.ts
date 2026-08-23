@@ -23,8 +23,8 @@ import type {
     AdminOperationsReadInput,
     AdminOperationsStatsReader
 } from '../../rallar-system/admin-operations/admin-operations-service.ts';
+import { groupStateEventWorkspaceKey } from '../../rallar-system/state-events/postgres/group-state-event-workspace-key.ts';
 import type { PSqlSql } from '../p-sql-sql.ts';
-import { groupEventWorkspaceKey } from '../rallar-system/group-event-workspace-key.ts';
 import { PSqlClientStateAdminStatsReader } from './p-sql-client-state-admin-stats-reader.ts';
 
 const DEFAULT_RECENT_EVENT_WINDOW_MS = 15 * 60 * 1_000;
@@ -389,7 +389,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
                 select count(*) as count
                 from group_state_events
                 where application_id = ${scope.applicationId}
-                  and workspace_key = ${groupEventWorkspaceKey(scope.workspaceId)}
+                  and workspace_key = ${groupStateEventWorkspaceKey(scope.workspaceId)}
             `)[0]?.count
             );
         }
@@ -409,7 +409,7 @@ export class PSqlAdminOperationsStatsReader implements AdminOperationsStatsReade
                 select count(*) as count
                 from group_state_events
                 where application_id = ${scope.applicationId}
-                  and workspace_key = ${groupEventWorkspaceKey(scope.workspaceId)}
+                  and workspace_key = ${groupStateEventWorkspaceKey(scope.workspaceId)}
                   and occurred_at_epoch_ms >= ${recentSinceEpochMs}
             `)[0]?.count
             );

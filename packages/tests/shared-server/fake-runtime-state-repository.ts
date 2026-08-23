@@ -8,10 +8,16 @@ import type {
     RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { assertRuntimeStateExpectedRevision, assertRuntimeStateUpsertExpectedRevision } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type { TestClientStateEventStoreOwner, TestGroupStateEventStoreOwner } from '@shared-test/shared-server/create-test-state-repositories.ts';
+import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
+import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
 
-export class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransactionalRepositoryLike {
+export class FakeRuntimeStateRepository
+    implements RuntimeStateOptimisticTransactionalRepositoryLike, TestClientStateEventStoreOwner, TestGroupStateEventStoreOwner {
     readonly data = new Map<string, RuntimeStateEntry>();
     readonly locks: Array<Readonly<{ namespace: string; key: string; }>> = [];
+    readonly clientStateEventStore = new TestClientStateEventStore();
+    readonly groupStateEventStore = new TestGroupStateEventStore();
     beforeUpsert?: (namespace: string, key: string) => void | Promise<void>;
     beforeConditionalWrite?: (
         operation: 'insertIfAbsent' | 'upsertIfRevision' | 'deleteIfRevision',

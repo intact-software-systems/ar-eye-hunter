@@ -1,16 +1,13 @@
 import assert from 'node:assert/strict';
 
-import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
-import { groupEventWorkspaceKey } from '@shared-server/postgres/rallar-system/group-event-workspace-key.ts';
-import {
-    ClientStateEventCollisionError,
-    PSqlClientStateEventRepository,
-    PSqlGroupStateEventRepository
-} from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
 import { ResourceInboxInvariantCorruptionError, ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { ClientStateEventCollisionError } from '@shared-server/rallar-system/state-events/client-state-event-store.ts';
+import { groupStateEventWorkspaceKey } from '@shared-server/rallar-system/state-events/postgres/group-state-event-workspace-key.ts';
+import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { GROUP_PRESENCE_SUMMARY_TOPIC as APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 
@@ -314,7 +311,7 @@ Deno.test(
             const persistedAuthority = await toPersistedAuthSessionFixture(authority);
             const service = createGroupStateService({
                 runtimeRepository: runtime,
-                createGroupStateEventStore: createGroupStateEventRepository,
+                groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                 authSessionRepository: {
                     findBySessionId: (sessionId) =>
                         Promise.resolve(
@@ -363,7 +360,7 @@ Deno.test(
                     error.code === 'group-state-event-collision'
             );
 
-            const repository = new GroupStateRepository(runtime);
+            const repository = new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(runtime.sql));
             assert.equal((await repository.findGroup(ref))?.displayName, 'Before collision');
             assert.equal(
                 await repository.findIdempotentGroupMutationReceipt(ref, 'collision-request'),
@@ -373,7 +370,7 @@ Deno.test(
       select count(*) as count
       from group_state_events
       where application_id = ${ref.applicationId}
-        and workspace_key = ${groupEventWorkspaceKey(ref.workspaceId)}
+        and workspace_key = ${groupStateEventWorkspaceKey(ref.workspaceId)}
         and group_id = ${ref.groupId}
         and event_id = ${updatePreparation.facts.eventId}
     `;
@@ -405,7 +402,7 @@ Deno.test(
             const persistedAuthority = await toPersistedAuthSessionFixture(authority);
             const service = createGroupStateService({
                 runtimeRepository: runtime,
-                createGroupStateEventStore: createGroupStateEventRepository,
+                groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                 authSessionRepository: {
                     findBySessionId: (sessionId) =>
                         Promise.resolve(
@@ -465,7 +462,7 @@ Deno.test(
                 ResourceInboxInvariantCorruptionError
             );
 
-            const repository = new GroupStateRepository(runtime);
+            const repository = new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(runtime.sql));
             assert.equal((await repository.findGroup(ref))?.displayName, 'Before summary collision');
             assert.equal(
                 await repository.findIdempotentGroupMutationReceipt(ref, 'summary-collision-request'),
@@ -475,7 +472,7 @@ Deno.test(
       select count(*) as count
       from group_state_events
       where application_id = ${ref.applicationId}
-        and workspace_key = ${groupEventWorkspaceKey(ref.workspaceId)}
+        and workspace_key = ${groupStateEventWorkspaceKey(ref.workspaceId)}
         and group_id = ${ref.groupId}
         and event_id = ${preparation.facts.eventId}
     `;

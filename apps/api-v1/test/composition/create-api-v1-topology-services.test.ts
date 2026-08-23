@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
+import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-group-state-event-store.ts';
 import { GroupTopologyConfigQueryService } from '@shared-server/rallar-system/topology/config/group-topology-config-query-service.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
@@ -24,6 +25,10 @@ Deno.test('topology composition installs canonical owners and RTT policy inputs'
     const formationEvents: unknown[] = [];
     const input: CreateApiV1TopologyServicesInput = {
         runtimeStateRepository,
+        groupStateRepository: new GroupStateRepository(
+            runtimeStateRepository,
+            new InMemoryGroupStateEventStore()
+        ),
         groupStateService: {
             readSnapshotAtLeast: () => Promise.resolve(snapshot)
         },
@@ -92,8 +97,13 @@ Deno.test('topology composition installs canonical owners and RTT policy inputs'
 });
 
 function createMinimalInput(): CreateApiV1TopologyServicesInput {
+    const runtimeStateRepository = new MemoryRuntimeStateRepository();
     return {
-        runtimeStateRepository: new MemoryRuntimeStateRepository(),
+        runtimeStateRepository,
+        groupStateRepository: new GroupStateRepository(
+            runtimeStateRepository,
+            new InMemoryGroupStateEventStore()
+        ),
         groupStateService: { readSnapshotAtLeast: () => Promise.resolve(undefined) },
         groupFormationRttMutation: () => {},
         webSocketServer: new JsonWebSocketServer(),

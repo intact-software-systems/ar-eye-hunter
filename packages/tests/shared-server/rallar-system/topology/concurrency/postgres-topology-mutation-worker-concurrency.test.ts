@@ -1,3 +1,4 @@
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -6,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
@@ -43,7 +45,10 @@ describe('Postgres topology mutation worker concurrency', () => {
             };
             const setupSql = await createSql(databaseUrl);
             const runtime = new PSqlRuntimeStateRepository(setupSql);
-            const groupState = new GroupStateRepository(runtime);
+            const groupState = createTestGroupStateRepository(
+                runtime,
+                new PSqlGroupStateEventRepository(setupSql)
+            );
             const tmpDirPath = await mkdtemp(path.join(tmpdir(), 'rallar-topology-request-id-'));
             const input: TopologyWorkerInput = {
                 command: 'topology-config-put',
@@ -99,7 +104,10 @@ describe('Postgres topology mutation worker concurrency', () => {
             const snapshot = topologyGroupSnapshot(groupRef);
             const setupSql = await createSql(databaseUrl);
             const runtime = new PSqlRuntimeStateRepository(setupSql);
-            const groupState = new GroupStateRepository(runtime);
+            const groupState = createTestGroupStateRepository(
+                runtime,
+                new PSqlGroupStateEventRepository(setupSql)
+            );
             const tmpDirPath = await mkdtemp(path.join(tmpdir(), 'rallar-topology-worker-race-'));
             const releaseFilePath = path.join(tmpDirPath, 'release');
             const inputs: readonly TopologyWorkerInput[] = [

@@ -1,12 +1,5 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import {
-    createAuthSessionRepository,
-    createClientStateEventRepository,
-    createClientStateRepository,
-    createGroupStateEventRepository,
-    createGroupStateRepository
-} from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import {
     ResourceInboxResultsRepository
@@ -22,14 +15,17 @@ import {
     createHmacAuthCredentialIssuer
 } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import {
     createCachedClientStateService
 } from '@shared-server/rallar-system/client-state/snapshot/cached-client-state-service.ts';
 import { ClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import type {
     GroupPolicyCapacityConfig
 } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
@@ -46,6 +42,8 @@ import {
     type RallarGroupFormationMetricsRecorder
 } from '@shared-server/rallar-system/observability/formation-metrics.ts';
 import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { DequeueResourceEntryOptions, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
@@ -87,9 +85,9 @@ export interface ApiV1MutationRuntime {
     readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
     readonly webSocketServer: JsonWebSocketServer;
     readonly runtimeStateRepository: PSqlRuntimeStateRepository;
-    readonly authSessionRepository: ReturnType<typeof createAuthSessionRepository>;
-    readonly clientsRepository: ReturnType<typeof createClientStateRepository>;
-    readonly groupsRepository: ReturnType<typeof createGroupStateRepository>;
+    readonly authSessionRepository: AuthSessionRepository;
+    readonly clientsRepository: ClientStateRepository;
+    readonly groupsRepository: GroupStateRepository;
     readonly clientSnapshotCache: ClientStateSnapshotReadThroughCache;
     readonly groupSnapshotCache: GroupStateSnapshotReadThroughCache;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
@@ -112,7 +110,8 @@ interface ApiV1StateMutationDependencies {
     readonly resourceInboxRepository: ResourceInboxRepository;
     readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
     readonly runtimeStateRepository: PSqlRuntimeStateRepository;
-    readonly authSessionRepository: ReturnType<typeof createAuthSessionRepository>;
+    readonly authSessionRepository: AuthSessionRepository;
+    readonly clientStateEventStore: PSqlClientStateEventRepository;
     readonly clientSnapshotCache: ClientStateSnapshotReadThroughCache;
     readonly groupSnapshotCache: GroupStateSnapshotReadThroughCache;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
@@ -123,9 +122,11 @@ interface ApiV1MutationResources {
     readonly resourceInboxRepository: ResourceInboxRepository;
     readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
     readonly runtimeStateRepository: PSqlRuntimeStateRepository;
-    readonly authSessionRepository: ReturnType<typeof createAuthSessionRepository>;
-    readonly clientsRepository: ReturnType<typeof createClientStateRepository>;
-    readonly groupsRepository: ReturnType<typeof createGroupStateRepository>;
+    readonly authSessionRepository: AuthSessionRepository;
+    readonly clientsRepository: ClientStateRepository;
+    readonly groupsRepository: GroupStateRepository;
+    readonly clientStateEventStore: PSqlClientStateEventRepository;
+    readonly groupStateEventStore: PSqlGroupStateEventRepository;
     readonly clientSnapshotCache: ClientStateSnapshotReadThroughCache;
     readonly groupSnapshotCache: GroupStateSnapshotReadThroughCache;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
@@ -151,7 +152,7 @@ export function createApiV1MutationRuntime(
             runtimeRepository: resources.runtimeStateRepository,
             capacity: input.groupCapacity,
             authSessionRepository: resources.authSessionRepository,
-            createGroupStateEventStore: createGroupStateEventRepository,
+            groupStateEventStore: resources.groupStateEventStore,
             serviceId: input.serviceId,
             timing: input.timing
         }),
@@ -196,9 +197,11 @@ function createApiV1MutationResources(
     const resourceInboxRepository = new ResourceInboxRepository(database);
     const resourceInboxResultsRepository = new ResourceInboxResultsRepository(database);
     const runtimeStateRepository = new PSqlRuntimeStateRepository(database);
-    const authSessionRepository = createAuthSessionRepository(runtimeStateRepository);
-    const clientsRepository = createClientStateRepository(database);
-    const groupsRepository = createGroupStateRepository(database);
+    const authSessionRepository = new AuthSessionRepository(runtimeStateRepository);
+    const clientStateEventStore = new PSqlClientStateEventRepository(database);
+    const groupStateEventStore = new PSqlGroupStateEventRepository(database);
+    const clientsRepository = new ClientStateRepository(runtimeStateRepository, clientStateEventStore);
+    const groupsRepository = new GroupStateRepository(runtimeStateRepository, groupStateEventStore);
     return {
         queueBox: new PSqlQueueBox(resourceInboxRepository),
         resourceInboxRepository,
@@ -207,6 +210,8 @@ function createApiV1MutationResources(
         authSessionRepository,
         clientsRepository,
         groupsRepository,
+        clientStateEventStore,
+        groupStateEventStore,
         clientSnapshotCache: new ClientStateSnapshotReadThroughCache({ clientsRepository }),
         groupSnapshotCache: new GroupStateSnapshotReadThroughCache({ groupsRepository }),
         groupFormationMetrics: createGroupFormationMetricsRecorder()
@@ -227,6 +232,7 @@ function createApiV1StateMutationDependencies(
         resourceInboxResultsRepository: resources.resourceInboxResultsRepository,
         runtimeStateRepository: resources.runtimeStateRepository,
         authSessionRepository: resources.authSessionRepository,
+        clientStateEventStore: resources.clientStateEventStore,
         clientSnapshotCache: resources.clientSnapshotCache,
         groupSnapshotCache: resources.groupSnapshotCache,
         groupFormationMetrics: resources.groupFormationMetrics
@@ -316,7 +322,7 @@ function createAppClientInboxServiceFactory(
         const clientStateService = createCachedClientStateService({
             durable: createClientStateService({
                 runtimeRepository: input.runtimeStateRepository,
-                createClientStateEventStore: createClientStateEventRepository,
+                clientStateEventStore: input.clientStateEventStore,
                 serviceId: input.serviceId,
                 timing: input.timing
             }),

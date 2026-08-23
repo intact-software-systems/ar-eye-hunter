@@ -1,4 +1,3 @@
-import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import {
     type RuntimeStateGuardedBatch,
     type RuntimeStateGuardedBatchEffect,
@@ -11,6 +10,7 @@ import { validateRuntimeStateGuardedBatchResult } from '@shared-server/runtime-s
 import { validateRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntry, RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
 import type { GroupEvent, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
@@ -278,7 +278,7 @@ function createBatchReadBarrier(
     };
 }
 
-export class OrderedGroupEventStore extends InMemoryGroupStateEventStore {
+export class OrderedGroupEventStore extends TestGroupStateEventStore {
     private readonly runtime: ApplyingGuardedBatchRepository;
 
     constructor(runtime: ApplyingGuardedBatchRepository) {

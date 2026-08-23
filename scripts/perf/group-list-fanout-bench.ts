@@ -1,6 +1,7 @@
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-group-state-event-store.ts';
 import type {
     RuntimeStateReadBatchSelection,
     RuntimeStateReadBatchSelector
@@ -53,9 +54,11 @@ const EXPECTED_BATCH_READS = Object.freeze({
 
 async function main(): Promise<void> {
     const repository = new CountingRuntimeStateRepository();
-    const groupRepository = new GroupStateRepository(repository);
+    const groupStateEventStore = new InMemoryGroupStateEventStore();
+    const groupRepository = new GroupStateRepository(repository, groupStateEventStore);
     const service = createGroupStateService({
         runtimeRepository: repository,
+        groupStateEventStore,
         now: () => 1_700_000_000_000,
         serviceId: 'group-list-fanout-bench',
         authSessionRepository: new AuthSessionRepository(repository)

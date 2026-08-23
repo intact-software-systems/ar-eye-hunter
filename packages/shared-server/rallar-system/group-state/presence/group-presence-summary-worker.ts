@@ -16,10 +16,8 @@ import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../topology/mutation/rtc-topol
 import {
     toRtcTopologyCoalescedGroupRevisionResourceId
 } from '../../topology/replay/rtc-topology-coalesced-group-revision-work.ts';
-import {
-    createTransactionBoundGroupStateRepository,
-    GroupStateRepository
-} from '../persistence/group-state-repository.ts';
+import { GroupStateRepositoryReads } from '../persistence/group-state-repository-reads.ts';
+import { createTransactionBoundGroupStateRepository } from '../persistence/group-state-repository.ts';
 import { groupStateGroupStorageKey } from '../persistence/group-state-storage-keys.ts';
 import { decodeCanonicalGroupPresenceSummaryWork } from './decode-canonical-group-presence-summary-work.ts';
 import {
@@ -58,7 +56,7 @@ export class GroupPresenceSummaryWork {
     public async read(
         work: GroupPresenceSummaryWorkData
     ): Promise<GroupPresenceSummaryWorkRead> {
-        const repository = new GroupStateRepository(this.options.runtimeRepository);
+        const repository = new GroupStateRepositoryReads(this.options.runtimeRepository);
         const [group, members, admissions, presenceSessions, current, coalescedTopologyEntry] = await Promise.all([
             repository.findGroupEntry(work.aggregateRef),
             repository.listMemberEntries(work.aggregateRef),

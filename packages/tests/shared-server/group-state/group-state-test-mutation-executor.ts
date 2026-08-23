@@ -18,6 +18,7 @@ import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/
 import { GroupLifecyclePolicyRepository } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import type { GroupStateEventStore } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
 import {
     isRuntimeStateGuardedBatchRepositoryLike,
     type RuntimeStateGuardedBatchRepositoryLike
@@ -29,13 +30,16 @@ import {
     RuntimeStateWriteConflictError
 } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import type { AuthSession } from '../auth/auth-test-fixtures.ts';
 
 type GroupStateTestMutationExecutorDependencies = Readonly<{
     durableService: GroupStateService;
     runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
-    createGroupStateEventStore?: GroupStateServiceDependencies['createGroupStateEventStore'];
+    groupStateEventStoreFor: (
+        runtime: RuntimeStateOptimisticTransactionalRepositoryLike
+    ) => GroupStateEventStore;
     serviceId: string;
     randomId: () => string;
     sleep?: (delayMs: number) => Promise<void>;
@@ -191,9 +195,10 @@ export class GroupStateTestMutationExecutor {
     }
 
     private repository(runtimeRepository = this.dependencies.runtimeRepository): GroupStateRepository {
-        return new GroupStateRepository(runtimeRepository, {
-            events: this.dependencies.createGroupStateEventStore?.(runtimeRepository)
-        });
+        return createTestGroupStateRepository(
+            runtimeRepository,
+            this.dependencies.groupStateEventStoreFor(runtimeRepository)
+        );
     }
 }
 

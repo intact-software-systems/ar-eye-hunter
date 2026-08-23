@@ -17,8 +17,9 @@ import { validateGroupMutationCommand } from '@shared-server/rallar-system/group
 import {
     groupMutationIdempotencyKey
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-idempotency-key.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { GroupStateRepositoryReads } from '@shared-server/rallar-system/group-state/persistence/group-state-repository-reads.ts';
 import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-client-state-event-store.ts';
 import * as TopologyMutation from '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
 import { readRuntimeStateBatch } from '@shared-server/runtime-state/postgres/read-runtime-state-batch.ts';
 import type {
@@ -356,7 +357,8 @@ async function readClientReceiptByIdentity(
 ): Promise<PersistedCommandEvidence> {
     const { runtime, row, commandType, ref, requestId, allowMissing = false } = input;
     const stored = await new ClientStateRepository(
-        runtime
+        runtime,
+        new InMemoryClientStateEventStore()
     ).findIdempotentClientMutationReceipt(ref, requestId);
     if (!stored && allowMissing) {
         return {
@@ -431,9 +433,10 @@ async function readGroupReceipt(input: ReadGroupReceiptInput): Promise<Persisted
             commandIds: [command.commandId]
         };
     }
-    const stored = await new GroupStateRepository(
-        runtime
-    ).findIdempotentGroupMutationReceipt(command.aggregateRef, idempotencyKey);
+    const stored = await new GroupStateRepositoryReads(runtime).findIdempotentGroupMutationReceipt(
+        command.aggregateRef,
+        idempotencyKey
+    );
     if (
         !stored ||
         stored.requestId !== idempotencyKey ||

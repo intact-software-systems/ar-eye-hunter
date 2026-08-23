@@ -1,4 +1,3 @@
-import type { GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createTimedGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-timing.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { describe, expect, expectTypeOf, it } from 'vitest';
@@ -50,7 +49,7 @@ describe('group-state service timing contract', () => {
         }
     });
 
-    it('preserves the optional listRecentEvents method when present', async () => {
+    it('times the required listRecentEvents method', async () => {
         const timeline: string[] = [];
         const fake = createGroupStateServiceTimingFake(undefined, (operation) => timeline.push(`call:${operation}`));
         const timingEvents: RallarTimingEvent[] = [];
@@ -88,23 +87,6 @@ describe('group-state service timing contract', () => {
                 atEpochMs: expect.any(Number)
             }
         ]);
-    });
-
-    it('preserves optional listRecentEvents absence without a method or timing event', () => {
-        const fake = createGroupStateServiceTimingFake();
-        const { listRecentEvents, ...serviceWithoutRecentEvents } = fake.service;
-        const timingEvents: RallarTimingEvent[] = [];
-        const timed = createTimedGroupStateService({
-            service: serviceWithoutRecentEvents as GroupStateService,
-            serviceId: 'timing-service',
-            timing: (event) => timingEvents.push(event)
-        });
-
-        expect(listRecentEvents).toBeTypeOf('function');
-        expect(timed.listRecentEvents).toBeUndefined();
-        expect(fake.calls).toEqual([]);
-        expect(fake.invocations).toEqual([]);
-        expect(timingEvents).toEqual([]);
     });
 });
 

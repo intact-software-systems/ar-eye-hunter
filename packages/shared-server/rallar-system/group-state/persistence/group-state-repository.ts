@@ -10,28 +10,29 @@ import type {
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { PSqlGroupStateEventRepository } from '../../../postgres/rallar-system/PSqlStateEventRepository.ts';
 import { PSqlRuntimeStateRepository } from '../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
     RuntimeStateRepositoryLike
 } from '../../../runtime-state/runtime-state-repository.ts';
+import type { GroupStateEventStore } from '../../state-events/group-state-event-store.ts';
+import { PSqlGroupStateEventRepository } from '../../state-events/postgres/p-sql-group-state-event-repository.ts';
 import type { StateEventListQuery } from '../../state-events/state-event-listing.ts';
-import { defaultGroupStateEventStoreFor } from '../../state-events/state-event-store.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
 import { GroupAggregateRepository } from './group-aggregate-repository.ts';
 import { GroupMembershipRepository } from './group-membership-repository.ts';
 import { GroupPresenceRepository } from './group-presence-repository.ts';
-import type { GroupStateAuthorityGuard, GroupStateRepositoryOptions } from './group-state-persistence-contracts.ts';
+import type { GroupStateAuthorityGuard } from './group-state-persistence-contracts.ts';
 import { GroupStateRepositoryReads } from './group-state-repository-reads.ts';
 
 export function createTransactionBoundGroupStateRepository(
     transaction: PSqlSql
 ): GroupStateRepository {
-    return new GroupStateRepository(new PSqlRuntimeStateRepository(transaction), {
-        events: new PSqlGroupStateEventRepository(transaction)
-    });
+    return new GroupStateRepository(
+        new PSqlRuntimeStateRepository(transaction),
+        new PSqlGroupStateEventRepository(transaction)
+    );
 }
 
 import { GroupLifecyclePolicyRepository, type GroupLifecyclePolicyRead } from './group-lifecycle-policy-repository.ts';
@@ -41,9 +42,8 @@ export class GroupStateRepository extends GroupStateRepositoryReads {
     private readonly membership: GroupMembershipRepository;
     private readonly presence: GroupPresenceRepository;
 
-    constructor(repository: RuntimeStateRepositoryLike, options: GroupStateRepositoryOptions = {}) {
+    constructor(repository: RuntimeStateRepositoryLike, events: GroupStateEventStore) {
         super(repository);
-        const events = options.events ?? defaultGroupStateEventStoreFor(repository);
         this.aggregate = new GroupAggregateRepository(repository, events);
         this.membership = new GroupMembershipRepository(repository);
         this.presence = new GroupPresenceRepository(repository);

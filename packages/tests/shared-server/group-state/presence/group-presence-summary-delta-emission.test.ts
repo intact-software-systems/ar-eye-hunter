@@ -6,6 +6,7 @@ import {
     type GroupPresenceSummaryWorkRead
 } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
@@ -143,7 +144,7 @@ async function computeSummaryWork(scenario: ConnectedScenario): Promise<
         serviceId: 'summary-worker'
     });
     const ref = groupRef(scenario.groupId);
-    const repository = new GroupStateRepository(scenario.runtime);
+    const repository = createTestGroupStateRepository(scenario.runtime);
     const event = (await repository.listEvents(ref)).find(
         (candidate: GroupEvent) => candidate.eventType === 'session-connected'
     );

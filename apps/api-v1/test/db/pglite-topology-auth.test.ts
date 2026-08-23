@@ -1,8 +1,8 @@
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import assert from 'node:assert/strict';
 
 import { configureSharedGraphRepositories } from '@shared-graph/repository/configure-shared-graph-repositories.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
@@ -104,14 +104,14 @@ Deno.test(
                 groupId: 'room'
             };
             const snapshot = topologyGroupSnapshot(groupRef);
-            const groupRepository = new GroupStateRepository(runtime);
+            const groupRepository = new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(runtime.sql));
             assert.equal((await groupRepository.insertGroup(snapshot.group)).status, 'applied');
             for (const member of snapshot.members) {
                 await groupRepository.putMember(member);
             }
             const groupState = createGroupStateService({
                 runtimeRepository: runtime,
-                createGroupStateEventStore: createGroupStateEventRepository,
+                groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                 authSessionRepository: authSessions,
                 serviceId: 'pglite-app-inbox-topology',
                 now: () => nowEpochMs

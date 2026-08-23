@@ -2,9 +2,9 @@ import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { groupEventWorkspaceKey } from '@shared-server/postgres/rallar-system/group-event-workspace-key.ts';
-import { PSqlGroupStateEventRepository } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
 import { ResourceInboxInvariantCorruptionError, ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { groupStateEventWorkspaceKey } from '@shared-server/rallar-system/state-events/postgres/group-state-event-workspace-key.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -12,16 +12,16 @@ import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { createResourceEntry } from './pglite-queue-crdt-test-runtime.ts';
 import { createGroupStateEvent } from './pglite-state-mutation-test-runtime.ts';
 
-Deno.test('PSql group event reads fail closed on a predecessor wrong-scope payload', async () => {
+Deno.test('PSql group event reads fail closed on a wrong-scope payload', async () => {
     await withPGliteSql(async (sql) => {
         const repository = new PSqlGroupStateEventRepository(sql);
         const expectedRef = {
-            applicationId: 'predecessor-group-event-app',
+            applicationId: 'wrong-scope-group-event-app',
             workspaceId: 'main',
-            groupId: 'predecessor-group-event-group'
+            groupId: 'wrong-scope-group-event-group'
         };
         const corruptEvent = createGroupStateEvent({
-            eventId: 'predecessor-event',
+            eventId: 'wrong-scope-event',
             occurredAtEpochMs: 1_000,
             snapshotVersion: 1,
             eventType: 'group-updated',
@@ -32,7 +32,7 @@ Deno.test('PSql group event reads fail closed on a predecessor wrong-scope paylo
         application_id, workspace_key, group_id, event_id, event_type,
         snapshot_version, occurred_at_epoch_ms, event_json
       ) values (
-        ${expectedRef.applicationId}, ${groupEventWorkspaceKey(expectedRef.workspaceId)},
+        ${expectedRef.applicationId}, ${groupStateEventWorkspaceKey(expectedRef.workspaceId)},
         ${expectedRef.groupId},
         ${corruptEvent.eventId}, ${corruptEvent.eventType},
         ${corruptEvent.snapshotVersion}, ${corruptEvent.occurredAtEpochMs},
@@ -56,20 +56,20 @@ Deno.test('PSql group event reads fail closed on a predecessor wrong-scope paylo
 });
 
 Deno.test(
-    'PSql group event reads reject a predecessor incomplete contract',
+    'PSql group event reads reject an incomplete current contract',
     async () => {
         await withPGliteSql(async (sql) => {
             const repository = new PSqlGroupStateEventRepository(sql);
             const ref = {
-                applicationId: 'predecessor-group-event-app',
+                applicationId: 'incomplete-group-event-app',
                 workspaceId: 'main',
-                groupId: 'predecessor-group-event-group'
+                groupId: 'incomplete-group-event-group'
             };
             const eventType: GroupEvent['eventType'] = 'group-updated';
-            const predecessorEvent = {
+            const incompleteEvent = {
                 applicationId: ref.applicationId,
                 groupId: ref.groupId,
-                eventId: 'predecessor-incomplete-event',
+                eventId: 'incomplete-event',
                 eventType,
                 snapshotVersion: 7,
                 occurredAtEpochMs: 1_000,
@@ -80,10 +80,10 @@ Deno.test(
         application_id, workspace_key, group_id, event_id, event_type,
         snapshot_version, occurred_at_epoch_ms, event_json
       ) values (
-        ${ref.applicationId}, ${groupEventWorkspaceKey(ref.workspaceId)},
-        ${ref.groupId}, ${predecessorEvent.eventId}, ${predecessorEvent.eventType},
-        ${predecessorEvent.snapshotVersion}, ${predecessorEvent.occurredAtEpochMs},
-        ${JSON.stringify(predecessorEvent)}
+        ${ref.applicationId}, ${groupStateEventWorkspaceKey(ref.workspaceId)},
+        ${ref.groupId}, ${incompleteEvent.eventId}, ${incompleteEvent.eventType},
+        ${incompleteEvent.snapshotVersion}, ${incompleteEvent.occurredAtEpochMs},
+        ${JSON.stringify(incompleteEvent)}
       )
     `;
 
@@ -104,7 +104,7 @@ Deno.test(
 );
 
 Deno.test(
-    'PSql group event reads reject explicit null predecessor identities and payloads',
+    'PSql group event reads reject explicit null identities and payloads',
     async () => {
         await withPGliteSql(async (sql) => {
             const repository = new PSqlGroupStateEventRepository(sql);
@@ -115,15 +115,15 @@ Deno.test(
                 ] as const
             ) {
                 const ref = {
-                    applicationId: 'predecessor-group-event-null-app',
+                    applicationId: 'null-field-group-event-app',
                     workspaceId: 'main',
-                    groupId: `predecessor-group-event-null-${suffix}`
+                    groupId: `null-field-group-event-${suffix}`
                 };
                 const event = {
                     applicationId: ref.applicationId,
                     workspaceId: ref.workspaceId,
                     groupId: ref.groupId,
-                    eventId: `predecessor-null-${suffix}`,
+                    eventId: `null-field-${suffix}`,
                     eventType: 'group-updated',
                     snapshotVersion: 1,
                     occurredAtEpochMs: 1_000,
@@ -135,7 +135,7 @@ Deno.test(
           application_id, workspace_key, group_id, event_id, event_type,
           snapshot_version, occurred_at_epoch_ms, event_json
         ) values (
-          ${ref.applicationId}, ${groupEventWorkspaceKey(ref.workspaceId)},
+          ${ref.applicationId}, ${groupStateEventWorkspaceKey(ref.workspaceId)},
           ${ref.groupId}, ${event.eventId}, ${event.eventType},
           ${event.snapshotVersion}, ${event.occurredAtEpochMs},
           ${JSON.stringify(event)}
@@ -246,7 +246,7 @@ Deno.test(
           application_id, workspace_key, group_id, event_id, event_type,
           snapshot_version, occurred_at_epoch_ms, event_json
         ) values (
-          ${ref.applicationId}, ${groupEventWorkspaceKey(ref.workspaceId)},
+          ${ref.applicationId}, ${groupStateEventWorkspaceKey(ref.workspaceId)},
           ${ref.groupId}, ${payload.eventId}, ${baseEvent.eventType},
           ${baseEvent.snapshotVersion}, ${baseEvent.occurredAtEpochMs},
           ${JSON.stringify(payload)}

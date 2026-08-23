@@ -19,7 +19,6 @@ import {
 } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 import { validateClientMutationRequest } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-request.ts';
 import {
-    filterStateEventsForList,
     readStateEventListQuery,
     type StateEventListQuery
 } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
@@ -451,9 +450,7 @@ async function listRecentClientEventsForArrayRoute(
     ref: ClientPrincipalRef,
     query: StateEventListQuery
 ): Promise<readonly ClientEvent[]> {
-    return service.listRecentEvents
-        ? await service.listRecentEvents(ref, query)
-        : filterStateEventsForList(await service.listEvents(ref), query);
+    return await service.listRecentEvents(ref, query);
 }
 
 async function assertCanReadClientState(

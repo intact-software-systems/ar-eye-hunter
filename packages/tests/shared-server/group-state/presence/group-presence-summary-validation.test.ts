@@ -1,5 +1,6 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { describe, expect, it } from 'vitest';
@@ -33,7 +34,7 @@ describe('group presence summary validation', () => {
             expiresAtEpochMs: BASE_EPOCH_MS + 60_000,
             requestId: 'connect-filter-bob'
         });
-        const repository = new GroupStateRepository(runtime);
+        const repository = createTestGroupStateRepository(runtime);
         const ref = groupRef('inactive-summary-filter');
         const admitted = await repository.findPresenceAdmissionEntry({
             ...ref,

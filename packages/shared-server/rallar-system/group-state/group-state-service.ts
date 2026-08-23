@@ -59,9 +59,7 @@ export function createGroupStateRuntime(
     const now = dependencies.now ?? (() => Date.now());
     const randomId = dependencies.randomId ?? (() => crypto.randomUUID());
     const repositoryFor: GroupStateRepositoryFactory = (target) =>
-        new GroupStateRepository(target, {
-            events: dependencies.createGroupStateEventStore?.(target)
-        });
+        new GroupStateRepository(target, dependencies.groupStateEventStore);
     const owners: GroupStateRuntimeOwners = {
         dependencies,
         repositoryFor,

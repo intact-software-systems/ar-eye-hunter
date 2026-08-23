@@ -1,6 +1,7 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { describe, expect, it } from 'vitest';
@@ -34,7 +35,7 @@ describe('group presence concurrency', () => {
         expect(runtime.groupGuards).toBe(0);
         expect(runtime.presenceGuards).toBe(2);
         expect(
-            await new GroupStateRepository(runtime).listPresenceSessions(groupRef('two-session-room'))
+            await createTestGroupStateRepository(runtime).listPresenceSessions(groupRef('two-session-room'))
         ).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
@@ -192,7 +193,7 @@ describe('group presence concurrency', () => {
                     ...request
                 });
             }
-            return await new GroupStateRepository(runtime).findPresenceSession({
+            return await createTestGroupStateRepository(runtime).findPresenceSession({
                 ...groupRef(`ordered-${reverse}`),
                 sessionId: 'session-a'
             });
@@ -244,7 +245,7 @@ describe('group presence concurrency', () => {
         expect(
             results.filter((result) => result.status === 'fulfilled' && result.value.status === 'ok')
         ).toHaveLength(1);
-        const admission = await new GroupStateRepository(runtime).findPresenceAdmissionEntry({
+        const admission = await createTestGroupStateRepository(runtime).findPresenceAdmissionEntry({
             ...groupRef('session-cap-room'),
             principalId: 'alice'
         });
@@ -315,7 +316,7 @@ describe('group presence concurrency', () => {
                 });
             }
 
-            const repository = new GroupStateRepository(runtime);
+            const repository = createTestGroupStateRepository(runtime);
             const ref = groupRef(`${operation}-${order}`);
             const snapshot = await repository.readSnapshot(ref);
             expect(snapshot?.members.find((member) => member.principalId === 'bob')).toMatchObject({

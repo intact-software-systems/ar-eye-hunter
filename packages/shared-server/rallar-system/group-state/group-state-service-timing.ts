@@ -159,7 +159,6 @@ function createTimedEventOperations(
     service: GroupStateService,
     input: TimedGroupStateServiceInput
 ): Pick<GroupStateService, 'listEvents' | 'listRecentEvents' | 'listEventPage'> {
-    const listRecentEvents = service.listRecentEvents;
     return {
         listEvents: async (ref) =>
             await timeGroupStateOperation({
@@ -168,17 +167,13 @@ function createTimedEventOperations(
                 details: toScopeTimingDetails(ref),
                 action: async () => await service.listEvents(ref)
             }),
-        ...(listRecentEvents
-            ? {
-                listRecentEvents: async (...[ref, query]: Parameters<typeof listRecentEvents>) =>
-                    await timeGroupStateOperation({
-                        ...input,
-                        operation: 'listRecentEvents',
-                        details: toScopeTimingDetails(ref),
-                        action: async () => await listRecentEvents.call(service, ref, query)
-                    })
-            }
-            : {}),
+        listRecentEvents: async (ref, query) =>
+            await timeGroupStateOperation({
+                ...input,
+                operation: 'listRecentEvents',
+                details: toScopeTimingDetails(ref),
+                action: async () => await service.listRecentEvents(ref, query)
+            }),
         listEventPage: async (ref, query) =>
             await timeGroupStateOperation({
                 ...input,

@@ -1,17 +1,19 @@
 import type { StateEventCursor, StateEventPage } from '@shared/api/state-event-types.ts';
 
-export type StateEventListQuery<TEventType extends string = string> = Readonly<{
-    eventTypes?: readonly TEventType[];
-    limit?: number;
-    after?: StateEventCursor;
-}>;
+import { compareStateEventOrder, toStateEventCursor } from './state-event-ordering.ts';
 
-export type StateEventListable<TEventType extends string = string> = Readonly<{
-    eventId: string;
-    eventType: TEventType;
-    snapshotVersion: number;
-    occurredAtEpochMs: number;
-}>;
+export interface StateEventListQuery<TEventType extends string = string> {
+    readonly eventTypes?: readonly TEventType[];
+    readonly limit?: number;
+    readonly after?: StateEventCursor;
+}
+
+export interface StateEventListable<TEventType extends string = string> {
+    readonly eventId: string;
+    readonly eventType: TEventType;
+    readonly snapshotVersion: number;
+    readonly occurredAtEpochMs: number;
+}
 
 export const DEFAULT_STATE_EVENT_LIST_LIMIT = 100;
 export const MAX_STATE_EVENT_LIST_LIMIT = 500;
@@ -23,23 +25,13 @@ export function readStateEventListQuery(
         .map((eventType) => eventType.trim())
         .filter((eventType) => eventType.length > 0);
     const limit = toEventListLimit(searchParams.get('limit'));
-    const after = toStateEventCursor(searchParams);
+    const after = toStateEventCursorQuery(searchParams);
 
     return {
         ...(eventTypes.length > 0 ? { eventTypes } : {}),
         limit,
         ...(after ? { after } : {})
     };
-}
-
-export function filterStateEventsForList<
-    TEvent extends StateEventListable<TEventType>,
-    TEventType extends string = string,
->(
-    events: readonly TEvent[],
-    query: StateEventListQuery<TEventType> = {}
-): readonly TEvent[] {
-    return listRecentStateEvents(events, query);
 }
 
 export function listRecentStateEvents<
@@ -72,7 +64,7 @@ export function listStateEventsPage<TEvent extends StateEventListable<TEventType
         : [...events];
     const after = query.after;
     const eventsAfterCursor = after
-        ? filtered.filter((event) => compareEventToCursor(event, after) > 0)
+        ? filtered.filter((event) => compareStateEventOrder(event, after) > 0)
         : filtered;
     const limit = query.limit ?? DEFAULT_STATE_EVENT_LIST_LIMIT;
     const eventsPlusOne = eventsAfterCursor.slice(0, limit + 1);
@@ -81,7 +73,7 @@ export function listStateEventsPage<TEvent extends StateEventListable<TEventType
 
     return {
         events: pageEvents,
-        ...(lastEvent ? { nextCursor: toCursor(lastEvent) } : {}),
+        ...(lastEvent ? { nextCursor: toStateEventCursor(lastEvent) } : {}),
         hasMore: eventsPlusOne.length > limit
     };
 }
@@ -99,7 +91,7 @@ function toEventListLimit(value: string | null): number {
     return Math.min(parsed, MAX_STATE_EVENT_LIST_LIMIT);
 }
 
-function toStateEventCursor(
+function toStateEventCursorQuery(
     searchParams: URLSearchParams
 ): StateEventCursor | undefined {
     const snapshotVersion = toSafeInteger(
@@ -131,21 +123,4 @@ function toSafeInteger(value: string | null): number | undefined {
 
     const parsed = Number(value);
     return Number.isSafeInteger(parsed) ? parsed : undefined;
-}
-
-function compareEventToCursor(
-    event: StateEventListable,
-    cursor: StateEventCursor
-): number {
-    return event.snapshotVersion - cursor.snapshotVersion ||
-        event.occurredAtEpochMs - cursor.occurredAtEpochMs ||
-        event.eventId.localeCompare(cursor.eventId);
-}
-
-function toCursor(event: StateEventListable): StateEventCursor {
-    return {
-        snapshotVersion: event.snapshotVersion,
-        occurredAtEpochMs: event.occurredAtEpochMs,
-        eventId: event.eventId
-    };
 }

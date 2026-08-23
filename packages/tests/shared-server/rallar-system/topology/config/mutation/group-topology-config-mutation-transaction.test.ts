@@ -1,3 +1,4 @@
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -80,7 +81,7 @@ function createService(): GroupTopologyConfigMutationService {
     const runtimeRepository = new FakeRuntimeStateRepository();
     return new GroupTopologyConfigMutationService({
         configRepository: new GroupTopologyConfigRepository(runtimeRepository),
-        groupStateRepository: new GroupStateRepository(runtimeRepository),
+        groupStateRepository: createTestGroupStateRepository(runtimeRepository),
         nowEpochMs: () => 20_000,
         isPlatformAdmin: () => false
     });
