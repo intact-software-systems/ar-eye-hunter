@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import type {
     RtcTopologyReplayConsumerInput,
@@ -7,6 +7,7 @@ import type {
     RtcTopologyReplayPageInput,
     RtcTopologyReplayPageResult
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-contracts.ts';
+import type { RtcTopologyReplayDiagnosticsEvent } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-diagnostics.ts';
 import type { RtcTopologyReplayEntryHandler, RtcTopologyReplayPort } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-service.ts';
 import { startApiRtcTopologyReplay } from '../../../apps/api-v1/src/runtime/rtc-topology/rtc-topology-replay-startup.ts';
 
@@ -25,19 +26,19 @@ describe('API RTC topology replay startup', () => {
         lifecycle.wake('notification');
         lifecycle.attach({ entryHandler: entryHandler(), hydrateGap: async () => undefined });
         await expect(lifecycle.readiness).resolves.toBeUndefined();
-        expect(repository.initializeConsumer).not.toHaveBeenCalled();
+        expect(repository.initializeConsumerInputs).toEqual([]);
         await lifecycle.stop();
     });
 
     it('buffers bounded wake sources until enabled replay is attached and ready', async () => {
         const repository = replayRepository();
-        const diagnostics = vi.fn();
+        const diagnosticsEvents: RtcTopologyReplayDiagnosticsEvent[] = [];
         const lifecycle = startApiRtcTopologyReplay({
             mode: 'enabled',
             configuration: DELIVERY_CONFIGURATION,
             consumerStreamId: STREAM_ID,
             repository,
-            diagnostics
+            diagnostics: (event) => diagnosticsEvents.push(event)
         });
 
         lifecycle.wake('notification');
@@ -47,11 +48,15 @@ describe('API RTC topology replay startup', () => {
         await lifecycle.readiness;
         await lifecycle.whenIdle();
 
-        expect(repository.initializeConsumer).toHaveBeenCalledOnce();
-        expect(repository.discoverPublishers).toHaveBeenCalledTimes(2);
-        expect(diagnostics).toHaveBeenCalledWith({ kind: 'wake', source: 'startup' });
-        expect(diagnostics).toHaveBeenCalledWith({ kind: 'wake', source: 'notification' });
-        expect(diagnostics).toHaveBeenCalledWith({ kind: 'wake', source: 'local-commit' });
+        expect(repository.initializeConsumerInputs).toHaveLength(1);
+        expect(repository.discoverPublisherInputs).toHaveLength(2);
+        expect(diagnosticsEvents).toEqual(
+            expect.arrayContaining([
+                { kind: 'wake', source: 'startup' },
+                { kind: 'wake', source: 'notification' },
+                { kind: 'wake', source: 'local-commit' }
+            ])
+        );
         await lifecycle.stop();
     });
 
@@ -68,10 +73,10 @@ describe('API RTC topology replay startup', () => {
         lifecycle.attach({ entryHandler: entryHandler(), hydrateGap: async () => undefined });
 
         await Promise.resolve();
-        expect(repository.initializeConsumer).not.toHaveBeenCalled();
+        expect(repository.initializeConsumerInputs).toEqual([]);
         publisherRegistration.resolve();
         await lifecycle.readiness;
-        expect(repository.initializeConsumer).toHaveBeenCalledOnce();
+        expect(repository.initializeConsumerInputs).toHaveLength(1);
         await lifecycle.stop();
     });
 
@@ -91,7 +96,7 @@ describe('API RTC topology replay startup', () => {
         publisherRegistration.resolve();
         await lifecycle.readiness;
 
-        expect(repository.initializeConsumer).not.toHaveBeenCalled();
+        expect(repository.initializeConsumerInputs).toEqual([]);
     });
 });
 
@@ -110,28 +115,34 @@ const DELIVERY_CONFIGURATION = {
 } as const;
 
 function replayRepository(): RtcTopologyReplayPort & {
-    initializeConsumer: ReturnType<typeof vi.fn>;
-    discoverPublishers: ReturnType<typeof vi.fn>;
+    readonly initializeConsumerInputs: RtcTopologyReplayConsumerInput[];
+    readonly discoverPublisherInputs: RtcTopologyReplayConsumerInput[];
 } {
+    const initializeConsumerInputs: RtcTopologyReplayConsumerInput[] = [];
+    const discoverPublisherInputs: RtcTopologyReplayConsumerInput[] = [];
     return {
-        initializeConsumer: vi.fn(async (_input: RtcTopologyReplayConsumerInput) => []),
-        discoverPublishers: vi.fn(async (_input: RtcTopologyReplayConsumerInput) => []),
-        capturePage: vi.fn(
-            async (_input: RtcTopologyReplayPageInput): Promise<RtcTopologyReplayPageResult> => ({
-                status: 'caught-up',
-                cursorSequence: 0,
-                capturedHeadSequence: 0,
-                retainedFromSequence: 1,
-                databaseNowEpochMs: 1_000
-            })
-        ),
-        compareAndSetCursor: vi.fn(
-            async (
-                _input: RtcTopologyReplayCursorCasInput
-            ): Promise<RtcTopologyReplayCursorCasResult> => ({
-                status: 'advanced'
-            })
-        )
+        initializeConsumerInputs,
+        discoverPublisherInputs,
+        initializeConsumer: async (input: RtcTopologyReplayConsumerInput) => {
+            initializeConsumerInputs.push(input);
+            return [];
+        },
+        discoverPublishers: async (input: RtcTopologyReplayConsumerInput) => {
+            discoverPublisherInputs.push(input);
+            return [];
+        },
+        capturePage: async (_input: RtcTopologyReplayPageInput): Promise<RtcTopologyReplayPageResult> => ({
+            status: 'caught-up',
+            cursorSequence: 0,
+            capturedHeadSequence: 0,
+            retainedFromSequence: 1,
+            databaseNowEpochMs: 1_000
+        }),
+        compareAndSetCursor: async (
+            _input: RtcTopologyReplayCursorCasInput
+        ): Promise<RtcTopologyReplayCursorCasResult> => ({
+            status: 'advanced'
+        })
     };
 }
 

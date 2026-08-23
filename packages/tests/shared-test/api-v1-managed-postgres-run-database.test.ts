@@ -87,8 +87,16 @@ describe('managed API-v1 PostgreSQL run database', () => {
     });
 
     it('drops the isolated database after the managed callback rejects', async () => {
-        const unsafe = vi.fn((_query: string) => Promise.resolve([]));
-        const end = vi.fn((_options: { timeout: number; }) => Promise.resolve());
+        const queries: string[] = [];
+        const endOptions: Array<Readonly<{ timeout: number; }>> = [];
+        const unsafe = (query: string) => {
+            queries.push(query);
+            return Promise.resolve([]);
+        };
+        const end = (options: Readonly<{ timeout: number; }>) => {
+            endOptions.push(options);
+            return Promise.resolve();
+        };
         vi.mocked(postgres).mockReturnValue({ unsafe, end } as never);
 
         await expect(
@@ -101,9 +109,9 @@ describe('managed API-v1 PostgreSQL run database', () => {
             )
         ).rejects.toThrow('managed callback rejected');
 
-        expect(unsafe).toHaveBeenCalledTimes(2);
-        expect(unsafe.mock.calls[0]?.[0]).toMatch(/^create database "rallar_bb_/);
-        expect(unsafe.mock.calls[1]?.[0]).toMatch(/^drop database "rallar_bb_.*" with \(force\)$/);
-        expect(end).toHaveBeenCalledWith({ timeout: 5 });
+        expect(queries).toHaveLength(2);
+        expect(queries[0]).toMatch(/^create database "rallar_bb_/);
+        expect(queries[1]).toMatch(/^drop database "rallar_bb_.*" with \(force\)$/);
+        expect(endOptions).toEqual([{ timeout: 5 }]);
     });
 });

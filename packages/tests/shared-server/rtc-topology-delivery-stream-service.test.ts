@@ -1,9 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import type {
-    RtcTopologyDeliveryCompactionResult,
-    RtcTopologyDeliveryStream
-} from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-contracts.ts';
+import type { RtcTopologyDeliveryStream } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-contracts.ts';
 import {
     RtcTopologyDeliveryLeaseLostError,
     RtcTopologyDeliveryStreamService,
@@ -27,6 +24,18 @@ const DELIVERY_POLICY = {
     consumerRetentionMs: RTC_TOPOLOGY_REPLAY_RETENTION_MS
 } as const;
 
+interface DeliveryRepositoryCalls {
+    readonly registerStream: Array<Parameters<RtcTopologyDeliveryStreamMaintenancePort['registerStream']>[0]>;
+    readonly renewStreamLease: Array<Parameters<RtcTopologyDeliveryStreamMaintenancePort['renewStreamLease']>[0]>;
+    readonly compactExpiredEntries: Array<Parameters<RtcTopologyDeliveryStreamMaintenancePort['compactExpiredEntries']>[0]>;
+    readonly retireExpiredConsumerCursors: Array<Parameters<RtcTopologyDeliveryStreamMaintenancePort['retireExpiredConsumerCursors']>[0]>;
+    readonly retireEmptyStreams: Array<Parameters<RtcTopologyDeliveryStreamMaintenancePort['retireEmptyStreams']>[0]>;
+}
+
+interface RecordingDeliveryRepository extends RtcTopologyDeliveryStreamMaintenancePort {
+    readonly calls: DeliveryRepositoryCalls;
+}
+
 describe('RTC topology delivery stream service', () => {
     it('registers before scheduling database-time heartbeat and bounded compaction', async () => {
         const events: string[] = [];
@@ -42,15 +51,17 @@ describe('RTC topology delivery stream service', () => {
             repository,
             policy: DELIVERY_POLICY,
             scheduler,
-            onHealthFailure: vi.fn()
+            onHealthFailure: () => undefined
         });
 
         await service.start();
 
-        expect(repository.registerStream).toHaveBeenCalledWith({
-            streamId: STREAM_ID,
-            leaseDurationMs: RTC_TOPOLOGY_REPLAY_LEASE_DURATION_MS
-        });
+        expect(repository.calls.registerStream).toEqual([
+            {
+                streamId: STREAM_ID,
+                leaseDurationMs: RTC_TOPOLOGY_REPLAY_LEASE_DURATION_MS
+            }
+        ]);
         expect(events).toEqual([
             'registered',
             `scheduled:${RTC_TOPOLOGY_REPLAY_HEARTBEAT_INTERVAL_MS}`,
@@ -60,20 +71,24 @@ describe('RTC topology delivery stream service', () => {
         await scheduler.run(RTC_TOPOLOGY_REPLAY_HEARTBEAT_INTERVAL_MS);
         await scheduler.run(RTC_TOPOLOGY_REPLAY_COMPACTION_INTERVAL_MS);
 
-        expect(repository.renewStreamLease).toHaveBeenCalledWith({
-            streamId: STREAM_ID,
-            leaseDurationMs: RTC_TOPOLOGY_REPLAY_LEASE_DURATION_MS
-        });
-        expect(repository.compactExpiredEntries).toHaveBeenCalledWith({
-            pageSize: RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE
-        });
-        expect(repository.retireExpiredConsumerCursors).toHaveBeenCalledWith({
-            retentionMs: RTC_TOPOLOGY_REPLAY_RETENTION_MS,
-            pageSize: RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE
-        });
-        expect(repository.retireEmptyStreams).toHaveBeenCalledWith({
-            pageSize: RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE
-        });
+        expect(repository.calls.renewStreamLease).toEqual([
+            {
+                streamId: STREAM_ID,
+                leaseDurationMs: RTC_TOPOLOGY_REPLAY_LEASE_DURATION_MS
+            }
+        ]);
+        expect(repository.calls.compactExpiredEntries).toEqual([
+            { pageSize: RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE }
+        ]);
+        expect(repository.calls.retireExpiredConsumerCursors).toEqual([
+            {
+                retentionMs: RTC_TOPOLOGY_REPLAY_RETENTION_MS,
+                pageSize: RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE
+            }
+        ]);
+        expect(repository.calls.retireEmptyStreams).toEqual([
+            { pageSize: RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE }
+        ]);
     });
 
     it('fails readiness when the process stream identity is already owned', async () => {
@@ -81,18 +96,18 @@ describe('RTC topology delivery stream service', () => {
         const repository = createRepository({
             registerStream: async () => ({ status: 'conflict' })
         });
-        const onHealthFailure = vi.fn();
+        const healthFailures: Error[] = [];
         const service = new RtcTopologyDeliveryStreamService({
             streamId: STREAM_ID,
             repository,
             policy: DELIVERY_POLICY,
             scheduler,
-            onHealthFailure
+            onHealthFailure: (error) => healthFailures.push(error)
         });
 
         await expect(service.start()).rejects.toBeInstanceOf(RtcTopologyDeliveryLeaseLostError);
         expect(scheduler.scheduledIntervals()).toEqual([]);
-        expect(onHealthFailure).not.toHaveBeenCalled();
+        expect(healthFailures).toEqual([]);
     });
 
     it('stops both loops and reports typed health failure after lease loss', async () => {
@@ -101,26 +116,26 @@ describe('RTC topology delivery stream service', () => {
         const repository = createRepository({
             renewStreamLease: async () => ({ status: 'lease-lost' })
         });
-        const onHealthFailure = vi.fn();
+        const healthFailures: Error[] = [];
         const service = new RtcTopologyDeliveryStreamService({
             streamId: STREAM_ID,
             repository,
             policy: DELIVERY_POLICY,
             scheduler,
-            onHealthFailure
+            onHealthFailure: (error) => healthFailures.push(error)
         });
         await service.start();
 
         await scheduler.run(RTC_TOPOLOGY_REPLAY_HEARTBEAT_INTERVAL_MS);
 
-        expect(onHealthFailure).toHaveBeenCalledOnce();
-        expect(onHealthFailure.mock.calls[0]![0]).toBeInstanceOf(RtcTopologyDeliveryLeaseLostError);
+        expect(healthFailures).toHaveLength(1);
+        expect(healthFailures[0]).toBeInstanceOf(RtcTopologyDeliveryLeaseLostError);
         expect(scheduler.cancelledIntervals()).toEqual([
             RTC_TOPOLOGY_REPLAY_HEARTBEAT_INTERVAL_MS,
             RTC_TOPOLOGY_REPLAY_COMPACTION_INTERVAL_MS
         ]);
         await scheduler.run(RTC_TOPOLOGY_REPLAY_COMPACTION_INTERVAL_MS);
-        expect(repository.compactExpiredEntries).not.toHaveBeenCalled();
+        expect(repository.calls.compactExpiredEntries).toEqual([]);
     });
 
     it('makes stop idempotent and prevents later scheduled maintenance', async () => {
@@ -131,7 +146,7 @@ describe('RTC topology delivery stream service', () => {
             repository,
             policy: DELIVERY_POLICY,
             scheduler,
-            onHealthFailure: vi.fn()
+            onHealthFailure: () => undefined
         });
         await service.start();
 
@@ -140,50 +155,53 @@ describe('RTC topology delivery stream service', () => {
         await scheduler.run(RTC_TOPOLOGY_REPLAY_HEARTBEAT_INTERVAL_MS);
         await scheduler.run(RTC_TOPOLOGY_REPLAY_COMPACTION_INTERVAL_MS);
 
-        expect(repository.renewStreamLease).not.toHaveBeenCalled();
-        expect(repository.compactExpiredEntries).not.toHaveBeenCalled();
+        expect(repository.calls.renewStreamLease).toEqual([]);
+        expect(repository.calls.compactExpiredEntries).toEqual([]);
     });
 });
 
 function createRepository(
     overrides: Partial<RtcTopologyDeliveryStreamMaintenancePort> = {}
-): RtcTopologyDeliveryStreamMaintenancePort & {
-    registerStream: ReturnType<typeof vi.fn>;
-    renewStreamLease: ReturnType<typeof vi.fn>;
-    compactExpiredEntries: ReturnType<typeof vi.fn>;
-    retireExpiredConsumerCursors: ReturnType<typeof vi.fn>;
-    retireEmptyStreams: ReturnType<typeof vi.fn>;
-} {
+): RecordingDeliveryRepository {
+    const calls: DeliveryRepositoryCalls = {
+        registerStream: [],
+        renewStreamLease: [],
+        compactExpiredEntries: [],
+        retireExpiredConsumerCursors: [],
+        retireEmptyStreams: []
+    };
     return {
-        registerStream: vi.fn(
-            overrides.registerStream ??
-                (async () => ({
-                    status: 'registered' as const,
-                    stream: registeredStream()
-                }))
-        ),
-        renewStreamLease: vi.fn(
-            overrides.renewStreamLease ??
-                (async () => ({
-                    status: 'renewed' as const,
-                    stream: registeredStream()
-                }))
-        ),
-        compactExpiredEntries: vi.fn(
-            overrides.compactExpiredEntries ??
-                (async (): Promise<RtcTopologyDeliveryCompactionResult> => ({
-                    scannedStreamCount: 1,
-                    deletedEntryCount: 0
-                }))
-        ),
-        retireExpiredConsumerCursors: vi.fn(
-            overrides.retireExpiredConsumerCursors ??
-                (async () => ({ deletedCursorCount: 0 }))
-        ),
-        retireEmptyStreams: vi.fn(
-            overrides.retireEmptyStreams ??
-                (async () => ({ deletedStreamCount: 0 }))
-        )
+        calls,
+        registerStream: async (input) => {
+            calls.registerStream.push(input);
+            return overrides.registerStream
+                ? await overrides.registerStream(input)
+                : { status: 'registered', stream: registeredStream() };
+        },
+        renewStreamLease: async (input) => {
+            calls.renewStreamLease.push(input);
+            return overrides.renewStreamLease
+                ? await overrides.renewStreamLease(input)
+                : { status: 'renewed', stream: registeredStream() };
+        },
+        compactExpiredEntries: async (input) => {
+            calls.compactExpiredEntries.push(input);
+            return overrides.compactExpiredEntries
+                ? await overrides.compactExpiredEntries(input)
+                : { scannedStreamCount: 1, deletedEntryCount: 0 };
+        },
+        retireExpiredConsumerCursors: async (input) => {
+            calls.retireExpiredConsumerCursors.push(input);
+            return overrides.retireExpiredConsumerCursors
+                ? await overrides.retireExpiredConsumerCursors(input)
+                : { deletedCursorCount: 0 };
+        },
+        retireEmptyStreams: async (input) => {
+            calls.retireEmptyStreams.push(input);
+            return overrides.retireEmptyStreams
+                ? await overrides.retireEmptyStreams(input)
+                : { deletedStreamCount: 0 };
+        }
     };
 }
 

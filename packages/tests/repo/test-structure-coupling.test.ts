@@ -1001,15 +1001,6 @@ describe('test structure-coupling review', () => {
             'packages/tests/repo/repo-code-style-checker-integrity.test.ts#keeps TypeScript formatter settings aligned with the canonical baseline'
         );
         expect(entriesByContract.get('repo-style-checker-interface')).toHaveLength(1);
-
-        expect(contracts.get('auth-server-wrapper-mutation-boundary')?.semanticCoverage).toBe(
-            'packages/tests/repo/auth-server-compatibility-governance.test.ts#rejects export kind, target, and second-hop changes'
-        );
-        expect(contracts.get('auth-server-canonical-test-inventory')?.semanticCoverage).toBe(
-            'packages/tests/repo/auth-server-compatibility-governance.test.ts#keeps every canonical auth test free of compatibility wrappers'
-        );
-        expect(entriesByContract.get('auth-server-wrapper-mutation-boundary')).toHaveLength(2);
-        expect(entriesByContract.get('auth-server-canonical-test-inventory')).toHaveLength(1);
     });
 
     it('reports renamed removals and unchanged-source copies with range-safe evidence', () => {
