@@ -337,12 +337,10 @@ describe('RTC RTT mutation phases', () => {
         ).causalRevision;
         const queries: string[] = [];
         const transaction = createUnopenedTransactionSql(queries);
-        const begin = vi.spyOn(transaction, 'begin');
 
         await expect(
             writeRtcRttMutation(transaction, { ttlMs: 60_000, now: () => 1 }, malformed)
-        ).rejects.toThrow();
-        expect(begin).not.toHaveBeenCalled();
+        ).rejects.toThrow('Stored group snapshot has invalid keys');
         expect(queries).toEqual([]);
     });
 

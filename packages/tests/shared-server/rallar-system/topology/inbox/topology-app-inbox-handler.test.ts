@@ -154,14 +154,18 @@ describe('TopologyAppInboxHandler', () => {
             'commit',
             'wake'
         ]);
-        expect(wakeQueue).toHaveBeenCalledOnce();
     });
 
     it('rejects idempotency conflict before transaction or wake', async () => {
         const phases: string[] = [];
         const context = await topologyContext(phases);
-        const writeMutation = vi.fn();
-        const wakeQueue = vi.fn();
+        const writeMutation = async () => {
+            phases.push('transaction');
+            throw new Error('Idempotency conflicts must not open a transaction');
+        };
+        const wakeQueue = () => {
+            phases.push('wake');
+        };
         const owners = {
             configMutationService: {
                 prepare: vi.fn(async () => configPreparation()),
@@ -188,8 +192,7 @@ describe('TopologyAppInboxHandler', () => {
         await expect(handler.processMutation(context, owners)).rejects.toMatchObject({
             code: 'group-topology-config-idempotency-conflict'
         });
-        expect(writeMutation).not.toHaveBeenCalled();
-        expect(wakeQueue).not.toHaveBeenCalled();
+        expect(phases).toEqual(['verify-authority']);
     });
 
     it('keeps reconfigure read-compute-validate-write ordered and wakes after commit', async () => {

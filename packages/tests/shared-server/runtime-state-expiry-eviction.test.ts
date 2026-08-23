@@ -5,15 +5,22 @@ import { describe, expect, it, vi } from 'vitest';
 
 describe('runtime state expiry eviction', () => {
     it('deletes expired rows across all runtime_state_store namespaces', async () => {
+        const excludedNamespaceInputs: readonly string[][] = [];
         const repository = {
-            deleteAllExpired: vi.fn(async () => 2)
+            deleteAllExpired: async (excludedNamespaces: readonly string[]) => {
+                excludedNamespaceInputs.push([...excludedNamespaces]);
+                return 2;
+            }
         };
-        const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+        const messages: string[] = [];
+        const log = vi.spyOn(console, 'log').mockImplementation((message) => {
+            messages.push(String(message));
+        });
         try {
             await expect(evictExpiredRuntimeStateRows({ repository })).resolves.toBe(2);
 
-            expect(repository.deleteAllExpired).toHaveBeenCalledWith([]);
-            expect(log).toHaveBeenCalledWith('Evicted expired runtime_state_store rows: 2');
+            expect(excludedNamespaceInputs).toEqual([[]]);
+            expect(messages).toEqual(['Evicted expired runtime_state_store rows: 2']);
         }
         finally {
             log.mockRestore();
@@ -21,8 +28,12 @@ describe('runtime state expiry eviction', () => {
     });
 
     it('passes caller-owned protected namespaces to generic expiry eviction', async () => {
+        const excludedNamespaceInputs: readonly string[][] = [];
         const repository = {
-            deleteAllExpired: vi.fn(async () => 0)
+            deleteAllExpired: async (excludedNamespaces: readonly string[]) => {
+                excludedNamespaceInputs.push([...excludedNamespaces]);
+                return 0;
+            }
         };
         const protectedNamespaces = ['rtc-rtt:receipts', 'test:second-protected-family'];
 
@@ -33,7 +44,7 @@ describe('runtime state expiry eviction', () => {
             })
         ).resolves.toBe(0);
 
-        expect(repository.deleteAllExpired).toHaveBeenCalledWith(protectedNamespaces);
+        expect(excludedNamespaceInputs).toEqual([protectedNamespaces]);
     });
 
     it('emits safe empty and nonempty generic namespace exclusion SQL', async () => {
@@ -54,14 +65,16 @@ describe('runtime state expiry eviction', () => {
 
     it('stays quiet when there is nothing to evict', async () => {
         const repository = {
-            deleteAllExpired: vi.fn(async () => 0)
+            deleteAllExpired: async () => 0
         };
-        const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+        const messages: string[] = [];
+        const log = vi.spyOn(console, 'log').mockImplementation((message) => {
+            messages.push(String(message));
+        });
         try {
             await expect(evictExpiredRuntimeStateRows({ repository })).resolves.toBe(0);
 
-            expect(repository.deleteAllExpired).toHaveBeenCalledTimes(1);
-            expect(log).not.toHaveBeenCalled();
+            expect(messages).toEqual([]);
         }
         finally {
             log.mockRestore();
@@ -90,8 +103,12 @@ describe('runtime state expiry eviction', () => {
         'runs immediately and schedules the $label until stopped',
         async ({ options, intervalMs, excludedNamespaces }) => {
             vi.useFakeTimers();
+            const evictionInputs: readonly string[][] = [];
             const repository = {
-                deleteAllExpired: vi.fn(async () => 0)
+                deleteAllExpired: async (excluded: readonly string[]) => {
+                    evictionInputs.push([...excluded]);
+                    return 0;
+                }
             };
             try {
                 const worker = new RuntimeStateExpiryWorker({
@@ -99,17 +116,22 @@ describe('runtime state expiry eviction', () => {
                     ...options
                 });
                 await worker.firstRun;
-                expect(repository.deleteAllExpired).toHaveBeenCalledTimes(1);
-                expect(repository.deleteAllExpired).toHaveBeenLastCalledWith([...excludedNamespaces]);
+                expect(evictionInputs).toEqual([[...excludedNamespaces]]);
 
                 await vi.advanceTimersByTimeAsync(intervalMs - 1);
-                expect(repository.deleteAllExpired).toHaveBeenCalledTimes(1);
+                expect(evictionInputs).toEqual([[...excludedNamespaces]]);
                 await vi.advanceTimersByTimeAsync(1);
-                expect(repository.deleteAllExpired).toHaveBeenCalledTimes(2);
+                expect(evictionInputs).toEqual([
+                    [...excludedNamespaces],
+                    [...excludedNamespaces]
+                ]);
                 worker.stop();
                 worker.stop();
                 await vi.advanceTimersByTimeAsync(intervalMs * 2);
-                expect(repository.deleteAllExpired).toHaveBeenCalledTimes(2);
+                expect(evictionInputs).toEqual([
+                    [...excludedNamespaces],
+                    [...excludedNamespaces]
+                ]);
             }
             finally {
                 vi.clearAllTimers();
@@ -120,8 +142,12 @@ describe('runtime state expiry eviction', () => {
 
     it('does not reschedule generic expiry after stop during an in-flight run', async () => {
         const blocked = createDeferred<number>();
+        let evictionStarted = false;
         const repository = {
-            deleteAllExpired: vi.fn(() => blocked.promise)
+            deleteAllExpired: () => {
+                evictionStarted = true;
+                return blocked.promise;
+            }
         };
         const scheduled: Array<
             Readonly<{
@@ -138,7 +164,7 @@ describe('runtime state expiry eviction', () => {
             }
         });
 
-        expect(repository.deleteAllExpired).toHaveBeenCalledTimes(1);
+        expect(evictionStarted).toBe(true);
         worker.stop();
         worker.stop();
         blocked.resolve(0);

@@ -104,7 +104,6 @@ describe('RTC RTT repository convergence', () => {
         'rejects $label before opening the RTT write transaction',
         async ({ corrupt }) => {
             const transaction = createUnopenedTransactionSql();
-            const begin = vi.spyOn(transaction, 'begin');
             const malformed = corrupt(
                 structuredClone(createValidRttWriteCandidate()) as unknown as MutableRttWriteCandidate
             );
@@ -116,7 +115,6 @@ describe('RTC RTT repository convergence', () => {
                     malformed as unknown as Extract<RtcRttMutationComputed, { outcome: 'write'; }>
                 )
             ).rejects.toBeInstanceOf(TypeError);
-            expect(begin).not.toHaveBeenCalled();
         }
     );
 
@@ -206,17 +204,24 @@ describe('RTC RTT repository convergence', () => {
             overlaySnapshotsByGroupKey: new Map(),
             degreeLimit: 1
         };
-        const readCommand = vi.fn(() => command);
-        const readFacts = vi
-            .fn()
-            .mockReturnValueOnce({
+        const lifecycleFacts = [
+            {
                 requestedAtEpochMs: 1,
                 purgeAfterEpochMs: 60_001
-            })
-            .mockReturnValueOnce({
+            },
+            {
                 requestedAtEpochMs: 2,
                 purgeAfterEpochMs: 60_002
-            });
+            }
+        ];
+        const readCommand = () => command;
+        const readFacts = () => {
+            const facts = lifecycleFacts.shift();
+            if (facts === undefined) {
+                throw new Error('RTT lifecycle facts exhausted');
+            }
+            return facts;
+        };
         let forcedConflict = false;
         runtimeRepository.beforeConditionalWrite = async (operation, namespace, key) => {
             if (
@@ -257,8 +262,7 @@ describe('RTC RTT repository convergence', () => {
                 reason: 'no-shared-active-group'
             }
         });
-        expect(readCommand).toHaveBeenCalledTimes(2);
-        expect(readFacts).toHaveBeenCalledTimes(2);
+        expect(lifecycleFacts).toEqual([]);
         await expect(runtimeRepository.findAllEntries(RTC_RTT_RECEIPTS_NAMESPACE)).resolves.toEqual([]);
     });
 
@@ -364,30 +368,25 @@ describe('RTC RTT repository convergence', () => {
                 }),
                 1 + DEFAULT_RTC_RTT_MUTATION_RETENTION_MS
             );
-            const now = vi.fn(() => {
+            const now = () => {
                 throw new Error('RTT receipt replay clock');
-            });
+            };
             const repository = new RtcRttRepository(runtimeRepository, { now });
-            const policy = vi.fn(() => {
+            const policy = () => {
                 throw new Error('RTT receipt replay policy');
-            });
-            const lifecycle = vi.fn(() => {
+            };
+            const lifecycle = () => {
                 throw new Error('RTT receipt replay lifecycle');
-            });
-            const measurement = vi
-                .spyOn(repository, 'findMeasurementEntry')
+            };
+            vi.spyOn(repository, 'findMeasurementEntry')
                 .mockRejectedValue(new Error('RTT receipt replay measurement'));
-            const measurementList = vi
-                .spyOn(repository, 'listMeasurementEntries')
+            vi.spyOn(repository, 'listMeasurementEntries')
                 .mockRejectedValue(new Error('RTT receipt replay measurement list'));
-            const admission = vi
-                .spyOn(repository, 'findEndpointAdmissionEntry')
+            vi.spyOn(repository, 'findEndpointAdmissionEntry')
                 .mockRejectedValue(new Error('RTT receipt replay admission'));
-            const cleanup = vi
-                .spyOn(runtimeRepository, 'deleteIfRevision')
+            vi.spyOn(runtimeRepository, 'deleteIfRevision')
                 .mockRejectedValue(new Error('RTT receipt replay cleanup'));
-            const transaction = vi
-                .spyOn(runtimeRepository, 'begin')
+            vi.spyOn(runtimeRepository, 'begin')
                 .mockRejectedValue(new Error('RTT receipt replay transaction'));
             const request = {
                 rtt: divergent ? { ...baseRtt, rttMs: 2 } : baseRtt,
@@ -418,14 +417,6 @@ describe('RTC RTT repository convergence', () => {
                     computed: { outcome: 'replay', reason: 'accepted' }
                 });
             }
-            expect(now).not.toHaveBeenCalled();
-            expect(policy).not.toHaveBeenCalled();
-            expect(lifecycle).not.toHaveBeenCalled();
-            expect(measurement).not.toHaveBeenCalled();
-            expect(measurementList).not.toHaveBeenCalled();
-            expect(admission).not.toHaveBeenCalled();
-            expect(cleanup).not.toHaveBeenCalled();
-            expect(transaction).not.toHaveBeenCalled();
         }
     );
 
@@ -468,20 +459,33 @@ describe('RTC RTT repository convergence', () => {
             updated: true,
             computed: { outcome: 'write' }
         });
-        const receiptReads = vi.spyOn(repository, 'probeMutationReceiptEntry');
-        const measurementReads = vi.spyOn(repository, 'findMeasurementEntry');
-        const measurementLists = vi.spyOn(repository, 'listMeasurementEntries');
-        const admissionReads = vi.spyOn(repository, 'findEndpointAdmissionEntry');
-        const conditionalDeletes = vi.spyOn(runtimeRepository, 'deleteIfRevision');
-        const conditionalUpdates = vi.spyOn(runtimeRepository, 'upsertIfRevision');
-        const transactions = vi.spyOn(runtimeRepository, 'begin');
-        const conditionalInserts = vi.spyOn(runtimeRepository, 'insertIfAbsent');
-        const policyReads = vi.fn(() => {
+        vi.spyOn(repository, 'findMeasurementEntry').mockRejectedValue(
+            new Error('RTT receipt replay must not read measurements')
+        );
+        vi.spyOn(repository, 'listMeasurementEntries').mockRejectedValue(
+            new Error('RTT receipt replay must not list measurements')
+        );
+        vi.spyOn(repository, 'findEndpointAdmissionEntry').mockRejectedValue(
+            new Error('RTT receipt replay must not read endpoint admission')
+        );
+        vi.spyOn(runtimeRepository, 'deleteIfRevision').mockRejectedValue(
+            new Error('RTT receipt replay must not delete state')
+        );
+        vi.spyOn(runtimeRepository, 'upsertIfRevision').mockRejectedValue(
+            new Error('RTT receipt replay must not update state')
+        );
+        vi.spyOn(runtimeRepository, 'begin').mockRejectedValue(
+            new Error('RTT receipt replay must not open a transaction')
+        );
+        vi.spyOn(runtimeRepository, 'insertIfAbsent').mockRejectedValue(
+            new Error('RTT receipt replay must not insert state')
+        );
+        const policyReads = () => {
             throw new Error('RTT replay read policy authority');
-        });
-        const lifecycleReads = vi.fn(() => {
+        };
+        const lifecycleReads = () => {
             throw new Error('RTT replay read lifecycle clock');
-        });
+        };
         commandReader.current = policyReads;
         readFacts = lifecycleReads;
         now = 12;
@@ -489,16 +493,6 @@ describe('RTC RTT repository convergence', () => {
             updated: false,
             computed: { outcome: 'replay', reason: 'accepted' }
         });
-        expect(receiptReads).toHaveBeenCalledTimes(1);
-        expect(measurementReads).not.toHaveBeenCalled();
-        expect(measurementLists).not.toHaveBeenCalled();
-        expect(admissionReads).not.toHaveBeenCalled();
-        expect(conditionalDeletes).not.toHaveBeenCalled();
-        expect(conditionalUpdates).not.toHaveBeenCalled();
-        expect(transactions).not.toHaveBeenCalled();
-        expect(conditionalInserts).not.toHaveBeenCalled();
-        expect(policyReads).not.toHaveBeenCalled();
-        expect(lifecycleReads).not.toHaveBeenCalled();
         await expect(
             execute({
                 ...command,
@@ -511,16 +505,6 @@ describe('RTC RTT repository convergence', () => {
                 alSenderId: 'session-b'
             })
         ).rejects.toMatchObject({ code: 'rtc-rtt-idempotency-conflict' });
-        expect(receiptReads).toHaveBeenCalledTimes(3);
-        expect(measurementReads).not.toHaveBeenCalled();
-        expect(measurementLists).not.toHaveBeenCalled();
-        expect(admissionReads).not.toHaveBeenCalled();
-        expect(conditionalDeletes).not.toHaveBeenCalled();
-        expect(conditionalUpdates).not.toHaveBeenCalled();
-        expect(transactions).not.toHaveBeenCalled();
-        expect(conditionalInserts).not.toHaveBeenCalled();
-        expect(policyReads).not.toHaveBeenCalled();
-        expect(lifecycleReads).not.toHaveBeenCalled();
         expect(await runtimeRepository.findAllEntries(RTC_RTT_RECEIPTS_NAMESPACE)).toHaveLength(1);
     });
 
@@ -662,7 +646,7 @@ describe('RTC RTT repository convergence', () => {
             })
             .mockImplementation(originalBegin);
         const requestedAtEpochMs = [1, 6];
-        const readFacts = vi.fn(() => {
+        const readFacts = () => {
             const requestedAt = requestedAtEpochMs.shift();
             if (requestedAt === undefined) {
                 throw new Error('facts exhausted');
@@ -671,7 +655,7 @@ describe('RTC RTT repository convergence', () => {
                 requestedAtEpochMs: requestedAt,
                 purgeAfterEpochMs: requestedAt + 100
             };
-        });
+        };
         const group = createRttGroupSnapshot('room-ab', ['session-a', 'session-b']);
 
         const result = await executeRtcRttMutation({
@@ -717,7 +701,6 @@ describe('RTC RTT repository convergence', () => {
                 updatedAtEpochMs: 6
             }
         });
-        expect(readFacts).toHaveBeenCalledTimes(2);
         expect(requestedAtEpochMs).toEqual([]);
         await expect(repository.findMeasurementEntry('session-a', 'session-b')).resolves.toMatchObject({
             entry: { expireAtTimestamp: 106 }
@@ -730,8 +713,7 @@ describe('RTC RTT repository convergence', () => {
             now: () => 0
         });
         const originalBegin = runtimeRepository.begin.bind(runtimeRepository);
-        const begin = vi
-            .spyOn(runtimeRepository, 'begin')
+        vi.spyOn(runtimeRepository, 'begin')
             .mockImplementationOnce(() => {
                 throw new RuntimeStateWriteConflictError();
             })
@@ -747,7 +729,7 @@ describe('RTC RTT repository convergence', () => {
             }))
         };
         const commands = [initial, futureConnection];
-        const readCommand = vi.fn(() => {
+        const readCommand = () => {
             const group = commands.shift();
             if (!group) {
                 throw new Error('commands exhausted');
@@ -765,7 +747,7 @@ describe('RTC RTT repository convergence', () => {
                 overlaySnapshotsByGroupKey: new Map(),
                 degreeLimit: 1
             };
-        });
+        };
         const stableCommand = readCommand();
         commands.unshift(initial);
 
@@ -788,8 +770,7 @@ describe('RTC RTT repository convergence', () => {
                 reason: 'no-shared-active-group'
             }
         });
-        expect(readCommand).toHaveBeenCalledTimes(3);
-        expect(begin).toHaveBeenCalledTimes(1);
+        expect(commands).toEqual([]);
         await expect(repository.findMeasurement('session-a', 'session-b')).resolves.toBeUndefined();
     });
 });

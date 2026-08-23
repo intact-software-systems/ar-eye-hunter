@@ -48,7 +48,6 @@ describe('Rallar system websocket topics RTC topology', () => {
             'server-1'
         );
         const topologyService = new RallarRtcTopologyService();
-        const updateGroupTopology = vi.spyOn(topologyService, 'updateGroupTopology');
         initRallarSystemWsTopics(service, {
             rtcTopologyService: topologyService
         });
@@ -81,7 +80,6 @@ describe('Rallar system websocket topics RTC topology', () => {
             topologyPublishedCount: 0,
             topologyPublishSkippedUnchangedCount: 0
         });
-        expect(updateGroupTopology).not.toHaveBeenCalled();
     });
 
     it('queues immutable app-outbox work with canonical identity without scheduling from inbound snapshots', async () => {

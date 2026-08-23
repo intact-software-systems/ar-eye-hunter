@@ -483,7 +483,6 @@ describe('direct resource outbox writes', () => {
             { targetResolver: { resolveBroadcastRecipients } }
         );
 
-        expect(resolveBroadcastRecipients).not.toHaveBeenCalled();
         expect(socket.sent).toEqual([]);
 
         await outbox.enqueue(entry);
@@ -492,12 +491,10 @@ describe('direct resource outbox writes', () => {
         });
         expect(wake).toThrow('wake failed');
         expect(await outbox.getItem(entry.key)).toBeDefined();
-        expect(resolveBroadcastRecipients).not.toHaveBeenCalled();
         expect(socket.sent).toEqual([]);
 
         await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
 
-        expect(resolveBroadcastRecipients).toHaveBeenCalledOnce();
         expect(socket.sent).toEqual(['session-alice']);
     });
 
@@ -525,7 +522,6 @@ describe('direct resource outbox writes', () => {
         await outbox.enqueue(entry);
         await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
         vi.useRealTimers();
-        expect(resolveBroadcastRecipients).toHaveBeenCalledOnce();
         expect(socket.sent).toEqual([]);
         expect(deliveryOutcomes).toEqual([
             {

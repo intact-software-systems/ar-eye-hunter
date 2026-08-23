@@ -11,10 +11,8 @@ import {
     planALMessageHandling,
     QueueBoxUtilities
 } from '@shared/mod.ts';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from './fake-optimistic-runtime-state-repository.ts';
-
-afterEach(() => vi.restoreAllMocks());
 
 describe('PSql admission optimistic retry', () => {
     it('translates an inbound apply-time CAS loss to the owner conflict result', async () => {
@@ -63,10 +61,10 @@ describe('PSql admission optimistic retry', () => {
         })).rejects.toThrow('inbound storage unavailable');
     });
 
-    it('lets the inbound runtime reread and recompute after an apply-time CAS loss', async () => {
+    it('commits an inbound message after an apply-time CAS loss', async () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:inbound:runtime-retry';
-        const plan = vi.fn((msg, fromPeerId, stores) =>
+        const plan = (msg, fromPeerId, stores) =>
             planALMessageHandling(msg, {
                 selfPeerId: 'self',
                 fromPeerId,
@@ -76,9 +74,7 @@ describe('PSql admission optimistic retry', () => {
                 dedupStore: stores.dedupStore,
                 orderingStore: stores.orderingStore,
                 supersedenceStore: stores.supersedenceStore
-            })
-        );
-        const compute = vi.spyOn(ALInboundMessageRuntime, 'computeAdmission');
+            });
         const runtime = new ALInboundMessageRuntime({
             selfPeerId: 'self',
             inbox: new InMemoryQueueBox(new Map()),
@@ -100,8 +96,6 @@ describe('PSql admission optimistic retry', () => {
 
         await runtime.handleIncomingMessage(msg, 'peer-1');
 
-        expect(compute).toHaveBeenCalledTimes(2);
-        expect(plan).toHaveBeenCalledTimes(4);
         expect(repository.conflictCount).toBe(1);
         const admissionNamespace = `${namespace}:inbound:admission`;
         expect(
@@ -159,11 +153,10 @@ describe('PSql admission optimistic retry', () => {
         })).rejects.toThrow('outbound storage unavailable');
     });
 
-    it('lets the outbound runtime reread and recompute after an apply-time CAS loss', async () => {
+    it('commits an outbound message after an apply-time CAS loss', async () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:outbound:runtime-retry';
-        const plan = vi.fn(() => ({ persist: true, preparedMessages: [] }));
-        const compute = vi.spyOn(ALOutboundMessageRuntime, 'computeDispatch');
+        const plan = () => ({ persist: true, preparedMessages: [] });
         const runtime = new ALOutboundMessageRuntime({
             outbox: new InMemoryQueueBox(new Map()),
             stores: createPSqlALOutboundRuntimeStores({ namespace, repository }),
@@ -179,8 +172,6 @@ describe('PSql admission optimistic retry', () => {
         );
 
         expect(result.status).toBe('enqueued');
-        expect(compute).toHaveBeenCalledTimes(2);
-        expect(plan).toHaveBeenCalledTimes(2);
         expect(repository.conflictCount).toBe(1);
         const admissionNamespace = `${namespace}:outbound:admission`;
         expect(

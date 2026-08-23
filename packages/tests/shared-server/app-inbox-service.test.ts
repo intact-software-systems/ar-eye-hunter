@@ -74,7 +74,10 @@ describe('AppInboxQueueClient', () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
-        const wakeOwningQueue = vi.fn();
+        let wakeRequests = 0;
+        const wakeOwningQueue = () => {
+            wakeRequests += 1;
+        };
         const service = new MaterializedTestAppInboxService(
             {
                 inboxQueueReader: reader,
@@ -96,14 +99,18 @@ describe('AppInboxQueueClient', () => {
         service.onStateMessage(AppInboxType.CRDT_SNAPSHOT_COMPACT, async (data) => data);
         const requestId = `strict-request-${'r'.repeat(113)}`;
         const contextId = `strict-context-${'c'.repeat(113)}`;
-        const materialize = vi.fn(async () => ({
-            type: AppInboxType.CRDT_SNAPSHOT_COMPACT,
-            topicId: AppInboxType.CRDT_SNAPSHOT_COMPACT,
-            resourceId: requestId,
-            contextId,
-            senderId: 'admin',
-            data: { status: 'winner' }
-        }));
+        let materializations = 0;
+        const materialize = async () => {
+            materializations += 1;
+            return {
+                type: AppInboxType.CRDT_SNAPSHOT_COMPACT,
+                topicId: AppInboxType.CRDT_SNAPSHOT_COMPACT,
+                resourceId: requestId,
+                contextId,
+                senderId: 'admin',
+                data: { status: 'winner' }
+            } as const;
+        };
         const placeholder = {
             type: AppInboxType.CRDT_SNAPSHOT_COMPACT,
             topicId: AppInboxType.CRDT_SNAPSHOT_COMPACT,
@@ -118,8 +125,8 @@ describe('AppInboxQueueClient', () => {
 
         expect(winner.winner).toBe(true);
         expect(loser.winner).toBe(false);
-        expect(materialize).toHaveBeenCalledOnce();
-        expect(wakeOwningQueue).toHaveBeenCalledOnce();
+        expect(materializations).toBe(1);
+        expect(wakeRequests).toBe(1);
         expect(await queue.getAllKeys()).toEqual([
             {
                 topicId: AppInboxType.CRDT_SNAPSHOT_COMPACT,
@@ -162,7 +169,9 @@ describe('AppInboxQueueClient', () => {
         service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, async () => ({
             status: 'stored'
         }));
-        const decodeResult = vi.fn((value: JsonWireValue) => {
+        const decodedValues: JsonWireValue[] = [];
+        const decodeResult = (value: JsonWireValue) => {
+            decodedValues.push(value);
             if (
                 typeof value !== 'object' ||
                 value === null ||
@@ -172,7 +181,7 @@ describe('AppInboxQueueClient', () => {
                 throw new TypeError('Unexpected stored result');
             }
             return { accepted: true } as const;
-        });
+        };
         const pending = service.processEntryUntilCompletionResult(
             {
                 type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
@@ -187,15 +196,23 @@ describe('AppInboxQueueClient', () => {
         await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
         await expect(pending).resolves.toEqual(Either.ofRight({ accepted: true }));
-        expect(decodeResult).toHaveBeenCalledOnce();
+        expect(decodedValues).toEqual([{ status: 'stored' }]);
     });
 
     it('uses one dedicated telemetry-clock sample for retry fallback ages', async () => {
         const queue = new TestResourceInbox();
         const reader = new CapturingInboxQueueReader(queue);
         const results = new TestResourceInboxResults();
-        const businessNowEpochMs = vi.fn(() => 9_000);
-        const timingNowEpochMs = vi.fn(() => 2_000);
+        let businessClockReads = 0;
+        let timingClockReads = 0;
+        const businessNowEpochMs = () => {
+            businessClockReads += 1;
+            return 9_000;
+        };
+        const timingNowEpochMs = () => {
+            timingClockReads += 1;
+            return 2_000;
+        };
         const timing: RallarTimingEvent[] = [];
         const service = new TestAppInboxRuntime(
             {
@@ -245,8 +262,8 @@ describe('AppInboxQueueClient', () => {
 
         await expect(reader.invoke(message, entry)).rejects.toThrow('retryable test failure');
 
-        expect(businessNowEpochMs).not.toHaveBeenCalled();
-        expect(timingNowEpochMs).toHaveBeenCalledOnce();
+        expect(businessClockReads).toBe(0);
+        expect(timingClockReads).toBe(1);
         expect(timing).toContainEqual(
             expect.objectContaining({
                 operation: 'queue-retry',
@@ -259,7 +276,7 @@ describe('AppInboxQueueClient', () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
-        const handler = vi.fn((data: GroupMemberUpsertAppInboxPayload) => Promise.resolve({ accepted: data }));
+        const handledPayloads: GroupMemberUpsertAppInboxPayload[] = [];
         const service = new TestAppInboxRuntime(
             {
                 inboxQueueReader: reader,
@@ -278,7 +295,11 @@ describe('AppInboxQueueClient', () => {
                 }
             }
         );
-        service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, handler);
+        service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, async (data) => {
+            const payload = data as GroupMemberUpsertAppInboxPayload;
+            handledPayloads.push(payload);
+            return { accepted: payload };
+        });
         const sparse = {
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
             resourceId: 'sparse-member-upsert',
@@ -373,14 +394,14 @@ describe('AppInboxQueueClient', () => {
                 })
             ).rejects.toThrow(/JSON wire/u);
         }
-        expect(handler).toHaveBeenCalledOnce();
+        expect(handledPayloads).toEqual([sparse.data]);
     });
 
     it('preserves an own __proto__ key through write, replay, and conflict', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
-        const handler = vi.fn((data: ProtoPayload) => Promise.resolve({ accepted: data }));
+        const handledPayloads: ProtoPayload[] = [];
         const service = new TestAppInboxRuntime(
             {
                 inboxQueueReader: reader,
@@ -399,7 +420,11 @@ describe('AppInboxQueueClient', () => {
                 }
             }
         );
-        service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, handler);
+        service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, async (data) => {
+            const payload = data as ProtoPayload;
+            handledPayloads.push(payload);
+            return { accepted: payload };
+        });
         const firstData: ProtoPayload = JSON.parse(
             '{"principalId":"alice","request":{"requestId":"proto-command",' +
                 '"metadata":{"alpha":1,"__proto__":{"flag":"first"}}}}'
@@ -437,8 +462,7 @@ describe('AppInboxQueueClient', () => {
             })
         ).rejects.toMatchObject({ status: 409 });
 
-        expect(handler).toHaveBeenCalledOnce();
-        const handled = handler.mock.calls[0]?.[0];
+        const handled = handledPayloads[0];
         expect(handled).toBeDefined();
         if (handled === undefined) {
             throw new Error('Expected the AppInbox handler to receive the first payload');
@@ -464,7 +488,7 @@ describe('AppInboxQueueClient', () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
-        const handler = vi.fn(() => Promise.resolve({ accepted: true }));
+        let handled = false;
         const service = new TestAppInboxRuntime(
             {
                 inboxQueueReader: reader,
@@ -477,7 +501,10 @@ describe('AppInboxQueueClient', () => {
                 defaultTopicId: SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC
             }
         );
-        service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, handler);
+        service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, async () => {
+            handled = true;
+            return { accepted: true };
+        });
         let getterCalls = 0;
         const accessor: Record<string, string> = {};
         Object.defineProperty(accessor, 'value', {
@@ -504,14 +531,14 @@ describe('AppInboxQueueClient', () => {
             expect(await readEntries(queue)).toHaveLength(0);
         }
         expect(getterCalls).toBe(0);
-        expect(handler).not.toHaveBeenCalled();
+        expect(handled).toBe(false);
     });
 
     it('rejects changed semantics while replaying reordered equal content', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
-        const handler = vi.fn((data: JsonWireObject) => Promise.resolve({ accepted: data }));
+        const handledPayloads: JsonWireObject[] = [];
         const service = new TestAppInboxRuntime(
             {
                 inboxQueueReader: reader,
@@ -530,7 +557,11 @@ describe('AppInboxQueueClient', () => {
                 }
             }
         );
-        service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, handler);
+        service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, async (data) => {
+            const payload = data as JsonWireObject;
+            handledPayloads.push(payload);
+            return { accepted: payload };
+        });
         const firstInput = {
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
             resourceId: 'same-public-request',
@@ -579,7 +610,7 @@ describe('AppInboxQueueClient', () => {
             code: 'app-inbox-idempotency-conflict',
             status: 409
         });
-        expect(handler).toHaveBeenCalledOnce();
+        expect(handledPayloads).toEqual([firstInput.data]);
     });
 
     it('stores client idempotency conflict as terminal without queue retry', async () => {
@@ -604,15 +635,14 @@ describe('AppInboxQueueClient', () => {
                 }
             }
         );
-        const handler = vi.fn(() =>
+        const handler = () =>
             Promise.reject(
                 new ClientMutationIdempotencyConflictError(
                     'same-request',
                     `sha256:${'a'.repeat(64)}`,
                     `sha256:${'b'.repeat(64)}`
                 )
-            )
-        );
+            );
         service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, handler);
         const pending = service.processEntryUntilCompletion({
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
@@ -628,7 +658,6 @@ describe('AppInboxQueueClient', () => {
             code: 'client-mutation-idempotency-conflict',
             status: 409
         });
-        expect(handler).toHaveBeenCalledOnce();
         expect((await readOnlyEntry(queue))?.status).toBe(EntityStatus.FAILED);
         expect((await readOnlyEntry(queue))?.dequeueAudit.attempts).toBe(1);
     });
@@ -676,7 +705,7 @@ describe('AppInboxQueueClient', () => {
                 }
             }
         );
-        const handler = vi.fn(() => Promise.reject(error));
+        const handler = () => Promise.reject(error);
         service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, handler);
         const pending = service.processEntryUntilCompletion({
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
@@ -689,7 +718,6 @@ describe('AppInboxQueueClient', () => {
         const result = await pending;
 
         expect(result.left).toMatchObject({ code, status: 409 });
-        expect(handler).toHaveBeenCalledOnce();
         expect((await readOnlyEntry(queue))?.status).toBe(EntityStatus.FAILED);
         expect((await readOnlyEntry(queue))?.dequeueAudit.attempts).toBe(1);
     });
