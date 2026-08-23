@@ -512,7 +512,6 @@ function configReceipt(): GroupTopologyConfigMutationReceipt {
             presenceVersion: 0
         },
         eventId: null,
-        outboxId: 'handler-request:config-outbox',
         outboxIds: ['handler-request:config-outbox']
     };
 }

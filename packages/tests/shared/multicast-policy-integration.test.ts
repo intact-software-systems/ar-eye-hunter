@@ -595,7 +595,6 @@ function createGroupSnapshot(memberSessionIds: readonly string[]): GroupSnapshot
     const audit = createAuditStamp('owner');
 
     return {
-        stateRevision: 1,
         causalRevision: {
             groupRevision: 1,
             presenceRevision: 0

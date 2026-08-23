@@ -35,7 +35,10 @@ describe('runtime-state guarded batches', () => {
         })).toBeDefined();
     });
 
-    it.each([
+    const invalidBatches: ReadonlyArray<readonly [
+        string,
+        Parameters<typeof validateRuntimeStateGuardedBatch>[0]
+    ]> = [
         ['put guard', {
             guard: {
                 operation: 'put',
@@ -79,7 +82,9 @@ describe('runtime-state guarded batches', () => {
                 expireAtTimestamp: FUTURE_MS
             }]
         }]
-    ])('rejects %s before SQL', (_label, input) => {
+    ];
+
+    it.each(invalidBatches)('rejects %s before SQL', (_label, input) => {
         expect(() => validateRuntimeStateGuardedBatch(input)).toThrow(
             /runtime state guarded batch/iu
         );

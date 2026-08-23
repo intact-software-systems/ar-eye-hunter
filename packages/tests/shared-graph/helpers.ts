@@ -45,7 +45,6 @@ export function createGroupSnapshot(
     }
 
     return {
-        stateRevision: membershipVersion,
         causalRevision: {
             groupRevision: membershipVersion,
             presenceRevision: membershipVersion

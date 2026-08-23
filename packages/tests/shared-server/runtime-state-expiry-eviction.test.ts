@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 describe('runtime state expiry eviction', () => {
     it('deletes expired rows across all runtime_state_store namespaces', async () => {
-        const excludedNamespaceInputs: readonly string[][] = [];
+        const excludedNamespaceInputs: string[][] = [];
         const repository = {
             deleteAllExpired: async (excludedNamespaces: readonly string[]) => {
                 excludedNamespaceInputs.push([...excludedNamespaces]);
@@ -28,7 +28,7 @@ describe('runtime state expiry eviction', () => {
     });
 
     it('passes caller-owned protected namespaces to generic expiry eviction', async () => {
-        const excludedNamespaceInputs: readonly string[][] = [];
+        const excludedNamespaceInputs: string[][] = [];
         const repository = {
             deleteAllExpired: async (excludedNamespaces: readonly string[]) => {
                 excludedNamespaceInputs.push([...excludedNamespaces]);
@@ -103,7 +103,7 @@ describe('runtime state expiry eviction', () => {
         'runs immediately and schedules the $label until stopped',
         async ({ options, intervalMs, excludedNamespaces }) => {
             vi.useFakeTimers();
-            const evictionInputs: readonly string[][] = [];
+            const evictionInputs: string[][] = [];
             const repository = {
                 deleteAllExpired: async (excluded: readonly string[]) => {
                     evictionInputs.push([...excluded]);

@@ -4,6 +4,7 @@ import { PSqlOutboundAdmissionBackend } from '@shared-server/al-runtime/postgres
 import {
     ALInboundMessageRuntime,
     ALOutboundMessageRuntime,
+    type ALInboundMessageRuntimeInput,
     createALInboundAdmissionStore,
     createALOutboundAdmissionStore,
     InMemoryQueueBox,
@@ -64,7 +65,11 @@ describe('PSql admission optimistic retry', () => {
     it('commits an inbound message after an apply-time CAS loss', async () => {
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:inbound:runtime-retry';
-        const plan = (msg, fromPeerId, stores) =>
+        const plan: ALInboundMessageRuntimeInput['planIncomingMessage'] = (
+            msg,
+            fromPeerId,
+            stores
+        ) =>
             planALMessageHandling(msg, {
                 selfPeerId: 'self',
                 fromPeerId,

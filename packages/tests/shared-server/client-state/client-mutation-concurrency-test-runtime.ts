@@ -170,11 +170,6 @@ export function createService(
     return createClientStateService({
         runtimeRepository,
         now: () => nowEpochMs,
-        randomId: (() => {
-            let next = 0;
-            return () => `id-${nowEpochMs}-${++next}`;
-        })(),
-        sleep: () => Promise.resolve(),
         serviceId: 'client-service',
         timing
     });

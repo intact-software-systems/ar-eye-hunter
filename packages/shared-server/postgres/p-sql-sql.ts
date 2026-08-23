@@ -2,13 +2,17 @@ export type PSqlParameter = string | number | boolean | bigint | Date | null | u
 export type PSqlRows = readonly (object | undefined)[];
 
 export interface PSqlQuery {
-    <Rows extends PSqlRows>(
+    <Result>(
         strings: TemplateStringsArray,
         ...values: readonly PSqlParameter[]
-    ): Promise<Rows>;
+    ): Promise<Result>;
 }
 
-export interface PSqlSql extends PSqlQuery {
+export interface PSqlSql {
+    <Result>(
+        strings: TemplateStringsArray,
+        ...values: readonly PSqlParameter[]
+    ): Promise<Result>;
     (values: readonly PSqlParameter[]): object;
     begin<T>(fn: (sql: PSqlSql) => Promise<T>): Promise<T>;
 }

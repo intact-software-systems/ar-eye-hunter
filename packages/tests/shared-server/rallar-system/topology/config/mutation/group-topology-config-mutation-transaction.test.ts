@@ -79,7 +79,6 @@ describe('group topology config mutation transaction shell', () => {
 function createService(): GroupTopologyConfigMutationService {
     const runtimeRepository = new FakeRuntimeStateRepository();
     return new GroupTopologyConfigMutationService({
-        readiness: { ensure: async () => undefined },
         configRepository: new GroupTopologyConfigRepository(runtimeRepository),
         groupStateRepository: new GroupStateRepository(runtimeRepository),
         nowEpochMs: () => 20_000,

@@ -100,10 +100,7 @@ const storedTestValueCodec: RuntimeStateJsonPersistenceCodec<StoredTestValue> = 
         return { value: value.value };
     },
     decode(value) {
-        if (!isStoredTestValue(value)) {
-            throw new TypeError('Stored test value does not match the current contract');
-        }
-        return { value: value.value };
+        return decodeStoredTestValue(value);
     }
 };
 
@@ -114,12 +111,18 @@ function createProvider(
     return new RuntimeStateJsonPersistenceProvider(repository, namespace, storedTestValueCodec);
 }
 
-function isStoredTestValue(value: JsonWireValue): value is StoredTestValue {
-    return typeof value === 'object' &&
-        value !== null &&
-        !Array.isArray(value) &&
-        Object.keys(value).length === 1 &&
-        typeof value.value === 'number';
+function decodeStoredTestValue(value: JsonWireValue): StoredTestValue {
+    if (!isJsonWireObject(value) ||
+        Object.keys(value).length !== 1 ||
+        typeof value.value !== 'number'
+    ) {
+        throw new TypeError('Stored test value does not match the current contract');
+    }
+    return { value: value.value };
+}
+
+function isJsonWireObject(value: JsonWireValue): value is Readonly<Record<string, JsonWireValue>> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function createRepository(): RuntimeStateRepositoryLike {

@@ -131,7 +131,6 @@ export function createSimulationGroupSnapshot(
     const ownerPrincipalId = sessionIds[0];
 
     return {
-        stateRevision: snapshotVersion * 2,
         causalRevision: {
             groupRevision: snapshotVersion,
             presenceRevision: snapshotVersion

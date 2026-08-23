@@ -218,7 +218,6 @@ function createSnapshot(
     appointment: ReturnType<typeof createRallarGroupDirectorAppointment>
 ): GroupSnapshot {
     return {
-        stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 1 },
         group: createTestGroup({
             applicationId: 'app-1',
@@ -301,7 +300,6 @@ function createPolicySnapshot(
     const activeMemberCount = input.members.filter((member) => member.status === 'active').length;
 
     return {
-        stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 1 },
         group: createTestGroup({
             applicationId: 'app-1',

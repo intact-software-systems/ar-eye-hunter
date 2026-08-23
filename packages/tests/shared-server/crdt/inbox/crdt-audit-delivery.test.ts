@@ -76,7 +76,11 @@ describe('CRDT audit delivery', () => {
         const recorded: RallarCrdtAuditEvent[] = [];
         registerCrdtAuditDelivery({
             outboxQueueReader,
-            auditSink: { record: (event) => recorded.push(event) }
+            auditSink: {
+                record: (event) => {
+                    recorded.push(event);
+                }
+            }
         });
         const handler = outboxQueueReader.requireHandler(CRDT_AUDIT_APP_OUTBOX_TYPE);
 

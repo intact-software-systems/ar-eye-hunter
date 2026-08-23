@@ -116,7 +116,6 @@ describe('Postgres transaction write boundary', () => {
         const handlerRegistry = new AppInboxHandlerRegistry(
             {
                 inboxQueueReader: new InboxQueueReader(new InMemoryQueueBox()),
-                resourceInboxRepository: new ResourceInboxRepository(database.sql),
                 resourceInboxResultsRepository: new ResourceInboxResultsRepository(database.sql),
                 database: database.sql
             },
