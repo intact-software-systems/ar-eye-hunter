@@ -13,6 +13,9 @@
       "DOM"
     ],
     "paths": {
+      "@api-v1/*": [
+        "../../apps/api-v1/*"
+      ],
       "@shared-web/*": [
         "../../packages/shared-web/*"
       ],
