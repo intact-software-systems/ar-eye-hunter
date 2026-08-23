@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import { startApiProcess } from '../../src/runtime/api-process-startup.ts';
 
-Deno.test('API process waits for runtime readiness before listener and queue workers', async () => {
+Deno.test('API process binds HTTP before runtime readiness and waits to start queue workers', async () => {
     const events: string[] = [];
     let resolveRuntimeReadiness: () => void = () => undefined;
     const runtimeReadiness = new Promise<void>((resolve) => {
@@ -23,7 +23,7 @@ Deno.test('API process waits for runtime readiness before listener and queue wor
         }
     });
 
-    assert.deepEqual(events, []);
+    assert.deepEqual(events, ['http-listener']);
 
     resolveRuntimeReadiness();
     const startup = await startupPromise;
@@ -32,7 +32,7 @@ Deno.test('API process waits for runtime readiness before listener and queue wor
     assert.deepEqual(events, ['http-listener', 'queue-workers']);
 });
 
-Deno.test('API process does not bind HTTP or start workers after readiness failure', async () => {
+Deno.test('API process closes bound HTTP without starting workers after readiness failure', async () => {
     const events: string[] = [];
     const startupError = new Error('topology replay failed');
     const startup = startApiProcess({
@@ -49,7 +49,7 @@ Deno.test('API process does not bind HTTP or start workers after readiness failu
     });
 
     await assert.rejects(startup, startupError);
-    assert.deepEqual(events, ['cleanup:no-http']);
+    assert.deepEqual(events, ['http-listener', 'cleanup:http']);
 });
 
 Deno.test('API process closes bound HTTP and owned resources when worker startup fails', async () => {

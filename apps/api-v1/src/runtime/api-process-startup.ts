@@ -14,8 +14,8 @@ export async function startApiProcess<THttpServer>(
 ): Promise<ApiProcessStartup<THttpServer>> {
     let httpServer: THttpServer | undefined;
     try {
-        await options.runtimeReadiness;
         httpServer = options.listen();
+        await options.runtimeReadiness;
         options.startQueueWorkers();
 
         return { httpServer };

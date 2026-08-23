@@ -26,7 +26,8 @@
     "strictReadAuthorization": true
   },
   "ice": {
-    "mode": "metered"
+    "mode": "metered",
+    "region": "eu"
   },
   "blackBox": {
     "operatorToken": {
