@@ -4,8 +4,8 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
-import { RuntimeStateJsonStore } from '../../../runtime-state/RuntimeStateJsonStore.ts';
-import type { RuntimeStateRepositoryLike } from '../../../runtime-state/RuntimeStateRepository.ts';
+import { RuntimeStateJsonStore } from '../../../runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import { sha256CanonicalJson } from '../../group-state/mutation/group-state-crypto.ts';
 import { compareRtcTopologyIdentifiers } from '../persistence/rtc-topology-identifiers.ts';
 import type { GroupTopologyPlanningAuthority } from '../planning/group-topology-planning-authority.ts';

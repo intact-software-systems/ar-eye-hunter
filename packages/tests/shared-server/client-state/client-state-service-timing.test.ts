@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createTimedClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-timing.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 
@@ -81,7 +81,7 @@ const TIMED_COMPUTED = {
         requestId: TIMED_COMMAND.requestId
     }
 } as never as Parameters<ClientStateService['write']>[1];
-const TIMED_TRANSACTION = {} as PSqlTransactionSql;
+const TIMED_TRANSACTION = {} as PSqlSql;
 
 interface TimedClientStateServiceFixture {
     readonly calls: string[];

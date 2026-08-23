@@ -1,5 +1,5 @@
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import type { AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/app-inbox-transaction-writer.ts';
 import {
@@ -181,7 +181,7 @@ export class ClientStateInboxHandler {
     }
 
     private async writeComputedMutation(
-        transaction: PSqlTransactionSql,
+        transaction: PSqlSql,
         computed: Exclude<ClientMutationComputed, { outcome: 'idempotency-conflict'; }>,
         lifecycleComputed: WsSessionGenerationLifecycleComputed | undefined
     ): Promise<void> {

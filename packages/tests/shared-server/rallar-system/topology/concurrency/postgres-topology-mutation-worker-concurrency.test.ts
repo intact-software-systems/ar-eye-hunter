@@ -4,10 +4,10 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { expectPendingDirectResourceOutboxEvidence, findDirectResourceOutboxEvidence } from '../../../direct-resource-outbox-evidence.ts';
 import { findSingleRetriedAppInboxAttemptSequence } from '../../../fixtures/postgres-app-inbox-worker-runtime.ts';

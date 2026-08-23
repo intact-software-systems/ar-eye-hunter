@@ -1,4 +1,4 @@
-import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import type {
     RtcTopologyDeliveryAppendInput,
     RtcTopologyDeliveryAppendResult
@@ -6,7 +6,7 @@ import type {
 
 export interface RtcTopologyDeliveryAppendPort {
     appendOrValidate(
-        transaction: PSqlTransactionSql,
+        transaction: PSqlSql,
         input: RtcTopologyDeliveryAppendInput
     ): Promise<RtcTopologyDeliveryAppendResult>;
 }

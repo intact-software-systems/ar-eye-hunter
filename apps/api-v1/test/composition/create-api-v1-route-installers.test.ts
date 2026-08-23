@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
 
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
-import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { authenticationRequired } from '../../src/services/request-auth-service.ts';
 
@@ -217,6 +218,12 @@ class UnusedRuntimeStateRepository implements RuntimeStateRepositoryLike {
     }
 
     findAllEntries(): Promise<never> {
+        return rejectUnusedOperation();
+    }
+
+    readRuntimeStateBatch(
+        _selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
         return rejectUnusedOperation();
     }
 

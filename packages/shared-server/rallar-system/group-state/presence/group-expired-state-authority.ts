@@ -1,6 +1,6 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { validateRuntimeStateExpiredAuthority } from '../../../runtime-state/RuntimeStateExpiredEntry.ts';
-import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
+import { validateRuntimeStateExpiredAuthority } from '../../../runtime-state/runtime-state-expired-entry.ts';
+import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
 import {
     groupStateGroupStorageKey,
     groupStatePresenceSessionStorageKey
@@ -10,33 +10,33 @@ export function validateGroupExpiredStateAuthority(
     input: Readonly<{
         ref: GroupRef;
         targetSessionId: string | null;
-        group: unknown;
+        group: object | null;
         expiredGroupEntry: RuntimeStateEntry | null;
-        targetPresence: unknown;
+        targetPresence: object | null;
         expiredTargetPresenceEntry: RuntimeStateEntry | null;
     }>
 ): void {
-    validateRuntimeStateExpiredAuthority(
-        input.group,
-        input.expiredGroupEntry,
-        groupStateGroupStorageKey(input.ref),
-        'Group read'
-    );
+    validateRuntimeStateExpiredAuthority({
+        live: input.group,
+        expiredEntry: input.expiredGroupEntry,
+        expectedKey: groupStateGroupStorageKey(input.ref),
+        label: 'Group read'
+    });
     if (input.targetSessionId === null) {
         if (input.expiredTargetPresenceEntry) {
             throw new TypeError('Presence read has expired authority without a target session');
         }
         return;
     }
-    validateRuntimeStateExpiredAuthority(
-        input.targetPresence,
-        input.expiredTargetPresenceEntry,
-        groupStatePresenceSessionStorageKey({
+    validateRuntimeStateExpiredAuthority({
+        live: input.targetPresence,
+        expiredEntry: input.expiredTargetPresenceEntry,
+        expectedKey: groupStatePresenceSessionStorageKey({
             ...input.ref,
             sessionId: input.targetSessionId
         }),
-        'Presence read'
-    );
+        label: 'Presence read'
+    });
 }
 
 export function toExpiredAwareInsertCandidate<T>(

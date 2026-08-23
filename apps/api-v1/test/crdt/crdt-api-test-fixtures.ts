@@ -7,7 +7,7 @@ import {
     type RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
 
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
 
 import { createCrdtMutationService } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-service.ts';
@@ -38,7 +38,7 @@ export function withCompetingWrite(
     afterCompetingWrite: () => void
 ): PSqlSql {
     let compete = true;
-    const begin = async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>) => {
+    const begin = async <T>(write: (transaction: PSqlSql) => Promise<T>) => {
         if (compete) {
             compete = false;
             const repository = new PSqlCrdtMutationRepository(

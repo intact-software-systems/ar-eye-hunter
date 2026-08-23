@@ -1,6 +1,6 @@
 import type { GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
-import type { RuntimeStateEntryValue } from '../../../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
 
 import {
     assertExactKeys,

@@ -9,7 +9,7 @@ import {
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
+import type { PSqlSql } from '../p-sql-sql.ts';
 import { ResourceInboxRow, rowsToMap, toDomain, toPgTimestamp, toSystemDate } from './repository-utils.ts';
 import { requeueObservedResourceInboxDeliveryFailure } from './resource-inbox-delivery-failure.ts';
 import { writeMaterializedResourceInboxEntry } from './write-materialized-resource-inbox-entry.ts';
@@ -51,7 +51,7 @@ export class ResourceInboxRepository {
      */
     async begin<T>(fn: (repo: ResourceInboxRepository) => Promise<T>): Promise<T> {
         const newVar = await this.sql.begin<T>(
-            async (sql: PSqlTransactionSql) => {
+            async (sql: PSqlSql) => {
                 return await fn(new ResourceInboxRepository(sql));
             }
         );

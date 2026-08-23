@@ -1,5 +1,9 @@
 import { type GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import type {
+    RuntimeStateReadBatchSelection,
+    RuntimeStateReadBatchSelector
+} from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import {
     groupStateGroupStorageKey,
     groupStateMemberStorageKey,
@@ -8,7 +12,7 @@ import {
     groupStatePresenceSummaryStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import type { AuditStamp, Group, GroupMember } from '@shared/api/group-types.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { createSnapshotAssemblyMutationRead } from '../../group-state-persistence-mutation-read-fixtures.ts';
 import { groupMemberStorageKey, groupRef, groupStorageKey, storedEntry } from '../mutation/group-mutation-test-runtime.ts';
@@ -41,8 +45,8 @@ describe('GroupStateRepository persistence', () => {
             code: 'group-state-repository-invariant-corruption'
         });
     });
-    it('fails closed when a persistence list repeats an inactive member', async () => {
-        const runtime = new FakeRuntimeStateRepository();
+    it('fails closed when a batch persistence result repeats an inactive member', async () => {
+        const runtime = new DuplicatingInactiveMemberRepository();
         const repository = new GroupStateRepository(runtime);
         const ref = groupRef('duplicate-invited-member');
         const read = createSnapshotAssemblyMutationRead();
@@ -69,19 +73,7 @@ describe('GroupStateRepository persistence', () => {
         await repository.putGroup(group);
         await repository.putMember(owner);
         await repository.putMember(invited);
-        const findEntriesByPrefix = runtime.findEntriesByPrefix.bind(runtime);
-        vi.spyOn(runtime, 'findEntriesByPrefix').mockImplementation(async (namespace, keyPrefix) => {
-            const entries = await findEntriesByPrefix(namespace, keyPrefix);
-            if (namespace !== 'group-state:members') {
-                return entries;
-            }
-            const invitedEntry = entries.find((entry) => JSON.parse(entry.value).principalId === 'bob');
-            return invitedEntry ? [...entries, invitedEntry] : entries;
-        });
-
-        await expect(repository.readSnapshot(ref)).rejects.toMatchObject({
-            code: 'group-state-repository-invariant-corruption'
-        });
+        await expect(repository.readSnapshot(ref)).rejects.toThrow(/not uniquely ordered/iu);
     });
 
     it('rejects canonically keyed incomplete persisted rows at every public read boundary', async () => {
@@ -361,6 +353,26 @@ describe('GroupStateRepository persistence', () => {
         });
     });
 });
+
+class DuplicatingInactiveMemberRepository extends FakeRuntimeStateRepository {
+    override async readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
+        const selections = await super.readRuntimeStateBatch(selectors);
+        return selections.map((selection, index) => {
+            const selector = selectors[index];
+            if (selector?.kind !== 'prefix' || selector.namespace !== 'group-state:members') {
+                return selection;
+            }
+            const invitedEntry = selection.entries.find(
+                (entry) => JSON.parse(entry.value).principalId === 'bob'
+            );
+            return invitedEntry
+                ? { ...selection, entries: [...selection.entries, invitedEntry] }
+                : selection;
+        });
+    }
+}
 
 function requireMutationGroupAndActor(read: GroupMutationRead): asserts read is
     & GroupMutationRead

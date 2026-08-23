@@ -8,8 +8,8 @@ import type {
     ClientSnapshot
 } from '@shared/api/client-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
-import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
-import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
+import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
+import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../runtime-state/runtime-state-repository.ts';
 import type { PersistedAuthSession } from '../auth/persistence/auth-persistence-contracts.ts';
 import type { ClientSessionExpiryCandidate } from '../presence/session-expiry.ts';
 import type { StateEventListQuery } from '../state-events/state-event-listing.ts';
@@ -69,7 +69,7 @@ export type ClientStateService = Readonly<{
         computed: ClientMutationComputed
     ): void;
     write(
-        transaction: PSqlTransactionSql,
+        transaction: PSqlSql,
         computed: ClientMutationComputedWrite
     ): Promise<ClientMutationReceipt>;
     listExpiredSessionCandidates(atEpochMs: number): Promise<readonly ClientSessionExpiryCandidate[]>;

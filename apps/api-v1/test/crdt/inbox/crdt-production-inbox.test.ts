@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { RALLAR_CRDT_OPERATION_VERSION, RALLAR_CRDT_PROTOCOL_VERSION, type RallarCrdtDocumentRef, type RallarCrdtUpdateEnvelope } from '@shared/crdt/mod.ts';
 
@@ -420,7 +420,7 @@ function withOneCrdtConflict(database: PSqlSql, onConflict: () => void): PSqlSql
             if (property !== 'begin') {
                 return Reflect.get(target, property, receiver);
             }
-            return async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>) =>
+            return async <T>(write: (transaction: PSqlSql) => Promise<T>) =>
                 await database.begin(async (transaction) => {
                     const conflicting = new Proxy(transaction, {
                         apply: (_transaction, _thisArgument, argumentsList) => {
@@ -451,7 +451,7 @@ function withInjectedTransactionFailure(
             if (property !== 'begin') {
                 return Reflect.get(target, property, receiver);
             }
-            return async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>) =>
+            return async <T>(write: (transaction: PSqlSql) => Promise<T>) =>
                 await database.begin(async (transaction) => {
                     let wsOutboxWrites = 0;
                     const failing = new Proxy(transaction, {
@@ -483,14 +483,33 @@ function withInjectedTransactionFailure(
 
 function executeSql(
     sql: PSqlSql,
-    parts: TemplateStringsArray | readonly unknown[],
+    parts: unknown,
     values: readonly unknown[]
-): unknown {
-    return isTemplateStringsArray(parts) ? sql(parts, ...values) : sql(parts);
+): object | Promise<object> {
+    requirePSqlParameters(values);
+    if (isTemplateStringsArray(parts)) {
+        return sql<object>(parts, ...values);
+    }
+    requirePSqlParameters(parts);
+    return sql(parts);
 }
 
 function isTemplateStringsArray(value: unknown): value is TemplateStringsArray {
     return Array.isArray(value) && 'raw' in value;
+}
+
+function requirePSqlParameters(
+    value: unknown
+): asserts value is readonly PSqlParameter[] {
+    if (
+        !Array.isArray(value) ||
+        !value.every((candidate) =>
+            candidate === null || candidate === undefined ||
+            ['string', 'number', 'boolean', 'bigint', 'object'].includes(typeof candidate)
+        )
+    ) {
+        throw new TypeError('Expected a current PSql parameter list');
+    }
 }
 
 class RecordingOutboxQueueReader extends OutboxQueueReader {

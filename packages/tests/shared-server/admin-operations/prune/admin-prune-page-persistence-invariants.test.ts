@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { PSqlAdminPruneRepository } from '@shared-server/postgres/admin-operations/p-sql-admin-prune-repository.ts';
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
     decodeAdminPruneWork,
     toAdminPruneOutbox,

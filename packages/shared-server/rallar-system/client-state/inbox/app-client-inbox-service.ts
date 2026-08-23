@@ -3,7 +3,7 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { isCompletedOrFailed } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import type { PSqlSql } from '../../../postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import type { AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
 import {

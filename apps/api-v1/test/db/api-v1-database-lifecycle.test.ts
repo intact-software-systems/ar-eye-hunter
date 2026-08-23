@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { ApiV1DatabaseConfiguration, ApiV1PGliteEvidenceConfiguration } from '../../src/configuration/api-v1-configuration.ts';
 import {
     constructApiV1DatabaseLifecycle,

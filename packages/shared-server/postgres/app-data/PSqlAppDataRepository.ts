@@ -8,7 +8,7 @@ import type {
     AppDataUpsertIfRevisionInput,
     AppDataUpsertInput
 } from '../../app-data/AppDataRepository.ts';
-import type { PSqlSql } from '../PostgresSqlClient.ts';
+import type { PSqlSql } from '../p-sql-sql.ts';
 
 type AppDataRow = Readonly<{
     app_namespace: string;

@@ -1,8 +1,8 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import { runInTransaction } from '@shared-server/postgres/run-in-transaction.ts';
+import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
 import {
     EntityStatus,
     toResourceEntryWithUpdatedResource,
@@ -28,13 +28,13 @@ export interface AppInboxMutationTransactionResult<DurableResult, AfterCommitRes
 export interface AppInboxMutationTransactionWriter {
     writeMutation<Result>(
         context: AppInboxMessageContext,
-        write: (transaction: PSqlTransactionSql) => Promise<Result>
+        write: (transaction: PSqlSql) => Promise<Result>
     ): Promise<Result>;
 
     writeMutationWithAfterCommitResult<DurableResult, AfterCommitResult>(
         context: AppInboxMessageContext,
         write: (
-            transaction: PSqlTransactionSql
+            transaction: PSqlSql
         ) => Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>>
     ): Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>>;
 }
@@ -77,7 +77,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
 
     async writeMutation<R>(
         context: AppInboxMessageContext,
-        write: (transaction: PSqlTransactionSql) => Promise<R>
+        write: (transaction: PSqlSql) => Promise<R>
     ): Promise<R> {
         return await this.writeFinalizedMutation(context, async (transaction) => {
             const durableResult = await write(transaction);
@@ -88,7 +88,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
     async writeMutationWithAfterCommitResult<DurableResult, AfterCommitResult>(
         context: AppInboxMessageContext,
         write: (
-            transaction: PSqlTransactionSql
+            transaction: PSqlSql
         ) => Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>>
     ): Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>> {
         return await this.writeFinalizedMutation(context, async (transaction) => {
@@ -100,7 +100,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
     private async writeFinalizedMutation<DurableResult, ReturnResult>(
         context: AppInboxMessageContext,
         write: (
-            transaction: PSqlTransactionSql
+            transaction: PSqlSql
         ) => Promise<AppInboxMutationFinalization<DurableResult, ReturnResult>>
     ): Promise<ReturnResult> {
         this.ensurePending(context);
@@ -177,7 +177,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         context: AppInboxMessageContext,
         details: RallarTimingDetails,
         write: (
-            transaction: PSqlTransactionSql,
+            transaction: PSqlSql,
             repositories: Readonly<{
                 inbox: ResourceInboxRepository;
                 results: ResourceInboxResultsRepository;
@@ -194,7 +194,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
                 details
             },
             async () =>
-                await runInTransaction(
+                await runInPSqlTransaction(
                     this.options.database,
                     async (transaction) =>
                         await write(transaction, {

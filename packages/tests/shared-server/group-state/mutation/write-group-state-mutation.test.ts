@@ -6,8 +6,8 @@ import {
     groupStateIdempotencyStorageKey,
     groupStateMemberStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
-import type { RuntimeStateGuardedBatch } from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
-import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';

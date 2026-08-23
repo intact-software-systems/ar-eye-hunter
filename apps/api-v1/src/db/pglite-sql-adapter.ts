@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
 type PGliteQueryExecutor = Readonly<{
     query<T>(query: string, params?: unknown[]): Promise<{ rows: T[]; }>;
@@ -11,8 +11,8 @@ type PGliteSavepointState = {
     nextId: number;
 };
 
-type PGliteSavepointSql = PSqlTransactionSql & {
-    savepoint<T>(fn: (sql: PSqlTransactionSql) => Promise<T>): Promise<T>;
+type PGliteSavepointSql = PSqlSql & {
+    savepoint<T>(fn: (sql: PSqlSql) => Promise<T>): Promise<T>;
 };
 
 type PGliteSqlArrayFragment = Readonly<{
@@ -77,11 +77,11 @@ function createSqlCallable(options: SqlCallableOptions): PSqlSql | PGliteSql {
 }
 
 function attachPGliteBegin(sql: PSqlSql, options: SqlCallableOptions): void {
-    sql.begin = async <T>(fn: (transactionSql: PSqlTransactionSql) => Promise<T>): Promise<T> => {
+    sql.begin = async <T>(fn: (transactionSql: PSqlSql) => Promise<T>): Promise<T> => {
         await options.ready;
 
         if (options.inTransaction) {
-            return await fn(sql as PSqlTransactionSql);
+            return await fn(sql as PSqlSql);
         }
 
         return await options.raw.transaction(async (tx: PGliteTransactionExecutor) => {
@@ -93,7 +93,7 @@ function attachPGliteBegin(sql: PSqlSql, options: SqlCallableOptions): void {
                 savepointState: { nextId: 0 }
             });
 
-            return await fn(txSql as PSqlTransactionSql);
+            return await fn(txSql as PSqlSql);
         });
     };
 }
@@ -108,7 +108,7 @@ function attachPGliteSavepoint(sql: PSqlSql, options: SqlCallableOptions): void 
     }
     const savepointSql = sql as PGliteSavepointSql;
     savepointSql.savepoint = async <T>(
-        fn: (transactionSql: PSqlTransactionSql) => Promise<T>
+        fn: (transactionSql: PSqlSql) => Promise<T>
     ): Promise<T> => {
         const savepointName = `rallar_savepoint_${savepointState.nextId}`;
         savepointState.nextId += 1;

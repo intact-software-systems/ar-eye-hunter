@@ -28,10 +28,14 @@ import { toClientSessionExpiryCandidate } from '@shared-server/rallar-system/pre
 import { defaultClientStateEventStoreFor } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type {
+    RuntimeStateReadBatchSelection,
+    RuntimeStateReadBatchSelector
+} from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { ClientPrincipalRef, ClientSession } from '@shared/api/client-types.ts';
 import type { ConnectClientSessionRequest, StateScope } from '@shared/api/state-types.ts';
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
@@ -156,13 +160,8 @@ describe('client mutation persisted-state validation', () => {
     });
 
     it('fails closed when a persistence list repeats a client instance', async () => {
-        const runtime = new AggregateBarrierRepository();
+        const runtime = new DuplicatingClientInstanceRepository();
         await connect(runtime, 'instance-session', 'instance-generation', BASE_EPOCH_MS);
-        const findEntriesByPrefix = runtime.findEntriesByPrefix.bind(runtime);
-        vi.spyOn(runtime, 'findEntriesByPrefix').mockImplementation(async (namespace, keyPrefix) => {
-            const entries = await findEntriesByPrefix(namespace, keyPrefix);
-            return namespace === 'client-state:instances' ? [...entries, ...entries] : entries;
-        });
 
         await expect(
             new ClientStateRepository(runtime).readSnapshot(principalRef('alice'))
@@ -352,6 +351,20 @@ describe('client mutation persisted-state validation', () => {
         ).toThrow(ClientMutationRejectedError);
     });
 });
+
+class DuplicatingClientInstanceRepository extends AggregateBarrierRepository {
+    override async readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
+        const selections = await super.readRuntimeStateBatch(selectors);
+        return selections.map((selection, index) => {
+            const selector = selectors[index];
+            return selector?.kind === 'prefix' && selector.namespace === 'client-state:instances'
+                ? { ...selection, entries: [...selection.entries, ...selection.entries] }
+                : selection;
+        });
+    }
+}
 
 const malformedNoOpRequest = {
     username: 'alice',

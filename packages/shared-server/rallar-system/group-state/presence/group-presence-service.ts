@@ -1,5 +1,5 @@
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import type { AppInboxEnqueueInput } from '../../app-inbox/app-inbox-queue-client.ts';
 import { AppInboxType } from '../../app-inbox/app-inbox-queue-client.ts';
 import type {
@@ -18,7 +18,7 @@ import type { GroupMutationComputed } from '../mutation/group-mutation-contracts
 import type { GroupPresenceSessionCleanupAppInboxPayload } from './group-presence-session-cleanup-app-inbox-payload.ts';
 
 type WriteMutation = <Result>(
-    write: (transaction: PSqlTransactionSql) => Promise<Result>
+    write: (transaction: PSqlSql) => Promise<Result>
 ) => Promise<Result>;
 
 export interface InactiveGroupPresenceResult {

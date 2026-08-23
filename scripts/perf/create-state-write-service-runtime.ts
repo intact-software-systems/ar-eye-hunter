@@ -16,7 +16,7 @@ import {
     createClientStateEventRepository,
     createGroupStateEventRepository
 } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 

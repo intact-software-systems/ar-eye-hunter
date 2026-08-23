@@ -2,13 +2,9 @@ import {
     configureServerWsQBoxALRuntimeStores,
     resolveServerWsQBoxALInboundRuntimeStores,
     resolveServerWsQBoxALOutboundRuntimeStores
-} from '@shared-server/postgres/al-runtime/createPSqlALRuntimeStores.ts';
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+} from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { initResourceInboxExpiryEviction } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import {
-    initRuntimeStateExpiryEviction,
-    PSqlRuntimeStateRepository
-} from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { initPresenceExpiryReconciliation } from '@shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts';
@@ -27,6 +23,8 @@ import {
 } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-runtime-namespaces.ts';
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import { setRtcTopologyOutboxWriteSink } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { RuntimeStateExpiryWorker } from '@shared-server/runtime-state/postgres/runtime-state-expiry-worker.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 
 import type {
@@ -117,7 +115,10 @@ export interface ApiV1RuntimeConstructionOperations {
     createMutationRuntime(input: CreateApiV1MutationRuntimeInput): ApiV1MutationRuntime;
     createRtcTopologyRuntime(input: CreateApiRtcTopologyRuntimeInput): ApiRtcTopologyRuntime;
     createTopologyServices(input: CreateApiV1TopologyServicesInput): ApiV1TopologyServices;
-    configureWsRuntimeStores(name: string, database: PSqlSql): void;
+    configureWsRuntimeStores(
+        name: string,
+        repository: ApiV1MutationRuntime['runtimeStateRepository']
+    ): void;
     startResourceInboxExpiry(
         repository: ApiV1MutationRuntime['resourceInboxRepository']
     ): void;
@@ -171,7 +172,10 @@ export function constructApiV1Runtime(
         timing: input.timing
     });
     input.backgroundTasks.register(rtcTopology.stop);
-    operations.configureWsRuntimeStores(input.wsRuntimeName, input.database);
+    operations.configureWsRuntimeStores(
+        input.wsRuntimeName,
+        mutation.runtimeStateRepository
+    );
     operations.startResourceInboxExpiry(mutation.resourceInboxRepository);
     operations.startRuntimeStateExpiry({
         database: input.database,
@@ -232,8 +236,8 @@ const PRODUCTION_OPERATIONS: ApiV1RuntimeConstructionOperations = {
     },
     createRtcTopologyRuntime: createApiRtcTopologyRuntime,
     createTopologyServices: createApiV1TopologyServices,
-    configureWsRuntimeStores: (name, database) => {
-        configureServerWsQBoxALRuntimeStores(name, { sql: database });
+    configureWsRuntimeStores: (name, repository) => {
+        configureServerWsQBoxALRuntimeStores(name, { repository });
     },
     startResourceInboxExpiry,
     startRuntimeStateExpiry: startRuntimeStateExpiry,
@@ -348,10 +352,10 @@ function startRuntimeStateExpiry(input: StartRuntimeStateExpiryInput): void {
         },
         initialiseRuntimeStateExpiryEviction: () =>
             input.startupGeneration.startRuntimeStateExpiryEviction(() =>
-                initRuntimeStateExpiryEviction(
-                    new PSqlRuntimeStateRepository(input.database),
-                    { excludedNamespaces: RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES }
-                )
+                new RuntimeStateExpiryWorker({
+                    repository: new PSqlRuntimeStateRepository(input.database),
+                    excludedNamespaces: RTC_RTT_PROTECTED_RUNTIME_STATE_NAMESPACES
+                })
             )
     }).catch((error) =>
         console.error(

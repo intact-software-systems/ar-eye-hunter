@@ -30,7 +30,7 @@ import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { ClientPrincipalRef, ClientSession } from '@shared/api/client-types.ts';
 import type { ConnectClientSessionRequest, StateScope } from '@shared/api/state-types.ts';
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
@@ -112,18 +112,12 @@ describe('client mutation transaction convergence', () => {
         expect(timing.filter((event) => event.operation === 'mutation.read')).toHaveLength(1);
     });
 
-    it('leaves retry delay scheduling outside the client service and keeps failed attempts atomic', async () => {
+    it('exhausts conflicting client writes and keeps failed attempts atomic', async () => {
         const runtime = new AlwaysConflictingPrincipalRepository();
-        const delays: number[] = [];
         const timing: RallarTimingEvent[] = [];
         const service = createClientStateService({
             runtimeRepository: runtime,
             now: () => 1_000,
-            randomId: () => 'event-conflict',
-            sleep: (delayMs: number) => {
-                delays.push(delayMs);
-                return Promise.resolve();
-            },
             serviceId: 'client-service',
             timing: (event) => timing.push(event)
         });
@@ -136,7 +130,6 @@ describe('client mutation transaction convergence', () => {
             .catch((caught) => caught);
 
         expect(error).toBeInstanceOf(RuntimeStateWriteConflictError);
-        expect(delays).toEqual([]);
         expect(runtime.principalGuardCount).toBe(8);
         expect(runtime.transactionBeginCount).toBe(8);
         expect([...runtime.data.keys()].filter((key) => key.startsWith('client-state:'))).toEqual([]);
@@ -150,8 +143,6 @@ describe('client mutation transaction convergence', () => {
         const service = createClientStateService({
             runtimeRepository: runtime,
             now: () => 1_000,
-            randomId: () => 'event-order',
-            sleep: () => Promise.resolve(),
             serviceId: 'client-service',
             timing: (event) => timing.push(event)
         });

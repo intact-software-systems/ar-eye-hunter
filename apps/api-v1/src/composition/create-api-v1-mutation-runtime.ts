@@ -1,4 +1,4 @@
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import {
     createAuthSessionRepository,
@@ -11,7 +11,6 @@ import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/
 import {
     ResourceInboxResultsRepository
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import {
     createAppInboxRetryExhaustionHandler,
     createAppInboxRetryExhaustionRecoveryHandler,
@@ -47,6 +46,7 @@ import {
     type RallarGroupFormationMetricsRecorder
 } from '@shared-server/rallar-system/observability/formation-metrics.ts';
 import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { DequeueResourceEntryOptions, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';

@@ -20,7 +20,7 @@ import {
     validateRtcTopologyDeliveryStreamId,
     type RtcTopologyDeliveryBoundaryNumber
 } from '../../rallar-system/topology/replay/rtc-topology-delivery-validation.ts';
-import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
+import type { PSqlSql } from '../p-sql-sql.ts';
 import { compactRtcTopologyDeliveryEntries } from './compact-rtc-topology-delivery-entries.ts';
 
 interface StreamRow {
@@ -93,7 +93,7 @@ export class PSqlRtcTopologyDeliveryRepository implements RtcTopologyDeliveryApp
     }
 
     async appendOrValidate(
-        transaction: PSqlTransactionSql,
+        transaction: PSqlSql,
         input: RtcTopologyDeliveryAppendInput
     ): Promise<RtcTopologyDeliveryAppendResult> {
         validateRtcTopologyDeliveryAppendInput(input);

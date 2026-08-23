@@ -8,7 +8,7 @@ import type {
     GroupScope
 } from '@shared/api/group-types.ts';
 
-import type { RuntimeStateEntryRead, RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntryRead, RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
 import { assertStoredIdempotency, canonicalStoredGroup } from './group-aggregate-repository.ts';
 import { canonicalStoredMember } from './group-membership-repository.ts';

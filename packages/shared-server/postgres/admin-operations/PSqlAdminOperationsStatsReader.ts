@@ -23,7 +23,7 @@ import type {
     AdminOperationsReadInput,
     AdminOperationsStatsReader
 } from '../../rallar-system/admin-operations/admin-operations-service.ts';
-import type { PSqlSql } from '../PostgresSqlClient.ts';
+import type { PSqlSql } from '../p-sql-sql.ts';
 import { groupEventWorkspaceKey } from '../rallar-system/group-event-workspace-key.ts';
 import { PSqlClientStateAdminStatsReader } from './p-sql-client-state-admin-stats-reader.ts';
 

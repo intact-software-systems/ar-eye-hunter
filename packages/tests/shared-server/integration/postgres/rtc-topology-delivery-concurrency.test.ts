@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-delivery-repository.ts';
 import type {
     RtcTopologyDeliveryAppendInput,

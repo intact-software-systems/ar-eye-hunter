@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/rallar-middleware.ts';
 
 import { createApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
@@ -71,12 +71,12 @@ function createDatabaseProbe(): DatabaseProbe {
     let transactions = 0;
     function query<T>(
         _strings: TemplateStringsArray,
-        ..._values: unknown[]
+        ..._values: readonly PSqlParameter[]
     ): Promise<T>;
-    function query(_values: readonly unknown[]): unknown;
+    function query(_values: readonly PSqlParameter[]): object;
     function query(
-        _input: TemplateStringsArray | readonly unknown[],
-        ..._values: unknown[]
+        _input: TemplateStringsArray | readonly PSqlParameter[],
+        ..._values: readonly PSqlParameter[]
     ): never {
         queries += 1;
         throw new Error('query not expected');

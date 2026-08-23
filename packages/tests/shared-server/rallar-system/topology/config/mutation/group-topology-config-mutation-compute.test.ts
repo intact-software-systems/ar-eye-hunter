@@ -124,7 +124,7 @@ describe('group topology config mutation compute', () => {
         const writeHelper = writerSource.indexOf('export async function writeTopologyConfigMutation');
         expect(writeHelper).toBeGreaterThan(-1);
         const writer = writerSource.slice(writeHelper);
-        expect(writer).toContain('transaction: PSqlTransactionSql');
+        expect(writer).toContain('transaction: PSqlSql');
         expect(writer).not.toContain('.begin(');
         expect(appInboxSource.slice(read, write)).not.toContain('.begin(');
     });

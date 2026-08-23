@@ -1,5 +1,5 @@
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { isRuntimeStateGuardedBatchRepositoryLike } from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
+import { isRuntimeStateGuardedBatchRepositoryLike } from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { describe, expect, it } from 'vitest';
 import { createRuntimeStatePostgresSql } from '../../postgres-runtime-state-client-fixtures.ts';
 

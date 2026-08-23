@@ -1,4 +1,4 @@
-import type { RuntimeStateEntry } from './RuntimeStateRepository.ts';
+import type { RuntimeStateEntry } from './runtime-state-repository.ts';
 
 export function validateRuntimeStateExpiredEntry(
     input: unknown,
@@ -22,38 +22,51 @@ export function validateRuntimeStateExpiredEntry(
     ) {
         throw new TypeError('Expired runtime state entry fields are invalid');
     }
-    if (entry.key !== expectedKey || typeof entry.value !== 'string') {
+    const key = entry.key;
+    const value = entry.value;
+    if (key !== expectedKey || typeof value !== 'string') {
         throw new TypeError('Expired runtime state entry identity is invalid');
     }
+    const expireAtTimestamp = entry.expireAtTimestamp;
     if (
-        !Number.isSafeInteger(entry.expireAtTimestamp) ||
-        (entry.expireAtTimestamp as number) < 0 ||
-        (entry.expireAtTimestamp as number) > observedAtEpochMs
+        typeof expireAtTimestamp !== 'number' ||
+        !Number.isSafeInteger(expireAtTimestamp) ||
+        expireAtTimestamp < 0 ||
+        expireAtTimestamp > observedAtEpochMs
     ) {
         throw new TypeError('Expired runtime state entry lifecycle is invalid');
     }
+    const revision = entry.revision;
     if (
-        !Number.isSafeInteger(entry.revision) || Object.is(entry.revision, -0) ||
-        (entry.revision as number) < 0
+        typeof revision !== 'number' ||
+        !Number.isSafeInteger(revision) ||
+        Object.is(revision, -0) ||
+        revision < 0
     ) {
         throw new TypeError('Expired runtime state entry revision is invalid');
     }
+    const updatedTimestamp = entry.updatedTimestamp;
     if (
-        typeof entry.updatedTimestamp !== 'string' ||
-        entry.updatedTimestamp.length === 0 ||
-        Number.isNaN(Date.parse(entry.updatedTimestamp))
+        typeof updatedTimestamp !== 'string' ||
+        updatedTimestamp.length === 0 ||
+        Number.isNaN(Date.parse(updatedTimestamp))
     ) {
         throw new TypeError('Expired runtime state entry timestamp is invalid');
     }
-    return entry as RuntimeStateEntry;
+    return { key, value, expireAtTimestamp, updatedTimestamp, revision };
+}
+
+export interface RuntimeStateExpiredAuthorityInput {
+    readonly live: object | null | undefined;
+    readonly expiredEntry: RuntimeStateEntry | null;
+    readonly expectedKey: string;
+    readonly label: string;
 }
 
 export function validateRuntimeStateExpiredAuthority(
-    live: unknown,
-    expiredEntry: RuntimeStateEntry | null,
-    expectedKey: string,
-    label: string
+    input: RuntimeStateExpiredAuthorityInput
 ): void {
+    const { live, expiredEntry, expectedKey, label } = input;
     if (!expiredEntry) {
         return;
     }

@@ -3,12 +3,12 @@ import {
     RuntimeStateJsonStore,
     type RuntimeStateEntryRead,
     type RuntimeStateEntryValue
-} from '../../../runtime-state/RuntimeStateJsonStore.ts';
+} from '../../../runtime-state/runtime-state-json-store.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
     RuntimeStateRepositoryLike
-} from '../../../runtime-state/RuntimeStateRepository.ts';
+} from '../../../runtime-state/runtime-state-repository.ts';
 import { hashAuthSecret } from '../credentials/hash-auth-secret.ts';
 import {
     decodePersistedAgentSessionTicket,

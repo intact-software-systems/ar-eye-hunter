@@ -1,15 +1,17 @@
-import { PSqlJsonPersistenceProvider } from '@shared-server/postgres/runtime-state/PSqlJsonPersistenceProvider.ts';
-import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
+import {
+    RuntimeStateJsonPersistenceProvider,
+    type RuntimeStateJsonPersistenceCodec
+} from '@shared-server/runtime-state/runtime-state-json-persistence-provider.ts';
+import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { describe, expect, it } from 'vitest';
 
-describe('PSqlJsonPersistenceProvider', () => {
+describe('RuntimeStateJsonPersistenceProvider', () => {
     it('stores, lists, and removes values within a namespace', async () => {
         const repository = createRepository();
-        const provider = new PSqlJsonPersistenceProvider<{ value: number; }>(
-            repository,
-            'al-runtime:inbound:dedup'
-        );
+        const provider = createProvider(repository, 'al-runtime:inbound:dedup');
 
         await provider.setItem(
             'msg-1',
@@ -32,10 +34,7 @@ describe('PSqlJsonPersistenceProvider', () => {
 
     it('lazy-evicts expired values', async () => {
         const repository = createRepository();
-        const provider = new PSqlJsonPersistenceProvider<{ value: number; }>(
-            repository,
-            'al-runtime:outbound:repair-attempts'
-        );
+        const provider = createProvider(repository, 'al-runtime:outbound:repair-attempts');
         const now = Date.now();
 
         await provider.setItem('active', { value: 1 }, { expireAtTimestamp: now + 60_000 });
@@ -47,14 +46,8 @@ describe('PSqlJsonPersistenceProvider', () => {
 
     it('deleteExpired only removes expired values in the current namespace', async () => {
         const repository = createRepository();
-        const inbound = new PSqlJsonPersistenceProvider<{ value: number; }>(
-            repository,
-            'al-runtime:inbound:ordering'
-        );
-        const outbound = new PSqlJsonPersistenceProvider<{ value: number; }>(
-            repository,
-            'al-runtime:outbound:ordering'
-        );
+        const inbound = createProvider(repository, 'al-runtime:inbound:ordering');
+        const outbound = createProvider(repository, 'al-runtime:outbound:ordering');
         const now = Date.now();
 
         await inbound.setItem('expired', { value: 1 }, { expireAtTimestamp: now - 1 });
@@ -68,14 +61,8 @@ describe('PSqlJsonPersistenceProvider', () => {
 
     it('isolates values by namespace', async () => {
         const repository = createRepository();
-        const inbound = new PSqlJsonPersistenceProvider<{ value: number; }>(
-            repository,
-            'al-runtime:inbound:supersedence'
-        );
-        const outbound = new PSqlJsonPersistenceProvider<{ value: number; }>(
-            repository,
-            'al-runtime:outbound:supersedence'
-        );
+        const inbound = createProvider(repository, 'al-runtime:inbound:supersedence');
+        const outbound = createProvider(repository, 'al-runtime:outbound:supersedence');
 
         await inbound.setItem(
             'presence:room-1',
@@ -91,7 +78,52 @@ describe('PSqlJsonPersistenceProvider', () => {
         expect(await inbound.getItem('presence:room-1')).toEqual({ value: 1 });
         expect(await outbound.getItem('presence:room-1')).toEqual({ value: 2 });
     });
+
+    it('rejects malformed stored values through the current codec', async () => {
+        const repository = createRepository();
+        const namespace = 'al-runtime:outbound:repair-attempts';
+        const provider = createProvider(repository, namespace);
+        await repository.upsert(namespace, 'bad', '{"value":"not-a-number"}', Date.now() + 60_000);
+
+        await expect(provider.getItem('bad')).rejects.toThrow(
+            'Stored test value does not match the current contract'
+        );
+    });
 });
+
+interface StoredTestValue {
+    readonly value: number;
+}
+
+const storedTestValueCodec: RuntimeStateJsonPersistenceCodec<StoredTestValue> = {
+    encode(value) {
+        return { value: value.value };
+    },
+    decode(value) {
+        return decodeStoredTestValue(value);
+    }
+};
+
+function createProvider(
+    repository: RuntimeStateRepositoryLike,
+    namespace: string
+): RuntimeStateJsonPersistenceProvider<StoredTestValue> {
+    return new RuntimeStateJsonPersistenceProvider(repository, namespace, storedTestValueCodec);
+}
+
+function decodeStoredTestValue(value: JsonWireValue): StoredTestValue {
+    if (!isJsonWireObject(value) ||
+        Object.keys(value).length !== 1 ||
+        typeof value.value !== 'number'
+    ) {
+        throw new TypeError('Stored test value does not match the current contract');
+    }
+    return { value: value.value };
+}
+
+function isJsonWireObject(value: JsonWireValue): value is Readonly<Record<string, JsonWireValue>> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 function createRepository(): RuntimeStateRepositoryLike {
     const data = new Map<string, RuntimeStateEntry>();
@@ -106,6 +138,17 @@ function createRepository(): RuntimeStateRepositoryLike {
                 .map((entryKey) => data.get(entryKey))
                 .filter((entry): entry is RuntimeStateEntry => entry !== undefined)
                 .sort((left, right) => left.key.localeCompare(right.key));
+        },
+        async readRuntimeStateBatch(selectors) {
+            const namespaces = new Set(selectors.map((selector) => selector.namespace));
+            return selectRuntimeStateReadBatch(
+                [...namespaces].flatMap((namespace) =>
+                    [...data]
+                        .filter(([compositeKey]) => compositeKey.startsWith(`${namespace}:`))
+                        .map(([, entry]) => ({ namespace, entry }))
+                ),
+                selectors
+            );
         },
         async upsert(namespace, key, value, expireAtTimestamp) {
             const compositeKey = `${namespace}:${key}`;

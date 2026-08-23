@@ -147,7 +147,6 @@ describe('browser heartbeat', () => {
         );
         const newer = {
             ...observed,
-            stateRevision: observed.stateRevision + 1,
             causalRevision: {
                 groupRevision: observed.causalRevision.groupRevision + 1,
                 presenceRevision: observed.causalRevision.presenceRevision
@@ -179,8 +178,7 @@ describe('browser heartbeat', () => {
     });
 
     it('stops and reports auth invalidation after a single client heartbeat 401', async () => {
-        const onAuthInvalid = vi.fn();
-        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        let authInvalidated = false;
         stubFetch(({ url, method }) => {
             if (
                 method === 'POST' &&
@@ -200,16 +198,19 @@ describe('browser heartbeat', () => {
                 workspaceId: 'default'
             },
             policies: { command: { maxAttempts: 3 } },
-            onAuthInvalid
+            onAuthInvalid: () => {
+                authInvalidated = true;
+            }
         });
 
         await vi.waitFor(() => {
-            expect(onAuthInvalid).toHaveBeenCalledOnce();
+            expect(authInvalidated).toBe(true);
         });
         handle.stop();
 
-        expect(fetchCalls.filter((call) => call.url.includes('/heartbeat'))).toHaveLength(1);
-        expect(warn).not.toHaveBeenCalled();
+        expect(fetchCalls.map((call) => call.url)).toEqual([
+            expect.stringContaining('/heartbeat')
+        ]);
     });
 
     it('uses one generation for an active heartbeat and allocates a new one after restart', async () => {

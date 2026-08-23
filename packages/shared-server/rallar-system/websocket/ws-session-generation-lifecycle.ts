@@ -1,10 +1,10 @@
-import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
-import { PSqlRuntimeStateRepository } from '../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
+import { PSqlRuntimeStateRepository } from '../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike
-} from '../../runtime-state/RuntimeStateRepository.ts';
+} from '../../runtime-state/runtime-state-repository.ts';
 
 const SESSION_CLOSE_HIGH_WATER_NAMESPACE = 'ws-session-close-high-water';
 
@@ -95,7 +95,7 @@ export interface WsSessionGenerationLifecycleService {
         read: WsSessionGenerationLifecycleRead
     ): WsSessionGenerationLifecycleComputed;
     write(
-        transaction: PSqlTransactionSql,
+        transaction: PSqlSql,
         computed: WsSessionGenerationLifecycleComputed
     ): Promise<void>;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import {
     AppInboxTransactionWriter,
@@ -32,12 +32,12 @@ type TransactionResult = AppInboxMutationTransactionResult<DurableResult, AfterC
 type ExpectedTransactionWriter = {
     writeMutation<Result>(
         context: AppInboxMessageContext,
-        write: (transaction: PSqlTransactionSql) => Promise<Result>
+        write: (transaction: PSqlSql) => Promise<Result>
     ): Promise<Result>;
     writeMutationWithAfterCommitResult<Durable, AfterCommit>(
         context: AppInboxMessageContext,
         write: (
-            transaction: PSqlTransactionSql
+            transaction: PSqlSql
         ) => Promise<AppInboxMutationTransactionResult<Durable, AfterCommit>>
     ): Promise<AppInboxMutationTransactionResult<Durable, AfterCommit>>;
 };

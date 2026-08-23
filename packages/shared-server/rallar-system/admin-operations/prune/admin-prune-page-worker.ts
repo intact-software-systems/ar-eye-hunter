@@ -1,8 +1,8 @@
 import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import type { PSqlSql, PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
-import { runInTransaction } from '../../../postgres/run-in-transaction.ts';
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
+import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import { requireAdminPrunePageSize, type AdminPruneAppData } from '../inbox/admin-prune-command-codec.ts';
 import {
     decodeAdminPruneWork,
@@ -61,17 +61,17 @@ export type AdminPrunePageRepository = Readonly<{
         }>
     >;
     deletePage(
-        transaction: PSqlTransactionSql,
+        transaction: PSqlSql,
         command: AdminPrunePageWork,
         rowIds: readonly string[]
     ): Promise<number>;
-    writeOutbox(transaction: PSqlTransactionSql, entry: ResourceEntry): Promise<void>;
+    writeOutbox(transaction: PSqlSql, entry: ResourceEntry): Promise<void>;
     writeProgress(
-        transaction: PSqlTransactionSql,
+        transaction: PSqlSql,
         computed: AdminPrunePageComputed
     ): Promise<void>;
     finishReserved(
-        transaction: PSqlTransactionSql,
+        transaction: PSqlSql,
         entry: ResourceEntry,
         finishedAtEpochMs: number
     ): Promise<boolean>;
@@ -216,7 +216,7 @@ export class AdminPrunePageWorker {
     }
 
     async write(
-        transaction: PSqlTransactionSql,
+        transaction: PSqlSql,
         computed: AdminPrunePageComputed,
         entry: ResourceEntry
     ): Promise<void> {
@@ -248,7 +248,7 @@ export class AdminPrunePageWorker {
         const read = await this.read(command);
         const computed = this.compute(command, read);
         this.validate(command, read, computed);
-        await runInTransaction(this.options.database, async (transaction) => {
+        await runInPSqlTransaction(this.options.database, async (transaction) => {
             await this.write(transaction, computed, entry);
         });
         this.options.wakeQueue?.();

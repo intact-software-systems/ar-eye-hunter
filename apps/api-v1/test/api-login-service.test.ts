@@ -1,5 +1,7 @@
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
-import type { RuntimeStateEntry, RuntimeStateTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
+import type { RuntimeStateEntry, RuntimeStateTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import assert from 'node:assert/strict';
 import { login, register } from '../src/services/api-login-service.ts';
 
@@ -133,6 +135,18 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
                 .map(([, entry]) => ({ ...entry }))
                 .sort((left, right) => left.key.localeCompare(right.key))
         );
+    }
+
+    readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
+        return Promise.resolve(selectRuntimeStateReadBatch(
+            [...this.data].map(([compositeKey, entry]) => ({
+                namespace: this.toNamespace(compositeKey),
+                entry
+            })),
+            selectors
+        ));
     }
 
     findEntriesByPrefix(

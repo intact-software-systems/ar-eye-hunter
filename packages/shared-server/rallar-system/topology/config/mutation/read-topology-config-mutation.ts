@@ -12,7 +12,7 @@ export async function readTopologyConfigMutation(
     command: GroupTopologyConfigMutationCommand
 ): Promise<GroupTopologyConfigMutationRead> {
     const exact = await repository.readMutationExactEntries(command.aggregateRef, command.requestId);
-    if (exact.status === 'fallback') {
+    if (exact.status === 'concurrent-change') {
         return await readTopologyConfigMutationSequentially(repository, groupStateRepository, command);
     }
 

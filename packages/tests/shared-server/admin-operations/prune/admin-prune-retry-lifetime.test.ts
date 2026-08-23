@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it } from 'vitest';
 
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
     toAdminPruneOutbox,
     type AdminPrunePageWork,
@@ -88,7 +88,7 @@ describe('admin prune retry lifetime', () => {
         };
         const transaction = (() => undefined) as never;
         const database = Object.assign((() => undefined) as never, {
-            begin: async <T>(write: (sql: PSqlTransactionSql) => Promise<T>): Promise<T> => await write(transaction)
+            begin: async <T>(write: (sql: PSqlSql) => Promise<T>): Promise<T> => await write(transaction)
         }) as PSqlSql;
         const repository: AdminPrunePageRepository = {
             readPage: () => {
@@ -241,8 +241,7 @@ function createDatabase(): PSqlSql {
             ..._values: Parameters<PSqlSql>[0]
         ): Promise<T> => Promise.reject(new Error('Unexpected SQL execution in admin prune compute test')),
         {
-            begin: <T>(_run: (sql: PSqlTransactionSql) => Promise<T>): Promise<T> =>
-                Promise.reject(new Error('Unexpected transaction in admin prune compute test'))
+            begin: <T>(_run: (sql: PSqlSql) => Promise<T>): Promise<T> => Promise.reject(new Error('Unexpected transaction in admin prune compute test'))
         }
     );
     return database;

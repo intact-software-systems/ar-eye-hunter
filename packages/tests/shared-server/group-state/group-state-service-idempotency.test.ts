@@ -111,20 +111,24 @@ describe('GroupStateService command idempotency', () => {
             requestId: 'create-room-6-a'
         });
 
-        await expect(
-            service.createGroup(SCOPE, {
+        try {
+            await service.createGroup(SCOPE, {
                 groupId: groupRef.groupId,
                 displayName: 'Room 6',
                 kind: 'room',
                 joinMode: 'open',
                 createdByPrincipalId: 'alice',
                 requestId: 'create-room-6-b'
-            })
-        ).rejects.toEqual(
-            expect.objectContaining<GroupMutationRejectedError>({
-                message: 'Group already exists: room-6'
-            })
-        );
+            });
+            throw new TypeError('Expected duplicate group creation to be rejected');
+        }
+        catch (error) {
+            expect(error).toBeInstanceOf(GroupMutationRejectedError);
+            if (!(error instanceof GroupMutationRejectedError)) {
+                throw error;
+            }
+            expect(error.message).toBe('Group already exists: room-6');
+        }
 
         const repository = new GroupStateRepository(runtimeRepository);
         expect((await repository.listEvents(groupRef)).map((event) => event.eventType)).toEqual([

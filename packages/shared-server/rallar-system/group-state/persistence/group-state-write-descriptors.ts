@@ -13,7 +13,7 @@ import type {
     RuntimeStateGuardedBatchInsert,
     RuntimeStateGuardedBatchPut,
     RuntimeStateGuardedBatchUpdate
-} from '../../../runtime-state/RuntimeStateGuardedBatch.ts';
+} from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
 import { toSessionPurgeAfterEpochMs } from '../../presence/session-expiry.ts';
 import { type GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
 import { validateGroupMutationIdempotencyRecord } from '../mutation/result-validation/validate-group-mutation-result.ts';

@@ -1,7 +1,7 @@
 import type { AuditStamp, ClientPrincipal, ClientPrincipalRef, ClientSession } from '@shared/api/client-types.ts';
 import type { MutationActor } from '@shared/api/mutation-actor.ts';
-import type { RuntimeStateEntryValue } from '../../../../runtime-state/RuntimeStateJsonStore.ts';
-import type { RuntimeStateEntry } from '../../../../runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateEntry } from '../../../../runtime-state/runtime-state-repository.ts';
 import { ClientMutationRejectedError } from '../../client-state-validation-primitives.ts';
 import type {
     ClientMutationCommand,

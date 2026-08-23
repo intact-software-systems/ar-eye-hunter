@@ -1,5 +1,5 @@
-import { validateRuntimeStateExpiredAuthority } from '@shared-server/runtime-state/RuntimeStateExpiredEntry.ts';
-import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import { validateRuntimeStateExpiredAuthority } from '@shared-server/runtime-state/runtime-state-expired-entry.ts';
+import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
 import { clientStateSessionStorageKey } from '../persistence/client-state-storage-keys.ts';
 
@@ -8,21 +8,21 @@ export function validateClientExpiredSessionAuthority(
         aggregateRef: ClientPrincipalRef;
         clientInstanceId: string | null;
         sessionId: string | null;
-        liveSession: unknown;
+        liveSession: object | null;
         expiredSessionEntry: RuntimeStateEntry | null;
     }>
 ): void {
     if (input.expiredSessionEntry && (input.clientInstanceId === null || input.sessionId === null)) {
         throw new TypeError('Expired client session has no command target');
     }
-    validateRuntimeStateExpiredAuthority(
-        input.liveSession,
-        input.expiredSessionEntry,
-        clientStateSessionStorageKey({
+    validateRuntimeStateExpiredAuthority({
+        live: input.liveSession,
+        expiredEntry: input.expiredSessionEntry,
+        expectedKey: clientStateSessionStorageKey({
             ...input.aggregateRef,
             clientInstanceId: input.clientInstanceId ?? '',
             sessionId: input.sessionId ?? ''
         }),
-        'Client session read'
-    );
+        label: 'Client session read'
+    });
 }

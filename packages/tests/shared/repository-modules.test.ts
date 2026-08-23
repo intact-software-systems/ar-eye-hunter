@@ -390,7 +390,6 @@ describe('repository modules', () => {
         } satisfies GroupSnapshot;
         const staleBySnapshotVersion = {
             ...createGroupSnapshot('group-1', 'Alpha', 99, ['self', 'peer-stale']),
-            stateRevision: 0,
             causalRevision: { groupRevision: 0, presenceRevision: 0 },
             group: {
                 ...createGroupSnapshot('group-1', 'Alpha', 99, ['self', 'peer-stale']).group,
@@ -416,11 +415,9 @@ describe('repository modules', () => {
     it('rejects stale and conflicting group causal revisions', () => {
         const accepted = {
             ...createGroupSnapshot('group-1', 'Alpha', 1, ['session-new']),
-            stateRevision: 2
         } satisfies GroupSnapshot;
         const stale = {
             ...createGroupSnapshot('group-1', 'Stale', 99, ['session-stale']),
-            stateRevision: 1,
             causalRevision: { groupRevision: 0, presenceRevision: 0 }
         } satisfies GroupSnapshot;
         const conflict = {
@@ -994,7 +991,6 @@ function createGroupSnapshot(
     }
 
     return {
-        stateRevision: membershipVersion,
         causalRevision: {
             groupRevision: membershipVersion,
             presenceRevision: membershipVersion

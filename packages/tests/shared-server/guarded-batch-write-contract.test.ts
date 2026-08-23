@@ -9,7 +9,7 @@ const topologyConfigSource = readFileSync(
 describe('authoritative conditional-write structural contract', () => {
     it('keeps topology config writes on the caller transaction without an owned transaction or retry', () => {
         const writer = topologyConfigWriter();
-        expect(writer).toMatch(/writeTopologyConfigMutation\(\s*transaction:\s*PSqlTransactionSql/);
+        expect(writer).toMatch(/writeTopologyConfigMutation\(\s*transaction:\s*PSqlSql/);
         expect(writer).not.toMatch(/\.begin\s*\(/);
         expect(writer).not.toMatch(/waitForRuntimeStateWriteRetry/);
         expect(writer).not.toMatch(/for\s*\([^)]*attempt/);

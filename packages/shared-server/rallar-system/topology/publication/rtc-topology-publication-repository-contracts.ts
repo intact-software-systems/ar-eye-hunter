@@ -1,6 +1,6 @@
 import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 
-import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import { hashMutationCommand, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { RTC_TOPOLOGY_REPLAY_RETENTION_MS } from '../replay/rtc-topology-replay-policy.ts';
 import { validateWorkClaim, type PersistedBoundaryValue } from './rtc-topology-publication-repository-state.ts';

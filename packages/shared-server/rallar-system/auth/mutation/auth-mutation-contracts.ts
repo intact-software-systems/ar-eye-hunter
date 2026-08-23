@@ -8,8 +8,8 @@ import type {
 } from '@shared/api/api-config.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
-import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
 import type { PreparedAuthUserRegistration } from '../login/prepare-auth-user-registration.ts';
 import type {
     PersistedAgentSessionTicket,

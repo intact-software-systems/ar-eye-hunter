@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
@@ -46,10 +46,16 @@ describe('CRDT audit delivery', () => {
     it('propagates content, decoding, and sink failures without hiding delivery retry', async () => {
         const outboxQueueReader = new RecordingOutboxQueueReader();
         const sinkFailure = new Error('audit sink unavailable');
-        const record = vi.fn(() => {
-            throw sinkFailure;
+        const recorded: RallarCrdtAuditEvent[] = [];
+        registerCrdtAuditDelivery({
+            outboxQueueReader,
+            auditSink: {
+                record: (event) => {
+                    recorded.push(event);
+                    throw sinkFailure;
+                }
+            }
         });
-        registerCrdtAuditDelivery({ outboxQueueReader, auditSink: { record } });
         const handler = outboxQueueReader.requireHandler(CRDT_AUDIT_APP_OUTBOX_TYPE);
         const wrongContentType = createAuditMessage(EVENT);
         Reflect.set(wrongContentType.payload, 'contentType', 'text/plain');
@@ -62,21 +68,26 @@ describe('CRDT audit delivery', () => {
             'CRDT audit outbox event is invalid'
         );
         await expect(handler.onMessage(createAuditMessage(EVENT), createResourceEntry())).rejects.toBe(sinkFailure);
-        expect(record).toHaveBeenCalledOnce();
-        expect(record).toHaveBeenCalledWith(EVENT);
+        expect(recorded).toEqual([EVENT]);
     });
 
     it('records the decoded event once for each successful handler invocation', async () => {
         const outboxQueueReader = new RecordingOutboxQueueReader();
-        const record = vi.fn(() => undefined);
-        registerCrdtAuditDelivery({ outboxQueueReader, auditSink: { record } });
+        const recorded: RallarCrdtAuditEvent[] = [];
+        registerCrdtAuditDelivery({
+            outboxQueueReader,
+            auditSink: {
+                record: (event) => {
+                    recorded.push(event);
+                }
+            }
+        });
         const handler = outboxQueueReader.requireHandler(CRDT_AUDIT_APP_OUTBOX_TYPE);
 
         await handler.onMessage(createAuditMessage(EVENT), createResourceEntry());
         await handler.onMessage(createAuditMessage(EVENT), createResourceEntry());
 
-        expect(record).toHaveBeenCalledTimes(2);
-        expect(record.mock.calls).toEqual([[EVENT], [EVENT]]);
+        expect(recorded).toEqual([EVENT, EVENT]);
     });
 });
 
@@ -110,8 +121,7 @@ function createUnusedDatabase(): PSqlSql {
         <T>(_stringsOrValues: TemplateStringsArray | readonly unknown[], ..._values: unknown[]): Promise<T> =>
             Promise.reject(new Error('Unexpected SQL execution in audit registration test')),
         {
-            begin: <T>(_run: (sql: PSqlTransactionSql) => Promise<T>): Promise<T> =>
-                Promise.reject(new Error('Unexpected transaction in audit registration test'))
+            begin: <T>(_run: (sql: PSqlSql) => Promise<T>): Promise<T> => Promise.reject(new Error('Unexpected transaction in audit registration test'))
         }
     );
     return database;

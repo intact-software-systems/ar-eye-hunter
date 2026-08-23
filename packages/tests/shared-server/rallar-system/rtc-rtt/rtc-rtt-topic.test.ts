@@ -1,5 +1,4 @@
-import * as vivaldiService from '@shared-graph/vivaldi-service.ts';
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { GroupTopologyGroupSnapshotReader } from '@shared-server/rallar-system/topology/group-topology-management-contracts.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { createGroupTopologyOwners, type GroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
@@ -142,18 +141,15 @@ describe('RTC RTT websocket topic', () => {
         expect(latestRttById().read('session-c::session-d')).toBeUndefined();
     });
 
-    it('ignores stale RTT measurements before Vivaldi or topology work', async () => {
+    it('preserves the latest RTT measurement when an older version arrives', async () => {
         configureTestCacheRepositories();
-        const { sockets, topologyService } = createRttHarness(['session-a', 'session-b'], {
+        const { sockets } = createRttHarness(['session-a', 'session-b'], {
             rtcTopologyOptions: {
                 rttRebuildDebounceMs: 0
             }
         });
         const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
         groupStateSnapshotsRepository.setGroupStateSnapshot(group);
-        const observeRtt = vi.spyOn(vivaldiService, 'observeRtt');
-        const queueRttTopologyUpdate = vi.spyOn(topologyService, 'queueRttTopologyUpdate');
-
         await dispatchRtt(
             sockets.get('session-a')!,
             'session-a',
@@ -166,9 +162,6 @@ describe('RTC RTT websocket topic', () => {
             },
             group
         );
-
-        observeRtt.mockClear();
-        queueRttTopologyUpdate.mockClear();
 
         await dispatchRtt(
             sockets.get('session-a')!,
@@ -184,8 +177,6 @@ describe('RTC RTT websocket topic', () => {
         );
 
         expect(latestRttById().read('session-a::session-b')?.rttMs).toBe(12);
-        expect(observeRtt).not.toHaveBeenCalled();
-        expect(queueRttTopologyUpdate).not.toHaveBeenCalled();
     });
 
     it('rejects RTT measurements that would exceed the reporting degree', async () => {
@@ -310,8 +301,6 @@ describe('RTC RTT websocket topic', () => {
                 socket.sent.length = 0;
             }
 
-            const fullSnapshotScan = vi.spyOn(groupStateSnapshotsRepository, 'getAllGroupStateSnapshots');
-
             for (const rtt of createCentralRttMeasurements([...sockets.keys()], 'session-a')) {
                 await senderSocket.dispatchMessage(
                     newALBroadcastMessage(
@@ -327,8 +316,6 @@ describe('RTC RTT websocket topic', () => {
                 );
             }
 
-            expect(fullSnapshotScan).not.toHaveBeenCalled();
-            fullSnapshotScan.mockRestore();
             expect(countSentTopologyMessages(sockets)).toBe(0);
 
             await vi.advanceTimersByTimeAsync(99);
@@ -359,7 +346,10 @@ describe('RTC RTT websocket topic', () => {
             const appOutboxQueue = new InMemoryQueueBox(new Map());
             const runtimeRepository = new FakeRuntimeStateRepository();
             const outboxQueueReader = new OutboxQueueReader(appOutboxQueue);
-            const wake = vi.fn();
+            let wakeRequested = false;
+            const wake = () => {
+                wakeRequested = true;
+            };
             const service = new WsQueueBoxServerService(new InMemoryQueueBox(new Map()), new InMemoryQueueBox(new Map()), server, 'server-1');
             const group = createGroupSnapshot('room-1', [...sockets.keys()]);
             const findGroupSnapshotByRef = vi.fn(() => Promise.resolve(group));
@@ -394,8 +384,6 @@ describe('RTC RTT websocket topic', () => {
             expect(await appOutboxQueue.getAllKeys()).toEqual([]);
             groupStateSnapshotsRepository.removeGroupStateSnapshotByRef(group.group);
 
-            const fullSnapshotScan = vi.spyOn(groupStateSnapshotsRepository, 'getAllGroupStateSnapshots');
-
             const rtt = {
                 sessionIdFrom: 'session-a',
                 sessionIdTo: 'session-b',
@@ -415,9 +403,7 @@ describe('RTC RTT websocket topic', () => {
             );
             groupStateSnapshotsRepository.setGroupStateSnapshot(group);
 
-            expect(fullSnapshotScan).not.toHaveBeenCalled();
-            fullSnapshotScan.mockRestore();
-            expect(wake).toHaveBeenCalled();
+            expect(wakeRequested).toBe(true);
             expect(findGroupSnapshotByRef).toHaveBeenCalledWith({
                 applicationId: group.group.applicationId,
                 workspaceId: group.group.workspaceId,

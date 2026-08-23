@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-delivery-repository.ts';
 import type { RtcTopologyDeliveryAppendInput } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-contracts.ts';
 
@@ -74,7 +74,7 @@ describe('RTC topology delivery append query', () => {
     });
 });
 
-function createSuccessfulAppendTransaction(observedQueries: string[]): PSqlTransactionSql {
+function createSuccessfulAppendTransaction(observedQueries: string[]): PSqlSql {
     const transaction = (async (strings: TemplateStringsArray) => {
         const query = strings.join('?').replace(/\s+/gu, ' ').trim().toLowerCase();
         observedQueries.push(query);
@@ -103,8 +103,8 @@ function createSuccessfulAppendTransaction(observedQueries: string[]): PSqlTrans
             return [APPENDED_ROW];
         }
         throw new Error(`Unexpected RTC topology delivery SQL: ${query}`);
-    }) as unknown as PSqlTransactionSql;
-    transaction.begin = async <T>(write: (sql: PSqlTransactionSql) => Promise<T>) => {
+    }) as unknown as PSqlSql;
+    transaction.begin = async <T>(write: (sql: PSqlSql) => Promise<T>) => {
         return await write(transaction);
     };
     return transaction;

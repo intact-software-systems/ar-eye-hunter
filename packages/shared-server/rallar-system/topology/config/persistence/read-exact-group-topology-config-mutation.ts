@@ -3,18 +3,17 @@ import type {
     StoredGroupTopologyOverride
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import type { RuntimeStateEntryValue } from '../../../../runtime-state/RuntimeStateJsonStore.ts';
+import { resolveRuntimeStateReadBatchLiveValues } from '../../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
 import {
-    isRuntimeStateReadBatchRepositoryLike,
-    validateRuntimeStateReadBatchResult,
     type RuntimeStateReadBatchSelection,
     type RuntimeStateReadBatchSelector
-} from '../../../../runtime-state/RuntimeStateReadBatch.ts';
-import { resolveRuntimeStateReadBatchLiveValues } from '../../../../runtime-state/RuntimeStateReadBatchLiveValues.ts';
+} from '../../../../runtime-state/read-batch/runtime-state-read-batch.ts';
+import { validateRuntimeStateReadBatchResult } from '../../../../runtime-state/read-batch/validate-runtime-state-read-batch-result.ts';
+import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateRepositoryLike
-} from '../../../../runtime-state/RuntimeStateRepository.ts';
+} from '../../../../runtime-state/runtime-state-repository.ts';
 import type {
     GroupTopologyConfigGeneration,
     GroupTopologyConfigGenerationTarget,
@@ -104,7 +103,7 @@ export type GroupTopologyMutationExactReadCodecs = Readonly<{
 }>;
 
 export type GroupTopologyMutationExactReadResult =
-    | Readonly<{ status: 'fallback'; }>
+    | Readonly<{ status: 'concurrent-change'; }>
     | Readonly<{
         status: 'stable';
         invariant: RuntimeStateEntryValue<GroupTopologyConfigInvariantGeneration> | null;
@@ -212,9 +211,6 @@ export async function readGroupTopologyMutationExactEntries(
     ) => Promise<RuntimeStateEntryValue<unknown> | undefined>,
     decoders: GroupTopologyMutationExactReadDecoders
 ): Promise<GroupTopologyMutationExactReadResult> {
-    if (!isRuntimeStateReadBatchRepositoryLike(repository)) {
-        return { status: 'fallback' };
-    }
     const selectors = createExactReadSelectors(locations);
     const selections = validateRuntimeStateReadBatchResult(
         selectors,
@@ -236,7 +232,7 @@ export async function readGroupTopologyMutationExactEntries(
         toLiveEntryValue
     );
     if (resolved.status === 'changed') {
-        return { status: 'fallback' };
+        return { status: 'concurrent-change' };
     }
 
     return {

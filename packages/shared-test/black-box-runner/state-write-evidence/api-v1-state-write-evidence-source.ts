@@ -127,7 +127,7 @@ function toStateWriteEvidenceQuery(sql: Sql | TransactionSql): ApiV1StateWriteEv
     const query: ApiV1StateWriteEvidenceQuery = <Rows extends readonly (object | undefined)[]>(
         strings: TemplateStringsArray,
         ...values: readonly ApiV1StateWriteEvidenceSqlParameter[]
-    ): Promise<Rows> => sql<Rows>(strings, ...values).then((rows) => rows);
+    ): Promise<Rows> => Reflect.apply(sql, sql, [strings, ...values]);
     return query;
 }
 

@@ -1,6 +1,6 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
-import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
-import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
 import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../../topology/persistence/rtc-topology-errors.ts';
 import type { RtcRttEndpointAdmission, RtcRttMutationReceipt } from './rtc-rtt-persistence-contracts.ts';

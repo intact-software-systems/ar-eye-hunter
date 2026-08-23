@@ -14,8 +14,8 @@ import {
     RuntimeStateJsonStore,
     type RuntimeStateEntryRead,
     type RuntimeStateEntryValue
-} from '../../../runtime-state/RuntimeStateJsonStore.ts';
-import type { RuntimeStateRepositoryLike } from '../../../runtime-state/RuntimeStateRepository.ts';
+} from '../../../runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import { filterStateEventsForList, type StateEventListQuery } from '../../state-events/state-event-listing.ts';
 import type { ClientStateEventStore } from '../../state-events/state-event-store.ts';
 import {

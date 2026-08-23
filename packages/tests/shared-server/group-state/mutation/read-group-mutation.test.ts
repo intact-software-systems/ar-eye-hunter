@@ -8,7 +8,7 @@ import {
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
-import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
@@ -189,33 +189,6 @@ describe('GroupStateService mutation exact reads', () => {
         ]);
     });
 
-    it('uses the complete sequential oracle for a marker-less batch method', async () => {
-        const runtime = new MarkerlessReadBatchRuntimeStateRepository();
-        const service = createTestGroupStateService({
-            runtimeRepository: runtime,
-            now: () => 1_000,
-            randomId: () => 'marker-less-id',
-            serviceId: 'marker-less-service'
-        });
-        await service.createGroup(SCOPE, {
-            groupId: 'marker-less',
-            displayName: 'marker-less',
-            kind: 'room',
-            joinMode: 'open',
-            createdByPrincipalId: 'owner',
-            requestId: 'marker-less-seed'
-        });
-
-        const written = await service.updateGroup(SCOPE, 'marker-less', {
-            metadata: { source: 'sequential-oracle' },
-            actorPrincipalId: 'owner',
-            requestId: 'marker-less-update'
-        });
-
-        expect(written.status).toBe('ok');
-        expect(runtime.readBatchCalls).toBe(0);
-    });
-
     it('keeps an expired batch authority read observational', async () => {
         const { runtime: seeded } = await createSeededService('expiry-replacement');
         const runtime = seeded as ExpiryReplacementReadBatchRuntime;
@@ -254,16 +227,6 @@ describe('GroupStateService mutation exact reads', () => {
         expect(runtime.postReplacementFinds).toEqual([]);
     });
 });
-
-class MarkerlessReadBatchRuntimeStateRepository extends FakeRuntimeStateRepository {
-    readonly runtimeStateReadBatchCapability = true as const;
-    readBatchCalls = 0;
-
-    readRuntimeStateBatch(): Promise<readonly never[]> {
-        this.readBatchCalls += 1;
-        throw new Error('Marker-less batch method must not be called');
-    }
-}
 
 class ExpiryReplacementReadBatchRuntime extends ReadBatchFakeRuntimeStateRepository {
     replacementVisible = false;

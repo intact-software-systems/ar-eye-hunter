@@ -1,21 +1,21 @@
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { GroupLifecyclePolicyRepository } from '../../persistence/group-lifecycle-policy-repository.ts';
 
-import type { PSqlTransactionSql } from '../../../../postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import { ResourceInboxRepository } from '../../../../postgres/resource-inbox/ResourceInboxRepository.ts';
-import { PSqlRuntimeStateRepository } from '../../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import {
+    isRuntimeStateGuardedBatchRepositoryLike,
+    type RuntimeStateGuardedBatch,
+    type RuntimeStateGuardedBatchEffect,
+    type RuntimeStateGuardedBatchGuard
+} from '../../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import { validateRuntimeStateGuardedBatchResult } from '../../../../runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
+import { validateRuntimeStateGuardedBatch } from '../../../../runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
 import {
     requireConditionalWrite,
     RuntimeStateWriteConflictError
 } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
-import {
-    isRuntimeStateGuardedBatchRepositoryLike,
-    validateRuntimeStateGuardedBatch,
-    validateRuntimeStateGuardedBatchResult,
-    type RuntimeStateGuardedBatch,
-    type RuntimeStateGuardedBatchEffect,
-    type RuntimeStateGuardedBatchGuard
-} from '../../../../runtime-state/RuntimeStateGuardedBatch.ts';
+import { PSqlRuntimeStateRepository } from '../../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { createTransactionBoundGroupStateRepository } from '../../persistence/group-state-repository.ts';
 import {
     groupStateDeletePresenceDescriptor,
@@ -89,7 +89,7 @@ export function materializeGroupStateGuardedBatch(
 }
 
 export async function writeGroupMutation(
-    transaction: PSqlTransactionSql,
+    transaction: PSqlSql,
     computed: GroupMutationComputedWrite
 ): Promise<GroupMutationReceipt> {
     const materialized = materializeGroupStateGuardedBatch(computed);

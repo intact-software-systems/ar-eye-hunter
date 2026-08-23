@@ -1,4 +1,4 @@
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { RallarServerSystemInstallers } from '@shared-server/rallar-facade/RallarServer.ts';
 import type { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';

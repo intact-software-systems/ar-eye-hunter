@@ -2,10 +2,10 @@ import { spawn } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';

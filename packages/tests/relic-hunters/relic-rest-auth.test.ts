@@ -121,7 +121,6 @@ function snapshot(
     });
 
     return {
-        stateRevision: groupRevision + presenceRevision,
         causalRevision: { groupRevision, presenceRevision },
         group,
         members,

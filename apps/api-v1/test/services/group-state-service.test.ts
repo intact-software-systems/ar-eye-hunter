@@ -1,10 +1,12 @@
 import { type GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
+import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
 import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { readRallarGroupDirectorFromSnapshot } from '@shared/api/group-director.ts';
 import type { GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -1708,6 +1710,18 @@ class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransactionalR
                 .map(([, entry]) => ({ ...entry }))
                 .sort((left, right) => left.key.localeCompare(right.key))
         );
+    }
+
+    readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
+        return Promise.resolve(selectRuntimeStateReadBatch(
+            [...this.data].map(([compositeKey, entry]) => ({
+                namespace: this.toNamespace(compositeKey),
+                entry
+            })),
+            selectors
+        ));
     }
 
     findEntriesByPrefix(

@@ -30,8 +30,8 @@ import type {
 
 import { type AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
-import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
-import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
+import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
+import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../runtime-state/runtime-state-repository.ts';
 import type { PersistedAuthSession } from '../auth/persistence/auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
 import type { RallarTimingSink } from '../observability/timing.ts';
@@ -153,7 +153,7 @@ export type GroupStateMutationService = Readonly<{
         computed: GroupMutationComputed
     ): void;
     write(
-        transaction: PSqlTransactionSql,
+        transaction: PSqlSql,
         computed: GroupMutationComputedWrite
     ): Promise<GroupMutationReceipt>;
 }>;

@@ -1,7 +1,7 @@
 import type { ClientEvent, ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
-import type { RuntimeStateRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateRepositoryLike } from '../../runtime-state/runtime-state-repository.ts';
 import { listRecentStateEvents, listStateEventsPage, type StateEventListQuery } from './state-event-listing.ts';
 
 export type ClientStateEventStore = Readonly<{

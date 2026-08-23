@@ -5,11 +5,11 @@ import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
-import type { PSqlSql, PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { ResourceInboxRepository } from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
-import { runInTransaction } from '../../../postgres/run-in-transaction.ts';
+import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import { requireConditionalWrite } from '../../../runtime-state/optimistic-runtime-state-write.ts';
-import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import { CoalescedAppOutboxWorkService } from '../../app-outbox/coalesced-app-outbox-work-service.ts';
 import type { GroupFormationPresenceSummarySink } from '../../observability/formation-metrics.ts';
 import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '../../topology/mutation/rtc-topology-outbox-entry.ts';
@@ -112,7 +112,7 @@ export class GroupPresenceSummaryWork {
     }
 
     public async write(
-        transaction: PSqlTransactionSql,
+        transaction: PSqlSql,
         computed: GroupPresenceSummaryComputedWork
     ): Promise<void> {
         const repository = createTransactionBoundGroupStateRepository(transaction);
@@ -147,7 +147,7 @@ export class GroupPresenceSummaryWork {
         const read = await this.read(work);
         const computed = this.compute(work, read);
         this.validate(work, read, computed);
-        await runInTransaction(this.options.database, async (transaction) => {
+        await runInPSqlTransaction(this.options.database, async (transaction) => {
             await this.write(transaction, computed);
             const finished = await new ResourceInboxRepository(transaction).finishReserved(
                 entry.key,

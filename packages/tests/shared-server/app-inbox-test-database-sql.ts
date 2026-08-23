@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
@@ -25,11 +25,11 @@ interface CreateAppInboxTestTransactionSqlInput {
 
 export function createAppInboxTestTransactionSql(
     input: CreateAppInboxTestTransactionSqlInput
-): PSqlTransactionSql {
+): PSqlSql {
     const transaction = (async (strings: TemplateStringsArray, ...values: unknown[]) => {
         const query = strings.join('?').replace(/\s+/gu, ' ').trim().toLowerCase();
         return await executeAppInboxTestSql({ ...input, query, values });
-    }) as unknown as PSqlTransactionSql;
+    }) as unknown as PSqlSql;
     transaction.begin = async () => {
         throw new Error('Nested app inbox transaction');
     };

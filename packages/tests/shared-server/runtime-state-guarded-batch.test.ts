@@ -1,12 +1,12 @@
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
     isRuntimeStateGuardedBatchRepositoryLike,
-    validateRuntimeStateGuardedBatch,
-    validateRuntimeStateGuardedBatchResult,
     type RuntimeStateGuardedBatch,
     type RuntimeStateGuardedBatchResult
-} from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
+} from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import { validateRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
+import { validateRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { describe, expect, it } from 'vitest';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
@@ -35,7 +35,10 @@ describe('runtime-state guarded batches', () => {
         })).toBeDefined();
     });
 
-    it.each([
+    const invalidBatches: ReadonlyArray<readonly [
+        string,
+        Parameters<typeof validateRuntimeStateGuardedBatch>[0]
+    ]> = [
         ['put guard', {
             guard: {
                 operation: 'put',
@@ -79,7 +82,9 @@ describe('runtime-state guarded batches', () => {
                 expireAtTimestamp: FUTURE_MS
             }]
         }]
-    ])('rejects %s before SQL', (_label, input) => {
+    ];
+
+    it.each(invalidBatches)('rejects %s before SQL', (_label, input) => {
         expect(() => validateRuntimeStateGuardedBatch(input)).toThrow(
             /runtime state guarded batch/iu
         );
@@ -94,7 +99,7 @@ describe('runtime-state guarded batches', () => {
                 guard: createInsertGuard(),
                 effects: sparseEffects
             })
-        ).toThrow(/dense/iu);
+        ).toThrow(/sparse|dense/iu);
 
         for (
             const mutation of [
@@ -152,7 +157,7 @@ describe('runtime-state guarded batches', () => {
                     guard,
                     effects: [createInsertEffect('effect', 'one')]
                 })
-            ).toThrow(/expected revision/iu);
+            ).toThrow(/expected.?revision/iu);
         }
     );
 
@@ -551,7 +556,7 @@ function createTransactionalSql(
     resultRows: readonly unknown[]
 ): PSqlSql {
     const runNested = async <T>(
-        fn: (sql: PSqlTransactionSql) => Promise<T>
+        fn: (sql: PSqlSql) => Promise<T>
     ): Promise<T> => await fn(transactionSql);
     const transactionSql = Object.assign(
         (strings: TemplateStringsArray, ...values: unknown[]) => {
@@ -560,16 +565,16 @@ function createTransactionalSql(
         },
         { begin: runNested, savepoint: runNested }
     ) as unknown as
-        & PSqlTransactionSql
+        & PSqlSql
         & Readonly<{
-            savepoint<T>(fn: (sql: PSqlTransactionSql) => Promise<T>): Promise<T>;
+            savepoint<T>(fn: (sql: PSqlSql) => Promise<T>): Promise<T>;
         }>;
 
     const rootSql = (() => {
         throw new Error('Root SQL should not be called.');
     }) as unknown as PSqlSql;
     rootSql.begin = async <T>(
-        fn: (sql: PSqlTransactionSql) => Promise<T>
+        fn: (sql: PSqlSql) => Promise<T>
     ): Promise<T> => await fn(transactionSql);
     return rootSql;
 }

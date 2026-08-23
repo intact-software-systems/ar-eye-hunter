@@ -3,7 +3,7 @@ import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 
 import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { RtcTopologyReplayDiagnosticsSink } from './rtc-topology-replay-diagnostics.ts';

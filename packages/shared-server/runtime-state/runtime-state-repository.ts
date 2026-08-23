@@ -1,23 +1,31 @@
-export type RuntimeStateEntry = Readonly<{
-    key: string;
-    value: string;
-    expireAtTimestamp: number;
-    updatedTimestamp: string;
-    revision: number;
-}>;
+import type {
+    RuntimeStateReadBatchSelection,
+    RuntimeStateReadBatchSelector
+} from './read-batch/runtime-state-read-batch.ts';
 
-export type RuntimeStateEntryPageOptions = Readonly<{
-    afterKey?: string;
-    limit: number;
-}>;
+export interface RuntimeStateEntry {
+    readonly key: string;
+    readonly value: string;
+    readonly expireAtTimestamp: number;
+    readonly updatedTimestamp: string;
+    readonly revision: number;
+}
 
-export type RuntimeStateRepositoryLike = Readonly<{
+export interface RuntimeStateEntryPageOptions {
+    readonly afterKey?: string;
+    readonly limit: number;
+}
+
+export interface RuntimeStateRepositoryLike {
     findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined>;
     findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]>;
+    readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]>;
     upsert(namespace: string, key: string, value: string, expireAtTimestamp: number): Promise<void>;
     deleteByKey(namespace: string, key: string): Promise<void>;
     deleteExpired(namespace: string): Promise<number>;
-}>;
+}
 
 export type RuntimeStateConditionalWriteResult =
     | Readonly<{ status: 'applied'; revision: number; }>
@@ -27,7 +35,7 @@ export type RuntimeStateConditionalDeleteResult =
     | Readonly<{ status: 'applied'; }>
     | Readonly<{ status: 'conflict'; }>;
 
-export type RuntimeStateConditionalRepositoryLike = Readonly<{
+export interface RuntimeStateConditionalRepositoryLike {
     insertIfAbsent(
         namespace: string,
         key: string,
@@ -46,23 +54,21 @@ export type RuntimeStateConditionalRepositoryLike = Readonly<{
         key: string,
         expectedRevision: number
     ): Promise<RuntimeStateConditionalDeleteResult>;
-}>;
+}
 
-export type RuntimeStateTransactionalRepositoryLike =
-    & RuntimeStateRepositoryLike
-    & Readonly<{
-        begin<T>(
-            fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>
-        ): Promise<T>;
-        findEntriesByPrefix(
-            namespace: string,
-            keyPrefix: string
-        ): Promise<readonly RuntimeStateEntry[]>;
-        findEntriesByKeys(
-            namespace: string,
-            keys: readonly string[]
-        ): Promise<readonly RuntimeStateEntry[]>;
-    }>;
+export interface RuntimeStateTransactionalRepositoryLike extends RuntimeStateRepositoryLike {
+    begin<T>(
+        fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>
+    ): Promise<T>;
+    findEntriesByPrefix(
+        namespace: string,
+        keyPrefix: string
+    ): Promise<readonly RuntimeStateEntry[]>;
+    findEntriesByKeys(
+        namespace: string,
+        keys: readonly string[]
+    ): Promise<readonly RuntimeStateEntry[]>;
+}
 
 export type RuntimeStateOptimisticTransactionalRepositoryLike =
     & Omit<RuntimeStateTransactionalRepositoryLike, 'begin'>
@@ -75,13 +81,13 @@ export type RuntimeStateOptimisticTransactionalRepositoryLike =
         ): Promise<T>;
     }>;
 
-export type RuntimeStatePrefixPageRepositoryLike = Readonly<{
+export interface RuntimeStatePrefixPageRepositoryLike {
     findEntriesByPrefixPage(
         namespace: string,
         keyPrefix: string,
         options: RuntimeStateEntryPageOptions
     ): Promise<readonly RuntimeStateEntry[]>;
-}>;
+}
 
 export function isRuntimeStateTransactionalRepositoryLike(
     repository: RuntimeStateRepositoryLike
@@ -94,12 +100,12 @@ export function isRuntimeStateTransactionalRepositoryLike(
 export function isRuntimeStateConditionalRepositoryLike(
     repository: RuntimeStateRepositoryLike
 ): repository is RuntimeStateRepositoryLike & RuntimeStateConditionalRepositoryLike {
-    const candidate = repository as
-        & RuntimeStateRepositoryLike
-        & Readonly<Record<string, unknown>>;
-    return typeof candidate.insertIfAbsent === 'function' &&
-        typeof candidate.upsertIfRevision === 'function' &&
-        typeof candidate.deleteIfRevision === 'function';
+    return 'insertIfAbsent' in repository &&
+        typeof repository.insertIfAbsent === 'function' &&
+        'upsertIfRevision' in repository &&
+        typeof repository.upsertIfRevision === 'function' &&
+        'deleteIfRevision' in repository &&
+        typeof repository.deleteIfRevision === 'function';
 }
 
 export function isRuntimeStateOptimisticTransactionalRepositoryLike(

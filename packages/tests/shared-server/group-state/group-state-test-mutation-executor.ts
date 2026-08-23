@@ -19,16 +19,16 @@ import { GroupLifecyclePolicyRepository } from '@shared-server/rallar-system/gro
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
+    isRuntimeStateGuardedBatchRepositoryLike,
+    type RuntimeStateGuardedBatchRepositoryLike
+} from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import { validateRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
+import {
     requireConditionalWrite,
     RuntimeStateRetryExhaustedError,
     RuntimeStateWriteConflictError
 } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import {
-    isRuntimeStateGuardedBatchRepositoryLike,
-    validateRuntimeStateGuardedBatchResult,
-    type RuntimeStateGuardedBatchRepositoryLike
-} from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
-import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import type { AuthSession } from '../auth/auth-test-fixtures.ts';
 

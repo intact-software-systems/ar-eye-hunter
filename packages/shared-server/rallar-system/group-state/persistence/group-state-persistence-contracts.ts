@@ -1,6 +1,6 @@
 import type { GroupRef, GroupScope, GroupSnapshot } from '@shared/api/group-types.ts';
-import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
-import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
 import type { GroupStateEventStore } from '../../state-events/state-event-store.ts';
 
 export type GroupStateRepositoryOptions = Readonly<{

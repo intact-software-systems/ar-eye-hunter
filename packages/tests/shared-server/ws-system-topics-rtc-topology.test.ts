@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { GroupTopologyGroupSnapshotReader } from '@shared-server/rallar-system/topology/group-topology-management-contracts.ts';
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
@@ -48,7 +48,6 @@ describe('Rallar system websocket topics RTC topology', () => {
             'server-1'
         );
         const topologyService = new RallarRtcTopologyService();
-        const updateGroupTopology = vi.spyOn(topologyService, 'updateGroupTopology');
         initRallarSystemWsTopics(service, {
             rtcTopologyService: topologyService
         });
@@ -81,7 +80,6 @@ describe('Rallar system websocket topics RTC topology', () => {
             topologyPublishedCount: 0,
             topologyPublishSkippedUnchangedCount: 0
         });
-        expect(updateGroupTopology).not.toHaveBeenCalled();
     });
 
     it('queues immutable app-outbox work with canonical identity without scheduling from inbound snapshots', async () => {

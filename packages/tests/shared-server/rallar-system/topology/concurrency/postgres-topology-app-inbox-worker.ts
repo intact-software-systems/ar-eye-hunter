@@ -2,7 +2,7 @@ import postgres from 'postgres';
 
 import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
 import { fromCanonicalGroupTopologyConfigPatch, toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';

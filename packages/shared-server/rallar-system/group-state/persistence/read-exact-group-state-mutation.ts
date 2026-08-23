@@ -6,16 +6,13 @@ import type {
     GroupPresenceSummary,
     GroupRef
 } from '@shared/api/group-types.ts';
-import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
-import {
-    isRuntimeStateReadBatchRepositoryLike,
-    type RuntimeStateReadBatchSelector
-} from '../../../runtime-state/RuntimeStateReadBatch.ts';
 import {
     resolveRuntimeStateReadBatchLiveValues,
     type RuntimeStateReadBatchLiveSelection
-} from '../../../runtime-state/RuntimeStateReadBatchLiveValues.ts';
-import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/RuntimeStateRepository.ts';
+} from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
+import { type RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
+import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
 import {
     GROUPS_NAMESPACE,
@@ -50,7 +47,7 @@ type ExactEntry<Identity extends string, Value> = Readonly<{
 }>;
 
 export type GroupStateMutationExactReadResult =
-    | Readonly<{ status: 'fallback'; }>
+    | Readonly<{ status: 'concurrent-change'; }>
     | Readonly<{
         status: 'stable';
         groups: readonly RuntimeStateEntryValue<Group>[];
@@ -138,16 +135,13 @@ export async function readGroupStateMutationExactEntries(
         sessionIds,
         admissionIds
     });
-    if (!isRuntimeStateReadBatchRepositoryLike(repository)) {
-        return { status: 'fallback' };
-    }
     const resolved = await resolveRuntimeStateReadBatchLiveValues(
         selectors,
         await repository.readRuntimeStateBatch(selectors),
         toLiveEntryValue
     );
     if (resolved.status === 'changed') {
-        return { status: 'fallback' };
+        return { status: 'concurrent-change' };
     }
     return toExactReadResult(slots, resolved.selections, decoders);
 }

@@ -4,7 +4,7 @@ import type {
 } from '@shared/api/graph-topology-management-types.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import type { RuntimeStateEntryValue } from '../../../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
 import { toRtcTopologyEntryResourceId } from '../../mutation/rtc-topology-outbox-entry.ts';
 import type {
     GroupTopologyConfigGeneration,

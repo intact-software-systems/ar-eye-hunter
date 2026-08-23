@@ -1,6 +1,6 @@
-import type { PSqlTransactionSql } from '../../../../postgres/PostgresSqlClient.ts';
-import { PSqlRuntimeStateRepository } from '../../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
+import { PSqlRuntimeStateRepository } from '../../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { GroupStateRepository } from '../../../group-state/persistence/group-state-repository.ts';
 import { writeRtcTopologyOutbox } from '../../mutation/rtc-topology-outbox-entry.ts';
 import { GroupTopologyConfigRepository } from '../persistence/group-topology-config-repository.ts';
@@ -12,7 +12,7 @@ type WritableTopologyConfigMutation = Extract<
 >;
 
 export async function writeTopologyConfigMutation(
-    transaction: PSqlTransactionSql,
+    transaction: PSqlSql,
     computed: WritableTopologyConfigMutation
 ): Promise<mutationContracts.GroupTopologyConfigMutationReceipt> {
     const runtime = new PSqlRuntimeStateRepository(transaction);

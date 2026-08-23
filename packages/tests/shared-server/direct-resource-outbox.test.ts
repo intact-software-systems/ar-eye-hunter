@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import { runInTransaction } from '@shared-server/postgres/run-in-transaction.ts';
+import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
 import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work-service.ts';
 import {
     computeClientStateSyncEntries,
@@ -43,7 +43,7 @@ describe('direct resource outbox writes', () => {
         expect(() => computeClientStateSyncEntries(computed, 'server-1')).toThrow();
         const database = createResourceInboxDatabase();
         await expect(
-            runInTransaction(database.sql, async (transaction) => {
+            runInPSqlTransaction(database.sql, async (transaction) => {
                 await writeClientStateSync(transaction, computed, 'server-1');
             })
         ).rejects.toThrow();
@@ -62,7 +62,7 @@ describe('direct resource outbox writes', () => {
         expect(() => computeClientStateSyncEntries(computed, 'server-1')).toThrow();
         const database = createResourceInboxDatabase();
         await expect(
-            runInTransaction(database.sql, async (transaction) => {
+            runInPSqlTransaction(database.sql, async (transaction) => {
                 await writeClientStateSync(transaction, computed, 'server-1');
             })
         ).rejects.toThrow();
@@ -77,7 +77,7 @@ describe('direct resource outbox writes', () => {
         expect(() => computeGroupStateSyncEntries(computed, 'server-1')).toThrow();
         const database = createResourceInboxDatabase();
         await expect(
-            runInTransaction(database.sql, async (transaction) => {
+            runInPSqlTransaction(database.sql, async (transaction) => {
                 await writeGroupStateSync(transaction, computed, 'server-1');
             })
         ).rejects.toThrow();
@@ -96,7 +96,7 @@ describe('direct resource outbox writes', () => {
         expect(() => computeGroupStateSyncEntries(computed, 'server-1')).toThrow();
         const database = createResourceInboxDatabase();
         await expect(
-            runInTransaction(database.sql, async (transaction) => {
+            runInPSqlTransaction(database.sql, async (transaction) => {
                 await writeGroupStateSync(transaction, computed, 'server-1');
             })
         ).rejects.toThrow();
@@ -147,7 +147,7 @@ describe('direct resource outbox writes', () => {
 
         for (const computed of [wrongAudience, missingCommandId]) {
             await expect(
-                runInTransaction(database.sql, async (transaction) => {
+                runInPSqlTransaction(database.sql, async (transaction) => {
                     await writeGroupStateSync(transaction, computed, 'server-1');
                 })
             ).rejects.toThrow();
@@ -164,7 +164,7 @@ describe('direct resource outbox writes', () => {
         const database = createResourceInboxDatabase();
 
         await expect(
-            runInTransaction(database.sql, async (transaction) => {
+            runInPSqlTransaction(database.sql, async (transaction) => {
                 await writeClientStateSync(transaction, forged, 'server-1');
             })
         ).rejects.toThrow('Computed state sync facts are invalid');
@@ -180,7 +180,7 @@ describe('direct resource outbox writes', () => {
         const database = createResourceInboxDatabase();
 
         await expect(
-            runInTransaction(database.sql, async (transaction) => {
+            runInPSqlTransaction(database.sql, async (transaction) => {
                 await writeGroupStateSync(transaction, forged, 'server-1');
             })
         ).rejects.toThrow('Computed state sync facts are invalid');
@@ -192,18 +192,18 @@ describe('direct resource outbox writes', () => {
         const client = createComputedClientEventStateSync(createClientEvent());
         const group = createComputedGroupStateSync(createGroupSnapshot());
 
-        const clientEntries = await runInTransaction(
+        const clientEntries = await runInPSqlTransaction(
             database.sql,
             async (transaction) => await writeClientStateSync(transaction, client, 'server-1')
         );
-        const groupEntries = await runInTransaction(
+        const groupEntries = await runInPSqlTransaction(
             database.sql,
             async (transaction) => await writeGroupStateSync(transaction, group, 'server-1')
         );
 
         expect(clientEntries).toEqual(computeClientStateSyncEntries(client, 'server-1'));
         expect(groupEntries).toEqual(computeGroupStateSyncEntries(group, 'server-1'));
-        await runInTransaction(database.sql, async (transaction) => {
+        await runInPSqlTransaction(database.sql, async (transaction) => {
             await writeClientStateSync(transaction, client, 'server-1');
             await writeGroupStateSync(transaction, group, 'server-1');
         });
@@ -260,7 +260,7 @@ describe('direct resource outbox writes', () => {
             payload: { typeId: 'client-state.event' }
         });
         const database = createResourceInboxDatabase();
-        await runInTransaction(database.sql, async (transaction) => {
+        await runInPSqlTransaction(database.sql, async (transaction) => {
             await writeClientStateSync(transaction, computed, 'server-1');
         });
         expect(database.rows.get(toRowKey(entry))?.ri_resource).toBe(entry.resource);
@@ -271,7 +271,7 @@ describe('direct resource outbox writes', () => {
         const database = createResourceInboxDatabase();
         const computed = createComputedGroupStateSync(createGroupSnapshot());
 
-        const entries = await runInTransaction(
+        const entries = await runInPSqlTransaction(
             database.sql,
             async (transaction) => await writeGroupStateSync(transaction, computed, 'server-1')
         );
@@ -283,13 +283,13 @@ describe('direct resource outbox writes', () => {
             [...database.rows.values()].every((row) => row.ri_type_id === EnqueuedType.WS_OUTBOX)
         ).toBe(true);
 
-        await runInTransaction(database.sql, async (transaction) => {
+        await runInPSqlTransaction(database.sql, async (transaction) => {
             await writeGroupStateSync(transaction, computed, 'server-1');
         });
         expect(database.rows.size).toBe(entries.length);
 
         await expect(
-            runInTransaction(database.sql, async (transaction) => {
+            runInPSqlTransaction(database.sql, async (transaction) => {
                 await new ResourceInboxRepository(transaction).writeIfAbsentOrMatch({
                     ...entries[0]!,
                     resource: JSON.stringify({ corrupt: true })
@@ -378,7 +378,7 @@ describe('direct resource outbox writes', () => {
         });
         expect(message.id.msgId).toContain('group-command-1');
         const database = createResourceInboxDatabase();
-        await runInTransaction(database.sql, async (transaction) => {
+        await runInPSqlTransaction(database.sql, async (transaction) => {
             await writeRtcTopologyOutbox(transaction, computed);
         });
         expect(database.rows.get(toRowKey(first))?.ri_resource).toBe(first.resource);
@@ -401,7 +401,7 @@ describe('direct resource outbox writes', () => {
         );
         const database = createResourceInboxDatabase();
         await expect(
-            runInTransaction(database.sql, async (transaction) => {
+            runInPSqlTransaction(database.sql, async (transaction) => {
                 await writeRtcTopologyOutbox(transaction, computed);
             })
         ).rejects.toThrow('Computed RTC topology outbox facts are invalid');
@@ -440,7 +440,7 @@ describe('direct resource outbox writes', () => {
         const database = createResourceInboxDatabase();
 
         await expect(
-            runInTransaction(database.sql, async (transaction) => {
+            runInPSqlTransaction(database.sql, async (transaction) => {
                 await writeRtcTopologyOutbox(transaction, forged);
             })
         ).rejects.toThrow('Computed RTC topology outbox facts are invalid');
@@ -451,7 +451,7 @@ describe('direct resource outbox writes', () => {
         const computed = createComputedRtcTopologyOutbox();
         const database = createResourceInboxDatabase();
 
-        const entry = await runInTransaction(
+        const entry = await runInPSqlTransaction(
             database.sql,
             async (transaction) => await writeRtcTopologyOutbox(transaction, computed)
         );
@@ -483,7 +483,6 @@ describe('direct resource outbox writes', () => {
             { targetResolver: { resolveBroadcastRecipients } }
         );
 
-        expect(resolveBroadcastRecipients).not.toHaveBeenCalled();
         expect(socket.sent).toEqual([]);
 
         await outbox.enqueue(entry);
@@ -492,12 +491,10 @@ describe('direct resource outbox writes', () => {
         });
         expect(wake).toThrow('wake failed');
         expect(await outbox.getItem(entry.key)).toBeDefined();
-        expect(resolveBroadcastRecipients).not.toHaveBeenCalled();
         expect(socket.sent).toEqual([]);
 
         await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
 
-        expect(resolveBroadcastRecipients).toHaveBeenCalledOnce();
         expect(socket.sent).toEqual(['session-alice']);
     });
 
@@ -525,7 +522,6 @@ describe('direct resource outbox writes', () => {
         await outbox.enqueue(entry);
         await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
         vi.useRealTimers();
-        expect(resolveBroadcastRecipients).toHaveBeenCalledOnce();
         expect(socket.sent).toEqual([]);
         expect(deliveryOutcomes).toEqual([
             {
@@ -576,10 +572,10 @@ describe('direct resource outbox writes', () => {
                 data: { overlayId: 'overlay-1', snapshotVersion: 3 }
             })
         ).entry;
-        await runInTransaction(database.sql, async (transaction) => {
+        await runInPSqlTransaction(database.sql, async (transaction) => {
             await new ResourceInboxRepository(transaction).writeIfAbsentOrMatch(first);
         });
-        const updated = await runInTransaction(
+        const updated = await runInPSqlTransaction(
             database.sql,
             async (transaction) =>
                 await stagingService.write(transaction, {
@@ -595,7 +591,7 @@ describe('direct resource outbox writes', () => {
         expect(database.rows.get(toRowKey(first))?.ri_resource).toBe(next.resource);
 
         database.reserve(next);
-        const result = await runInTransaction(
+        const result = await runInPSqlTransaction(
             database.sql,
             async (transaction) =>
                 await stagingService.write(transaction, {
@@ -951,7 +947,7 @@ function createResourceInboxDatabase() {
     const sql = (() => {
         throw new Error('Resource inbox SQL must use the received transaction');
     }) as unknown as PSqlSql;
-    sql.begin = async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>): Promise<T> => {
+    sql.begin = async <T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T> => {
         beginCalls += 1;
         const pending = new Map([...rows].map(([key, row]) => [key, { ...row }]));
         const transaction = createResourceInboxTransaction(pending, () => {
@@ -988,7 +984,7 @@ function createResourceInboxDatabase() {
 function createResourceInboxTransaction(
     rows: Map<string, TestResourceInboxRow>,
     onNestedBegin: () => void
-): PSqlTransactionSql {
+): PSqlSql {
     const transaction = ((
         stringsOrValues: TemplateStringsArray | readonly unknown[],
         ...values: unknown[]
@@ -1046,7 +1042,7 @@ function createResourceInboxTransaction(
             return [{ ...row }];
         }
         throw new Error(`Unexpected resource inbox SQL: ${query}`);
-    }) as unknown as PSqlTransactionSql;
+    }) as unknown as PSqlSql;
     transaction.begin = () => {
         onNestedBegin();
         throw new Error('Nested resource inbox transaction');

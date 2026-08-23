@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
 import { emptyGroupFormationMetrics } from '@shared-server/rallar-system/observability/formation-metrics.ts';
 
@@ -157,7 +157,7 @@ function createDatabase(): PSqlSql {
             return Promise.reject(new Error('query not used'));
         },
         {
-            begin<T>(_operation: (transaction: PSqlTransactionSql) => Promise<T>): Promise<T> {
+            begin<T>(_operation: (transaction: PSqlSql) => Promise<T>): Promise<T> {
                 return Promise.reject(new Error('transaction not used'));
             }
         }

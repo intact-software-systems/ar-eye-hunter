@@ -2,9 +2,10 @@ import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic
 import type {
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import { readRuntimeStateEntriesByPrefix } from './runtime-state-prefix-reader.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '../../rallar-system/protocol/json-wire-identity.ts';
+import { readRuntimeStateEntriesByPrefix } from './read-runtime-state-entries-by-prefix.ts';
 
 export type ALAdmissionMutation =
     | Readonly<{
@@ -27,12 +28,12 @@ export type ALAdmissionMutation =
         expectedRevision: number;
     }>;
 
-type Observation = {
-    entry: RuntimeStateEntry | null;
-    value: unknown;
+interface Observation {
+    readonly entry: RuntimeStateEntry | null;
+    value: JsonWireValue | undefined;
     expireAtEpochMs: number;
     touched: boolean;
-};
+}
 
 export class PSqlAdmissionMutationCollector {
     private readonly observations = new Map<string, Observation>();
@@ -80,7 +81,7 @@ export class PSqlAdmissionMutationCollector {
         expireAtEpochMs = NEVER_EXPIRE_AT_TIMESTAMP
     ): Promise<void> {
         const observation = await this.observe(key);
-        observation.value = value;
+        observation.value = encodeALAdmissionValue(value, key);
         observation.expireAtEpochMs = expireAtEpochMs;
         observation.touched = true;
     }
@@ -200,9 +201,23 @@ export class PSqlAdmissionMutationCollector {
         }
         return {
             entry,
-            value: JSON.parse(entry.value) as unknown,
+            value: decodeJsonWireValue(
+                JSON.parse(entry.value),
+                `Stored AL admission value for ${entry.key}`
+            ),
             expireAtEpochMs: entry.expireAtTimestamp,
             touched: false
         };
     }
+}
+
+function encodeALAdmissionValue<V>(value: V, key: string): JsonWireValue {
+    const serialized = JSON.stringify(value);
+    if (serialized === undefined) {
+        throw new TypeError(`AL admission value for ${key} is not JSON-serializable`);
+    }
+    return decodeJsonWireValue(
+        JSON.parse(serialized),
+        `AL admission value for ${key}`
+    );
 }

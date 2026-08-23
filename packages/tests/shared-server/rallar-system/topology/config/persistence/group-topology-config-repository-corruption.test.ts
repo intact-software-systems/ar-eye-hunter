@@ -9,7 +9,7 @@ import {
     GROUP_TOPOLOGY_CONFIG_NAMESPACE,
     GROUP_TOPOLOGY_OVERRIDE_NAMESPACE
 } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts';
-import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import { FakeRuntimeStateRepository } from '../../../../fake-runtime-state-repository.ts';

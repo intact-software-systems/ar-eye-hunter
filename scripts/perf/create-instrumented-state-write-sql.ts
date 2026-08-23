@@ -1,4 +1,4 @@
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
     recordRallarTiming,
     type RallarTimingEvent,
@@ -16,7 +16,7 @@ export interface StateWriteSqlMetrics {
 }
 
 type PSqlValues = Parameters<PSqlSql>[0];
-type PSqlSavepointMethod = <T>(fn: (sql: PSqlTransactionSql) => Promise<T>) => Promise<T>;
+type PSqlSavepointMethod = <T>(fn: (sql: PSqlSql) => Promise<T>) => Promise<T>;
 
 export type CreateInstrumentedStateWriteSqlInput = Readonly<{
     sql: PSqlSql;
@@ -29,17 +29,22 @@ export function createInstrumentedStateWriteSql({
     metrics,
     timing
 }: CreateInstrumentedStateWriteSqlInput): PSqlSql {
-    const instrumented = function<T> (
+    function instrumentedQuery<Rows extends PSqlRows>(
+        strings: TemplateStringsArray,
+        ...values: PSqlValues
+    ): Promise<Rows>;
+    function instrumentedQuery(values: PSqlValues): object;
+    function instrumentedQuery(
         stringsOrValues: TemplateStringsArray | PSqlValues,
         ...values: PSqlValues
-    ): Promise<T> | ReturnType<PSqlSql> {
+    ): Promise<PSqlRows> | object {
         if (!isTemplateStringsArray(stringsOrValues)) {
             return sql(stringsOrValues);
         }
         const queryText = stringsOrValues.join('?');
         const category = classifyBenchmarkSql(queryText, values);
         const startedAt = performance.now();
-        return Promise.resolve(sql<T>(stringsOrValues, ...values)).then(
+        return Promise.resolve(sql<PSqlRows>(stringsOrValues, ...values)).then(
             (result) => {
                 const durationMs = performance.now() - startedAt;
                 observeSql({ metrics, category, result, durationMs });
@@ -72,8 +77,9 @@ export function createInstrumentedStateWriteSql({
                 throw error;
             }
         );
-    } as PSqlSql;
-    instrumented.begin = async <T>(fn: (transaction: PSqlTransactionSql) => Promise<T>) => {
+    }
+    const instrumented = instrumentedQuery as PSqlSql;
+    instrumented.begin = async <T>(fn: (transaction: PSqlSql) => Promise<T>) => {
         const startedAt = performance.now();
         try {
             return await sql.begin(
@@ -98,7 +104,7 @@ export function createInstrumentedStateWriteSql({
     if (typeof savepoint === 'function') {
         const invokeSavepoint = savepoint.bind(sql) as PSqlSavepointMethod;
         (instrumented as PSqlSql & { savepoint: PSqlSavepointMethod; }).savepoint = async <T>(
-            fn: (transaction: PSqlTransactionSql) => Promise<T>
+            fn: (transaction: PSqlSql) => Promise<T>
         ): Promise<T> =>
             await invokeSavepoint<T>(
                 async (transaction) => await fn(createInstrumentedStateWriteSql({ sql: transaction, metrics, timing }))
@@ -125,7 +131,7 @@ export function stateWriteProductionPhaseDuration(
 type ObserveSqlInput = Readonly<{
     metrics: StateWriteSqlMetrics;
     category: 'read' | 'write' | 'outbox';
-    result: ReturnType<PSqlSql> | undefined;
+    result: PSqlRows | undefined;
     durationMs: number;
 }>;
 
@@ -168,7 +174,7 @@ function isTemplateStringsArray(
     return Object.hasOwn(value, 'raw');
 }
 
-function byteLength(value: ReturnType<PSqlSql> | undefined): number {
+function byteLength(value: PSqlRows | undefined): number {
     if (value === undefined) {
         return 0;
     }

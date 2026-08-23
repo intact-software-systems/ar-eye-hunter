@@ -1,13 +1,14 @@
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { waitForRuntimeStateWriteRetry } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import { RuntimeStateJsonStore, type RuntimeStateEntryValue } from '@shared-server/runtime-state/RuntimeStateJsonStore.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
+import { RuntimeStateJsonStore, type RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
 import {
     isRuntimeStateConditionalRepositoryLike,
     type RuntimeStateConditionalDeleteResult,
     type RuntimeStateConditionalWriteResult,
     type RuntimeStateRepositoryLike
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
@@ -99,6 +100,10 @@ describe('runtime-state conditional writes', () => {
         const repository: RuntimeStateRepositoryLike = {
             findEntry: () => Promise.resolve(undefined),
             findAllEntries: () => Promise.resolve([]),
+            readRuntimeStateBatch: (selectors) =>
+                Promise.resolve(
+                    selectRuntimeStateReadBatch([], selectors)
+                ),
             upsert: () => {
                 unconditionalWrites += 1;
                 return Promise.resolve();
@@ -142,6 +147,13 @@ describe('runtime-state conditional writes', () => {
         const repository: RuntimeStateRepositoryLike = {
             findEntry: () => Promise.resolve(expiredEntry),
             findAllEntries: () => Promise.resolve([expiredEntry]),
+            readRuntimeStateBatch: (selectors) =>
+                Promise.resolve(
+                    selectRuntimeStateReadBatch(
+                        [{ namespace: 'state', entry: expiredEntry }],
+                        selectors
+                    )
+                ),
             upsert: () => Promise.resolve(),
             deleteByKey: () => {
                 unconditionalDeletes += 1;
@@ -206,6 +218,10 @@ describe('runtime-state conditional writes', () => {
         const baseRepository: RuntimeStateRepositoryLike = {
             findEntry: () => Promise.resolve(undefined),
             findAllEntries: () => Promise.resolve([]),
+            readRuntimeStateBatch: (selectors) =>
+                Promise.resolve(
+                    selectRuntimeStateReadBatch([], selectors)
+                ),
             upsert: () => Promise.resolve(),
             deleteByKey: () => Promise.resolve(),
             deleteExpired: () => Promise.resolve(0)
@@ -562,7 +578,7 @@ class ExposedRuntimeStateJsonStore extends RuntimeStateJsonStore {
     insert(
         namespace: string,
         key: string,
-        value: unknown,
+        value: object,
         expireAtTimestamp: number
     ): Promise<RuntimeStateConditionalWriteResult> {
         return this.putValueIfAbsent(namespace, key, value, expireAtTimestamp);
@@ -571,7 +587,7 @@ class ExposedRuntimeStateJsonStore extends RuntimeStateJsonStore {
     update(
         namespace: string,
         key: string,
-        value: unknown,
+        value: object,
         expireAtTimestamp: number,
         expectedRevision: number
     ): Promise<RuntimeStateConditionalWriteResult> {
@@ -618,7 +634,7 @@ function createResultSql(
         ]);
     }) as unknown as PSqlSql;
     sql.begin = async <T>(
-        _fn: (transactionSql: PSqlTransactionSql) => Promise<T>
+        _fn: (transactionSql: PSqlSql) => Promise<T>
     ): Promise<T> => {
         throw new Error('Test SQL does not run transactions.');
     };

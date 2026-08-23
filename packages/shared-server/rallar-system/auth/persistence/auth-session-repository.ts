@@ -1,9 +1,9 @@
-import type { RuntimeStateEntryRead, RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntryRead, RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
     RuntimeStateRepositoryLike
-} from '../../../runtime-state/RuntimeStateRepository.ts';
+} from '../../../runtime-state/runtime-state-repository.ts';
 import type {
     PersistedAgentSessionTicket,
     PersistedAuthSession,

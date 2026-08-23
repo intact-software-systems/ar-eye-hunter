@@ -5,7 +5,6 @@ import { AppInboxQueueClient, SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '@shar
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 
 const COMMAND = {
     type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
@@ -52,14 +51,16 @@ describe('AppInbox durable enqueue', () => {
 
     it('wakes the owning queue after durable enqueue and idempotent reuse', async () => {
         const queue = new DurableEnqueueQueue(new Map());
-        const wakeQueue = vi.fn();
-        const service = createService(queue, wakeQueue);
+        let wakeSignals = 0;
+        const service = createService(queue, () => {
+            wakeSignals += 1;
+        });
 
         const first = await service.enqueue(COMMAND);
         const duplicate = await service.enqueue(COMMAND);
 
         expect(duplicate).toBe(first);
-        expect(wakeQueue).toHaveBeenCalledTimes(2);
+        expect(wakeSignals).toBe(2);
     });
 });
 
@@ -72,8 +73,7 @@ function createService(queue: DurableEnqueueQueue, wakeQueue?: () => void): AppI
         {
             inboxQueueReader: new InboxQueueReader(queue),
             resourceInboxRepository: queue,
-            resourceInboxResultsRepository: results,
-            database: createAppInboxTestDatabase(queue, results)
+            resourceInboxResultsRepository: results
         },
         {
             serviceId: 'server-12345678',

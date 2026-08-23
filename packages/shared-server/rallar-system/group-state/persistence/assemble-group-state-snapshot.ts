@@ -7,7 +7,7 @@ import type {
     GroupRef,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
-import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import { isLogicallyActiveSession } from '../../presence/session-expiry.ts';
 import { groupStateGroupStorageKey } from './group-state-storage-keys.ts';
 

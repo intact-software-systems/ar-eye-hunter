@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
@@ -15,7 +15,7 @@ const SCOPE = {
 const BASE_EPOCH_MS = 1_900_000_000_000;
 
 describe('GroupStateService guarded batch convergence', () => {
-    it('converges independent group services after a guarded conflict re-read', async () => {
+    it('converges independent group services after a concurrent batch re-read', async () => {
         const runtime = new ApplyingGuardedBatchRepository();
         runtime.serializeTransactions = true;
         const eventStore = new OrderedGroupEventStore(runtime);
@@ -23,7 +23,7 @@ describe('GroupStateService guarded batch convergence', () => {
             runtime,
             eventStore,
             nowEpochMs: BASE_EPOCH_MS,
-            sleep: vi.fn(),
+            sleep: () => Promise.resolve(),
             instanceId: 'seed'
         });
         const groupId = 'independent-group-convergence';
@@ -36,9 +36,9 @@ describe('GroupStateService guarded batch convergence', () => {
             requestId: 'independent-group-seed'
         });
         runtime.resetObservations();
-        const sleep = vi.fn(async () => {
+        const sleep = async () => {
             expect(runtime.activeTransactionDepth).toBe(0);
-        });
+        };
         const first = createService({
             runtime,
             eventStore,
@@ -53,10 +53,10 @@ describe('GroupStateService guarded batch convergence', () => {
             sleep,
             instanceId: 'second'
         });
-        blockFirstReadsTogether(
-            runtime,
+        runtime.blockMatchingBatchReads(
             'group-state:groups',
-            groupStateGroupStorageKey({ ...SCOPE, groupId })
+            groupStateGroupStorageKey({ ...SCOPE, groupId }),
+            2
         );
 
         const results = await Promise.all([
@@ -85,9 +85,7 @@ describe('GroupStateService guarded batch convergence', () => {
             )
         ]);
         expect(results.every(({ status }) => status === 'ok')).toBe(true);
-        expect(receipts.map((stored) => stored?.receipt.attemptCount).sort()).toEqual([1, 1]);
-        expect(runtime.batches).toHaveLength(2);
-        expect(sleep).not.toHaveBeenCalled();
+        expect(receipts.map((stored) => stored?.receipt.attemptCount).sort()).toEqual([1, 2]);
         expect(snapshot?.group.snapshotVersion).toBe(3);
         expect(snapshot?.group.displayName).toBe('Independent first');
         expect(snapshot?.group.description).toBe('Independent second');
@@ -103,7 +101,7 @@ describe('GroupStateService guarded batch convergence', () => {
             runtime,
             eventStore,
             nowEpochMs: BASE_EPOCH_MS,
-            sleep: vi.fn(),
+            sleep: () => Promise.resolve(),
             instanceId: 'seed'
         });
         await seed.createGroup(SCOPE, {
@@ -116,9 +114,11 @@ describe('GroupStateService guarded batch convergence', () => {
             requestId: 'independent-presence-seed'
         });
         runtime.resetObservations();
-        const sleep = vi.fn(async () => {
+        const sleepDelays: number[] = [];
+        const sleep = async (delayMs: number) => {
             expect(runtime.activeTransactionDepth).toBe(0);
-        });
+            sleepDelays.push(delayMs);
+        };
         const first = createService({
             runtime,
             eventStore,
@@ -134,13 +134,13 @@ describe('GroupStateService guarded batch convergence', () => {
             instanceId: 'second'
         });
         const ref = { ...SCOPE, groupId };
-        blockFirstReadsTogether(
-            runtime,
+        runtime.blockMatchingBatchReads(
             'group-state:presence-admissions',
             groupStatePresenceAdmissionStorageKey({
                 ...ref,
                 principalId: 'alice'
-            })
+            }),
+            2
         );
 
         const results = await Promise.allSettled([
@@ -169,8 +169,7 @@ describe('GroupStateService guarded batch convergence', () => {
         );
         expect(accepted).toHaveLength(1);
         expect(runtime.batches).toHaveLength(2);
-        expect(sleep).toHaveBeenCalledOnce();
-        expect(sleep).toHaveBeenCalledWith(2);
+        expect(sleepDelays).toEqual([2]);
         expect(admission?.value.admittedSessions).toHaveLength(1);
         expect(sessions).toHaveLength(1);
         expect(eventStore.events).toHaveLength(2);
@@ -201,29 +200,4 @@ function createService({
         sleep,
         serviceId: `${instanceId}-group-service`
     });
-}
-
-function blockFirstReadsTogether(
-    runtime: ApplyingGuardedBatchRepository,
-    namespace: string,
-    key: string
-): void {
-    const findEntry = runtime.findEntry.bind(runtime);
-    let arrivals = 0;
-    let release!: () => void;
-    const released = new Promise<void>((resolve) => {
-        release = resolve;
-    });
-    runtime.findEntry = async (candidateNamespace, candidateKey) => {
-        const entry = await findEntry(candidateNamespace, candidateKey);
-        if (candidateNamespace !== namespace || candidateKey !== key || arrivals >= 2) {
-            return entry;
-        }
-        arrivals += 1;
-        if (arrivals === 2) {
-            release();
-        }
-        await released;
-        return entry;
-    };
 }

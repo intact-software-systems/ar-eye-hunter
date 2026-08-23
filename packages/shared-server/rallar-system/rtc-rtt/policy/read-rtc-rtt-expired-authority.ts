@@ -1,8 +1,8 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { validateRuntimeStateExpiredAuthority } from '../../../runtime-state/RuntimeStateExpiredEntry.ts';
-import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
-import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
+import { validateRuntimeStateExpiredAuthority } from '../../../runtime-state/runtime-state-expired-entry.ts';
+import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
 import {
     compareRtcTopologyIdentifiers,
     toCanonicalRtcTopologyGroupIdentity
@@ -28,12 +28,15 @@ export function readRtcRttExpiredAuthority(
         expiredEndpointAdmissionEntries: readonly RuntimeStateEntry[];
     }>
 ): RtcRttExpiredAuthority {
-    validateRuntimeStateExpiredAuthority(
-        input.measurement,
-        input.expiredMeasurementEntry,
-        toRtcRttMeasurementStorageKey(input.sessionIdFrom, input.sessionIdTo),
-        'RTC RTT measurement read'
-    );
+    validateRuntimeStateExpiredAuthority({
+        live: input.measurement,
+        expiredEntry: input.expiredMeasurementEntry,
+        expectedKey: toRtcRttMeasurementStorageKey(
+            input.sessionIdFrom,
+            input.sessionIdTo
+        ),
+        label: 'RTC RTT measurement read'
+    });
     const admissionByEndpoint = new Map(
         input.endpointAdmissions.map((stored) => [stored.value.endpointId, stored])
     );
@@ -47,12 +50,12 @@ export function readRtcRttExpiredAuthority(
     for (const endpointId of [input.sessionIdFrom, input.sessionIdTo]) {
         const key = toRtcRttEndpointAdmissionStorageKey(endpointId);
         const expired = expiredByKey.get(key) ?? null;
-        validateRuntimeStateExpiredAuthority(
-            admissionByEndpoint.get(endpointId),
-            expired,
-            key,
-            'RTC RTT endpoint admission read'
-        );
+        validateRuntimeStateExpiredAuthority({
+            live: admissionByEndpoint.get(endpointId),
+            expiredEntry: expired,
+            expectedKey: key,
+            label: 'RTC RTT endpoint admission read'
+        });
         if (expired) {
             expiredAdmissionByEndpoint.set(endpointId, expired);
         }

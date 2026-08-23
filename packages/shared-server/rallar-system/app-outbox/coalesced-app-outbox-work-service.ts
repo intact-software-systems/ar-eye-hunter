@@ -14,7 +14,7 @@ import {
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
-import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import {
     replaceFinishedResourceEntryIfMatch
 } from '../../postgres/resource-inbox/resource-inbox-finished-replacement.ts';
@@ -86,7 +86,7 @@ export class CoalescedAppOutboxWorkService {
     }
 
     async write(
-        transaction: PSqlTransactionSql,
+        transaction: PSqlSql,
         computed: ComputedCoalescedAppOutboxWork
     ): Promise<CoalescedAppOutboxWorkWriteResult> {
         const repository = new ResourceInboxRepository(transaction);

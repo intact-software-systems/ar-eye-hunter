@@ -1,5 +1,5 @@
-import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 
 import {
     type AppInboxTestDatabaseOptions,
@@ -16,7 +16,7 @@ interface CreateAppInboxTestTransactionInput {
 }
 
 interface RunAppInboxTestTransactionInput<T> extends CreateAppInboxTestTransactionInput {
-    readonly write: (transaction: PSqlTransactionSql) => Promise<T>;
+    readonly write: (transaction: PSqlSql) => Promise<T>;
     readonly runtime: RuntimeStateOptimisticTransactionalRepositoryLike | undefined;
 }
 
@@ -25,7 +25,7 @@ export function createAppInboxTestTransaction({
     options,
     state
 }: CreateAppInboxTestTransactionInput) {
-    return async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>): Promise<T> => {
+    return async <T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T> => {
         try {
             const execute = async (
                 runtime: RuntimeStateOptimisticTransactionalRepositoryLike | undefined

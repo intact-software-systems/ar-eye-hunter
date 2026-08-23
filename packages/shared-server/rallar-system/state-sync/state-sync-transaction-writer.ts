@@ -1,6 +1,6 @@
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceInboxRepository.ts';
 import {
     computeClientStateSyncEntries,
@@ -10,7 +10,7 @@ import {
 } from './state-sync-entry-computation.ts';
 
 export async function writeClientStateSync(
-    transaction: PSqlTransactionSql,
+    transaction: PSqlSql,
     computed: ComputedClientStateSync,
     senderId: string
 ): Promise<readonly ResourceEntry[]> {
@@ -20,7 +20,7 @@ export async function writeClientStateSync(
 }
 
 export async function writeGroupStateSync(
-    transaction: PSqlTransactionSql,
+    transaction: PSqlSql,
     computed: ComputedGroupStateSync,
     senderId: string
 ): Promise<readonly ResourceEntry[]> {
@@ -30,7 +30,7 @@ export async function writeGroupStateSync(
 }
 
 async function writeStateSyncEntries(
-    transaction: PSqlTransactionSql,
+    transaction: PSqlSql,
     entries: readonly ResourceEntry[]
 ): Promise<void> {
     const repository = new ResourceInboxRepository(transaction);

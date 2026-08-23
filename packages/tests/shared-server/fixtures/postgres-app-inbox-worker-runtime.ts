@@ -4,7 +4,7 @@ import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.t
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { ResourceInboxAttemptReleaseTelemetry } from '@shared/queuebox/ResourceInboxAttemptTelemetry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
@@ -277,15 +277,15 @@ export function createPostgresWorkerTransactionGate(
 ): Readonly<{ sql: PSqlSql; arm(): void; }> {
     let armed = false;
     let consumed = false;
-    const gated = function<T> (
-        stringsOrValues: TemplateStringsArray | readonly unknown[],
-        ...values: unknown[]
-    ): Promise<T> | unknown {
-        return Array.isArray(stringsOrValues)
+    const gated = function<Rows extends PSqlRows> (
+        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
+        ...values: PSqlParameter[]
+    ): Promise<Rows> | object {
+        return !isTemplateStringsArray(stringsOrValues)
             ? sql(stringsOrValues)
-            : sql<T>(stringsOrValues as TemplateStringsArray, ...values);
+            : sql<Rows>(stringsOrValues, ...values);
     } as PSqlSql;
-    gated.begin = async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>) => {
+    gated.begin = async <T>(write: (transaction: PSqlSql) => Promise<T>) => {
         if (armed && !consumed && beforeMutationTransaction) {
             consumed = true;
             trace.barrierWaitCount += 1;
@@ -294,6 +294,12 @@ export function createPostgresWorkerTransactionGate(
         return await sql.begin(write);
     };
     return { sql: gated, arm: () => (armed = true) };
+}
+
+function isTemplateStringsArray(
+    value: TemplateStringsArray | readonly PSqlParameter[]
+): value is TemplateStringsArray {
+    return Array.isArray(value) && Object.hasOwn(value, 'raw');
 }
 
 function createWorkerResilience(): ResilienceDto {

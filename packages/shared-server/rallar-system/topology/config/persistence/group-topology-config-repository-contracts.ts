@@ -4,7 +4,7 @@ import type {
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
-import type { RuntimeStateEntry } from '../../../../runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateEntry } from '../../../../runtime-state/runtime-state-repository.ts';
 import type { GroupTopologyConfigGenerationTarget } from '../mutation/group-topology-config-mutation-contracts.ts';
 
 export type GroupTopologyConfigCommitResult =

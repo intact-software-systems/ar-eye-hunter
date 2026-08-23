@@ -1,4 +1,4 @@
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
@@ -74,7 +74,7 @@ export function createApiCrdtInboxService(
             database: input.database,
             mutationService: createCrdtMutationService({
                 repository,
-                createWriter: (transaction: PSqlTransactionSql) =>
+                createWriter: (transaction: PSqlSql) =>
                     new PSqlCrdtMutationRepository({ sql: transaction, authorize }, { policies }),
                 serviceId: input.serviceId
             }),

@@ -20,7 +20,7 @@ import type {
 import type { ClientEvent, ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
-import type { PSqlSql } from '../PostgresSqlClient.ts';
+import type { PSqlSql } from '../p-sql-sql.ts';
 import { groupEventWorkspaceKey } from './group-event-workspace-key.ts';
 
 type ClientStateEventRow = Readonly<{

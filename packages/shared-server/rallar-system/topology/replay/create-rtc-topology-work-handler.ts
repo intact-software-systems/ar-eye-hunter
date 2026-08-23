@@ -8,9 +8,9 @@ import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts
 import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
 import { hashRtcTopologyExecutionCommand } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import { type RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
-import type { PSqlSql, PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { ResourceInboxRepository } from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
-import { runInTransaction } from '../../../postgres/run-in-transaction.ts';
+import { runInPSqlTransaction } from '../../../postgres/run-in-p-sql-transaction.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import type { RtcRttRefinementService } from '../../rtc-rtt/topic/rtc-rtt-refinement-service.ts';
@@ -332,7 +332,7 @@ async function writeAcceptedRtcTopologyWork(
         return;
     }
     if (accepted.decision === 'skipped-unchanged') {
-        await runInTransaction(options.database, async (transaction) => {
+        await runInPSqlTransaction(options.database, async (transaction) => {
             await options.executionRepository.writeTopologyInputFingerprint(
                 transaction,
                 accepted.group.group,
@@ -379,10 +379,10 @@ async function writeAcceptedRtcTopologyWork(
 async function writeRtcTopologyPublicationTransaction(
     options: Pick<RtcTopologyWorkHandlerOptions, 'database'>,
     entry: ResourceEntry,
-    write: (transaction: PSqlTransactionSql) => Promise<void>
+    write: (transaction: PSqlSql) => Promise<void>
 ): Promise<void> {
     try {
-        await runInTransaction(options.database, async (transaction) => {
+        await runInPSqlTransaction(options.database, async (transaction) => {
             await write(transaction);
             await finishRtcTopologyReservation(transaction, entry);
         });
@@ -396,7 +396,7 @@ async function writeRtcTopologyPublicationTransaction(
 }
 
 async function writePublicationDelivery(
-    transaction: PSqlTransactionSql,
+    transaction: PSqlSql,
     publication: RtcTopologyPublication,
     delivery: RtcTopologyDeliveryOptions | undefined
 ): Promise<void> {

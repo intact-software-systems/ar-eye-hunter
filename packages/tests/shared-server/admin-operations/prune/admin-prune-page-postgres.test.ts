@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { PSqlAdminPruneRepository } from '@shared-server/postgres/admin-operations/p-sql-admin-prune-repository.ts';
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { AdminPruneAppData } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
 import type { AdminPrunePageWork } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
 

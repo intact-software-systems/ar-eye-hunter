@@ -1,5 +1,5 @@
-import { validateRuntimeStateExpiredAuthority } from '../../../../runtime-state/RuntimeStateExpiredEntry.ts';
-import type { RuntimeStateEntryValue } from '../../../../runtime-state/RuntimeStateJsonStore.ts';
+import { validateRuntimeStateExpiredAuthority } from '../../../../runtime-state/runtime-state-expired-entry.ts';
+import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
 import type { PersistedAuthSession } from '../../persistence/auth-persistence-contracts.ts';
 import { authSessionKey, authTokenDigestKey } from '../../persistence/auth-storage-keys.ts';
 import type { AuthMutationCommand, AuthMutationRead, AuthSessionEntries } from '../auth-mutation-contracts.ts';
@@ -47,18 +47,18 @@ export function validateIssueSessionRead(
     if (!session) {
         throw new AuthMutationRejectedError('Issued auth session is missing');
     }
-    validateRuntimeStateExpiredAuthority(
-        read.byToken,
-        read.expiredByTokenEntry,
-        authTokenDigestKey(session.accessTokenDigest),
-        'Auth token index read'
-    );
-    validateRuntimeStateExpiredAuthority(
-        read.bySession,
-        read.expiredBySessionEntry,
-        authSessionKey(session.sessionId),
-        'Auth session index read'
-    );
+    validateRuntimeStateExpiredAuthority({
+        live: read.byToken,
+        expiredEntry: read.expiredByTokenEntry,
+        expectedKey: authTokenDigestKey(session.accessTokenDigest),
+        label: 'Auth token index read'
+    });
+    validateRuntimeStateExpiredAuthority({
+        live: read.bySession,
+        expiredEntry: read.expiredBySessionEntry,
+        expectedKey: authSessionKey(session.sessionId),
+        label: 'Auth session index read'
+    });
     const tokenMatches = !read.byToken || equalAuthJson(read.byToken.value, session);
     const sessionMatches = !read.bySession || equalAuthJson(read.bySession.value, session);
     if (!tokenMatches || !sessionMatches) {

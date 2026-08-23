@@ -7,10 +7,10 @@ import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/t
 import { type RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
-import { PSqlRuntimeStateRepository } from '../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
-import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/RuntimeStateRepository.ts';
+import { PSqlRuntimeStateRepository } from '../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import {
     computeTopologyMutation,
     validateTopologyMutation,
@@ -83,7 +83,7 @@ export class RtcTopologyExecutionRepository {
     }
 
     async writeTopologyInputFingerprint(
-        transaction: PSqlTransactionSql,
+        transaction: PSqlSql,
         groupRef: GroupRef,
         fingerprint: string
     ): Promise<void> {
@@ -126,7 +126,7 @@ export class RtcTopologyExecutionRepository {
     }
 
     async writeTopologyMutation(
-        transaction: PSqlTransactionSql,
+        transaction: PSqlSql,
         computed: Extract<RtcTopologyMutationComputed, { outcome: 'write' | 'publish-superseded'; }>
     ): Promise<'committed'> {
         const publicationWrite = requirePublicationWrite(computed);

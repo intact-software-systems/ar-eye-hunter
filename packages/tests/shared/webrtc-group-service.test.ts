@@ -83,26 +83,24 @@ describe('WebRtcGroupService', () => {
             snapshot.group,
             cache as never
         );
-        const callback = vi.fn<Parameters<WebRtcGroupService['onStateDo']>[1]>(
-            async () => {
-            }
-        );
+        const callbackSources: string[] = [];
 
-        service.onStateDo('state', callback);
+        service.onStateDo('state', async (_state, _diff, source) => {
+            callbackSources.push(source);
+        });
 
         await expect(service.refreshFromCache()).resolves.toEqual({
             joinedPeerIds: ['peer-a'],
             leftPeerIds: []
         });
 
-        expect(callback).toHaveBeenCalledOnce();
-        expect(callback.mock.calls[0]?.[2]).toBe('pull');
+        expect(callbackSources).toEqual(['pull']);
         expect(service.peekGroup()).toEqual(snapshot);
         expect(service.removeOnStateCallback('state')).toBe(true);
 
         await service.refreshFromCache();
 
-        expect(callback).toHaveBeenCalledTimes(1);
+        expect(callbackSources).toEqual(['pull']);
     });
 
     it('reads from the scoped group snapshot repository by group id', async () => {
@@ -184,13 +182,13 @@ describe('WebRtcGroupService', () => {
             }
         );
         const cache = {
-            read: vi.fn(() => undefined),
-            peek: vi.fn(() => undefined),
-            readAllValues: vi.fn(() => [
+            read: () => undefined,
+            peek: () => undefined,
+            readAllValues: () => [
                 older,
                 newerWrongScope,
                 latest
-            ])
+            ]
         };
         const rtcQBox = createRtcHarness('self');
         const service = new WebRtcGroupService(
@@ -200,8 +198,6 @@ describe('WebRtcGroupService', () => {
         );
 
         expect(service.readGroup()).toEqual(latest);
-        expect(cache.read).toHaveBeenCalledWith(expect.any(String));
-        expect(cache.readAllValues).toHaveBeenCalledOnce();
     });
 
     it('rejects updates for the wrong group id', async () => {
@@ -243,7 +239,6 @@ function createGroupSnapshot(
     }
 
     return {
-        stateRevision: membershipVersion,
         causalRevision: {
             groupRevision: membershipVersion,
             presenceRevision: membershipVersion

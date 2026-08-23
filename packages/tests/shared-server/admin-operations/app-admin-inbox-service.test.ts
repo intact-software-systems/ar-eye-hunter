@@ -5,7 +5,7 @@ import { ADMIN_PRUNE_EXPIRED_CATEGORIES, type AdminPruneExpiredCategory, type Ad
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarCrdtJsonValue } from '@shared/crdt/mod.ts';
 
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
     createAdminPruneCommand,
     decodeAdminPruneCommand,
@@ -101,14 +101,14 @@ describe('AppAdminInboxService initial prune command', () => {
         expect(harness.events.indexOf('semantic-identity-completed')).toBeLessThan(
             harness.events.indexOf('retry-expiry-callback')
         );
-        expect(harness.createAdminPruneIdempotencyIdentity).toHaveBeenCalledExactlyOnceWith({
+        expect(harness.identityInputs()).toEqual([{
             requestId: 'default-prune-request',
             requestedBy: 'admin',
             requestedSessionId: 'admin-session',
             categories: defaultAdminPruneCategories(),
             appData: null,
             dryRun: true
-        });
+        }]);
         expect(harness.timingEvents).toContainEqual(
             expect.objectContaining({
                 component: 'admin-prune-inbox',
@@ -118,17 +118,19 @@ describe('AppAdminInboxService initial prune command', () => {
                 details: expect.objectContaining({ semanticHash: expect.stringMatching(/^sha256:/u) })
             })
         );
-        expect(harness.nowEpochMs).toHaveBeenCalledOnce();
-        expect(harness.computeRetryExpiryAtEpochMs).toHaveBeenCalledExactlyOnceWith(
-            INITIAL_TIME_EPOCH_MS
-        );
-        expect(harness.readAuthority).not.toHaveBeenCalled();
-        expect(harness.pruner.countExpired).not.toHaveBeenCalled();
-        expect(harness.wakeQueueEngine).not.toHaveBeenCalled();
+        expect(harness.retryExpiryInputs()).toEqual([INITIAL_TIME_EPOCH_MS]);
+        expect(harness.readWorkCounts()).toEqual({
+            now: 1,
+            expiry: 1,
+            authority: 0,
+            count: 0,
+            transaction: 0,
+            wake: 0
+        });
 
         await dequeueInitialCommand(harness);
         await expect(pending).resolves.toMatchObject({ right: { status: 'dry-run' } });
-        expect(harness.wakeQueueEngine).toHaveBeenCalledOnce();
+        expect(harness.readWorkCounts().wake).toBe(1);
     });
 
     it('rejects app-data without a namespace before volatile or mutation work', async () => {
@@ -142,12 +144,14 @@ describe('AppAdminInboxService initial prune command', () => {
             })
         ).rejects.toThrow('appData.namespace is required');
 
-        expect(harness.nowEpochMs).not.toHaveBeenCalled();
-        expect(harness.computeRetryExpiryAtEpochMs).not.toHaveBeenCalled();
-        expect(harness.readAuthority).not.toHaveBeenCalled();
-        expect(harness.pruner.countExpired).not.toHaveBeenCalled();
-        expect(harness.transactionCount()).toBe(0);
-        expect(harness.wakeQueueEngine).not.toHaveBeenCalled();
+        expect(harness.readWorkCounts()).toEqual({
+            now: 0,
+            expiry: 0,
+            authority: 0,
+            count: 0,
+            transaction: 0,
+            wake: 0
+        });
     });
 
     it('reuses a same-client same-session request without recapturing facts', async () => {
@@ -219,13 +223,11 @@ describe('AppAdminInboxService initial prune command', () => {
         });
 
         await waitForQueueEntry(harness.queue);
-        expect(harness.computeRetryExpiryAtEpochMs).toHaveBeenCalledOnce();
-        expect(harness.nowEpochMs).toHaveBeenCalledOnce();
+        expect(harness.readWorkCounts()).toMatchObject({ expiry: 1, now: 1 });
         await dequeueInitialCommand(harness);
         await expect(Promise.all([first, contender])).resolves.toHaveLength(2);
 
-        expect(harness.computeRetryExpiryAtEpochMs).toHaveBeenCalledOnce();
-        expect(harness.pruner.countExpired).toHaveBeenCalledOnce();
+        expect(harness.readWorkCounts()).toMatchObject({ expiry: 1, count: 1 });
         expect(harness.transactionCount()).toBe(1);
     });
 
@@ -302,7 +304,7 @@ describe('AppAdminInboxService initial prune command', () => {
             { requestedBy: 'admin-a', requestedSessionId: 'admin-a-session' },
             { requestedBy: 'admin-b', requestedSessionId: 'admin-b-session' }
         ]);
-        expect(harness.pruner.countExpired).toHaveBeenCalledTimes(2);
+        expect(harness.readWorkCounts().count).toBe(2);
     });
 
     it(
@@ -518,7 +520,7 @@ describe('AppAdminInboxService initial prune command', () => {
         expect(harness.outboxWinnerLookups()).toBe(0);
         expect(harness.durableResultQueryLookups()).toBe(0);
         expect(harness.durableResultPortLookups()).toBe(0);
-        expect(harness.wakeQueueEngine).toHaveBeenCalledOnce();
+        expect(harness.readWorkCounts().wake).toBe(1);
     });
 
     it('restarts read and write after an optimistic transaction conflict', async () => {
@@ -535,10 +537,12 @@ describe('AppAdminInboxService initial prune command', () => {
             dequeueAttempts: 2
         });
 
-        expect(harness.readAuthority).toHaveBeenCalledTimes(2);
-        expect(harness.pruner.countExpired).toHaveBeenCalledTimes(2);
-        expect(harness.transactionCount()).toBe(2);
-        expect(harness.wakeQueueEngine).toHaveBeenCalledOnce();
+        expect(harness.readWorkCounts()).toMatchObject({
+            authority: 2,
+            count: 2,
+            transaction: 2,
+            wake: 1
+        });
         expect(harness.events.filter((event) => event !== 'queue-wake')).toEqual([
             'semantic-identity-completed',
             'phase:semantic-identity',
@@ -595,7 +599,7 @@ describe('AppAdminInboxService initial prune command', () => {
 
             expect(result.left).toMatchObject({ code: expectedCode });
             expect(harness.database.outboxEntries.size).toBe(0);
-            expect(harness.wakeQueueEngine).toHaveBeenCalledOnce();
+            expect(harness.readWorkCounts().wake).toBe(1);
         }
     );
 
@@ -843,9 +847,11 @@ describe('AppAdminInboxService initial prune command', () => {
             })
         ).resolves.toMatchObject({ left: { code: 'app-inbox-unavailable' } });
 
-        expect(harness.readAuthority).not.toHaveBeenCalled();
-        expect(harness.pruner.countExpired).not.toHaveBeenCalled();
-        expect(harness.transactionCount()).toBe(0);
+        expect(harness.readWorkCounts()).toMatchObject({
+            authority: 0,
+            count: 0,
+            transaction: 0
+        });
     });
 });
 
@@ -871,11 +877,7 @@ async function rejectsChangedAdminPruneRequest({
     });
 
     expect(harness.readWorkCounts()).toEqual(beforeConflict);
-    expect(harness.createAdminPruneIdempotencyIdentity).toHaveBeenCalledTimes(2);
-    const identities = await Promise.all(
-        harness.createAdminPruneIdempotencyIdentity.mock.results.map(({ value }) => value)
-    );
-    expect(identities[0]?.semanticHash).not.toBe(identities[1]?.semanticHash);
+    expect(harness.identityInputs()).toHaveLength(2);
     const semanticHashes = readSemanticHashes(harness.timingEvents);
     expect(semanticHashes).toHaveLength(2);
     expect(semanticHashes[0]).toMatch(/^sha256:/u);
@@ -917,16 +919,12 @@ interface AdminInboxHarness {
     readonly database: ReturnType<typeof createAppInboxTestDatabase>;
     readonly events: string[];
     readonly timingEvents: RallarTimingEvent[];
-    readonly nowEpochMs: ReturnType<typeof vi.fn>;
-    readonly computeRetryExpiryAtEpochMs: ReturnType<typeof vi.fn>;
-    readonly createAdminPruneIdempotencyIdentity: ReturnType<typeof vi.fn>;
-    readonly readAuthority: ReturnType<typeof vi.fn>;
-    readonly pruner: Readonly<{ countExpired: ReturnType<typeof vi.fn>; }>;
-    readonly wakeQueueEngine: ReturnType<typeof vi.fn>;
     advanceTime(milliseconds: number): void;
     durableResultPortLookups(): number;
     durableResultQueryLookups(): number;
     outboxWinnerLookups(): number;
+    identityInputs(): readonly AdminPruneIdempotencyIdentityInput[];
+    retryExpiryInputs(): readonly number[];
     readWorkCounts(): Readonly<{
         now: number;
         expiry: number;
@@ -949,35 +947,49 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
     let collisionWinnerLookups = 0;
     let resultPortLookups = 0;
     let resultQueryLookups = 0;
-    const nowEpochMs = vi.fn(() => {
+    let nowReads = 0;
+    let authorityReads = 0;
+    let expiredCounts = 0;
+    let wakeRequests = 0;
+    const retryExpiryInputValues: number[] = [];
+    const idempotencyIdentityInputs: AdminPruneIdempotencyIdentityInput[] = [];
+    const nowEpochMs = () => {
+        nowReads += 1;
         events.push('now-callback');
         return currentTimeEpochMs;
-    });
-    const computeRetryExpiryAtEpochMs = vi.fn((capturedAtEpochMs: number) => {
+    };
+    const computeRetryExpiryAtEpochMs = (capturedAtEpochMs: number) => {
+        retryExpiryInputValues.push(capturedAtEpochMs);
         events.push('retry-expiry-callback');
         return capturedAtEpochMs + (options.retryExpiryOffsetMs ?? RETRY_EXPIRY_OFFSET_MS);
-    });
-    const createAdminPruneIdentity = vi.fn(
-        async (input: AdminPruneIdempotencyIdentityInput): Promise<AdminPruneIdempotencyIdentity> => {
-            const identity = await createAdminPruneIdempotencyIdentity(input);
-            events.push('semantic-identity-completed');
-            return identity;
-        }
-    );
-    const readAuthority = vi.fn(async () => {
+    };
+    const createAdminPruneIdentity = async (
+        input: AdminPruneIdempotencyIdentityInput
+    ): Promise<AdminPruneIdempotencyIdentity> => {
+        idempotencyIdentityInputs.push(input);
+        const identity = await createAdminPruneIdempotencyIdentity(input);
+        events.push('semantic-identity-completed');
+        return identity;
+    };
+    const readAuthority = async () => {
+        authorityReads += 1;
         events.push('current-authority');
         return {
             allowed: options.allowCurrentAuthority ?? true,
             code: options.allowCurrentAuthority === false ? 'admin-prune-authority-denied' : 'allowed'
         };
-    });
+    };
     const pruner = {
-        countExpired: vi.fn(async (category: AdminPruneExpiredCategory) => {
+        countExpired: async (category: AdminPruneExpiredCategory) => {
+            expiredCounts += 1;
             events.push(`count:${category}`);
             return category.length;
-        })
+        }
     };
-    const wakeQueueEngine = vi.fn(() => events.push('queue-wake'));
+    const wakeQueueEngine = () => {
+        wakeRequests += 1;
+        events.push('queue-wake');
+    };
     const resultRepository = {
         replace: async (entry: ResourceEntry) => {
             return await results.replace(entry);
@@ -1047,25 +1059,21 @@ function createAdminInboxHarness(options: CreateAdminInboxHarnessOptions = {}): 
         database,
         events,
         timingEvents,
-        nowEpochMs,
-        computeRetryExpiryAtEpochMs,
-        createAdminPruneIdempotencyIdentity: createAdminPruneIdentity,
-        readAuthority,
-        pruner,
-        wakeQueueEngine,
         advanceTime: (milliseconds) => {
             currentTimeEpochMs += milliseconds;
         },
         durableResultPortLookups: () => resultPortLookups,
         durableResultQueryLookups: () => resultQueryLookups,
         outboxWinnerLookups: () => collisionWinnerLookups,
+        identityInputs: () => idempotencyIdentityInputs,
+        retryExpiryInputs: () => retryExpiryInputValues,
         readWorkCounts: () => ({
-            now: nowEpochMs.mock.calls.length,
-            expiry: computeRetryExpiryAtEpochMs.mock.calls.length,
-            authority: readAuthority.mock.calls.length,
-            count: pruner.countExpired.mock.calls.length,
+            now: nowReads,
+            expiry: retryExpiryInputValues.length,
+            authority: authorityReads,
+            count: expiredCounts,
             transaction: transactions,
-            wake: wakeQueueEngine.mock.calls.length
+            wake: wakeRequests
         }),
         transactionCount: () => transactions
     };
@@ -1097,7 +1105,7 @@ function createObservedDatabase(
 ): PSqlSql {
     const observed = ((strings: TemplateStringsArray, ...values: Parameters<PSqlSql>[0]) => database(strings, ...values)) as PSqlSql;
     Object.defineProperties(observed, Object.getOwnPropertyDescriptors(database));
-    observed.begin = async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>): Promise<T> =>
+    observed.begin = async <T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T> =>
         await database.begin(
             async (transaction) => await write(createObservedTransaction(transaction, events, lookupRecorder))
         );
@@ -1105,13 +1113,13 @@ function createObservedDatabase(
 }
 
 function createObservedTransaction(
-    transaction: PSqlTransactionSql,
+    transaction: PSqlSql,
     events: string[],
     lookupRecorder: Readonly<{
         recordOutboxWinnerLookup(): void;
         recordDurableResultLookup(): void;
     }>
-): PSqlTransactionSql {
+): PSqlSql {
     const observed = (async (strings: TemplateStringsArray, ...values: Parameters<PSqlSql>[0]) => {
         const query = strings.join(' ').replace(/\s+/gu, ' ').trim().toLowerCase();
         if (query.includes('from resource_inbox') && query.includes('limit 1')) {

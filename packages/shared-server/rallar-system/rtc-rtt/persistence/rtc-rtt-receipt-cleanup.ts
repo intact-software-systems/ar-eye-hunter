@@ -1,7 +1,7 @@
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
-import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
-import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/RuntimeStateRepository.ts';
-import { isRuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
+import { isRuntimeStateOptimisticTransactionalRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../../topology/persistence/rtc-topology-errors.ts';
 import { compareRtcTopologyIdentifiers } from '../../topology/persistence/rtc-topology-identifiers.ts';
 import type { RtcRttMutationReceipt } from './rtc-rtt-persistence-contracts.ts';

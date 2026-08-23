@@ -10,7 +10,7 @@ import {
 import {
     RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE
 } from '../../rallar-system/topology/replay/rtc-topology-replay-policy.ts';
-import type { PSqlSql } from '../PostgresSqlClient.ts';
+import type { PSqlSql } from '../p-sql-sql.ts';
 
 interface CompactRtcTopologyDeliveryEntriesInput {
     readonly database: PSqlSql;

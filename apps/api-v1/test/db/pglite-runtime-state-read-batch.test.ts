@@ -1,5 +1,6 @@
-import { PSqlRuntimeStateRepository, type RuntimeStateReadBatchSelector } from '@shared-server/mod.ts';
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import type { RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import assert from 'node:assert/strict';
 import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
 
@@ -76,14 +77,14 @@ function observeDriverRowCounts(
     sql: PSqlSql,
     rowCounts: number[]
 ): PSqlSql {
-    const observed = function<T> (
-        stringsOrValues: TemplateStringsArray | readonly unknown[],
-        ...values: unknown[]
-    ): Promise<T> | unknown {
+    const observed = function<Rows extends PSqlRows> (
+        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
+        ...values: PSqlParameter[]
+    ): Promise<Rows> | object {
         if (!isTemplateStringsArray(stringsOrValues)) {
             return sql(stringsOrValues);
         }
-        return Promise.resolve(sql<T>(stringsOrValues, ...values)).then((result) => {
+        return Promise.resolve(sql<Rows>(stringsOrValues, ...values)).then((result) => {
             rowCounts.push(Array.isArray(result) ? result.length : -1);
             return result;
         });
@@ -92,6 +93,8 @@ function observeDriverRowCounts(
     return observed;
 }
 
-function isTemplateStringsArray(value: readonly unknown[]): value is TemplateStringsArray {
+function isTemplateStringsArray(
+    value: TemplateStringsArray | readonly PSqlParameter[]
+): value is TemplateStringsArray {
     return Array.isArray(value) && Object.hasOwn(value, 'raw');
 }

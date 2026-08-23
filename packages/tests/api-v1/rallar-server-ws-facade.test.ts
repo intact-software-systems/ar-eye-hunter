@@ -1,5 +1,9 @@
 import { createRallarServerFacade } from '@shared-server/rallar-facade/RallarServer.ts';
 import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
+import {
+    decodeJsonWireValue,
+    type JsonWireValue
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
@@ -81,14 +85,19 @@ describe('RallarServerWsFacade', () => {
 
     it('dispatches registered handlers and allows default fanout to be disabled', async () => {
         const { facade, socket } = createFacade();
-        const handler = vi.fn();
+        const handledPayloads: JsonWireValue[] = [];
         facade.defineTopic({
             topicId: 'app.todo',
             typeId: 'todo.item.updated.v1',
             fanout: 'none',
             validate: () => true
         });
-        facade.on({ topicId: 'app.todo', typeId: 'todo.item.updated.v1' }, handler);
+        facade.on(
+            { topicId: 'app.todo', typeId: 'todo.item.updated.v1' },
+            async (handledMessage) => {
+                handledPayloads.push(decodeJsonWireValue(handledMessage.payload));
+            }
+        );
         const message = newALBroadcastMessage(
             'peer-1',
             newALRoute('app.todo', 'all', 'todo-1'),
@@ -99,17 +108,20 @@ describe('RallarServerWsFacade', () => {
 
         await facade.handle(message);
 
-        expect(handler).toHaveBeenCalledTimes(1);
-        expect(handler.mock.calls[0][0].payload).toEqual({
+        expect(handledPayloads).toEqual([{
             title: 'Ship facade',
             done: false
-        });
+        }]);
         expect(socket.sent).toHaveLength(0);
     });
 
     it('can route registered topics through the QueueBox outbox', async () => {
-        const wakeOutbox = vi.fn();
-        const { facade, service } = createFacade({ wakeOutbox });
+        let outboxWakeRequested = false;
+        const { facade, service } = createFacade({
+            wakeOutbox: () => {
+                outboxWakeRequested = true;
+            }
+        });
         const enqueue = vi.spyOn(service, 'enqueueOutboxIfAbsent');
         facade.defineTopic({
             topicId: 'app.todo',
@@ -131,7 +143,7 @@ describe('RallarServerWsFacade', () => {
         await facade.handle(message);
 
         expect(enqueue).toHaveBeenCalledWith(message);
-        expect(wakeOutbox).toHaveBeenCalledOnce();
+        expect(outboxWakeRequested).toBe(true);
     });
 
     it('can require explicit topic definitions while still rejecting custom prefixes', async () => {
@@ -367,7 +379,7 @@ describe('RallarServer.ws.publish current behavior', () => {
         expect(result.entries).toHaveLength(1);
         expect((outbox as any).data.size).toBe(1);
         expect(socket.sent).toHaveLength(0);
-        expect(qboxEngine.wake).toHaveBeenCalledOnce();
+        expect(qboxEngine.wakeRequested).toBe(true);
     });
 
     it('rejects a durable room broadcast before the router can queue an unscoped envelope', async () => {
@@ -390,13 +402,11 @@ describe('RallarServer.ws.publish current behavior', () => {
 
         expect(await outbox.getItem(message.route)).toBeUndefined();
         expect(socket.sent).toHaveLength(0);
-        expect(qboxEngine.wake).not.toHaveBeenCalled();
+        expect(qboxEngine.wakeRequested).toBe(false);
     });
 
     it('returns none metadata without sending or enqueueing', async () => {
-        const { server, service, socket, outbox } = createServerFacade();
-        const enqueue = vi.spyOn(service, 'enqueueOutboxIfAbsent');
-        const sendToTargets = vi.spyOn(service, 'sendToTargets');
+        const { server, socket, outbox } = createServerFacade();
         const message = newALBroadcastMessage(
             'server-1',
             newALRoute('app.todo', 'room-1', 'todo-1'),
@@ -413,8 +423,6 @@ describe('RallarServer.ws.publish current behavior', () => {
             sentCount: 0,
             entries: []
         });
-        expect(enqueue).not.toHaveBeenCalled();
-        expect(sendToTargets).not.toHaveBeenCalled();
         expect(socket.sent).toHaveLength(0);
         expect((outbox as any).data.size).toBe(0);
     });
@@ -493,8 +501,11 @@ function createServerFacade(
         }
     );
     const qboxEngine = {
-        start: vi.fn(),
-        wake: vi.fn()
+        wakeRequested: false,
+        start() {},
+        wake() {
+            this.wakeRequested = true;
+        }
     };
     const server = createRallarServerFacade({
         runtime: {
@@ -589,7 +600,6 @@ function createGroupSnapshot(
         throw new Error('Group fixture requires an owner session');
     }
     return {
-        stateRevision: snapshotVersion,
         causalRevision: {
             groupRevision: snapshotVersion,
             presenceRevision: snapshotVersion

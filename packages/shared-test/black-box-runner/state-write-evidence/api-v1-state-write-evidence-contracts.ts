@@ -2,7 +2,7 @@ import { type ReceiptEffectIdentityKind } from './api-v1-state-write-result-evid
 
 export type ApiV1StateWriteEvidence = Readonly<Record<string, unknown>>;
 
-export type ApiV1StateWriteEvidenceSqlParameter = string | number | boolean | Date | null;
+export type ApiV1StateWriteEvidenceSqlParameter = string | number | boolean | Date | null | object;
 
 export interface ApiV1StateWriteEvidenceQuery {
     <Rows extends readonly (object | undefined)[]>(

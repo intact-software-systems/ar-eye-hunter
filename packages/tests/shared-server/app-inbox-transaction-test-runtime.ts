@@ -1,6 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/app-inbox-handler-registry.ts';
+import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppInboxQueueClient, AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 
@@ -76,7 +77,7 @@ class AtomicAppInboxService {
 
     async commit<R>(
         context: AppInboxMessageContext,
-        write: (transaction: PSqlTransactionSql) => Promise<R>
+        write: (transaction: PSqlSql) => Promise<R>
     ): Promise<R> {
         return await this.handlerRegistry.writeMutation(context, write);
     }
@@ -93,7 +94,7 @@ class AtomicAppInboxService {
     }
 
     processEntryUntilCompletion<V>(
-        input: AppInboxMessageContext['enqueue']
+        input: AppInboxEnqueueInput<V>
     ) {
         return this.queueClient.processEntryUntilCompletion<V>(input);
     }
@@ -271,7 +272,7 @@ export function toRegisteredHandlerIdentityResource(
 class AtomicDatabase {
     state: AtomicState;
     beginCalls = 0;
-    activeTransaction: PSqlTransactionSql | undefined;
+    activeTransaction: PSqlSql | undefined;
     private working: AtomicState | undefined;
     loseReservation: boolean;
 
@@ -300,7 +301,7 @@ class AtomicDatabase {
         const sql = (async (_stringsOrValues: TemplateStringsArray | PSqlValues) => {
             throw new Error('Unexpected raw SQL in atomic test database');
         }) as PSqlSql;
-        sql.begin = async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>) => {
+        sql.begin = async <T>(write: (transaction: PSqlSql) => Promise<T>) => {
             this.beginCalls += 1;
             const transaction = (async (strings: TemplateStringsArray, ...values: PSqlValues) => {
                 const query = strings.join('?').replace(/\s+/gu, ' ').trim().toLowerCase();
@@ -345,7 +346,7 @@ class AtomicDatabase {
                     return [{ ri_row_id: 1n }];
                 }
                 throw new Error(`Unexpected raw transaction SQL in atomic test database: ${query}`);
-            }) as PSqlTransactionSql;
+            }) as PSqlSql;
             transaction.begin = async () => {
                 throw new Error('Nested transaction');
             };

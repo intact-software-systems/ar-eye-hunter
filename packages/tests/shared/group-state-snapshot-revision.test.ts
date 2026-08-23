@@ -120,7 +120,6 @@ function createGroupSnapshot(
         expiresAtEpochMs: 120_000 + leaseOffsetMs
     });
     return {
-        stateRevision: 4 + input.presenceRevision,
         causalRevision: { groupRevision: 4, presenceRevision: input.presenceRevision },
         group: createTestGroup({
             ...ref,

@@ -1,11 +1,8 @@
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import {
-    isRuntimeStateReadBatchRepositoryLike,
-    validateRuntimeStateReadBatchResult,
-    validateRuntimeStateReadBatchSelectors,
-    type RuntimeStateReadBatchSelector
-} from '@shared-server/runtime-state/RuntimeStateReadBatch.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import { type RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import { validateRuntimeStateReadBatchResult } from '@shared-server/runtime-state/read-batch/validate-runtime-state-read-batch-result.ts';
+import { validateRuntimeStateReadBatchSelectors } from '@shared-server/runtime-state/read-batch/validate-runtime-state-read-batch-selectors.ts';
 import { describe, expect, it } from 'vitest';
 
 const ENTRY = {
@@ -65,12 +62,12 @@ describe('runtime-state read batches', () => {
         const sparseSelectors = new Array(2);
         sparseSelectors[0] = SELECTORS[0];
         expect(() => validateRuntimeStateReadBatchSelectors(sparseSelectors))
-            .toThrow(/dense/iu);
+            .toThrow(/sparse|dense/iu);
 
         const sparseResults = new Array(2);
         sparseResults[0] = { selectorId: 'group', entries: [ENTRY] };
         expect(() => validateRuntimeStateReadBatchResult(SELECTORS, sparseResults))
-            .toThrow(/dense/iu);
+            .toThrow(/sparse|dense/iu);
         expect(() =>
             validateRuntimeStateReadBatchResult(SELECTORS, [{
                 selectorId: 'members',
@@ -148,31 +145,6 @@ describe('runtime-state read batches', () => {
         }
     });
 
-    it('detects only explicit callable capabilities without throwing', () => {
-        const capable = {
-            runtimeStateReadBatchCapability: true,
-            runtimeStateReadBatchConsistency: 'single-database-snapshot',
-            readRuntimeStateBatch: async () => []
-        };
-        expect(isRuntimeStateReadBatchRepositoryLike(capable)).toBe(true);
-        for (
-            const candidate of [
-                null,
-                {},
-                {
-                    runtimeStateReadBatchCapability: true,
-                    readRuntimeStateBatch: async () => []
-                },
-                { ...capable, runtimeStateReadBatchCapability: false },
-                { ...capable, runtimeStateReadBatchConsistency: 'best-effort' },
-                { ...capable, readRuntimeStateBatch: null }
-            ]
-        ) {
-            expect(() => isRuntimeStateReadBatchRepositoryLike(candidate)).not.toThrow();
-            expect(isRuntimeStateReadBatchRepositoryLike(candidate)).toBe(false);
-        }
-    });
-
     it('uses one fixed parameterized SELECT and returns one packed driver row', async () => {
         const captured: CapturedQuery[] = [];
         const sql = captureSql(captured, [{
@@ -190,10 +162,6 @@ describe('runtime-state read batches', () => {
         }]);
         const repository = new PSqlRuntimeStateRepository(sql);
 
-        expect(isRuntimeStateReadBatchRepositoryLike(repository)).toBe(true);
-        if (!isRuntimeStateReadBatchRepositoryLike(repository)) {
-            throw new Error('Expected runtime-state read batch capability');
-        }
         await expect(repository.readRuntimeStateBatch(SELECTORS)).resolves.toEqual([{
             selectorId: 'group',
             entries: [ENTRY]

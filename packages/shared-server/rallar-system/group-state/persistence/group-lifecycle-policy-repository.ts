@@ -2,8 +2,8 @@ import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lif
 import { validateGroupLifecyclePolicy } from '@shared/api/group-lifecycle/validate-group-lifecycle-policy.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
-import { RuntimeStateJsonStore } from '../../../runtime-state/RuntimeStateJsonStore.ts';
-import type { RuntimeStateRepositoryLike } from '../../../runtime-state/RuntimeStateRepository.ts';
+import { RuntimeStateJsonStore } from '../../../runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import { groupStateGroupStorageKey } from './group-state-storage-keys.ts';
 
 export const GROUP_LIFECYCLE_POLICIES_NAMESPACE = 'group-state:lifecycle-policies';

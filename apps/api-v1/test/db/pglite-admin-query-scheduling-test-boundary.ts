@@ -1,4 +1,4 @@
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlParameter, PSqlRows, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 
@@ -19,10 +19,10 @@ export function delayAdminRuntimeFactQueries(
     const gate = Promise.withResolvers<void>();
     let runtimeFactQueries = 0;
     const recentEventQueries: string[] = [];
-    const delayed = (function<T> (
-        stringsOrValues: TemplateStringsArray | readonly unknown[],
-        ...values: unknown[]
-    ): Promise<T> | unknown {
+    const delayed = (function<Rows extends PSqlRows> (
+        stringsOrValues: TemplateStringsArray | readonly PSqlParameter[],
+        ...values: PSqlParameter[]
+    ): Promise<Rows> | object {
         if (!isTemplateStringsArray(stringsOrValues)) {
             return sql(stringsOrValues);
         }
@@ -37,7 +37,7 @@ export function delayAdminRuntimeFactQueries(
         if (isRuntimeFactQuery) {
             runtimeFactQueries += 1;
         }
-        const result = sql<T>(stringsOrValues, ...values);
+        const result = sql<Rows>(stringsOrValues, ...values);
         if (!isRuntimeFactQuery) {
             return result;
         }
@@ -57,6 +57,8 @@ export function delayAdminRuntimeFactQueries(
     };
 }
 
-function isTemplateStringsArray(value: readonly unknown[]): value is TemplateStringsArray {
+function isTemplateStringsArray(
+    value: TemplateStringsArray | readonly PSqlParameter[]
+): value is TemplateStringsArray {
     return Array.isArray(value) && Object.hasOwn(value, 'raw');
 }

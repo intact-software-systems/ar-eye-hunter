@@ -1,13 +1,13 @@
 import type { Group, GroupEvent, GroupRef, GroupScope } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import type { RuntimeStateGuardedBatchUpdate } from '../../../runtime-state/RuntimeStateGuardedBatch.ts';
-import { RuntimeStateJsonStore, type RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateGuardedBatchUpdate } from '../../../runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import { RuntimeStateJsonStore, type RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import {
     isRuntimeStateConditionalRepositoryLike,
     type RuntimeStateConditionalWriteResult,
     type RuntimeStateRepositoryLike
-} from '../../../runtime-state/RuntimeStateRepository.ts';
+} from '../../../runtime-state/runtime-state-repository.ts';
 import { filterStateEventsForList, type StateEventListQuery } from '../../state-events/state-event-listing.ts';
 import type { GroupStateEventStore } from '../../state-events/state-event-store.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';

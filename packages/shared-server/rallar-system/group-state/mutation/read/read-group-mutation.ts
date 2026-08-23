@@ -327,7 +327,7 @@ function exactEntry<Identity extends string, Value>(
 function exactExpiredEntry<Identity extends string>(
     entries: readonly Readonly<{
         identity: Identity;
-        expiredEntry: import('../../../../runtime-state/RuntimeStateRepository.ts').RuntimeStateEntry | null;
+        expiredEntry: import('../../../../runtime-state/runtime-state-repository.ts').RuntimeStateEntry | null;
     }>[],
     identity: Identity | null | undefined
 ) {
