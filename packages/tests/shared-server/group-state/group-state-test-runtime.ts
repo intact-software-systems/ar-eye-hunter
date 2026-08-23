@@ -14,7 +14,6 @@ import {
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import type { GroupStateEventStore } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
-import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-group-state-event-store.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
@@ -81,8 +80,7 @@ export function createTestGroupStateRuntime(
     const issued = new Map<string, StoredAuthSession>();
     const now = dependencies.now ?? (() => Date.now());
     const randomId = dependencies.randomId ?? (() => crypto.randomUUID());
-    const defaultEventStore = new InMemoryGroupStateEventStore();
-    const eventStoreFor = dependencies.groupStateEventStoreFor ?? (() => defaultEventStore);
+    const eventStoreFor = resolveGroupStateEventStoreFactory(dependencies);
     const durable = createGroupStateService({
         runtimeRepository: dependencies.runtimeRepository,
         groupStateEventStore: eventStoreFor(dependencies.runtimeRepository),
@@ -110,6 +108,23 @@ export function createTestGroupStateRuntime(
         mutationExecutor
     );
     return { service, durable, maintenance };
+}
+
+function resolveGroupStateEventStoreFactory(
+    dependencies: TestGroupStateServiceDependencies
+): (runtime: RuntimeStateOptimisticTransactionalRepositoryLike) => GroupStateEventStore {
+    if (dependencies.groupStateEventStoreFor !== undefined) {
+        return dependencies.groupStateEventStoreFor;
+    }
+    const eventStore = (
+        dependencies.runtimeRepository as
+            & RuntimeStateOptimisticTransactionalRepositoryLike
+            & Partial<Readonly<{ groupStateEventStore: GroupStateEventStore; }>>
+    ).groupStateEventStore;
+    if (eventStore === undefined) {
+        throw new TypeError('Test group-state runtime construction requires an explicit event store owner');
+    }
+    return () => eventStore;
 }
 
 function createAuthenticatedTestGroupStateService(

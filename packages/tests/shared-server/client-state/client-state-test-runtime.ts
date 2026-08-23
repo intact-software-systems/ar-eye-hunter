@@ -48,21 +48,25 @@ interface ClientStateTestExecutorInput {
 }
 
 interface ClientStateTestDriverDependencies {
-    readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
+    readonly runtimeRepository: ClientStateTestRuntimeRepository;
     readonly now?: () => number;
     readonly serviceId: string;
     readonly timing?: RallarTimingSink;
 }
 
+type ClientStateTestRuntimeRepository =
+    & RuntimeStateOptimisticTransactionalRepositoryLike
+    & Readonly<{ clientStateEventStore: TestClientStateEventStore; }>;
+
 export type { ClientStatePhaseTestDriver } from './client-state-test-driver-contracts.ts';
 export { failNextClientStateTestOutboxWrite, getClientStateTestOutbox };
 
 export function createClientStatePhaseTestDriver(
-    runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike,
+    runtimeRepository: ClientStateTestRuntimeRepository,
     nowEpochMs: () => number,
     options: Readonly<{ serviceId?: string; timing?: RallarTimingSink; }> = {}
 ): ClientStatePhaseTestDriver {
-    const eventStore = new TestClientStateEventStore();
+    const eventStore = runtimeRepository.clientStateEventStore;
     const serviceId = options.serviceId ?? 'client-service';
     const service = createClientStateService({
         runtimeRepository,

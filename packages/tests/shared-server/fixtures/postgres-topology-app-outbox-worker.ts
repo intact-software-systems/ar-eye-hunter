@@ -6,6 +6,7 @@ import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { createRtcTopologyOutboxPublisher, createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
@@ -86,7 +87,10 @@ function registerTopologyAppOutboxHandler(
     const runtimeRepository = new PSqlRuntimeStateRepository(registration.sql);
     const topologyManagement = createGroupTopologyOwners({
         findGroupSnapshotByRef: () => input.groupSnapshot,
-        groupStateRepository: createTestGroupStateRepository(runtimeRepository),
+        groupStateRepository: createTestGroupStateRepository(
+            runtimeRepository,
+            new PSqlGroupStateEventRepository(registration.sql)
+        ),
         topologyService: new RallarRtcTopologyService({ now: () => input.atEpochMs }),
         processRttReader: () => [],
         serviceId: `postgres-topology-outbox-${Deno.pid}`

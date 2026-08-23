@@ -76,7 +76,10 @@ export async function convergeSummaryForTest({
         if (computed.summary.outcome === 'no-op') {
             return;
         }
-        const transactionRepository = createTestGroupStateRepository(transaction);
+        const transactionRepository = createTestGroupStateRepository(
+            transaction,
+            runtime.groupStateEventStore
+        );
         requireConditionalWrite(
             computed.summary.operation === 'insert'
                 ? await transactionRepository.insertPresenceSummary(computed.summary.summary)

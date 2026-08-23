@@ -106,7 +106,10 @@ export function createPostgresAppInboxWorkerServices(
     );
     const topologyOwners = createGroupTopologyOwners({
         findGroupSnapshotByRef: (ref) => groupState.readSnapshot(ref),
-        groupStateRepository: createTestGroupStateRepository(runtimeRepository),
+        groupStateRepository: createTestGroupStateRepository(
+            runtimeRepository,
+            new PSqlGroupStateEventRepository(input.sql)
+        ),
         configRepository: new GroupTopologyConfigRepository(topologyRuntimeRepository),
         topologyService: new RallarRtcTopologyService(),
         now: () => input.atEpochMs,

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -86,7 +87,10 @@ export async function createPostgresSql(databaseUrl: string): Promise<PostgresSq
 }
 
 export async function seedTopologyGroup(sql: PSqlSql, snapshot: GroupSnapshot): Promise<void> {
-    const repository = createTestGroupStateRepository(new PSqlRuntimeStateRepository(sql));
+    const repository = createTestGroupStateRepository(
+        new PSqlRuntimeStateRepository(sql),
+        new PSqlGroupStateEventRepository(sql)
+    );
     const inserted = await repository.insertGroup(snapshot.group);
     if (inserted.status !== 'applied') {
         throw new Error('Topology group seed was not inserted');

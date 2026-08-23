@@ -253,7 +253,7 @@ it('writes topology config state, receipt, authority fence, and APP_OUTBOX atomi
         'writeRtcTopologyOutbox(transaction, computed.outbox)'
     ]);
     expectInOrder(readFunctionBody(sources.topologyConfig, 'writeTopologyConfigAuthorityFence'), [
-        'advanceAuthorityFence(',
+        'advanceGroupStateAuthorityFence(',
         'computed.groupAuthorityGuard',
         'throw new RuntimeStateWriteConflictError()'
     ]);
@@ -263,7 +263,7 @@ it('writes topology config state, receipt, authority fence, and APP_OUTBOX atomi
 it('fences explicit reconfigure authority before inserting APP_OUTBOX', () => {
     const seam = readMethodBody(sources.topologyReconfigure, 'write');
     expectInOrder(seam, [
-        'advanceAuthorityFence(',
+        'advanceGroupStateAuthorityFence(',
         'computed.authorityGuard',
         'throw new RuntimeStateWriteConflictError()',
         'writeRtcTopologyOutbox(transaction, computed)'

@@ -31,7 +31,8 @@ describe('ClientStateRepository', () => {
         expectTypeOf<ClientStateRepository>().not.toHaveProperty('removeSession');
 
         const clientRepository = createTestClientStateRepository(
-            new FakeRuntimeStateRepository()
+            new FakeRuntimeStateRepository(),
+            new TestClientStateEventStore()
         );
         expect(Object.hasOwn(Object.getPrototypeOf(clientRepository), 'putPrincipal'))
             .toBe(false);
@@ -513,7 +514,7 @@ async function insertClientSession(
 describe('GroupStateRepository', () => {
     it('rejects group rows that omit current identity and audit fields', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = createTestGroupStateRepository(repository);
+        const groupRepository = createTestGroupStateRepository(repository, new TestGroupStateEventStore());
         const ref = {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -590,7 +591,7 @@ describe('GroupStateRepository', () => {
 
     it('rejects explicit null and wrong-slot persisted group identities', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = createTestGroupStateRepository(repository);
+        const groupRepository = createTestGroupStateRepository(repository, new TestGroupStateEventStore());
         const expected = createGroup('expected-group');
         await repository.upsert(
             'group-state:groups',
