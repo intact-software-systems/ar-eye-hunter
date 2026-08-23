@@ -414,7 +414,7 @@ describe('repository modules', () => {
 
     it('rejects stale and conflicting group causal revisions', () => {
         const accepted = {
-            ...createGroupSnapshot('group-1', 'Alpha', 1, ['session-new']),
+            ...createGroupSnapshot('group-1', 'Alpha', 1, ['session-new'])
         } satisfies GroupSnapshot;
         const stale = {
             ...createGroupSnapshot('group-1', 'Stale', 99, ['session-stale']),

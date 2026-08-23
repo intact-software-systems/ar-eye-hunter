@@ -1,13 +1,10 @@
+import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
-import type {
-    RuntimeStateReadBatchSelection,
-    RuntimeStateReadBatchSelector
-} from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 
 export class GroupBarrierRepository extends FakeRuntimeStateRepository {
@@ -158,8 +155,7 @@ export class GroupBarrierRepository extends FakeRuntimeStateRepository {
         }
 
         const keySelectors = selectors.filter(
-            (selector): selector is Extract<RuntimeStateReadBatchSelector, { kind: 'key'; }> =>
-                selector.kind === 'key'
+            (selector): selector is Extract<RuntimeStateReadBatchSelector, { kind: 'key'; }> => selector.kind === 'key'
         );
         this.entryReadKeys.push(...keySelectors.map((selector) => selector.key));
         const groupSelector = keySelectors.find(
