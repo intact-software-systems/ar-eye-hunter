@@ -47,6 +47,17 @@ describe('managed API-v1 PostgreSQL run database', () => {
         ).toBe(true);
     });
 
+    it('isolates the formation load profile from foreign queue workers', () => {
+        expect(
+            requiresManagedPostgresRunDatabase({
+                backend: 'postgres',
+                clusterOnly: true,
+                clusterProfile: 'api-v1-black-box-formation-large',
+                recipesOnly: false
+            })
+        ).toBe(true);
+    });
+
     it('changes only the database selected by the managed PostgreSQL URL', () => {
         const databaseName = toManagedPostgresDatabaseName(
             'local-1785497966315',
