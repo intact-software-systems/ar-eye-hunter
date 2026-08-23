@@ -1,9 +1,9 @@
 # Group Activation — Implementation Plan (2026-08-22)
 
-Status: **planning — re-baselined 2026-08-23 against `main` at `f26f65685`. All ten corrections are
+Status: **planning — re-baselined against product decisions 35–41 (PR #321) and against `main`. All ten corrections are
 resolved: C1–C4 became product decisions 25, 28, 2 and the admission table; C5–C10 remain as
 additions with owning slices. Six questions remain, of which Q3 and Q4 block their slices.**
-Implements `2026-08-22-group-activation-product-plan.md` (decisions 1–34). That document owns the
+Implements `2026-08-22-group-activation-product-plan.md` (decisions 1–41). That document owns the
 product surface; this one owns how it lands. It does not restate the product decisions — it records
 what the code says about them, what has to change, in what order, and which gate proves each step.
 
@@ -118,17 +118,18 @@ only so the reasoning survives; the product plan is now the authority.
 
 ## Decisions taken at planning
 
-| #  | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| -- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| I1 | **The rename lands first, alone, and mechanically.** `establishing → connecting` is one PR keyed on the _field name_ (`lifecycleState` / `GroupLifecycleState` / the `"lifecycleState"` JSON key), never on the value. `'active'` has 1,330 occurrences across seven meanings; `establishing` (the stage) and `establishment` (the policy namespace) are different words. Product decision 14 forbids the shim that would stage it.                                                                                                                                                                                         |
-| I2 | **Exhaustiveness becomes compiler-enforced before any new stage is reachable.** There is not one exhaustive `switch` and not one `Record<GroupLifecycleState, …>` in the repository; every consumer is a negative or equality comparison, so _adding_ two stages produces zero compiler errors and silently routes them down whichever branch the predicate picks. Slice 1b introduces one stage registry, derives the three untyped runtime validator arrays and `EVERY_LIFECYCLE_STATE` from it, and converts every stage predicate into a stage-keyed pure function returning exactly what the comparison returns today. |
-| I3 | **Causal fences land early, not late.** `expectedFormationEpoch` and `expectedLayout` (product decision 19) are retrofitted onto the existing criterion commands in slice 3, so every later internal family — triggers, status writes, the internal `connect` — is fenced from birth rather than twice.                                                                                                                                                                                                                                                                                                                     |
-| I4 | **The status axes do not ride the aggregate's first field edit.** A condition pinned at `inactive` on a live group for eight slices is a lie on the wire. The key-list edit is paid twice; new fields go last and wire order stays stable, so the second edit is cheap.                                                                                                                                                                                                                                                                                                                                                     |
-| I5 | **The unit of PR is the lettered sub-slice; the unit of shippable capability is the numbered slice.** Thirteen numbered slices plus finalisation deliver as **26 PRs** for slices 1–13, or **28** including slice 0 and slice 14 — a numbered slice that carries no letters is itself one PR, which is where the earlier figure of 22 went wrong. Each sub-slice records its delivery PR number here as it lands.                                                                                                                                                                                                           |
-| I6 | **Every slice's gates are named in its own section, not in an appendix.** Three gates are not in branch CI and are therefore invisible unless named per slice: `test:rallar:full-stack:memory:live-rtc-3`, the local medium-scale run, and **Run Hetzner Supported Distributed Manifests** (push-to-main only, required before the plan may be marked complete).                                                                                                                                                                                                                                                            |
-| I7 | **A persisted field lands with its first reader.** The control-plane workstream recorded this as its own slice-1 lesson: _"Persisting a document nothing reads would put an AppInbox mutation-path change into a slice that otherwise carries no risk. It lands with its first reader."_ So slice 2's aggregate fields merge in the **same PR as slice 4a**, which is what first reads them. That pays medium-scale and state-write once instead of twice, and removes the only dark-plumbing hazard in the plan.                                                                                                           |
-| I8 | **Route mounting is its own sub-slice, and it comes last.** The stage commands' plumbing, persistence and semantics land dark across slices 5 and 6; slice 8d mounts all five HTTP routes in one PR, after slice 7's halt and slice 8b's dial gate and inbound-admission deny exist. In parallel, `validateGroupLifecyclePolicy` returns a typed issue for the new policy fields until the vertical passes live-RTC-3 — one issue code, one file, the same shape the repository already ships for `strictConfirmation`.                                                                                                     |
-| I9 | **Citations name symbols, not lines.** Between the two census passes `main` moved five commits and invalidated 18 of 64 line citations while leaving nearly every symbol name intact. Exported symbols and test constants (`EVERY_LIFECYCLE_STATE`, `TRANSITION_TARGETS`, `COVERED_API_MUTATIONS`) are the durable anchors; `file:line` is reserved for the handful of lines whose exact position is the point.                                                                                                                                                                                                             |
+| #   | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| I1  | **The rename lands first, alone, and mechanically.** `establishing → connecting` is one PR keyed on the _field name_ (`lifecycleState` / `GroupLifecycleState` / the `"lifecycleState"` JSON key), never on the value. `'active'` has 1,330 occurrences across seven meanings; `establishing` (the stage) and `establishment` (the policy namespace) are different words. Product decision 14 forbids the shim that would stage it.                                                                                                                                                                                           |
+| I2  | **Exhaustiveness becomes compiler-enforced before any new stage is reachable.** There is not one exhaustive `switch` and not one `Record<GroupLifecycleState, …>` in the repository; every consumer is a negative or equality comparison, so _adding_ three stages produces zero compiler errors and silently routes them down whichever branch the predicate picks. Slice 1b introduces one stage registry, derives the three untyped runtime validator arrays and `EVERY_LIFECYCLE_STATE` from it, and converts every stage predicate into a stage-keyed pure function returning exactly what the comparison returns today. |
+| I3  | **Causal fences land early, not late.** `expectedFormationEpoch` and `expectedLayout` (product decision 19) are retrofitted onto the existing criterion commands in slice 3, so every later internal family — triggers, status writes, the internal `connect` — is fenced from birth rather than twice.                                                                                                                                                                                                                                                                                                                       |
+| I4  | **The status axes do not ride the aggregate's first field edit.** A condition pinned at `inactive` on a live group for eight slices is a lie on the wire. The key-list edit is paid twice; new fields go last and wire order stays stable, so the second edit is cheap.                                                                                                                                                                                                                                                                                                                                                       |
+| I5  | **The unit of PR is the lettered sub-slice; the unit of shippable capability is the numbered slice.** Thirteen numbered slices plus finalisation deliver as **27 PRs** for slices 1–13, or **29** including slice 0 and slice 14 — a numbered slice that carries no letters is itself one PR, which is where the earlier figure of 22 went wrong. Each sub-slice records its delivery PR number here as it lands.                                                                                                                                                                                                             |
+| I6  | **Every slice's gates are named in its own section, not in an appendix.** Three gates are not in branch CI and are therefore invisible unless named per slice: `test:rallar:full-stack:memory:live-rtc-3`, the local medium-scale run, and **Run Hetzner Supported Distributed Manifests** (push-to-main only, required before the plan may be marked complete).                                                                                                                                                                                                                                                              |
+| I7  | **A persisted field lands with its first reader.** The control-plane workstream recorded this as its own slice-1 lesson: _"Persisting a document nothing reads would put an AppInbox mutation-path change into a slice that otherwise carries no risk. It lands with its first reader."_ So slice 2's aggregate fields merge in the **same PR as slice 4a**, which is what first reads them. That pays medium-scale and state-write once instead of twice, and removes the only dark-plumbing hazard in the plan.                                                                                                             |
+| I8  | **Route mounting is its own sub-slice, and it comes last.** The stage commands' plumbing, persistence and semantics land dark across slices 5 and 6; slice 8d mounts all five HTTP routes in one PR, after slice 7's halt and slice 8b's dial gate and inbound-admission deny exist. In parallel, `validateGroupLifecyclePolicy` returns a typed issue for the new policy fields until the vertical passes live-RTC-3 — one issue code, one file, the same shape the repository already ships for `strictConfirmation`.                                                                                                       |
+| I10 | **Decision 41's three mechanical rules are slice 1b's acceptance criteria, not aspirations.** The transition table is keyed on `(stage, command) → stage`; every stage-keyed decision is a total function over the stage registry; every status function is total over the business plane. Each is checkable: no `Record<GroupLifecycleTransition, GroupLifecycleState>` survives, no bare `lifecycleState !==` comparison survives outside the registry, and the condition matrix has a row for archived, deleted and expired. Without these, adding the eighth stage costs what adding the seventh cost.                    |
+| I9  | **Citations name symbols, not lines.** Between the two census passes `main` moved five commits and invalidated 18 of 64 line citations while leaving nearly every symbol name intact. Exported symbols and test constants (`EVERY_LIFECYCLE_STATE`, `TRANSITION_TARGETS`, `COVERED_API_MUTATIONS`) are the durable anchors; `file:line` is reserved for the handful of lines whose exact position is the point.                                                                                                                                                                                                               |
 
 ## Slice 1 — Contract closure
 
@@ -153,14 +154,16 @@ at build time. No medium-scale; no mutation semantics change.
 
 ### 1b — Stage widening and the pure function library (dark)
 
-**Lands:** `GroupLifecycleState` widened with `planned | reconnecting` — **two** members, not three,
-since product decision 25 keeps halting off this enum; the transition table reshaped; and the pure
-library with its matrices, called by nothing.
+**Lands:** `GroupLifecycleState` widened with `dormant | planned | reconnecting` — three members.
+Halting is _not_ among them (product decision 25 keeps it on `transportState`), but the clean slate
+_is_ a stage (product decision 35). The transition table is reshaped, and the pure library lands with
+its matrices, called by nothing.
 
 `TRANSITION_TARGETS` is `Readonly<Record<GroupLifecycleTransition, GroupLifecycleState>>` — one target
 per transition. It cannot express `connect` landing in either `connecting` or `reconnecting`, nor
-`fail-formation` landing in either `forming` or `active` (product decision 28). **The table shape
-changes, not just its entries.**
+`fail-formation` landing in `forming`, `active` **or** `dormant` (product decisions 28 and 35). **The
+table shape changes, not just its entries**, and product decision 41 fixes the replacement shape:
+keyed on `(stage, command) → stage`, so the next stage is a table entry rather than a refactor.
 
 The library: the six-stage transition table with C2's landing rule and the `connect` precondition;
 `resolveLayoutRole(publication, accepted) → accepted | planned | superseded | incomparable`, keyed on
@@ -169,7 +172,8 @@ transportState, preActivationAppData) → flows | blocked | halted`; the total p
 condition function and the remediation function (product decision 30) — total over business status ×
 stage × expiry per C5; `computeLayoutStale(storedFingerprint, currentFingerprint)`; the in-flight axis
 on the outbound dial plan; trigger evaluation; `validateExpectedFence`; and the admission × stage
-table.
+table, which gains a `dormant` row and product decision 38's rule that exhaustion preserves the
+policy's posture rather than re-opening a `closed` group.
 
 **Dark:** all of it. Adding union members is unobservable while no transition produces them.
 
@@ -267,6 +271,13 @@ every attempt and on replay of durable rows.
 topology work handler, not after it. Any petition whose fence names a layout identity must move to
 the post-commit hook, or it will fence against a layout that has not been written yet.
 
+**Also here, because they ride the same path:** the criterion's `fail-formation` gains `dormant` as a
+target when the attempt budget for the series is spent (product decisions 35, 37), and
+`formationAttemptCount` becomes per-series rather than per-lifetime — today it is incremented by
+`fail-formation` and reset nowhere, so only `reset` may zero it. **`api-v1-match-preset.json` pins the
+behaviour product decision 38 reverses** — a `closed` lobby re-opening to joins at exhaustion — so
+that recipe changes here, not at finalisation.
+
 **Gates:** baseline + both profiles + **medium-scale** + state-write.
 `api-v1-group-formation-criterion.json` is the only end-to-end pin of the arm-and-fire path and gains
 a `stale-petition-fenced` leg. Write the first unit tests this path has ever had.
@@ -313,7 +324,7 @@ returns `publish-superseded`, so a dominated candidate's publication can be broa
 **Gates:** baseline, both profiles, **medium-scale**, `topology-replay`, state-write,
 `test:integration:postgres`.
 
-## Slice 5 — The stage command family: `plan`, `connect` (dark)
+## Slice 5 — The stage command family: `plan`, `connect`, `reset`, `start` (dark)
 
 Per-command cost is the ~15-registry census: a new `AppInboxType`; a payload type and an
 `AUTHENTICATED_GROUP_INBOX_TYPES` entry; a `GroupMutationCommand` union member; a
@@ -347,13 +358,31 @@ builder; `GROUP_MUTATION_OPERATIONS` is an untyped `Set` of bare strings.
   OpenAPI block and 22 recipe call sites across 10 files, once `plan` + `connect` cover it (product
   decision 34). Each `POST …/lifecycle/establish/…` becomes two calls, so the recipe edit is a rewrite,
   not a path substitution. The automatic retry leg is re-expressed as `plan` plus the connect trigger.
+- **5e — `reset` and `start`, dark** (product decisions 35–37). `start` is an ordinary transition,
+  `dormant → forming`, denied when the attempt budget is spent. `reset` is the expensive one and is
+  the only command in this workstream that **deletes durable rows**: it clears four `Group` fields
+  (`formationAttemptCount` to 0, `establishmentStartedAtEpochMs` and `lastFormationOutcome` to null,
+  `transportState` to `halted`), drops the accepted-layout row 4a introduced, and clears the stored
+  topology-input fingerprint. It needs 4a, and it carries its own state-write verdict because a
+  delete on a command path is not what the recorded baseline measured.
+
+  Two traps. The fingerprint clear is **not** optional: it is the planner's change-suppression gate
+  (`skipped-fingerprint`), so a reset group whose membership has not changed would otherwise have its
+  next plan skipped as unchanged — no publication, no layout, no error anywhere. And `reset` must
+  advance the formation epoch like every other transition; resetting it would make the
+  epoch-keyed formation-timer resource id and the epoch-keyed criterion request id from the group's
+  previous life collide with its next one, turning transitions into silent inbox replays.
 
 Product decision 12 keeps one initiator policy, so the command predicate needs no per-command branch.
 Every new command inherits the slow sequential read path, and the read step and its validator apply
 that predicate independently — a one-sided edit throws at compute.
 
 **Gates:** baseline, both profiles, **medium-scale**, state-write, and the hard-coded counters, which
-are **net, not additive**, because 5d removes two operations as 5a/5c add four:
+are **net, not additive**: seven commands arrive across slices 5 and 6 (`plan`, `connect`, `pause`,
+`resume`, `reset`, `start`, stage-level `reconfigure`) while 5d and 6a remove two, for a net of five.
+Recompute each counter rather than adding five to it — the three registries count different things
+(routing entrypoints, distinct types, covered API mutations), and `pause`/`resume`/`reset`/`start`
+do not all appear in all three:
 `mutation-routing-inventory.ts:71` (`!== 56`) and `:74` (`!== 52`);
 `api-mutation-openapi-contract.test.ts:139` (`COVERED_API_MUTATIONS.length, 47`);
 `api-v1-recipe-idempotency-cutover.test.ts:268` (`toHaveLength(47)`); and the route-count strings
@@ -441,8 +470,11 @@ Four verified facts shape it:
   the first time the browser dials two layouts at once. Without the inbound deny, a lagging peer's offer
   still creates connections and `discovery-holds-dials` fails.
 - **8c — the room facade:** readiness on the accepted layout, the local halt with its typed status, the
-  browser's own repair reporting (aggregate the per-peer `reconnecting` / `reconnectAttempts` pair the
-  RTC layer already computes — no server change and no wire change), and C10's two games updated in the
+  browser's own repair and progress reporting — the per-peer `reconnecting` / `reconnectAttempts` pair
+  and the `desiredPeerIds` / `readyPeerIds` / `failedPeerIds` triple that `roomStatus().rtc` already
+  computes, repointed at the accepted layout. Product decision 40's member progress is
+  `readyPeerIds.length / desiredPeerIds.length`, needs no server change and no wire change, and must
+  report nothing rather than 1 while no layout exists (**Q10** settles its public shape), and C10's two games updated in the
   same PR: the exhaustive status mapping and the `sendJson` fallback together.
 - **8d — mount the routes** (I8): `plan`, `connect`, `pause`, `resume` and `reconfigure` on HTTP with
   their OpenAPI paths, in one PR, now that the halt and the dial gate exist.
@@ -586,7 +618,15 @@ measurement's monotonic version and timestamp and must return the watermark.
   added to the key lists (I4's second edit), `group-activation-status-changed` registered at its six
   sites (only the `Record<GroupEventType, true>` one is compiler-checked), and both axes reported on the
   formation view **derived at read** — written only by transitions that already CAS the row. No new
-  writer, no amplification.
+  writer, no amplification. Also here: publish `maxFormationAttempts` beside `formationAttemptCount`
+  on the formation view and in OpenAPI (product decision 39) — today it appears only inside
+  `CreateGroupRequest`, a request body, so the numerator is pushed everywhere and the denominator is
+  readable nowhere, which makes `start`'s exhaustion denial undiagnosable.
+
+  **No pushed fraction** (product decision 40): coverage stays derived at read, and 12b's writer
+  publishes only banded condition changes. Pushing a fraction at 1 Hz for a 50-session group would
+  cost ~60 group CASes, ~60 durable event rows and ~3,000 WS deliveries per minute against a measured
+  steady state of zero at that tier.
 - **12b — the internal status writer** with dwell, hysteresis and durable clocks. Design its damping to
   survive a multi-node cluster before writing it.
 
@@ -665,15 +705,20 @@ deliberately so the Hetzner run is paid once per foundation, not once per file t
 Each becomes a numbered decision here the moment it is taken, with its alternatives. **Q3 and Q4 block
 their slices.**
 
-| #   | Question                                                                                                                                               | Slice |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- |
-| Q2  | How `maxConcurrentEdgeSetups` reaches the browser: a required `Group` field mirroring the policy, a formation-view read, or the policy on the snapshot | 9a    |
-| Q3  | Whether the halt lives in the shared `canSendGroupMessage` or only at the WS relay (Relic Hunters REST is the difference)                              | 7     |
-| Q4  | Whether the two `reconfigure` mutations merge or sequence, and how the lifecycle write and the outbox enqueue stay atomic under a `hold` landing       | 6a    |
-| Q6  | How the status writer damps across a multi-node cluster, given both existing dampers are process-local                                                 | 12b   |
-| Q7  | Whether `forming` keeps publishing a removed tombstone to every session (it does today, and a recipe tolerates both)                                   | 4b    |
-| Q9  | `mutationDescriptor` already takes six positional parameters against a three-parameter standard; a seventh needs a ~22-call-site refactor instead      | 5a    |
-| Q10 | The public shape of the browser's own repair reporting on `roomStatus()` — a `shared-web` public API addition, so it needs a snapshot decision         | 8c    |
+| #   | Question                                                                                                                                                                                      | Slice |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| Q2  | How `maxConcurrentEdgeSetups` reaches the browser: a required `Group` field mirroring the policy, a formation-view read, or the policy on the snapshot                                        | 9a    |
+| Q3  | Whether the halt lives in the shared `canSendGroupMessage` or only at the WS relay (Relic Hunters REST is the difference)                                                                     | 7     |
+| Q4  | Whether the two `reconfigure` mutations merge or sequence, and how the lifecycle write and the outbox enqueue stay atomic under a `hold` landing                                              | 6a    |
+| Q6  | How the status writer damps across a multi-node cluster, given both existing dampers are process-local                                                                                        | 12b   |
+| Q7  | Whether `forming` keeps publishing a removed tombstone to every session (it does today, and a recipe tolerates both)                                                                          | 4b    |
+| Q9  | `mutationDescriptor` already takes six positional parameters against a three-parameter standard; a seventh needs a ~22-call-site refactor instead                                             | 5a    |
+| Q10 | The public shape of the browser's member-progress and repair reporting on `roomStatus()` — a `shared-web` public API addition, so it needs a snapshot decision                                | 8c    |
+| Q11 | Whether `reset`'s durable-row deletes ride the lifecycle transaction or a follow-up, and which state-write profile they are measured under — no command in this workstream deletes rows today | 5e    |
+
+Q3 and Q4 are unchanged by product decisions 35–41. Q11 is new and does not block: it can be settled
+when 5e is scheduled, but it must be settled _before_ the slice-0 state-write control is reused as
+5e's baseline, since a delete-bearing profile is not what that control measured.
 
 Settled and closed: **Q1** — the existing topology row is the planned layout, the accepted layout gets
 the second never-expiring row (product decision 24). **Q5** — the status fields do not ride the first
