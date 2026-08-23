@@ -15,12 +15,13 @@ afterEach(() => {
 });
 
 describe('managed API-v1 PostgreSQL run database', () => {
-    it('isolates the exact medium-scale profile from retained base-database queue work', () => {
+    it('isolates every managed PostgreSQL run from retained base-database queue work', () => {
         expect(
             requiresManagedPostgresRunDatabase({
                 backend: 'postgres',
-                clusterOnly: true,
-                clusterProfile: 'api-v1-black-box-medium-scale',
+                profile: 'api-v1-black-box',
+                clusterOnly: false,
+                clusterProfile: 'api-v1-black-box-cluster',
                 recipesOnly: false
             })
         ).toBe(true);
@@ -29,7 +30,16 @@ describe('managed API-v1 PostgreSQL run database', () => {
             requiresManagedPostgresRunDatabase({
                 backend: 'postgres',
                 clusterOnly: false,
-                clusterProfile: 'api-v1-black-box-medium-scale',
+                clusterProfile: 'api-v1-black-box-cluster',
+                recipesOnly: true
+            })
+        ).toBe(false);
+
+        expect(
+            requiresManagedPostgresRunDatabase({
+                backend: 'pglite-memory',
+                clusterOnly: false,
+                clusterProfile: 'api-v1-black-box-cluster',
                 recipesOnly: false
             })
         ).toBe(false);
