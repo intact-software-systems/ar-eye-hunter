@@ -50,10 +50,6 @@ export type ResourceInboxWorkAdvertisementOptions = Readonly<{
     finalizationStaleAfterMs: number;
 }>;
 
-export type ResourceInboxWorkAdvertisementInput =
-    | RateLimiter
-    | ResourceInboxWorkAdvertisementOptions;
-
 export type ResourceInboxTerminalReleaseStatus =
     | typeof Resource.EntityStatus.COMPLETED
     | typeof Resource.EntityStatus.FAILED
@@ -264,31 +260,41 @@ export function toResourceInboxFinalizationReservationOptions(
 }
 
 export function toResourceInboxWorkAdvertisementOptions(
-    input: ResourceInboxWorkAdvertisementInput,
-    legacyCheckFairness: RateLimiter | undefined,
-    defaultMaxAttempts: number
+    input: unknown
 ): ResourceInboxWorkAdvertisementOptions {
-    const options = input instanceof RateLimiter
-        ? {
-            checkTimeout: input,
-            checkFairness: legacyCheckFairness ?? input,
-            checkFinalization: input,
-            maxAttempts: defaultMaxAttempts,
-            finalizationStaleAfterMs: 5 * 60 * 1000
-        }
-        : input;
-
-    if (!Number.isSafeInteger(options.maxAttempts) || options.maxAttempts < 1) {
+    if (
+        typeof input !== 'object' ||
+        input === null ||
+        !('maxAttempts' in input) ||
+        typeof input.maxAttempts !== 'number' ||
+        !Number.isSafeInteger(input.maxAttempts) ||
+        input.maxAttempts < 1
+    ) {
         throw new Error('maxAttempts must be a positive safe integer');
     }
     if (
-        !Number.isSafeInteger(options.finalizationStaleAfterMs) ||
-        options.finalizationStaleAfterMs < 0
+        !('finalizationStaleAfterMs' in input) ||
+        typeof input.finalizationStaleAfterMs !== 'number' ||
+        !Number.isSafeInteger(input.finalizationStaleAfterMs) ||
+        input.finalizationStaleAfterMs < 0
     ) {
         throw new Error('finalizationStaleAfterMs must be a non-negative safe integer');
     }
+    if (
+        !('checkTimeout' in input) || !(input.checkTimeout instanceof RateLimiter) ||
+        !('checkFairness' in input) || !(input.checkFairness instanceof RateLimiter) ||
+        !('checkFinalization' in input) || !(input.checkFinalization instanceof RateLimiter)
+    ) {
+        throw new Error('work advertisement checks must be rate limiters');
+    }
 
-    return options;
+    return {
+        checkTimeout: input.checkTimeout,
+        checkFairness: input.checkFairness,
+        checkFinalization: input.checkFinalization,
+        maxAttempts: input.maxAttempts,
+        finalizationStaleAfterMs: input.finalizationStaleAfterMs
+    };
 }
 
 export function toResourceInboxReleaseDisposition(
@@ -322,8 +328,7 @@ export function toResourceInboxReleaseDisposition(
 export interface DequeueResourceEntryRepository {
     isAnyEntryToLock(
         typeIds: Set<string>,
-        workOptions: ResourceInboxWorkAdvertisementInput,
-        legacyCheckFairness?: RateLimiter
+        workOptions: ResourceInboxWorkAdvertisementOptions
     ): Promise<boolean>;
 
     reserveEntries(

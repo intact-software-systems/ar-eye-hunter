@@ -11,7 +11,7 @@ import {
     ResourceInboxLostReservationError,
     ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
-    ResourceInboxWorkAdvertisementInput,
+    ResourceInboxWorkAdvertisementOptions,
     toResourceInboxFairnessReservationOptions,
     toResourceInboxFinalizationReservationOptions,
     toResourceInboxReleaseDisposition,
@@ -47,15 +47,10 @@ export class PSqlQueueBox implements QueueBoxResourceEntryRepository {
 
     async isAnyEntryToLock(
         typeIds: Set<string>,
-        workInput: ResourceInboxWorkAdvertisementInput,
-        legacyCheckFairness?: RateLimiter
+        workInput: ResourceInboxWorkAdvertisementOptions
     ): Promise<boolean> {
         const { checkTimeout, checkFinalization, maxAttempts, finalizationStaleAfterMs } =
-            toResourceInboxWorkAdvertisementOptions(
-                workInput,
-                legacyCheckFairness,
-                DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
-            );
+            toResourceInboxWorkAdvertisementOptions(workInput);
         const isTimedOutReservedEntryToLock: boolean = await RateLimiter.tryToExecuteOrDefault(
             checkTimeout,
             async () =>

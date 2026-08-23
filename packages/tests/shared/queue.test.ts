@@ -2,10 +2,15 @@ import { Temporal } from '@js-temporal/polyfill';
 import { Reservator } from '@shared/queuebox/DequeueController.ts';
 import { DequeueResourceEntryController, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import { toResourceInboxFairnessReservationOptions, type DequeueResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
+import {
+    toResourceInboxFairnessReservationOptions,
+    toResourceInboxWorkAdvertisementOptions,
+    type DequeueResourceEntryRepository
+} from '@shared/queuebox/QueueBoxTypes.ts';
 import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
+import { RateLimiter } from '@shared/resilience/Resilience.ts';
 import { describe, expect, it, vi } from 'vitest';
 
 describe('enqueue and dequeue', () => {
@@ -225,6 +230,12 @@ describe('enqueue and dequeue', () => {
 });
 
 describe('resource inbox retry and fairness lanes', () => {
+    it('rejects an incomplete work advertisement before checking queue state', () => {
+        expect(() => toResourceInboxWorkAdvertisementOptions(
+            RateLimiter.init(60_000, 1)
+        )).toThrow('maxAttempts must be a positive safe integer');
+    });
+
     it('uses the configured retry budget for engine work advertisement', () => {
         const duration = Temporal.Duration.from({ seconds: 10 });
         const retryPolicy = {

@@ -6,6 +6,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { IndexedDbQueueBox } from '@shared/queuebox/IndexedDbQueueBox.ts';
 import { EntityStatus, NEVER_EXPIRE_TS, ResourceEntry, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
+import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { RateLimiter } from '@shared/resilience/Resilience.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HANDLER_FINALIZED_SUMMARY_SCENARIOS } from './handler-finalized-summary-test-support.ts';
@@ -167,8 +168,7 @@ describe('IndexedDbQueueBox', () => {
 
         const hasWork = await writer.isAnyEntryToLock(
             new Set([typeId]),
-            RateLimiter.init(60_000, 1),
-            RateLimiter.init(60_000, 1)
+            createWorkAdvertisementOptions()
         );
 
         expect(hasWork).toBe(false);
@@ -546,8 +546,7 @@ describe('IndexedDbQueueBox', () => {
 
         const hasWork = await queue.isAnyEntryToLock(
             new Set([typeId]),
-            RateLimiter.init(60_000, 1),
-            RateLimiter.init(60_000, 1)
+            createWorkAdvertisementOptions()
         );
 
         expect(hasWork).toBe(false);
@@ -1044,6 +1043,16 @@ function firstValue<K, V>(map: Map<K, V>): V {
         throw new Error('Expected at least one map value');
     }
     return first;
+}
+
+function createWorkAdvertisementOptions() {
+    return {
+        checkTimeout: RateLimiter.init(60_000, 1),
+        checkFairness: RateLimiter.init(60_000, 1),
+        checkFinalization: RateLimiter.init(60_000, 1),
+        maxAttempts: DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts,
+        finalizationStaleAfterMs: 5 * 60 * 1000
+    };
 }
 
 type LegacyStoredResourceEntry = Readonly<{
