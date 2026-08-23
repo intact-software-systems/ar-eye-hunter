@@ -1,14 +1,14 @@
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import assert from 'node:assert/strict';
 
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
-import { ClientStateEventCollisionError } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { ClientStateEventCollisionError } from '@shared-server/rallar-system/state-events/client-state-event-store.ts';
 import type { GroupTopologyConfigMutationCommand } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
@@ -657,7 +657,7 @@ Deno.test(
                 groupId: 'room'
             };
             const snapshot = topologyGroupSnapshot(groupRef);
-            const groupStateRepository = new GroupStateRepository(runtime);
+            const groupStateRepository = new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(runtime.sql));
             assert.equal((await groupStateRepository.insertGroup(snapshot.group)).status, 'applied');
             for (const member of snapshot.members) {
                 await groupStateRepository.putMember(member);
@@ -695,7 +695,7 @@ Deno.test(
             };
             const groupState = createGroupStateService({
                 runtimeRepository: runtime,
-                createGroupStateEventStore: createGroupStateEventRepository,
+                groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                 authSessionRepository: authSessions,
                 serviceId: 'pglite-topology-cross-target',
                 now: () => nowEpochMs

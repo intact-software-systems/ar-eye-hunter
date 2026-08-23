@@ -15,8 +15,9 @@ import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topo
 import { readRtcTopologyWorkEnvelope } from '@shared-server/rallar-system/topology/replay/rtc-topology-work-codec.ts';
 import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
-import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupPresenceSummary, GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import { EntityStatus, InMemoryQueueBox, type ALMessage } from '@shared/mod.ts';
@@ -230,7 +231,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         await runtime.publisher.enqueueForGroupSnapshot(queuedGroup);
         const [entry] = await entriesIn(queue);
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const groupStateRepository = new GroupStateRepository(runtimeRepository);
+        const groupStateRepository = createTestGroupStateRepository(runtimeRepository);
         await groupStateRepository.putGroup(durableGroup.group);
         await Promise.all(durableGroup.members.map((member) => groupStateRepository.putMember(member)));
         const presenceSummary: GroupPresenceSummary = {
@@ -740,10 +741,12 @@ describe('RTC topology APP_OUTBOX work', () => {
             rttMeasurements: [rtt('session-a', 'session-b', 1)],
             nowEpochMs: 1_000
         };
-        const submittedCommands: Array<Readonly<{
-            command: GroupMutationCommand;
-            atEpochMs: number;
-        }>> = [];
+        const submittedCommands: Array<
+            Readonly<{
+                command: GroupMutationCommand;
+                atEpochMs: number;
+            }>
+        > = [];
         const submitCommand = async (command: GroupMutationCommand, atEpochMs: number) => {
             submittedCommands.push({ command, atEpochMs });
         };

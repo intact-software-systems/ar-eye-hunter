@@ -2,12 +2,6 @@ import type { ClientPrincipal, ClientSnapshot } from '@shared/api/client-types.t
 
 import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
-import type { ClientStateEventStore } from '../../state-events/state-event-store.ts';
-
-export type ClientStateRepositoryOptions = Readonly<{
-    events?: ClientStateEventStore;
-}>;
-
 export type ClientPrincipalSnapshotRead = Readonly<{
     principal: RuntimeStateEntryValue<ClientPrincipal>;
     snapshot: ClientSnapshot;

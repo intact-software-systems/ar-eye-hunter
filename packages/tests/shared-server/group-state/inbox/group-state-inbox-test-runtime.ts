@@ -1,5 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
@@ -87,7 +88,7 @@ export async function createAuthorityHarness(
     const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
     const groupStateService = createGroupStateService({
         runtimeRepository,
-        createGroupStateEventStore: () => database.groupEventStore,
+        groupStateEventStore: database.groupEventStore,
         serviceId: 'server-12345678',
         now: () => nowEpochMs,
         authSessionRepository: authSessions
@@ -95,7 +96,7 @@ export async function createAuthorityHarness(
     return {
         nowEpochMs,
         runtimeRepository,
-        repository: new GroupStateRepository(runtimeRepository, { events: database.groupEventStore }),
+        repository: createTestGroupStateRepository(runtimeRepository, database.groupEventStore),
         authSessions,
         groupStateService,
         service: createAuthorityAppInboxService({

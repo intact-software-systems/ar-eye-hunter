@@ -2,6 +2,7 @@ import { groupStateMaintenanceRequestId } from '@shared-server/rallar-system/gro
 import { GroupMutationRejectedError } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { describe, expect, it, vi } from 'vitest';
@@ -85,7 +86,7 @@ describe('GroupStateService command idempotency', () => {
             }
         });
 
-        const repository = new GroupStateRepository(runtimeRepository);
+        const repository = createTestGroupStateRepository(runtimeRepository);
         expect((await repository.listEvents(groupRef)).map((event) => event.eventType)).toEqual([
             'group-created'
         ]);
@@ -130,7 +131,7 @@ describe('GroupStateService command idempotency', () => {
             expect(error.message).toBe('Group already exists: room-6');
         }
 
-        const repository = new GroupStateRepository(runtimeRepository);
+        const repository = createTestGroupStateRepository(runtimeRepository);
         expect((await repository.listEvents(groupRef)).map((event) => event.eventType)).toEqual([
             'group-created'
         ]);
@@ -204,7 +205,7 @@ describe('GroupStateService command idempotency', () => {
             status: 409
         });
 
-        const repository = new GroupStateRepository(runtimeRepository);
+        const repository = createTestGroupStateRepository(runtimeRepository);
         expect((await repository.readSnapshot(toGroupRef('room-3')))?.group).toMatchObject({
             displayName: 'Room 3',
             snapshotVersion: 1
@@ -244,7 +245,7 @@ describe('GroupStateService command idempotency', () => {
         expect(first.result?.event?.eventType).toBe('group-updated');
         expect(second.result?.event).toEqual(first.result?.event);
 
-        const repository = new GroupStateRepository(runtimeRepository);
+        const repository = createTestGroupStateRepository(runtimeRepository);
         expect((await repository.readSnapshot(groupRef))?.group.snapshotVersion).toBe(2);
         expect((await repository.listEvents(groupRef)).map((event) => event.eventType)).toEqual([
             'group-created',
@@ -287,7 +288,7 @@ describe('GroupStateService command idempotency', () => {
         expect(first.result?.event?.eventType).toBe('member-joined');
         expect(second.result?.event).toEqual(first.result?.event);
 
-        const repository = new GroupStateRepository(runtimeRepository);
+        const repository = createTestGroupStateRepository(runtimeRepository);
         expect((await repository.listEvents(groupRef)).map((event) => event.eventType)).toEqual([
             'group-created',
             'member-joined'

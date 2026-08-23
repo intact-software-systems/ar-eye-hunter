@@ -1,6 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { ClientStateEventCollisionError, GroupStateEventCollisionError } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
 import { toResultsDomain } from '@shared-server/postgres/resource-inbox/repository-utils.ts';
 import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/app-inbox-handler-registry.ts';
 import {
@@ -10,6 +9,8 @@ import {
     type AppInboxMessageContext
 } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type { GroupMemberUpsertAppInboxPayload } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
+import { ClientStateEventCollisionError } from '@shared-server/rallar-system/state-events/client-state-event-store.ts';
+import { GroupStateEventCollisionError } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
 
 import { SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 

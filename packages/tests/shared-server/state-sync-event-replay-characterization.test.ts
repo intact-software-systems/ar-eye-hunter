@@ -1,5 +1,6 @@
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { createTestClientStateRepository, createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { ClientEvent, ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -92,8 +93,8 @@ describe('state sync event replay characterization', () => {
 
     it('uses aggregate snapshot version as the replay order for equal timestamps', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(runtimeRepository);
-        const clientRepository = new ClientStateRepository(runtimeRepository);
+        const groupRepository = createTestGroupStateRepository(runtimeRepository);
+        const clientRepository = createTestClientStateRepository(runtimeRepository);
         const groupRef = toGroupRef('room-1');
         const principalRef = toClientPrincipalRef('alice');
 

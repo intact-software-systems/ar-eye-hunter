@@ -3,7 +3,7 @@ import {
     RUNTIME_STATE_PREFIX_READ_PAGE_SIZE
 } from '@shared-server/al-runtime/postgres/read-runtime-state-entries-by-prefix.ts';
 import { readRateLimiter } from '@shared-server/http/rate-limit-service.ts';
-import { filterStateEventsForList } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
+import { listRecentStateEvents } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
 import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync/state-sync-routing.ts';
 import type {
     RuntimeStateReadBatchSelection,
@@ -111,7 +111,7 @@ function makeEvent(index: number): JsonRecord {
 
 function runLegacyEventPipeline(rowJson: readonly string[], limit: number): number {
     const parsed = rowJson.map((value) => JSON.parse(value));
-    return filterStateEventsForList(parsed as never[], { limit }).length;
+    return listRecentStateEvents(parsed as never[], { limit }).length;
 }
 
 function runPagedEventPipeline(rowJson: readonly string[], limit: number): number {
@@ -123,7 +123,7 @@ function runPagedEventPipeline(rowJson: readonly string[], limit: number): numbe
 function runRecentEventPipeline(rowJson: readonly string[], limit: number): number {
     const recentRows = rowJson.slice(-limit);
     const parsed = recentRows.map((value) => JSON.parse(value));
-    return filterStateEventsForList(parsed as never[], { limit }).length;
+    return listRecentStateEvents(parsed as never[], { limit }).length;
 }
 
 function makeRuntimeStateEntries(size: number): readonly RuntimeStateEntry[] {

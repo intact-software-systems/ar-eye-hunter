@@ -4,6 +4,7 @@ import {
     createClientStateSnapshotReadThroughCache,
     toClientStateSnapshotRepositoryKey
 } from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
+import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { AuditStamp, ClientInstance, ClientPrincipal, ClientSession, ClientSnapshot } from '@shared/api/client-types.ts';
 import {
     findClientStateSnapshotByPrincipalId,
@@ -45,7 +46,7 @@ describe('ClientStateSnapshotReadThroughCache', () => {
         configureTestCacheRepositories();
 
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const clientRepository = new ClientStateRepository(runtimeRepository);
+        const clientRepository = createTestClientStateRepository(runtimeRepository);
         const snapshot = createClientSnapshot({
             principalId: 'alice',
             applicationId: 'app-1',
@@ -72,7 +73,7 @@ describe('ClientStateSnapshotReadThroughCache', () => {
         configureTestCacheRepositories();
 
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const clientRepository = new ClientStateRepository(runtimeRepository);
+        const clientRepository = createTestClientStateRepository(runtimeRepository);
         const stale = createClientSnapshot({
             principalId: 'alice',
             applicationId: 'app-1',
@@ -111,7 +112,7 @@ describe('ClientStateSnapshotReadThroughCache', () => {
         configureTestCacheRepositories();
 
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const clientRepository = new ClientStateRepository(runtimeRepository);
+        const clientRepository = createTestClientStateRepository(runtimeRepository);
         const workspaceA = createClientSnapshot({
             principalId: 'alice',
             applicationId: 'app-1',
@@ -164,7 +165,7 @@ describe('ClientStateSnapshotReadThroughCache', () => {
         configureTestCacheRepositories();
 
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const clientRepository = new ClientStateRepository(runtimeRepository);
+        const clientRepository = createTestClientStateRepository(runtimeRepository);
         const snapshot = createClientSnapshot({
             principalId: 'alice',
             applicationId: 'app-1',
@@ -194,7 +195,7 @@ describe('ClientStateSnapshotReadThroughCache', () => {
     it('observes revisioned snapshots monotonically and rejects conflicts', () => {
         configureTestCacheRepositories();
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const clientRepository = new ClientStateRepository(runtimeRepository);
+        const clientRepository = createTestClientStateRepository(runtimeRepository);
         const readThroughCache = createClientStateSnapshotReadThroughCache({
             clientsRepository: clientRepository
         });

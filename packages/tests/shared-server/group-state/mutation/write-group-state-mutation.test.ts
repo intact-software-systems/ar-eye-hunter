@@ -1,3 +1,4 @@
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
@@ -77,7 +78,7 @@ describe('GroupStateService guarded runtime-state batch', () => {
         let generatedId = 0;
         const service = createTestGroupStateService({
             runtimeRepository: runtime,
-            createGroupStateEventStore: () => eventStore,
+            groupStateEventStoreFor: () => eventStore,
             now: () => 1_000,
             randomId: () => `group-batch-id-${++generatedId}`,
             serviceId: 'group-batch-service'
@@ -97,7 +98,7 @@ describe('GroupStateService guarded runtime-state batch', () => {
         if (!event) {
             throw new Error('Expected group insert event');
         }
-        const repository = new GroupStateRepository(runtime, { events: eventStore });
+        const repository = createTestGroupStateRepository(runtime, eventStore);
         const summary = await repository.findPresenceSummaryEntry(ref);
         const idempotency = await repository.findIdempotentGroupMutationReceipt(
             ref,
@@ -156,7 +157,7 @@ describe('GroupStateService guarded runtime-state batch', () => {
         let generatedId = 0;
         const service = createTestGroupStateService({
             runtimeRepository: runtime,
-            createGroupStateEventStore: () => eventStore,
+            groupStateEventStoreFor: () => eventStore,
             now: () => 1_000,
             randomId: () => `group-recreate-id-${++generatedId}`,
             serviceId: 'group-batch-service'

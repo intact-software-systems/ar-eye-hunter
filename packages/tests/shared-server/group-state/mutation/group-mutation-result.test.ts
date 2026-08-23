@@ -7,6 +7,7 @@ import { computeGroupMutation } from '@shared-server/rallar-system/group-state/m
 import { validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/result-validation/validate-group-mutation-result.ts';
 import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { AuditStamp, GroupPresenceAdmission, GroupPresenceSummary } from '@shared/api/group-types.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { describe, expect, it } from 'vitest';
@@ -108,7 +109,7 @@ describe('group mutation receipt causal invariants', () => {
                 requestId: 'rejected-duplicate-create'
             });
             await expect(mutation).rejects.toThrow('Group already exists: ephemeral-rejection-room');
-            const repository = new GroupStateRepository(runtime);
+            const repository = createTestGroupStateRepository(runtime);
             expect(
                 await repository.findIdempotentGroupMutationReceipt(
                     groupRef('ephemeral-rejection-room'),

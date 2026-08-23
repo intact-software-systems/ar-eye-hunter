@@ -1,6 +1,7 @@
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { createClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
 import { createWsServerTargetResolver } from '@shared-server/rallar-system/middleware/rallar-middleware.ts';
+import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { type AuditStamp, type ClientInstance, type ClientPrincipal, type ClientSession, type ClientSnapshot } from '@shared/api/client-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
@@ -26,7 +27,7 @@ const COLD_CACHE_FANOUT_BEHAVIOR = 'fails closed while cold, then expands omitte
 describe('CRDT principal fanout from a cold cache', () => {
     it(COLD_CACHE_FANOUT_BEHAVIOR, async () => {
         configureTestCacheRepositories();
-        const repository = new ClientStateRepository(new FakeRuntimeStateRepository());
+        const repository = createTestClientStateRepository(new FakeRuntimeStateRepository());
         const snapshot = clientSnapshot();
         await putSnapshot(repository, snapshot);
         const cache = createClientStateSnapshotReadThroughCache({

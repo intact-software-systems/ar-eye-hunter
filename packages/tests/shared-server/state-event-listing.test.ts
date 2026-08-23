@@ -1,6 +1,5 @@
 import {
     DEFAULT_STATE_EVENT_LIST_LIMIT,
-    filterStateEventsForList,
     listRecentStateEvents,
     listStateEventsPage,
     MAX_STATE_EVENT_LIST_LIMIT,
@@ -24,7 +23,7 @@ describe('state event listing', () => {
         );
 
         expect(
-            filterStateEventsForList(events, query).map((event) => event.eventId)
+            listRecentStateEvents(events, query).map((event) => event.eventId)
         ).toEqual(['event-2', 'event-3']);
     });
 
@@ -37,7 +36,7 @@ describe('state event listing', () => {
         const query = readStateEventListQuery(new URLSearchParams('limit=2'));
 
         expect(
-            filterStateEventsForList(events, query).map((event) => event.eventId)
+            listRecentStateEvents(events, query).map((event) => event.eventId)
         ).toEqual(['event-2', 'event-3']);
     });
 
@@ -71,10 +70,10 @@ describe('state event listing', () => {
         const query = readStateEventListQuery(new URLSearchParams());
 
         expect(query.limit).toBe(DEFAULT_STATE_EVENT_LIST_LIMIT);
-        expect(filterStateEventsForList(events, query)).toHaveLength(
+        expect(listRecentStateEvents(events, query)).toHaveLength(
             DEFAULT_STATE_EVENT_LIST_LIMIT
         );
-        expect(filterStateEventsForList(events, query)[0]?.eventId).toBe(
+        expect(listRecentStateEvents(events, query)[0]?.eventId).toBe(
             'event-3'
         );
     });
@@ -97,7 +96,7 @@ describe('state event listing', () => {
         );
 
         expect(query.limit).toBe(DEFAULT_STATE_EVENT_LIST_LIMIT);
-        expect(filterStateEventsForList(events, query)).toEqual(events);
+        expect(listRecentStateEvents(events, query)).toEqual(events);
     });
 
     it('reads cursor query params and returns forward event pages', () => {

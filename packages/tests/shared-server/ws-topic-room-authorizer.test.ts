@@ -3,6 +3,7 @@ import { GroupStateRepository } from '@shared-server/rallar-system/group-state/p
 import { createCachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { newALBroadcastMessage, newALEventRoute, newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceSummary, GroupSnapshot } from '@shared/api/group-types.ts';
 import { findGroupStateSnapshotByRef, setGroupStateSnapshot } from '@shared/repository/group-state-snapshots-repository.ts';
@@ -144,7 +145,7 @@ describe('createGroupRoomWsAuthorizer', () => {
         configureTestCacheRepositories();
 
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(runtimeRepository);
+        const groupRepository = createTestGroupStateRepository(runtimeRepository);
         const group = createGroupSnapshot(
             'shared-room',
             'app-1',
@@ -194,7 +195,7 @@ describe('createGroupRoomWsAuthorizer', () => {
         configureTestCacheRepositories();
 
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(runtimeRepository);
+        const groupRepository = createTestGroupStateRepository(runtimeRepository);
         const staleGroup = createGroupSnapshot(
             'shared-room',
             'app-1',
@@ -262,7 +263,7 @@ describe('createGroupRoomWsAuthorizer', () => {
         configureTestCacheRepositories();
 
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(runtimeRepository);
+        const groupRepository = createTestGroupStateRepository(runtimeRepository);
         const group = createGroupSnapshot(
             'shared-room',
             'app-1',
@@ -319,7 +320,7 @@ describe('createGroupRoomWsAuthorizer', () => {
         configureTestCacheRepositories();
 
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(runtimeRepository);
+        const groupRepository = createTestGroupStateRepository(runtimeRepository);
         const group = createGroupSnapshot(
             'stale-disconnect-room',
             'app-1',
@@ -502,7 +503,7 @@ describe('createGroupRoomWsAuthorizer', () => {
         configureTestCacheRepositories();
 
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(runtimeRepository);
+        const groupRepository = createTestGroupStateRepository(runtimeRepository);
         const staleGroup = createGroupSnapshot(
             'shared-room',
             'app-1',

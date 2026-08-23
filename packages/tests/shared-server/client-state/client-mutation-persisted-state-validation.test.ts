@@ -25,18 +25,16 @@ import {
 } from '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { toClientSessionExpiryCandidate } from '@shared-server/rallar-system/presence/session-expiry.ts';
-import { defaultClientStateEventStoreFor } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import type {
-    RuntimeStateReadBatchSelection,
-    RuntimeStateReadBatchSelector
-} from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
-import type { ClientPrincipalRef, ClientSession } from '@shared/api/client-types.ts';
+import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
+import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
+import type { ClientEvent, ClientPrincipalRef, ClientSession } from '@shared/api/client-types.ts';
 import type { ConnectClientSessionRequest, StateScope } from '@shared/api/state-types.ts';
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
@@ -75,7 +73,7 @@ describe('client mutation persisted-state validation', () => {
         await removePersistedWorkspaceId(runtime, 'client-state:principals');
 
         await expect(
-            new ClientStateRepository(runtime).findPrincipal(principalRef('alice'))
+            createTestClientStateRepository(runtime).findPrincipal(principalRef('alice'))
         ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
     });
 
@@ -85,7 +83,7 @@ describe('client mutation persisted-state validation', () => {
         await removePersistedWorkspaceId(runtime, 'client-state:instances');
 
         await expect(
-            new ClientStateRepository(runtime).listInstances(principalRef('alice'))
+            createTestClientStateRepository(runtime).listInstances(principalRef('alice'))
         ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
     });
 
@@ -95,25 +93,32 @@ describe('client mutation persisted-state validation', () => {
         await removePersistedWorkspaceId(runtime, 'client-state:sessions');
 
         await expect(
-            new ClientStateRepository(runtime).readSnapshot(principalRef('alice'))
+            createTestClientStateRepository(runtime).readSnapshot(principalRef('alice'))
         ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
     });
 
     it('fails closed when a persisted event read omits its workspace identity', async () => {
         const runtime = new AggregateBarrierRepository();
-        await connect(runtime, 'event-session', 'event-generation', BASE_EPOCH_MS);
-        const eventStore = defaultClientStateEventStoreFor(runtime);
-        const event = eventStore.events[0];
-        if (!event) {
-            throw new Error('Expected a stored client event');
-        }
-        const { workspaceId: ignoredWorkspaceId, ...eventWithoutWorkspaceId } = event;
-        void ignoredWorkspaceId;
-        eventStore.events[0] = eventWithoutWorkspaceId as typeof event;
+        const eventStore = new TestClientStateEventStore();
+        eventStore.events.push({
+            applicationId: SCOPE.applicationId,
+            principalId: 'alice',
+            eventId: 'event-without-workspace',
+            eventType: 'session-connected',
+            clientInstanceId: 'browser',
+            sessionId: 'event-session',
+            snapshotVersion: 1,
+            occurredAtEpochMs: BASE_EPOCH_MS,
+            actor: { kind: 'service', serviceId: 'client-test' },
+            reason: null,
+            traceId: null,
+            requestId: null,
+            payload: {}
+        } as ClientEvent);
         vi.spyOn(eventStore, 'listClientEvents').mockResolvedValue(eventStore.events);
 
         await expect(
-            new ClientStateRepository(runtime).listEvents(principalRef('alice'))
+            createTestClientStateRepository(runtime, eventStore).listEvents(principalRef('alice'))
         ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
     });
 
@@ -127,7 +132,7 @@ describe('client mutation persisted-state validation', () => {
         await runtime.deleteByKey('client-state:instances', instance.key);
 
         await expect(
-            new ClientStateRepository(runtime).readSnapshot(principalRef('alice'))
+            createTestClientStateRepository(runtime).readSnapshot(principalRef('alice'))
         ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
     });
 
@@ -138,7 +143,7 @@ describe('client mutation persisted-state validation', () => {
             platform: 'web',
             requestId: 'register-phone'
         });
-        const repository = new ClientStateRepository(runtime);
+        const repository = createTestClientStateRepository(runtime);
         const browserSession = await repository.findSession({
             ...principalRef('alice'),
             clientInstanceId: 'browser',
@@ -164,7 +169,7 @@ describe('client mutation persisted-state validation', () => {
         await connect(runtime, 'instance-session', 'instance-generation', BASE_EPOCH_MS);
 
         await expect(
-            new ClientStateRepository(runtime).readSnapshot(principalRef('alice'))
+            createTestClientStateRepository(runtime).readSnapshot(principalRef('alice'))
         ).rejects.toBeInstanceOf(ClientStateRepositoryInvariantCorruptionError);
     });
 
@@ -186,7 +191,7 @@ describe('client mutation persisted-state validation', () => {
             const runtime = new AggregateBarrierRepository();
             const service = createService(runtime, 1_000);
             await service.upsertPrincipal(SCOPE, 'alice', request);
-            const repository = new ClientStateRepository(runtime);
+            const repository = createTestClientStateRepository(runtime);
             const stored = await repository.findIdempotentClientMutationReceipt(
                 principalRef('alice'),
                 request.requestId
@@ -241,7 +246,7 @@ describe('client mutation persisted-state validation', () => {
                 requestId: 'seed-malformed-no-op-replay'
             });
             await service.upsertPrincipal(SCOPE, 'alice', malformedNoOpRequest);
-            const repository = new ClientStateRepository(runtime);
+            const repository = createTestClientStateRepository(runtime);
             const stored = await repository.findIdempotentClientMutationReceipt(
                 principalRef('alice'),
                 malformedNoOpRequest.requestId

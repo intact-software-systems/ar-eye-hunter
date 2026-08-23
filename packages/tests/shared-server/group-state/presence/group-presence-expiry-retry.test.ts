@@ -1,6 +1,7 @@
 import { groupStateMaintenanceRequestId } from '@shared-server/rallar-system/group-state/group-presence-mutation-command.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { RuntimeStateRetryExhaustedError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
@@ -48,7 +49,7 @@ describe('group presence expiry retry', () => {
             onlineMemberCount: 0
         });
 
-        const repository = new GroupStateRepository(runtimeRepository);
+        const repository = createTestGroupStateRepository(runtimeRepository);
         expect(
             await repository.findPresenceSession({
                 ...groupRef,
@@ -115,7 +116,7 @@ describe('group presence expiry retry', () => {
             )
         ]);
         const events = (
-            await new GroupStateRepository(runtime).listEvents(groupRef('different-expiry-observations'))
+            await createTestGroupStateRepository(runtime).listEvents(groupRef('different-expiry-observations'))
         ).filter((event) => event.eventType === 'session-disconnected');
 
         expect(results.flat()).toHaveLength(1);
@@ -154,7 +155,7 @@ describe('group presence expiry retry', () => {
             ).disconnectPresenceSessionsBySessionIdWritten('cleanup-session', BASE_EPOCH_MS + 4_000)
         ]);
         const events = (
-            await new GroupStateRepository(runtime).listEvents(groupRef('different-cleanup-observations'))
+            await createTestGroupStateRepository(runtime).listEvents(groupRef('different-cleanup-observations'))
         ).filter((event) => event.eventType === 'session-disconnected');
 
         expect(results).toHaveLength(2);
@@ -188,7 +189,7 @@ describe('group presence expiry retry', () => {
             createMaintenance(runtime, atEpochMs).expireExpiredPresenceSessions(atEpochMs)
         ]);
         const events = (
-            await new GroupStateRepository(runtime).listEvents(groupRef('duplicate-expiry-work'))
+            await createTestGroupStateRepository(runtime).listEvents(groupRef('duplicate-expiry-work'))
         ).filter((event) => event.eventType === 'session-disconnected');
 
         expect(results.flat()).toHaveLength(1);
@@ -232,13 +233,13 @@ describe('group presence expiry retry', () => {
             'delete:group-state:sessions'
         ]);
         expect(
-            await new GroupStateRepository(runtime).findPresenceSession({
+            await createTestGroupStateRepository(runtime).findPresenceSession({
                 ...ref,
                 sessionId: 'expiry-delete-exhaustion-session'
             })
         ).toMatchObject({ generationId: 'expiry-delete-exhaustion-generation' });
         expect(
-            (await new GroupStateRepository(runtime).listEvents(ref)).filter(
+            (await createTestGroupStateRepository(runtime).listEvents(ref)).filter(
                 (event) => event.eventType === 'session-disconnected'
             )
         ).toEqual([]);
@@ -256,7 +257,7 @@ describe('group presence expiry retry', () => {
             expiresAtEpochMs: BASE_EPOCH_MS + 3_000,
             requestId: 'connect-generation-1'
         });
-        const groupRevision = await new GroupStateRepository(runtime).findGroupEntry(
+        const groupRevision = await createTestGroupStateRepository(runtime).findGroupEntry(
             groupRef('presence-room')
         );
         runtime.resetGuards();
@@ -286,7 +287,7 @@ describe('group presence expiry retry', () => {
                 }
             )
         ]);
-        const disconnected = await new GroupStateRepository(runtime).findPresenceSession({
+        const disconnected = await createTestGroupStateRepository(runtime).findPresenceSession({
             ...groupRef('presence-room'),
             sessionId: 'session-a'
         });
@@ -297,7 +298,7 @@ describe('group presence expiry retry', () => {
         });
         expect(runtime.groupGuards).toBe(0);
         expect(
-            (await new GroupStateRepository(runtime).findGroupEntry(groupRef('presence-room')))?.entry
+            (await createTestGroupStateRepository(runtime).findGroupEntry(groupRef('presence-room')))?.entry
                 .revision
         ).toBe(groupRevision?.entry.revision);
 
@@ -317,7 +318,7 @@ describe('group presence expiry retry', () => {
         await createMaintenance(runtime, BASE_EPOCH_MS + 4_000).expireExpiredPresenceSessions(
             BASE_EPOCH_MS + 4_000
         );
-        const reconnected = await new GroupStateRepository(runtime).findPresenceSession({
+        const reconnected = await createTestGroupStateRepository(runtime).findPresenceSession({
             ...groupRef('presence-room'),
             sessionId: 'session-a'
         });

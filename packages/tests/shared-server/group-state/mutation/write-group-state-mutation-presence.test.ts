@@ -1,3 +1,4 @@
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
@@ -26,7 +27,7 @@ describe('GroupStateService guarded presence batch', () => {
         let generatedId = 0;
         const service = createTestGroupStateService({
             runtimeRepository: runtime,
-            createGroupStateEventStore: () => eventStore,
+            groupStateEventStoreFor: () => eventStore,
             now: () => nowEpochMs,
             randomId: () => `presence-batch-id-${++generatedId}`,
             serviceId: 'presence-batch-service'
@@ -52,7 +53,7 @@ describe('GroupStateService guarded presence batch', () => {
                 requestId: 'presence-update-connect'
             }
         );
-        const repository = new GroupStateRepository(runtime, { events: eventStore });
+        const repository = createTestGroupStateRepository(runtime, eventStore);
         const connectedGroup = await repository.findGroup(ref);
         const admission = await repository.findPresenceAdmissionEntry({
             ...ref,
@@ -165,7 +166,7 @@ describe('GroupStateService guarded presence batch', () => {
         let generatedId = 0;
         const groupRuntime = createTestGroupStateRuntime({
             runtimeRepository: runtime,
-            createGroupStateEventStore: () => eventStore,
+            groupStateEventStoreFor: () => eventStore,
             now: () => nowEpochMs,
             randomId: () => `expiry-batch-id-${++generatedId}`,
             serviceId: 'expiry-batch-service'
@@ -194,7 +195,7 @@ describe('GroupStateService guarded presence batch', () => {
 
         const written = await groupRuntime.maintenance.expireExpiredPresenceSessions(nowEpochMs);
         const batch = runtime.batches[0];
-        const repository = new GroupStateRepository(runtime, { events: eventStore });
+        const repository = createTestGroupStateRepository(runtime, eventStore);
         const admission = await repository.findPresenceAdmissionEntry({
             ...ref,
             principalId: 'alice'

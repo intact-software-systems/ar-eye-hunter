@@ -31,6 +31,7 @@ import type {
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike
 } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { ClientPrincipalRef, ClientSession } from '@shared/api/client-types.ts';
 import type { ConnectClientSessionRequest, StateScope } from '@shared/api/state-types.ts';
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
@@ -80,7 +81,7 @@ describe('client mutation transaction convergence', () => {
 
     it('rolls back client state, receipt, event, and outbox when the insert-only outbox collides', async () => {
         const runtime = new AggregateBarrierRepository();
-        const repository = new ClientStateRepository(runtime);
+        const repository = createTestClientStateRepository(runtime);
         const timing: RallarTimingEvent[] = [];
         failNextClientStateTestOutboxWrite(runtime);
 

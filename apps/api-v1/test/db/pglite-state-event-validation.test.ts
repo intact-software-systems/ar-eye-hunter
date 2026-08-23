@@ -2,9 +2,9 @@ import { Temporal } from '@js-temporal/polyfill';
 import assert from 'node:assert/strict';
 
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { groupEventWorkspaceKey } from '@shared-server/postgres/rallar-system/group-event-workspace-key.ts';
-import { PSqlGroupStateEventRepository } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
 import { ResourceInboxInvariantCorruptionError, ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { groupStateEventWorkspaceKey } from '@shared-server/rallar-system/state-events/postgres/group-state-event-workspace-key.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -32,7 +32,7 @@ Deno.test('PSql group event reads fail closed on a predecessor wrong-scope paylo
         application_id, workspace_key, group_id, event_id, event_type,
         snapshot_version, occurred_at_epoch_ms, event_json
       ) values (
-        ${expectedRef.applicationId}, ${groupEventWorkspaceKey(expectedRef.workspaceId)},
+        ${expectedRef.applicationId}, ${groupStateEventWorkspaceKey(expectedRef.workspaceId)},
         ${expectedRef.groupId},
         ${corruptEvent.eventId}, ${corruptEvent.eventType},
         ${corruptEvent.snapshotVersion}, ${corruptEvent.occurredAtEpochMs},
@@ -80,7 +80,7 @@ Deno.test(
         application_id, workspace_key, group_id, event_id, event_type,
         snapshot_version, occurred_at_epoch_ms, event_json
       ) values (
-        ${ref.applicationId}, ${groupEventWorkspaceKey(ref.workspaceId)},
+        ${ref.applicationId}, ${groupStateEventWorkspaceKey(ref.workspaceId)},
         ${ref.groupId}, ${predecessorEvent.eventId}, ${predecessorEvent.eventType},
         ${predecessorEvent.snapshotVersion}, ${predecessorEvent.occurredAtEpochMs},
         ${JSON.stringify(predecessorEvent)}
@@ -135,7 +135,7 @@ Deno.test(
           application_id, workspace_key, group_id, event_id, event_type,
           snapshot_version, occurred_at_epoch_ms, event_json
         ) values (
-          ${ref.applicationId}, ${groupEventWorkspaceKey(ref.workspaceId)},
+          ${ref.applicationId}, ${groupStateEventWorkspaceKey(ref.workspaceId)},
           ${ref.groupId}, ${event.eventId}, ${event.eventType},
           ${event.snapshotVersion}, ${event.occurredAtEpochMs},
           ${JSON.stringify(event)}
@@ -246,7 +246,7 @@ Deno.test(
           application_id, workspace_key, group_id, event_id, event_type,
           snapshot_version, occurred_at_epoch_ms, event_json
         ) values (
-          ${ref.applicationId}, ${groupEventWorkspaceKey(ref.workspaceId)},
+          ${ref.applicationId}, ${groupStateEventWorkspaceKey(ref.workspaceId)},
           ${ref.groupId}, ${payload.eventId}, ${baseEvent.eventType},
           ${baseEvent.snapshotVersion}, ${baseEvent.occurredAtEpochMs},
           ${JSON.stringify(payload)}

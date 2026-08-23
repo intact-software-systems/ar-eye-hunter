@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
-import { PSqlClientStateEventRepository } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
+import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';

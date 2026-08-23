@@ -9,10 +9,12 @@ import {
     groupStatePresenceSessionStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import { readStateEventListQuery } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
-import { InMemoryClientStateEventStore, InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
 import type { RuntimeStateEntry, RuntimeStateTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { createTestClientStateRepository, createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
+import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
+import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
 import type { AuditStamp as ClientAuditStamp, ClientEvent, ClientInstance, ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
 import type { AuditStamp as GroupAuditStamp, Group, GroupEvent, GroupMember, GroupPresenceSession, GroupPresenceSummary } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
@@ -28,7 +30,7 @@ describe('ClientStateRepository', () => {
         expectTypeOf<ClientStateRepository>().not.toHaveProperty('putSession');
         expectTypeOf<ClientStateRepository>().not.toHaveProperty('removeSession');
 
-        const clientRepository = new ClientStateRepository(
+        const clientRepository = createTestClientStateRepository(
             new FakeRuntimeStateRepository()
         );
         expect(Object.hasOwn(Object.getPrototypeOf(clientRepository), 'putPrincipal'))
@@ -39,9 +41,7 @@ describe('ClientStateRepository', () => {
 
     it('fails closed when a persisted client row omits its workspace identity', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const clientRepository = new ClientStateRepository(repository, {
-            events: new InMemoryClientStateEventStore()
-        });
+        const clientRepository = createTestClientStateRepository(repository, new TestClientStateEventStore());
         const canonical = createClientPrincipal();
         const noncanonical = {
             applicationId: canonical.applicationId,
@@ -70,9 +70,7 @@ describe('ClientStateRepository', () => {
 
     it('fails closed when a client row identity differs from its canonical slot', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const clientRepository = new ClientStateRepository(repository, {
-            events: new InMemoryClientStateEventStore()
-        });
+        const clientRepository = createTestClientStateRepository(repository, new TestClientStateEventStore());
         const expected = createClientPrincipal();
         await repository.upsert(
             'client-state:principals',
@@ -88,10 +86,8 @@ describe('ClientStateRepository', () => {
 
     it('stores durable client records, expires sessions, and assembles snapshots', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const eventStore = new InMemoryClientStateEventStore();
-        const clientRepository = new ClientStateRepository(repository, {
-            events: eventStore
-        });
+        const eventStore = new TestClientStateEventStore();
+        const clientRepository = createTestClientStateRepository(repository, eventStore);
         const now = Date.now();
 
         const principal = createClientPrincipal();
@@ -176,14 +172,11 @@ describe('ClientStateRepository', () => {
             expireAtTimestamp: NEVER_EXPIRE_AT_TIMESTAMP
         });
         expect(repository.findStoredEntry('client-state:events')).toBeUndefined();
-        expect(eventStore.listEventsCalls).toBe(1);
     });
 
     it('exposes the durable principal-row revision without changing snapshotVersion', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const clientRepository = new ClientStateRepository(repository, {
-            events: new InMemoryClientStateEventStore()
-        });
+        const clientRepository = createTestClientStateRepository(repository, new TestClientStateEventStore());
         const principal = createClientPrincipal();
 
         await insertClientPrincipal(clientRepository, principal);
@@ -207,9 +200,7 @@ describe('ClientStateRepository', () => {
 
     it('allows one of two concurrent client compare-and-set writes to win', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const clientRepository = new ClientStateRepository(repository, {
-            events: new InMemoryClientStateEventStore()
-        });
+        const clientRepository = createTestClientStateRepository(repository, new TestClientStateEventStore());
         const principal = createClientPrincipal();
 
         await insertClientPrincipal(clientRepository, principal);
@@ -229,9 +220,7 @@ describe('ClientStateRepository', () => {
 
     it('retries a client snapshot when the principal revision changes during child reads', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const clientRepository = new ClientStateRepository(repository, {
-            events: new InMemoryClientStateEventStore()
-        });
+        const clientRepository = createTestClientStateRepository(repository, new TestClientStateEventStore());
         const principal = createClientPrincipal();
 
         await insertClientPrincipal(clientRepository, principal);
@@ -265,9 +254,7 @@ describe('ClientStateRepository', () => {
 
     it('returns absent when a client principal is created after the aggregate probe', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const clientRepository = new ClientStateRepository(repository, {
-            events: new InMemoryClientStateEventStore()
-        });
+        const clientRepository = createTestClientStateRepository(repository, new TestClientStateEventStore());
         const principal = createClientPrincipal();
         repository.onFindEntryAfterRead = async () => {
             repository.onFindEntryAfterRead = undefined;
@@ -283,9 +270,7 @@ describe('ClientStateRepository', () => {
 
     it('lists client snapshots with scope-wide child reads instead of per-principal fanout', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const clientRepository = new ClientStateRepository(repository, {
-            events: new InMemoryClientStateEventStore()
-        });
+        const clientRepository = createTestClientStateRepository(repository, new TestClientStateEventStore());
         const now = Date.now();
         const clientCount = 50;
 
@@ -328,9 +313,7 @@ describe('ClientStateRepository', () => {
 
     it('target-reads only changed clients and omits clients deleted during full-list validation', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const clientRepository = new ClientStateRepository(repository, {
-            events: new InMemoryClientStateEventStore()
-        });
+        const clientRepository = createTestClientStateRepository(repository, new TestClientStateEventStore());
         for (const principalId of ['principal-0', 'principal-1', 'principal-2']) {
             await insertClientPrincipal(
                 clientRepository,
@@ -383,10 +366,8 @@ describe('ClientStateRepository', () => {
 
     it('lists client event pages with event-type filtering through dedicated event-store paging', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const eventStore = new InMemoryClientStateEventStore();
-        const clientRepository = new ClientStateRepository(repository, {
-            events: eventStore
-        });
+        const eventStore = new TestClientStateEventStore();
+        const clientRepository = createTestClientStateRepository(repository, eventStore);
         const ref = {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -429,15 +410,11 @@ describe('ClientStateRepository', () => {
         expect(recentEvents.map((event) => event.eventId)).toEqual(['evt-4']);
         expect(repository.findEntriesByPrefixCalls).toBe(0);
         expect(repository.findEntriesByPrefixPageCalls).toHaveLength(0);
-        expect(eventStore.listRecentEventsCalls).toBe(1);
-        expect(eventStore.listEventPageCalls).toBe(2);
     });
 
     it('preserves client event cursor order when snapshot versions diverge from timestamps', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const clientRepository = new ClientStateRepository(repository, {
-            events: new InMemoryClientStateEventStore()
-        });
+        const clientRepository = createTestClientStateRepository(repository, new TestClientStateEventStore());
         const ref = {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -536,7 +513,7 @@ async function insertClientSession(
 describe('GroupStateRepository', () => {
     it('rejects group rows that omit current identity and audit fields', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(repository);
+        const groupRepository = createTestGroupStateRepository(repository);
         const ref = {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -613,7 +590,7 @@ describe('GroupStateRepository', () => {
 
     it('rejects explicit null and wrong-slot persisted group identities', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(repository);
+        const groupRepository = createTestGroupStateRepository(repository);
         const expected = createGroup('expected-group');
         await repository.upsert(
             'group-state:groups',
@@ -637,10 +614,8 @@ describe('GroupStateRepository', () => {
 
     it('stores groups by scope, supports slug lookup, and assembles group snapshots', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const eventStore = new InMemoryGroupStateEventStore();
-        const groupRepository = new GroupStateRepository(repository, {
-            events: eventStore
-        });
+        const eventStore = new TestGroupStateEventStore();
+        const groupRepository = createTestGroupStateRepository(repository, eventStore);
         const now = Date.now();
 
         const group = createGroup();
@@ -714,14 +689,11 @@ describe('GroupStateRepository', () => {
             })
         ).toEqual([createGroupEvent('evt-1', now + 1_000), createGroupEvent('evt-2', now + 2_000)]);
         expect(repository.findStoredEntry('group-state:events')).toBeUndefined();
-        expect(eventStore.listEventsCalls).toBe(1);
     });
 
     it('exposes the canonical causal group revision without changing snapshotVersion', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(repository, {
-            events: new InMemoryGroupStateEventStore()
-        });
+        const groupRepository = createTestGroupStateRepository(repository, new TestGroupStateEventStore());
         const group = createGroup();
 
         await putGroupFixture(groupRepository, group);
@@ -742,9 +714,7 @@ describe('GroupStateRepository', () => {
 
     it('assigns distinct causal revisions to concurrent group writes with one domain version', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(repository, {
-            events: new InMemoryGroupStateEventStore()
-        });
+        const groupRepository = createTestGroupStateRepository(repository, new TestGroupStateEventStore());
         const group = createGroup();
 
         await groupRepository.putMember(createGroupOwner(group));
@@ -761,9 +731,7 @@ describe('GroupStateRepository', () => {
 
     it('retries a group snapshot when the aggregate revision changes during child reads', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(repository, {
-            events: new InMemoryGroupStateEventStore()
-        });
+        const groupRepository = createTestGroupStateRepository(repository, new TestGroupStateEventStore());
         const group = { ...createGroup(), activeMemberCount: 2 };
 
         await putGroupFixture(groupRepository, group);
@@ -793,9 +761,7 @@ describe('GroupStateRepository', () => {
 
     it('returns absent when a group is deleted during child reads', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(repository, {
-            events: new InMemoryGroupStateEventStore()
-        });
+        const groupRepository = createTestGroupStateRepository(repository, new TestGroupStateEventStore());
         const group = createGroup('group-delete');
         await putGroupFixture(groupRepository, group);
         await groupRepository.putMember(
@@ -811,9 +777,7 @@ describe('GroupStateRepository', () => {
 
     it('uses one current group authority snapshot without a compatibility reread', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(repository, {
-            events: new InMemoryGroupStateEventStore()
-        });
+        const groupRepository = createTestGroupStateRepository(repository, new TestGroupStateEventStore());
         const group = createGroup();
 
         await putGroupFixture(groupRepository, group);
@@ -835,9 +799,7 @@ describe('GroupStateRepository', () => {
 
     it('lists group snapshots with scope-wide child reads instead of per-group fanout', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(repository, {
-            events: new InMemoryGroupStateEventStore()
-        });
+        const groupRepository = createTestGroupStateRepository(repository, new TestGroupStateEventStore());
         const now = Date.now();
         const groupCount = 50;
 
@@ -894,9 +856,7 @@ describe('GroupStateRepository', () => {
 
     it('target-reads only changed groups and omits groups deleted during full-list validation', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(repository, {
-            events: new InMemoryGroupStateEventStore()
-        });
+        const groupRepository = createTestGroupStateRepository(repository, new TestGroupStateEventStore());
         for (const groupId of ['group-0', 'group-1', 'group-2']) {
             await putGroupFixture(groupRepository, createGroup(groupId));
             await groupRepository.putMember(
@@ -941,9 +901,7 @@ describe('GroupStateRepository', () => {
 
     it('lists bounded group snapshot pages without scanning every group row', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(repository, {
-            events: new InMemoryGroupStateEventStore()
-        });
+        const groupRepository = createTestGroupStateRepository(repository, new TestGroupStateEventStore());
         const now = Date.now();
         const groupCount = 5;
 
@@ -1001,9 +959,7 @@ describe('GroupStateRepository', () => {
 
     it('fills bounded group snapshot pages after expired raw group rows are skipped', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(repository, {
-            events: new InMemoryGroupStateEventStore()
-        });
+        const groupRepository = createTestGroupStateRepository(repository, new TestGroupStateEventStore());
 
         await putGroupFixture(groupRepository, {
             ...createGroup('group-0000'),
@@ -1041,9 +997,7 @@ describe('GroupStateRepository', () => {
 
     it('omits groups deleted during page validation while retaining the scanned cursor', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(repository, {
-            events: new InMemoryGroupStateEventStore()
-        });
+        const groupRepository = createTestGroupStateRepository(repository, new TestGroupStateEventStore());
         await putGroupFixture(groupRepository, createGroup('group-0000'));
         await putGroupFixture(groupRepository, createGroup('group-0001'));
         repository.onReadRuntimeStateBatch = async (selectors) => {
@@ -1068,9 +1022,7 @@ describe('GroupStateRepository', () => {
 
     it('target-reads a group changed during exact-key page validation', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(repository, {
-            events: new InMemoryGroupStateEventStore()
-        });
+        const groupRepository = createTestGroupStateRepository(repository, new TestGroupStateEventStore());
         const group = createGroup('group-0000');
         await putGroupFixture(groupRepository, group);
         await groupRepository.putMember(
@@ -1109,9 +1061,7 @@ describe('GroupStateRepository', () => {
 
     it('keeps paged group snapshot scans inside the exact workspace scope', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(repository, {
-            events: new InMemoryGroupStateEventStore()
-        });
+        const groupRepository = createTestGroupStateRepository(repository, new TestGroupStateEventStore());
 
         await putGroupFixture(groupRepository, createGroup('room-current'));
         await putGroupFixture(groupRepository, {
@@ -1147,10 +1097,8 @@ describe('GroupStateRepository', () => {
 
     it('lists group event pages with cursor order through dedicated event-store paging', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const eventStore = new InMemoryGroupStateEventStore();
-        const groupRepository = new GroupStateRepository(repository, {
-            events: eventStore
-        });
+        const eventStore = new TestGroupStateEventStore();
+        const groupRepository = createTestGroupStateRepository(repository, eventStore);
         const ref = {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
@@ -1188,15 +1136,11 @@ describe('GroupStateRepository', () => {
         ]);
         expect(repository.findEntriesByPrefixCalls).toBe(0);
         expect(repository.findEntriesByPrefixPageCalls).toHaveLength(0);
-        expect(eventStore.listRecentEventsCalls).toBe(1);
-        expect(eventStore.listEventPageCalls).toBe(2);
     });
 
     it('preserves group event cursor order when snapshot versions diverge from timestamps', async () => {
         const repository = new FakeRuntimeStateRepository();
-        const groupRepository = new GroupStateRepository(repository, {
-            events: new InMemoryGroupStateEventStore()
-        });
+        const groupRepository = createTestGroupStateRepository(repository, new TestGroupStateEventStore());
         const ref = {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',

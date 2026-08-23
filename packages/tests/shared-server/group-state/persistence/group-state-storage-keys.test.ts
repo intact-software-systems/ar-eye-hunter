@@ -9,6 +9,7 @@ import {
     groupStatePresenceSummaryStorageKey,
     groupStateScopeStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceAdmission, GroupPresenceSession } from '@shared/api/group-types.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createTestGroup } from '../../../create-test-group.ts';
@@ -222,7 +223,7 @@ describe('GroupStateRepository persistence', () => {
                 updatedTimestamp: new Date().toISOString(),
                 revision: 0
             });
-            await expect(testCase.direct(new GroupStateRepository(directRuntime))).rejects.toMatchObject({
+            await expect(testCase.direct(createTestGroupStateRepository(directRuntime))).rejects.toMatchObject({
                 code: 'group-state-repository-invariant-corruption'
             });
 
@@ -233,7 +234,7 @@ describe('GroupStateRepository persistence', () => {
                 JSON.stringify(testCase.value),
                 Number.MAX_SAFE_INTEGER
             );
-            const listRepository = new GroupStateRepository(listRuntime);
+            const listRepository = createTestGroupStateRepository(listRuntime);
             for (const read of testCase.lists(listRepository)) {
                 await expect(read()).rejects.toMatchObject({
                     code: 'group-state-repository-invariant-corruption'
@@ -256,7 +257,7 @@ describe('GroupStateRepository persistence', () => {
             JSON.stringify(member),
             Number.MAX_SAFE_INTEGER
         );
-        const snapshotRepository = new GroupStateRepository(snapshotRuntime);
+        const snapshotRepository = createTestGroupStateRepository(snapshotRuntime);
         for (
             const read of [
                 () => snapshotRepository.readSnapshot(ref),

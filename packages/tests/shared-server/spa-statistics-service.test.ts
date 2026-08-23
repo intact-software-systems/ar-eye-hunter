@@ -378,41 +378,6 @@ describe('SPA statistics use cases', () => {
             bounded: true
         });
     });
-
-    it('uses the newest events when the recent-events service method is unavailable', async () => {
-        const events = Array.from({ length: 5 }, (_, index) => createGroupEvent('room-1', index));
-        const service = createSpaStatisticsUseCases({
-            now: () => NOW_EPOCH_MS,
-            recentEventLimit: 2,
-            clientStateService: {
-                readSnapshot: () => Promise.resolve(undefined),
-                readPresenceSnapshot: () => Promise.resolve(undefined)
-            },
-            groupStateService: {
-                listSnapshots: () => Promise.resolve([createGroupSnapshot('room-1', [['alice', 'member']])]),
-                listSnapshotsPage: () =>
-                    Promise.resolve({
-                        snapshots: [],
-                        scannedGroupCount: 0,
-                        hasMore: false
-                    }),
-                readCurrentSnapshot: () => Promise.resolve(createGroupSnapshot('room-1', [['alice', 'member']])),
-                listEvents: () => Promise.resolve(events)
-            }
-        });
-
-        const stats = await service.readGroupStats({
-            scope: TEST_SCOPE,
-            groupId: 'room-1',
-            authSession: createAuthSession('alice', 'alice-session')
-        });
-
-        expect(stats.activity.recentGroupEventCount).toEqual({
-            count: 2,
-            limit: 2,
-            bounded: true
-        });
-    });
 });
 
 type TestServiceInput = Readonly<{

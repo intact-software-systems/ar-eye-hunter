@@ -1,3 +1,4 @@
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
@@ -72,7 +73,7 @@ describe('GroupStateService guarded batch convergence', () => {
             })
         ]);
 
-        const repository = new GroupStateRepository(runtime, { events: eventStore });
+        const repository = createTestGroupStateRepository(runtime, eventStore);
         const snapshot = await repository.readSnapshot({ ...SCOPE, groupId });
         const receipts = await Promise.all([
             repository.findIdempotentGroupMutationReceipt(
@@ -158,7 +159,7 @@ describe('GroupStateService guarded batch convergence', () => {
             })
         ]);
 
-        const repository = new GroupStateRepository(runtime, { events: eventStore });
+        const repository = createTestGroupStateRepository(runtime, eventStore);
         const admission = await repository.findPresenceAdmissionEntry({
             ...ref,
             principalId: 'alice'
@@ -194,7 +195,7 @@ function createService({
     let generatedId = 0;
     return createTestGroupStateService({
         runtimeRepository: runtime,
-        createGroupStateEventStore: () => eventStore,
+        groupStateEventStoreFor: () => eventStore,
         now: () => nowEpochMs,
         randomId: () => `${instanceId}-id-${++generatedId}`,
         sleep,

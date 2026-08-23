@@ -1,4 +1,5 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { AuditStamp, Group, GroupPresenceSession } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 import { auditStamp } from '../group-state-concurrency-test-fixtures.ts';
@@ -11,7 +12,7 @@ const BASE_EPOCH_MS = Date.now();
 describe('group snapshot presence', () => {
     it('intersects stale live summaries with latest group lifecycle in every snapshot API', async () => {
         const runtime = new GroupBarrierRepository();
-        const repository = new GroupStateRepository(runtime);
+        const repository = createTestGroupStateRepository(runtime);
         const observedAtEpochMs = Date.now();
         const cases = [
             { groupId: 'stale-summary-archived', status: 'archived' as const },
@@ -117,7 +118,7 @@ describe('group snapshot presence', () => {
 
     it('intersects summary presence with the latest exact session generation in every snapshot API', async () => {
         const runtime = new GroupBarrierRepository();
-        const repository = new GroupStateRepository(runtime);
+        const repository = createTestGroupStateRepository(runtime);
         const observedAtEpochMs = Date.now();
         const cases = [
             { groupId: 'snapshot-current-session', latest: 'current' as const },

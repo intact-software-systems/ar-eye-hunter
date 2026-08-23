@@ -4,6 +4,7 @@ import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-sta
 import { createCachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
 import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupPresenceSummary, GroupRef, GroupScope, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
@@ -22,7 +23,7 @@ interface CacheConvergenceCommandConstruction {
 describe('GroupStateSnapshotReadThroughCache', () => {
     it('hydrates and refreshes by durable state revision', async () => {
         configureTestCacheRepositories();
-        const repository = new GroupStateRepository(new FakeRuntimeStateRepository());
+        const repository = createTestGroupStateRepository(new FakeRuntimeStateRepository());
         const cache = createGroupStateSnapshotReadThroughCache({
             groupsRepository: repository
         });
@@ -42,7 +43,7 @@ describe('GroupStateSnapshotReadThroughCache', () => {
 
     it('observes revisions monotonically and rejects equal-revision conflicts', () => {
         configureTestCacheRepositories();
-        const repository = new GroupStateRepository(new FakeRuntimeStateRepository());
+        const repository = createTestGroupStateRepository(new FakeRuntimeStateRepository());
         const cache = createGroupStateSnapshotReadThroughCache({
             groupsRepository: repository
         });
@@ -76,7 +77,7 @@ describe('GroupStateSnapshotReadThroughCache', () => {
     it('keeps tuple-preserving liveness projections outside the monotonic summary cache', async () => {
         configureTestCacheRepositories();
         const runtime = new FakeRuntimeStateRepository();
-        const repository = new GroupStateRepository(runtime);
+        const repository = createTestGroupStateRepository(runtime);
         const cache = createGroupStateSnapshotReadThroughCache({
             groupsRepository: repository,
             now: () => 2_000
@@ -162,7 +163,7 @@ describe('GroupStateSnapshotReadThroughCache', () => {
             evictIfUnchanged?: (ref: GroupRef, expected: GroupSnapshot) => boolean;
         }>;
         configureTestCacheRepositories();
-        const repository = new GroupStateRepository(new FakeRuntimeStateRepository());
+        const repository = createTestGroupStateRepository(new FakeRuntimeStateRepository());
         const cache = createGroupStateSnapshotReadThroughCache({
             groupsRepository: repository
         });
@@ -223,7 +224,7 @@ async function convergePresenceSummaryForCacheTest(
         if (computed.summary.outcome === 'no-op') {
             return;
         }
-        const transactionRepository = new GroupStateRepository(transaction);
+        const transactionRepository = createTestGroupStateRepository(transaction);
         requireConditionalWrite(
             computed.summary.operation === 'insert'
                 ? await transactionRepository.insertPresenceSummary(computed.summary.summary)

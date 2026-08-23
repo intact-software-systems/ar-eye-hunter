@@ -1,5 +1,6 @@
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-client-state-event-store.ts';
 import type {
     RuntimeStateReadBatchSelection,
     RuntimeStateReadBatchSelector
@@ -43,9 +44,11 @@ interface RunResult {
 
 async function main(): Promise<void> {
     const repository = new CountingRuntimeStateRepository();
-    const clients = new ClientStateRepository(repository);
+    const clientStateEventStore = new InMemoryClientStateEventStore();
+    const clients = new ClientStateRepository(repository, clientStateEventStore);
     const service = createClientStateService({
         runtimeRepository: repository,
+        clientStateEventStore,
         serviceId: 'client-list-fanout-bench'
     });
 

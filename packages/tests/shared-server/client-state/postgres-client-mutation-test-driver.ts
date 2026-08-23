@@ -1,5 +1,4 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { createClientStateEventRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { requiresClientWrite } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
@@ -14,7 +13,8 @@ import {
     toExpiryCommandInput
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import type { ClientMutationCommandInput, ClientMutationComputed } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
-import type { ClientStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
+import type { ClientStateEventStore } from '@shared-server/rallar-system/state-events/client-state-event-store.ts';
+import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { ConnectClientSessionRequest, StateScope } from '@shared/api/state-types.ts';
@@ -35,9 +35,7 @@ export interface PostgresClientPhaseDriverOptions {
     readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
     readonly atEpochMs: number;
     readonly serviceId: string;
-    readonly createClientStateEventStore?: (
-        runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike
-    ) => ClientStateEventStore;
+    readonly clientStateEventStore?: ClientStateEventStore;
     readonly writeComputed?: (computed: ClientMutationComputed) => Promise<void>;
 }
 
@@ -61,7 +59,7 @@ export function createPostgresClientPhaseDriver(
 ): PostgresClientPhaseDriver {
     const service = createClientStateService({
         runtimeRepository: options.runtimeRepository,
-        createClientStateEventStore: options.createClientStateEventStore ?? createClientStateEventRepository,
+        clientStateEventStore: options.clientStateEventStore ?? new PSqlClientStateEventRepository(options.sql),
         serviceId: options.serviceId
     });
     const execute = createPostgresClientMutationExecutor(options, service);

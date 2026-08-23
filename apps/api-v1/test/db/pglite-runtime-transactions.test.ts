@@ -1,6 +1,7 @@
+import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import assert from 'node:assert/strict';
 
-import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
@@ -103,8 +104,8 @@ Deno.test('PSqlRuntimeStateRepository treats encoded prefix characters literally
 Deno.test('PGlite runtime-state hierarchy isolates sibling key segments', async () => {
     await withPGliteSql(async (sql) => {
         const runtime = new PSqlRuntimeStateRepository(sql);
-        const clients = new ClientStateRepository(runtime);
-        const groups = new GroupStateRepository(runtime);
+        const clients = new ClientStateRepository(runtime, new PSqlClientStateEventRepository(runtime.sql));
+        const groups = new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(runtime.sql));
         const audit = canonicalAuditStamp(1);
 
         assert.equal(
@@ -219,7 +220,8 @@ Deno.test(
       )
     `;
             const repository = new GroupStateRepository(
-                new PSqlRuntimeStateRepository(sql)
+                new PSqlRuntimeStateRepository(sql),
+                new PSqlGroupStateEventRepository(sql)
             );
 
             for (
@@ -289,7 +291,7 @@ Deno.test(
                 const runtime = new PSqlRuntimeStateRepository(sql);
                 const service = createGroupStateService({
                     runtimeRepository: runtime,
-                    createGroupStateEventStore: createGroupStateEventRepository,
+                    groupStateEventStore: new PSqlGroupStateEventRepository(sql),
                     authSessionRepository: {
                         findBySessionId: (sessionId) =>
                             Promise.resolve(
@@ -350,7 +352,7 @@ Deno.test(
           and store_key = ${storageKey}
       `;
 
-                const repository = new GroupStateRepository(runtime);
+                const repository = new GroupStateRepository(runtime, new PSqlGroupStateEventRepository(runtime.sql));
                 const reads = testCase.kind === 'group'
                     ? [
                         () => repository.findGroup(ref),

@@ -35,8 +35,8 @@ import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../ru
 import type { PersistedAuthSession } from '../auth/persistence/auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
 import type { RallarTimingSink } from '../observability/timing.ts';
+import type { GroupStateEventStore } from '../state-events/group-state-event-store.ts';
 import type { StateEventListQuery } from '../state-events/state-event-listing.ts';
-import type { GroupStateEventStore } from '../state-events/state-event-store.ts';
 import type { WsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
 import type {
     GroupMutationCommand,
@@ -193,7 +193,7 @@ export type GroupStateService =
         readCausalRevision(ref: GroupRef): Promise<GroupStateCausalRevision | undefined>;
         readIssuedAuthSession(sessionId: string): Promise<PersistedAuthSession | undefined>;
         listEvents(ref: GroupRef): Promise<readonly GroupEvent[]>;
-        listRecentEvents?(ref: GroupRef, query: StateEventListQuery): Promise<readonly GroupEvent[]>;
+        listRecentEvents(ref: GroupRef, query: StateEventListQuery): Promise<readonly GroupEvent[]>;
         listEventPage(ref: GroupRef, query: StateEventListQuery): Promise<StateEventPage<GroupEvent>>;
         observeSnapshot(snapshot: GroupSnapshot): Promise<GroupSnapshot>;
     }>;
@@ -209,9 +209,7 @@ export type GroupStateServiceDependencies = Readonly<{
      * runtime configures none, which keeps stored-cap-only admission.
      */
     capacity?: GroupPolicyCapacityConfig;
-    createGroupStateEventStore?: (
-        runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike
-    ) => GroupStateEventStore;
+    groupStateEventStore: GroupStateEventStore;
     now?: () => number;
     randomId?: () => string;
     serviceId: string;

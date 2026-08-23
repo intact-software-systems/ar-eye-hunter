@@ -369,6 +369,7 @@ function createPresenceResponseService(
             return Promise.resolve(snapshot);
         },
         listEvents: () => Promise.resolve([]),
+        listRecentEvents: () => Promise.resolve([]),
         listEventPage: () => Promise.resolve({ events: [], hasMore: false })
     };
 }

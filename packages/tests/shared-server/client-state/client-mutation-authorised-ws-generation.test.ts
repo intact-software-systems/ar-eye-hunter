@@ -1,3 +1,4 @@
+import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it } from 'vitest';
 
 import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
@@ -35,7 +36,7 @@ describe('client mutation authorised WebSocket generation', () => {
             })
         ]);
 
-        const repository = new ClientStateRepository(scenario.runtimeRepository);
+        const repository = createTestClientStateRepository(scenario.runtimeRepository);
         expect(
             await repository.findSession({
                 ...toClientPrincipalRef('alice'),
@@ -93,7 +94,7 @@ describe('client mutation authorised WebSocket generation', () => {
         ).rejects.toBeInstanceOf(ClientMutationIdempotencyConflictError);
         const authorisedCommandId = 'authorised-ws:connect:ws-session-ordered:generation-b';
         const authorisedOutbox = getClientStateTestOutbox(scenario.runtimeRepository).filter((entry) => entry.resource.includes(authorisedCommandId));
-        const authorisedReceipt = await new ClientStateRepository(
+        const authorisedReceipt = await createTestClientStateRepository(
             scenario.runtimeRepository
         ).findIdempotentClientMutationReceipt(toClientPrincipalRef('alice'), authorisedCommandId);
         expect(authorisedReceipt?.receipt.commandHash).toMatch(/^sha256:[0-9a-f]{64}$/u);

@@ -1,4 +1,5 @@
-import { InMemoryClientStateEventStore, InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
+import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
+import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { type AppInboxTestDatabase, type AppInboxTestDatabaseOptions, type AppInboxTestResourceRepositories } from './app-inbox-test-database-contracts.ts';
@@ -22,8 +23,8 @@ export function createAppInboxTestDatabase(
     const repositories: AppInboxTestResourceRepositories = { inbox, results };
     const state = {
         outboxEntries: new Map<string, ResourceEntry>(),
-        clientEventStore: options.clientEventStore ?? new InMemoryClientStateEventStore(),
-        groupEventStore: new InMemoryGroupStateEventStore()
+        clientEventStore: options.clientEventStore ?? new TestClientStateEventStore(),
+        groupEventStore: new TestGroupStateEventStore()
     };
     const database = (async () => {
         throw new Error('App inbox SQL must use the supplied transaction');

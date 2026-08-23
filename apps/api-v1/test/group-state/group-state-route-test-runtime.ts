@@ -337,7 +337,7 @@ function createGroupStateRouteService(
         readSnapshot,
         readCurrentSnapshot: groupService?.readCurrentSnapshot ?? readSnapshot,
         listEvents: groupService?.listEvents ?? (() => Promise.resolve([])),
-        ...(groupService?.listRecentEvents ? { listRecentEvents: groupService.listRecentEvents } : {}),
+        listRecentEvents: groupService?.listRecentEvents ?? (() => Promise.resolve([])),
         listEventPage: groupService?.listEventPage ??
             (() => Promise.resolve({ events: [], hasMore: false }))
     };

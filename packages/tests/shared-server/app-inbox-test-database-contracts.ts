@@ -1,6 +1,7 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import type { InMemoryClientStateEventStore, InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import type { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
+import type { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -8,8 +9,8 @@ import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 export type AppInboxTestDatabase =
     & PSqlSql
     & Readonly<{
-        clientEventStore: InMemoryClientStateEventStore;
-        groupEventStore: InMemoryGroupStateEventStore;
+        clientEventStore: TestClientStateEventStore;
+        groupEventStore: TestGroupStateEventStore;
         outboxEntries: ReadonlyMap<string, ResourceEntry>;
     }>;
 
@@ -17,7 +18,7 @@ export type AppInboxTestDatabaseStage = 'resource-result-replace' | 'reservation
 
 export interface AppInboxTestDatabaseOptions {
     readonly runtimeRepository?: RuntimeStateOptimisticTransactionalRepositoryLike;
-    readonly clientEventStore?: InMemoryClientStateEventStore;
+    readonly clientEventStore?: TestClientStateEventStore;
     readonly withTransaction?: <T>(write: () => Promise<T>) => Promise<T>;
     readonly shouldFailOutboxWrite?: () => boolean;
     readonly onTransactionRollback?: () => void | Promise<void>;
@@ -36,8 +37,8 @@ export interface AppInboxTestResourceRepositories {
 
 export interface AppInboxTestDatabaseState {
     readonly outboxEntries: Map<string, ResourceEntry>;
-    readonly clientEventStore: InMemoryClientStateEventStore;
-    readonly groupEventStore: InMemoryGroupStateEventStore;
+    readonly clientEventStore: TestClientStateEventStore;
+    readonly groupEventStore: TestGroupStateEventStore;
 }
 
 export interface AppInboxTestPendingWrites {

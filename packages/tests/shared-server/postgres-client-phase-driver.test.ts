@@ -1,4 +1,4 @@
-import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
+import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-client-state-event-store.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { describe, expect, it } from 'vitest';
 import { createPostgresClientPhaseDriver } from './client-state/postgres-client-mutation-test-driver.ts';
@@ -13,7 +13,7 @@ describe('Postgres client phase driver', () => {
             runtimeRepository,
             atEpochMs,
             serviceId: 'postgres-client-phase-driver-unit',
-            createClientStateEventStore: () => new InMemoryClientStateEventStore(),
+            clientStateEventStore: new InMemoryClientStateEventStore(),
             writeComputed: () => Promise.resolve()
         });
 

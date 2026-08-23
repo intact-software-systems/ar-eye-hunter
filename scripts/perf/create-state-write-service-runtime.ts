@@ -12,10 +12,6 @@ import {
     ResourceInboxResultsRepository
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 
-import {
-    createClientStateEventRepository,
-    createGroupStateEventRepository
-} from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
@@ -30,6 +26,8 @@ import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbo
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 
 import type { RallarTimingEvent, RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
@@ -80,9 +78,11 @@ export function createStateWriteServiceRuntime({
     });
     const runtimeRepository = new PSqlRuntimeStateRepository(instrumentedSql);
     const authSessionRepository = new AuthSessionRepository(runtimeRepository);
+    const clientStateEventStore = new PSqlClientStateEventRepository(instrumentedSql);
+    const groupStateEventStore = new PSqlGroupStateEventRepository(instrumentedSql);
     const groupState = createGroupStateService({
         runtimeRepository,
-        createGroupStateEventStore: createGroupStateEventRepository,
+        groupStateEventStore,
         serviceId,
         timing,
         authSessionRepository
@@ -100,7 +100,7 @@ export function createStateWriteServiceRuntime({
             database: instrumentedSql,
             clientStateService: createClientStateService({
                 runtimeRepository,
-                createClientStateEventStore: createClientStateEventRepository,
+                clientStateEventStore,
                 serviceId,
                 timing
             })
@@ -127,7 +127,7 @@ export function createStateWriteServiceRuntime({
     );
     const topologyOwners = createGroupTopologyOwners({
         findGroupSnapshotByRef: (ref) => groupState.readSnapshot(ref),
-        groupStateRepository: new GroupStateRepository(runtimeRepository),
+        groupStateRepository: new GroupStateRepository(runtimeRepository, groupStateEventStore),
         configRepository: new GroupTopologyConfigRepository(runtimeRepository),
         topologyService: new RallarRtcTopologyService(),
         timing,

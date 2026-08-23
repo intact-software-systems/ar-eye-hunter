@@ -1,3 +1,4 @@
+import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { expect, it, vi } from 'vitest';
 
 import type { ClientPrincipalRef } from '@shared/api/client-types.ts';
@@ -50,7 +51,7 @@ it(
         const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
         const clientStateService = createClientStateService({
             runtimeRepository,
-            createClientStateEventStore: () => database.clientEventStore,
+            clientStateEventStore: database.clientEventStore,
             serviceId: 'server-12345678'
         });
         const service = new AppClientInboxService(
@@ -171,7 +172,7 @@ it('expires stale sessions once and leaves publication to the app inbox', async 
         isOnline: false
     });
 
-    const repository = new ClientStateRepository(runtimeRepository);
+    const repository = createTestClientStateRepository(runtimeRepository);
     expect(
         await repository.findSession({
             ...principalRef,
@@ -215,7 +216,7 @@ it('does not rewrite an expired session when a late disconnect cleanup arrives',
     );
 
     expect(lateDisconnect.result?.event).toBeNull();
-    const repository = new ClientStateRepository(runtimeRepository);
+    const repository = createTestClientStateRepository(runtimeRepository);
     expect(
         await repository.findSession({
             ...principalRef,
@@ -263,7 +264,7 @@ it('ignores a late heartbeat from an expired connection generation', async () =>
     expect(lateHeartbeat.result?.event).toBeNull();
     expect(lateHeartbeat.result?.snapshot.activeSessions).toHaveLength(0);
 
-    const repository = new ClientStateRepository(runtimeRepository);
+    const repository = createTestClientStateRepository(runtimeRepository);
     expect(
         await repository.findSession({
             ...principalRef,

@@ -16,8 +16,8 @@ import {
     type RuntimeStateEntryValue
 } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
-import { filterStateEventsForList, type StateEventListQuery } from '../../state-events/state-event-listing.ts';
-import type { ClientStateEventStore } from '../../state-events/state-event-store.ts';
+import type { ClientStateEventStore } from '../../state-events/client-state-event-store.ts';
+import type { StateEventListQuery } from '../../state-events/state-event-listing.ts';
 import {
     decodePersistedClientEvent,
     decodePersistedClientInstance,
@@ -179,9 +179,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
         ref: ClientPrincipalRef,
         query: StateEventListQuery = {}
     ): Promise<readonly ClientEvent[]> {
-        const events = this.events.listRecentClientEvents
-            ? await this.events.listRecentClientEvents(ref, query)
-            : filterStateEventsForList(await this.events.listClientEvents(ref), query);
+        const events = await this.events.listRecentClientEvents(ref, query);
         return events.map((event) => decodePersistedClientEventForRepository(event, ref));
     }
 

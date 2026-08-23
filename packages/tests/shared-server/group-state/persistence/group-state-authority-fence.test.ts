@@ -2,6 +2,7 @@ import { GroupStateRepository } from '@shared-server/rallar-system/group-state/p
 import { groupStateGroupStorageKey, groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import type { RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { Group, GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 import { createTestGroup } from '../../../create-test-group.ts';
@@ -10,7 +11,7 @@ import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.
 describe('GroupStateRepository authority fence', () => {
     it('preserves the exact raw group bytes, physical expiry, and every domain field', async () => {
         const runtime = new FakeRuntimeStateRepository();
-        const repository = new GroupStateRepository(runtime);
+        const repository = createTestGroupStateRepository(runtime);
         const { group, owner } = fixture();
         await repository.insertGroup(group);
         await repository.putMember(owner);
@@ -40,7 +41,7 @@ describe('GroupStateRepository authority fence', () => {
 
     it('conflicts for a stale observed storage revision', async () => {
         const runtime = new FakeRuntimeStateRepository();
-        const repository = new GroupStateRepository(runtime);
+        const repository = createTestGroupStateRepository(runtime);
         const { group, owner } = fixture();
         await repository.insertGroup(group);
         await repository.putMember(owner);
@@ -56,7 +57,7 @@ describe('GroupStateRepository authority fence', () => {
 
     it('keeps domain causal revision stable across physical authority fences', async () => {
         const runtime = new FakeRuntimeStateRepository();
-        const repository = new GroupStateRepository(runtime);
+        const repository = createTestGroupStateRepository(runtime);
         const { group, owner } = fixture();
         await repository.insertGroup(group);
         await repository.putMember(owner);
@@ -78,7 +79,7 @@ describe('GroupStateRepository authority fence', () => {
 
     it('uses one dense batch read as the authority snapshot on capable repositories', async () => {
         const runtime = new BatchReadRuntimeStateRepository();
-        const repository = new GroupStateRepository(runtime);
+        const repository = createTestGroupStateRepository(runtime);
         const { group, owner } = fixture();
         await repository.insertGroup(group);
         await repository.putMember(owner);
@@ -97,7 +98,7 @@ describe('GroupStateRepository authority fence', () => {
             Date.now() - 1
         );
         const fallbackRuntime = cloneRuntime(runtime);
-        const expected = await new GroupStateRepository(fallbackRuntime).readSnapshotWithAuthorityGuard(
+        const expected = await createTestGroupStateRepository(fallbackRuntime).readSnapshotWithAuthorityGuard(
             group
         );
         runtime.rejectIndividualReads = true;

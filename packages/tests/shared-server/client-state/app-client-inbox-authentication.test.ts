@@ -1,3 +1,4 @@
+import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { describe, expect, it, vi } from 'vitest';
 
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -5,7 +6,7 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 
-import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
+import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-client-state-event-store.ts';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
@@ -140,6 +141,7 @@ describe('AppClientInbox authentication', () => {
         await authSessions.putSession(mallory);
         const service = createClientStateService({
             runtimeRepository,
+            clientStateEventStore: new InMemoryClientStateEventStore(),
             serviceId: 'server-12345678'
         });
         const command = await toClientMutationCommand(
@@ -191,7 +193,7 @@ describe('AppClientInbox authentication', () => {
                 database: database,
                 clientStateService: createClientStateService({
                     runtimeRepository,
-                    createClientStateEventStore: () => new InMemoryClientStateEventStore(),
+                    clientStateEventStore: new InMemoryClientStateEventStore(),
                     serviceId: 'server-12345678'
                 })
             },
@@ -224,7 +226,7 @@ describe('AppClientInbox authentication', () => {
         ).rejects.toThrow(/principal|authority|authenticated/i);
 
         expect(
-            await new ClientStateRepository(runtimeRepository).readSnapshot({
+            await createTestClientStateRepository(runtimeRepository).readSnapshot({
                 ...SCOPE,
                 principalId: 'alice'
             })
@@ -244,7 +246,7 @@ describe('AppClientInbox authentication', () => {
         expect(result.left?.message).toMatch(/expired|missing|revoked|authority|authenticated/i);
         expect(harness.wasRevoked()).toBe(true);
         expect(
-            await new ClientStateRepository(harness.runtimeRepository).readSnapshot({
+            await createTestClientStateRepository(harness.runtimeRepository).readSnapshot({
                 ...SCOPE,
                 principalId: 'alice'
             })
@@ -298,7 +300,7 @@ async function createRevokedAuthorityRetryHarness() {
             database: database,
             clientStateService: createClientStateService({
                 runtimeRepository,
-                createClientStateEventStore: () => new InMemoryClientStateEventStore(),
+                clientStateEventStore: new InMemoryClientStateEventStore(),
                 serviceId: 'server-12345678'
             })
         },

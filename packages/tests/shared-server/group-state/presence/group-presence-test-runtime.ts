@@ -2,6 +2,7 @@ import { GroupStateRepository } from '@shared-server/rallar-system/group-state/p
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
@@ -54,7 +55,7 @@ export async function convergeSummaryForTest({
     ref,
     commandId
 }: ConvergeSummaryForTestInput): Promise<void> {
-    const repository = new GroupStateRepository(runtime);
+    const repository = createTestGroupStateRepository(runtime);
     const event = (await repository.listEvents(ref)).at(-1);
     if (!event) {
         throw new Error(`Missing group event for summary: ${ref.groupId}`);
@@ -75,7 +76,7 @@ export async function convergeSummaryForTest({
         if (computed.summary.outcome === 'no-op') {
             return;
         }
-        const transactionRepository = new GroupStateRepository(transaction);
+        const transactionRepository = createTestGroupStateRepository(transaction);
         requireConditionalWrite(
             computed.summary.operation === 'insert'
                 ? await transactionRepository.insertPresenceSummary(computed.summary.summary)
@@ -104,7 +105,7 @@ export async function seedOpenGroup(
 }
 
 export async function requireSnapshot(runtime: GroupBarrierRepository, groupId: string) {
-    const snapshot = await new GroupStateRepository(runtime).readSnapshot(groupRef(groupId));
+    const snapshot = await createTestGroupStateRepository(runtime).readSnapshot(groupRef(groupId));
     if (!snapshot) {
         throw new Error(`Missing group snapshot: ${groupId}`);
     }

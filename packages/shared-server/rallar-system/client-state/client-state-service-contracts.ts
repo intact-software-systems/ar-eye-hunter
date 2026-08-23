@@ -12,8 +12,8 @@ import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../runtime-state/runtime-state-repository.ts';
 import type { PersistedAuthSession } from '../auth/persistence/auth-persistence-contracts.ts';
 import type { ClientSessionExpiryCandidate } from '../presence/session-expiry.ts';
+import type { ClientStateEventStore } from '../state-events/client-state-event-store.ts';
 import type { StateEventListQuery } from '../state-events/state-event-listing.ts';
-import type { ClientStateEventStore } from '../state-events/state-event-store.ts';
 import type { WsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
 import type {
     ClientMutationCommand,
@@ -53,7 +53,7 @@ export type ClientStateService = Readonly<{
     readSnapshot(ref: ClientPrincipalRef): Promise<ClientSnapshot | undefined>;
     readPresenceSnapshot(ref: ClientPrincipalRef): Promise<ClientPresenceSnapshot | undefined>;
     listEvents(ref: ClientPrincipalRef): Promise<readonly ClientEvent[]>;
-    listRecentEvents?(
+    listRecentEvents(
         ref: ClientPrincipalRef,
         query: StateEventListQuery
     ): Promise<readonly ClientEvent[]>;
@@ -82,9 +82,7 @@ export type ClientStateMutationService = Pick<ClientStateService, 'read' | 'comp
 
 export type ClientStateServiceDependencies = Readonly<{
     runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
-    createClientStateEventStore?: (
-        runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike
-    ) => ClientStateEventStore;
+    clientStateEventStore: ClientStateEventStore;
     serviceId: string;
     timing?: import('../observability/timing.ts').RallarTimingSink;
 }>;

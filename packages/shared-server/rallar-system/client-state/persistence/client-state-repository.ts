@@ -10,7 +10,6 @@ import type {
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
-import { PSqlClientStateEventRepository } from '../../../postgres/rallar-system/PSqlStateEventRepository.ts';
 import { PSqlRuntimeStateRepository } from '../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
@@ -18,11 +17,9 @@ import type {
     RuntimeStateRepositoryLike
 } from '../../../runtime-state/runtime-state-repository.ts';
 import { toSessionPurgeAfterEpochMs } from '../../presence/session-expiry.ts';
-import { defaultClientStateEventStoreFor } from '../../state-events/state-event-store.ts';
-import {
-    type ClientMutationIdempotencyRecord,
-    type ClientStateRepositoryOptions
-} from './client-state-persistence-contracts.ts';
+import type { ClientStateEventStore } from '../../state-events/client-state-event-store.ts';
+import { PSqlClientStateEventRepository } from '../../state-events/postgres/p-sql-client-state-event-repository.ts';
+import { type ClientMutationIdempotencyRecord } from './client-state-persistence-contracts.ts';
 import { assertCanonicalClientStateIdempotencyRecord } from './client-state-repository-reads.ts';
 import {
     CLIENT_STATE_IDEMPOTENT_NAMESPACE,
@@ -46,8 +43,7 @@ import {
 
 export type {
     ClientMutationIdempotencyRecord,
-    ClientPrincipalSnapshotRead,
-    ClientStateRepositoryOptions
+    ClientPrincipalSnapshotRead
 } from './client-state-persistence-contracts.ts';
 export { ClientStateRepositoryInvariantCorruptionError } from './client-state-persistence-contracts.ts';
 
@@ -55,14 +51,12 @@ export function createTransactionBoundClientStateRepository(
     transaction: PSqlSql
 ): ClientStateRepository {
     const runtime = new PSqlRuntimeStateRepository(transaction);
-    return new ClientStateRepository(runtime, {
-        events: new PSqlClientStateEventRepository(transaction)
-    });
+    return new ClientStateRepository(runtime, new PSqlClientStateEventRepository(transaction));
 }
 
 export class ClientStateRepository extends ClientStateSnapshotRepository {
-    constructor(repository: RuntimeStateRepositoryLike, options: ClientStateRepositoryOptions = {}) {
-        super(repository, options.events ?? defaultClientStateEventStoreFor(repository));
+    constructor(repository: RuntimeStateRepositoryLike, events: ClientStateEventStore) {
+        super(repository, events);
     }
 
     async insertIdempotentClientStateWritten(

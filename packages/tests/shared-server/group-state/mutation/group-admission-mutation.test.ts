@@ -1,4 +1,5 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { GroupAdmissionPolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
@@ -42,7 +43,7 @@ async function memberStatus(
     groupId: string,
     principalId: string
 ): Promise<string | undefined> {
-    const snapshot = await new GroupStateRepository(runtime).readSnapshot(groupRef(groupId));
+    const snapshot = await createTestGroupStateRepository(runtime).readSnapshot(groupRef(groupId));
     return snapshot?.members.find((member) => member.principalId === principalId)?.status;
 }
 
@@ -146,7 +147,7 @@ describe('group admission mutation', () => {
             requestId: 'transfer-to-bob-events'
         });
 
-        const events = await new GroupStateRepository(runtime).listEvents(
+        const events = await createTestGroupStateRepository(runtime).listEvents(
             groupRef('event-payload-room')
         );
         const byRequestId = (requestId: string) => events.find((event) => event.requestId === requestId);

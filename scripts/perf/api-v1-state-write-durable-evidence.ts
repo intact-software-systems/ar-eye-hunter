@@ -11,6 +11,8 @@ import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-c
 import { type ClientMutationIdempotencyRecord } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
 import { validateClientMutationIdempotencyRecord } from '@shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
+import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
@@ -102,9 +104,16 @@ export async function queryStateWriteDurableEvidence({
     groupCount,
     timingEvents
 }: QueryStateWriteDurableEvidenceInput): Promise<StateWriteDurableEvidence> {
-    const runtime = new PSqlRuntimeStateRepository(toApiV1PostgresClient(sql));
-    const clients = new ClientStateRepository(runtime);
-    const groups = new GroupStateRepository(runtime);
+    const database = toApiV1PostgresClient(sql);
+    const runtime = new PSqlRuntimeStateRepository(database);
+    const clients = new ClientStateRepository(
+        runtime,
+        new PSqlClientStateEventRepository(database)
+    );
+    const groups = new GroupStateRepository(
+        runtime,
+        new PSqlGroupStateEventRepository(database)
+    );
     const topology = new GroupTopologyConfigRepository(runtime);
     const outbox = createProductionOutboxRepository(sql);
     const acceptedCommands = commands.filter((command) => command.status === 'accepted');

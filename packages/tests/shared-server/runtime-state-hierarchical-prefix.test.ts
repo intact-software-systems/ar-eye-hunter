@@ -1,5 +1,6 @@
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { createTestClientStateRepository, createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { ClientInstance, ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceSession } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
@@ -9,8 +10,8 @@ import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 describe('runtime-state hierarchical prefix isolation', () => {
     it('keeps sibling workspace identifiers isolated', async () => {
         const runtime = new FakeRuntimeStateRepository();
-        const clients = new ClientStateRepository(runtime);
-        const groups = new GroupStateRepository(runtime);
+        const clients = createTestClientStateRepository(runtime);
+        const groups = createTestGroupStateRepository(runtime);
 
         await expect(clients.insertPrincipal(clientPrincipal('foo', 'alice')))
             .resolves.toMatchObject({ status: 'applied' });
@@ -28,7 +29,7 @@ describe('runtime-state hierarchical prefix isolation', () => {
     });
 
     it('keeps sibling principal and client-instance identifiers isolated', async () => {
-        const repository = new ClientStateRepository(new FakeRuntimeStateRepository());
+        const repository = createTestClientStateRepository(new FakeRuntimeStateRepository());
 
         await expect(repository.insertInstance(clientInstance('alice', 'phone')))
             .resolves.toMatchObject({ status: 'applied' });
@@ -47,7 +48,7 @@ describe('runtime-state hierarchical prefix isolation', () => {
     });
 
     it('keeps sibling group identifiers isolated for members and sessions', async () => {
-        const repository = new GroupStateRepository(new FakeRuntimeStateRepository());
+        const repository = createTestGroupStateRepository(new FakeRuntimeStateRepository());
 
         await repository.putMember(groupMember('room', 'alice'));
         await repository.putMember(groupMember('room-2', 'bob'));

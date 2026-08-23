@@ -1,3 +1,4 @@
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
@@ -21,6 +22,7 @@ import {
     type GroupPresenceHeartbeatAppInboxPayload,
     type GroupUpdateAppInboxPayload
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-group-state-event-store.ts';
 
 import { type GroupMutationReceipt } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
@@ -196,6 +198,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 runtimeRepository,
                 serviceId: 'server-12345678',
                 now: () => nowEpochMs,
+                groupStateEventStore: new InMemoryGroupStateEventStore(),
                 authSessionRepository: authSessions
             } as
                 & Parameters<typeof createGroupStateService>[0]
@@ -265,7 +268,7 @@ describe('GroupStateInboxService authenticated authority', () => {
                 }
             })
         ).rejects.toMatchObject({ status: 403 });
-        const repository = new GroupStateRepository(runtimeRepository);
+        const repository = createTestGroupStateRepository(runtimeRepository);
         const snapshot = await repository.readSnapshot({
             ...SCOPE,
             groupId: 'authority-room'

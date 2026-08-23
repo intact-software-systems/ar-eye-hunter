@@ -1,9 +1,5 @@
 import { type GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import type {
-    RuntimeStateReadBatchSelection,
-    RuntimeStateReadBatchSelector
-} from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import {
     groupStateGroupStorageKey,
     groupStateMemberStorageKey,
@@ -11,6 +7,8 @@ import {
     groupStatePresenceSessionStorageKey,
     groupStatePresenceSummaryStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { AuditStamp, Group, GroupMember } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
@@ -19,7 +17,7 @@ import { groupMemberStorageKey, groupRef, groupStorageKey, storedEntry } from '.
 describe('GroupStateRepository persistence', () => {
     it('fails closed when persisted active membership exceeds maxMembers', async () => {
         const runtime = new FakeRuntimeStateRepository();
-        const repository = new GroupStateRepository(runtime);
+        const repository = createTestGroupStateRepository(runtime);
         const ref = groupRef('over-capacity-roster');
         const read = createSnapshotAssemblyMutationRead();
         requireMutationGroupAndActor(read);
@@ -47,7 +45,7 @@ describe('GroupStateRepository persistence', () => {
     });
     it('fails closed when a batch persistence result repeats an inactive member', async () => {
         const runtime = new DuplicatingInactiveMemberRepository();
-        const repository = new GroupStateRepository(runtime);
+        const repository = createTestGroupStateRepository(runtime);
         const ref = groupRef('duplicate-invited-member');
         const read = createSnapshotAssemblyMutationRead();
         requireMutationGroupAndActor(read);
@@ -108,7 +106,7 @@ describe('GroupStateRepository persistence', () => {
             JSON.stringify(incompleteGroup),
             Number.MAX_SAFE_INTEGER
         );
-        const groupRepository = new GroupStateRepository(groupRuntime);
+        const groupRepository = createTestGroupStateRepository(groupRuntime);
         for (
             const read of [
                 () => groupRepository.findGroup(ref),
@@ -172,7 +170,7 @@ describe('GroupStateRepository persistence', () => {
             JSON.stringify(incompleteSession),
             Number.MAX_SAFE_INTEGER
         );
-        const sessionRepository = new GroupStateRepository(sessionRuntime);
+        const sessionRepository = createTestGroupStateRepository(sessionRuntime);
         for (
             const read of [
                 () =>
@@ -303,7 +301,7 @@ describe('GroupStateRepository persistence', () => {
                 JSON.stringify(testCase.value),
                 Number.MAX_SAFE_INTEGER
             );
-            const repository = new GroupStateRepository(runtime);
+            const repository = createTestGroupStateRepository(runtime);
             for (const read of testCase.reads(repository)) {
                 await expect(read()).rejects.toMatchObject({
                     code: 'group-state-repository-invariant-corruption',
@@ -315,7 +313,7 @@ describe('GroupStateRepository persistence', () => {
 
     it('validates child entry identity before assembling scope snapshot lists', async () => {
         const runtime = new FakeRuntimeStateRepository();
-        const repository = new GroupStateRepository(runtime);
+        const repository = createTestGroupStateRepository(runtime);
         const ref = {
             applicationId: 'snapshot-child-app',
             workspaceId: 'snapshot-child-workspace',

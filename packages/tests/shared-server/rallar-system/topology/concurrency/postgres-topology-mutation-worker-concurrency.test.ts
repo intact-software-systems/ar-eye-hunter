@@ -1,3 +1,4 @@
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -43,7 +44,7 @@ describe('Postgres topology mutation worker concurrency', () => {
             };
             const setupSql = await createSql(databaseUrl);
             const runtime = new PSqlRuntimeStateRepository(setupSql);
-            const groupState = new GroupStateRepository(runtime);
+            const groupState = createTestGroupStateRepository(runtime);
             const tmpDirPath = await mkdtemp(path.join(tmpdir(), 'rallar-topology-request-id-'));
             const input: TopologyWorkerInput = {
                 command: 'topology-config-put',
@@ -99,7 +100,7 @@ describe('Postgres topology mutation worker concurrency', () => {
             const snapshot = topologyGroupSnapshot(groupRef);
             const setupSql = await createSql(databaseUrl);
             const runtime = new PSqlRuntimeStateRepository(setupSql);
-            const groupState = new GroupStateRepository(runtime);
+            const groupState = createTestGroupStateRepository(runtime);
             const tmpDirPath = await mkdtemp(path.join(tmpdir(), 'rallar-topology-worker-race-'));
             const releaseFilePath = path.join(tmpDirPath, 'release');
             const inputs: readonly TopologyWorkerInput[] = [

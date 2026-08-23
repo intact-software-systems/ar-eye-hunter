@@ -104,6 +104,7 @@ function createTimedClientStateServiceFixture(): TimedClientStateServiceFixture 
         readSnapshot: async () => undefined,
         readPresenceSnapshot: async () => undefined,
         listEvents: async () => [],
+        listRecentEvents: async () => [],
         listEventPage: async () => ({ events: [], hasMore: false }),
         read: async (command) => {
             calls.push('read');

@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import postgres from 'postgres';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
@@ -85,7 +86,7 @@ function registerTopologyAppOutboxHandler(
     const runtimeRepository = new PSqlRuntimeStateRepository(registration.sql);
     const topologyManagement = createGroupTopologyOwners({
         findGroupSnapshotByRef: () => input.groupSnapshot,
-        groupStateRepository: new GroupStateRepository(runtimeRepository),
+        groupStateRepository: createTestGroupStateRepository(runtimeRepository),
         topologyService: new RallarRtcTopologyService({ now: () => input.atEpochMs }),
         processRttReader: () => [],
         serviceId: `postgres-topology-outbox-${Deno.pid}`

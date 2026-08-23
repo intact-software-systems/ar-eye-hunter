@@ -14,9 +14,9 @@ import {
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import type { ClientMutationComputed } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
-import { defaultClientStateEventStoreFor, type InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
 
 import type { ClientStatePhaseTestDriver } from './client-state-test-driver-contracts.ts';
 import {
@@ -39,7 +39,7 @@ const MAX_TEST_MUTATION_ATTEMPTS = 8;
 type ClientMutationInput = Parameters<typeof toClientMutationCommand>[0];
 interface ClientStateTestExecutorInput {
     readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
-    readonly eventStore: InMemoryClientStateEventStore;
+    readonly eventStore: TestClientStateEventStore;
     readonly authSessions: AuthSessionRepository;
     readonly service: ClientStateService;
     readonly serviceId: string;
@@ -62,11 +62,11 @@ export function createClientStatePhaseTestDriver(
     nowEpochMs: () => number,
     options: Readonly<{ serviceId?: string; timing?: RallarTimingSink; }> = {}
 ): ClientStatePhaseTestDriver {
-    const eventStore = defaultClientStateEventStoreFor(runtimeRepository);
+    const eventStore = new TestClientStateEventStore();
     const serviceId = options.serviceId ?? 'client-service';
     const service = createClientStateService({
         runtimeRepository,
-        createClientStateEventStore: () => eventStore,
+        clientStateEventStore: eventStore,
         serviceId,
         timing: options.timing
     });

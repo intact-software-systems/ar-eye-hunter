@@ -1,6 +1,6 @@
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { type GroupStateMutationCommand } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
-import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
+import { TestGroupStateEventStore } from '@shared-test/shared-server/test-group-state-event-store.ts';
 import type { CreateGroupRequest } from '@shared/api/state-types.ts';
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
@@ -11,15 +11,15 @@ import { SCOPE } from './group-mutation-test-runtime.ts';
 describe('group mutation result adaptation', () => {
     it('constructs one result repository and shares its event view across result branches', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const persistedEvents = new InMemoryGroupStateEventStore();
+        const persistedEvents = new TestGroupStateEventStore();
         let observeResultAdapter = false;
         let resultStoreCreations = 0;
-        const createGroupStateEventStore = () => {
+        const groupStateEventStoreFor = () => {
             if (!observeResultAdapter) {
                 return persistedEvents;
             }
             resultStoreCreations += 1;
-            const resultView = new InMemoryGroupStateEventStore();
+            const resultView = new TestGroupStateEventStore();
             if (resultStoreCreations === 1) {
                 resultView.events.push(...persistedEvents.events);
             }
@@ -27,7 +27,7 @@ describe('group mutation result adaptation', () => {
         };
         const runtime = createTestGroupStateRuntime({
             runtimeRepository,
-            createGroupStateEventStore,
+            groupStateEventStoreFor,
             now: () => 1_000,
             randomId: () => 'result-adapter-id',
             serviceId: 'group-service'
@@ -45,7 +45,7 @@ describe('group mutation result adaptation', () => {
         const executor = new GroupStateTestMutationExecutor({
             durableService: runtime.durable,
             runtimeRepository,
-            createGroupStateEventStore,
+            groupStateEventStoreFor,
             serviceId: 'group-service',
             randomId: () => 'unused-result-id'
         });

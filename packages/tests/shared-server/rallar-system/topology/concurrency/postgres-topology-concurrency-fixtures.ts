@@ -1,3 +1,4 @@
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { spawn } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -85,7 +86,7 @@ export async function createPostgresSql(databaseUrl: string): Promise<PostgresSq
 }
 
 export async function seedTopologyGroup(sql: PSqlSql, snapshot: GroupSnapshot): Promise<void> {
-    const repository = new GroupStateRepository(new PSqlRuntimeStateRepository(sql));
+    const repository = createTestGroupStateRepository(new PSqlRuntimeStateRepository(sql));
     const inserted = await repository.insertGroup(snapshot.group);
     if (inserted.status !== 'applied') {
         throw new Error('Topology group seed was not inserted');

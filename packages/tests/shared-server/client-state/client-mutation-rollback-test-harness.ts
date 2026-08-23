@@ -1,3 +1,4 @@
+import { createTestClientStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import { expect } from 'vitest';
 
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
@@ -15,7 +16,7 @@ import { ClientStateRepository } from '@shared-server/rallar-system/client-state
 import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
-import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
+import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
@@ -29,8 +30,8 @@ export async function createRollbackHarness() {
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
     const runtimeRepository = new FakeRuntimeStateRepository();
-    const eventStore = new InMemoryClientStateEventStore();
-    const repository = new ClientStateRepository(runtimeRepository, { events: eventStore });
+    const eventStore = new TestClientStateEventStore();
+    const repository = createTestClientStateRepository(runtimeRepository, eventStore);
     const key = toAppQueueKey({
         topicId: AppInboxType.CLIENT_SESSION_CONNECT,
         resourceId: 'connect-client-rollback',
@@ -119,7 +120,7 @@ export function processRollbackMutation(harness: RollbackHarness) {
 }
 
 async function restoreEventsAfterFailure<T>(
-    eventStore: InMemoryClientStateEventStore,
+    eventStore: TestClientStateEventStore,
     write: () => Promise<T>
 ): Promise<T> {
     const before = [...eventStore.events];

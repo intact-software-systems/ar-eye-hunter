@@ -1,4 +1,5 @@
 import { createGroupStateRuntime } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/in-memory-group-state-event-store.ts';
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 
@@ -7,6 +8,7 @@ describe('GroupStateService retry ownership', () => {
         const service = createGroupStateRuntime({
             runtimeRepository: new FakeRuntimeStateRepository(),
             authSessionRepository: { findBySessionId: () => Promise.resolve(undefined) },
+            groupStateEventStore: new InMemoryGroupStateEventStore(),
             serviceId: 'single-attempt-group-service'
         }).service;
 

@@ -1,6 +1,7 @@
 import { type GroupMutationIdempotencyRecord, type GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { groupStateGroupStorageKey, groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { createTestGroupStateRepository } from '@shared-test/shared-server/create-test-state-repositories.ts';
 import type { AuditStamp, Group } from '@shared/api/group-types.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
@@ -10,7 +11,7 @@ import { groupMemberStorageKey, groupRef, groupStorageKey, storedEntry } from '.
 describe('GroupStateRepository persistence', () => {
     it('keeps absent and explicit sentinel workspaces isolated at the repository boundary', async () => {
         const runtime = new FakeRuntimeStateRepository();
-        const repository = new GroupStateRepository(runtime);
+        const repository = createTestGroupStateRepository(runtime);
         const base = createIdentityMutationRead().group!.value;
         const absentGroup: Group = {
             ...base,
@@ -47,7 +48,7 @@ describe('GroupStateRepository persistence', () => {
     });
     it('fails closed when an absent-scope direct read decodes an explicit-sentinel group', async () => {
         const runtime = new FakeRuntimeStateRepository();
-        const repository = new GroupStateRepository(runtime);
+        const repository = createTestGroupStateRepository(runtime);
         const absentRef = {
             applicationId: 'sentinel-boundary-app',
             workspaceId: 'sentinel-workspace',
@@ -92,7 +93,7 @@ describe('GroupStateRepository persistence', () => {
             updatedTimestamp: new Date().toISOString(),
             revision: 0
         });
-        await expect(new GroupStateRepository(runtime).findGroup(ref)).rejects.toMatchObject({
+        await expect(createTestGroupStateRepository(runtime).findGroup(ref)).rejects.toMatchObject({
             code: 'group-state-repository-invariant-corruption',
             message: 'Stored group key differs from the requested scope:' + ' app=other:ws=_:group=other'
         });
@@ -315,7 +316,7 @@ describe('GroupStateRepository persistence', () => {
         ];
 
         const validRuntime = new FakeRuntimeStateRepository();
-        const validRepository = new GroupStateRepository(validRuntime);
+        const validRepository = createTestGroupStateRepository(validRuntime);
         await expect(
             validRepository.insertIdempotentGroupMutationReceipt(ref, requestId, valid)
         ).resolves.toMatchObject({ status: 'applied', revision: 0 });
@@ -346,7 +347,7 @@ describe('GroupStateRepository persistence', () => {
         ).resolves.toEqual(absentRejected);
 
         for (const [label, invalid] of invalidRecords) {
-            const insertRepository = new GroupStateRepository(new FakeRuntimeStateRepository());
+            const insertRepository = createTestGroupStateRepository(new FakeRuntimeStateRepository());
             await expect(
                 insertRepository.insertIdempotentGroupMutationReceipt(
                     ref,
@@ -365,7 +366,7 @@ describe('GroupStateRepository persistence', () => {
                 JSON.stringify(invalid),
                 Number.MAX_SAFE_INTEGER
             );
-            const readRepository = new GroupStateRepository(readRuntime);
+            const readRepository = createTestGroupStateRepository(readRuntime);
             for (
                 const read of [
                     () => readRepository.findIdempotentGroupMutationReceipt(ref, requestId),

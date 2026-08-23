@@ -1,7 +1,6 @@
 import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
 
 import {
-    filterStateEventsForList,
     readStateEventListQuery,
     type StateEventListQuery
 } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
@@ -171,7 +170,5 @@ async function listRecentGroupEventsForArrayRoute(
     ref: GroupRef,
     query: StateEventListQuery
 ): Promise<readonly GroupEvent[]> {
-    return service.listRecentEvents
-        ? await service.listRecentEvents(ref, query)
-        : filterStateEventsForList(await service.listEvents(ref), query);
+    return await service.listRecentEvents(ref, query);
 }
