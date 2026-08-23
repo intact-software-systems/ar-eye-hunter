@@ -276,7 +276,7 @@ const PRODUCTION_OPERATIONS: ApiV1DatabaseLifecycleOperations = {
         })
 };
 
-function toApiV1PostgresClient<Client extends object>(
+export function toApiV1PostgresClient<Client extends object>(
     client: Client
 ): Client & ApiV1PostgresClient {
     if (

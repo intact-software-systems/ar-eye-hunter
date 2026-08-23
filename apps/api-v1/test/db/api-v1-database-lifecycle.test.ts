@@ -4,11 +4,24 @@ import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import type { ApiV1DatabaseConfiguration, ApiV1PGliteEvidenceConfiguration } from '../../src/configuration/api-v1-configuration.ts';
 import {
     constructApiV1DatabaseLifecycle,
+    toApiV1PostgresClient,
     toPostgresJsConnectionUrl,
     type ApiV1DatabaseLifecycleOperations,
     type ApiV1PGliteResource,
     type ApiV1PostgresClient
 } from '../../src/db/api-v1-database-lifecycle.ts';
+
+Deno.test('PostgreSQL client adapter preserves a complete current client', () => {
+    const client = fakePostgresClient(7, []);
+
+    assert.equal(toApiV1PostgresClient(client), client);
+    assert.throws(
+        () => toApiV1PostgresClient(Object.assign(() => Promise.resolve([]), {
+            begin: () => Promise.resolve()
+        })),
+        /required API-v1 capabilities/u
+    );
+});
 
 Deno.test('database lifecycle constructs PostgreSQL application and listener pools explicitly', async () => {
     const events: string[] = [];

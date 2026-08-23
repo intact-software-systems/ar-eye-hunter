@@ -213,24 +213,24 @@ export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTra
         return await fn(this);
     }
 
-    async findEntry(
+    findEntry(
         namespace: string,
         key: string
     ): Promise<RuntimeStateEntry | undefined> {
         this.findEntryCalls += 1;
         const entry = this.data.get(this.toKey(namespace, key));
-        return entry ? { ...entry } : undefined;
+        return Promise.resolve(entry ? { ...entry } : undefined);
     }
 
-    async findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]> {
+    findAllEntries(namespace: string): Promise<readonly RuntimeStateEntry[]> {
         this.findAllEntriesCalls += 1;
-        return [...this.data.entries()]
+        return Promise.resolve([...this.data.entries()]
             .filter(([compositeKey]) => this.toNamespace(compositeKey) === namespace)
             .map(([, entry]) => ({ ...entry }))
-            .sort((left, right) => left.key.localeCompare(right.key));
+            .sort((left, right) => left.key.localeCompare(right.key)));
     }
 
-    async findEntriesByPrefix(
+    findEntriesByPrefix(
         namespace: string,
         keyPrefix: string
     ): Promise<readonly RuntimeStateEntry[]> {
@@ -251,24 +251,24 @@ export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTra
             this.maxRowsReturnedPerPrefixCall,
             rows.length
         );
-        return rows;
+        return Promise.resolve(rows);
     }
 
-    async findEntriesByKeys(
+    findEntriesByKeys(
         namespace: string,
         keys: readonly string[]
     ): Promise<readonly RuntimeStateEntry[]> {
         const keySet = new Set(keys);
-        return [...this.data.entries()]
+        return Promise.resolve([...this.data.entries()]
             .filter(([compositeKey]) =>
                 this.toNamespace(compositeKey) === namespace &&
                 keySet.has(this.toStoreKey(compositeKey))
             )
             .map(([, entry]) => ({ ...entry }))
-            .sort((left, right) => left.key.localeCompare(right.key));
+            .sort((left, right) => left.key.localeCompare(right.key)));
     }
 
-    async upsert(
+    upsert(
         namespace: string,
         key: string,
         value: string,
@@ -283,9 +283,10 @@ export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTra
             updatedTimestamp: new Date().toISOString(),
             revision: current ? current.revision + 1 : 0
         });
+        return Promise.resolve();
     }
 
-    async insertIfAbsent(
+    insertIfAbsent(
         namespace: string,
         key: string,
         value: string,
@@ -293,13 +294,13 @@ export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTra
     ): Promise<{ status: 'applied'; revision: number; } | { status: 'conflict'; }> {
         const compositeKey = this.toKey(namespace, key);
         if (this.data.has(compositeKey)) {
-            return { status: 'conflict' };
+            return Promise.resolve({ status: 'conflict' });
         }
         this.data.set(compositeKey, this.entry(key, value, expireAtTimestamp, 0));
-        return { status: 'applied', revision: 0 };
+        return Promise.resolve({ status: 'applied', revision: 0 });
     }
 
-    async upsertIfRevision(
+    upsertIfRevision(
         namespace: string,
         key: string,
         value: string,
@@ -310,14 +311,14 @@ export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTra
         const compositeKey = this.toKey(namespace, key);
         const current = this.data.get(compositeKey);
         if (!current || current.revision !== expectedRevision) {
-            return { status: 'conflict' };
+            return Promise.resolve({ status: 'conflict' });
         }
         const revision = expectedRevision + 1;
         this.data.set(compositeKey, this.entry(key, value, expireAtTimestamp, revision));
-        return { status: 'applied', revision };
+        return Promise.resolve({ status: 'applied', revision });
     }
 
-    async deleteIfRevision(
+    deleteIfRevision(
         namespace: string,
         key: string,
         expectedRevision: number
@@ -326,17 +327,18 @@ export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTra
         const compositeKey = this.toKey(namespace, key);
         const current = this.data.get(compositeKey);
         if (!current || current.revision !== expectedRevision) {
-            return { status: 'conflict' };
+            return Promise.resolve({ status: 'conflict' });
         }
         this.data.delete(compositeKey);
-        return { status: 'applied' };
+        return Promise.resolve({ status: 'applied' });
     }
 
-    async deleteByKey(namespace: string, key: string): Promise<void> {
+    deleteByKey(namespace: string, key: string): Promise<void> {
         this.data.delete(this.toKey(namespace, key));
+        return Promise.resolve();
     }
 
-    async deleteExpired(namespace: string): Promise<number> {
+    deleteExpired(namespace: string): Promise<number> {
         let deleted = 0;
         for (const [compositeKey, entry] of this.data.entries()) {
             if (
@@ -347,10 +349,12 @@ export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTra
                 deleted += 1;
             }
         }
-        return deleted;
+        return Promise.resolve(deleted);
     }
 
-    async lockKey(_namespace: string, _key: string): Promise<void> {}
+    lockKey(_namespace: string, _key: string): Promise<void> {
+        return Promise.resolve();
+    }
 
     resetCounters(): void {
         this.findEntryCalls = 0;

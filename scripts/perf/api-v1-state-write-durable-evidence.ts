@@ -17,7 +17,7 @@ import type { RallarTimingEvent } from '@shared-server/rallar-system/observabili
 import { readTopologyConfigMutationRecordBoundary } from '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
 import type { Sql } from 'postgres';
 
-import { toPSqlSql } from '../../apps/api-v1/src/db/to-p-sql-sql.ts';
+import { toApiV1PostgresClient } from '../../apps/api-v1/src/db/api-v1-database-lifecycle.ts';
 import { parsePersistedResult } from './api-v1-state-write-attempt-evidence.ts';
 import {
     readScopedGroupCommandsByRequestId,
@@ -102,7 +102,7 @@ export async function queryStateWriteDurableEvidence({
     groupCount,
     timingEvents
 }: QueryStateWriteDurableEvidenceInput): Promise<StateWriteDurableEvidence> {
-    const runtime = new PSqlRuntimeStateRepository(toPSqlSql(sql));
+    const runtime = new PSqlRuntimeStateRepository(toApiV1PostgresClient(sql));
     const clients = new ClientStateRepository(runtime);
     const groups = new GroupStateRepository(runtime);
     const topology = new GroupTopologyConfigRepository(runtime);
