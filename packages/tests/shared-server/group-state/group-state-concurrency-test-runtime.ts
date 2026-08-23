@@ -3,7 +3,7 @@ import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 
 export class GroupBarrierRepository extends FakeRuntimeStateRepository {

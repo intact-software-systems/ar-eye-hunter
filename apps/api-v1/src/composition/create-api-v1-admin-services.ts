@@ -1,6 +1,6 @@
 import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
 import { PSqlAdminSupportReader } from '@shared-server/postgres/admin-support/PSqlAdminSupportReader.ts';
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { RallarServerWsStatus } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import { AdminOperationsService } from '@shared-server/rallar-system/admin-operations/admin-operations-service.ts';
 import type {

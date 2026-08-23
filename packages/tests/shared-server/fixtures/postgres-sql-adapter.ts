@@ -1,4 +1,4 @@
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
 interface PostgresSqlAdapterSource {
     (...arguments_: never[]): object;
@@ -20,10 +20,10 @@ interface PostgresTransactionSqlAdapterSource extends PostgresSqlAdapterSource {
     ): Promise<Readonly<{ value: T; }>>;
 }
 
-type SavepointPSqlTransactionSql =
-    & PSqlTransactionSql
+type SavepointPSqlSql =
+    & PSqlSql
     & Readonly<{
-        savepoint<T>(write: (transaction: PSqlTransactionSql) => Promise<T>): Promise<T>;
+        savepoint<T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T>;
     }>;
 
 export function toPSqlSql(rawSql: PostgresRootSqlAdapterSource): PSqlSql {
@@ -39,37 +39,37 @@ export function toPSqlSql(rawSql: PostgresRootSqlAdapterSource): PSqlSql {
         return Reflect.apply(rawSql, rawSql, [stringsOrValues, ...values]);
     }
     sql.begin = async <T>(
-        write: (transaction: PSqlTransactionSql) => Promise<T>
+        write: (transaction: PSqlSql) => Promise<T>
     ): Promise<T> => {
         const result = await rawSql.begin(async (transaction) => ({
-            value: await write(toPSqlTransactionSql(transaction))
+            value: await write(toSavepointPSqlSql(transaction))
         }));
         return result.value;
     };
     return sql;
 }
 
-function toPSqlTransactionSql(
+function toSavepointPSqlSql(
     rawSql: PostgresTransactionSqlAdapterSource
-): SavepointPSqlTransactionSql {
+): SavepointPSqlSql {
     function sql<T>(
         strings: TemplateStringsArray,
-        ...values: Parameters<PSqlTransactionSql>[0]
+        ...values: Parameters<PSqlSql>[0]
     ): Promise<T>;
     function sql(
-        values: Parameters<PSqlTransactionSql>[0]
-    ): ReturnType<PSqlTransactionSql>;
+        values: Parameters<PSqlSql>[0]
+    ): ReturnType<PSqlSql>;
     function sql(
-        stringsOrValues: TemplateStringsArray | Parameters<PSqlTransactionSql>[0],
-        ...values: Parameters<PSqlTransactionSql>[0]
+        stringsOrValues: TemplateStringsArray | Parameters<PSqlSql>[0],
+        ...values: Parameters<PSqlSql>[0]
     ) {
         return Reflect.apply(rawSql, rawSql, [stringsOrValues, ...values]);
     }
     const savepoint = async <T>(
-        write: (transaction: PSqlTransactionSql) => Promise<T>
+        write: (transaction: PSqlSql) => Promise<T>
     ): Promise<T> => {
         const result = await rawSql.savepoint(async (transaction) => ({
-            value: await write(toPSqlTransactionSql(transaction))
+            value: await write(toSavepointPSqlSql(transaction))
         }));
         return result.value;
     };

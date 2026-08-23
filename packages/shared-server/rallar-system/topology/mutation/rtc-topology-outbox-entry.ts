@@ -12,7 +12,7 @@ import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
-import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { ResourceInboxRepository } from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
 import { toRtcRttMutationReceiptId } from '../../rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
@@ -184,7 +184,7 @@ export function toRtcTopologyEntryResourceId(computed: ComputedRtcTopologyOutbox
 }
 
 export async function writeRtcTopologyOutbox(
-    transaction: PSqlTransactionSql,
+    transaction: PSqlSql,
     computed: ComputedRtcTopologyOutbox
 ): Promise<ResourceEntry> {
     const entry = computeRtcTopologyEntry(computed);

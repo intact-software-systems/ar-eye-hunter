@@ -1,27 +1,36 @@
+import type { PSqlRows } from '../../postgres/p-sql-sql.ts';
+import type { JsonWireValue } from '../../rallar-system/protocol/json-wire-identity.ts';
 import {
-    validateRuntimeStateReadBatchResult,
-    validateRuntimeStateReadBatchSelectors,
     type RuntimeStateReadBatchSelection,
     type RuntimeStateReadBatchSelector
-} from '../../runtime-state/RuntimeStateReadBatch.ts';
-import type { PSqlSql } from '../PostgresSqlClient.ts';
-import { toExclusivePrefixEnd } from './PSqlRuntimeStateSqlValues.ts';
+} from '../read-batch/runtime-state-read-batch.ts';
+import { validateRuntimeStateReadBatchResult } from '../read-batch/validate-runtime-state-read-batch-result.ts';
+import { validateRuntimeStateReadBatchSelectors } from '../read-batch/validate-runtime-state-read-batch-selectors.ts';
+import { decodeRuntimeStateReadBatchDriverValue } from './decode-runtime-state-read-batch-driver-value.ts';
+import { toExclusivePrefixEnd } from './runtime-state-sql-values.ts';
 
-type PSqlRuntimeStateReadBatchRow = Readonly<{
-    selections: unknown;
-}>;
+interface PSqlRuntimeStateReadBatchRow {
+    readonly selections: JsonWireValue;
+}
 
-type PSqlRuntimeStateReadBatchSelector = Readonly<{
-    selectorId: string;
-    kind: RuntimeStateReadBatchSelector['kind'];
-    namespace: string;
-    key: string | null;
-    keyPrefix: string | null;
-    prefixEnd: string | null;
-}>;
+interface PSqlRuntimeStateReadBatchSelector {
+    readonly selectorId: string;
+    readonly kind: RuntimeStateReadBatchSelector['kind'];
+    readonly namespace: string;
+    readonly key: string | null;
+    readonly keyPrefix: string | null;
+    readonly prefixEnd: string | null;
+}
 
-export async function readPSqlRuntimeStateBatch(
-    sql: PSqlSql,
+export interface RuntimeStateReadBatchQuery {
+    <Rows extends PSqlRows>(
+        strings: TemplateStringsArray,
+        ...values: readonly object[]
+    ): Promise<Rows>;
+}
+
+export async function readRuntimeStateBatch(
+    sql: RuntimeStateReadBatchQuery,
     input: readonly RuntimeStateReadBatchSelector[]
 ): Promise<readonly RuntimeStateReadBatchSelection[]> {
     const selectors = validateRuntimeStateReadBatchSelectors(input);
@@ -99,7 +108,7 @@ export async function readPSqlRuntimeStateBatch(
     }
     return validateRuntimeStateReadBatchResult(
         selectors,
-        normalizeDriverResult(rows[0].selections)
+        decodeRuntimeStateReadBatchDriverValue(rows[0].selections)
     );
 }
 
@@ -117,52 +126,4 @@ function toSqlSelector(
             key: null,
             prefixEnd: toExclusivePrefixEnd(selector.keyPrefix)
         };
-}
-
-function normalizeDriverResult(input: unknown): unknown {
-    const parsed = typeof input === 'string' ? parsePayload(input) : input;
-    if (!Array.isArray(parsed)) {
-        return parsed;
-    }
-    return parsed.map((selection) => {
-        if (!isRecord(selection) || !Array.isArray(selection.entries)) {
-            return selection;
-        }
-        return {
-            ...selection,
-            entries: selection.entries.map((entry) => {
-                if (!isRecord(entry)) {
-                    return entry;
-                }
-                return {
-                    ...entry,
-                    expireAtTimestamp: normalizeDriverInteger(entry.expireAtTimestamp),
-                    revision: normalizeDriverInteger(entry.revision)
-                };
-            })
-        };
-    });
-}
-
-function parsePayload(input: string): unknown {
-    try {
-        return JSON.parse(input) as unknown;
-    }
-    catch (error) {
-        throw new Error(
-            `Invalid runtime state read batch database JSON: ${error instanceof Error ? error.message : String(error)}`
-        );
-    }
-}
-
-function normalizeDriverInteger(input: unknown): unknown {
-    if (typeof input !== 'string' || !/^-?(0|[1-9]\d*)$/u.test(input)) {
-        return input;
-    }
-    const parsed = Number(input);
-    return Number.isSafeInteger(parsed) ? parsed : input;
-}
-
-function isRecord(input: unknown): input is Readonly<Record<string, unknown>> {
-    return typeof input === 'object' && input !== null && !Array.isArray(input);
 }

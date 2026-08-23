@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import {
     CrdtMutationConflictError,
@@ -375,13 +375,12 @@ class MemoryCrdtMutationRepository implements CrdtMutationRepository {
     }
 }
 
-function createUnusedTransaction(): PSqlTransactionSql {
-    const transaction: PSqlTransactionSql = Object.assign(
+function createUnusedTransaction(): PSqlSql {
+    const transaction: PSqlSql = Object.assign(
         <T>(_stringsOrValues: TemplateStringsArray | readonly unknown[], ..._values: unknown[]): Promise<T> =>
             Promise.reject(new Error('Unexpected SQL execution in mutation unit test')),
         {
-            begin: <T>(_run: (sql: PSqlTransactionSql) => Promise<T>): Promise<T> =>
-                Promise.reject(new Error('Unexpected nested transaction in mutation unit test'))
+            begin: <T>(_run: (sql: PSqlSql) => Promise<T>): Promise<T> => Promise.reject(new Error('Unexpected nested transaction in mutation unit test'))
         }
     );
     return transaction;

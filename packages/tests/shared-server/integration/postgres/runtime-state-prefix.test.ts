@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { clientStateWorkspaceStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import { createTestGroup } from '../../../create-test-group.ts';
 

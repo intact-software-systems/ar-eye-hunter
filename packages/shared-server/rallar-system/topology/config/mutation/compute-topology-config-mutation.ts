@@ -5,7 +5,7 @@ import type {
     StoredGroupTopologyOverride
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import type { RuntimeStateEntryValue } from '../../../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
 import { readDefaultGroupTopologyConfig, resolveGroupTopologyConfig } from '../group-topology-config.ts';
 import type {
     GroupTopologyConfigGeneration,

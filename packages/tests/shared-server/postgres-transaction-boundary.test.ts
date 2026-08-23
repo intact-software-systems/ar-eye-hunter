@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { runInTransaction } from '@shared-server/postgres/run-in-transaction.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
@@ -13,9 +13,9 @@ import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/
 
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/app-inbox-handler-registry.ts';
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
@@ -163,7 +163,7 @@ describe('Postgres transaction write boundary', () => {
 });
 
 async function runMutation(database: TransactionalDatabase): Promise<void> {
-    await runInTransaction(database.sql, async (transaction) => {
+    await runInPSqlTransaction(database.sql, async (transaction) => {
         const runtime = new PSqlRuntimeStateRepository(transaction);
         const events = new PSqlClientStateEventRepository(transaction);
         const inbox = new ResourceInboxRepository(transaction);
@@ -196,7 +196,7 @@ function createTransactionalDatabase(options: Readonly<{ failCompletion?: boolea
     let committed = createState();
     committed.inbox.set(toKey(incomingEntry.key), toInboxRow(incomingEntry, 1n));
     let beginCalls = 0;
-    const statementTransactions: PSqlTransactionSql[] = [];
+    const statementTransactions: PSqlSql[] = [];
 
     function outsideTransactionSql<T>(
         _strings: TemplateStringsArray,
@@ -208,7 +208,7 @@ function createTransactionalDatabase(options: Readonly<{ failCompletion?: boolea
     }
 
     const sql: PSqlSql = Object.assign(outsideTransactionSql, {
-        begin: async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>): Promise<T> => {
+        begin: async <T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T> => {
             beginCalls += 1;
             const pending = cloneState(committed);
             const transaction = createTransactionSql(pending, statementTransactions, options);
@@ -232,9 +232,9 @@ function createTransactionalDatabase(options: Readonly<{ failCompletion?: boolea
 
 function createTransactionSql(
     state: TransactionState,
-    observed: PSqlTransactionSql[],
+    observed: PSqlSql[],
     options: Readonly<{ failCompletion?: boolean; }>
-): PSqlTransactionSql {
+): PSqlSql {
     function executeTransaction<T>(strings: TemplateStringsArray, ...values: SqlValue[]): Promise<T>;
     function executeTransaction(values: readonly SqlValue[]): ReturnType<PSqlSql>;
     function executeTransaction(
@@ -317,7 +317,7 @@ function createTransactionSql(
         throw new Error(`Unhandled transaction SQL: ${query}`);
     }
 
-    const transaction: PSqlTransactionSql = Object.assign(executeTransaction, {
+    const transaction: PSqlSql = Object.assign(executeTransaction, {
         begin: async () => await Promise.reject(new Error('nested-transaction'))
     });
     return transaction;

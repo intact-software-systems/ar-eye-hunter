@@ -1,10 +1,10 @@
 import type {
     RuntimeStateOptimisticTransactionalRepositoryLike
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import type { ALInboundAdmissionBackend, ALInboundAdmissionWriteContext } from '@shared/alm/ALInboundAdmissionStore.ts';
 import { RuntimeStateWriteConflictError } from '../../runtime-state/optimistic-runtime-state-write.ts';
-import { PSqlAdmissionMutationCollector } from './PSqlAdmissionMutationCollector.ts';
+import { PSqlAdmissionMutationCollector } from './p-sql-admission-mutation-collector.ts';
 
 export class PSqlInboundAdmissionBackend implements ALInboundAdmissionBackend {
     private readonly repository: RuntimeStateOptimisticTransactionalRepositoryLike;

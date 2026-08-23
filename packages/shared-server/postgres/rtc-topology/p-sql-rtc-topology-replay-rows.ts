@@ -9,7 +9,7 @@ import {
 import type {
     RtcTopologyReplayCursorSnapshot
 } from '../../rallar-system/topology/replay/rtc-topology-replay-contracts.ts';
-import type { PSqlSql } from '../PostgresSqlClient.ts';
+import type { PSqlSql } from '../p-sql-sql.ts';
 
 export interface CursorSnapshotRow {
     readonly consumer_stream_id: string;

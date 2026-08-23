@@ -1,4 +1,4 @@
-import { PSqlOutboundAdmissionBackend } from '@shared-server/postgres/al-runtime/PSqlOutboundAdmissionBackend.ts';
+import { PSqlOutboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-outbound-admission-backend.ts';
 import { describe, expect, it } from 'vitest';
 
 describe('PSqlOutboundAdmissionBackend architecture', () => {

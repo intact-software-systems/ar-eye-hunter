@@ -1,5 +1,5 @@
-import type { RuntimeStateEntryValue } from '../../../../runtime-state/RuntimeStateJsonStore.ts';
-import type { RuntimeStateEntry } from '../../../../runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateEntryValue } from '../../../../runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateEntry } from '../../../../runtime-state/runtime-state-repository.ts';
 import type { AuthSessionRepository, PersistedAgentSessionTicket } from '../../persistence/auth-session-repository.ts';
 import type { AuthUserRepository } from '../../persistence/auth-user-repository.ts';
 import type { AuthMutationCommand, AuthMutationRead, AuthSessionEntries } from '../auth-mutation-contracts.ts';

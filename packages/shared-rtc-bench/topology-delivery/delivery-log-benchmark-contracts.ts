@@ -1,4 +1,4 @@
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 
 export const RTC_TOPOLOGY_DELIVERY_LOG_BENCHMARK_POLICY = Object.freeze({
     appendCount: 300,

@@ -2,13 +2,18 @@ import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persist
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import type {
+    RuntimeStateReadBatchSelection,
+    RuntimeStateReadBatchSelector
+} from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
+import type {
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import {
     assertRuntimeStateExpectedRevision,
     assertRuntimeStateUpsertExpectedRevision
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceSession } from '@shared/api/group-types.ts';
 
 const GROUPS = Number(
@@ -27,18 +32,19 @@ const scope = {
     workspaceId: 'perf-workspace'
 };
 
-type RunResult = Readonly<{
-    run: number;
-    durationMs: number;
-    snapshots: number;
-    findEntryCalls: number;
-    findAllEntriesCalls: number;
-    findEntriesByPrefixCalls: number;
-    findEntriesByPrefixCallsByNamespace: Readonly<Record<string, number>>;
-    maxRowsReturnedPerPrefixCall: number;
-}>;
+interface RunResult {
+    readonly run: number;
+    readonly durationMs: number;
+    readonly snapshots: number;
+    readonly findEntryCalls: number;
+    readonly findAllEntriesCalls: number;
+    readonly findEntriesByPrefixCalls: number;
+    readonly readRuntimeStateBatchCalls: number;
+    readonly readRuntimeStateBatchCallsByNamespace: Readonly<Record<string, number>>;
+    readonly maxRowsReturnedPerReadBatchSelector: number;
+}
 
-const EXPECTED_PREFIX_READS = Object.freeze({
+const EXPECTED_BATCH_READS = Object.freeze({
     'group-state:groups': 2,
     'group-state:members': 1,
     'group-state:presence-summaries': 1,
@@ -74,16 +80,19 @@ async function main(): Promise<void> {
         if (snapshots.length !== GROUPS) {
             throw new Error(`Expected ${GROUPS} snapshots, got ${snapshots.length}`);
         }
-        const prefixReads = repository.prefixReadCounts();
+        const batchReads = repository.batchReadCounts();
         if (
-            repository.findEntriesByPrefixCalls !== 5 ||
+            repository.readRuntimeStateBatchCalls !== 5 ||
+            repository.findEntriesByPrefixCalls !== 0 ||
             repository.findEntryCalls !== 0 ||
-            JSON.stringify(prefixReads) !== JSON.stringify(EXPECTED_PREFIX_READS)
+            JSON.stringify(batchReads) !== JSON.stringify(EXPECTED_BATCH_READS)
         ) {
             throw new Error(
-                `Expected bounded semantic prefix reads ${
-                    JSON.stringify(EXPECTED_PREFIX_READS)
-                } and zero point reads, got ${JSON.stringify(prefixReads)} and ${repository.findEntryCalls}`
+                `Expected bounded semantic batch reads ${
+                    JSON.stringify(EXPECTED_BATCH_READS)
+                } and no direct prefix or point reads, got ${
+                    JSON.stringify(batchReads)
+                }, ${repository.findEntriesByPrefixCalls} direct prefix reads, and ${repository.findEntryCalls} point reads`
             );
         }
         results.push({
@@ -93,8 +102,9 @@ async function main(): Promise<void> {
             findEntryCalls: repository.findEntryCalls,
             findAllEntriesCalls: repository.findAllEntriesCalls,
             findEntriesByPrefixCalls: repository.findEntriesByPrefixCalls,
-            findEntriesByPrefixCallsByNamespace: prefixReads,
-            maxRowsReturnedPerPrefixCall: repository.maxRowsReturnedPerPrefixCall
+            readRuntimeStateBatchCalls: repository.readRuntimeStateBatchCalls,
+            readRuntimeStateBatchCallsByNamespace: batchReads,
+            maxRowsReturnedPerReadBatchSelector: repository.maxRowsReturnedPerReadBatchSelector
         });
     }
 
@@ -204,8 +214,9 @@ export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTra
     findEntryCalls = 0;
     findAllEntriesCalls = 0;
     findEntriesByPrefixCalls = 0;
-    readonly findEntriesByPrefixCallsByNamespace = new Map<string, number>();
-    maxRowsReturnedPerPrefixCall = 0;
+    readRuntimeStateBatchCalls = 0;
+    readonly readRuntimeStateBatchCallsByNamespace = new Map<string, number>();
+    maxRowsReturnedPerReadBatchSelector = 0;
 
     async begin<T>(
         fn: (repository: RuntimeStateOptimisticTransactionalRepositoryLike) => Promise<T>
@@ -232,15 +243,35 @@ export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTra
         );
     }
 
+    readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
+        this.readRuntimeStateBatchCalls += 1;
+        for (const { namespace } of selectors) {
+            this.readRuntimeStateBatchCallsByNamespace.set(
+                namespace,
+                (this.readRuntimeStateBatchCallsByNamespace.get(namespace) ?? 0) + 1
+            );
+        }
+        const selections = selectRuntimeStateReadBatch(
+            [...this.data].map(([compositeKey, entry]) => ({
+                namespace: this.toNamespace(compositeKey),
+                entry
+            })),
+            selectors
+        );
+        this.maxRowsReturnedPerReadBatchSelector = Math.max(
+            this.maxRowsReturnedPerReadBatchSelector,
+            ...selections.map(({ entries }) => entries.length)
+        );
+        return Promise.resolve(selections);
+    }
+
     findEntriesByPrefix(
         namespace: string,
         keyPrefix: string
     ): Promise<readonly RuntimeStateEntry[]> {
         this.findEntriesByPrefixCalls += 1;
-        this.findEntriesByPrefixCallsByNamespace.set(
-            namespace,
-            (this.findEntriesByPrefixCallsByNamespace.get(namespace) ?? 0) + 1
-        );
         const rows = [...this.data.entries()]
             .filter(
                 ([compositeKey]) =>
@@ -249,10 +280,6 @@ export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTra
             )
             .map(([, entry]) => ({ ...entry }))
             .sort((left, right) => left.key.localeCompare(right.key));
-        this.maxRowsReturnedPerPrefixCall = Math.max(
-            this.maxRowsReturnedPerPrefixCall,
-            rows.length
-        );
         return Promise.resolve(rows);
     }
 
@@ -364,13 +391,16 @@ export class CountingRuntimeStateRepository implements RuntimeStateOptimisticTra
         this.findEntryCalls = 0;
         this.findAllEntriesCalls = 0;
         this.findEntriesByPrefixCalls = 0;
-        this.findEntriesByPrefixCallsByNamespace.clear();
-        this.maxRowsReturnedPerPrefixCall = 0;
+        this.readRuntimeStateBatchCalls = 0;
+        this.readRuntimeStateBatchCallsByNamespace.clear();
+        this.maxRowsReturnedPerReadBatchSelector = 0;
     }
 
-    prefixReadCounts(): Readonly<Record<string, number>> {
+    batchReadCounts(): Readonly<Record<string, number>> {
         return Object.fromEntries(
-            [...this.findEntriesByPrefixCallsByNamespace.entries()].sort(([left], [right]) => left.localeCompare(right))
+            [...this.readRuntimeStateBatchCallsByNamespace.entries()].sort(([left], [right]) =>
+                left.localeCompare(right)
+            )
         );
     }
 

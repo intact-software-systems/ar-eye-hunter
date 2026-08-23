@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "lineages": [
+    {
+      "mergeBase": "81b39033645e85087b583ea9644d187d115a88e1",
+      "source": {
+        "path": "packages/shared-server/runtime-state/RuntimeStateGuardedBatch.ts",
+        "blob": "b6b9ca3ca651df214c74951e36c72a026a1c8bc1"
+      },
+      "targets": [
+        "packages/shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts",
+        "packages/shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts",
+        "packages/shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts"
+      ]
+    },
+    {
+      "mergeBase": "81b39033645e85087b583ea9644d187d115a88e1",
+      "source": {
+        "path": "packages/shared-server/runtime-state/RuntimeStateReadBatch.ts",
+        "blob": "d4449b9fd5e578067983b120a60b7ecc22b446ae"
+      },
+      "targets": [
+        "packages/shared-server/runtime-state/read-batch/runtime-state-read-batch.ts",
+        "packages/shared-server/runtime-state/read-batch/validate-runtime-state-read-batch-selectors.ts"
+      ]
+    },
+    {
+      "mergeBase": "81b39033645e85087b583ea9644d187d115a88e1",
+      "source": {
+        "path": "packages/shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts",
+        "blob": "885c965d928127c2d6ff46134108e9faccd76b79"
+      },
+      "targets": [
+        "packages/shared-server/runtime-state/postgres/decode-runtime-state-guarded-batch-rows.ts",
+        "packages/shared-server/runtime-state/postgres/execute-runtime-state-guarded-batch.ts",
+        "packages/shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts",
+        "packages/shared-server/runtime-state/postgres/runtime-state-expiry-worker.ts",
+        "packages/shared-server/runtime-state/postgres/runtime-state-row-codec.ts"
+      ]
+    }
+  ]
+}

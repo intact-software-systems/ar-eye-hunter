@@ -10,7 +10,9 @@ import {
 } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import { readStateEventListQuery } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
 import { InMemoryClientStateEventStore, InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
-import type { RuntimeStateEntry, RuntimeStateTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
+import type { RuntimeStateEntry, RuntimeStateTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { AuditStamp as ClientAuditStamp, ClientEvent, ClientInstance, ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
 import type { AuditStamp as GroupAuditStamp, Group, GroupEvent, GroupMember, GroupPresenceSession, GroupPresenceSummary } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
@@ -237,10 +239,11 @@ describe('ClientStateRepository', () => {
             clientRepository,
             createClientInstance('instance-a')
         );
-        repository.onFindEntriesByPrefix = async () => {
-            if (repository.findEntriesByPrefixCalls !== 2) {
+        repository.onReadRuntimeStateBatch = async () => {
+            if (repository.readRuntimeStateBatchCalls !== 2) {
                 return;
             }
+            repository.onReadRuntimeStateBatch = undefined;
             await updateClientInstance(clientRepository, {
                 ...createClientInstance('instance-a'),
                 platform: 'desktop'
@@ -319,8 +322,8 @@ describe('ClientStateRepository', () => {
         expect(snapshots[0].instances).toHaveLength(1);
         expect(snapshots[0].activeSessions).toHaveLength(1);
         expect(repository.findEntryCalls).toBe(0);
-        expect(repository.findEntriesByPrefixCalls).toBe(4);
-        expect(repository.maxRowsReturnedPerFindEntriesByPrefix).toBe(clientCount);
+        expect(repository.readRuntimeStateBatchCalls).toBe(4);
+        expect(repository.maxRowsReturnedPerBatchSelection).toBe(clientCount);
     });
 
     it('target-reads only changed clients and omits clients deleted during full-list validation', async () => {
@@ -339,11 +342,11 @@ describe('ClientStateRepository', () => {
             );
         }
         repository.resetCounters();
-        repository.onFindEntriesByPrefix = async () => {
-            if (repository.findEntriesByPrefixCalls !== 4) {
+        repository.onReadRuntimeStateBatch = async () => {
+            if (repository.readRuntimeStateBatchCalls !== 4) {
                 return;
             }
-            repository.onFindEntriesByPrefix = undefined;
+            repository.onReadRuntimeStateBatch = undefined;
             await insertClientInstance(
                 clientRepository,
                 createClientInstance('instance-new', 'principal-0')
@@ -374,7 +377,7 @@ describe('ClientStateRepository', () => {
                 expect.objectContaining({ clientInstanceId: 'instance-new' })
             ])
         });
-        expect(repository.findEntriesByPrefixCalls).toBe(6);
+        expect(repository.readRuntimeStateBatchCalls).toBe(6);
         expect(repository.findEntryCalls).toBe(2);
     });
 
@@ -765,11 +768,8 @@ describe('GroupStateRepository', () => {
 
         await putGroupFixture(groupRepository, group);
         await groupRepository.putMember(createGroupMember('principal-b', 'active'));
-        let groupReads = 0;
-        repository.onFindEntryAfterRead = async (namespace) => {
-            if (namespace !== 'group-state:groups' || ++groupReads !== 1) {
-                return;
-            }
+        repository.onReadRuntimeStateBatch = async () => {
+            repository.onReadRuntimeStateBatch = undefined;
             await groupRepository.putMember(
                 createGroupMember('principal-b', 'banned')
             );
@@ -801,15 +801,15 @@ describe('GroupStateRepository', () => {
         await groupRepository.putMember(
             createGroupMember('principal-a', 'active', group.groupId)
         );
-        repository.onFindEntriesByPrefix = async () => {
-            repository.onFindEntriesByPrefix = undefined;
+        repository.onReadRuntimeStateBatch = async () => {
+            repository.onReadRuntimeStateBatch = undefined;
             await groupRepository.removeGroup(group);
         };
 
         await expect(groupRepository.readSnapshot(group)).resolves.toBeUndefined();
     });
 
-    it('fails a group snapshot read after three continuously conflicting attempts', async () => {
+    it('uses one current group authority snapshot without a compatibility reread', async () => {
         const repository = new FakeRuntimeStateRepository();
         const groupRepository = new GroupStateRepository(repository, {
             events: new InMemoryGroupStateEventStore()
@@ -817,29 +817,20 @@ describe('GroupStateRepository', () => {
         const group = createGroup();
 
         await putGroupFixture(groupRepository, group);
-        let groupReads = 0;
-        repository.onFindEntryAfterRead = async (namespace) => {
-            if (namespace !== 'group-state:groups' || ++groupReads % 2 === 0) {
-                return;
-            }
+        let batchReads = 0;
+        repository.onReadRuntimeStateBatch = async () => {
+            batchReads += 1;
             await groupRepository.putGroup({
                 ...group,
-                displayName: `Revision ${groupReads}`
+                displayName: `Revision ${batchReads}`
             });
         };
 
-        await expect(groupRepository.readSnapshot(group)).rejects.toMatchObject({
-            name: 'StateSnapshotReadConflictError',
-            status: 503
+        await expect(groupRepository.readSnapshot(group)).resolves.toMatchObject({
+            group: { displayName: 'Revision 1' }
         });
-        expect(repository.findEntriesByPrefixCalls).toBe(6);
-        expect(repository.findEntriesByPrefixCallsByNamespace).toEqual(
-            new Map([
-                ['group-state:members', 3],
-                ['group-state:sessions', 3]
-            ])
-        );
-        expect(groupReads).toBe(6);
+        expect(repository.readRuntimeStateBatchCalls).toBe(1);
+        expect(batchReads).toBe(1);
     });
 
     it('lists group snapshots with scope-wide child reads instead of per-group fanout', async () => {
@@ -890,16 +881,15 @@ describe('GroupStateRepository', () => {
         expect(snapshots[0].memberCount).toBe(1);
         expect(snapshots[0].onlineMemberCount).toBe(1);
         expect(repository.findEntryCalls).toBe(0);
-        expect(repository.findEntriesByPrefixCalls).toBe(5);
-        expect(repository.findEntriesByPrefixCallsByNamespace).toEqual(
-            new Map([
-                ['group-state:groups', 2],
-                ['group-state:members', 1],
-                ['group-state:presence-summaries', 1],
-                ['group-state:sessions', 1]
-            ])
-        );
-        expect(repository.maxRowsReturnedPerFindEntriesByPrefix).toBe(groupCount);
+        expect(repository.readRuntimeStateBatchCalls).toBe(5);
+        expect(repository.readRuntimeStateBatchSelectors.flat().map((selector) => selector.namespace)).toEqual([
+            'group-state:groups',
+            'group-state:members',
+            'group-state:presence-summaries',
+            'group-state:sessions',
+            'group-state:groups'
+        ]);
+        expect(repository.maxRowsReturnedPerBatchSelection).toBe(groupCount);
     });
 
     it('target-reads only changed groups and omits groups deleted during full-list validation', async () => {
@@ -914,11 +904,11 @@ describe('GroupStateRepository', () => {
             );
         }
         repository.resetCounters();
-        repository.onFindEntriesByPrefix = async () => {
-            if (repository.findEntriesByPrefixCalls !== 4) {
+        repository.onReadRuntimeStateBatch = async () => {
+            if (repository.readRuntimeStateBatchCalls !== 4) {
                 return;
             }
-            repository.onFindEntriesByPrefix = undefined;
+            repository.onReadRuntimeStateBatch = undefined;
             await groupRepository.putMember(
                 createGroupMember('principal-new', 'active', 'group-0')
             );
@@ -945,16 +935,8 @@ describe('GroupStateRepository', () => {
                 expect.objectContaining({ principalId: 'principal-new' })
             ])
         });
-        expect(repository.findEntriesByPrefixCalls).toBe(7);
-        expect(repository.findEntriesByPrefixCallsByNamespace).toEqual(
-            new Map([
-                ['group-state:groups', 2],
-                ['group-state:members', 2],
-                ['group-state:presence-summaries', 1],
-                ['group-state:sessions', 2]
-            ])
-        );
-        expect(repository.findEntryCalls).toBe(3);
+        expect(repository.readRuntimeStateBatchCalls).toBe(6);
+        expect(repository.findEntryCalls).toBe(0);
     });
 
     it('lists bounded group snapshot pages without scanning every group row', async () => {
@@ -1012,16 +994,9 @@ describe('GroupStateRepository', () => {
                 limit: 3
             }
         ]);
-        expect(repository.findEntriesByKeysCalls).toBe(1);
-        expect(repository.findEntriesByPrefixCalls).toBe(4);
-        expect(repository.findEntriesByPrefixCallsByNamespace).toEqual(
-            new Map([
-                ['group-state:members', 2],
-                ['group-state:sessions', 2]
-            ])
-        );
+        expect(repository.readRuntimeStateBatchCalls).toBe(5);
         expect(repository.findEntryCalls).toBe(2);
-        expect(repository.maxRowsReturnedPerFindEntriesByPrefix).toBe(1);
+        expect(repository.maxRowsReturnedPerBatchSelection).toBe(1);
     });
 
     it('fills bounded group snapshot pages after expired raw group rows are skipped', async () => {
@@ -1071,8 +1046,11 @@ describe('GroupStateRepository', () => {
         });
         await putGroupFixture(groupRepository, createGroup('group-0000'));
         await putGroupFixture(groupRepository, createGroup('group-0001'));
-        repository.onFindEntriesByKeys = async () => {
-            repository.onFindEntriesByKeys = undefined;
+        repository.onReadRuntimeStateBatch = async (selectors) => {
+            if (!selectors.every((selector) => selector.kind === 'key')) {
+                return;
+            }
+            repository.onReadRuntimeStateBatch = undefined;
             await groupRepository.removeGroup(createGroup('group-0000'));
         };
 
@@ -1099,8 +1077,11 @@ describe('GroupStateRepository', () => {
             createGroupMember('principal-0000', 'active', group.groupId)
         );
         repository.resetCounters();
-        repository.onFindEntriesByKeys = async () => {
-            repository.onFindEntriesByKeys = undefined;
+        repository.onReadRuntimeStateBatch = async (selectors) => {
+            if (!selectors.every((selector) => selector.kind === 'key')) {
+                return;
+            }
+            repository.onReadRuntimeStateBatch = undefined;
             await groupRepository.putMember(
                 createGroupMember('principal-new', 'active', group.groupId)
             );
@@ -1122,15 +1103,8 @@ describe('GroupStateRepository', () => {
                 expect.objectContaining({ principalId: 'principal-new' })
             ])
         });
-        expect(repository.findEntriesByKeysCalls).toBe(1);
-        expect(repository.findEntriesByPrefixCalls).toBe(4);
-        expect(repository.findEntriesByPrefixCallsByNamespace).toEqual(
-            new Map([
-                ['group-state:members', 2],
-                ['group-state:sessions', 2]
-            ])
-        );
-        expect(repository.findEntryCalls).toBe(4);
+        expect(repository.readRuntimeStateBatchCalls).toBe(4);
+        expect(repository.findEntryCalls).toBe(1);
     });
 
     it('keeps paged group snapshot scans inside the exact workspace scope', async () => {
@@ -1585,12 +1559,18 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
     readonly findEntriesByPrefixCallsByNamespace = new Map<string, number>();
     findEntriesByKeysCalls = 0;
     maxRowsReturnedPerFindEntriesByPrefix = 0;
+    readRuntimeStateBatchCalls = 0;
+    readonly readRuntimeStateBatchSelectors: RuntimeStateReadBatchSelector[][] = [];
+    maxRowsReturnedPerBatchSelection = 0;
     onFindEntryAfterRead?: (
         namespace: string,
         key: string
     ) => void | Promise<void>;
     onFindEntriesByPrefix?: () => void | Promise<void>;
     onFindEntriesByKeys?: () => void | Promise<void>;
+    onReadRuntimeStateBatch?: (
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ) => void | Promise<void>;
     findEntriesByPrefixPageCalls: Array<
         Readonly<{
             namespace: string;
@@ -1618,6 +1598,29 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
             .filter(([compositeKey]) => this.toNamespace(compositeKey) === namespace)
             .map(([, entry]) => ({ ...entry }))
             .sort((left, right) => left.key.localeCompare(right.key));
+    }
+
+    async readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
+        this.readRuntimeStateBatchCalls += 1;
+        this.readRuntimeStateBatchSelectors.push(
+            selectors.map((selector) => ({ ...selector }))
+        );
+        await this.onReadRuntimeStateBatch?.(selectors);
+        const selections = selectRuntimeStateReadBatch(
+            [...this.data].map(([compositeKey, entry]) => ({
+                namespace: this.toNamespace(compositeKey),
+                entry
+            })),
+            selectors
+        );
+        this.maxRowsReturnedPerBatchSelection = Math.max(
+            this.maxRowsReturnedPerBatchSelection,
+            0,
+            ...selections.map((selection) => selection.entries.length)
+        );
+        return selections;
     }
 
     async findEntriesByPrefix(
@@ -1788,6 +1791,9 @@ class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryL
         this.findEntriesByPrefixCallsByNamespace.clear();
         this.findEntriesByKeysCalls = 0;
         this.maxRowsReturnedPerFindEntriesByPrefix = 0;
+        this.readRuntimeStateBatchCalls = 0;
+        this.readRuntimeStateBatchSelectors.length = 0;
+        this.maxRowsReturnedPerBatchSelection = 0;
         this.findEntriesByPrefixPageCalls.length = 0;
     }
 

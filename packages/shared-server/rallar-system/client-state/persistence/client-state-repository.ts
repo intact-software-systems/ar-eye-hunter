@@ -9,14 +9,14 @@ import type {
 } from '@shared/api/client-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
-import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { PSqlClientStateEventRepository } from '../../../postgres/rallar-system/PSqlStateEventRepository.ts';
-import { PSqlRuntimeStateRepository } from '../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { PSqlRuntimeStateRepository } from '../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
     RuntimeStateRepositoryLike
-} from '../../../runtime-state/RuntimeStateRepository.ts';
+} from '../../../runtime-state/runtime-state-repository.ts';
 import { toSessionPurgeAfterEpochMs } from '../../presence/session-expiry.ts';
 import { defaultClientStateEventStoreFor } from '../../state-events/state-event-store.ts';
 import {
@@ -52,7 +52,7 @@ export type {
 export { ClientStateRepositoryInvariantCorruptionError } from './client-state-persistence-contracts.ts';
 
 export function createTransactionBoundClientStateRepository(
-    transaction: PSqlTransactionSql
+    transaction: PSqlSql
 ): ClientStateRepository {
     const runtime = new PSqlRuntimeStateRepository(transaction);
     return new ClientStateRepository(runtime, {

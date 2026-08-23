@@ -1,4 +1,4 @@
-import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { AuthSessionRepository } from '../../persistence/auth-session-repository.ts';
@@ -42,7 +42,7 @@ export async function writeAuthSessionIssue(
 }
 
 export async function writeAuthLogout(
-    transaction: PSqlTransactionSql,
+    transaction: PSqlSql,
     repository: AuthSessionRepository,
     computed: AuthMutationComputed
 ): Promise<void> {

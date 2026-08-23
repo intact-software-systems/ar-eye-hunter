@@ -1,4 +1,4 @@
-import { validateRuntimeStateExpiredAuthority } from '../../../../runtime-state/RuntimeStateExpiredEntry.ts';
+import { validateRuntimeStateExpiredAuthority } from '../../../../runtime-state/runtime-state-expired-entry.ts';
 import { authTicketDigestKey } from '../../persistence/auth-storage-keys.ts';
 import type {
     AuthMutationCommand,
@@ -36,12 +36,12 @@ function validateIssueAuthWebSocketTicket(
     command: IssueAuthWsTicketCommand,
     read: Extract<AuthMutationRead, { kind: 'issue-ws-ticket'; }>
 ): void {
-    validateRuntimeStateExpiredAuthority(
-        read.ticket,
-        read.expiredTicketEntry,
-        authTicketDigestKey(command.ticketRecord.ticketDigest),
-        'Websocket ticket read'
-    );
+    validateRuntimeStateExpiredAuthority({
+        live: read.ticket,
+        expiredEntry: read.expiredTicketEntry,
+        expectedKey: authTicketDigestKey(command.ticketRecord.ticketDigest),
+        label: 'Websocket ticket read'
+    });
     if (
         !read.session ||
         read.session.value.clientId !== command.ticketRecord.clientId ||

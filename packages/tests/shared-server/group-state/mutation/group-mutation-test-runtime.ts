@@ -1,15 +1,15 @@
 import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import {
-    validateRuntimeStateGuardedBatch,
-    validateRuntimeStateGuardedBatchResult,
     type RuntimeStateGuardedBatch,
     type RuntimeStateGuardedBatchEffect,
     type RuntimeStateGuardedBatchEffectResult,
     type RuntimeStateGuardedBatchGuard,
     type RuntimeStateGuardedBatchGuardResult,
     type RuntimeStateGuardedBatchResult
-} from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
-import type { RuntimeStateEntry, RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/guarded-batch/runtime-state-guarded-batch.ts';
+import { validateRuntimeStateGuardedBatchResult } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch-result.ts';
+import { validateRuntimeStateGuardedBatch } from '@shared-server/runtime-state/guarded-batch/validate-runtime-state-guarded-batch.ts';
+import type { RuntimeStateEntry, RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { GroupEvent, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';

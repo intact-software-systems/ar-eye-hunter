@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 
-import { runInTransaction } from '@shared-server/postgres/run-in-transaction.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
 import { createWsSessionGenerationLifecycleService } from '@shared-server/rallar-system/websocket/ws-session-generation-lifecycle.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 
@@ -42,9 +42,9 @@ Deno.test('PGlite close high-water converges after a stale write and extends rep
         const stale = lifecycle.computeClosed(older, empty);
         const winner = lifecycle.computeClosed(newer, empty);
 
-        await runInTransaction(sql, async (transaction) => await lifecycle.write(transaction, winner));
+        await runInPSqlTransaction(sql, async (transaction) => await lifecycle.write(transaction, winner));
         await assert.rejects(
-            runInTransaction(sql, async (transaction) => await lifecycle.write(transaction, stale)),
+            runInPSqlTransaction(sql, async (transaction) => await lifecycle.write(transaction, stale)),
             RuntimeStateWriteConflictError
         );
 
@@ -59,7 +59,7 @@ Deno.test('PGlite close high-water converges after a stale write and extends rep
             expireAtEpochMs: newer.expireAtEpochMs + 10_000
         }, retryRead);
         assert.equal(extended.outcome, 'update');
-        await runInTransaction(
+        await runInPSqlTransaction(
             sql,
             async (transaction) => await lifecycle.write(transaction, extended)
         );

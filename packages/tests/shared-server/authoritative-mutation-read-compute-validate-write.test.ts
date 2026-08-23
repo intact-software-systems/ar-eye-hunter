@@ -215,7 +215,7 @@ it('keeps every authoritative service write bound to the caller transaction', ()
         readMethodBody(sources.topologyRepository, 'writeTopologyMutation')
     ];
     for (const seam of seams) {
-        expect(seam).toMatch(/transaction:\s*PSqlTransactionSql/);
+        expect(seam).toMatch(/transaction:\s*PSqlSql/);
         expect(seam).not.toMatch(/\.begin\s*\(/);
         expect(seam).not.toMatch(/waitForRuntimeStateWriteRetry/);
     }

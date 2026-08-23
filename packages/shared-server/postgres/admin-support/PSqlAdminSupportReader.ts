@@ -3,7 +3,7 @@ import type {
     AdminSupportQueueEntryRead,
     AdminSupportReader
 } from '../../rallar-system/admin-support/admin-support-contracts.ts';
-import type { PSqlSql } from '../PostgresSqlClient.ts';
+import type { PSqlSql } from '../p-sql-sql.ts';
 import {
     toAdminSupportInboxRead,
     toAdminSupportResultRead,

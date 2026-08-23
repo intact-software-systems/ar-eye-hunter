@@ -4,7 +4,7 @@ import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
 
-import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { AuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import type { AuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import { toAuthAppInboxType, toAuthIntentContextId } from '@shared-server/rallar-system/auth/inbox/auth-app-inbox-routing.ts';
@@ -29,7 +29,7 @@ const decodeOrderCase = 'decodes before queue identity validation and exits befo
 describe('auth inbox mutation phase order', () => {
     it('materializes worker facts before mutation phases', async () => {
         const actions: string[] = [];
-        const transaction = {} as PSqlTransactionSql;
+        const transaction = {} as PSqlSql;
         const intent = createIssueSessionIntent();
         const command = (
             await materializeAuthMutationIntent(intent, {
@@ -60,7 +60,7 @@ describe('auth inbox mutation phase order', () => {
             logoutOutbox: null,
             outcome: 'write'
         };
-        const written: Array<readonly [PSqlTransactionSql, AuthMutationComputed]> = [];
+        const written: Array<readonly [PSqlSql, AuthMutationComputed]> = [];
         const handler = new AuthInboxHandler({
             mutationService: createMutationService({ actions, read, computed, result, written }),
             credentialIssuer: createCredentialIssuer(actions),
@@ -88,7 +88,7 @@ describe('auth inbox mutation phase order', () => {
 describe('auth inbox routing rejection', () => {
     it(decodeOrderCase, async () => {
         const actions: string[] = [];
-        const transaction = {} as PSqlTransactionSql;
+        const transaction = {} as PSqlSql;
         const intent = createIssueSessionIntent();
         const context = createContext(intent, 'wrong-context');
         const handler = new AuthInboxHandler({
@@ -132,7 +132,7 @@ interface MutationServiceRecording {
     readonly read: AuthMutationRead;
     readonly computed: AuthMutationComputed;
     readonly result: AuthMutationResult;
-    readonly written: Array<readonly [PSqlTransactionSql, AuthMutationComputed]>;
+    readonly written: Array<readonly [PSqlSql, AuthMutationComputed]>;
 }
 
 function createMutationService(input: MutationServiceRecording): AuthMutationService {
@@ -186,16 +186,16 @@ function createCredentialIssuer(actions: string[]): AuthCredentialIssuer {
 
 class RecordingTransactionWriter implements AppInboxMutationTransactionWriter {
     private readonly actions: string[];
-    private readonly transaction: PSqlTransactionSql;
+    private readonly transaction: PSqlSql;
 
-    constructor(actions: string[], transaction: PSqlTransactionSql) {
+    constructor(actions: string[], transaction: PSqlSql) {
         this.actions = actions;
         this.transaction = transaction;
     }
 
     async writeMutation<Result>(
         _context: AppInboxMessageContext,
-        write: (transaction: PSqlTransactionSql) => Promise<Result>
+        write: (transaction: PSqlSql) => Promise<Result>
     ): Promise<Result> {
         this.actions.push('transaction');
         return await write(this.transaction);
@@ -204,7 +204,7 @@ class RecordingTransactionWriter implements AppInboxMutationTransactionWriter {
     async writeMutationWithAfterCommitResult<DurableResult, AfterCommitResult>(
         _context: AppInboxMessageContext,
         _write: (
-            transaction: PSqlTransactionSql
+            transaction: PSqlSql
         ) => Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>>
     ): Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>> {
         throw new Error('After-commit transaction must not run');

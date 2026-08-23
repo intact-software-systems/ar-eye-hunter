@@ -1,6 +1,6 @@
 import type { GroupMember, GroupRef } from '@shared/api/group-types.ts';
-import { RuntimeStateJsonStore, type RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
-import type { RuntimeStateRepositoryLike } from '../../../runtime-state/RuntimeStateRepository.ts';
+import { RuntimeStateJsonStore, type RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import { decodePersistedGroupMember } from './group-state-persistence-codec.ts';
 import {
     assertGroupRefIdentity,

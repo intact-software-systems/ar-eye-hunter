@@ -1,4 +1,4 @@
-import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import type { AppInboxMessageContext } from '../../app-inbox/app-inbox-queue-client.ts';
 import type { AppInboxEnqueueInput } from '../../app-inbox/app-inbox-queue-client.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
@@ -22,7 +22,7 @@ export interface RtcRttAppInboxHandlerDependencies {
     readonly groupStateService: GroupStateService;
     readonly writeMutation: (
         context: AppInboxMessageContext,
-        write: (transaction: PSqlTransactionSql) => Promise<RtcRttAppInboxResult>
+        write: (transaction: PSqlSql) => Promise<RtcRttAppInboxResult>
     ) => Promise<RtcRttAppInboxResult>;
     readonly nowEpochMs: () => number;
     readonly wakeQueue?: () => void;

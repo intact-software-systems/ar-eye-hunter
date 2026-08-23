@@ -3,7 +3,7 @@ import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-typ
 import type { AdminOperationsPruner } from '../../rallar-system/admin-operations/admin-operations-service.ts';
 
 import type { AdminPruneExpiredOptions } from '../../rallar-system/admin-operations/admin-prune-options.ts';
-import type { PSqlSql } from '../PostgresSqlClient.ts';
+import type { PSqlSql } from '../p-sql-sql.ts';
 
 type CountRow = Readonly<{
     count: number | string | bigint;

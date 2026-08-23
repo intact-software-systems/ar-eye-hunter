@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/rallar-middleware.ts';
 
 import { createApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';

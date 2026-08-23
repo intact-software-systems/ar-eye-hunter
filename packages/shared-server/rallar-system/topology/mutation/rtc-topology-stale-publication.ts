@@ -1,5 +1,5 @@
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type { RtcTopologyPublication } from '../publication/rtc-topology-publication.ts';
 
 export type RtcTopologyStaleMutationComputed =

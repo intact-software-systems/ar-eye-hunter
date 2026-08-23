@@ -9,14 +9,14 @@ import type {
 } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { PSqlGroupStateEventRepository } from '../../../postgres/rallar-system/PSqlStateEventRepository.ts';
-import { PSqlRuntimeStateRepository } from '../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { PSqlRuntimeStateRepository } from '../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
     RuntimeStateRepositoryLike
-} from '../../../runtime-state/RuntimeStateRepository.ts';
+} from '../../../runtime-state/runtime-state-repository.ts';
 import type { StateEventListQuery } from '../../state-events/state-event-listing.ts';
 import { defaultGroupStateEventStoreFor } from '../../state-events/state-event-store.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
@@ -27,7 +27,7 @@ import type { GroupStateAuthorityGuard, GroupStateRepositoryOptions } from './gr
 import { GroupStateRepositoryReads } from './group-state-repository-reads.ts';
 
 export function createTransactionBoundGroupStateRepository(
-    transaction: PSqlTransactionSql
+    transaction: PSqlSql
 ): GroupStateRepository {
     return new GroupStateRepository(new PSqlRuntimeStateRepository(transaction), {
         events: new PSqlGroupStateEventRepository(transaction)

@@ -3,7 +3,7 @@ import {
     type ResourceInboxReleaseDisposition
 } from '@shared/queuebox/QueueBoxTypes.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { PSqlSql } from '../PostgresSqlClient.ts';
+import type { PSqlSql } from '../p-sql-sql.ts';
 import { toDomain, type ResourceInboxRow } from './repository-utils.ts';
 
 export async function requeueObservedResourceInboxDeliveryFailure(

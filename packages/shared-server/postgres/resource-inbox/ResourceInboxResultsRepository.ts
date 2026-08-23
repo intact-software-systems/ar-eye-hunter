@@ -1,4 +1,4 @@
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
     ResourceInboxResultsRow,
     toPgTimestamp,
@@ -22,7 +22,7 @@ export class ResourceInboxResultsRepository {
         fn: (repo: ResourceInboxResultsRepository) => Promise<T>
     ): Promise<T> {
         const newVar = await this.sql.begin<T>(
-            async (sql: PSqlTransactionSql) => {
+            async (sql: PSqlSql) => {
                 return await fn(new ResourceInboxResultsRepository(sql));
             }
         );

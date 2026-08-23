@@ -8,10 +8,9 @@ import {
     GROUP_TOPOLOGY_CONFIG_NAMESPACE,
     GROUP_TOPOLOGY_OVERRIDE_NAMESPACE
 } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts';
-import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/RuntimeStateJsonStore.ts';
-import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateEntryValue } from '@shared-server/runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { FakeRuntimeStateRepository } from '../../../../fake-runtime-state-repository.ts';
 import { ReadBatchFakeRuntimeStateRepository } from '../../../../read-batch-fake-runtime-state-repository.ts';
 
 const GROUP_REF: GroupRef = {
@@ -76,10 +75,9 @@ describe('group topology mutation exact read', () => {
         ]);
     });
 
-    it('omits the idempotency selector for query reads and falls back without batch support', async () => {
+    it('omits the idempotency selector for query reads', async () => {
         const batchRuntime = new ReadBatchFakeRuntimeStateRepository();
         const batchRepository = new GroupTopologyConfigRepository(batchRuntime);
-        const fallbackRepository = new GroupTopologyConfigRepository(new FakeRuntimeStateRepository());
 
         await expect(batchRepository.readMutationExactEntries(GROUP_REF, null)).resolves.toMatchObject({
             status: 'stable',
@@ -92,19 +90,16 @@ describe('group topology mutation exact read', () => {
             'topology-generation-config',
             'topology-generation-override'
         ]);
-        await expect(
-            fallbackRepository.readMutationExactEntries(GROUP_REF, 'request-1')
-        ).resolves.toEqual({ status: 'fallback' });
     });
 
-    it('treats equal-revision invariant content changes as a race and falls back', async () => {
+    it('reports equal-revision invariant content changes as concurrent change', async () => {
         const runtime = new ReadBatchFakeRuntimeStateRepository();
         const writer = new GroupTopologyConfigRepository(runtime);
         await writer.commitInvariantGeneration({ groupRef: GROUP_REF, version: 1 }, null);
         const reader = new EqualRevisionInvariantChangeRepository(runtime);
 
         await expect(reader.readMutationExactEntries(GROUP_REF, null)).resolves.toEqual({
-            status: 'fallback'
+            status: 'concurrent-change'
         });
     });
 });

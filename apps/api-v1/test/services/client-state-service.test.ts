@@ -1,10 +1,12 @@
 import { type ClientMutationWritten, type ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import assert from 'node:assert/strict';
@@ -393,6 +395,18 @@ class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransactionalR
                 .map(([, entry]) => ({ ...entry }))
                 .sort((left, right) => left.key.localeCompare(right.key))
         );
+    }
+
+    readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
+        return Promise.resolve(selectRuntimeStateReadBatch(
+            [...this.data].map(([compositeKey, entry]) => ({
+                namespace: this.toNamespace(compositeKey),
+                entry
+            })),
+            selectors
+        ));
     }
 
     findEntriesByPrefix(

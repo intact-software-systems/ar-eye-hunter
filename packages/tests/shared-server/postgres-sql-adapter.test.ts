@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { toPSqlSql } from './fixtures/postgres-sql-adapter.ts';
 
 describe('postgres.js PSqlSql adapter', () => {

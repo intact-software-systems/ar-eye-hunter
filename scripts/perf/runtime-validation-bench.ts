@@ -1,15 +1,20 @@
-import { readRateLimiter } from '@shared-server/http/rate-limit-service.ts';
 import {
     readRuntimeStateEntriesByPrefix,
     RUNTIME_STATE_PREFIX_READ_PAGE_SIZE
-} from '@shared-server/postgres/al-runtime/runtime-state-prefix-reader.ts';
+} from '@shared-server/al-runtime/postgres/read-runtime-state-entries-by-prefix.ts';
+import { readRateLimiter } from '@shared-server/http/rate-limit-service.ts';
 import { filterStateEventsForList } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
 import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync/state-sync-routing.ts';
+import type {
+    RuntimeStateReadBatchSelection,
+    RuntimeStateReadBatchSelector
+} from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateEntryPageOptions,
     RuntimeStateTransactionalRepositoryLike
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
@@ -136,14 +141,20 @@ function makeRuntimeStateEntries(size: number): readonly RuntimeStateEntry[] {
 }
 
 class RuntimeStatePrefixBenchRepository implements RuntimeStateTransactionalRepositoryLike {
+    private readonly entries: readonly RuntimeStateEntry[];
+    private readonly namespace: string;
+
     findEntriesByPrefixCalls = 0;
     findEntriesByPrefixPageCalls = 0;
     maxRowsReturned = 0;
 
     public constructor(
-        private readonly entries: readonly RuntimeStateEntry[],
-        private readonly namespace = 'perf-runtime-20260702'
-    ) {}
+        entries: readonly RuntimeStateEntry[],
+        namespace = 'perf-runtime-20260702'
+    ) {
+        this.entries = entries;
+        this.namespace = namespace;
+    }
 
     async begin<T>(
         fn: (repository: RuntimeStateTransactionalRepositoryLike) => Promise<T>
@@ -157,6 +168,15 @@ class RuntimeStatePrefixBenchRepository implements RuntimeStateTransactionalRepo
 
     async findAllEntries(): Promise<readonly RuntimeStateEntry[]> {
         return [];
+    }
+
+    async readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
+        return selectRuntimeStateReadBatch(
+            this.entries.map((entry) => ({ namespace: this.namespace, entry })),
+            selectors
+        );
     }
 
     async findEntriesByPrefix(
@@ -478,7 +498,7 @@ async function benchRateLimiter(results: BenchResult[]): Promise<void> {
 }
 
 class FakeSocket {
-    readyState = WebSocket.OPEN;
+    readyState: number = WebSocket.OPEN;
     sentBytes = 0;
     sentCount = 0;
     addEventListener(_type: string, _listener: unknown): void {}

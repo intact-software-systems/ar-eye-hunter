@@ -1,4 +1,4 @@
-import { validateRuntimeStateExpiredAuthority } from '../../../../runtime-state/RuntimeStateExpiredEntry.ts';
+import { validateRuntimeStateExpiredAuthority } from '../../../../runtime-state/runtime-state-expired-entry.ts';
 import { authTicketDigestKey } from '../../persistence/auth-storage-keys.ts';
 import type {
     AuthMutationCommand,
@@ -127,12 +127,12 @@ function validateIssuedAuthAgentTicket(validation: ValidateIssuedAuthAgentTicket
         ...validation.read.sessions[validation.index]
     });
     const current = validation.read.tickets[validation.index];
-    validateRuntimeStateExpiredAuthority(
-        current,
-        validation.read.expiredTicketEntries[validation.index],
-        authTicketDigestKey(ticket.ticketDigest),
-        'Agent ticket read'
-    );
+    validateRuntimeStateExpiredAuthority({
+        live: current,
+        expiredEntry: validation.read.expiredTicketEntries[validation.index],
+        expectedKey: authTicketDigestKey(ticket.ticketDigest),
+        label: 'Agent ticket read'
+    });
     if (
         current &&
         !equalAuthJson(current.value, validation.computed.agentTickets[validation.index])

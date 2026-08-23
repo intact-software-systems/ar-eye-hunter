@@ -1,105 +1,21 @@
-import type { RuntimeStateEntry } from './RuntimeStateRepository.ts';
-
-export type RuntimeStateReadBatchKeySelector = Readonly<{
-    selectorId: string;
-    kind: 'key';
-    namespace: string;
-    key: string;
-}>;
-
-export type RuntimeStateReadBatchPrefixSelector = Readonly<{
-    selectorId: string;
-    kind: 'prefix';
-    namespace: string;
-    keyPrefix: string;
-}>;
-
-export type RuntimeStateReadBatchSelector =
-    | RuntimeStateReadBatchKeySelector
-    | RuntimeStateReadBatchPrefixSelector;
-
-export type RuntimeStateReadBatchSelection = Readonly<{
-    selectorId: string;
-    entries: readonly RuntimeStateEntry[];
-}>;
-
-export type RuntimeStateReadBatchRepositoryLike = Readonly<{
-    runtimeStateReadBatchCapability: true;
-    runtimeStateReadBatchConsistency: 'single-database-snapshot';
-    readRuntimeStateBatch(
-        selectors: readonly RuntimeStateReadBatchSelector[]
-    ): Promise<readonly RuntimeStateReadBatchSelection[]>;
-}>;
-
-export function isRuntimeStateReadBatchRepositoryLike(
-    repository: unknown
-): repository is RuntimeStateReadBatchRepositoryLike {
-    if (typeof repository !== 'object' || repository === null) {
-        return false;
-    }
-    const candidate = repository as Readonly<Record<string, unknown>>;
-    return candidate.runtimeStateReadBatchCapability === true &&
-        candidate.runtimeStateReadBatchConsistency === 'single-database-snapshot' &&
-        typeof candidate.readRuntimeStateBatch === 'function';
-}
-
-export function validateRuntimeStateReadBatchSelectors(
-    input: unknown
-): readonly RuntimeStateReadBatchSelector[] {
-    const selectors = requireDenseArray(input, 'selectors');
-    if (selectors.length === 0) {
-        throw invalidReadBatch('selectors must not be empty');
-    }
-
-    const selectorIds = new Set<string>();
-    return selectors.map((inputSelector, index) => {
-        const label = `selector ${index}`;
-        const selector = requireRecord(inputSelector, label);
-        const selectorId = requireNonEmptyString(selector.selectorId, `${label} ID`);
-        if (selectorIds.has(selectorId)) {
-            throw invalidReadBatch(`duplicate selector ID: ${selectorId}`);
-        }
-        selectorIds.add(selectorId);
-        const namespace = requireNonEmptyString(
-            selector.namespace,
-            `${label} namespace`
-        );
-
-        if (selector.kind === 'key') {
-            requireExactKeys(selector, ['selectorId', 'kind', 'namespace', 'key'], label);
-            return {
-                selectorId,
-                kind: selector.kind,
-                namespace,
-                key: requireNonEmptyString(selector.key, `${label} key`)
-            };
-        }
-        if (selector.kind === 'prefix') {
-            requireExactKeys(
-                selector,
-                ['selectorId', 'kind', 'namespace', 'keyPrefix'],
-                label
-            );
-            return {
-                selectorId,
-                kind: selector.kind,
-                namespace,
-                keyPrefix: requireNonEmptyString(
-                    selector.keyPrefix,
-                    `${label} key prefix`
-                )
-            };
-        }
-        throw invalidReadBatch(`${label} kind is invalid`);
-    });
-}
+import {
+    decodeJsonWireValue,
+    type JsonWireObject,
+    type JsonWireValue
+} from '../../rallar-system/protocol/json-wire-identity.ts';
+import type { RuntimeStateEntry } from '../runtime-state-repository.ts';
+import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from './runtime-state-read-batch.ts';
+import { validateRuntimeStateReadBatchSelectors } from './validate-runtime-state-read-batch-selectors.ts';
 
 export function validateRuntimeStateReadBatchResult(
     expectedSelectors: readonly RuntimeStateReadBatchSelector[],
     input: unknown
 ): readonly RuntimeStateReadBatchSelection[] {
     const selectors = validateRuntimeStateReadBatchSelectors(expectedSelectors);
-    const results = requireDenseArray(input, 'results');
+    const results = requireDenseArray(
+        decodeJsonWireValue(input, 'runtime state read batch result'),
+        'results'
+    );
     if (results.length !== selectors.length) {
         throw invalidReadBatch(
             `results expected ${selectors.length} selections, received ${results.length}`
@@ -148,7 +64,7 @@ function validateSelectionEntries(
     }
 }
 
-function validateEntry(input: unknown, label: string): RuntimeStateEntry {
+function validateEntry(input: JsonWireValue, label: string): RuntimeStateEntry {
     const entry = requireRecord(input, label);
     requireExactKeys(
         entry,
@@ -194,7 +110,10 @@ function validateEntry(input: unknown, label: string): RuntimeStateEntry {
     };
 }
 
-function requireDenseArray(input: unknown, label: string): readonly unknown[] {
+function requireDenseArray(
+    input: JsonWireValue | undefined,
+    label: string
+): readonly JsonWireValue[] {
     if (!Array.isArray(input)) {
         throw invalidReadBatch(`${label} must be an array`);
     }
@@ -207,17 +126,17 @@ function requireDenseArray(input: unknown, label: string): readonly unknown[] {
 }
 
 function requireRecord(
-    input: unknown,
+    input: JsonWireValue | undefined,
     label: string
-): Readonly<Record<string, unknown>> {
-    if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+): JsonWireObject {
+    if (!isJsonWireObject(input)) {
         throw invalidReadBatch(`${label} must be an object`);
     }
-    return input as Readonly<Record<string, unknown>>;
+    return input;
 }
 
 function requireExactKeys(
-    input: Readonly<Record<string, unknown>>,
+    input: JsonWireObject,
     expected: readonly string[],
     label: string
 ): void {
@@ -231,7 +150,7 @@ function requireExactKeys(
     }
 }
 
-function requireNonEmptyString(input: unknown, label: string): string {
+function requireNonEmptyString(input: JsonWireValue | undefined, label: string): string {
     const value = requireString(input, label);
     if (value.length === 0) {
         throw invalidReadBatch(`${label} must not be empty`);
@@ -239,7 +158,7 @@ function requireNonEmptyString(input: unknown, label: string): string {
     return value;
 }
 
-function requireString(input: unknown, label: string): string {
+function requireString(input: JsonWireValue | undefined, label: string): string {
     if (typeof input !== 'string') {
         throw invalidReadBatch(`${label} must be a string`);
     }
@@ -257,6 +176,12 @@ function compareUtf8(left: string, right: string): number {
         }
     }
     return leftBytes.length - rightBytes.length;
+}
+
+function isJsonWireObject(
+    value: JsonWireValue | undefined
+): value is JsonWireObject {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function invalidReadBatch(reason: string): Error {

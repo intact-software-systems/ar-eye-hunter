@@ -4,12 +4,12 @@ import {
     decodeGroupStateGroupStorageKey,
     groupStateGroupStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
-import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateEntry } from '../../../runtime-state/runtime-state-repository.ts';
 import {
     isRuntimeStateOptimisticTransactionalRepositoryLike,
     type RuntimeStateOptimisticTransactionalRepositoryLike,
     type RuntimeStateRepositoryLike
-} from '../../../runtime-state/RuntimeStateRepository.ts';
+} from '../../../runtime-state/runtime-state-repository.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../persistence/rtc-topology-errors.ts';
 import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
 import type { RtcTopologyPublicationWorkClaim } from './rtc-topology-publication-repository-contracts.ts';

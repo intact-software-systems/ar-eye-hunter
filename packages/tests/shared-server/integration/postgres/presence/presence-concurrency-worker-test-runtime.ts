@@ -1,4 +1,4 @@
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { spawn } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';

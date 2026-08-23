@@ -1,4 +1,4 @@
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 

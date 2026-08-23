@@ -1,6 +1,7 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { groupStateGroupStorageKey, groupStateMemberStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
-import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import type { RuntimeStateEntry } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { Group, GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 import { createTestGroup } from '../../../create-test-group.ts';
@@ -138,24 +139,8 @@ describe('GroupStateRepository authority fence', () => {
     });
 });
 
-type BatchReadSelector =
-    | Readonly<{
-        selectorId: string;
-        kind: 'key';
-        namespace: string;
-        key: string;
-    }>
-    | Readonly<{
-        selectorId: string;
-        kind: 'prefix';
-        namespace: string;
-        keyPrefix: string;
-    }>;
-
 class BatchReadRuntimeStateRepository extends FakeRuntimeStateRepository {
-    readonly runtimeStateReadBatchCapability = true as const;
-    readonly runtimeStateReadBatchConsistency = 'single-database-snapshot' as const;
-    readonly batchReadCalls: BatchReadSelector[][] = [];
+    readonly batchReadCalls: RuntimeStateReadBatchSelector[][] = [];
     rejectIndividualReads = false;
 
     override findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {
@@ -175,7 +160,7 @@ class BatchReadRuntimeStateRepository extends FakeRuntimeStateRepository {
         return super.findEntriesByPrefix(namespace, keyPrefix);
     }
 
-    async readRuntimeStateBatch(selectors: readonly BatchReadSelector[]): Promise<
+    async readRuntimeStateBatch(selectors: readonly RuntimeStateReadBatchSelector[]): Promise<
         readonly Readonly<{
             selectorId: string;
             entries: readonly RuntimeStateEntry[];

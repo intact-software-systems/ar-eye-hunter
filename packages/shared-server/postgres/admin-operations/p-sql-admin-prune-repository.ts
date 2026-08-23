@@ -9,7 +9,7 @@ import {
     decodeAdminPruneAggregate,
     toAdminPruneAggregateKey
 } from '../../rallar-system/admin-operations/prune/admin-prune-progress.ts';
-import type { PSqlSql, PSqlTransactionSql } from '../PostgresSqlClient.ts';
+import type { PSqlSql } from '../p-sql-sql.ts';
 import { ResourceInboxRepository } from '../resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '../resource-inbox/ResourceInboxResultsRepository.ts';
 
@@ -39,7 +39,7 @@ export class PSqlAdminPruneRepository implements AdminPrunePageRepository {
     }
 
     async deletePage(
-        transaction: PSqlTransactionSql,
+        transaction: PSqlSql,
         command: AdminPrunePageWork,
         rowIds: readonly string[]
     ): Promise<number> {
@@ -62,12 +62,12 @@ export class PSqlAdminPruneRepository implements AdminPrunePageRepository {
         return { aggregate, resource: current.resource };
     }
 
-    async writeOutbox(transaction: PSqlTransactionSql, entry: ResourceEntry): Promise<void> {
+    async writeOutbox(transaction: PSqlSql, entry: ResourceEntry): Promise<void> {
         await new ResourceInboxRepository(transaction).write(entry);
     }
 
     async writeProgress(
-        transaction: PSqlTransactionSql,
+        transaction: PSqlSql,
         computed: AdminPrunePageComputed
     ): Promise<void> {
         const next = computed.aggregateSuccessor;
@@ -90,7 +90,7 @@ export class PSqlAdminPruneRepository implements AdminPrunePageRepository {
     }
 
     async finishReserved(
-        transaction: PSqlTransactionSql,
+        transaction: PSqlSql,
         entry: ResourceEntry,
         finishedAtEpochMs: number
     ): Promise<boolean> {

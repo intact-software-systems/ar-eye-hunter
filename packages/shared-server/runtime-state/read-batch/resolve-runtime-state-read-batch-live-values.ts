@@ -1,10 +1,7 @@
-import type { RuntimeStateEntryValue } from './RuntimeStateJsonStore.ts';
-import {
-    validateRuntimeStateReadBatchResult,
-    type RuntimeStateReadBatchSelection,
-    type RuntimeStateReadBatchSelector
-} from './RuntimeStateReadBatch.ts';
-import type { RuntimeStateEntry } from './RuntimeStateRepository.ts';
+import type { RuntimeStateEntryValue } from '../runtime-state-json-store.ts';
+import type { RuntimeStateEntry } from '../runtime-state-repository.ts';
+import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from './runtime-state-read-batch.ts';
+import { validateRuntimeStateReadBatchResult } from './validate-runtime-state-read-batch-result.ts';
 
 export type RuntimeStateReadBatchLiveSelection<T> = Readonly<{
     selectorId: string;

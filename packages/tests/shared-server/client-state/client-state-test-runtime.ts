@@ -16,7 +16,7 @@ import type { ClientMutationComputed } from '@shared-server/rallar-system/client
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { defaultClientStateEventStoreFor, type InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
-import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 
 import type { ClientStatePhaseTestDriver } from './client-state-test-driver-contracts.ts';
 import {

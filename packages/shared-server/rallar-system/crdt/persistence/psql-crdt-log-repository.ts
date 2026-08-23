@@ -27,7 +27,7 @@ import {
     type RallarCrdtUpdatePage
 } from '@shared/crdt/mod.ts';
 
-import type { PSqlSql } from '../../../postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import {
     toMetadata,
     toRecord,

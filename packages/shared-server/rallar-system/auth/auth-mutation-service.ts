@@ -1,5 +1,5 @@
-import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
-import type * as RuntimeState from '../../runtime-state/RuntimeStateRepository.ts';
+import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
+import type * as RuntimeState from '../../runtime-state/runtime-state-repository.ts';
 import type {
     AuthMutationCommand,
     AuthMutationComputed,
@@ -27,7 +27,7 @@ export interface AuthMutationService {
         computed: AuthMutationComputed
     ) => void;
     readonly write: (
-        transaction: PSqlTransactionSql,
+        transaction: PSqlSql,
         computed: AuthMutationComputed
     ) => Promise<AuthMutationResult>;
 }

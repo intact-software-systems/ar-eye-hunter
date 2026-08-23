@@ -1,6 +1,6 @@
-import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { AuthSessionRepository } from '../../persistence/auth-session-repository.ts';
 import { AuthUserRepository } from '../../persistence/auth-user-repository.ts';
 import type { AuthMutationComputed, AuthMutationResult } from '../auth-mutation-contracts.ts';
@@ -8,7 +8,7 @@ import { writeAuthLogout, writeAuthSessionIssue } from './write-auth-session.ts'
 import { writeAuthTicketMutation } from './write-auth-ticket-mutation.ts';
 
 export async function writeAuthMutation(
-    transaction: PSqlTransactionSql,
+    transaction: PSqlSql,
     computed: AuthMutationComputed
 ): Promise<AuthMutationResult> {
     if (computed.outcome !== 'write') {

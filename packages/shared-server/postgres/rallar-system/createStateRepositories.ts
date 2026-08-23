@@ -6,9 +6,9 @@ import type {
     ClientStateEventStore,
     GroupStateEventStore
 } from '@shared-server/rallar-system/state-events/state-event-store.ts';
-import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
-import type { PSqlSql } from '../PostgresSqlClient.ts';
-import { PSqlRuntimeStateRepository } from '../runtime-state/PSqlRuntimeStateRepository.ts';
+import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
+import { PSqlRuntimeStateRepository } from '../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
+import type { PSqlSql } from '../p-sql-sql.ts';
 import { PSqlClientStateEventRepository, PSqlGroupStateEventRepository } from './PSqlStateEventRepository.ts';
 
 export function createRuntimeStateRepository(sql: PSqlSql): PSqlRuntimeStateRepository {

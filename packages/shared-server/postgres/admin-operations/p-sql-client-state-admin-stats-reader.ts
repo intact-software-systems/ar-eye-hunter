@@ -7,7 +7,7 @@ import {
     decodeClientPrincipalStorageKey,
     decodeClientSessionStorageKey
 } from '../../rallar-system/client-state/persistence/client-state-storage-keys.ts';
-import type { PSqlSql } from '../PostgresSqlClient.ts';
+import type { PSqlSql } from '../p-sql-sql.ts';
 
 const DEFAULT_RECENT_EVENT_WINDOW_MS = 15 * 60 * 1_000;
 

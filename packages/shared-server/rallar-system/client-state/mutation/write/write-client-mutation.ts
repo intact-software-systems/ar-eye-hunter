@@ -1,11 +1,11 @@
-import type { PSqlTransactionSql } from '../../../../postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
 import { ResourceInboxRepository } from '../../../../postgres/resource-inbox/ResourceInboxRepository.ts';
 import { requireConditionalWrite } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import { ClientStateRepository } from '../../persistence/client-state-repository.ts';
 import type { ClientMutationComputedWrite, ClientMutationReceipt } from '../client-mutation-contracts.ts';
 
 export async function writeClientMutation(
-    transaction: PSqlTransactionSql,
+    transaction: PSqlSql,
     repository: ClientStateRepository,
     computed: ClientMutationComputedWrite
 ): Promise<ClientMutationReceipt> {
@@ -82,7 +82,7 @@ async function writeChildCandidate(
 }
 
 async function writeFinalOutboxEntries(
-    transaction: PSqlTransactionSql,
+    transaction: PSqlSql,
     computed: Extract<ClientMutationComputedWrite, { outcome: 'write'; }>
 ): Promise<void> {
     const outbox = new ResourceInboxRepository(transaction);

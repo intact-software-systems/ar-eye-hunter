@@ -1,30 +1,31 @@
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
+import { decodeJsonWireValue } from '../rallar-system/protocol/json-wire-identity.ts';
+import type { RuntimeStateReadBatchSelector } from './read-batch/runtime-state-read-batch.ts';
 import {
     isRuntimeStateConditionalRepositoryLike,
     isRuntimeStatePrefixPageRepositoryLike,
-    isRuntimeStateTransactionalRepositoryLike,
     type RuntimeStateConditionalDeleteResult,
     type RuntimeStateConditionalRepositoryLike,
     type RuntimeStateConditionalWriteResult,
     type RuntimeStateEntry,
     type RuntimeStateEntryPageOptions,
     type RuntimeStateRepositoryLike
-} from './RuntimeStateRepository.ts';
+} from './runtime-state-repository.ts';
 
-type ScopedRef = Readonly<{
-    applicationId: string;
-    workspaceId?: string;
-}>;
+interface ScopedRef {
+    readonly applicationId: string;
+    readonly workspaceId?: string;
+}
 
-export type RuntimeStateEntryValue<T> = Readonly<{
-    entry: RuntimeStateEntry;
-    value: T;
-}>;
+export interface RuntimeStateEntryValue<T> {
+    readonly entry: RuntimeStateEntry;
+    readonly value: T;
+}
 
-export type RuntimeStateEntryRead<T> = Readonly<{
-    value: RuntimeStateEntryValue<T> | undefined;
-    expiredEntry: RuntimeStateEntry | undefined;
-}>;
+export interface RuntimeStateEntryRead<T> {
+    readonly value: RuntimeStateEntryValue<T> | undefined;
+    readonly expiredEntry: RuntimeStateEntry | undefined;
+}
 
 export class RuntimeStateJsonStore {
     protected readonly repository: RuntimeStateRepositoryLike;
@@ -36,20 +37,25 @@ export class RuntimeStateJsonStore {
     protected async putValue(
         namespace: string,
         key: string,
-        value: unknown,
+        value: object,
         expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP
     ): Promise<void> {
-        await this.repository.upsert(namespace, key, JSON.stringify(value), expireAtTimestamp);
+        await this.repository.upsert(
+            namespace,
+            key,
+            serializeRuntimeStateJsonValue(value),
+            expireAtTimestamp
+        );
     }
 
     protected async putValueIfAbsent(
         namespace: string,
         key: string,
-        value: unknown,
+        value: object,
         expireAtTimestamp = NEVER_EXPIRE_AT_TIMESTAMP
     ): Promise<RuntimeStateConditionalWriteResult> {
         const repository = this.conditionalRepository();
-        const serializedValue = JSON.stringify(value);
+        const serializedValue = serializeRuntimeStateJsonValue(value);
         return await repository.insertIfAbsent(
             namespace,
             key,
@@ -61,12 +67,12 @@ export class RuntimeStateJsonStore {
     protected async putValueIfRevision(
         namespace: string,
         key: string,
-        value: unknown,
+        value: object,
         expireAtTimestamp: number,
         expectedRevision: number
     ): Promise<RuntimeStateConditionalWriteResult> {
         const repository = this.conditionalRepository();
-        const serializedValue = JSON.stringify(value);
+        const serializedValue = serializeRuntimeStateJsonValue(value);
         return await repository.upsertIfRevision(
             namespace,
             key,
@@ -134,11 +140,16 @@ export class RuntimeStateJsonStore {
             return [];
         }
 
-        const entries = isRuntimeStateTransactionalRepositoryLike(this.repository)
-            ? await this.repository.findEntriesByKeys(namespace, keys)
-            : (await Promise.all(
-                keys.map((key) => this.repository.findEntry(namespace, key))
-            )).filter((entry): entry is RuntimeStateEntry => entry !== undefined);
+        const selectors: readonly RuntimeStateReadBatchSelector[] = [...new Set(keys)]
+            .sort(compareUtf8)
+            .map((key, index) => ({
+                selectorId: `key:${index}`,
+                kind: 'key',
+                namespace,
+                key
+            }));
+        const entries = (await this.repository.readRuntimeStateBatch(selectors))
+            .flatMap((selection) => selection.entries);
         const values: RuntimeStateEntryValue<T>[] = [];
         for (const entry of entries) {
             const value = await this.toLiveEntryValue<T>(namespace, entry);
@@ -238,16 +249,16 @@ export class RuntimeStateJsonStore {
         namespace: string,
         keyPrefix?: string
     ): Promise<readonly RuntimeStateEntry[]> {
-        if (keyPrefix !== undefined && isRuntimeStateTransactionalRepositoryLike(this.repository)) {
-            return await this.repository.findEntriesByPrefix(namespace, keyPrefix);
-        }
-
-        const entries = await this.repository.findAllEntries(namespace);
         if (keyPrefix === undefined) {
-            return entries;
+            return await this.repository.findAllEntries(namespace);
         }
-
-        return entries.filter((entry) => entry.key.startsWith(keyPrefix));
+        const [selection] = await this.repository.readRuntimeStateBatch([{
+            selectorId: 'prefix',
+            kind: 'prefix',
+            namespace,
+            keyPrefix
+        }]);
+        return selection.entries;
     }
 
     protected async toLiveValue<T>(
@@ -262,7 +273,7 @@ export class RuntimeStateJsonStore {
         entry: RuntimeStateEntry
     ): Promise<RuntimeStateEntryValue<T> | undefined> {
         return entry.expireAtTimestamp > Date.now()
-            ? { entry, value: JSON.parse(entry.value) as T }
+            ? { entry, value: decodeRuntimeStateJsonValue<T>(entry.value) }
             : undefined;
     }
 
@@ -278,4 +289,34 @@ export class RuntimeStateJsonStore {
     private toKeyPart(name: string, value?: string): string {
         return `${name}=${encodeURIComponent(value ?? '_')}`;
     }
+}
+
+function serializeRuntimeStateJsonValue(value: object): string {
+    const serialized = JSON.stringify(value);
+    if (serialized === undefined) {
+        throw new TypeError('Runtime state value cannot be represented as JSON');
+    }
+    decodeJsonWireValue(JSON.parse(serialized), 'Runtime state value');
+    return serialized;
+}
+
+function decodeRuntimeStateJsonValue<T>(serialized: string): T {
+    return decodeJsonWireValue(
+        JSON.parse(serialized),
+        'Stored runtime state value'
+    ) as T;
+}
+
+function compareUtf8(left: string, right: string): number {
+    const encoder = new TextEncoder();
+    const leftBytes = encoder.encode(left);
+    const rightBytes = encoder.encode(right);
+    const length = Math.min(leftBytes.length, rightBytes.length);
+    for (let index = 0; index < length; index += 1) {
+        const difference = leftBytes[index] - rightBytes[index];
+        if (difference !== 0) {
+            return difference;
+        }
+    }
+    return leftBytes.length - rightBytes.length;
 }

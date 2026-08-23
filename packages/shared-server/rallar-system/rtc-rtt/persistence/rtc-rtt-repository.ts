@@ -1,11 +1,11 @@
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
-import type { RuntimeStateEntryRead, RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
-import { RuntimeStateJsonStore } from '../../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntryRead, RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import { RuntimeStateJsonStore } from '../../../runtime-state/runtime-state-json-store.ts';
 import type {
     RuntimeStateEntryPageOptions,
     RuntimeStateRepositoryLike
-} from '../../../runtime-state/RuntimeStateRepository.ts';
+} from '../../../runtime-state/runtime-state-repository.ts';
 import { RtcTopologyRepositoryInvariantCorruptionError } from '../../topology/persistence/rtc-topology-errors.ts';
 import type { RtcRttMutationLifecycleFacts } from '../mutation/rtc-rtt-mutation-contracts.ts';
 import {

@@ -5,7 +5,7 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
-import type { PSqlSql } from '../../postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import { initDynamicWsTopicRouter, type DynamicWsTopicRouterOptions } from '../../rallar-facade/ws-topic-router.ts';
 import { installChatWsTopic } from '../communication/install-chat-ws-topic.ts';
 import { installRtcSignalingWsTopic } from '../communication/install-rtc-signaling-ws-topic.ts';

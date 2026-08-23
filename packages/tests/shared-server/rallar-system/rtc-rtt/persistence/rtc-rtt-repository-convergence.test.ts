@@ -1,4 +1,4 @@
-import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { RtcRttMutationCommand, RtcRttMutationComputed } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-contracts.ts';
 import { toRtcRttMutationReceiptId, toRtcRttTopologyOutboxId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
@@ -794,7 +794,7 @@ describe('RTC RTT repository convergence', () => {
     });
 });
 
-function createUnopenedTransactionSql(): PSqlTransactionSql {
+function createUnopenedTransactionSql(): PSqlSql {
     return Object.assign(
         () => {
             throw new Error('RTT write must not query the transaction');

@@ -1,6 +1,6 @@
-import { createPSqlALInboundRuntimeStores, createPSqlALOutboundRuntimeStores } from '@shared-server/postgres/al-runtime/createPSqlALRuntimeStores.ts';
-import { PSqlInboundAdmissionBackend } from '@shared-server/postgres/al-runtime/PSqlInboundAdmissionBackend.ts';
-import { PSqlOutboundAdmissionBackend } from '@shared-server/postgres/al-runtime/PSqlOutboundAdmissionBackend.ts';
+import { createPSqlALInboundRuntimeStores, createPSqlALOutboundRuntimeStores } from '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts';
+import { PSqlInboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-inbound-admission-backend.ts';
+import { PSqlOutboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-outbound-admission-backend.ts';
 import {
     ALInboundMessageRuntime,
     ALOutboundMessageRuntime,

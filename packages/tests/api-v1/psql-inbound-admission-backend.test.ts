@@ -1,6 +1,6 @@
-import { PSqlInboundAdmissionBackend } from '@shared-server/postgres/al-runtime/PSqlInboundAdmissionBackend.ts';
-import { PSqlOutboundAdmissionBackend } from '@shared-server/postgres/al-runtime/PSqlOutboundAdmissionBackend.ts';
-import { RUNTIME_STATE_PREFIX_READ_PAGE_SIZE } from '@shared-server/postgres/al-runtime/runtime-state-prefix-reader.ts';
+import { PSqlInboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-inbound-admission-backend.ts';
+import { PSqlOutboundAdmissionBackend } from '@shared-server/al-runtime/postgres/p-sql-outbound-admission-backend.ts';
+import { RUNTIME_STATE_PREFIX_READ_PAGE_SIZE } from '@shared-server/al-runtime/postgres/read-runtime-state-entries-by-prefix.ts';
 import { createALInboundAdmissionStore, createALOutboundAdmissionStore, newALAckControlMessage, newALUnicastMessage } from '@shared/mod.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FakeRuntimeStateRepository } from './fake-optimistic-runtime-state-repository.ts';
@@ -305,7 +305,7 @@ describe('PSqlOutboundAdmissionBackend', () => {
 
     it('wires PostgreSQL outbound admission into the server runtime store factory', async () => {
         const { createPSqlALOutboundRuntimeStores } = await import(
-            '@shared-server/postgres/al-runtime/createPSqlALRuntimeStores.ts'
+            '@shared-server/al-runtime/postgres/create-p-sql-al-runtime-stores.ts'
         );
         const repository = new FakeRuntimeStateRepository();
         const namespace = 'psql-test:factory';

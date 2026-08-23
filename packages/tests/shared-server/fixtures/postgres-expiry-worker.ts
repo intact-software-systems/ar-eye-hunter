@@ -1,4 +1,4 @@
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { createClientStateRepository, createGroupStateRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import type { DeleteGroupTopologyConfigInput, PutGroupTopologyConfigInput } from '@shared-server/rallar-system/topology/group-topology-management-contracts.ts';
 import { fromCanonicalGroupTopologyConfigPatch, toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
@@ -16,7 +16,7 @@ import type {
 } from '@shared/api/state-types.ts';
 import postgres from 'postgres';
 
-import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 
 import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import {

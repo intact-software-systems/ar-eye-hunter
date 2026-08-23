@@ -1,11 +1,8 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
-import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
-import {
-    isRuntimeStateReadBatchRepositoryLike,
-    type RuntimeStateReadBatchSelector
-} from '../../../runtime-state/RuntimeStateReadBatch.ts';
-import { resolveRuntimeStateReadBatchLiveValues } from '../../../runtime-state/RuntimeStateReadBatchLiveValues.ts';
-import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/RuntimeStateRepository.ts';
+import { resolveRuntimeStateReadBatchLiveValues } from '../../../runtime-state/read-batch/resolve-runtime-state-read-batch-live-values.ts';
+import { type RuntimeStateReadBatchSelector } from '../../../runtime-state/read-batch/runtime-state-read-batch.ts';
+import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/runtime-state-repository.ts';
 import {
     GROUPS_NAMESPACE,
     MEMBERS_NAMESPACE,
@@ -15,7 +12,7 @@ import {
 import { groupStateGroupStorageKey } from './group-state-storage-keys.ts';
 
 export type GroupStateAuthorityBatchRead =
-    | Readonly<{ status: 'fallback'; }>
+    | Readonly<{ status: 'concurrent-change'; }>
     | Readonly<{
         status: 'stable';
         group: RuntimeStateEntryValue<unknown> | undefined;
@@ -32,9 +29,6 @@ export async function readGroupStateAuthorityBatch(
         entry: RuntimeStateEntry
     ) => Promise<RuntimeStateEntryValue<unknown> | undefined>
 ): Promise<GroupStateAuthorityBatchRead> {
-    if (!isRuntimeStateReadBatchRepositoryLike(repository)) {
-        return { status: 'fallback' };
-    }
     const groupKey = groupStateGroupStorageKey(ref);
     const childPrefix = `${groupKey}:`;
     const selectors: readonly RuntimeStateReadBatchSelector[] = [
@@ -69,7 +63,7 @@ export async function readGroupStateAuthorityBatch(
         toLiveEntryValue
     );
     if (resolved.status === 'changed') {
-        return { status: 'fallback' };
+        return { status: 'concurrent-change' };
     }
     const [group, members, summary, sessions] = resolved.selections;
     return {

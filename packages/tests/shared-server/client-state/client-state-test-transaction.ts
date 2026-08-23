@@ -1,8 +1,8 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { ResourceInboxInvariantCorruptionError } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import type { ClientStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
-import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -22,13 +22,13 @@ interface ClientStateTestSqlInput extends CreateClientStateTestTransactionInput 
 
 export function createClientStateTestTransaction(
     input: CreateClientStateTestTransactionInput
-): PSqlTransactionSql {
+): PSqlSql {
     const transaction = (async (strings: TemplateStringsArray, ...values: unknown[]) =>
         await executeClientStateTestSql({
             ...input,
             query: strings.join('?').replace(/\s+/gu, ' ').trim().toLowerCase(),
             values
-        })) as unknown as PSqlTransactionSql;
+        })) as unknown as PSqlSql;
     transaction.begin = async () => {
         throw new Error('Nested client test transaction');
     };

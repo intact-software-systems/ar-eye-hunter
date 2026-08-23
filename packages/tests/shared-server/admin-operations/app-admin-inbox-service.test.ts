@@ -5,7 +5,7 @@ import { ADMIN_PRUNE_EXPIRED_CATEGORIES, type AdminPruneExpiredCategory, type Ad
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarCrdtJsonValue } from '@shared/crdt/mod.ts';
 
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
     createAdminPruneCommand,
     decodeAdminPruneCommand,
@@ -1097,7 +1097,7 @@ function createObservedDatabase(
 ): PSqlSql {
     const observed = ((strings: TemplateStringsArray, ...values: Parameters<PSqlSql>[0]) => database(strings, ...values)) as PSqlSql;
     Object.defineProperties(observed, Object.getOwnPropertyDescriptors(database));
-    observed.begin = async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>): Promise<T> =>
+    observed.begin = async <T>(write: (transaction: PSqlSql) => Promise<T>): Promise<T> =>
         await database.begin(
             async (transaction) => await write(createObservedTransaction(transaction, events, lookupRecorder))
         );
@@ -1105,13 +1105,13 @@ function createObservedDatabase(
 }
 
 function createObservedTransaction(
-    transaction: PSqlTransactionSql,
+    transaction: PSqlSql,
     events: string[],
     lookupRecorder: Readonly<{
         recordOutboxWinnerLookup(): void;
         recordDurableResultLookup(): void;
     }>
-): PSqlTransactionSql {
+): PSqlSql {
     const observed = (async (strings: TemplateStringsArray, ...values: Parameters<PSqlSql>[0]) => {
         const query = strings.join(' ').replace(/\s+/gu, ' ').trim().toLowerCase();
         if (query.includes('from resource_inbox') && query.includes('limit 1')) {

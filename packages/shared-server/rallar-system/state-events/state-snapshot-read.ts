@@ -1,4 +1,4 @@
-import type { RuntimeStateEntryValue } from '../../runtime-state/RuntimeStateJsonStore.ts';
+import type { RuntimeStateEntryValue } from '../../runtime-state/runtime-state-json-store.ts';
 
 const MAX_STATE_SNAPSHOT_READ_ATTEMPTS = 3;
 

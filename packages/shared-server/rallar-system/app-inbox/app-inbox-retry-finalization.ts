@@ -1,8 +1,8 @@
 import { Temporal } from '@js-temporal/polyfill';
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import { runInTransaction } from '@shared-server/postgres/run-in-transaction.ts';
+import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
 import type {
     ResourceInboxRetryExhaustion,
     ResourceInboxRetryExhaustionRecovery
@@ -72,7 +72,7 @@ function createFinalizer(
                 details
             },
             async () =>
-                await runInTransaction(options.database, async (transaction) => {
+                await runInPSqlTransaction(options.database, async (transaction) => {
                     const resourceInbox = new ResourceInboxRepository(transaction);
                     const results = new ResourceInboxResultsRepository(transaction);
                     await timeRallarAsync(

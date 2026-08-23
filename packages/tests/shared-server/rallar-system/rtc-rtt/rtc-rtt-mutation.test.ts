@@ -1,4 +1,4 @@
-import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { computeRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/compute-rtc-rtt-mutation.ts';
 import { toRtcRttMutationReceiptId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
 import { validateRtcRttMutation } from '@shared-server/rallar-system/rtc-rtt/mutation/validate-rtc-rtt-mutation.ts';
@@ -43,7 +43,7 @@ describe('RTC RTT mutation phases', () => {
         expect(executeSource).not.toMatch(/\bsleep\??\s*:/);
 
         const writeSource = readFileSync(writeUrl, 'utf8');
-        expect(writeSource).toMatch(/transaction:\s*PSqlTransactionSql/);
+        expect(writeSource).toMatch(/transaction:\s*PSqlSql/);
         expect(writeSource).not.toMatch(/RuntimeStateOptimisticTransactionalRepositoryLike/);
     });
     it('computes stale RTT rejection deterministically without mutating frozen reads', () => {
@@ -868,7 +868,7 @@ function rttGroupSnapshot(
     };
 }
 
-function createUnopenedTransactionSql(queries: string[]): PSqlTransactionSql {
+function createUnopenedTransactionSql(queries: string[]): PSqlSql {
     return Object.assign(
         () => {
             queries.push('query');

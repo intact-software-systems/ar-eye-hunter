@@ -20,7 +20,7 @@ import type {
     RtcTopologyReplayStreamRetirementResult
 } from '../../rallar-system/topology/replay/rtc-topology-replay-contracts.ts';
 import { RTC_TOPOLOGY_REPLAY_PAGE_SIZE } from '../../rallar-system/topology/replay/rtc-topology-replay-policy.ts';
-import type { PSqlSql } from '../PostgresSqlClient.ts';
+import type { PSqlSql } from '../p-sql-sql.ts';
 import {
     retireExpiredRtcTopologyReplayConsumerCursors,
     retireRtcTopologyReplayEmptyStreams

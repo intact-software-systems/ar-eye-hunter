@@ -1,5 +1,5 @@
 import { COMPLETED_STATUSES, EntityStatus, isFailed, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import type { PSqlTransactionSql } from '../PostgresSqlClient.ts';
+import type { PSqlSql } from '../p-sql-sql.ts';
 import { toDomain, toPgTimestamp, type ResourceInboxRow } from './repository-utils.ts';
 import { ResourceInboxInvariantCorruptionError } from './ResourceInboxRepository.ts';
 
@@ -16,7 +16,7 @@ export interface ReplaceFinishedResourceEntryInput {
  * fall back to a successor queue identity.
  */
 export async function replaceFinishedResourceEntryIfMatch(
-    sql: PSqlTransactionSql,
+    sql: PSqlSql,
     input: ReplaceFinishedResourceEntryInput
 ): Promise<ResourceEntry | null> {
     const { expected, next, expectedGeneration } = input;

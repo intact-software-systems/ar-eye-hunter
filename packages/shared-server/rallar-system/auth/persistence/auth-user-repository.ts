@@ -1,9 +1,9 @@
-import { RuntimeStateJsonStore } from '../../../runtime-state/RuntimeStateJsonStore.ts';
-import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
+import { RuntimeStateJsonStore } from '../../../runtime-state/runtime-state-json-store.ts';
+import type { RuntimeStateEntryValue } from '../../../runtime-state/runtime-state-json-store.ts';
 import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateRepositoryLike
-} from '../../../runtime-state/RuntimeStateRepository.ts';
+} from '../../../runtime-state/runtime-state-repository.ts';
 
 const AUTH_USERS_BY_USERNAME_NAMESPACE = 'auth-users:by-username';
 const AUTH_USERS_BY_CLIENT_ID_NAMESPACE = 'auth-users:by-client-id';

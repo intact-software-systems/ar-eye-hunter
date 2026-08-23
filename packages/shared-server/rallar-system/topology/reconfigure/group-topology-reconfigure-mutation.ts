@@ -2,9 +2,9 @@ import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import { readGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 
-import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
-import { PSqlRuntimeStateRepository } from '../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
+import { PSqlRuntimeStateRepository } from '../../../runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { GroupStateRepository } from '../../group-state/persistence/group-state-repository.ts';
 import { canUpdateGroupSnapshot } from '../../group-state/policy/group-governance-policy.ts';
 import { canMutateActiveGroup } from '../../group-state/policy/group-lifecycle-policy.ts';
@@ -100,7 +100,7 @@ export class GroupTopologyReconfigureMutation {
     }
 
     async write(
-        transaction: PSqlTransactionSql,
+        transaction: PSqlSql,
         computed: GroupTopologyReconfigureComputed
     ): Promise<void> {
         const runtime = new PSqlRuntimeStateRepository(transaction);

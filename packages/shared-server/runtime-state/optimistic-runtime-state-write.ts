@@ -1,7 +1,7 @@
 import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult
-} from './RuntimeStateRepository.ts';
+} from './runtime-state-repository.ts';
 
 export const DEFAULT_RUNTIME_STATE_WRITE_ATTEMPTS = 3;
 export const DEFAULT_RUNTIME_STATE_WRITE_BACKOFF_MS = [0, 2, 8] as const;

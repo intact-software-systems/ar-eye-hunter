@@ -1,4 +1,4 @@
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import {
     PSqlRtcTopologyDeliveryRepository
 } from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-delivery-repository.ts';
@@ -28,7 +28,7 @@ import {
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-entry-handler.ts';
 import type {
     RuntimeStateOptimisticTransactionalRepositoryLike
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import type { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 

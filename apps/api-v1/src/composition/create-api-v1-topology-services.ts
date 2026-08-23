@@ -27,7 +27,7 @@ import {
     RallarRtcTopologyService,
     type RallarRtcTopologyServiceOptions
 } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
-import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';

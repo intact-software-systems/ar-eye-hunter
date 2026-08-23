@@ -2,7 +2,7 @@ import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-cont
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { EffectiveGroupTopologyConfig, StoredGroupTopologyConfig } from '@shared/api/graph-topology-management-types.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -135,7 +135,7 @@ describe('TopologyAppInboxHandler', () => {
             transactionWriter: {
                 writeMutation: async (_context, write) => {
                     phases.push('transaction');
-                    const result = await write({} as PSqlTransactionSql);
+                    const result = await write({} as PSqlSql);
                     phases.push('commit');
                     return result;
                 }
@@ -222,7 +222,7 @@ describe('TopologyAppInboxHandler', () => {
             transactionWriter: {
                 writeMutation: async (_context, write) => {
                     phases.push('transaction');
-                    const result = await write({} as PSqlTransactionSql);
+                    const result = await write({} as PSqlSql);
                     phases.push('commit');
                     return result;
                 }

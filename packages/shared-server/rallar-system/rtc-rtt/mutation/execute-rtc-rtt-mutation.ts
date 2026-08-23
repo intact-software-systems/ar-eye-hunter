@@ -1,4 +1,4 @@
-import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 
 import { hashCanonicalCommand } from '../../app-inbox/hash-canonical-command.ts';
 import { RtcRttRepository } from '../persistence/rtc-rtt-repository.ts';
@@ -21,7 +21,7 @@ export type ExecuteRtcRttMutationResult = Readonly<{
 
 export type ExecuteRtcRttMutationInput = Readonly<{
     repository: RtcRttRepository;
-    transaction: PSqlTransactionSql;
+    transaction: PSqlSql;
     readFacts: () => RtcRttMutationLifecycleFacts | Promise<RtcRttMutationLifecycleFacts>;
     request: RtcRttStableRequest;
     readCommand: () => RtcRttMutationCommand | Promise<RtcRttMutationCommand>;

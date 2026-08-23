@@ -20,10 +20,15 @@ import {
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import * as TopologyMutation from '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
+import { readRuntimeStateBatch } from '@shared-server/runtime-state/postgres/read-runtime-state-batch.ts';
+import type {
+    RuntimeStateReadBatchSelection,
+    RuntimeStateReadBatchSelector
+} from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateRepositoryLike
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 
@@ -104,6 +109,9 @@ function createStateWriteEvidenceRuntimeStateRepository(
         findAllEntries: async () => {
             throw unsupportedRuntimeStateEvidenceOperation('findAllEntries');
         },
+        readRuntimeStateBatch: async (
+            selectors: readonly RuntimeStateReadBatchSelector[]
+        ): Promise<readonly RuntimeStateReadBatchSelection[]> => await readRuntimeStateBatch(sql, selectors),
         upsert: async () => {
             throw unsupportedRuntimeStateEvidenceOperation('upsert');
         },

@@ -1,7 +1,12 @@
 import type {
+    RuntimeStateReadBatchSelection,
+    RuntimeStateReadBatchSelector
+} from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
+import type {
     RuntimeStateEntry,
     RuntimeStateRepositoryLike
-} from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+} from '@shared-server/runtime-state/runtime-state-repository.ts';
 
 export class SyntheticRtcRttRuntimeStateRepository implements RuntimeStateRepositoryLike {
     readonly data = new Map<string, RuntimeStateEntry>();
@@ -18,6 +23,20 @@ export class SyntheticRtcRttRuntimeStateRepository implements RuntimeStateReposi
                 .map(([, entry]) => ({ ...entry }))
                 .sort((left, right) => left.key.localeCompare(right.key))
         );
+    }
+
+    readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
+        const namespaces = new Set(selectors.map(({ namespace }) => namespace));
+        return Promise.resolve(selectRuntimeStateReadBatch(
+            [...namespaces].flatMap((namespace) =>
+                [...this.data]
+                    .filter(([compositeKey]) => compositeKey.startsWith(`${namespace}:`))
+                    .map(([, entry]) => ({ namespace, entry }))
+            ),
+            selectors
+        ));
     }
 
     upsert(namespace: string, key: string, value: string, expireAtTimestamp: number): Promise<void> {

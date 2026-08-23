@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { RALLAR_CRDT_OPERATION_VERSION, RALLAR_CRDT_PROTOCOL_VERSION, type RallarCrdtDocumentRef, type RallarCrdtUpdateEnvelope } from '@shared/crdt/mod.ts';
 
@@ -420,7 +420,7 @@ function withOneCrdtConflict(database: PSqlSql, onConflict: () => void): PSqlSql
             if (property !== 'begin') {
                 return Reflect.get(target, property, receiver);
             }
-            return async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>) =>
+            return async <T>(write: (transaction: PSqlSql) => Promise<T>) =>
                 await database.begin(async (transaction) => {
                     const conflicting = new Proxy(transaction, {
                         apply: (_transaction, _thisArgument, argumentsList) => {
@@ -451,7 +451,7 @@ function withInjectedTransactionFailure(
             if (property !== 'begin') {
                 return Reflect.get(target, property, receiver);
             }
-            return async <T>(write: (transaction: PSqlTransactionSql) => Promise<T>) =>
+            return async <T>(write: (transaction: PSqlSql) => Promise<T>) =>
                 await database.begin(async (transaction) => {
                     let wsOutboxWrites = 0;
                     const failing = new Proxy(transaction, {

@@ -10,7 +10,7 @@ import {
     type ResourceEntry
 } from '@shared/queuebox/ResourceEntry.ts';
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import type { PSqlSql, PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
+import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 
 import {
     recordRallarTiming,
@@ -68,7 +68,7 @@ export class AppInboxHandlerRegistry {
 
     async writeMutation<R>(
         context: AppInboxMessageContext,
-        write: (transaction: PSqlTransactionSql) => Promise<R>
+        write: (transaction: PSqlSql) => Promise<R>
     ): Promise<R> {
         return await this.transactionWriter.writeMutation(context, write);
     }

@@ -7,7 +7,9 @@ import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topo
 import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
-import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/read-batch/runtime-state-read-batch.ts';
+import { selectRuntimeStateReadBatch } from '@shared-server/runtime-state/read-batch/select-runtime-state-read-batch.ts';
+import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
@@ -176,6 +178,19 @@ class MemoryRuntimeStateRepository implements RuntimeStateRepositoryLike {
                 .filter(([key]) => key.startsWith(`${namespace}:`))
                 .map(([, entry]) => entry)
         );
+    }
+
+    readRuntimeStateBatch(
+        selectors: readonly RuntimeStateReadBatchSelector[]
+    ): Promise<readonly RuntimeStateReadBatchSelection[]> {
+        return Promise.resolve(selectRuntimeStateReadBatch(
+            selectors.flatMap((selector) =>
+                [...this.entries]
+                    .filter(([compositeKey]) => compositeKey.startsWith(`${selector.namespace}:`))
+                    .map(([, entry]) => ({ namespace: selector.namespace, entry }))
+            ),
+            selectors
+        ));
     }
 
     upsert(

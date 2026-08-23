@@ -13,7 +13,7 @@ import {
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/runtime-state-repository.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import { persistAuthSession, type AuthSession, type StoredAuthSession } from '../auth/auth-test-fixtures.ts';
 import { GroupStateTestMutationExecutor } from './group-state-test-mutation-executor.ts';
