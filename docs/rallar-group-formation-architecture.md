@@ -128,10 +128,9 @@ Only `forming` holds topology planning. `isGroupTopologyPlannableAt`
 choke point: a forming group takes the same removed-topology branch as an archived one, so no
 overlay is planned or published and the server commands no dials. The browser is another matter:
 with no server overlay, `WebRtcGroupManager.targetPeerIdsForGroup` falls back to the group's online
-members and `bounded-bootstrap` (`computeOutboundDialPlan`) dials up to `maxPeerConnections` of
-them, so a presence-connected forming lobby still makes bounded bootstrap RTC attempts. Holding
-those is not built (see [Not In V1](#not-in-v1)). `establishing`, `active`, and `reconfiguring`
-all plan.
+members and `computeOutboundDialPlan` dials up to `maxPeerConnections` of them, so a
+presence-connected forming lobby still makes bounded bootstrap RTC attempts. Holding those is not
+built (see [Not In V1](#not-in-v1)). `establishing`, `active`, and `reconfiguring` all plan.
 `api-v1-group-lifecycle-transitions` pins it: `GET …/topology` is `null` or `state: 'removed'`
 while forming, the `overlay.topology` hydration a forming member receives announces `removed`, and
 a plan exists after `start-establishment`. The admin `reconfigureGroupTopology` path bypasses the
