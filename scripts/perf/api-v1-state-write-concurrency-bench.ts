@@ -803,10 +803,7 @@ function toGroupPresenceEnqueue(
     }
 }
 
-async function runAppInboxMutation<
-    Failure extends string | Readonly<{ message: string; }>,
-    Result
->(
+async function runAppInboxMutation<Failure extends string | Readonly<{ message: string; }>, Result>(
     runtime: StateWriteServiceRuntime,
     start: () => Promise<Either<Failure, Result>>
 ): Promise<void> {

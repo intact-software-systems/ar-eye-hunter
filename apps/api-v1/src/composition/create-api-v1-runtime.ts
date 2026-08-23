@@ -32,12 +32,12 @@ import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type {
     GroupPolicyCapacityConfig
 } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
-import { findCurrentClientSnapshot } from '../crdt/create-api-crdt-document-authorizer.ts';
 import type {
     ApiV1DatabaseConfiguration,
     ApiV1TopologyDeliveryConfiguration,
     ApiV1TopologyReplayConfiguration
 } from '../configuration/api-v1-configuration.ts';
+import { findCurrentClientSnapshot } from '../crdt/create-api-crdt-document-authorizer.ts';
 import type { ApiV1DatabaseNotificationPort } from '../db/api-v1-database-lifecycle.ts';
 import { readAuthorisedWsConnectionIdentity } from '../runtime/rtc-topology/authorised-ws-connection-registry.ts';
 import {
