@@ -68,7 +68,7 @@ Deno.test('manual retention route cannot close sockets delete artifacts or read 
     const route = source.slice(start, end + 1);
 
     assert(route.includes('handleRetentionCleanup({'));
-    assert(route.includes('persist: persistControlSnapshot'));
+    assert(route.includes('persist: () => snapshotPersistence.persist()'));
     for (
         const forbidden of [
             'closeRunSockets',

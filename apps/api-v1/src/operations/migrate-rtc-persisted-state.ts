@@ -10,13 +10,13 @@ import {
     migrateLegacyRtcTopologySnapshotKeys,
     RtcTopologySnapshotRepository
 } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
-import { readApiV1Configuration } from '../src/configuration/read-api-v1-configuration.ts';
-import { createApiV1DatabaseLifecycle } from '../src/db/api-v1-database-lifecycle.ts';
+import { readApiV1Configuration } from '../configuration/read-api-v1-configuration.ts';
+import { createApiV1DatabaseLifecycle } from '../db/api-v1-database-lifecycle.ts';
 import {
     executeRtcPersistedStateMigration,
     parseRtcPersistedStateMigrationArgs,
     RTC_PERSISTED_STATE_MIGRATION_STEPS
-} from '../src/operations/rtc-persisted-state-migration.ts';
+} from './rtc-persisted-state-migration.ts';
 
 const options = parseRtcPersistedStateMigrationArgs(Deno.args);
 
@@ -35,13 +35,13 @@ else {
     const configuration = await readApiV1Configuration({
         environment: Deno.env,
         readTextFile: Deno.readTextFile,
-        defaultsUrl: new URL('../resources/configuration/defaults-config.json', import.meta.url),
+        defaultsUrl: new URL('../../resources/configuration/defaults-config.json', import.meta.url),
         profileUrls: {
-            dev: new URL('../resources/configuration/dev-config.json', import.meta.url),
-            prod: new URL('../resources/configuration/prod-config.json', import.meta.url),
-            'prod-in-memory': new URL('../resources/configuration/prod-in-memory-config.json', import.meta.url)
+            dev: new URL('../../resources/configuration/dev-config.json', import.meta.url),
+            prod: new URL('../../resources/configuration/prod-config.json', import.meta.url),
+            'prod-in-memory': new URL('../../resources/configuration/prod-in-memory-config.json', import.meta.url)
         },
-        staticClientsUrl: new URL('../resources/authorised-clients.json', import.meta.url)
+        staticClientsUrl: new URL('../../resources/authorised-clients.json', import.meta.url)
     });
     const databaseLifecycle = await createApiV1DatabaseLifecycle({
         database: configuration.database,

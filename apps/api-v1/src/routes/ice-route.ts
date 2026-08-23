@@ -5,7 +5,7 @@ import { LoanedValue } from '@shared/cache/LoanedValue.ts';
 import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import type { ApiV1IceConfiguration, ApiV1MeteredIceConfiguration } from '../configuration/api-v1-configuration.ts';
-import * as metered from '../integration/metered-api.ts';
+import { getMeteredIceCandidates } from '../services/get-metered-ice-candidates.ts';
 import { toAuthErrorResponse } from '../services/request-auth-service.ts';
 
 class MeteredIceFetchError extends Error {
@@ -53,7 +53,7 @@ export function registerIceRoutes(app: Hono, input: RegisterIceRoutesInput): voi
             readFreshIceConfig(
                 input.configuration,
                 input.nowEpochMs,
-                input.readMeteredIceCandidates ?? metered.getIceCandidates
+                input.readMeteredIceCandidates ?? getMeteredIceCandidates
             ),
         {
             ttlMs: input.configuration.cacheTtlMs,

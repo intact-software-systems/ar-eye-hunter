@@ -39,7 +39,13 @@ export interface RtcTopologyReplayDrainOperationCounts {
     readonly yieldedTurns: number;
 }
 
-type WorkloadName = 'caughtUp' | 'entries100' | 'entries1000' | 'noRecipient' | 'currentRepair' | 'gapHydration';
+type WorkloadName =
+    | 'caughtUp'
+    | 'entries100'
+    | 'entries1000'
+    | 'noRecipient'
+    | 'currentRepair'
+    | 'gapHydration';
 
 export interface RtcTopologyReplayDrainOperationArtifact {
     readonly schema: 'rallar.rtc-topology.replay-drain-operation-counts.v1';

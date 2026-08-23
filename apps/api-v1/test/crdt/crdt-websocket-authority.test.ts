@@ -29,11 +29,11 @@ import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/i
 
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 
-import { toResilienceDto } from '../../api-v1-test-queue-resilience.ts';
+import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 
-import { createApiCrdtDocumentAuthorizer } from '../../../src/crdt/create-api-crdt-document-authorizer.ts';
-import { createApiCrdtInboxService } from '../../../src/crdt/create-api-crdt-inbox-service.ts';
-import { toPersistedAuthSessionFixture, waitForPGliteQueueRow, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
+import { createApiCrdtDocumentAuthorizer } from '../../src/crdt/create-api-crdt-document-authorizer.ts';
+import { createApiCrdtInboxService } from '../../src/crdt/create-api-crdt-inbox-service.ts';
+import { toPersistedAuthSessionFixture, waitForPGliteQueueRow, withPGliteSql } from '../db/pglite-auth-test-harness.ts';
 
 const NOW = Date.now();
 const CLIENT_ID = 'client-42';
@@ -398,10 +398,10 @@ class FakeSocket extends EventTarget implements WebSocket {
     readonly readyState = WebSocket.OPEN;
     readonly url = 'ws://test.invalid';
     binaryType: BinaryType = 'blob';
-    onclose: ((this: WebSocket, event: CloseEvent) => unknown) | null = null;
-    onerror: ((this: WebSocket, event: Event) => unknown) | null = null;
-    onmessage: ((this: WebSocket, event: MessageEvent) => unknown) | null = null;
-    onopen: ((this: WebSocket, event: Event) => unknown) | null = null;
+    onclose: ((this: WebSocket, event: CloseEvent) => void) | null = null;
+    onerror: ((this: WebSocket, event: Event) => void) | null = null;
+    onmessage: ((this: WebSocket, event: MessageEvent) => void) | null = null;
+    onopen: ((this: WebSocket, event: Event) => void) | null = null;
 
     close(): void {}
 

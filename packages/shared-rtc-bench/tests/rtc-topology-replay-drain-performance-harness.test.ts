@@ -4,7 +4,7 @@ import {
     executeRtcTopologyReplayServiceLifecycle,
     RTC_TOPOLOGY_REPLAY_DRAIN_WORKLOAD_POLICY,
     runRtcTopologyReplayDrainOperationWorkloads
-} from '../../topology-replay/replay-drain-operation-counts.ts';
+} from '../diagnostics/rtc-topology-replay-drain-operation-counts.ts';
 
 describe('RTC topology replay drain operation-count harness', () => {
     it('keeps the acceptance workloads and page/turn limits fixed', () => {
