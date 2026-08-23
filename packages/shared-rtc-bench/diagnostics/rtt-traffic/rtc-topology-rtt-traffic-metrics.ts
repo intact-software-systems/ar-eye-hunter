@@ -1,5 +1,5 @@
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+import { initRallarSystemWsTopics } from '@shared-server/rallar-system/websocket/ws-system-topics.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import {
@@ -160,7 +160,6 @@ function createGroupSnapshot(groupId: string, memberSessionIds: readonly string[
     const workspaceId = 'workspace-1';
 
     return {
-        stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 1 },
         group: {
             applicationId,

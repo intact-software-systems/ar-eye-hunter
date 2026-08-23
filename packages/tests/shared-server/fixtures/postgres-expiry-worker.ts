@@ -1,6 +1,6 @@
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { createClientStateRepository, createGroupStateRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
-import type { DeleteGroupTopologyConfigInput, PutGroupTopologyConfigInput } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+import type { DeleteGroupTopologyConfigInput, PutGroupTopologyConfigInput } from '@shared-server/rallar-system/topology/group-topology-management-contracts.ts';
 import { fromCanonicalGroupTopologyConfigPatch, toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
@@ -18,21 +18,21 @@ import postgres from 'postgres';
 
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 
-import type { ClientMutationCommandInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
-import type { ClientMutationReceipt } from '@shared-server/rallar-system/services/client-state-mutations.ts';
+import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import {
     toClientMutationCommand,
-    toClientMutationIssuedSessionAuthority,
     toConnectCommandInput,
     toDisconnectCommandInput,
     toHeartbeatCommandInput
-} from '@shared-server/rallar-system/services/client-state-service.ts';
+} from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import type { ClientMutationCommandInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import { type ClientMutationReceipt } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
 
 import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 
-import type { GroupMutationReceipt } from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import { type GroupMutationReceipt } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 
 import {
     isAuthenticatedGroupMutationEnqueue,
@@ -41,15 +41,15 @@ import {
 
 import { requireGroupMutationReceipt } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
 
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 
-import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import { createPostgresAppInboxWorkerRuntime, toGroupAppInboxStorageCommandId, type PersistedAppInboxAttempt } from './postgres-app-inbox-worker-runtime.ts';
 import { toPSqlSql } from './postgres-sql-adapter.ts';
 
-import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
 interface WorkerBarrier {
     readonly readyDirectoryPath: string;
@@ -283,7 +283,7 @@ async function runClientMutation(
     if (stored) {
         return compactClientReceipt(input.command, requestId, stored.receipt);
     }
-    const mutation = written.result.right;
+    const mutation = written.result;
     if (!mutation || mutation.event !== null) {
         throw new Error(`Applied client mutation receipt not found: ${requestId}`);
     }
@@ -305,8 +305,7 @@ async function runClientMutation(
             serviceId: `postgres-state-worker-${Deno.pid}`,
             eventId: `postgres-client-event:${requestId}`,
             attemptCount: entry.dequeueAudit.attempts,
-            expireAtEpochMs: Number(entry.audit.expiryTs.epochMilliseconds),
-            formationDamping: 'damped'
+            expireAtEpochMs: Number(entry.audit.expiryTs.epochMilliseconds)
         },
         toClientMutationIssuedSessionAuthority(
             authoritySession,
@@ -429,7 +428,7 @@ async function runGroupMutation(
     const result = await runtime.runUntilCompletion(() => runtime.group.processAuthenticatedGroupEntryUntilCompletion(enqueue, authority));
     const durableResult = result.fold(
         (error) => {
-            throw new Error(error);
+            throw new Error(error.message);
         },
         (value) => value
     );
@@ -523,7 +522,7 @@ async function runTopologyMutation(
     });
     runtime.armBarrier();
     const result = await runtime.runUntilCompletion(() =>
-        runtime.group.processAuthenticatedTopologyEntryUntilCompletion(
+        runtime.topology.processAuthenticatedEntryUntilCompletion(
             {
                 type: input.command === 'topology-config-put'
                     ? AppInboxType.TOPOLOGY_CONFIG_PUT
@@ -542,7 +541,7 @@ async function runTopologyMutation(
     );
     const execution = result.fold(
         (error) => {
-            throw new Error(error);
+            throw new Error(error.message);
         },
         (value) => {
             if (!('receipt' in value)) {
@@ -590,7 +589,6 @@ function compactGroupReceipt(
         acceptedStorageRevision: receipt.acceptedStorageRevision,
         acceptedCausalRevision: {
             kind: 'group',
-            stateRevision: receipt.stateRevision,
             causalRevision: { ...receipt.causalRevision },
             snapshotVersion: receipt.snapshotVersion
         },

@@ -3,6 +3,30 @@ import { isValidPersistedResult, validateReceiptResultBindings } from '../../../
 import { binding, durableResult } from './state-write-performance-result-fixture.ts';
 
 describe('API-v1 state-write persisted result binding', () => {
+    it('rejects the removed nested Either success envelope', () => {
+        const command = {
+            kind: 'membership',
+            commandId: 'nested-predecessor-result',
+            commandType: 'GROUP_MEMBER_UPSERT',
+            operationId: 'command'
+        };
+        const currentResult = durableResult(command, command.operationId);
+        const predecessorResult = {
+            status: currentResult.status,
+            result: { right: currentResult.result }
+        };
+
+        expect(isValidPersistedResult(
+            {
+                commandId: command.commandId,
+                commandType: command.commandType,
+                durableResult: predecessorResult
+            },
+            command,
+            binding(command, command.operationId)
+        )).toBe(false);
+    });
+
     it.each([
         { kind: 'profile-instance', commandType: 'CLIENT_INSTANCE_UPSERT', operationId: 'instance' },
         { kind: 'membership', commandType: 'GROUP_MEMBER_UPSERT', operationId: 'command' }
@@ -25,7 +49,7 @@ describe('API-v1 state-write persisted result binding', () => {
         (value: any) => value.acceptedConfig.topologyKind = 'invented',
         (value: any) => value.acceptedCausalRevision.unexpected = 1,
         (value: any) => value.outcome = 'no-op',
-        (value: any) => value.outboxId = 'invented-effect'
+        (value: any) => value.outboxIds = ['invented-effect']
     ])('rejects malformed topology receipt truth', (mutate) => {
         const command = { kind: 'topology-source', commandId: 'topology-command' };
         const authoritative = binding(command, 'command');

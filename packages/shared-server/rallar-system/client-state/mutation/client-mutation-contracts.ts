@@ -1,3 +1,4 @@
+import { type PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-persistence-contracts.ts';
 import type {
     ClientEvent,
     ClientInstance,
@@ -13,8 +14,7 @@ import type {
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
-import type { PersistedAuthSession } from '../../repositories/AuthSessionRepository.ts';
-import type { ComputedClientStateSync } from '../../state-sync-publisher.ts';
+import type { ComputedClientStateSync } from '../../state-sync/state-sync-entry-computation.ts';
 import type {
     ClientMutationIdempotencyRecord,
     ClientMutationReceipt
@@ -232,7 +232,6 @@ export type ClientMutationFacts = Readonly<{
     commandHash: string;
     attemptCount: number;
     expireAtEpochMs: number;
-    formationDamping: 'damped' | 'legacy';
 }>;
 
 export type ClientMutationCommandInput = ClientMutationCommand extends infer Command ?

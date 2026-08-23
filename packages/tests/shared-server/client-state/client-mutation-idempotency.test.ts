@@ -10,17 +10,16 @@ import { computeClientMutation } from '@shared-server/rallar-system/client-state
 
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
-import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/services/client-state-service.ts';
+import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 import {
     CLIENT_STATE_TEST_SCOPE as APP_SCOPE,
     createAutoAuthorizingClientStateService,
-    createPublisher,
     processAppInbox,
     requireRightSnapshot,
     requireRightWritten
@@ -30,8 +29,8 @@ import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-
 import { emptyRead, entryValue, principalCommand, readAfterWrite, requireWrite } from './client-mutation-compute-test-fixtures.ts';
 import { AggregateBarrierRepository, createService, outboxFor } from './client-mutation-concurrency-test-runtime.ts';
 import { CLIENT_MUTATION_TEST_SCOPE as SCOPE, clientMutationPrincipalRef as principalRef } from './client-mutation-validation-test-fixtures.ts';
-import { CLIENT_MUTATION_SERVICE_SCOPE, createPublisher as createServicePublisher, toClientPrincipalRef } from './client-state-service-test-fixtures.ts';
-import { createLegacyClientStateTestDriver } from './client-state-test-runtime.ts';
+import { CLIENT_MUTATION_SERVICE_SCOPE, toClientPrincipalRef } from './client-state-service-test-fixtures.ts';
+import { createClientStateTestDriver } from './client-state-test-runtime.ts';
 
 describe('client mutation idempotency compute', () => {
     it('replays the exact stored receipt, snapshot, and event', async () => {
@@ -78,7 +77,7 @@ describe('client mutation idempotency compute', () => {
 
 describe('client mutation AppInbox idempotency', () => {
     it('replays stored idempotent mutation results without direct publication', async () => {
-        const { publisher, reader, service } = createAppInboxIdempotencyHarness();
+        const { reader, service } = createAppInboxIdempotencyHarness();
 
         const first = await processAppInbox<ClientPrincipalUpsertAppInboxPayload>(service, reader, {
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
@@ -96,8 +95,6 @@ describe('client mutation AppInbox idempotency', () => {
                 }
             }
         });
-        vi.mocked(publisher.publishClientSnapshot).mockClear();
-        vi.mocked(publisher.publishClientEvent).mockClear();
 
         const replay = await processAppInbox<ClientPrincipalUpsertAppInboxPayload>(service, reader, {
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
@@ -118,8 +115,6 @@ describe('client mutation AppInbox idempotency', () => {
 
         expect(requireRightSnapshot(replay).principal.displayName).toBe('Alice');
         expect(requireRightWritten(replay).event).toEqual(requireRightWritten(first).event);
-        expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
-        expect(publisher.publishClientEvent).not.toHaveBeenCalled();
     });
 });
 
@@ -127,11 +122,9 @@ function createAppInboxIdempotencyHarness() {
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
-    const publisher = createPublisher();
     const runtimeRepository = new FakeRuntimeStateRepository();
     const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
     return {
-        publisher,
         reader,
         service: new AppClientInboxService(
             {
@@ -151,9 +144,8 @@ function createAppInboxIdempotencyHarness() {
 describe('client mutation service idempotency', () => {
     it('makes a semantic no-op receipt first-writer-wins', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const service = createLegacyClientStateTestDriver({
+        const service = createClientStateTestDriver({
             runtimeRepository,
-            syncPublisher: createServicePublisher(),
             now: () => 1_000,
             serviceId: 'client-service'
         });
@@ -183,10 +175,8 @@ describe('client mutation service idempotency', () => {
 
     it('rejects the same requestId with different semantic content', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const publisher = createServicePublisher();
-        const service = createLegacyClientStateTestDriver({
+        const service = createClientStateTestDriver({
             runtimeRepository,
-            syncPublisher: publisher,
             now: () => 1_000,
             serviceId: 'client-service'
         });
@@ -210,15 +200,13 @@ describe('client mutation service idempotency', () => {
                 requestId: 'upsert-alice'
             })
         ).rejects.toBeInstanceOf(ClientMutationIdempotencyConflictError);
-        expect(first.result.right?.event?.eventType).toBe('principal-created');
+        expect(first.result?.event?.eventType).toBe('principal-created');
 
         const repository = new ClientStateRepository(runtimeRepository);
         expect((await repository.readSnapshot(principalRef))?.principal.displayName).toBe('Alice');
         expect((await repository.listEvents(principalRef)).map((event) => event.eventType)).toEqual([
             'principal-created'
         ]);
-        expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
-        expect(publisher.publishClientEvent).not.toHaveBeenCalled();
     });
 });
 
@@ -244,7 +232,7 @@ describe('client mutation idempotency convergence', () => {
                 })
             ]);
 
-            expect(second.result.right?.event).toEqual(first.result.right?.event);
+            expect(second.result?.event).toEqual(first.result?.event);
             const idempotent = await new ClientStateRepository(
                 runtime
             ).findIdempotentClientMutationReceipt(principalRef('alice'), 'same-request');

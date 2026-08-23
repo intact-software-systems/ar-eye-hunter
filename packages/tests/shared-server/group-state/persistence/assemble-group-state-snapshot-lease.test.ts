@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { canSendRoomMessage } from '@shared-server/rallar-system/group-policy.ts';
 import {
     assembleGroupStateSnapshot,
     type GroupStateSnapshotAssemblyInput
 } from '@shared-server/rallar-system/group-state/persistence/assemble-group-state-snapshot.ts';
-import { isGroupSnapshotPresenceFresh } from '@shared-server/rallar-system/snapshot-presence.ts';
+import { canSendGroupMessage } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
+import { isGroupSnapshotPresenceFresh } from '@shared-server/rallar-system/presence/snapshot-presence.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceSession, GroupPresenceSummary } from '@shared/api/group-types.ts';
 import { createTestGroup } from '../../../create-test-group.ts';
 
@@ -36,7 +36,7 @@ describe('assembleGroupStateSnapshot session lease fields', () => {
         expect(snapshot.onlineMemberCount).toBe(1);
         expect(isGroupSnapshotPresenceFresh(snapshot, IDLE_OBSERVED_AT_EPOCH_MS)).toBe(true);
         expect(
-            canSendRoomMessage({
+            canSendGroupMessage({
                 snapshot,
                 senderSessionId: 'session-alice',
                 actor: { principalId: 'alice' },

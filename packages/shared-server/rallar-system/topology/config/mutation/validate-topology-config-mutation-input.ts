@@ -1,6 +1,8 @@
 import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
-import { canMutateActiveGroup, canUpdateGroupSnapshot, GroupPolicyDeniedError } from '../../../group-policy.ts';
+import { canUpdateGroupSnapshot } from '../../../group-state/policy/group-governance-policy.ts';
+import { canMutateActiveGroup } from '../../../group-state/policy/group-lifecycle-policy.ts';
+import { GroupPolicyDeniedError } from '../../../group-state/policy/group-policy-result.ts';
 import { resolveOverrideExpiresAtEpochMs, validateGroupTopologyConfigPatch } from '../group-topology-config.ts';
 import type {
     GroupTopologyConfigMutationCommand,

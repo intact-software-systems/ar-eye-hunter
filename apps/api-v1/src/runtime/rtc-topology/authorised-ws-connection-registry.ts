@@ -1,7 +1,5 @@
-import type {
-    ClientAuthorisedWsSessionConnectAppInboxPayload
-} from '@shared-server/rallar-system/services/AppClientInboxService.ts';
-import type { RallarWsLifecycleCloseInput } from '@shared-server/rallar-system/services/ws-lifecycle-service.ts';
+import { type ClientAuthorisedWsSessionConnectAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
+import type { RallarWsLifecycleCloseInput } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
 import type { ConnectionContext } from '@shared/websocket/JsonWebSocketServer.ts';
 
 interface AuthorisedWsClientDisconnectInput {

@@ -2,22 +2,23 @@ import { describe, expect, it } from 'vitest';
 
 import type { StateScope } from '@shared/api/state-types.ts';
 
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { requireGroupStateWritten } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
-import { AppClientInboxService, AppInboxType } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import {
-    AppGroupInboxService,
-    type AppInboxEnqueueInput,
+    GroupStateInboxService,
     type GroupCreateAppInboxPayload,
     type GroupPresenceConnectAppInboxPayload
-} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 
-import { toAuthorisedWsClientConnectEnqueue } from '@shared-server/rallar-system/services/authorised-ws-client-app-inbox.ts';
+import { toAuthorisedWsClientConnectEnqueue } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 
-import type { GroupStateWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { type GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import {
     delayEntry,
     groupPresenceFacts,
@@ -305,7 +306,7 @@ async function enqueueClientClose(
 }
 
 async function enqueueGroupClose(
-    service: AppGroupInboxService,
+    service: GroupStateInboxService,
     facts: AuthorisedWsCloseFacts
 ): Promise<number> {
     return await service.enqueueGroupSessionCleanup({
@@ -389,10 +390,10 @@ function enqueueGroupConnect(input: EnqueueGroupConnectInput) {
 }
 
 function processAuthenticated(
-    service: AppGroupInboxService,
+    service: GroupStateInboxService,
     authority: IssuedAuthSession,
     enqueue: AuthenticatedGroupMutationEnqueue
-): ReturnType<AppGroupInboxService['processAuthenticatedGroupEntryUntilCompletion']> {
+): ReturnType<GroupStateInboxService['processAuthenticatedGroupEntryUntilCompletion']> {
     return service.processAuthenticatedGroupEntryUntilCompletion(enqueue, authority);
 }
 

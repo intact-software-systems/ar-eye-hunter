@@ -40,8 +40,7 @@ describe('group presence summary evaluation time', () => {
         const computed = computeGroupPresenceSummary({
             ref: REF,
             read,
-            nowEpochMs: 2_000,
-            formationDamping: 'legacy'
+            nowEpochMs: 2_000
         });
 
         expect(computed).toEqual({
@@ -53,8 +52,7 @@ describe('group presence summary evaluation time', () => {
             validateGroupPresenceSummary({
                 ref: REF,
                 read,
-                computed,
-                formationDamping: 'legacy'
+                computed
             })
         ).not.toThrow();
     });
@@ -108,16 +106,14 @@ describe('group presence summary evaluation time', () => {
         const canonical = computeGroupPresenceSummary({
             ref: groupRef('pure-room'),
             read,
-            nowEpochMs: 2_000,
-            formationDamping: 'legacy'
+            nowEpochMs: 2_000
         });
         expect(canonical).toEqual({ outcome: 'no-op', evaluatedAtEpochMs: 2_000, summary: base });
         expect(() =>
             validateGroupPresenceSummary({
                 ref: groupRef('pure-room'),
                 read,
-                computed: canonical,
-                formationDamping: 'legacy'
+                computed: canonical
             })
         ).not.toThrow();
         const staleSession = presenceFor('alice', 'stale-session', 'stale-generation');
@@ -140,8 +136,7 @@ describe('group presence summary evaluation time', () => {
         const write = computeGroupPresenceSummary({
             ref: groupRef('pure-room'),
             read: divergent,
-            nowEpochMs: 2_000,
-            formationDamping: 'legacy'
+            nowEpochMs: 2_000
         });
         expect(write).toMatchObject({
             outcome: 'write',
@@ -153,8 +148,7 @@ describe('group presence summary evaluation time', () => {
             validateGroupPresenceSummary({
                 ref: groupRef('pure-room'),
                 read: divergent,
-                computed: write,
-                formationDamping: 'legacy'
+                computed: write
             })
         ).not.toThrow();
         const aheadValue = {
@@ -172,8 +166,7 @@ describe('group presence summary evaluation time', () => {
         const concurrent = computeGroupPresenceSummary({
             ref: groupRef('pure-room'),
             read: ahead,
-            nowEpochMs: 2_000,
-            formationDamping: 'legacy'
+            nowEpochMs: 2_000
         });
         expect(concurrent).toEqual({
             outcome: 'no-op',
@@ -184,8 +177,7 @@ describe('group presence summary evaluation time', () => {
             validateGroupPresenceSummary({
                 ref: groupRef('pure-room'),
                 read: ahead,
-                computed: concurrent,
-                formationDamping: 'legacy'
+                computed: concurrent
             })
         ).not.toThrow();
         expect(() =>
@@ -195,8 +187,7 @@ describe('group presence summary evaluation time', () => {
                     ...read,
                     current: rekey(current, `${groupPresenceSummaryStorageKey()}:wrong`)
                 },
-                computed: { outcome: 'no-op', evaluatedAtEpochMs: 2_000, summary: base },
-                formationDamping: 'legacy'
+                computed: { outcome: 'no-op', evaluatedAtEpochMs: 2_000, summary: base }
             })
         ).toThrow(/canonical|key/i);
     });

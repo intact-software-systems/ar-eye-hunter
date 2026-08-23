@@ -15,19 +15,23 @@ import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { validateAppInboxCommandIdentity } from '../../services/app-inbox-command-identity.ts';
-import { toJsonWireAppInboxEnqueue } from '../../services/app-inbox-command-wire.ts';
+import {
+    toAppQueueCreatedBy as toAppInboxQueueCreatedBy,
+    toAppQueueKey as toAppInboxQueueKey
+} from '@shared/queuebox/AppQueueIdentity.ts';
+import { validateAppInboxCommandIdentity } from '../../app-inbox/app-inbox-command-identity.ts';
+import { toJsonWireAppInboxEnqueue } from '../../app-inbox/app-inbox-command-wire.ts';
 import {
     AppInboxIdempotencyConflictError,
     AppInboxType,
     type AppInboxEnqueueInput
-} from '../../services/app-inbox-contracts.ts';
-import { toAppInboxErrorCode } from '../../services/app-inbox-error-classification.ts';
-import { toTerminalAppInboxFailure, type AppInboxFailure } from '../../services/app-inbox-failure.ts';
-import { toAppInboxQueueCreatedBy, toAppInboxQueueKey } from '../../services/app-inbox-queue-key.ts';
-import { AppInboxService, type AppInboxServiceOptions } from '../../services/AppInboxService.ts';
-import type { JsonWireValue } from '../../services/mutation-command-identity.ts';
-import type { RallarTimingSink } from '../../services/timing.ts';
+} from '../../app-inbox/app-inbox-contracts.ts';
+import { toAppInboxErrorCode } from '../../app-inbox/app-inbox-error-classification.ts';
+import { toTerminalAppInboxFailure, type AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
+import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
+import { AppInboxQueueClient, type AppInboxOptions } from '../../app-inbox/app-inbox-queue-client.ts';
+import type { RallarTimingSink } from '../../observability/timing.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { AuthMutationService } from '../auth-mutation-service.ts';
 import type { AuthCredentialIssuer } from '../credentials/auth-credential-issuer.ts';
 import { constantTimeAuthDigestEqual } from '../credentials/constant-time-auth-digest-equal.ts';
@@ -90,8 +94,8 @@ const AUTH_TYPES = [
 export namespace AppAuthInboxService {
     export interface Dependencies {
         readonly inboxQueueReader: InboxQueueReader;
-        readonly resourceInboxRepository: AppInboxService.InboxRepository & AuthInboxRepository;
-        readonly resourceInboxResultsRepository: AppInboxService.ResultRepository;
+        readonly resourceInboxRepository: AppInboxQueueClient.InboxRepository & AuthInboxRepository;
+        readonly resourceInboxResultsRepository: AppInboxQueueClient.ResultRepository;
         readonly database: PSqlSql;
         readonly authMutationService: AuthMutationService;
         readonly credentialIssuer: AuthCredentialIssuer;
@@ -100,7 +104,7 @@ export namespace AppAuthInboxService {
     export interface Config {
         readonly serviceId: string;
         readonly timing?: RallarTimingSink;
-        readonly options?: AppInboxServiceOptions;
+        readonly options?: AppInboxOptions;
         readonly wakeOwningQueue?: () => void;
         readonly authFactNowEpochMs?: () => number;
     }
@@ -110,7 +114,9 @@ export namespace AppAuthInboxService {
     }
 }
 
-export class AppAuthInboxService extends AppInboxService {
+export class AppAuthInboxService {
+    private readonly queueClient: AppInboxQueueClient;
+    private readonly handlers: AppInboxHandlerRegistry;
     private readonly authInboxHandler: AuthInboxHandler;
     private readonly authInboxRepository: AuthInboxRepository;
     private readonly authFactNowEpochMs: () => number;
@@ -119,12 +125,11 @@ export class AppAuthInboxService extends AppInboxService {
     public readonly credentialIssuer: AuthCredentialIssuer;
 
     constructor(dependencies: AppAuthInboxService.Dependencies, config: AppAuthInboxService.Config) {
-        super(
+        this.queueClient = new AppInboxQueueClient(
             {
                 inboxQueueReader: dependencies.inboxQueueReader,
                 resourceInboxRepository: dependencies.resourceInboxRepository,
-                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
-                database: dependencies.database
+                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository
             },
             {
                 serviceId: config.serviceId,
@@ -134,6 +139,18 @@ export class AppAuthInboxService extends AppInboxService {
                 wakeOwningQueue: config.wakeOwningQueue
             }
         );
+        this.handlers = new AppInboxHandlerRegistry(
+            {
+                inboxQueueReader: dependencies.inboxQueueReader,
+                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
+                database: dependencies.database
+            },
+            {
+                serviceId: config.serviceId,
+                timing: config.timing,
+                options: config.options
+            }
+        );
         this.authMutationService = dependencies.authMutationService;
         this.credentialIssuer = dependencies.credentialIssuer;
         this.authInboxRepository = dependencies.resourceInboxRepository;
@@ -141,11 +158,11 @@ export class AppAuthInboxService extends AppInboxService {
         this.authInboxHandler = new AuthInboxHandler({
             mutationService: dependencies.authMutationService,
             credentialIssuer: dependencies.credentialIssuer,
-            transactionWriter: this.transactionWriter,
+            transactionWriter: this.handlers.transactionWriter,
             nowEpochMs: this.authFactNowEpochMs
         });
         for (const type of AUTH_TYPES) {
-            this.onStateMessage<Parameters<AuthInboxHandler['processAuthMutation']>[0]>(
+            this.handlers.onStateMessage<Parameters<AuthInboxHandler['processAuthMutation']>[0]>(
                 type,
                 async (command, context) => await this.authInboxHandler.processAuthMutation(command, context)
             );
@@ -182,7 +199,10 @@ export class AppAuthInboxService extends AppInboxService {
         const decoded = decodeAuthMutationIntent(intent);
         let persisted: Either<AppInboxFailure, AuthMutationResult>;
         try {
-            persisted = await super.processEntryUntilCompletionResult<AuthMutationIntent, AuthMutationResult>(
+            persisted = await this.queueClient.processEntryUntilCompletionResult<
+                AuthMutationIntent,
+                AuthMutationResult
+            >(
                 {
                     type: toAuthAppInboxType(decoded),
                     topicId: toAuthAppInboxType(decoded),

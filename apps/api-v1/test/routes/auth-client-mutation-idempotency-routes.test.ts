@@ -1,7 +1,7 @@
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type { ApiMutationFailure } from '@shared/api/mutation/api-mutation-failure.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { authenticationRequired } from '../../src/services/request-auth-service.ts';
@@ -314,7 +314,7 @@ Deno.test('client mutation uses operation topic and target-plus-caller context',
 });
 
 Deno.test(
-    'client mutation rejects legacy identity before enqueue with a canonical failure',
+    'client mutation rejects noncanonical identity before enqueue with a canonical failure',
     async () => {
         let inboxCalls = 0;
         const deps = createClientRouteDeps({
@@ -395,7 +395,7 @@ Deno.test(
     }
 );
 
-Deno.test('every covered legacy auth and client mutation URL is absent', async () => {
+Deno.test('every removed auth and client mutation URL is absent', async () => {
     const app = createConfigRouteApp();
     clientStateRoutes.registerClientStateRoutes(
         app,
@@ -407,7 +407,7 @@ Deno.test('every covered legacy auth and client mutation URL is absent', async (
     const client = '/api/state/apps/app/workspaces/workspace/clients/alice';
     const instance = `${client}/instances/browser`;
     const session = `${instance}/sessions/alice-session`;
-    const legacyMutations = [
+    const removedMutations = [
         ['POST', '/api/auth/register'],
         ['POST', '/api/auth/login'],
         ['POST', '/api/auth/logout'],
@@ -421,7 +421,7 @@ Deno.test('every covered legacy auth and client mutation URL is absent', async (
         ['POST', `${session}/disconnect`]
     ] as const;
 
-    for (const [method, path] of legacyMutations) {
+    for (const [method, path] of removedMutations) {
         const response = await app.request(path, {
             method,
             headers: { 'content-type': 'application/json' },
@@ -479,7 +479,7 @@ interface FailureInput {
 function mutationFailure(input: FailureInput): ApiMutationFailure {
     return {
         type: 'api-mutation-failure',
-        version: 'canonical.v1',
+        version: 'canonical.v2',
         code: input.code,
         status: input.status,
         message: input.message,

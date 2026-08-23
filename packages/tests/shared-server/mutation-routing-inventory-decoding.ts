@@ -1,4 +1,4 @@
-import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 
 import type { MutationRouteInventoryEntry } from './mutation-routing-inventory.ts';
 import { MUTATION_ROUTE_OWNER_DISPATCH_PATHS, MUTATION_ROUTE_OWNER_PATHS, type MutationRouteInventoryRow } from './mutation-routing-owner-inventory.ts';
@@ -21,12 +21,12 @@ const PATHS = {
     cm: 'apps/api-v1/src/crdt/create-crdt-admin-mutations.ts',
     ag: 'apps/api-v1/src/admin-operations/create-api-admin-mutation-gateway.ts',
     rq: 'apps/api-v1/src/services/request-auth-service.ts',
-    l: 'packages/shared-server/rallar-system/services/ws-lifecycle-service.ts',
+    l: 'packages/shared-server/rallar-system/websocket/ws-lifecycle-service.ts',
     e: 'packages/shared-server/rallar-system/group-state/presence/' +
         'reconcile-expired-group-presence.ts',
-    s: 'packages/shared-server/rallar-system/rtc-topology/topic/init-rtc-rtt-topic.ts',
+    s: 'packages/shared-server/rallar-system/rtc-rtt/topic/init-rtc-rtt-topic.ts',
     d: 'packages/shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts',
-    gi: 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts',
+    gi: 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts',
     ci: 'apps/api-v1/src/composition/create-api-v1-system-installers.ts'
 } as const;
 

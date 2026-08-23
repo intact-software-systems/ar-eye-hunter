@@ -1,12 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
-
-import type { RtcTopologyRuntimeState } from '@shared-server/rallar-system/ws-rtc-topology-runtime.ts';
-import { initRallarSystemWsTopics, type InitRallarSystemWsTopicsOptions } from '@shared-server/rallar-system/ws-system-topics.ts';
+import type { RtcRttRuntimeState } from '@shared-server/rallar-system/rtc-rtt/rtc-rtt-runtime-state.ts';
+import { initRallarSystemWsTopics, type InitRallarSystemWsTopicsOptions } from '@shared-server/rallar-system/websocket/ws-system-topics.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, ConnectionContext, InMemoryQueueBox, JsonWebSocketServer, newALBroadcastMessage, newALEventRoute } from '@shared/mod.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
-import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
+import { describe, expect, it, vi } from 'vitest';
 
 const RTT = {
     sessionIdFrom: 'session-a',
@@ -16,39 +14,22 @@ const RTT = {
     version: 1
 } as const;
 
-describe('WS RTT persisted runtime option resolution', () => {
-    it('routes RTT through AppInbox when only rtcTopologyRuntimeState is declared', async () => {
+describe('WS RTT durable registration', () => {
+    it('routes RTT through the registered AppInbox entry owner', async () => {
         const enqueue = vi.fn(() => Promise.resolve({} as ResourceEntry));
-        const socket = createHarness({
-            rtcTopologyRuntimeState: { repository: new FakeRuntimeStateRepository() },
-            enqueueRtcRttMutation: enqueue
-        });
+        const socket = createHarness({ enqueueRtcRttMutation: enqueue });
 
         await socket.dispatchMessage(rttMessage());
 
         expect(enqueue).toHaveBeenCalledOnce();
     });
 
-    it('routes RTT through AppInbox when only rtcTopologyRepositories is declared', async () => {
-        const enqueue = vi.fn(() => Promise.resolve({} as ResourceEntry));
-        const socket = createHarness({
-            rtcTopologyRepositories: {} as RtcTopologyRuntimeState,
-            enqueueRtcRttMutation: enqueue
-        });
-
-        await socket.dispatchMessage(rttMessage());
-
-        expect(enqueue).toHaveBeenCalledOnce();
-    });
-
-    it('fails construction for conflicting persisted runtime declarations', () => {
+    it('requires the AppInbox entry owner before registering persisted RTT state', () => {
         expect(() =>
             createHarness({
-                rtcTopologyRuntimeState: { repository: new FakeRuntimeStateRepository() },
-                rtcTopologyRepositories: {} as RtcTopologyRuntimeState,
-                enqueueRtcRttMutation: () => Promise.resolve({} as ResourceEntry)
+                rtcRttRuntimeState: {} as RtcRttRuntimeState
             })
-        ).toThrow(/conflicting.*RTC topology runtime/i);
+        ).toThrow(/requires durable AppInbox enqueue/i);
     });
 });
 

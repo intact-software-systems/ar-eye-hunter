@@ -1,11 +1,14 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { createRallarMiddleware, createWsServerTargetResolver } from '@shared-server/rallar-system/middleware/RallarMiddleware.ts';
-import type { QueueBoxPubSubBridge } from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
-import type { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import type { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import type { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
-import type { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { type AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+import { type ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import type { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import { type GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { createRallarMiddleware, createWsServerTargetResolver } from '@shared-server/rallar-system/middleware/rallar-middleware.ts';
+import type { QueueBoxPubSubBridge } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
+import type { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
+import type { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
+import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { AuditStamp, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
     AppTopics,
@@ -38,15 +41,21 @@ describe('createRallarMiddleware', () => {
         const groupsRepository = {} as GroupStateRepository;
         const appInboxResilience = createResilience();
         const appOutboxResilience = createResilience();
-        const appGroupInboxService = {} as AppGroupInboxService;
+        const groupStateInboxService = {} as GroupStateInboxService;
+        const topologyInboxService = {} as TopologyInboxService;
+        const rtcRttInboxService = {} as RtcRttInboxService;
         const appClientInboxService = {} as AppClientInboxService;
-        const createAppGroupInboxService = vi.fn(() => appGroupInboxService);
+        const createGroupStateInboxService = vi.fn(() => groupStateInboxService);
+        const createTopologyInboxService = vi.fn(() => topologyInboxService);
+        const createRtcRttInboxService = vi.fn(() => rtcRttInboxService);
         const createAppClientInboxService = vi.fn(() => appClientInboxService);
         const runtime = createRallarMiddleware({
             inbox,
             outbox,
             wsRuntimeName: 'server-1',
-            createAppGroupInboxService,
+            createGroupStateInboxService,
+            createTopologyInboxService,
+            createRtcRttInboxService,
             createAppClientInboxService,
             resilience: {
                 inbox: createResilience(),
@@ -68,14 +77,26 @@ describe('createRallarMiddleware', () => {
         expect(runtime.outboxQueueReader.outbox).toBe(outbox);
         expect(runtime.appInboxResilience).toBe(appInboxResilience);
         expect(runtime.appOutboxResilience).toBe(appOutboxResilience);
-        expect(runtime.appGroupInboxService).toBe(appGroupInboxService);
+        expect(runtime.groupStateInboxService).toBe(groupStateInboxService);
+        expect(runtime.topologyInboxService).toBe(topologyInboxService);
+        expect(runtime.rtcRttInboxService).toBe(rtcRttInboxService);
         expect(runtime.appClientInboxService).toBe(appClientInboxService);
-        expect(createAppGroupInboxService).toHaveBeenCalledWith({
+        expect(createGroupStateInboxService).toHaveBeenCalledWith({
             inboxQueueReader: runtime.inboxQueueReader,
             outboxQueueReader: runtime.outboxQueueReader,
             wsQBoxServerService: runtime.wsQBoxServerService,
             appInboxResilience,
             appOutboxResilience,
+            wakeQueueEngine: expect.any(Function)
+        });
+        expect(createTopologyInboxService).toHaveBeenCalledWith({
+            inboxQueueReader: runtime.inboxQueueReader,
+            appInboxResilience,
+            wakeQueueEngine: expect.any(Function)
+        });
+        expect(createRtcRttInboxService).toHaveBeenCalledWith({
+            inboxQueueReader: runtime.inboxQueueReader,
+            appInboxResilience,
             wakeQueueEngine: expect.any(Function)
         });
         expect(createAppClientInboxService).toHaveBeenCalledWith({
@@ -163,7 +184,9 @@ describe('createRallarMiddleware', () => {
                 inbox: createResilience(),
                 appOutbox: createResilience()
             },
-            createAppGroupInboxService: () => ({}) as AppGroupInboxService,
+            createGroupStateInboxService: () => ({}) as GroupStateInboxService,
+            createTopologyInboxService: () => ({}) as TopologyInboxService,
+            createRtcRttInboxService: () => ({}) as RtcRttInboxService,
             createAppClientInboxService: () => ({}) as AppClientInboxService,
             clientsRepository: {} as ClientStateRepository,
             groupsRepository: {} as GroupStateRepository
@@ -207,7 +230,9 @@ describe('createRallarMiddleware', () => {
                 appInbox: resilience,
                 appOutbox: createResilience()
             },
-            createAppGroupInboxService: () => ({}) as AppGroupInboxService,
+            createGroupStateInboxService: () => ({}) as GroupStateInboxService,
+            createTopologyInboxService: () => ({}) as TopologyInboxService,
+            createRtcRttInboxService: () => ({}) as RtcRttInboxService,
             createAppClientInboxService: () => ({}) as AppClientInboxService,
             clientsRepository: {} as ClientStateRepository,
             groupsRepository: {} as GroupStateRepository
@@ -254,7 +279,9 @@ describe('createRallarMiddleware', () => {
                 appInbox: createResilience(),
                 appOutbox: createResilience()
             },
-            createAppGroupInboxService: () => ({}) as AppGroupInboxService,
+            createGroupStateInboxService: () => ({}) as GroupStateInboxService,
+            createTopologyInboxService: () => ({}) as TopologyInboxService,
+            createRtcRttInboxService: () => ({}) as RtcRttInboxService,
             createAppClientInboxService: () => ({}) as AppClientInboxService,
             clientsRepository: {} as ClientStateRepository,
             groupsRepository: {} as GroupStateRepository
@@ -295,7 +322,9 @@ describe('createRallarMiddleware', () => {
                 appInbox: createResilience(),
                 appOutbox: createResilience()
             },
-            createAppGroupInboxService: () => ({}) as AppGroupInboxService,
+            createGroupStateInboxService: () => ({}) as GroupStateInboxService,
+            createTopologyInboxService: () => ({}) as TopologyInboxService,
+            createRtcRttInboxService: () => ({}) as RtcRttInboxService,
             createAppClientInboxService: () => ({}) as AppClientInboxService,
             clientsRepository: {} as ClientStateRepository,
             groupsRepository: {} as GroupStateRepository
@@ -421,18 +450,19 @@ describe('createWsServerTargetResolver state sync routing', () => {
                 snapshot.group.groupId,
                 snapshot.group.groupId
             ),
-            'all',
+            'room',
             AppTopics.groupStateSnapshot,
-            snapshot
+            snapshot,
+            { groupRef: snapshot.group }
         );
         const resolver = createWsServerTargetResolver(webSocketServer);
 
         expect(
             resolver
-                .resolveBroadcastRecipients?.('all', message)
+                .resolveBroadcastRecipients?.('room', message)
                 .map((recipient) => recipient.connectionId)
                 .sort()
-        ).toEqual(['session-a']);
+        ).toEqual(['session-a', 'session-c']);
     });
 
     it('does not route full group directory broadcasts to directory-only sessions', () => {
@@ -465,15 +495,16 @@ describe('createWsServerTargetResolver state sync routing', () => {
                 snapshot.group.groupId,
                 snapshot.group.groupId
             ),
-            'all',
+            'room',
             AppTopics.groupDirectorySnapshot,
-            snapshot
+            snapshot,
+            { groupRef: snapshot.group }
         );
         const resolver = createWsServerTargetResolver(webSocketServer);
 
         expect(
             resolver
-                .resolveBroadcastRecipients?.('all', message)
+                .resolveBroadcastRecipients?.('room', message)
                 .map((recipient) => recipient.connectionId)
                 .sort()
         ).toEqual(['session-a']);
@@ -527,15 +558,16 @@ describe('createWsServerTargetResolver state sync routing', () => {
                 snapshot.group.groupId,
                 snapshot.group.groupId
             ),
-            'all',
+            'room',
             AppTopics.groupStateSnapshot,
-            snapshot
+            snapshot,
+            { groupRef: snapshot.group }
         );
         const resolver = createWsServerTargetResolver(webSocketServer);
 
         expect(
             resolver
-                .resolveBroadcastRecipients?.('all', message)
+                .resolveBroadcastRecipients?.('room', message)
                 .map((recipient) => recipient.connectionId)
                 .sort()
         ).toEqual(['session-a', 'session-b']);
@@ -552,47 +584,37 @@ describe('createWsServerTargetResolver state sync routing', () => {
             createClientSnapshot('alice', 'session-a', 'app-1', 'workspace-a', 1),
             createClientSnapshot('bob', 'session-b', 'app-1', 'workspace-b', 1)
         ]);
-        groupStateSnapshotsRepository.setGroupStateSnapshots([
-            createGroupSnapshot(
-                'shared-room',
-                'app-1',
-                'workspace-a',
-                [{ principalId: 'alice', sessionId: 'session-a', status: 'active' }],
-                1
-            ),
-            createGroupSnapshot(
-                'shared-room',
-                'app-1',
-                'workspace-b',
-                [{ principalId: 'bob', sessionId: 'session-b', status: 'active' }],
-                1
-            )
-        ]);
+        const workspaceA = createGroupSnapshot(
+            'shared-room',
+            'app-1',
+            'workspace-a',
+            [{ principalId: 'alice', sessionId: 'session-a', status: 'active' }],
+            1
+        );
+        const workspaceB = createGroupSnapshot(
+            'shared-room',
+            'app-1',
+            'workspace-b',
+            [{ principalId: 'bob', sessionId: 'session-b', status: 'active' }],
+            1
+        );
+        groupStateSnapshotsRepository.setGroupStateSnapshots([workspaceA, workspaceB]);
 
-        const event = {
-            applicationId: 'app-1',
-            workspaceId: 'workspace-b',
-            groupId: 'shared-room',
-            eventId: 'event-1',
-            eventType: 'member-joined',
-            snapshotVersion: 1,
-            occurredAtEpochMs: 2,
-            actor: {
-                principalId: 'bob'
-            }
-        };
+        const envelope = createGroupEventEnvelope(workspaceB, ['session-b']);
+        const event = envelope.event;
         const message = newALBroadcastMessage(
             'server-1',
             newALEventRoute(AppTopics.groupStateEvent, event.groupId, event.eventId),
-            'all',
+            'room',
             AppTopics.groupStateEvent,
-            event
+            envelope,
+            { groupRef: event }
         );
         const resolver = createWsServerTargetResolver(webSocketServer);
 
         expect(
             resolver
-                .resolveBroadcastRecipients?.('all', message)
+                .resolveBroadcastRecipients?.('room', message)
                 .map((recipient) => recipient.connectionId)
                 .sort()
         ).toEqual(['session-b']);
@@ -835,24 +857,15 @@ describe('createWsServerTargetResolver state sync routing', () => {
             [{ principalId: 'bob', sessionId: 'session-b', status: 'active' }],
             1
         );
-        const event = {
-            applicationId: 'app-1',
-            workspaceId: 'workspace-b',
-            groupId: 'shared-room',
-            eventId: 'event-1',
-            eventType: 'member-joined',
-            snapshotVersion: 1,
-            occurredAtEpochMs: 2,
-            actor: {
-                principalId: 'bob'
-            }
-        };
+        const envelope = createGroupEventEnvelope(workspaceB, ['session-b']);
+        const event = envelope.event;
         const message = newALBroadcastMessage(
             'server-1',
             newALEventRoute(AppTopics.groupStateEvent, event.groupId, event.eventId),
-            'all',
+            'room',
             AppTopics.groupStateEvent,
-            event
+            envelope,
+            { groupRef: event }
         );
         const resolver = createWsServerTargetResolver(webSocketServer, {
             findGroupSnapshotById: () => workspaceA,
@@ -861,7 +874,7 @@ describe('createWsServerTargetResolver state sync routing', () => {
 
         expect(
             resolver
-                .resolveBroadcastRecipients?.('all', message)
+                .resolveBroadcastRecipients?.('room', message)
                 .map((recipient) => recipient.connectionId)
                 .sort()
         ).toEqual(['session-b']);
@@ -965,7 +978,9 @@ function createReadinessMiddlewareOptions(
             inbox: createResilience(),
             appOutbox: createResilience()
         },
-        createAppGroupInboxService: () => ({}) as AppGroupInboxService,
+        createGroupStateInboxService: () => ({}) as GroupStateInboxService,
+        createTopologyInboxService: () => ({}) as TopologyInboxService,
+        createRtcRttInboxService: () => ({}) as RtcRttInboxService,
         createAppClientInboxService: () => ({}) as AppClientInboxService,
         clientsRepository: {} as ClientStateRepository,
         groupsRepository: {} as GroupStateRepository,
@@ -1111,7 +1126,6 @@ function createGroupSnapshot(
     const created = createAuditStamp(1, 'system');
     const updated = createAuditStamp(snapshotVersion, 'system');
     return {
-        stateRevision: snapshotVersion,
         causalRevision: {
             groupRevision: snapshotVersion,
             presenceRevision: snapshotVersion
@@ -1156,6 +1170,48 @@ function createGroupSnapshot(
         })),
         memberCount: activeMembers.length,
         onlineMemberCount: activeMembers.length
+    };
+}
+
+function createGroupEventEnvelope(
+    snapshot: GroupSnapshot,
+    audienceSessionIds: readonly string[]
+): GroupStateDeltaEnvelope {
+    const actorSession = snapshot.activeSessions[0]!;
+    return {
+        event: {
+            applicationId: snapshot.group.applicationId,
+            workspaceId: snapshot.group.workspaceId,
+            groupId: snapshot.group.groupId,
+            eventId: 'event-1',
+            eventType: 'session-connected',
+            snapshotVersion: snapshot.group.snapshotVersion,
+            causalRevision: snapshot.causalRevision,
+            occurredAtEpochMs: 2,
+            actor: {
+                kind: 'session',
+                sessionId: actorSession.sessionId,
+                principalId: actorSession.principalId
+            },
+            reason: null,
+            traceId: null,
+            requestId: null,
+            payload: {}
+        },
+        predecessorCausalRevision: {
+            groupRevision: Math.max(0, snapshot.causalRevision.groupRevision - 1),
+            presenceRevision: Math.max(0, snapshot.causalRevision.presenceRevision - 1)
+        },
+        resultingCausalRevision: snapshot.causalRevision,
+        members: [],
+        removedMemberPrincipalIds: [],
+        sessions: snapshot.activeSessions,
+        removedSessionIds: [],
+        activeSessionIds: snapshot.activeSessions.map((session) => session.sessionId),
+        group: snapshot.group,
+        memberCount: snapshot.memberCount,
+        onlineMemberCount: snapshot.onlineMemberCount,
+        audienceSessionIds
     };
 }
 

@@ -20,7 +20,6 @@ export const TIMED_ASYNC_OPERATIONS = [
     'listSnapshots',
     'listSnapshotsPage',
     'readSnapshot',
-    'readStateRevision',
     'readCausalRevision',
     'readIssuedAuthSession',
     'listEvents',
@@ -124,7 +123,6 @@ function createQueryFake(
     | 'listSnapshots'
     | 'listSnapshotsPage'
     | 'readSnapshot'
-    | 'readStateRevision'
     | 'readCausalRevision'
     | 'readIssuedAuthSession'
     | 'listEvents'
@@ -136,7 +134,6 @@ function createQueryFake(
         listSnapshots: async (...arguments_) => (await record('listSnapshots', arguments_)) as never,
         listSnapshotsPage: async (...arguments_) => (await record('listSnapshotsPage', arguments_)) as never,
         readSnapshot: async (...arguments_) => (await record('readSnapshot', arguments_)) as never,
-        readStateRevision: async (...arguments_) => (await record('readStateRevision', arguments_)) as never,
         readCausalRevision: async (...arguments_) => (await record('readCausalRevision', arguments_)) as never,
         readIssuedAuthSession: async (...arguments_) => (await record('readIssuedAuthSession', arguments_)) as never,
         listEvents: async (...arguments_) => (await record('listEvents', arguments_)) as never,
@@ -233,7 +230,6 @@ export const TIMED_OPERATION_ARGUMENTS: TimedOperationArgumentsByOperation = {
     listSnapshots: [timingScope],
     listSnapshotsPage: [timingScope, timingSnapshotPageOptions],
     readSnapshot: [timingGroupRef],
-    readStateRevision: [timingGroupRef],
     readCausalRevision: [timingGroupRef],
     readIssuedAuthSession: ['timing-session'],
     listEvents: [timingGroupRef],
@@ -266,7 +262,6 @@ const TIMED_OPERATION_INVOCATIONS: Readonly<Record<TimedAsyncOperation, (service
     listSnapshots: async (service) => await service.listSnapshots(...TIMED_OPERATION_ARGUMENTS.listSnapshots),
     listSnapshotsPage: async (service) => await service.listSnapshotsPage(...TIMED_OPERATION_ARGUMENTS.listSnapshotsPage),
     readSnapshot: async (service) => await service.readSnapshot(...TIMED_OPERATION_ARGUMENTS.readSnapshot),
-    readStateRevision: async (service) => await service.readStateRevision(...TIMED_OPERATION_ARGUMENTS.readStateRevision),
     readCausalRevision: async (service) => await service.readCausalRevision(...TIMED_OPERATION_ARGUMENTS.readCausalRevision),
     readIssuedAuthSession: async (service) => await service.readIssuedAuthSession(...TIMED_OPERATION_ARGUMENTS.readIssuedAuthSession),
     listEvents: async (service) => await service.listEvents(...TIMED_OPERATION_ARGUMENTS.listEvents),

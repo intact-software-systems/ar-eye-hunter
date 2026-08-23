@@ -1,6 +1,6 @@
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 
-import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
 import type { ProductionOutboxExpectation } from './api-v1-state-write-outbox-expectations.ts';
 

@@ -1,4 +1,4 @@
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { describe, expect, it } from 'vitest';
 import { createHetznerGroupAssertionsRecipe } from '../../../apps/rallar-black-box/src/hetzner/create-hetzner-group-assertions-recipe.ts';
 import { createHetznerRtcAbsenceWaitRecipe } from '../../../apps/rallar-black-box/src/hetzner/create-hetzner-rtc-absence-wait-recipe.ts';

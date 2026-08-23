@@ -1,11 +1,10 @@
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import type { ClientEvent, ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { describe, expect, it } from 'vitest';
-import { createLegacyClientStateTestDriver as createClientStateService } from './client-state/client-state-test-runtime.ts';
+import { createClientStateTestDriver as createClientStateService } from './client-state/client-state-test-runtime.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 import { createTestGroupStateService as createGroupStateService } from './group-state/group-state-test-runtime.ts';
 
@@ -20,7 +19,6 @@ describe('state sync event replay characterization', () => {
         let now = 1_000;
         const service = createGroupStateService({
             runtimeRepository,
-            formationDamping: 'damped',
             now: () => now,
             serviceId: 'group-service'
         });
@@ -60,7 +58,6 @@ describe('state sync event replay characterization', () => {
         let now = 1_000;
         const service = createClientStateService({
             runtimeRepository,
-            syncPublisher: createPublisher(),
             now: () => now,
             serviceId: 'client-service'
         });
@@ -176,14 +173,5 @@ function createClientEvent(
         clientInstanceId: null,
         sessionId: null,
         payload: {}
-    };
-}
-
-function createPublisher(): StateSyncPublisher {
-    return {
-        publishClientSnapshot: async () => undefined,
-        publishClientEvent: async () => undefined,
-        publishGroupSnapshot: async () => undefined,
-        publishGroupEvent: async () => undefined
     };
 }

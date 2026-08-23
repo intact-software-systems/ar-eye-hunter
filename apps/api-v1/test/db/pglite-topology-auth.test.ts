@@ -6,21 +6,20 @@ import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { AuthSessionRepository, type IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { RtcRttRepository } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts';
-import {
-    AppGroupInboxService,
-    toTopologyAppInboxCommand,
-    type TopologyAppInboxCommand,
-    type TopologyAppInboxRequestPayload,
-    type TopologyAppInboxResult
-} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
+import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
-import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
+import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
+import { type TopologyAppInboxCommand, type TopologyAppInboxRequestPayload } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
+import type { TopologyAppInboxResult } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
+import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
+import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+import { initRallarSystemWsTopics } from '@shared-server/rallar-system/websocket/ws-system-topics.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     AppTopics,
@@ -38,7 +37,12 @@ import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import { readPGliteDatabaseEpochMs, waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { PGliteTestSocket } from './pglite-test-socket.ts';
-import { submitPGliteTopologyCommand, topologyGroupSnapshot, topologyGroupSnapshotWithSessions } from './pglite-topology-test-runtime.ts';
+import {
+    requireTopologyMutationOwners,
+    submitPGliteTopologyCommand,
+    topologyGroupSnapshot,
+    topologyGroupSnapshotWithSessions
+} from './pglite-topology-test-runtime.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 
@@ -107,13 +111,12 @@ Deno.test(
             }
             const groupState = createGroupStateService({
                 runtimeRepository: runtime,
-                formationDamping: 'damped',
                 createGroupStateEventStore: createGroupStateEventRepository,
                 authSessionRepository: authSessions,
                 serviceId: 'pglite-app-inbox-topology',
                 now: () => nowEpochMs
             });
-            const topology = new GroupTopologyManagementService({
+            const topology = createGroupTopologyOwners({
                 findGroupSnapshotByRef: (ref) => groupRepository.readSnapshot(ref),
                 groupStateRepository: groupRepository,
                 configRepository: new GroupTopologyConfigRepository(runtime),
@@ -121,13 +124,14 @@ Deno.test(
                 processRttReader: () => [],
                 now: () => nowEpochMs
             });
-            const appGroup = new AppGroupInboxService(
+            const appGroup = new TopologyInboxService(
                 {
                     inboxQueueReader: inboxReader,
                     resourceInboxRepository: resourceInbox,
                     resourceInboxResultsRepository: resourceResults,
                     database: sql,
-                    groupStateService: groupState
+                    groupStateService: groupState,
+                    mutationOwners: requireTopologyMutationOwners(topology)
                 },
                 {
                     serviceId: 'pglite-app-inbox-topology',
@@ -141,7 +145,6 @@ Deno.test(
                     }
                 }
             );
-            appGroup.setTopologyManagementService(topology);
 
             const first = await toTopologyAppInboxCommand({
                 actor: { principalId: authority.clientId, sessionId: authority.sessionId },
@@ -396,7 +399,7 @@ Deno.test(
                 { operation: 'putConfig', config: { degreeLimit: 3 } }
             );
             assert.ok(durableUpdateUnderOverride.result.right);
-            const underOverride = await topology.readConfig(groupRef);
+            const underOverride = await topology.query.readConfig(groupRef);
             assert.equal(underOverride.durable?.config.degreeLimit, 3);
             assert.equal(underOverride.temporary?.config.degreeLimit, 4);
             assert.equal(underOverride.temporary?.expiresAtEpochMs, nowEpochMs + 60_000);
@@ -407,7 +410,7 @@ Deno.test(
                 { operation: 'putConfig', config: { degreeLimit: null } }
             );
             assert.ok(cleared.result.right);
-            const afterClear = await topology.readConfig(groupRef);
+            const afterClear = await topology.query.readConfig(groupRef);
             assert.equal(afterClear.durable?.config.degreeLimit, 5);
             assert.equal(afterClear.effective.degreeLimit, 4);
             assert.equal(afterClear.effective.meshParamK, 4);
@@ -423,7 +426,7 @@ Deno.test(
                     }
                 )).result.right
             );
-            assert.equal((await topology.readConfig(groupRef)).effective.degreeLimit, 5);
+            assert.equal((await topology.query.readConfig(groupRef)).effective.degreeLimit, 5);
 
             assert.ok(
                 (await processCommand(
@@ -442,7 +445,7 @@ Deno.test(
                 (await submitPGliteTopologyCommand(appGroup, authority, clearReplay)).right,
                 cleared.result.right
             );
-            assert.equal((await topology.readConfig(groupRef)).durable?.config.degreeLimit, 7);
+            assert.equal((await topology.query.readConfig(groupRef)).durable?.config.degreeLimit, 7);
             const clearDivergent = await toTopologyAppInboxCommand({
                 actor: first.actor,
                 groupRef,
@@ -463,15 +466,28 @@ Deno.test(
                 peerSessionId: 'peer-session',
                 nowEpochMs
             });
-            appGroup.setRtcRttAppInboxDependencies({
-                repository: new RtcRttRepository(runtime, { now: () => nowEpochMs }),
-                readPolicyInputs: () =>
-                    Promise.resolve({
-                        candidateGroups: [rttGroup],
-                        overlaySnapshotsByGroupKey: new Map(),
-                        degreeLimit: 5
-                    })
-            });
+            const rtcRttInbox = new RtcRttInboxService(
+                {
+                    inboxQueueReader: inboxReader,
+                    resourceInboxRepository: resourceInbox,
+                    resourceInboxResultsRepository: resourceResults,
+                    database: sql,
+                    groupStateService: groupState,
+                    mutationDependencies: {
+                        repository: new RtcRttRepository(runtime, { now: () => nowEpochMs }),
+                        readPolicyInputs: () =>
+                            Promise.resolve({
+                                candidateGroups: [rttGroup],
+                                overlaySnapshotsByGroupKey: new Map(),
+                                degreeLimit: 5
+                            })
+                    }
+                },
+                {
+                    serviceId: 'pglite-app-inbox-topology',
+                    options: { nowEpochMs: () => nowEpochMs }
+                }
+            );
             configureRttRepository({ ttlMs: 60_000 });
             configureSharedGraphRepositories({
                 graphs: { ttlMs: 60_000 },
@@ -489,10 +505,9 @@ Deno.test(
             const wsIngressCapturedAt: number[] = [];
             const wsTopics = initRallarSystemWsTopics(wsService, {
                 rtcTopologyService: new RallarRtcTopologyService({ now: () => nowEpochMs }),
-                rtcTopologyRuntimeState: { repository: runtime },
                 enqueueRtcRttMutation: async (input) => {
                     wsIngressCapturedAt.push(input.capturedAtEpochMs);
-                    return await appGroup.enqueueRtcRtt(input);
+                    return await rtcRttInbox.enqueue(input);
                 }
             });
             const rtt = {

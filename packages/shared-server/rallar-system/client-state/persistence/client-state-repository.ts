@@ -17,8 +17,8 @@ import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateRepositoryLike
 } from '../../../runtime-state/RuntimeStateRepository.ts';
-import { toSessionPurgeAfterEpochMs } from '../../repositories/session-expiry.ts';
-import { defaultClientStateEventStoreFor } from '../../repositories/StateEventStore.ts';
+import { toSessionPurgeAfterEpochMs } from '../../presence/session-expiry.ts';
+import { defaultClientStateEventStoreFor } from '../../state-events/state-event-store.ts';
 import {
     type ClientMutationIdempotencyRecord,
     type ClientStateRepositoryOptions

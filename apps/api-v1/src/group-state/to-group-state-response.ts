@@ -3,6 +3,10 @@ import type {
     GroupStateWritten
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import {
+    type GroupJoinCodeMutationWritten,
+    type GroupMutationWritten
+} from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import {
     requireGroupJoinCodeWritten,
     requireGroupPresenceInboxDurableResult,
     requireGroupStateWritten
@@ -14,10 +18,6 @@ import type {
 import {
     GroupMutationRejectedError
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import type {
-    GroupJoinCodeMutationWritten,
-    GroupMutationWritten
-} from '@shared-server/rallar-system/services/group-state-service.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import type { GroupStateRouteService } from './group-state-route-contracts.ts';
@@ -69,21 +69,11 @@ export function toGroupStateResponse(
 }
 
 function toGroupMutationResponse(written: GroupStateWritten): GroupMutationWritten {
-    const mutation = written.result.right;
-    if (!mutation) {
-        throw new Error(written.result.left ?? 'Client mutation failed');
-    }
-
-    return mutation;
+    return written.result;
 }
 
 function toGroupJoinCodeResponse(written: GroupJoinCodeWritten): GroupJoinCodeResponse {
-    const mutation = written.result.right;
-    if (!mutation) {
-        throw new Error(written.result.left ?? 'Group join code rotation failed');
-    }
-
-    const { event: _event, ...response } = mutation;
+    const { event: _event, ...response } = written.result;
     return response;
 }
 

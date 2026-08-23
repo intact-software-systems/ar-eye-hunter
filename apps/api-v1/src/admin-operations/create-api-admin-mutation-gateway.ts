@@ -9,14 +9,16 @@ import type {
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
 import {
     toTopologyAppInboxCommand,
-    toTopologyHttpMutationSemanticHash,
-    type AppGroupInboxService,
-    type TopologyReconfigureInboxResult
-} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+    toTopologyHttpMutationSemanticHash
+} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
+import type {
+    TopologyReconfigureInboxResult
+} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
+import type { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { RallarCrdtDocumentMetadata } from '@shared/crdt/mod.ts';
 
-import { decodeJsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
 import type { CrdtAdminMutations, CrdtAdminPublicResult } from '../crdt/create-crdt-admin-mutations.ts';
 
@@ -25,14 +27,14 @@ export interface ApiAdminPruneMutationPort {
 }
 
 export interface ApiTopologyRecomputeMutationPort {
-    readonly processAuthenticatedHttpTopologyEntryUntilCompletionResult:
-        AppGroupInboxService['processAuthenticatedHttpTopologyEntryUntilCompletionResult'];
+    readonly processAuthenticatedHttpEntryUntilCompletionResult:
+        TopologyInboxService['processAuthenticatedHttpEntryUntilCompletionResult'];
 }
 
 export interface CreateApiAdminMutationGatewayInput {
     readonly appAdmin: ApiAdminPruneMutationPort;
     readonly crdtAdminMutations: CrdtAdminMutations;
-    readonly appGroup: ApiTopologyRecomputeMutationPort;
+    readonly topologyInbox: ApiTopologyRecomputeMutationPort;
     readonly now: () => number;
 }
 
@@ -56,8 +58,8 @@ export function createApiAdminMutationGateway(
                 requestId,
                 payload: requestPayload
             });
-            const result = await input.appGroup
-                .processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+            const result = await input.topologyInbox
+                .processAuthenticatedHttpEntryUntilCompletionResult(
                     {
                         operation: requestPayload.operation,
                         requestId,
@@ -134,7 +136,7 @@ function requireTopologyReconfigureResult(
     result: Awaited<
         ReturnType<
             ApiTopologyRecomputeMutationPort[
-                'processAuthenticatedHttpTopologyEntryUntilCompletionResult'
+                'processAuthenticatedHttpEntryUntilCompletionResult'
             ]
         >
     >['right']

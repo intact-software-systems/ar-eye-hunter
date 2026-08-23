@@ -12,8 +12,10 @@ import type { ResourceInboxRepository } from '@shared-server/postgres/resource-i
 
 import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 
-import type { AuthSessionRepository, IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { type AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 
 import {
@@ -25,12 +27,13 @@ import { toGroupMutationDescriptor } from '@shared-server/rallar-system/group-st
 
 import { toScopedGroupMutationCommandId } from '@shared-server/rallar-system/group-state/scoped-group-mutation-command-id.ts';
 
-import type { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
+import { type AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 
-import type { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import type { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import type { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 
-import type { JsonWireObject } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import type { JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
 import { createPostgresAppInboxWorkerServices } from './postgres-app-inbox-worker-services.ts';
 
@@ -65,7 +68,8 @@ export type TopologyReadBarrierPrimitive = 'readRuntimeStateBatch';
 
 export interface PostgresAppInboxWorkerRuntime {
     readonly client: AppClientInboxService;
-    readonly group: AppGroupInboxService;
+    readonly group: GroupStateInboxService;
+    readonly topology: TopologyInboxService;
     readonly authSessions: AuthSessionRepository;
     readonly resourceInbox: ResourceInboxRepository;
     readonly resourceInboxResults: ResourceInboxResultsRepository;
@@ -109,7 +113,7 @@ export function createPostgresAppInboxWorkerTrace(): PostgresAppInboxWorkerTrace
 
 export function groupAppInboxStart(
     input: GroupAppInboxMutationInput
-): () => Promise<Either<string, GroupStateInboxDurableResult>> {
+): () => Promise<Either<AppInboxFailure, GroupStateInboxDurableResult>> {
     const enqueue = toAuthenticatedGroupAppInboxEnqueue(input);
     return () => input.runtime.group.processAuthenticatedGroupEntryUntilCompletion(enqueue, input.authority);
 }
@@ -148,10 +152,10 @@ export async function runGroupAppInbox(
     return unwrapAppInboxResult(await input.runtime.runUntilCompletion(groupAppInboxStart(input)));
 }
 
-export function unwrapAppInboxResult<L, R>(result: Either<L, R>): R {
+export function unwrapAppInboxResult<R>(result: Either<AppInboxFailure, R>): R {
     return result.fold(
         (error) => {
-            throw new Error(String(error));
+            throw new Error(error.message);
         },
         (value) => value
     );
@@ -250,6 +254,7 @@ export function createPostgresAppInboxWorkerRuntime(
     return {
         client: services.client,
         group: services.group,
+        topology: services.topology,
         authSessions: services.authSessions,
         resourceInbox: services.resourceInbox,
         resourceInboxResults: services.resourceInboxResults,

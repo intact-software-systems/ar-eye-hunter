@@ -1,10 +1,8 @@
-const ABSENT_GROUP_EVENT_WORKSPACE_KEY = '_';
-
 export function groupEventWorkspaceKey(
-    workspaceId: string | undefined
+    workspaceId: string
 ): string {
-    if (workspaceId === undefined) {
-        return ABSENT_GROUP_EVENT_WORKSPACE_KEY;
+    if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
+        throw new TypeError('Group event workspaceId must be a nonempty string');
     }
-    return workspaceId === '_' ? '%5F' : encodeURIComponent(workspaceId);
+    return encodeURIComponent(workspaceId);
 }

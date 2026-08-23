@@ -2,7 +2,7 @@ import type { ClientPrincipal, ClientSnapshot } from '@shared/api/client-types.t
 
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
-import type { ClientStateEventStore } from '../../repositories/StateEventStore.ts';
+import type { ClientStateEventStore } from '../../state-events/state-event-store.ts';
 
 export type ClientStateRepositoryOptions = Readonly<{
     events?: ClientStateEventStore;

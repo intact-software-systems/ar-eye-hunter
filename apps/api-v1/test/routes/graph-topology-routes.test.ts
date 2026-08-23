@@ -462,7 +462,7 @@ Deno.test(
     }
 );
 
-Deno.test('all legacy topology mutation paths return 404 without enqueue', async () => {
+Deno.test('all noncanonical topology mutation paths return 404 without enqueue', async () => {
     const calls: Parameters<graphTopologyRoutes.ProcessTopologyAppInbox>[1][] = [];
     const app = createRouteApp({
         group: createGroupSnapshot('room-1', ['owner']),
@@ -604,7 +604,8 @@ function createRouteApp(options: {
     readonly adminClientIds?: readonly string[];
     readonly requireApiAuthSession?: GraphTopologyRouteRequireApiAuthSession;
     readonly graphDiagnostics?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['graphDiagnostics']>;
-    readonly topologyManagement?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['topologyManagement']>;
+    readonly topologyQuery?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['topologyQuery']>;
+    readonly topologyPlanning?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['topologyPlanning']>;
     readonly processTopologyAppInbox?: graphTopologyRoutes.ProcessTopologyAppInbox;
     readonly onCurrentGroupRead?: () => void;
 }): Hono {
@@ -633,8 +634,8 @@ function createRouteApp(options: {
             readGroupGraphDiagnostic: options.graphDiagnostics?.readGroupGraphDiagnostic ??
                 ((groupRef) => Either.ofRight(createGraphResponse(groupRef)))
         },
-        topologyManagement: {
-            readTopologyView: options.topologyManagement?.readTopologyView ??
+        topologyQuery: {
+            readTopologyView: options.topologyQuery?.readTopologyView ??
                 ((groupRef) =>
                     Promise.resolve({
                         groupRef,
@@ -643,17 +644,19 @@ function createRouteApp(options: {
                         config: createTopologyConfigView(),
                         pending: null
                     })),
-            readConfig: options.topologyManagement?.readConfig ??
+            readConfig: options.topologyQuery?.readConfig ??
                 (() => Promise.resolve(createTopologyConfigView())),
-            readOverride: options.topologyManagement?.readOverride ??
-                (() => Promise.resolve(undefined)),
-            readTopologyPlanningAuthority: options.topologyManagement?.readTopologyPlanningAuthority ??
-                ((groupRef, _requestOptions, knownGroup) =>
+            readOverride: options.topologyQuery?.readOverride ??
+                (() => Promise.resolve(undefined))
+        },
+        topologyPlanning: {
+            readTopologyPlanningAuthority: options.topologyPlanning?.readTopologyPlanningAuthority ??
+                ((input) =>
                     Promise.resolve({
-                        group: knownGroup ??
-                            createGroupSnapshot(groupRef.groupId, ['alice'], {
-                                applicationId: groupRef.applicationId,
-                                workspaceId: groupRef.workspaceId
+                        group: input.knownGroup ??
+                            createGroupSnapshot(input.groupRef.groupId, ['alice'], {
+                                applicationId: input.groupRef.applicationId,
+                                workspaceId: input.groupRef.workspaceId
                             }),
                         rttMeasurements: [],
                         nowEpochMs: 123_456
@@ -716,7 +719,6 @@ async function createTopologyAppInboxResult(
             acceptedConfig: null,
             acceptedCausalRevision: null,
             eventId: null,
-            outboxId: null,
             outboxIds: []
         }
     };
@@ -762,7 +764,6 @@ function createGroupSnapshot(
     scope: StateScope = TEST_SCOPE
 ): GroupSnapshot {
     return {
-        stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 0 },
         group: createTestGroup({
             ...scope,

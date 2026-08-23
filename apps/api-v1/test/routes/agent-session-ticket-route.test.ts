@@ -1,4 +1,4 @@
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { AgentSessionTicketResponse, ConsumeAgentSessionTicketResponse } from '@shared/api/api-config.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
@@ -180,7 +180,7 @@ function createApp(
 function mutationFailure(code: string, status: number, message: string) {
     return {
         type: 'api-mutation-failure',
-        version: 'canonical.v1',
+        version: 'canonical.v2',
         code,
         status,
         message,

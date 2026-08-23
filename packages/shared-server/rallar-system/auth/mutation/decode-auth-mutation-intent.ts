@@ -1,4 +1,4 @@
-import type { JsonWireObject, JsonWireValue } from '../../services/mutation-command-identity.ts';
+import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { decodePersistedAuthSession } from '../persistence/auth-persistence-contracts.ts';
 import type { AuthMutationIntent } from './auth-mutation-contracts.ts';
 

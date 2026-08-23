@@ -1,6 +1,6 @@
 import { validateRallarCrdtUpdateEnvelope, type RallarCrdtUpdateEnvelope } from '@shared/crdt/mod.ts';
 
-import { requireExactKeys, requireRecord } from '../../services/exact-object-codec.ts';
+import { requireExactKeys, requireRecord } from '../../protocol/exact-object-decoding.ts';
 import { decodeExactDocumentRef } from './crdt-mutation-value-codec.ts';
 import { decodeExactCausalFrontierShape, decodeExactOperationBatchShape } from './crdt-operation-exact-codec.ts';
 

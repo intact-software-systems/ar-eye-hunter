@@ -6,7 +6,7 @@ import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { createTestGroupStateRuntime } from '../group-state-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
-import { createPublisher, seedGroup, seedPresenceSession, toGroupRef } from './group-presence-retry-test-runtime.ts';
+import { seedGroup, seedPresenceSession, toGroupRef } from './group-presence-retry-test-runtime.ts';
 import { createMaintenance, createService, seedOpenGroup } from './group-presence-test-runtime.ts';
 
 const BASE_EPOCH_MS = Date.now();
@@ -21,12 +21,9 @@ describe('group presence expiry retry', () => {
             expiresAtEpochMs
         });
 
-        const publisher = createPublisher();
         const now = expiresAtEpochMs + 1;
         const runtime = createTestGroupStateRuntime({
             runtimeRepository,
-            syncPublisher: publisher,
-            formationDamping: 'damped',
             now: () => now,
             serviceId: 'group-service'
         });
@@ -37,11 +34,11 @@ describe('group presence expiry retry', () => {
 
         expect(first).toHaveLength(1);
         expect(second).toEqual([]);
-        expect(first[0].result.right?.event).toMatchObject({
+        expect(first[0].result?.event).toMatchObject({
             eventType: 'session-disconnected',
             reason: 'expired'
         });
-        expect(first[0].result.right?.snapshot).toMatchObject({
+        expect(first[0].result?.snapshot).toMatchObject({
             group: {
                 ...groupRef,
                 snapshotVersion: 1,
@@ -89,8 +86,6 @@ describe('group presence expiry retry', () => {
             'session-connected',
             'session-disconnected'
         ]);
-        expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
-        expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
     });
 
     it('rebases expiry observations at different times without idempotency conflict', async () => {

@@ -1,3 +1,4 @@
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import type {
     CrdtAdminCompactResult,
@@ -14,7 +15,6 @@ import {
     decodeExactRetentionPolicy,
     decodeExactSnapshotEnvelope
 } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-value-codec.ts';
-import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type {
     RallarCrdtDocumentLifecycleState,
@@ -27,8 +27,8 @@ import { toRallarCrdtDocumentKey } from '@shared/crdt/mod.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
-import { hashCanonicalCommand } from '@shared-server/rallar-system/services/canonical-command-hash.ts';
-import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import { hashCanonicalCommand } from '@shared-server/rallar-system/app-inbox/hash-canonical-command.ts';
+import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
 export type CrdtAdminMutationOperation =
     | 'rebuild-projection'

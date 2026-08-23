@@ -162,7 +162,6 @@
       "expect": {
         "status": 201,
         "body": {
-          "stateRevision": "integer",
           "group": {
             "groupId": "{groupOneId}"
           }
@@ -230,7 +229,6 @@
       "expect": {
         "status": 201,
         "body": {
-          "stateRevision": "integer",
           "group": {
             "groupId": "{groupTwoId}"
           }
@@ -298,7 +296,6 @@
       "expect": {
         "status": 201,
         "body": {
-          "stateRevision": "integer",
           "group": {
             "groupId": "{groupThreeId}"
           }
@@ -366,7 +363,6 @@
       "expect": {
         "status": 201,
         "body": {
-          "stateRevision": "integer",
           "group": {
             "groupId": "{groupFourId}"
           }
@@ -434,7 +430,6 @@
       "expect": {
         "status": 201,
         "body": {
-          "stateRevision": "integer",
           "group": {
             "groupId": "{groupFiveId}"
           }

@@ -2,11 +2,11 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-import type { RtcTopologyPublication } from '../../rtc-topology-publication-contract.ts';
-import { validateRtcTopologyPublication } from '../../rtc-topology-publication-validation.ts';
-import { rtcTopologySemanticEqual } from '../../rtc-topology-semantic-equality.ts';
-import { compareTopologyTuple, validateTopologySnapshot } from '../../rtc-topology-snapshot-contract.ts';
-import { computeRtcTopologyPublicationOutbox } from '../../services/rtc-topology-ws-outbox-entry.ts';
+import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
+import { compareTopologyTuple, validateTopologySnapshot } from '../persistence/rtc-topology-snapshot-contract.ts';
+import type { RtcTopologyPublication } from '../publication/rtc-topology-publication.ts';
+import { computeRtcTopologyPublicationOutbox } from '../publication/rtc-topology-ws-outbox-entry.ts';
+import { validateRtcTopologyPublication } from '../publication/validate-rtc-topology-publication.ts';
 import type { RtcTopologyDeliveryLogEntry } from './rtc-topology-delivery-contracts.ts';
 import {
     readRtcTopologyDeliverySafeInteger,

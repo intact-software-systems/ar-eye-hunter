@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
-import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
+import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
+import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { computeGroupPresenceSummaryEntry, type GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createAppInboxTestDatabase } from '../../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { TestResourceInbox, TestResourceInboxResults } from '../inbox/group-state-inbox-resource-fixtures.ts';
+import { createTestGroupPresenceSummaryTopologyIntent } from './group-presence-test-runtime.ts';
 
 const BASE_EPOCH_MS = Date.now();
 
@@ -21,7 +22,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
         const formationEvents: Array<Readonly<{ downstreamTopicIds: readonly string[]; }>> = [];
         const wakeQueue = vi.fn();
         const worker = new GroupPresenceSummaryWork({
-            topologyIntent: { damping: 'legacy' },
+            topologyIntent: createTestGroupPresenceSummaryTopologyIntent(),
             disseminationMode: 'dual-emit',
             runtimeRepository: new FakeRuntimeStateRepository(),
             database: database as never,
@@ -64,7 +65,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
         const database = createAppInboxTestDatabase(new TestResourceInbox(), new TestResourceInboxResults());
         const formationMetrics = vi.fn();
         const worker = new GroupPresenceSummaryWork({
-            topologyIntent: { damping: 'legacy' },
+            topologyIntent: createTestGroupPresenceSummaryTopologyIntent(),
             disseminationMode: 'dual-emit',
             runtimeRepository: new FakeRuntimeStateRepository(),
             database: database as never,

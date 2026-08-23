@@ -12,7 +12,7 @@ export function clientStateWorkspaceStorageKey(workspaceId: string): string {
     if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
         throw new TypeError('Client-state workspaceId must be a nonempty string');
     }
-    return workspaceId === '_' ? '%5F' : encodeURIComponent(workspaceId);
+    return encodeURIComponent(workspaceId);
 }
 
 export function clientStateIdempotencyStorageKey(

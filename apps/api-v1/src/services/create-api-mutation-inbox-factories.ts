@@ -3,12 +3,12 @@ import type { ResourceInboxRepository } from '@shared-server/postgres/resource-i
 import type {
     ResourceInboxResultsRepository
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type {
     RallarAdminInboxServiceFactory,
     RallarCrdtInboxServiceFactory
 } from '@shared-server/rallar-system/middleware/rallar-middleware-options.ts';
-import type { AppInboxServiceOptions } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 
 import { createApiAdminInboxService } from '../admin-operations/create-api-admin-inbox-service.ts';
 
@@ -32,7 +32,7 @@ export interface CreateApiMutationInboxFactoriesInput {
     readonly database: PSqlSql;
     readonly serviceId: string;
     readonly timing: RallarTimingSink | undefined;
-    readonly options: AppInboxServiceOptions;
+    readonly options: AppInboxOptions;
     readonly currentAuthority: CurrentAdminMutationAuthority;
 }
 

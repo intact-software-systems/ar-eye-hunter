@@ -7,12 +7,12 @@ import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/
 
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+import { createGroupTopologyOwners, type GroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
 
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 
-import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { computeRtcTopologyEntry } from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
+import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { computeRtcTopologyEntry } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 
 import { createAuthenticatedTopologyEnqueue } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
 import {
@@ -21,6 +21,7 @@ import {
     toTopologyHttpMutationSemanticHash
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import { TopologyAppInboxHandler, type TopologyAppInboxMutationOwners } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
+import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import { authSession } from './group-state/group-state-test-runtime.ts';
 import {
     createAuthorityHarness,
@@ -35,24 +36,25 @@ const GROUP_REF: GroupRef = {
     ...SCOPE,
     groupId: 'topology-room'
 };
+const topologyServices = new WeakMap<AuthorityHarness, TopologyInboxService>();
 
 describe('topology AppInbox transaction and idempotency', () => {
     it('coalesces concurrent identical commands into one durable mutation and result', async () => {
         const wakeQueue = vi.fn();
         const harness = await createAuthorityHarness(['owner'], { wakeQueue });
         await createRoom(harness, GROUP_REF.groupId, 'Topology room');
-        const repository = configureTopology(harness);
+        const repository = configureTopology(harness, wakeQueue);
         wakeQueue.mockClear();
         const initialOutboxCount = harness.database.outboxEntries.size;
         const command = await topologyCommand('same-request', 4);
         const enqueue = topologyEnqueue(command);
 
-        const first = harness.service.processAuthenticatedTopologyEntryUntilCompletion(
+        const first = topologyServiceFor(harness).processAuthenticatedEntryUntilCompletion(
             enqueue,
             harness.sessions.owner
         );
         await waitForQueueEntry(harness.queue);
-        const second = harness.service.processAuthenticatedTopologyEntryUntilCompletion(
+        const second = topologyServiceFor(harness).processAuthenticatedEntryUntilCompletion(
             structuredClone(enqueue),
             harness.sessions.owner
         );
@@ -77,14 +79,14 @@ describe('topology AppInbox transaction and idempotency', () => {
         configureTopology(harness);
         const firstCommand = await topologyCommand('divergent-request', 4);
         const secondCommand = await topologyCommand('divergent-request', 7);
-        const first = harness.service.processAuthenticatedTopologyEntryUntilCompletion(
+        const first = topologyServiceFor(harness).processAuthenticatedEntryUntilCompletion(
             topologyEnqueue(firstCommand),
             harness.sessions.owner
         );
         await waitForQueueEntry(harness.queue);
 
         await expect(
-            harness.service.processAuthenticatedTopologyEntryUntilCompletion(
+            topologyServiceFor(harness).processAuthenticatedEntryUntilCompletion(
                 topologyEnqueue(secondCommand),
                 harness.sessions.owner
             )
@@ -114,11 +116,11 @@ describe('topology AppInbox transaction and idempotency', () => {
                     capturedAtEpochMs: 2_000
                 })
         );
-        const first = harness.service.processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+        const first = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
             await configReservation('owner', 'reserved-config-request', 4, firstMaterialize),
             harness.sessions.owner
         );
-        const second = harness.service.processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+        const second = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
             await configReservation('owner', 'reserved-config-request', 4, secondMaterialize),
             renewed
         );
@@ -139,7 +141,7 @@ describe('topology AppInbox transaction and idempotency', () => {
         await createRoom(harness, GROUP_REF.groupId, 'Topology room');
         configureTopology(harness);
         const materialize = vi.fn(async () => await topologyCommand('renewed-config-request', 4));
-        const first = harness.service.processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+        const first = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
             await configReservation('owner', 'renewed-config-request', 4, materialize),
             harness.sessions.owner
         );
@@ -163,7 +165,7 @@ describe('topology AppInbox transaction and idempotency', () => {
                 })
         );
         await expect(
-            harness.service.processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+            topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
                 await configReservation('owner', 'renewed-config-request', 4, replayMaterialize),
                 renewed
             )
@@ -176,7 +178,7 @@ describe('topology AppInbox transaction and idempotency', () => {
         const harness = await createAuthorityHarness(['owner', 'other']);
         await createRoom(harness, GROUP_REF.groupId, 'Topology room');
         configureTopology(harness);
-        const owner = harness.service.processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+        const owner = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
             await configReservation(
                 'owner',
                 'shared-graph-request',
@@ -185,7 +187,7 @@ describe('topology AppInbox transaction and idempotency', () => {
             ),
             harness.sessions.owner
         );
-        const other = harness.service.processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+        const other = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
             await configReservation(
                 'other',
                 'shared-graph-request',
@@ -222,7 +224,7 @@ describe('topology AppInbox transaction and idempotency', () => {
         const materialize = vi.fn(
             async () => await reconfigureCommand('shared-admin-request', 'owner', 'owner-session', 1_000)
         );
-        const first = harness.service.processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+        const first = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
             await adminReconfigureReservation('owner', materialize),
             harness.sessions.owner
         );
@@ -247,7 +249,7 @@ describe('topology AppInbox transaction and idempotency', () => {
                 )
         );
         await expect(
-            harness.service.processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+            topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
                 await adminReconfigureReservation('owner', replayMaterialize),
                 renewed
             )
@@ -258,7 +260,7 @@ describe('topology AppInbox transaction and idempotency', () => {
         const otherMaterialize = vi.fn(
             async () => await reconfigureCommand('shared-admin-request', 'other', 'other-session', 3_000)
         );
-        const other = harness.service.processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+        const other = topologyServiceFor(harness).processAuthenticatedHttpEntryUntilCompletionResult(
             await adminReconfigureReservation('other', otherMaterialize),
             harness.sessions.other
         );
@@ -284,14 +286,15 @@ describe('topology AppInbox transaction and idempotency', () => {
         const initialOutboxCount = harness.database.outboxEntries.size;
         const command = await topologyCommand('collision-request', 5);
         const mutationCommand = toTopologyConfigMutationCommand(command);
-        const preparation = await management.prepareTopologyConfigMutation({
+        const mutation = management.configMutation!;
+        const preparation = await mutation.prepare({
             command: mutationCommand,
             commandHash: command.commandHash,
             capturedAtEpochMs: command.capturedAtEpochMs
         });
-        const read = await management.readTopologyConfigMutation(mutationCommand);
-        const computed = management.computeTopologyConfigMutation(preparation, read, 1);
-        management.validateTopologyConfigMutation(preparation, read, 1, computed);
+        const read = await mutation.read(mutationCommand);
+        const computed = mutation.compute(preparation, read, 1);
+        mutation.validate(preparation, read, 1, computed);
         expect(computed.outcome).toBe('write');
         if (computed.outcome !== 'write') {
             throw new Error('Expected a topology config write');
@@ -343,17 +346,45 @@ describe('topology AppInbox transaction and idempotency', () => {
     });
 });
 
-function configureTopology(harness: AuthorityHarness): GroupTopologyConfigRepository {
+function configureTopology(
+    harness: AuthorityHarness,
+    wakeQueue?: () => void
+): GroupTopologyConfigRepository {
     const repository = new GroupTopologyConfigRepository(harness.runtimeRepository);
-    harness.service.setTopologyManagementService(topologyManagement(harness, repository));
+    const management = topologyManagement(harness, repository);
+    topologyServices.set(
+        harness,
+        new TopologyInboxService(
+            {
+                inboxQueueReader: harness.reader,
+                resourceInboxRepository: harness.queue,
+                resourceInboxResultsRepository: harness.results,
+                database: harness.database,
+                groupStateService: harness.groupStateService,
+                mutationOwners: topologyMutationOwners(management)
+            },
+            {
+                serviceId: 'server-12345678',
+                wakeOwningQueue: wakeQueue
+            }
+        )
+    );
     return repository;
+}
+
+function topologyServiceFor(harness: AuthorityHarness): TopologyInboxService {
+    const service = topologyServices.get(harness);
+    if (!service) {
+        throw new TypeError('Topology inbox service is not configured for this harness');
+    }
+    return service;
 }
 
 function topologyManagement(
     harness: AuthorityHarness,
     repository: GroupTopologyConfigRepository
-): GroupTopologyManagementService {
-    return new GroupTopologyManagementService({
+): GroupTopologyOwners {
+    return createGroupTopologyOwners({
         findGroupSnapshotByRef: (ref) => harness.groupStateService.readSnapshot(ref),
         groupStateRepository: harness.repository,
         configRepository: repository,
@@ -366,13 +397,13 @@ function topologyManagement(
 }
 
 function topologyMutationOwners(
-    management: GroupTopologyManagementService
+    management: GroupTopologyOwners
 ): TopologyAppInboxMutationOwners {
-    if (!management.configMutationService || !management.reconfigureMutation) {
+    if (!management.configMutation || !management.reconfigureMutation) {
         throw new TypeError('Expected complete topology mutation owners');
     }
     return {
-        configMutationService: management.configMutationService,
+        configMutationService: management.configMutation,
         reconfigureMutation: management.reconfigureMutation
     };
 }

@@ -1,12 +1,9 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import {
-    serializeCanonicalJsonWire,
-    toJsonWireAppInboxEnqueue,
-    toLogicalAppInboxCommand
-} from '@shared-server/rallar-system/services/app-inbox-command-wire.ts';
-import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { serializeCanonicalJsonWire, toJsonWireAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-wire.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { toLogicalAppInboxCommand } from '@shared-server/rallar-system/app-inbox/logical-app-inbox-command.ts';
+import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import {
     readAuthenticatedTopologyCommand,
     readDurableTopologyAppInboxCommand,

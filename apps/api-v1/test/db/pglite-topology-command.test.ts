@@ -3,19 +3,19 @@ import assert from 'node:assert/strict';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ResourceInboxInvariantCorruptionError, ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
-import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
-import { RtcRttRepository } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import {
     APP_OUTBOX_RTC_TOPOLOGY_TOPIC,
     createRtcTopologyOutboxPublisher,
     createRtcTopologyWorkHandler
-} from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
-import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+} from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
+import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
+import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { RtcTopologyDeliveryLeaseLostError } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-stream-service.ts';
+import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -53,7 +53,7 @@ Deno.test(
                 updatedAtEpochMs: 123
             });
 
-            const result = scenario.service.computeTopologyFromAuthority(
+            const result = scenario.service.planning.computeTopologyFromAuthority(
                 scenario.authority,
                 scenario.previous
             );
@@ -76,7 +76,7 @@ Deno.test(
                 updatedAtEpochMs: 200
             });
 
-            const result = scenario.service.computeTopologyFromAuthority(
+            const result = scenario.service.planning.computeTopologyFromAuthority(
                 scenario.authority,
                 scenario.previous
             );
@@ -102,7 +102,7 @@ Deno.test(
                 updatedAtEpochMs: 201
             });
 
-            const result = scenario.service.computeTopologyFromAuthority(
+            const result = scenario.service.planning.computeTopologyFromAuthority(
                 scenario.authority,
                 scenario.previous
             );
@@ -128,7 +128,7 @@ Deno.test(
                 updatedAtEpochMs: 202
             });
 
-            const result = scenario.service.computeTopologyFromAuthority(
+            const result = scenario.service.planning.computeTopologyFromAuthority(
                 scenario.authority,
                 scenario.previous
             );
@@ -194,7 +194,7 @@ Deno.test(
                 degreeLimit: 2,
                 rttReportingDegreeLimit: 1
             });
-            const service = new GroupTopologyManagementService({
+            const service = createGroupTopologyOwners({
                 findGroupSnapshotByRef: () => group,
                 groupStateRepository: groups,
                 configRepository: new GroupTopologyConfigRepository(runtime),
@@ -217,10 +217,13 @@ Deno.test(
                     'session-c': ['session-b']
                 }
             });
-            const authority = await service.readTopologyPlanningAuthority(groupRef);
+            const authority = await service.planning.readTopologyPlanningAuthority({
+                groupRef,
+                snapshotSelection: 'prefer-current'
+            });
             assert.deepEqual(authority.rttMeasurements, [storedRtt]);
 
-            service.computeTopologyFromAuthority(authority, previous);
+            service.planning.computeTopologyFromAuthority(authority, previous);
 
             assert.deepEqual(plannedRtts, []);
         });
@@ -266,7 +269,7 @@ Deno.test(
             assert.equal(await snapshots.observeSnapshot(predecessor), 'inserted');
             const movedPredecessor = { ...predecessor, version: 1, updatedAtEpochMs: 2 };
             let authorityReadCount = 0;
-            const topologyManagement = new GroupTopologyManagementService({
+            const topologyManagement = createGroupTopologyOwners({
                 findGroupSnapshotByRef: (ref) => groups.readSnapshot(ref),
                 groupStateRepository: groups,
                 configRepository: new GroupTopologyConfigRepository(runtimeRepository),
@@ -275,11 +278,11 @@ Deno.test(
                 processRttReader: () => [],
                 now: () => nowEpochMs
             });
-            const readTopologyPlanningAuthority = topologyManagement.planningService
+            const readTopologyPlanningAuthority = topologyManagement.planning
                 .readTopologyPlanningAuthority.bind(
-                    topologyManagement.planningService
+                    topologyManagement.planning
                 );
-            topologyManagement.planningService.readTopologyPlanningAuthority = async (input) => {
+            topologyManagement.planning.readTopologyPlanningAuthority = async (input) => {
                 const authority = await readTopologyPlanningAuthority(input);
                 authorityReadCount += 1;
                 if (authorityReadCount === 1) {
@@ -318,7 +321,7 @@ Deno.test(
                 createRtcTopologyWorkHandler({
                     runtime: workRuntime,
                     database: sql,
-                    topologyPlanning: topologyManagement.planningService,
+                    topologyPlanning: topologyManagement.planning,
                     executionRepository
                 })
             );

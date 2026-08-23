@@ -5,17 +5,15 @@ import type { StateScope } from '@shared/api/state-types.ts';
 
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
-import {
-    validateClientMutationIdempotencyRecord,
-    type ClientMutationIdempotencyRecord
-} from '@shared-server/rallar-system/services/client-state-mutations.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { type ClientMutationIdempotencyRecord } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
+import { validateClientMutationIdempotencyRecord } from '@shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 
-import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { readTopologyConfigMutationRecordBoundary } from '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
 import type { Sql } from 'postgres';
 

@@ -43,6 +43,7 @@ interface ResourceInboxResultPayloadRow {
 
 interface RetryMutationScenario {
     readonly service: ReturnType<typeof createApiCrdtInboxService>;
+    readonly inboxQueueReader: InboxQueueReader;
     readonly documentAuthorityReadCount: () => number;
 }
 
@@ -288,7 +289,7 @@ async function verifyRealSqlCasConflictRetry(): Promise<void> {
         const scenario = createRetryMutationScenario(sql, now);
         await enqueueOwnerUpdate(scenario.service, now);
         await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
-        await scenario.service.inbox.dequeueInbox(
+        await scenario.inboxQueueReader.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
             toResilienceDto()
         );
@@ -303,9 +304,10 @@ function createRetryMutationScenario(sql: PGliteSql, now: number): RetryMutation
         membershipAllowed = false;
     });
     const resourceInbox = new ResourceInboxRepository(sql);
+    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
     return {
         service: createApiCrdtInboxService({
-            inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(resourceInbox)),
+            inboxQueueReader,
             resourceInboxRepository: resourceInbox,
             resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
             database,
@@ -332,6 +334,7 @@ function createRetryMutationScenario(sql: PGliteSql, now: number): RetryMutation
             },
             policies: [{ documentType: 'checklist', rollout: 'production' }]
         }),
+        inboxQueueReader,
         documentAuthorityReadCount: () => documentAuthorityReads
     };
 }

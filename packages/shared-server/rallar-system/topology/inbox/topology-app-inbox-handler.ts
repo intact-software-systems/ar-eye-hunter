@@ -1,12 +1,12 @@
 import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 
+import type { AppInboxEnqueueInput, AppInboxMessageContext } from '../../app-inbox/app-inbox-queue-client.ts';
+import type { AppInboxMutationTransactionWriter } from '../../app-inbox/app-inbox-transaction-writer.ts';
 import type { PersistedAuthSession } from '../../auth/persistence/auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
 import type { GroupStateService } from '../../group-state/group-state-service-contracts.ts';
-import type { AppInboxMutationTransactionWriter } from '../../services/app-inbox-transaction-writer.ts';
-import type { AppInboxEnqueueInput, AppInboxMessageContext } from '../../services/AppInboxService.ts';
-import { requireExactKeys, requireString } from '../../services/exact-object-codec.ts';
-import type { JsonWireValue } from '../../services/mutation-command-identity.ts';
+import { requireExactKeys, requireString } from '../../protocol/exact-object-decoding.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { GroupTopologyConfigMutationService } from '../config/group-topology-config-mutation-service.ts';
 import { toTopologyConfigMutationResult } from '../config/mutation/to-topology-config-mutation-result.ts';
 import { writeTopologyConfigMutation } from '../config/mutation/write-topology-config-mutation.ts';

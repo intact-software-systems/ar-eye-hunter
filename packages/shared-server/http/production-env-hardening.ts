@@ -1,4 +1,4 @@
-import { isValidAuthCredentialSecret } from '../rallar-system/services/auth-credential-issuer.ts';
+import { isValidAuthCredentialSecret } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 
 export type EnvReader = Readonly<{
     get(key: string): string | undefined;

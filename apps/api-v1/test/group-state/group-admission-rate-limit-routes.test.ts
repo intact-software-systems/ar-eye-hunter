@@ -27,7 +27,7 @@ Deno.test('join route answers 429 with Retry-After once the join-admission windo
     assert.equal(response.headers.get('retry-after'), '60');
     assert.deepEqual(await response.json(), {
         type: 'api-mutation-failure',
-        version: 'canonical.v1',
+        version: 'canonical.v2',
         code: 'rate-limited',
         status: 429,
         message: 'Too many group join-admission requests',
@@ -76,7 +76,7 @@ Deno.test('presence connect route answers 429 from the presence-connect window',
     assert.equal(response.headers.get('retry-after'), '60');
     assert.deepEqual(await response.json(), {
         type: 'api-mutation-failure',
-        version: 'canonical.v1',
+        version: 'canonical.v2',
         code: 'rate-limited',
         status: 429,
         message: 'Too many group presence-connect requests',

@@ -2,24 +2,24 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
 import type { CanonicalGroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
-import { readGroupStateRevision } from '@shared/api/group-client-views.ts';
+import { readGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import { readCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { validateRtcRttMeasurement } from '../../rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
+import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
+import { validateRtcRttMeasurement } from '../../rtc-rtt/persistence/rtc-rtt-persistence-validation.ts';
 
-import { groupStateGroupStorageKey } from '../../group-state-storage-keys.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import {
+    COALESCED_APP_OUTBOX_WORK_FIELD,
+    type CoalescedAppOutboxWorkMetadata
+} from '../../app-outbox/coalesced-app-outbox-work-service.ts';
 import {
     readRtcRttTopologyOutboxIdentity,
     toRtcRttMutationReceiptId,
     type RtcRttTopologyOutboxIdentity
-} from '../../rtc-topology/mutation/rtc-rtt-mutation-identifiers.ts';
-import { validatePersistedALMessage } from '../../services/al-message-persistence-validation.ts';
-import { toAppQueueKey } from '../../services/app-inbox-queue-key.ts';
-import {
-    COALESCED_APP_OUTBOX_WORK_FIELD,
-    type CoalescedAppOutboxWorkMetadata
-} from '../../services/CoalescedAppOutboxWorkService.ts';
-import type { RtcTopologyGroupRevisionWork, RtcTopologyRttRefreshWork } from '../../services/RtcTopologyOutboxWork.ts';
+} from '../../rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
+import type { RtcTopologyGroupRevisionWork, RtcTopologyRttRefreshWork } from '../mutation/rtc-topology-outbox-work.ts';
 
 export type RtcTopologyWorkEnvelope<T extends object> = Readonly<{
     type: string;
@@ -200,24 +200,27 @@ function readGroupRevisionWork(input: ReadRtcTopologyWorkVariantInput): Persiste
     }
     requireWorkKeys({
         value: work,
-        required: [...commonKeys, 'sourceGroupStateRevision'],
-        allowed: [...commonKeys, 'sourceGroupStateRevision', COALESCED_APP_OUTBOX_WORK_FIELD],
+        required: [...commonKeys, 'sourceGroupStateCausalRevision'],
+        allowed: [...commonKeys, 'sourceGroupStateCausalRevision', COALESCED_APP_OUTBOX_WORK_FIELD],
         label: 'RTC topology work data'
     });
-    validatePersistedRtcTopologyRevision(work);
+    const sourceGroupStateCausalRevision = readWorkGroupCausalRevision(
+        work.sourceGroupStateCausalRevision,
+        'RTC topology work source causal revision'
+    );
+    validateWorkGroupCausalRevision(sourceGroupStateCausalRevision, commonWork.groupSnapshot);
     const metadata = readOptionalCoalescedWorkMetadata(work);
-    requireWorkInteger(work.sourceGroupStateRevision, 'RTC topology work source revision');
     return {
         kind: 'group-revision',
         ...commonWork,
-        sourceGroupStateRevision: work.sourceGroupStateRevision,
+        sourceGroupStateCausalRevision,
         ...optionalCoalescedMetadata(metadata)
     };
 }
 
 function readRttRefreshWork(input: ReadRtcTopologyWorkVariantInput): PersistedRtcTopologyWork {
     const { work, commonKeys, commonWork, durableIdentity } = input;
-    const revision = ['requestedGroupStateRevision', 'requestedRttVersion'];
+    const revision = ['requestedGroupStateCausalRevision', 'requestedRttVersion'];
     requireWorkKeys({
         value: work,
         required: [...commonKeys, ...revision, 'rtt', 'refinementObservationId'],
@@ -230,8 +233,11 @@ function readRttRefreshWork(input: ReadRtcTopologyWorkVariantInput): PersistedRt
         ],
         label: 'RTC topology work data'
     });
-    validatePersistedRtcTopologyRevision(work);
-    requireWorkInteger(work.requestedGroupStateRevision, 'RTC topology RTT group revision');
+    const requestedGroupStateCausalRevision = readWorkGroupCausalRevision(
+        work.requestedGroupStateCausalRevision,
+        'RTC topology RTT group causal revision'
+    );
+    validateWorkGroupCausalRevision(requestedGroupStateCausalRevision, commonWork.groupSnapshot);
     requireWorkInteger(work.requestedRttVersion, 'RTC topology RTT version');
     validateRtcRttMeasurement(work.rtt);
     requireWorkString(work.refinementObservationId, 'RTC topology RTT refinement observation id');
@@ -257,7 +263,7 @@ function readRttRefreshWork(input: ReadRtcTopologyWorkVariantInput): PersistedRt
     return {
         kind: 'rtt-refresh',
         ...commonWork,
-        requestedGroupStateRevision: work.requestedGroupStateRevision,
+        requestedGroupStateCausalRevision,
         requestedRttVersion: work.requestedRttVersion,
         rtt,
         refinementObservationId: work.refinementObservationId,
@@ -265,25 +271,35 @@ function readRttRefreshWork(input: ReadRtcTopologyWorkVariantInput): PersistedRt
     };
 }
 
-function validatePersistedRtcTopologyRevision(work: WorkBoundaryRecord): void {
-    const groupSnapshot = work.groupSnapshot;
-    validateAuthoritativeGroupSnapshot(groupSnapshot);
-    const stateRevision = readGroupStateRevision(groupSnapshot);
-    if (work.kind === 'group-revision') {
-        requireWorkInteger(work.sourceGroupStateRevision, 'RTC topology work sourceGroupStateRevision');
-        if (work.sourceGroupStateRevision !== stateRevision) {
-            throw new TypeError('RTC topology work source revision differs from snapshot');
-        }
-    }
-    else {
-        requireWorkInteger(
-            work.requestedGroupStateRevision,
-            'RTC topology work requestedGroupStateRevision'
-        );
-        requireWorkInteger(work.requestedRttVersion, 'RTC topology work requestedRttVersion');
-        if (work.requestedGroupStateRevision !== stateRevision) {
-            throw new TypeError('RTC topology RTT work revision differs from snapshot');
-        }
+function readWorkGroupCausalRevision(
+    value: WorkBoundaryValue,
+    label: string
+): GroupStateCausalRevision {
+    const revision = requireWorkRecord(value, label);
+    requireWorkKeys({
+        value: revision,
+        required: ['groupRevision', 'presenceRevision'],
+        allowed: ['groupRevision', 'presenceRevision'],
+        label
+    });
+    requireWorkInteger(revision.groupRevision, `${label} groupRevision`);
+    requireWorkInteger(revision.presenceRevision, `${label} presenceRevision`);
+    return {
+        groupRevision: revision.groupRevision,
+        presenceRevision: revision.presenceRevision
+    };
+}
+
+function validateWorkGroupCausalRevision(
+    revision: GroupStateCausalRevision,
+    snapshot: GroupSnapshot
+): void {
+    const snapshotRevision = readGroupCausalRevision(snapshot);
+    if (
+        revision.groupRevision !== snapshotRevision.groupRevision ||
+        revision.presenceRevision !== snapshotRevision.presenceRevision
+    ) {
+        throw new TypeError('RTC topology work causal revision differs from snapshot');
     }
 }
 

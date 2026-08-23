@@ -1,9 +1,7 @@
-import type {
-    AuthSessionRepository,
-    IssuedAuthSession
-} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { type AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
+import { type AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
-import type { AppAuthInboxService } from '../rallar-system/services/AppAuthInboxService.ts';
 
 const BEARER_PREFIX = 'Bearer ';
 

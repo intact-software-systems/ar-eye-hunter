@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { RallarCrdtAdminReadRepository, RallarCrdtDocumentMetadata, RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 
 import type { AdminOperationMutationWriteInput } from '../../../src/admin-operations/register-admin-operation-mutation-routes.ts';
@@ -198,7 +198,7 @@ Deno.test(
             assert.equal(response.status, 401, route.path);
             const failure = await readJsonRecord(response);
             assert.equal(failure.type, 'api-mutation-failure', route.path);
-            assert.equal(failure.version, 'canonical.v1', route.path);
+            assert.equal(failure.version, 'canonical.v2', route.path);
             assert.equal(failure.code, 'api-authentication-required', route.path);
             assert.equal(fixture.authCalls(), 1, route.path);
             assert.deepEqual(fixture.calls, []);
@@ -414,7 +414,7 @@ async function assertCanonicalValidationFailure(
     assert.equal(response.status, 400, path);
     const failure = await readJsonRecord(response);
     assert.equal(failure.type, 'api-mutation-failure', path);
-    assert.equal(failure.version, 'canonical.v1', path);
+    assert.equal(failure.version, 'canonical.v2', path);
     assert.equal(failure.code, 'api-mutation-request-invalid', path);
     assert.equal(failure.status, 400, path);
 }

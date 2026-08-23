@@ -5,9 +5,9 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { WsServerLiveSendStatus } from '@shared/services/ws-queue-box-server-contracts.ts';
 
-import { toCanonicalRtcTopologyGroupIdentity } from '../../rtc-topology-identifiers.ts';
-import type { RtcTopologyPublication } from '../../rtc-topology-publication-contract.ts';
-import { validatePersistedALMessage } from '../../services/al-message-persistence-validation.ts';
+import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { toCanonicalRtcTopologyGroupIdentity } from '../persistence/rtc-topology-identifiers.ts';
+import type { RtcTopologyPublication } from '../publication/rtc-topology-publication.ts';
 import type { RtcTopologyDeliveryLogEntry } from './rtc-topology-delivery-contracts.ts';
 import { decideRtcTopologyReplayEntry } from './rtc-topology-replay-decision.ts';
 import type {

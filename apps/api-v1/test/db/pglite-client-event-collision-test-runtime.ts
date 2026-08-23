@@ -2,16 +2,16 @@ import assert from 'node:assert/strict';
 
 import { PSqlClientStateEventRepository } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import { type TopologyAppInboxCommand } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
+import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import {
-    createClientStateService,
     toClientMutationCommand,
-    toClientMutationIssuedSessionAuthority,
     toUpsertInstanceCommandInput,
     toUpsertPrincipalCommandInput
-} from '@shared-server/rallar-system/services/client-state-service.ts';
+} from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import type { TopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
 
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 
@@ -141,7 +141,6 @@ export async function createPGliteClientEventCollisionFixture(
     const repository = new ClientStateRepository(runtime, { events });
     const service = createClientStateService({
         runtimeRepository: runtime,
-        formationDamping: 'damped',
         createClientStateEventStore: () => events,
         serviceId: 'pglite-client-service'
     });
@@ -175,8 +174,7 @@ export async function createPGliteClientEventCollisionFixture(
                 serviceId: 'pglite-client-service',
                 eventId,
                 attemptCount: 1,
-                expireAtEpochMs: FUTURE_MS,
-                formationDamping: 'damped'
+                expireAtEpochMs: FUTURE_MS
             },
             toClientMutationIssuedSessionAuthority(authority, scope, operation)
         );

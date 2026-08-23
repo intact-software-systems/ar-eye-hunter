@@ -12,7 +12,10 @@ import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
 import { UndirectedGraph } from 'graphology';
 
-import { compareRtcTopologyIdentifiers, toCanonicalRtcTopologyPairIdentity } from '../../rtc-topology-identifiers.ts';
+import {
+    compareRtcTopologyIdentifiers,
+    toCanonicalRtcTopologyPairIdentity
+} from '../persistence/rtc-topology-identifiers.ts';
 import { computeCanonicalTopologyPairWeight } from './canonical-topology-planning-input.ts';
 import { computeNoRttTopologyNextHops } from './compute-no-rtt-topology-next-hops.ts';
 

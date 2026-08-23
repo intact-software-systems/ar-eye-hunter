@@ -3,22 +3,19 @@ import type { GroupSnapshot as GroupStateSnapshot } from '@shared/api/group-type
 import { createAndSetBootstrapOverlays, type BootstrapOverlayPolicy } from '@shared/repository/overlay-bootstrap.ts';
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { resolveBootstrapDegree } from '@shared/rtc/bootstrap-peer-selection.ts';
-import { resolveRtcGroupFormationMode, type RtcGroupFormationMode } from '@shared/rtc/group-formation-mode.ts';
 import type { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
 
-export type GroupFormationPolicyInput = Readonly<{
-    mode: RtcGroupFormationMode;
+export type BootstrapOverlayPolicyInput = Readonly<{
     bootstrapDegree: number;
 }>;
 
 export function resolveBootstrapOverlayPolicy(
-    groupFormation: GroupFormationPolicyInput | undefined,
+    input: BootstrapOverlayPolicyInput | undefined,
     localSessionId: string
 ): BootstrapOverlayPolicy {
     return {
         localSessionId,
-        mode: resolveRtcGroupFormationMode(groupFormation?.mode),
-        bootstrapDegree: groupFormation?.bootstrapDegree ??
+        bootstrapDegree: input?.bootstrapDegree ??
             resolveBootstrapDegree({})
     };
 }
@@ -28,7 +25,6 @@ export function isSameBootstrapOverlayPolicy(
     right: BootstrapOverlayPolicy
 ): boolean {
     return left.localSessionId === right.localSessionId &&
-        left.mode === right.mode &&
         left.bootstrapDegree === right.bootstrapDegree;
 }
 
@@ -39,7 +35,6 @@ export async function acceptGroupSnapshotUpdate(
 ): Promise<void> {
     if (!isGroupActive(snapshot)) {
         overlaysRepository.removeOverlayByGroupRef(snapshot.group);
-        overlaysRepository.removeLegacyOverlayByGroupIdIfMatches(snapshot.group);
 
         await webRtcGroupManager.delete(snapshot.group);
         return;
@@ -47,7 +42,6 @@ export async function acceptGroupSnapshotUpdate(
 
     if (!isSessionInGroup(snapshot, bootstrapOverlayPolicy.localSessionId)) {
         overlaysRepository.removeOverlayByGroupRef(snapshot.group);
-        overlaysRepository.removeLegacyOverlayByGroupIdIfMatches(snapshot.group);
         if (webRtcGroupManager.has(snapshot.group)) {
             await webRtcGroupManager.delete(snapshot.group, { retainConnections: true });
         }
@@ -66,7 +60,6 @@ export async function acceptGroupSnapshotRemoval(
     webRtcGroupManager: WebRtcGroupManager
 ): Promise<void> {
     overlaysRepository.removeOverlayByGroupRef(snapshot.group);
-    overlaysRepository.removeLegacyOverlayByGroupIdIfMatches(snapshot.group);
 
     await webRtcGroupManager.delete(snapshot.group);
 }

@@ -1,8 +1,8 @@
-import type { RtcTopologyPublicationWorkClaim } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
-import type { RtcRttAppInboxResult } from '@shared-server/rallar-system/rtc-topology/inbox/rtc-rtt-app-inbox-result.ts';
-import type { AuthMutationResult } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
-import type { ClientMutationReceipt } from '@shared-server/rallar-system/services/client-state-mutations.ts';
-import type { GroupMutationReceipt } from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import { type AuthMutationResult } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
+import { type ClientMutationReceipt } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
+import { type GroupMutationReceipt } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import type { RtcRttAppInboxResult } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-app-inbox-result.ts';
+import { type RtcTopologyPublicationWorkClaim } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
 import type { OverlayInfo, RegisterResponse } from '@shared/api/api-config.ts';
 import type { AuditStamp as ClientAuditStamp, ClientEvent, ClientInstance, ClientPrincipal, ClientScope, ClientSession } from '@shared/api/client-types.ts';
 import type {

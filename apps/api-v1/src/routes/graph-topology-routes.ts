@@ -9,24 +9,22 @@ import type {
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
 
-import {
-    canReadGroupSnapshot,
-    canUpdateGroupSnapshot,
-    GroupPolicyDeniedError
-} from '@shared-server/rallar-system/group-policy.ts';
+import { type AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type {
     GroupLifecyclePolicyRead
 } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { canUpdateGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-governance-policy.ts';
+import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
+import { canReadGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
     toTopologyAppInboxCommand,
-    toTopologyHttpMutationSemanticHash,
-    type AppGroupInboxService,
-    type TopologyAppInboxRequestPayload,
-    type TopologyAppInboxResult
-} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import { type AppInboxFailure } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+    toTopologyHttpMutationSemanticHash
+} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
+import type { TopologyAppInboxRequestPayload } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
+import type { TopologyAppInboxResult } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
+import type { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { toApiMutationRouteFailure } from './api-mutation-route-failure.ts';
@@ -46,12 +44,12 @@ const GROUP_TOPOLOGY_PATH = '/api/state/apps/:applicationId/workspaces/:workspac
 
 export type ProcessTopologyAppInbox = (
     authority: IssuedAuthSession,
-    reservation: AppGroupInboxService.HttpTopologyCommandReservation
+    reservation: TopologyInboxService.HttpCommandReservation
 ) => Promise<TopologyAppInboxResult>;
 
 export interface GraphTopologyAppInboxService {
-    processAuthenticatedHttpTopologyEntryUntilCompletionResult(
-        reservation: AppGroupInboxService.HttpTopologyCommandReservation,
+    processAuthenticatedHttpEntryUntilCompletionResult(
+        reservation: TopologyInboxService.HttpCommandReservation,
         authority: IssuedAuthSession
     ): Promise<Either<AppInboxFailure, TopologyAppInboxResult>>;
 }
@@ -71,14 +69,20 @@ export interface GraphTopologyRouteGraphDiagnostics {
     ): Either<string, GraphDiagnosticReadResponse>;
 }
 
-export interface GraphTopologyRouteTopologyManagement {
+export interface GraphTopologyRouteQuery {
     readTopologyView(groupRef: GroupRef): Promise<GroupTopologyManagementView>;
     readConfig(groupRef: GroupRef): Promise<GroupTopologyConfigView>;
     readOverride(groupRef: GroupRef): Promise<StoredGroupTopologyOverride | undefined>;
+}
+
+export interface GraphTopologyRoutePlanning {
     readTopologyPlanningAuthority(
-        groupRef: GroupRef,
-        requestOptions?: undefined,
-        knownGroup?: GroupSnapshot
+        input: Readonly<{
+            groupRef: GroupRef;
+            requestOptions?: undefined;
+            knownGroup?: GroupSnapshot;
+            snapshotSelection: 'prefer-current' | 'preserve-known-revision';
+        }>
     ): Promise<
         Readonly<{
             group: GroupSnapshot;
@@ -91,7 +95,8 @@ export interface GraphTopologyRouteTopologyManagement {
 export interface GraphTopologyRouteDependencies {
     readonly groupStateService: GraphTopologyGroupStateService;
     readonly graphDiagnostics: GraphTopologyRouteGraphDiagnostics;
-    readonly topologyManagement: GraphTopologyRouteTopologyManagement;
+    readonly topologyQuery: GraphTopologyRouteQuery;
+    readonly topologyPlanning: GraphTopologyRoutePlanning;
     readonly processTopologyAppInbox: ProcessTopologyAppInbox;
     readonly requireApiAuthSession: (
         req: { header(name: string): string | undefined; }
@@ -154,7 +159,7 @@ export function registerGraphTopologyRoutes(
                 const groupRef = toGroupRef(c);
                 const snapshot = await readCurrentGroupSnapshot(groupRef, deps);
                 await assertCanReadGroupSnapshot(c.req, deps, snapshot);
-                return c.json(await deps.topologyManagement.readTopologyView(groupRef));
+                return c.json(await deps.topologyQuery.readTopologyView(groupRef));
             }
             catch (error) {
                 return toErrorResponse(c, error);
@@ -184,7 +189,7 @@ export function registerGraphTopologyRoutes(
                 const groupRef = toGroupRef(c);
                 const snapshot = await readCurrentGroupSnapshot(groupRef, deps);
                 await assertCanReadGroupSnapshot(c.req, deps, snapshot);
-                return c.json(await deps.topologyManagement.readConfig(groupRef));
+                return c.json(await deps.topologyQuery.readConfig(groupRef));
             }
             catch (error) {
                 return toErrorResponse(c, error);
@@ -251,7 +256,7 @@ export function registerGraphTopologyRoutes(
                 const groupRef = toGroupRef(c);
                 const snapshot = await readCurrentGroupSnapshot(groupRef, deps);
                 await assertCanReadGroupSnapshot(c.req, deps, snapshot);
-                return c.json(await deps.topologyManagement.readOverride(groupRef) ?? {});
+                return c.json(await deps.topologyQuery.readOverride(groupRef) ?? {});
             }
             catch (error) {
                 return toErrorResponse(c, error);
@@ -547,9 +552,9 @@ async function writeTopologyAppInboxCommand(
 export async function processTopologyAppInbox(
     service: GraphTopologyAppInboxService,
     authority: IssuedAuthSession,
-    reservation: AppGroupInboxService.HttpTopologyCommandReservation
+    reservation: TopologyInboxService.HttpCommandReservation
 ): Promise<TopologyAppInboxResult> {
-    const result = await service.processAuthenticatedHttpTopologyEntryUntilCompletionResult(
+    const result = await service.processAuthenticatedHttpEntryUntilCompletionResult(
         reservation,
         authority
     );

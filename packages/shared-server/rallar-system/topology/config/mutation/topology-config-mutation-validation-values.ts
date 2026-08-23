@@ -42,9 +42,7 @@ export function requireTopologyString(value: string, label: string): void {
 export function validateTopologyGroupRef(value: GroupRef, label: string): void {
     validateTopologyConfigObject(value, label);
     requireTopologyString(value.applicationId, `${label} applicationId`);
-    if (value.workspaceId !== undefined) {
-        requireTopologyString(value.workspaceId, `${label} workspaceId`);
-    }
+    requireTopologyString(value.workspaceId, `${label} workspaceId`);
     requireTopologyString(value.groupId, `${label} groupId`);
 }
 

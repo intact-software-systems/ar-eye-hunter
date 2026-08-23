@@ -1042,7 +1042,6 @@ function groupSnapshot(groupId: string, applicationId = 'rallar-server'): GroupS
     const groupRevision = 3;
     return {
         ...snapshot,
-        stateRevision: groupRevision + snapshot.causalRevision.presenceRevision,
         causalRevision: {
             ...snapshot.causalRevision,
             groupRevision
@@ -1061,7 +1060,6 @@ function groupSnapshotWithActiveSession(groupId: string, generationId: string): 
     const snapshot = groupSnapshot(groupId);
     return {
         ...snapshot,
-        stateRevision: snapshot.stateRevision + 1,
         causalRevision: {
             ...snapshot.causalRevision,
             presenceRevision: snapshot.causalRevision.presenceRevision + 1

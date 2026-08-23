@@ -6,22 +6,21 @@ import type {
 import type {
     ClientRestSnapshotReadSelector
 } from '@shared-server/rallar-system/client-state/snapshot/client-rest-snapshot-read-selector.ts';
-import type { RallarGroupFormationMetricsRecorder } from '@shared-server/rallar-system/formation-metrics.ts';
 import type {
     CachedGroupStateService
 } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import type {
     GroupRestSnapshotReadSelector
 } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
-import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/RallarMiddleware.ts';
+import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware.ts';
+import type { RallarGroupFormationMetricsRecorder } from '@shared-server/rallar-system/observability/formation-metrics.ts';
 import type {
     RtcTopologyExecutionRepository
-} from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
-import type {
-    RtcTopologyPublicationRepository
-} from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
+} from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
+import { type RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
 
 import type { ApiV1BackgroundTaskLifecycle } from './api-v1-background-task-lifecycle.ts';
+import type { ApiV1TopologyServices } from './create-api-v1-topology-services.ts';
 
 export interface ApiV1Runtime extends
     Omit<
@@ -46,6 +45,7 @@ export interface ApiV1Runtime extends
     readonly groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
     readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
+    readonly topologyServices: ApiV1TopologyServices;
 }
 
 export interface RequireApiV1RuntimeInput {
@@ -55,6 +55,7 @@ export interface RequireApiV1RuntimeInput {
     readonly groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
     readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
+    readonly topologyServices: ApiV1TopologyServices;
 }
 
 export function requireApiV1Runtime(input: RequireApiV1RuntimeInput): ApiV1Runtime {
@@ -94,7 +95,8 @@ export function requireApiV1Runtime(input: RequireApiV1RuntimeInput): ApiV1Runti
         clientRestSnapshotReadSelector: input.clientRestSnapshotReadSelector,
         groupRestSnapshotReadSelector: input.groupRestSnapshotReadSelector,
         groupFormationMetrics: input.groupFormationMetrics,
-        backgroundTasks: input.backgroundTasks
+        backgroundTasks: input.backgroundTasks,
+        topologyServices: input.topologyServices
     };
 }
 

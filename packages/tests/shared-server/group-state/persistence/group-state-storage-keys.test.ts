@@ -1,3 +1,4 @@
+import { type GroupMutationIdempotencyRecord, type GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
     groupStateGroupStorageKey,
@@ -8,7 +9,6 @@ import {
     groupStatePresenceSummaryStorageKey,
     groupStateScopeStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
-import { type GroupMutationIdempotencyRecord, type GroupMutationRead } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceAdmission, GroupPresenceSession } from '@shared/api/group-types.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createTestGroup } from '../../../create-test-group.ts';
@@ -16,7 +16,7 @@ import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.
 import { groupMemberStorageKey, groupRef, groupStorageKey, storedEntry } from '../mutation/group-mutation-test-runtime.ts';
 
 describe('GroupStateRepository persistence', () => {
-    it('encodes canonical group storage keys including workspace absence and reserved IDs', () => {
+    it('encodes canonical group storage keys for every required identity component', () => {
         const ref = {
             applicationId: 'app/one',
             workspaceId: 'workspace/one',
@@ -40,27 +40,27 @@ describe('GroupStateRepository persistence', () => {
         expect(groupStateIdempotencyStorageKey(ref, 'r/a')).toBe(`${groupKey}:request=r%2Fa`);
     });
 
-    it('keeps the legacy absent-workspace key while encoding every present workspace injectively', () => {
-        const absentRef = {
+    it('encodes every present workspace and lookalike identifier injectively', () => {
+        const ordinaryRef = {
             applicationId: 'app/one',
             workspaceId: 'workspace/default',
             groupId: 'group:one'
         };
-        const explicitSentinelRef = { ...absentRef, workspaceId: '_' };
+        const explicitSentinelRef = { ...ordinaryRef, workspaceId: '_' };
 
-        expect(groupStateScopeStorageKey(absentRef)).toBe('app=app%2Fone:ws=workspace%2Fdefault');
-        expect(groupStateScopeStorageKey(explicitSentinelRef)).toBe('app=app%2Fone:ws=%5F');
+        expect(groupStateScopeStorageKey(ordinaryRef)).toBe('app=app%2Fone:ws=workspace%2Fdefault');
+        expect(groupStateScopeStorageKey(explicitSentinelRef)).toBe('app=app%2Fone:ws=_');
 
-        const absentKeys = [
-            groupStateGroupStorageKey(absentRef),
-            groupStateMemberStorageKey({ ...absentRef, principalId: 'p:a' }),
-            groupStatePresenceSessionStorageKey({ ...absentRef, sessionId: 's:a' }),
+        const ordinaryKeys = [
+            groupStateGroupStorageKey(ordinaryRef),
+            groupStateMemberStorageKey({ ...ordinaryRef, principalId: 'p:a' }),
+            groupStatePresenceSessionStorageKey({ ...ordinaryRef, sessionId: 's:a' }),
             groupStatePresenceAdmissionStorageKey({
-                ...absentRef,
+                ...ordinaryRef,
                 principalId: 'p:a'
             }),
-            groupStatePresenceSummaryStorageKey(absentRef),
-            groupStateIdempotencyStorageKey(absentRef, 'r:a')
+            groupStatePresenceSummaryStorageKey(ordinaryRef),
+            groupStateIdempotencyStorageKey(ordinaryRef, 'r:a')
         ];
         const explicitSentinelKeys = [
             groupStateGroupStorageKey(explicitSentinelRef),
@@ -79,11 +79,11 @@ describe('GroupStateRepository persistence', () => {
             groupStatePresenceSummaryStorageKey(explicitSentinelRef),
             groupStateIdempotencyStorageKey(explicitSentinelRef, 'r:a')
         ];
-        for (let index = 0; index < absentKeys.length; index += 1) {
-            expect(explicitSentinelKeys[index]).not.toBe(absentKeys[index]);
+        for (let index = 0; index < ordinaryKeys.length; index += 1) {
+            expect(explicitSentinelKeys[index]).not.toBe(ordinaryKeys[index]);
         }
 
-        const workspaceValues = ['', '_', '%5F', 'a:b', 'a%b', 'a/b'];
+        const workspaceValues = ['_', '%5F', 'a:b', 'a%b', 'a/b'];
         const scopeKeys = workspaceValues.map((workspaceId) =>
             groupStateScopeStorageKey({
                 applicationId: 'app/one',
@@ -94,16 +94,19 @@ describe('GroupStateRepository persistence', () => {
 
         const lookalikeValues = ['a:b', 'a%3Ab', 'a%b', 'a/b'];
         const keyFamilies = [
-            lookalikeValues.map((groupId) => groupStateGroupStorageKey({ ...absentRef, groupId })),
-            lookalikeValues.map((principalId) => groupStateMemberStorageKey({ ...absentRef, principalId })),
-            lookalikeValues.map((sessionId) => groupStatePresenceSessionStorageKey({ ...absentRef, sessionId })),
-            lookalikeValues.map((principalId) => groupStatePresenceAdmissionStorageKey({ ...absentRef, principalId })),
-            lookalikeValues.map((groupId) => groupStatePresenceSummaryStorageKey({ ...absentRef, groupId })),
-            lookalikeValues.map((requestId) => groupStateIdempotencyStorageKey(absentRef, requestId))
+            lookalikeValues.map((groupId) => groupStateGroupStorageKey({ ...ordinaryRef, groupId })),
+            lookalikeValues.map((principalId) => groupStateMemberStorageKey({ ...ordinaryRef, principalId })),
+            lookalikeValues.map((sessionId) => groupStatePresenceSessionStorageKey({ ...ordinaryRef, sessionId })),
+            lookalikeValues.map((principalId) => groupStatePresenceAdmissionStorageKey({ ...ordinaryRef, principalId })),
+            lookalikeValues.map((groupId) => groupStatePresenceSummaryStorageKey({ ...ordinaryRef, groupId })),
+            lookalikeValues.map((requestId) => groupStateIdempotencyStorageKey(ordinaryRef, requestId))
         ];
         for (const keys of keyFamilies) {
             expect(new Set(keys).size).toBe(lookalikeValues.length);
         }
+        expect(() => groupStateScopeStorageKey({ applicationId: 'app', workspaceId: '' })).toThrow(
+            TypeError
+        );
     });
 
     it('rejects noncanonical percent aliases for every derived child key on direct, list, and snapshot reads', async () => {
@@ -153,7 +156,6 @@ describe('GroupStateRepository persistence', () => {
                 outcome: 'no-op',
                 attemptCount: 1,
                 acceptedStorageRevision: 0,
-                stateRevision: 1,
                 snapshotVersion: 1,
                 causalRevision: { groupRevision: 1, presenceRevision: 0 },
                 eventId: null,

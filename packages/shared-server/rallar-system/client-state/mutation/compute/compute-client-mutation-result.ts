@@ -5,7 +5,10 @@ import type {
     ClientSession,
     ClientSnapshot
 } from '@shared/api/client-types.ts';
-import { computeClientStateSyncEntries, type ComputedClientStateSync } from '../../../state-sync-publisher.ts';
+import {
+    computeClientStateSyncEntries,
+    type ComputedClientStateSync
+} from '../../../state-sync/state-sync-entry-computation.ts';
 import { ClientMutationRejectedError } from '../../client-state-validation-primitives.ts';
 import {
     compareClientStateInstanceStorageKeys,
@@ -46,13 +49,7 @@ export function computeClientMutationResult(
         stateRevision
     });
     const stateSync = toClientStateSync(command, snapshot, event);
-    const outboxEntries = stateSync.flatMap((computed) =>
-        computeClientStateSyncEntries(
-            computed,
-            facts.serviceId,
-            facts.formationDamping === 'damped' ? 'principal' : 'world'
-        )
-    );
+    const outboxEntries = stateSync.flatMap((computed) => computeClientStateSyncEntries(computed, facts.serviceId));
     const receipt = toAppliedClientMutationReceipt({
         command,
         read,

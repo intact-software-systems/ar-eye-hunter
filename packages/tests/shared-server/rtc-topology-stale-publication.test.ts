@@ -1,5 +1,5 @@
-import { toRtcTopologyPublicationMessageId } from '@shared-server/rallar-system/rtc-topology-identifiers.ts';
-import { computeTopologyMutation, validateTopologyMutation } from '@shared-server/rallar-system/services/rtc-topology-mutations.ts';
+import { computeTopologyMutation, validateTopologyMutation } from '@shared-server/rallar-system/topology/mutation/rtc-topology-mutations.ts';
+import { toRtcTopologyPublicationMessageId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';

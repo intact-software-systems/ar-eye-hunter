@@ -61,7 +61,6 @@ export function createTopologyTestGroupRef() {
 export function createTopologyTestGroupSnapshot(): GroupSnapshot {
     const groupRef = createTopologyTestGroupRef();
     return {
-        stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 0 },
         group: createTestGroup({
             ...groupRef,

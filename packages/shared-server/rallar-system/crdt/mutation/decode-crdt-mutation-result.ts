@@ -14,7 +14,7 @@ import {
     requireOneOf,
     requireRecord,
     requireString
-} from '../../services/exact-object-codec.ts';
+} from '../../protocol/exact-object-decoding.ts';
 import { appendRejectionReason, isAppendRejectionRetryable, toAppendRejectionCode } from './crdt-append-rejection.ts';
 import type { CrdtMutationResult } from './crdt-mutation-contracts.ts';
 import {

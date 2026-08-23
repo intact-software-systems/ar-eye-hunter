@@ -35,7 +35,7 @@ Deno.test('strict client mutations receive canonical authentication failures', a
             assert.equal(response.status, failure.status);
             assert.deepEqual(await response.json(), {
                 type: 'api-mutation-failure',
-                version: 'canonical.v1',
+                version: 'canonical.v2',
                 code: failure.code,
                 status: failure.status,
                 message: failure.message,
@@ -71,7 +71,7 @@ Deno.test('removed client mutation paths bypass auth middleware and remain 404',
     }
 });
 
-Deno.test('state authentication retains the legacy response contract for reads', async () => {
+Deno.test('state authentication retains the current read response contract', async () => {
     const failure = authenticationRequired('Credential wording has no status prefix');
     const app = new Hono();
     app.use(

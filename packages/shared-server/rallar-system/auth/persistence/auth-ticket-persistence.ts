@@ -10,7 +10,6 @@ import type {
     RuntimeStateRepositoryLike
 } from '../../../runtime-state/RuntimeStateRepository.ts';
 import { hashAuthSecret } from '../credentials/hash-auth-secret.ts';
-import { readBoundedLegacyAuthPage } from './auth-legacy-compatibility.ts';
 import {
     decodePersistedAgentSessionTicket,
     decodePersistedWebSocketTicket,
@@ -21,7 +20,6 @@ import {
 import type { IssuedAgentSessionTicket, IssuedWebSocketTicket } from './auth-session-types.ts';
 import {
     AGENT_SESSION_TICKETS_NAMESPACE,
-    authLegacyTicketKey,
     authTicketDigestKey,
     WS_AUTH_TICKETS_NAMESPACE
 } from './auth-storage-keys.ts';
@@ -149,13 +147,7 @@ export class AuthTicketPersistence extends RuntimeStateJsonStore {
             authTicketDigestKey(ticketDigest)
         );
         if (!read.value) {
-            if (read.expiredEntry) {
-                return { value: undefined, expiredEntry: read.expiredEntry };
-            }
-            return {
-                value: await this.findLegacyWebSocketTicketByDigestEntry(ticketDigest),
-                expiredEntry: undefined
-            };
+            return { value: undefined, expiredEntry: read.expiredEntry };
         }
         const value = decodePersistedWebSocketTicket(read.value.value);
         if (value.ticketDigest !== ticketDigest) {
@@ -221,13 +213,7 @@ export class AuthTicketPersistence extends RuntimeStateJsonStore {
             authTicketDigestKey(ticketDigest)
         );
         if (!read.value) {
-            if (read.expiredEntry) {
-                return { value: undefined, expiredEntry: read.expiredEntry };
-            }
-            return {
-                value: await this.findLegacyAgentTicketByDigestEntry(ticketDigest),
-                expiredEntry: undefined
-            };
+            return { value: undefined, expiredEntry: read.expiredEntry };
         }
         const value = decodePersistedAgentSessionTicket(read.value.value);
         if (value.ticketDigest !== ticketDigest) {
@@ -263,127 +249,5 @@ export class AuthTicketPersistence extends RuntimeStateJsonStore {
     ): Promise<PersistedAuthSession | undefined> {
         const session = await this.findSessionById(issuedTicket.sessionId);
         return session?.clientId === issuedTicket.clientId ? session : undefined;
-    }
-
-    private async findLegacyWebSocketTicketByDigestEntry(
-        ticketDigest: string
-    ): Promise<RuntimeStateEntryValue<PersistedWebSocketTicket> | undefined> {
-        return (await this.findLegacyTicketByDigestEntry(
-            WS_AUTH_TICKETS_NAMESPACE,
-            ticketDigest,
-            false
-        )) as RuntimeStateEntryValue<PersistedWebSocketTicket> | undefined;
-    }
-
-    private async findLegacyAgentTicketByDigestEntry(
-        ticketDigest: string
-    ): Promise<RuntimeStateEntryValue<PersistedAgentSessionTicket> | undefined> {
-        return (await this.findLegacyTicketByDigestEntry(
-            AGENT_SESSION_TICKETS_NAMESPACE,
-            ticketDigest,
-            true
-        )) as RuntimeStateEntryValue<PersistedAgentSessionTicket> | undefined;
-    }
-
-    private async findLegacyTicketByDigestEntry(
-        namespace: string,
-        ticketDigest: string,
-        agentTicket: boolean
-    ): Promise<RuntimeStateEntryValue<PersistedWebSocketTicket | PersistedAgentSessionTicket> | undefined> {
-        for (
-            const entry of await readBoundedLegacyAuthPage(
-                this.repository,
-                namespace,
-                authLegacyTicketKey('')
-            )
-        ) {
-            const live = await this.toLiveEntryValue<unknown>(namespace, entry);
-            if (!live) {
-                continue;
-            }
-            const legacy = decodeLegacyTicket(live.value, agentTicket);
-            if (live.entry.key !== authLegacyTicketKey(legacy.ticket)) {
-                continue;
-            }
-            if ((await hashAuthSecret(legacy.ticket)) !== ticketDigest) {
-                continue;
-            }
-            const session = await this.findSessionById(legacy.sessionId);
-            if (!session || session.clientId !== legacy.clientId) {
-                continue;
-            }
-            return {
-                entry: live.entry,
-                value: {
-                    ticketDigest,
-                    accessTokenDigest: session.accessTokenDigest,
-                    sessionId: legacy.sessionId,
-                    clientId: legacy.clientId,
-                    ...(agentTicket ? { agentId: legacy.agentId } : {}),
-                    issuedAtEpochMs: legacy.issuedAtEpochMs,
-                    expiresAtEpochMs: legacy.expiresAtEpochMs
-                } as PersistedWebSocketTicket | PersistedAgentSessionTicket
-            };
-        }
-        return undefined;
-    }
-}
-
-function decodeLegacyTicket(
-    input: unknown,
-    agentTicket: boolean
-): IssuedWebSocketTicket & Partial<Readonly<{ agentId: string; }>> {
-    const label = agentTicket ? 'Legacy agent ticket' : 'Legacy websocket ticket';
-    const value = requirePlainRecord(input, label);
-    requireExactKeys(
-        value,
-        agentTicket
-            ? ['ticket', 'sessionId', 'clientId', 'agentId', 'issuedAtEpochMs', 'expiresAtEpochMs']
-            : ['ticket', 'sessionId', 'clientId', 'issuedAtEpochMs', 'expiresAtEpochMs']
-    );
-    for (const field of ['ticket', 'sessionId', 'clientId'] as const) {
-        requireNonEmptyString(value[field], `${label} ${field}`);
-    }
-    if (agentTicket) {
-        requireNonEmptyString(value.agentId, `${label} agentId`);
-    }
-    requireTimestamp(value.issuedAtEpochMs, `${label} issuedAtEpochMs`);
-    requireTimestamp(value.expiresAtEpochMs, `${label} expiresAtEpochMs`);
-    if (value.issuedAtEpochMs >= value.expiresAtEpochMs) {
-        throw new TypeError(`${label} lifecycle is invalid`);
-    }
-    return structuredClone(value) as IssuedWebSocketTicket & Partial<Readonly<{ agentId: string; }>>;
-}
-
-function requirePlainRecord(input: unknown, label: string): Readonly<Record<string, unknown>> {
-    if (
-        typeof input !== 'object' ||
-        input === null ||
-        Array.isArray(input) ||
-        Object.getPrototypeOf(input) !== Object.prototype
-    ) {
-        throw new TypeError(`${label} must be a plain JSON object`);
-    }
-    return input as Readonly<Record<string, unknown>>;
-}
-
-function requireExactKeys(
-    value: Readonly<Record<string, unknown>>,
-    expectedKeys: readonly string[]
-): void {
-    if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify([...expectedKeys].sort())) {
-        throw new TypeError('Persisted auth ticket fields are invalid');
-    }
-}
-
-function requireNonEmptyString(value: unknown, label: string): asserts value is string {
-    if (typeof value !== 'string' || value.length === 0) {
-        throw new TypeError(`${label} is required`);
-    }
-}
-
-function requireTimestamp(value: unknown, label: string): asserts value is number {
-    if (!Number.isSafeInteger(value) || (value as number) < 0) {
-        throw new TypeError(`${label} is invalid`);
     }
 }

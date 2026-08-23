@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
-import type { RtcRttAppInboxDependencies } from '@shared-server/rallar-system/rtc-topology/inbox/rtc-rtt-app-inbox-contracts.ts';
-import { RtcRttRepository } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
+import { GroupTopologyConfigQueryService } from '@shared-server/rallar-system/topology/config/group-topology-config-query-service.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import { GroupTopologyPlanningService } from '@shared-server/rallar-system/topology/planning/group-topology-planning-service.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import type { GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
@@ -18,22 +18,12 @@ const NOW_EPOCH_MS = 4_000_000_000_000;
 
 Deno.test('topology composition installs canonical owners and RTT policy inputs', async () => {
     const runtimeStateRepository = new MemoryRuntimeStateRepository();
-    let installedTopology: GroupTopologyManagementService | undefined;
-    let installedRtt: RtcRttAppInboxDependencies | undefined;
     const snapshot = createGroupSnapshot();
     const formationEvents: unknown[] = [];
     const input: CreateApiV1TopologyServicesInput = {
         runtimeStateRepository,
         groupStateService: {
             readSnapshotAtLeast: () => Promise.resolve(snapshot)
-        },
-        groupInbox: {
-            setTopologyManagementService: (service) => {
-                installedTopology = service;
-            },
-            setRtcRttAppInboxDependencies: (dependencies) => {
-                installedRtt = dependencies;
-            }
         },
         groupFormationRttMutation: (event) => formationEvents.push(event),
         webSocketServer: new JsonWebSocketServer(),
@@ -55,17 +45,17 @@ Deno.test('topology composition installs canonical owners and RTT policy inputs'
     const services = createApiV1TopologyServices(input);
 
     assert.ok(services.rtcTopologyService instanceof RallarRtcTopologyService);
-    assert.ok(services.topologyManagement instanceof GroupTopologyManagementService);
+    assert.ok(services.topologyQuery instanceof GroupTopologyConfigQueryService);
+    assert.ok(services.topologyPlanning instanceof GroupTopologyPlanningService);
     assert.ok(services.topologyConfigRepository instanceof GroupTopologyConfigRepository);
     assert.ok(services.groupStateRepository instanceof GroupStateRepository);
     assert.ok(services.topologySnapshotRepository instanceof RtcTopologySnapshotRepository);
     assert.ok(services.rttRepository instanceof RtcRttRepository);
-    assert.equal(installedTopology, services.topologyManagement);
-    assert.equal(installedRtt?.repository, services.rttRepository);
-    assert.equal(installedRtt?.formationMetrics, input.groupFormationRttMutation);
+    assert.equal(services.topologyMutationOwners.configMutationService, services.topologyConfigMutation);
+    assert.equal(services.topologyMutationOwners.reconfigureMutation, services.topologyReconfigureMutation);
+    assert.equal(services.rtcRttMutationDependencies.repository, services.rttRepository);
+    assert.equal(services.rtcRttMutationDependencies.formationMetrics, input.groupFormationRttMutation);
     assert.deepEqual(services.adminClientIds, ['admin']);
-    assert.equal(services.topologyManagement.isPlatformAdmin('admin'), true);
-    assert.equal(services.topologyManagement.isPlatformAdmin('user'), false);
     assert.deepEqual(services.readRtcTopologyMetrics(), {
         ...services.rtcTopologyService.readMetrics(),
         replay: { replayWakeCount: 2 }
@@ -78,7 +68,7 @@ Deno.test('topology composition installs canonical owners and RTT policy inputs'
         createPresenceSession('session-to', 'bob')
     );
     assert.equal((await services.groupStateRepository.listAllPresenceSessions()).length, 2);
-    const policy = await installedRtt?.readPolicyInputs({
+    const policy = await services.rtcRttMutationDependencies.readPolicyInputs({
         actor: { principalId: 'alice', sessionId: 'session-from' },
         requestId: 'request-1',
         commandHash: `sha256:${'1'.repeat(64)}`,
@@ -93,30 +83,16 @@ Deno.test('topology composition installs canonical owners and RTT policy inputs'
         }
     });
 
-    assert.deepEqual(policy?.candidateGroups, [snapshot]);
-    assert.equal(policy?.overlaySnapshotsByGroupKey.size, 0);
-    assert.equal(policy?.degreeLimit, 7);
+    assert.deepEqual(policy.candidateGroups, [snapshot]);
+    assert.equal(policy.overlaySnapshotsByGroupKey.size, 0);
+    assert.equal(policy.degreeLimit, 7);
     assert.deepEqual(formationEvents, []);
-});
-
-Deno.test('topology composition propagates group AppInbox installation failure', () => {
-    const failure = new Error('topology installation failed');
-    const input = createMinimalInput();
-    input.groupInbox.setTopologyManagementService = () => {
-        throw failure;
-    };
-
-    assert.throws(() => createApiV1TopologyServices(input), (error) => error === failure);
 });
 
 function createMinimalInput(): CreateApiV1TopologyServicesInput {
     return {
         runtimeStateRepository: new MemoryRuntimeStateRepository(),
         groupStateService: { readSnapshotAtLeast: () => Promise.resolve(undefined) },
-        groupInbox: {
-            setTopologyManagementService: () => {},
-            setRtcRttAppInboxDependencies: () => {}
-        },
         groupFormationRttMutation: () => {},
         webSocketServer: new JsonWebSocketServer(),
         topologyReplayMetrics: {
@@ -165,7 +141,6 @@ function createGroupSnapshot(): GroupSnapshot {
         requestId: 'create-group'
     };
     return {
-        stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 1 },
         group: createTestGroup({
             applicationId: 'app',

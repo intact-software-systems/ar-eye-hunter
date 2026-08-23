@@ -4,15 +4,15 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { isAuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import {
-    AppInboxType,
     type GroupInviteCreateAppInboxPayload,
     type GroupMemberBanAppInboxPayload,
     type GroupMemberUnbanAppInboxPayload
-} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 
-import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
 import { processAuthenticated, SCOPE, type AuthorityHarness } from './group-state-inbox-test-runtime.ts';
 

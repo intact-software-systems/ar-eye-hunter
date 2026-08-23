@@ -14,7 +14,7 @@ import {
     RESOURCE_INBOX_RETRY_PROCESSING_MARGIN_MS
 } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 
-import { toAppQueueCreatedBy, toAppQueueKey } from '../../services/app-inbox-queue-key.ts';
+import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { CrdtAppendCommand } from './crdt-mutation-contracts.ts';
 
 interface AppendOutboxInput {

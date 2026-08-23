@@ -75,8 +75,8 @@ describe('browser group-state delta application', () => {
         expect(fetchMock).not.toHaveBeenCalled();
         expect(deltaApplyResults()).toEqual(['applied']);
 
-        // Dual-emit oracle compatibility: the trailing equal-tuple snapshot row
-        // must decide as a duplicate against the materialized snapshot.
+        // A trailing equal-tuple snapshot must decide as a duplicate against
+        // the materialized delta result.
         await expect(runtime.receiveSnapshotMessage(resulting)).resolves.toBeUndefined();
         expect(
             groupStateSnapshotsRepository.findGroupStateSnapshotByRef(resulting.group)
@@ -244,7 +244,10 @@ describe('browser group-state delta application', () => {
         );
         vi.stubGlobal('fetch', fetchMock);
         vi.mocked(decideGroupSnapshotCausalRevision).mockImplementationOnce(() => {
-            throw new StateSnapshotRevisionConflictError('Group', resulting.stateRevision);
+            throw new StateSnapshotRevisionConflictError(
+                'Group',
+                resulting.group.snapshotVersion
+            );
         });
 
         await expect(runtime.receiveDeltaMessage(envelope)).resolves.toBeUndefined();
@@ -350,8 +353,6 @@ function createDeltaGroupSnapshot(input: DeltaGroupSnapshotInput): GroupSnapshot
         throw new TypeError('Delta group fixture requires an owner');
     }
     return {
-        stateRevision: input.causalRevision.groupRevision +
-            input.causalRevision.presenceRevision,
         causalRevision: input.causalRevision,
         group: createTestGroup({
             applicationId: DEFAULT_STATE_APPLICATION_ID,
@@ -390,7 +391,7 @@ function createDeltaEnvelope(input: DeltaEnvelopeInput): GroupStateDeltaEnvelope
             applicationId: resulting.group.applicationId,
             workspaceId: resulting.group.workspaceId,
             groupId: resulting.group.groupId,
-            eventId: `event-${resulting.group.groupId}-${resulting.stateRevision}`,
+            eventId: `event-${resulting.group.groupId}-g${resulting.causalRevision.groupRevision}-p${resulting.causalRevision.presenceRevision}`,
             eventType: input.eventType ?? 'member-joined',
             snapshotVersion: resulting.group.snapshotVersion,
             causalRevision: resulting.causalRevision,

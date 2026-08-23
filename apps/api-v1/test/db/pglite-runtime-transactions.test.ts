@@ -2,14 +2,15 @@ import assert from 'node:assert/strict';
 
 import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
     groupStateGroupStorageKey,
     groupStateMemberStorageKey,
     groupStatePresenceSessionStorageKey
-} from '@shared-server/rallar-system/group-state-storage-keys.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { createGroupStateService, mutationDescriptor } from '@shared-server/rallar-system/services/group-state-service.ts';
+} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import { toPersistedAuthSessionFixture, withPGliteSql } from './pglite-auth-test-harness.ts';
 import { applyPGliteGroupMutation, canonicalAuditStamp, groupFixture } from './pglite-state-mutation-test-runtime.ts';
 
@@ -179,7 +180,7 @@ Deno.test('PGlite runtime-state hierarchy isolates sibling key segments', async 
 });
 
 Deno.test(
-    'PGlite group-state reads fail closed on a directly seeded legacy wrong-scope row',
+    'PGlite group-state reads fail closed on a directly seeded noncanonical wrong-scope row',
     async () => {
         await withPGliteSql(async (sql) => {
             const ref = {
@@ -187,13 +188,13 @@ Deno.test(
                 workspaceId: 'main',
                 groupId: 'pglite-legacy-scope-group'
             };
-            // Deliberately degenerate: a legacy row carrying the sentinel workspace and
+            // Deliberately degenerate: a noncanonical row carrying the sentinel workspace and
             // partial audit stamps. It must stay a hand-built payload, because the point
             // of the test is the exact stored shape a current writer would never produce.
             const storedGroup = {
                 ...ref,
                 workspaceId: '_',
-                displayName: 'Legacy explicit sentinel',
+                displayName: 'Noncanonical explicit sentinel',
                 kind: 'room',
                 status: 'active',
                 joinMode: 'open',
@@ -288,7 +289,6 @@ Deno.test(
                 const runtime = new PSqlRuntimeStateRepository(sql);
                 const service = createGroupStateService({
                     runtimeRepository: runtime,
-                    formationDamping: 'damped',
                     createGroupStateEventStore: createGroupStateEventRepository,
                     authSessionRepository: {
                         findBySessionId: (sessionId) =>

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/services/client-state-service.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
-import { CLIENT_MUTATION_SERVICE_SCOPE as SCOPE, createPublisher, toClientPrincipalRef } from './client-state-service-test-fixtures.ts';
-import { createLegacyClientStateTestDriver as createClientStateService, getClientStateTestOutbox } from './client-state-test-runtime.ts';
+import { CLIENT_MUTATION_SERVICE_SCOPE as SCOPE, toClientPrincipalRef } from './client-state-service-test-fixtures.ts';
+import { createClientStateTestDriver as createClientStateService, getClientStateTestOutbox } from './client-state-test-runtime.ts';
 
 describe('client mutation authorised WebSocket generation', () => {
     it('advances authorised websocket generations and makes an old close stale', async () => {
@@ -15,20 +15,18 @@ describe('client mutation authorised WebSocket generation', () => {
         expect(scenario.second).toMatchObject({
             status: 'ok',
             result: {
-                right: {
-                    snapshot: {
-                        principal: {
-                            principalId: 'alice',
-                            snapshotVersion: 3
-                        }
+                snapshot: {
+                    principal: {
+                        principalId: 'alice',
+                        snapshotVersion: 3
                     }
                 }
             }
         });
-        expect(scenario.first.result.right?.event?.eventType).toBe('session-connected');
-        expect(scenario.second.result.right?.event?.eventType).toBe('session-connected');
-        expect(scenario.third.result.right?.event?.eventType).toBe('session-connected');
-        expect(scenario.staleClose.result.right?.snapshot.activeSessions).toEqual([
+        expect(scenario.first.result?.event?.eventType).toBe('session-connected');
+        expect(scenario.second.result?.event?.eventType).toBe('session-connected');
+        expect(scenario.third.result?.event?.eventType).toBe('session-connected');
+        expect(scenario.staleClose.result?.snapshot.activeSessions).toEqual([
             expect.objectContaining({
                 sessionId: scenario.authSession.sessionId,
                 generationId: 'ws-generation-3',
@@ -63,7 +61,7 @@ describe('client mutation authorised WebSocket generation', () => {
     it('orders websocket generations by their server-owned start tuple and bootstraps the authorised principal', async () => {
         const scenario = await runOrderedGenerationScenario();
 
-        expect(scenario.newer.result.right?.snapshot).toMatchObject({
+        expect(scenario.newer.result?.snapshot).toMatchObject({
             principal: {
                 username: 'alice-login',
                 displayName: 'Alice Display',
@@ -76,8 +74,8 @@ describe('client mutation authorised WebSocket generation', () => {
                 }
             ]
         });
-        expect(scenario.delayedOlder.result.right?.event).toBeNull();
-        expect(scenario.delayedOlder.result.right?.snapshot.activeSessions).toEqual([
+        expect(scenario.delayedOlder.result?.event).toBeNull();
+        expect(scenario.delayedOlder.result?.snapshot.activeSessions).toEqual([
             expect.objectContaining({
                 generationId: 'generation-b',
                 connectedAtEpochMs: 200
@@ -111,7 +109,6 @@ async function runGenerationAdvanceScenario() {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const service = createClientStateService({
         runtimeRepository,
-        syncPublisher: createPublisher(),
         now: () => 5_000,
         serviceId: 'client-service'
     });
@@ -176,7 +173,6 @@ async function runOrderedGenerationScenario() {
     const runtimeRepository = new FakeRuntimeStateRepository();
     const service = createClientStateService({
         runtimeRepository,
-        syncPublisher: createPublisher(),
         now: () => 10_000,
         serviceId: 'client-service'
     });
@@ -235,8 +231,8 @@ async function expectRestGenerationOrdering(scenario: OrderedGenerationScenario)
             requestId: 'rest-missing-ordered-fact'
         }
     );
-    expect(missingOrderedFact.result.right?.event).toBeNull();
-    expect(missingOrderedFact.result.right?.snapshot.activeSessions).toEqual(
+    expect(missingOrderedFact.result?.event).toBeNull();
+    expect(missingOrderedFact.result?.snapshot.activeSessions).toEqual(
         expect.arrayContaining([
             expect.objectContaining({ sessionId: 'rest-session', generationId: 'rest-current' })
         ])

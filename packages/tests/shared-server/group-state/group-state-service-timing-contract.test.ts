@@ -1,6 +1,6 @@
 import type { GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { createTimedGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-timing.ts';
-import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
     createGroupStateServiceTimingFake,

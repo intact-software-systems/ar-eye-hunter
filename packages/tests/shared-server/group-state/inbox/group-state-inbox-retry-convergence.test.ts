@@ -1,4 +1,4 @@
-import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { describe, expect, it } from 'vitest';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { SCOPE } from '../mutation/group-mutation-test-runtime.ts';

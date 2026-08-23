@@ -9,7 +9,7 @@ import type {
 } from '@shared/api/group-types.ts';
 import { RuntimeStateJsonStore, type RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/RuntimeStateRepository.ts';
-import { readStableStateSnapshot } from '../../repositories/state-snapshot-read.ts';
+import { readStableStateSnapshot } from '../../state-events/state-snapshot-read.ts';
 import type { GroupSnapshotPage, GroupSnapshotPageOptions } from '../group-state-service-contracts.ts';
 import {
     assembleGroupStateSnapshot,

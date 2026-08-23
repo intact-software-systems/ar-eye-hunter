@@ -164,7 +164,6 @@ function createGroupSnapshot(
     memberSessionIds: readonly string[]
 ): GroupSnapshot {
     return {
-        stateRevision: membershipVersion,
         causalRevision: {
             groupRevision: membershipVersion,
             presenceRevision: membershipVersion

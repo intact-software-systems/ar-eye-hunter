@@ -9,13 +9,11 @@ import type {
     RuntimeStateRepositoryLike
 } from '../../../runtime-state/RuntimeStateRepository.ts';
 import { hashAuthSecret } from '../credentials/hash-auth-secret.ts';
-import { isLegacyPlaintextCompatibilityActive, readBoundedLegacyAuthPage } from './auth-legacy-compatibility.ts';
 import { decodePersistedAuthSession, type PersistedAuthSession } from './auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from './auth-session-types.ts';
 import {
     AUTH_SESSIONS_BY_SESSION_NAMESPACE,
     AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
-    authLegacyTokenKey,
     authSessionKey,
     authTokenDigestKey
 } from './auth-storage-keys.ts';
@@ -90,8 +88,7 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
     }
 
     async findByAccessToken(accessToken: string): Promise<IssuedAuthSession | undefined> {
-        const persisted = (await this.findSessionByAccessTokenDigestEntry(await hashAuthSecret(accessToken))) ??
-            (await this.findLegacySessionByAccessTokenEntry(accessToken));
+        const persisted = await this.findSessionByAccessTokenDigestEntry(await hashAuthSecret(accessToken));
         return persisted ? toIssuedAuthSession(persisted.value, accessToken) : undefined;
     }
 
@@ -102,59 +99,7 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
     async findSessionByAccessTokenEntry(
         accessToken: string
     ): Promise<RuntimeStateEntryValue<PersistedAuthSession> | undefined> {
-        return (
-            (await this.findSessionByAccessTokenDigestEntry(await hashAuthSecret(accessToken))) ??
-                (await this.findLegacySessionByAccessTokenEntry(accessToken))
-        );
-    }
-
-    async findLegacySessionByAccessTokenEntry(
-        accessToken: string
-    ): Promise<RuntimeStateEntryValue<PersistedAuthSession> | undefined> {
-        if (!isLegacyPlaintextCompatibilityActive()) {
-            return undefined;
-        }
-        const entry = await this.getEntryValue<unknown>(
-            AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
-            authLegacyTokenKey(accessToken)
-        );
-        if (!entry) {
-            return undefined;
-        }
-        const legacy = decodeLegacyIssuedAuthSession(entry.value);
-        if (legacy.accessToken !== accessToken) {
-            throw new TypeError('Legacy auth session token identity differs');
-        }
-        return { entry: entry.entry, value: await toPersistedAuthSession(legacy) };
-    }
-
-    async findLegacySessionByAccessTokenDigestEntry(
-        accessTokenDigest: string
-    ): Promise<RuntimeStateEntryValue<PersistedAuthSession> | undefined> {
-        for (
-            const entry of await readBoundedLegacyAuthPage(
-                this.repository,
-                AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
-                authLegacyTokenKey('')
-            )
-        ) {
-            const live = await this.toLiveEntryValue<unknown>(AUTH_SESSIONS_BY_TOKEN_NAMESPACE, entry);
-            if (!live) {
-                continue;
-            }
-            const legacy = decodeLegacyIssuedAuthSession(live.value);
-            if (live.entry.key !== authLegacyTokenKey(legacy.accessToken)) {
-                continue;
-            }
-            if ((await hashAuthSecret(legacy.accessToken)) !== accessTokenDigest) {
-                continue;
-            }
-            return {
-                entry: live.entry,
-                value: await toPersistedAuthSession(legacy)
-            };
-        }
-        return undefined;
+        return await this.findSessionByAccessTokenDigestEntry(await hashAuthSecret(accessToken));
     }
 
     async findSessionByAccessTokenDigestEntry(
@@ -196,10 +141,7 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
         if (!read.value) {
             return { value: undefined, expiredEntry: read.expiredEntry };
         }
-        const value = await decodePersistedOrLegacyAuthSession(read.value.value);
-        if (!value) {
-            return { value: undefined, expiredEntry: undefined };
-        }
+        const value = decodePersistedAuthSession(read.value.value);
         if (value.sessionId !== sessionId) {
             throw new TypeError('Persisted auth session id identity differs');
         }
@@ -209,10 +151,6 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
     async deleteSession(session: IssuedAuthSession): Promise<void> {
         const accessTokenDigest = await hashAuthSecret(session.accessToken);
         await this.deleteValue(AUTH_SESSIONS_BY_TOKEN_NAMESPACE, authTokenDigestKey(accessTokenDigest));
-        await this.deleteValue(
-            AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
-            authLegacyTokenKey(session.accessToken)
-        );
         await this.deleteValue(AUTH_SESSIONS_BY_SESSION_NAMESPACE, authSessionKey(session.sessionId));
     }
 
@@ -238,17 +176,6 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
         );
     }
 
-    async deleteLegacySessionByAccessTokenIfRevision(
-        accessToken: string,
-        expectedRevision: number
-    ): Promise<RuntimeStateConditionalDeleteResult> {
-        return await this.deleteValueIfRevision(
-            AUTH_SESSIONS_BY_TOKEN_NAMESPACE,
-            authLegacyTokenKey(accessToken),
-            expectedRevision
-        );
-    }
-
     async deleteSessionTokenStorageKeyIfRevision(
         storageKey: string,
         expectedRevision: number
@@ -259,48 +186,6 @@ export class AuthSessionPersistence extends RuntimeStateJsonStore {
             expectedRevision
         );
     }
-}
-
-async function decodePersistedOrLegacyAuthSession(
-    input: unknown
-): Promise<PersistedAuthSession | undefined> {
-    try {
-        return decodePersistedAuthSession(input);
-    }
-    catch (persistedError) {
-        let legacy: IssuedAuthSession;
-        try {
-            legacy = decodeLegacyIssuedAuthSession(input);
-        }
-        catch {
-            throw persistedError;
-        }
-        if (!isLegacyPlaintextCompatibilityActive()) {
-            return undefined;
-        }
-        return await toPersistedAuthSession(legacy);
-    }
-}
-
-function decodeLegacyIssuedAuthSession(input: unknown): IssuedAuthSession {
-    const value = requirePlainRecord(input, 'Legacy issued auth session');
-    requireExactKeys(value, [
-        'clientId',
-        'username',
-        'sessionId',
-        'accessToken',
-        'issuedAtEpochMs',
-        'expiresAtEpochMs'
-    ]);
-    for (const field of ['clientId', 'username', 'sessionId', 'accessToken'] as const) {
-        requireNonEmptyString(value[field], `Legacy issued auth session ${field}`);
-    }
-    requireTimestamp(value.issuedAtEpochMs, 'Legacy issued auth session issuedAtEpochMs');
-    requireTimestamp(value.expiresAtEpochMs, 'Legacy issued auth session expiresAtEpochMs');
-    if (value.issuedAtEpochMs >= value.expiresAtEpochMs) {
-        throw new TypeError('Legacy issued auth session lifecycle is invalid');
-    }
-    return structuredClone(value) as IssuedAuthSession;
 }
 
 async function toPersistedAuthSession(session: IssuedAuthSession): Promise<PersistedAuthSession> {
@@ -319,37 +204,4 @@ function toIssuedAuthSession(
     accessToken: string
 ): IssuedAuthSession {
     return { ...session, accessToken };
-}
-
-function requirePlainRecord(input: unknown, label: string): Readonly<Record<string, unknown>> {
-    if (
-        typeof input !== 'object' ||
-        input === null ||
-        Array.isArray(input) ||
-        Object.getPrototypeOf(input) !== Object.prototype
-    ) {
-        throw new TypeError(`${label} must be a plain JSON object`);
-    }
-    return input as Readonly<Record<string, unknown>>;
-}
-
-function requireExactKeys(
-    value: Readonly<Record<string, unknown>>,
-    expectedKeys: readonly string[]
-): void {
-    if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify([...expectedKeys].sort())) {
-        throw new TypeError('Persisted auth session fields are invalid');
-    }
-}
-
-function requireNonEmptyString(value: unknown, label: string): asserts value is string {
-    if (typeof value !== 'string' || value.length === 0) {
-        throw new TypeError(`${label} is required`);
-    }
-}
-
-function requireTimestamp(value: unknown, label: string): asserts value is number {
-    if (!Number.isSafeInteger(value) || (value as number) < 0) {
-        throw new TypeError(`${label} is invalid`);
-    }
 }

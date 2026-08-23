@@ -12,8 +12,8 @@ import type { AdminOperationsMutationGateway } from '@shared-server/rallar-syste
 import { AdminOperationsService } from '@shared-server/rallar-system/admin-operations/admin-operations-service.ts';
 import type { AdminPruneEnqueueResult } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
 import type { CrdtAdminCompactResult, CrdtAdminEraseResult } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
-import { emptyGroupFormationMetrics } from '@shared-server/rallar-system/formation-metrics.ts';
-import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
+import { emptyGroupFormationMetrics } from '@shared-server/rallar-system/observability/formation-metrics.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 
 import type { TopologyReconfigureInboxResult } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
 

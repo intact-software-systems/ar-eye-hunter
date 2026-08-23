@@ -1,8 +1,8 @@
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
+import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
-import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { AuditStamp, ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -95,7 +95,7 @@ export function createClientRouteDeps(
 export function toClientStateWritten(snapshot: ClientSnapshot): ClientStateWritten {
     return {
         status: 'ok',
-        result: Either.ofRight({ snapshot, event: null })
+        result: { snapshot, event: null }
     };
 }
 export async function withStrictReadAuth(

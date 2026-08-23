@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 
+import { toUnavailableAppInboxFailure, type AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
-import { toUnavailableAppInboxFailure, type AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarCrdtDocumentMetadata, RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -218,7 +218,7 @@ Deno.test('admin prune pending completion preserves its typed 503 response', asy
     assert.equal(response.status, 503);
     assert.deepEqual(await response.json(), {
         type: 'api-mutation-failure',
-        version: 'canonical.v1',
+        version: 'canonical.v2',
         status: 503,
         code: 'app-inbox-unavailable',
         message: 'App inbox entry did not complete within the wait budget',
@@ -359,8 +359,8 @@ Deno.test('admin CRDT routes preserve compact lifecycle and erase operations', a
 
 interface CreateRecordingGatewayInput {
     readonly pruneExpired?: CreateApiAdminMutationGatewayInput['appAdmin']['pruneExpired'];
-    readonly topology?: CreateApiAdminMutationGatewayInput['appGroup'][
-        'processAuthenticatedHttpTopologyEntryUntilCompletionResult'
+    readonly topology?: CreateApiAdminMutationGatewayInput['topologyInbox'][
+        'processAuthenticatedHttpEntryUntilCompletionResult'
     ];
     readonly now?: () => number;
 }
@@ -391,8 +391,8 @@ function createRecordingGateway(
                 return Promise.resolve(toRecordedCrdtResult(mutation));
             }
         },
-        appGroup: {
-            processAuthenticatedHttpTopologyEntryUntilCompletionResult: input.topology ??
+        topologyInbox: {
+            processAuthenticatedHttpEntryUntilCompletionResult: input.topology ??
                 (() => Promise.reject(new Error('Unexpected topology recompute')))
         },
         now: input.now ?? (() => NOW_EPOCH_MS)

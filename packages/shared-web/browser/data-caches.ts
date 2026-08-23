@@ -22,7 +22,7 @@ import {
     acceptGroupSnapshotUpdate,
     isSameBootstrapOverlayPolicy,
     resolveBootstrapOverlayPolicy,
-    type GroupFormationPolicyInput
+    type BootstrapOverlayPolicyInput
 } from '@shared/services/group-snapshot-rtc-sync.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import { WebRtcGroupManager } from '@shared/services/WebRtcGroupManager.ts';
@@ -48,7 +48,7 @@ export type StateCacheChangeListener = (
     change: StateCacheChange
 ) => void | Promise<void>;
 
-export type StateCacheGroupFormationOptions = GroupFormationPolicyInput;
+export type StateCacheGroupFormationOptions = BootstrapOverlayPolicyInput;
 
 export type StateCacheScopeOptions = Readonly<{
     scope?: StateScope;

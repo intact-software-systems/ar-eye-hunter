@@ -15,10 +15,6 @@ import { AuthTicketPersistence } from './auth-ticket-persistence.ts';
 
 export { hashAuthSecret } from '../credentials/hash-auth-secret.ts';
 export {
-    AUTH_LEGACY_PLAINTEXT_COMPATIBILITY_DEADLINE_EPOCH_MS,
-    AUTH_LEGACY_PLAINTEXT_SCAN_LIMIT
-} from './auth-legacy-compatibility.ts';
-export {
     decodePersistedAgentSessionTicket,
     decodePersistedAuthSession,
     decodePersistedWebSocketTicket,

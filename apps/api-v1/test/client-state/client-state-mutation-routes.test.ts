@@ -1,7 +1,7 @@
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
-import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 
@@ -194,7 +194,7 @@ Deno.test('client REST mutation preserves explicit terminal idempotency 409', as
     assert.equal(response.status, 409);
     assert.deepEqual(await response.json(), {
         type: 'api-mutation-failure',
-        version: 'canonical.v1',
+        version: 'canonical.v2',
         code: 'client-mutation-idempotency-conflict',
         status: 409,
         message: 'Client mutation command differs for request same-request',
@@ -252,7 +252,7 @@ Deno.test('client mutation routes hydrate the receiving node cache from remotely
         processClientAppInbox: <V>(_input: AppInboxEnqueueInput<V>) =>
             Promise.resolve(Either.ofRight({
                 status: 'ok',
-                result: Either.ofRight({ snapshot, event: null })
+                result: { snapshot, event: null }
             })),
         hydrateStateSyncSnapshotCaches: (input) => {
             hydrationInputs.push(input);
@@ -306,7 +306,7 @@ Deno.test('client mutation routes preserve committed success when cache hydratio
             processClientAppInbox: () =>
                 Promise.resolve({
                     status: 'ok',
-                    result: Either.ofRight({ snapshot, event: null })
+                    result: { snapshot, event: null }
                 }),
             hydrateStateSyncSnapshotCaches: () => Promise.reject(new Error('local cache observer failed'))
         });

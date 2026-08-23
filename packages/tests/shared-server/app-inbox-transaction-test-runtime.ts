@@ -1,10 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { AppInboxService, AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/app-inbox-handler-registry.ts';
+import { AppInboxQueueClient, AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 
-import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
-import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { Reservator } from '@shared/queuebox/DequeueController.ts';
 import {
@@ -59,16 +60,46 @@ interface AtomicResultRow {
     readonly expire_ts: string;
 }
 
-class AtomicAppInboxService extends AppInboxService {
+class AtomicAppInboxService {
+    private readonly queueClient: AppInboxQueueClient;
+    private readonly handlerRegistry: AppInboxHandlerRegistry;
+
+    constructor(
+        dependencies:
+            & AppInboxQueueClient.Dependencies
+            & AppInboxHandlerRegistry.Dependencies,
+        config: AppInboxQueueClient.Config & AppInboxHandlerRegistry.Config
+    ) {
+        this.queueClient = new AppInboxQueueClient(dependencies, config);
+        this.handlerRegistry = new AppInboxHandlerRegistry(dependencies, config);
+    }
+
     async commit<R>(
         context: AppInboxMessageContext,
         write: (transaction: PSqlTransactionSql) => Promise<R>
     ): Promise<R> {
-        return await this.writeMutation(context, write);
+        return await this.handlerRegistry.writeMutation(context, write);
     }
 
     async fail(context: AppInboxMessageContext, error: JsonWireValue): Promise<void> {
-        await this.writeTerminalFailure(context, error);
+        await this.handlerRegistry.transactionWriter.writeTerminalFailure(context, error);
+    }
+
+    onStateMessage<V>(
+        type: AppInboxType,
+        handler: (data: V, context: AppInboxMessageContext) => Promise<unknown>
+    ): void {
+        this.handlerRegistry.onStateMessage(type, handler);
+    }
+
+    processEntryUntilCompletion<V>(
+        input: AppInboxMessageContext['enqueue']
+    ) {
+        return this.queueClient.processEntryUntilCompletion<V>(input);
+    }
+
+    processEntryNoWaiting(input: AppInboxMessageContext['enqueue']): void {
+        this.queueClient.processEntryNoWaiting(input);
     }
 }
 
@@ -108,7 +139,7 @@ class RegisteredHandlerResults {
     async replace(entry: ResourceEntry): Promise<ResourceEntry> {
         this.replaceCalls += 1;
         if (this.failResultWriteAfter !== undefined && this.replaceCalls > this.failResultWriteAfter) {
-            throw new Error('legacy result write must not run');
+            throw new Error('duplicate result write must not run');
         }
         this.entries.set(toKeyAsString(entry.key), entry);
         return entry;

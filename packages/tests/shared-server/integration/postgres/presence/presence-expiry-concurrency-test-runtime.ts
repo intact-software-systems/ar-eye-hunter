@@ -8,7 +8,6 @@ import { createRequire } from 'node:module';
 import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
 import { createTestGroupStateRuntime } from '../../../group-state/group-state-test-runtime.ts';
 
 import { createPostgresClientPhaseDriver } from '../../../client-state/postgres-client-mutation-test-driver.ts';
@@ -73,9 +72,7 @@ export async function seedExpiredGroupPresenceSession(
 ): Promise<void> {
     const service = createTestGroupStateRuntime({
         runtimeRepository: toRuntimeRepository(input.sql),
-        formationDamping: 'damped',
         createGroupStateEventStore: createGroupStateEventRepository,
-        syncPublisher: createPublisher(),
         now: () => input.atEpochMs - 10_000,
         serviceId: 'postgres-expiry-test-setup'
     }).service;
@@ -164,9 +161,7 @@ export function createPostgresGroupRuntime(input: CreatePostgresGroupRuntimeInpu
             input.barrierNamespace,
             input.applicationId
         ),
-        formationDamping: 'damped',
         createGroupStateEventStore: createGroupStateEventRepository,
-        syncPublisher: createPublisher(),
         now: () => input.atEpochMs,
         sleep: () => Promise.resolve(),
         serviceId: 'postgres-group-cas-worker'
@@ -261,15 +256,6 @@ export class PrincipalReadBarrier {
 }
 
 export class GroupPresenceReadBarrier extends PrincipalReadBarrier {}
-
-export function createPublisher(): StateSyncPublisher {
-    return {
-        publishClientSnapshot: () => Promise.resolve(),
-        publishClientEvent: () => Promise.resolve(),
-        publishGroupSnapshot: () => Promise.resolve(),
-        publishGroupEvent: () => Promise.resolve()
-    };
-}
 
 interface SeedConnectedClientSessionInput {
     readonly sql: PostgresSql;

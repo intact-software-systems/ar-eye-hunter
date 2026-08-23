@@ -29,8 +29,8 @@ import {
     waitForGroupStateSnapshotChangesIdle
 } from '@shared/repository/group-state-snapshots-repository.ts';
 import * as groupSnapshotRepositoryModule from '@shared/repository/group-state-snapshots-repository.ts';
+import { createAndSetBootstrapOverlays } from '@shared/repository/overlay-bootstrap.ts';
 import {
-    createAndSetStarOverlays,
     findOverlayById,
     getAllOverlays,
     onOverlayChange,
@@ -90,22 +90,7 @@ describe('repository modules', () => {
         expect(getAllClientStateSnapshots()).toHaveLength(2);
     });
 
-    it('keeps absent and explicitly empty client workspace keys distinct', () => {
-        const absentWorkspace = {
-            applicationId: 'app-1',
-            principalId: 'client-1'
-        } as ClientPrincipalRef;
-        const emptyWorkspace = {
-            ...absentWorkspace,
-            workspaceId: ''
-        };
-
-        expect(toClientStateSnapshotRepositoryKey(absentWorkspace)).not.toBe(
-            toClientStateSnapshotRepositoryKey(emptyWorkspace)
-        );
-    });
-
-    it('round-trips client snapshot keys with tagged workspace values', () => {
+    it('round-trips client snapshot keys with required workspace values', () => {
         type SnapshotKeyCodec = Readonly<{
             fromClientStateSnapshotRepositoryKey?: (
                 key: string
@@ -113,15 +98,6 @@ describe('repository modules', () => {
         }>;
         const codec = clientSnapshotRepositoryModule as SnapshotKeyCodec;
         const refs = [
-            {
-                applicationId: 'app|with:delimiters',
-                principalId: 'principal%2Fname'
-            } as ClientPrincipalRef,
-            {
-                applicationId: 'app|with:delimiters',
-                workspaceId: '',
-                principalId: 'principal%2Fname'
-            },
             {
                 applicationId: 'app|with:delimiters',
                 workspaceId: '_',
@@ -139,6 +115,13 @@ describe('repository modules', () => {
         expect(
             keys.map((key) => codec.fromClientStateSnapshotRepositoryKey?.(key) ?? null)
         ).toEqual(refs);
+        expect(() =>
+            toClientStateSnapshotRepositoryKey({
+                applicationId: 'app',
+                workspaceId: '',
+                principalId: 'principal'
+            })
+        ).toThrow();
     });
 
     it('emits client snapshot changes only for accepted writes', async () => {
@@ -363,22 +346,7 @@ describe('repository modules', () => {
         );
     });
 
-    it('keeps absent and explicitly empty group workspace keys distinct', () => {
-        const absentWorkspace = {
-            applicationId: 'app-1',
-            groupId: 'group-1'
-        } as GroupSnapshot['group'];
-        const emptyWorkspace = {
-            ...absentWorkspace,
-            workspaceId: ''
-        };
-
-        expect(toGroupStateSnapshotRepositoryKey(absentWorkspace)).not.toBe(
-            toGroupStateSnapshotRepositoryKey(emptyWorkspace)
-        );
-    });
-
-    it('round-trips group snapshot keys with tagged workspace values', () => {
+    it('round-trips group snapshot keys with required workspace values', () => {
         type SnapshotKeyCodec = Readonly<{
             fromGroupStateSnapshotRepositoryKey?: (
                 key: string
@@ -386,15 +354,6 @@ describe('repository modules', () => {
         }>;
         const codec = groupSnapshotRepositoryModule as SnapshotKeyCodec;
         const refs = [
-            {
-                applicationId: 'app|with:delimiters',
-                groupId: 'group%2Fname'
-            } as GroupSnapshot['group'],
-            {
-                applicationId: 'app|with:delimiters',
-                workspaceId: '',
-                groupId: 'group%2Fname'
-            } as GroupSnapshot['group'],
             {
                 applicationId: 'app|with:delimiters',
                 workspaceId: '_',
@@ -412,6 +371,13 @@ describe('repository modules', () => {
         expect(
             keys.map((key) => codec.fromGroupStateSnapshotRepositoryKey?.(key) ?? null)
         ).toEqual(refs);
+        expect(() =>
+            toGroupStateSnapshotRepositoryKey({
+                applicationId: 'app',
+                workspaceId: '',
+                groupId: 'group'
+            })
+        ).toThrow();
     });
 
     it('uses the full group causal tuple for cache ordering', () => {
@@ -558,7 +524,10 @@ describe('repository modules', () => {
         ]);
         const overlayId = toScopedOverlayId(group.group);
 
-        createAndSetStarOverlays([group]);
+        createAndSetBootstrapOverlays([group], {
+            localSessionId: 'self',
+            bootstrapDegree: 2
+        });
 
         expect(findOverlayById(overlayId)).toEqual({
             sourceGroupStateCausalRevision: group.causalRevision,
@@ -570,7 +539,7 @@ describe('repository modules', () => {
             name: 'Alpha',
             createdByClientId: 'self',
             createdAtEpochMs: 1,
-            nextHopSessionIds: ['self', 'peer-a', 'peer-b'],
+            nextHopSessionIds: expect.arrayContaining(['peer-a', 'peer-b']),
             degreeLimit: 2,
             overlayVersion: 2,
             updatedAtEpochMs: 2
@@ -587,15 +556,13 @@ describe('repository modules', () => {
         };
 
         setOverlayById(overlayId, staleOverlay);
-        expect(findOverlayById(overlayId)?.nextHopSessionIds).toEqual([
-            'self',
-            'peer-a',
-            'peer-b'
-        ]);
+        expect(findOverlayById(overlayId)?.nextHopSessionIds).toEqual(
+            currentOverlay.nextHopSessionIds
+        );
 
         expect(updateNextHopSessionIds(overlayId, ['peer-c'])).toMatchObject({
             overlayId,
-            nextHopSessionIds: ['self', 'peer-a', 'peer-b']
+            nextHopSessionIds: currentOverlay.nextHopSessionIds
         });
         expect(findOverlayById(overlayId)?.nextHopSessionIds).toEqual(['peer-c']);
         expect(getAllOverlays()).toHaveLength(1);

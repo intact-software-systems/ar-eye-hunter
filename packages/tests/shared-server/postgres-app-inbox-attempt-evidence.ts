@@ -1,5 +1,5 @@
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { validatePersistedAppInboxCommandIdentity } from '@shared-server/rallar-system/services/app-inbox-command-identity.ts';
+import { validatePersistedAppInboxCommandIdentity } from '@shared-server/rallar-system/app-inbox/app-inbox-command-identity.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';

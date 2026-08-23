@@ -25,16 +25,6 @@ export interface GroupTopologyConfigGenerationSourceEntry {
     readonly value: StoredGroupTopologyConfig | StoredGroupTopologyOverride;
 }
 
-export interface GroupTopologyConfigLegacyKeyMigrationSource extends GroupTopologyConfigGenerationSourceEntry {
-    readonly canonicalKey: string;
-}
-
-export interface GroupTopologyConfigLegacyKeyMigrationPage {
-    readonly sources: readonly GroupTopologyConfigLegacyKeyMigrationSource[];
-    readonly afterKey?: string;
-    readonly hasMore: boolean;
-}
-
 export class GroupTopologyConfigRepositoryInvariantCorruptionError extends Error {
     readonly code = 'group-topology-config-repository-invariant-corruption';
 

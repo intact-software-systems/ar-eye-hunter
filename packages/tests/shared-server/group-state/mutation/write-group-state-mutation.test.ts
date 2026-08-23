@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
     groupStateGroupStorageKey,
     groupStateIdempotencyStorageKey,
     groupStateMemberStorageKey
-} from '@shared-server/rallar-system/group-state-storage-keys.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import type { RuntimeStateGuardedBatch } from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import type { GroupMember, GroupRef } from '@shared/api/group-types.ts';
@@ -54,7 +54,6 @@ describe('GroupStateService guarded runtime-state batch', () => {
         const runtime = new BeginOnlyGuardedBatchRepository();
         const service = createTestGroupStateService({
             runtimeRepository: runtime,
-            formationDamping: 'damped',
             now: () => 1_000,
             randomId: () => 'group-batch-id',
             serviceId: 'group-batch-service'
@@ -78,7 +77,6 @@ describe('GroupStateService guarded runtime-state batch', () => {
         let generatedId = 0;
         const service = createTestGroupStateService({
             runtimeRepository: runtime,
-            formationDamping: 'damped',
             createGroupStateEventStore: () => eventStore,
             now: () => 1_000,
             randomId: () => `group-batch-id-${++generatedId}`,
@@ -94,10 +92,10 @@ describe('GroupStateService guarded runtime-state batch', () => {
             createdByPrincipalId: 'alice',
             requestId: 'group-insert-request'
         });
-        const accepted = written.result.right;
-        const event = accepted?.event;
-        if (!accepted || !event) {
-            throw new Error(written.result.left ?? 'Expected group insert event');
+        const accepted = written.result;
+        const event = accepted.event;
+        if (!event) {
+            throw new Error('Expected group insert event');
         }
         const repository = new GroupStateRepository(runtime, { events: eventStore });
         const summary = await repository.findPresenceSummaryEntry(ref);
@@ -158,7 +156,6 @@ describe('GroupStateService guarded runtime-state batch', () => {
         let generatedId = 0;
         const service = createTestGroupStateService({
             runtimeRepository: runtime,
-            formationDamping: 'damped',
             createGroupStateEventStore: () => eventStore,
             now: () => 1_000,
             randomId: () => `group-recreate-id-${++generatedId}`,

@@ -3,7 +3,7 @@ import { GroupStateRepository } from '@shared-server/rallar-system/group-state/p
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { createTestGroupStateRuntime, createTestGroupStateService as createGroupStateService } from '../group-state-test-runtime.ts';
-import { createPublisher, SCOPE, seedGroup, seedPresenceSession, toGroupRef } from './group-presence-retry-test-runtime.ts';
+import { SCOPE, seedGroup, seedPresenceSession, toGroupRef } from './group-presence-retry-test-runtime.ts';
 
 describe('Group presence lifecycle retry', () => {
     it('replays disconnectPresenceSession with generated timestamps without duplicating disconnect events', async () => {
@@ -12,11 +12,8 @@ describe('Group presence lifecycle retry', () => {
         await seedPresenceSession(runtimeRepository, 'room-4');
 
         let now = 4_000;
-        const publisher = createPublisher();
         const service = createTestGroupStateRuntime({
             runtimeRepository,
-            syncPublisher: publisher,
-            formationDamping: 'damped',
             now: () => now,
             serviceId: 'group-service'
         }).service;
@@ -46,20 +43,18 @@ describe('Group presence lifecycle retry', () => {
         expect(second).toMatchObject({
             status: 'ok',
             result: {
-                right: {
-                    snapshot: {
-                        group: {
-                            ...groupRef,
-                            snapshotVersion: 1,
-                            presenceVersion: 0
-                        },
-                        activeSessions: []
-                    }
+                snapshot: {
+                    group: {
+                        ...groupRef,
+                        snapshotVersion: 1,
+                        presenceVersion: 0
+                    },
+                    activeSessions: []
                 }
             }
         });
-        expect(first.result.right?.event?.eventType).toBe('session-disconnected');
-        expect(second.result.right?.event).toEqual(first.result.right?.event);
+        expect(first.result?.event?.eventType).toBe('session-disconnected');
+        expect(second.result?.event).toEqual(first.result?.event);
 
         const repository = new GroupStateRepository(runtimeRepository);
         expect(
@@ -76,8 +71,6 @@ describe('Group presence lifecycle retry', () => {
             'session-disconnected'
         ]);
         expect((await repository.readSnapshot(groupRef))?.group.snapshotVersion).toBe(1);
-        expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
-        expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
     });
 
     it('returns disconnects triggered by websocket session cleanup without publishing directly', async () => {
@@ -85,11 +78,8 @@ describe('Group presence lifecycle retry', () => {
         await seedGroup(runtimeRepository, 'room-7');
         await seedPresenceSession(runtimeRepository, 'room-7');
 
-        const publisher = createPublisher();
         const runtime = createTestGroupStateRuntime({
             runtimeRepository,
-            syncPublisher: publisher,
-            formationDamping: 'damped',
             now: () => 5_000,
             serviceId: 'group-service'
         });
@@ -101,8 +91,6 @@ describe('Group presence lifecycle retry', () => {
 
         expect(snapshots).toHaveLength(1);
         expect(snapshots[0].activeSessions).toHaveLength(0);
-        expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
-        expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
     });
 
     it('returns written disconnect results for websocket session cleanup', async () => {
@@ -110,11 +98,8 @@ describe('Group presence lifecycle retry', () => {
         await seedGroup(runtimeRepository, 'room-8');
         await seedPresenceSession(runtimeRepository, 'room-8');
 
-        const publisher = createPublisher();
         const runtime = createTestGroupStateRuntime({
             runtimeRepository,
-            syncPublisher: publisher,
-            formationDamping: 'damped',
             now: () => 5_000,
             serviceId: 'group-service'
         });
@@ -124,17 +109,12 @@ describe('Group presence lifecycle retry', () => {
         ).resolves.toMatchObject([
             {
                 result: {
-                    right: {
-                        event: {
-                            eventType: 'session-disconnected'
-                        }
+                    event: {
+                        eventType: 'session-disconnected'
                     }
                 }
             }
         ]);
-
-        expect(publisher.publishGroupSnapshot).not.toHaveBeenCalled();
-        expect(publisher.publishGroupEvent).not.toHaveBeenCalled();
     });
 
     it('does not rewrite expired presence when late websocket cleanup arrives', async () => {
@@ -150,8 +130,6 @@ describe('Group presence lifecycle retry', () => {
         const now = expiresAtEpochMs + 1;
         const runtime = createTestGroupStateRuntime({
             runtimeRepository,
-            syncPublisher: createPublisher(),
-            formationDamping: 'damped',
             now: () => now,
             serviceId: 'group-service'
         });
@@ -197,8 +175,6 @@ describe('Group presence lifecycle retry', () => {
         const now = expiresAtEpochMs + 1;
         const runtime = createTestGroupStateRuntime({
             runtimeRepository,
-            syncPublisher: createPublisher(),
-            formationDamping: 'damped',
             now: () => now,
             serviceId: 'group-service'
         });
@@ -240,7 +216,6 @@ describe('Group presence lifecycle retry', () => {
         const before = await repository.readSnapshot(groupRef);
         const service = createGroupStateService({
             runtimeRepository,
-            formationDamping: 'damped',
             now: () => 2_000,
             serviceId: 'group-service'
         });
@@ -254,11 +229,11 @@ describe('Group presence lifecycle retry', () => {
             actorPrincipalId: 'alice'
         });
 
-        expect(written.result.right?.event?.eventType).toBe('session-heartbeat');
-        expect(written.result.right?.snapshot.group.snapshotVersion).toBe(
+        expect(written.result?.event?.eventType).toBe('session-heartbeat');
+        expect(written.result?.snapshot.group.snapshotVersion).toBe(
             before?.group.snapshotVersion
         );
-        expect(written.result.right?.snapshot.stateRevision).toBe(before?.stateRevision);
+        expect(written.result?.snapshot.causalRevision).toEqual(before?.causalRevision);
     });
 
     it('rejects a heartbeat that would advance past expiry without extending expiry', async () => {
@@ -273,7 +248,6 @@ describe('Group presence lifecycle retry', () => {
         });
         const service = createGroupStateService({
             runtimeRepository,
-            formationDamping: 'damped',
             now: () => lateHeartbeatAtEpochMs,
             serviceId: 'group-service'
         });
@@ -314,7 +288,6 @@ describe('Group presence lifecycle retry', () => {
         await seedPresenceSession(runtimeRepository, 'room-session-principal-invariant');
         const service = createGroupStateService({
             runtimeRepository,
-            formationDamping: 'damped',
             now: () => 3_000,
             serviceId: 'group-service'
         });

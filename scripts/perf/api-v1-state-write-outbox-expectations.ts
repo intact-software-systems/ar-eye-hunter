@@ -6,9 +6,9 @@ import {
 } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 
-import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state-storage-keys.ts';
-import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
-import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
+import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 
 import type { StateWriteOutboxCommand } from './api-v1-state-write-outbox-evidence.ts';
 import type { ProductionReceiptEvidence } from './api-v1-state-write-receipt-evidence.ts';

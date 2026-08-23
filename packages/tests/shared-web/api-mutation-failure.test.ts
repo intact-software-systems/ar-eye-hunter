@@ -6,7 +6,7 @@ describe('API mutation failure HTTP decoding', () => {
     it('exposes an exact canonical mutation failure from an HTTP error response', () => {
         const bodyText = JSON.stringify({
             type: 'api-mutation-failure',
-            version: 'canonical.v1',
+            version: 'canonical.v2',
             code: 'app-inbox-unavailable',
             status: 503,
             message: 'App inbox entry did not complete within the wait budget',
@@ -30,7 +30,7 @@ describe('API mutation failure HTTP decoding', () => {
     it('preserves Retry-After alongside the exact canonical rate-limit failure', () => {
         const bodyText = JSON.stringify({
             type: 'api-mutation-failure',
-            version: 'canonical.v1',
+            version: 'canonical.v2',
             code: 'rate-limited',
             status: 429,
             message: 'Too many mutation requests',

@@ -246,7 +246,7 @@
         "status": 403,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "group-admission-capacity-reached",
           "status": 403
         }
@@ -332,7 +332,7 @@
         "status": 403,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "group-admission-capacity-reached",
           "status": 403
         }
@@ -436,7 +436,7 @@
         "status": 403,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "group-admission-deadline-passed",
           "status": 403
         }
@@ -595,7 +595,7 @@
         "status": 403,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "group-admission-closed",
           "status": 403
         }
@@ -644,7 +644,7 @@
         "status": 403,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "group-admission-closed",
           "status": 403
         }

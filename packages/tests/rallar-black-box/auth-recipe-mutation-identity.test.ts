@@ -1,4 +1,4 @@
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { describe, expect, it } from 'vitest';
 import { authRecipeSnippet } from '../../../apps/rallar-black-box/src/legacy/diagnostics/auth/auth-recipe.ts';
 

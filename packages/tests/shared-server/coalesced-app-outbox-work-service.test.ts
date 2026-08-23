@@ -1,9 +1,9 @@
-import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
+import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
     CoalescedAppOutboxWorkService,
     type CoalescedAppOutboxWorkData
-} from '@shared-server/rallar-system/services/CoalescedAppOutboxWorkService.ts';
+} from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work-service.ts';
 import { EnqueuedType, EntityStatus, InMemoryQueueBox } from '@shared/mod.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { describe, expect, it } from 'vitest';

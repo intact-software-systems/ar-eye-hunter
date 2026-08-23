@@ -3,11 +3,10 @@ import {
     validateAuthoritativeGroupSnapshot
 } from '@shared/api/authoritative-state-validation.ts';
 import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types.ts';
-import { Either } from '@shared/resilience/Either.ts';
 
-import { AppInboxType } from '../../services/app-inbox-contracts.ts';
-import { requireExactKeys, requireOneOf, requireString } from '../../services/exact-object-codec.ts';
-import type { JsonWireObject, JsonWireValue } from '../../services/mutation-command-identity.ts';
+import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
+import { requireExactKeys, requireOneOf, requireString } from '../../protocol/exact-object-decoding.ts';
+import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type {
     GroupJoinCodeMutationWritten,
     GroupJoinCodeWritten,
@@ -44,29 +43,19 @@ export function decodeGroupStateWritten(value: JsonWireValue): GroupStateWritten
     requireExactKeys(written, ['status', 'result'], 'Group state result');
     const status = requireOneOf(
         written.status,
-        ['created', 'ok', 'error'] as const,
+        ['created', 'ok'] as const,
         'Group state result status'
     );
-    const result = decodeGroupMutationEither(written.result);
-    if ((status === 'error') !== (result.left !== undefined)) {
-        throw new TypeError('Group state result status differs from its result');
-    }
-    return { status, result };
+    return { status, result: decodeGroupMutationWritten(written.result) };
 }
 
 export function decodeGroupJoinCodeWritten(value: JsonWireValue): GroupJoinCodeWritten {
     const written = requireJsonWireRecord(value, 'Group join-code result');
     requireExactKeys(written, ['status', 'result'], 'Group join-code result');
-    const status = requireOneOf(
-        written.status,
-        ['ok', 'error'] as const,
-        'Group join-code result status'
-    );
-    const result = decodeGroupJoinCodeEither(written.result);
-    if ((status === 'error') !== (result.left !== undefined)) {
-        throw new TypeError('Group join-code result status differs from its result');
+    if (written.status !== 'ok') {
+        throw new TypeError('Group join-code result status is invalid');
     }
-    return { status, result };
+    return { status: 'ok', result: decodeGroupJoinCodeMutationWritten(written.result) };
 }
 
 export function decodeGroupMutationReceipt(value: JsonWireValue): GroupMutationReceipt {
@@ -81,7 +70,6 @@ export function decodeGroupMutationReceipt(value: JsonWireValue): GroupMutationR
             'outcome',
             'attemptCount',
             'acceptedStorageRevision',
-            'stateRevision',
             'snapshotVersion',
             'causalRevision',
             'eventId',
@@ -109,10 +97,6 @@ export function decodeGroupMutationReceipt(value: JsonWireValue): GroupMutationR
         receipt.acceptedStorageRevision,
         'Group mutation receipt acceptedStorageRevision'
     );
-    const stateRevision = requireNonNegativeInteger(
-        receipt.stateRevision,
-        'Group mutation receipt stateRevision'
-    );
     const snapshotVersion = requireNonNegativeInteger(
         receipt.snapshotVersion,
         'Group mutation receipt snapshotVersion'
@@ -134,7 +118,6 @@ export function decodeGroupMutationReceipt(value: JsonWireValue): GroupMutationR
         outcome,
         attemptCount,
         acceptedStorageRevision,
-        stateRevision,
         snapshotVersion,
         causalRevision,
         eventId,
@@ -202,16 +185,9 @@ export function requireGroupPresenceInboxDurableResult(
     throw new TypeError('Expected a group presence mutation result');
 }
 
-function decodeGroupMutationEither(value: JsonWireValue): GroupStateWritten['result'] {
-    const result = requireJsonWireRecord(value, 'Group state mutation result');
-    if (Object.hasOwn(result, 'left')) {
-        requireExactKeys(result, ['left'], 'Group state mutation result');
-        requireString(result.left, 'Group state mutation result left');
-        return Either.ofLeft(result.left);
-    }
-    requireExactKeys(result, ['right'], 'Group state mutation result');
-    const written = requireJsonWireRecord(result.right, 'Group state mutation result right');
-    requireExactKeys(written, ['snapshot', 'event'], 'Group state mutation result right');
+function decodeGroupMutationWritten(value: JsonWireValue): GroupStateWritten['result'] {
+    const written = requireJsonWireRecord(value, 'Group state mutation result');
+    requireExactKeys(written, ['snapshot', 'event'], 'Group state mutation result');
     validateAuthoritativeGroupSnapshot(written.snapshot);
     if (written.event !== null) {
         validateAuthoritativeGroupEvent(written.event, {
@@ -220,38 +196,27 @@ function decodeGroupMutationEither(value: JsonWireValue): GroupStateWritten['res
             groupId: written.snapshot.group.groupId
         });
     }
-    return Either.ofRight({ snapshot: written.snapshot, event: written.event });
+    return { snapshot: written.snapshot, event: written.event };
 }
 
 function isJoinCodeSuccess(
     result: GroupStateWritten | GroupJoinCodeWritten
 ): result is GroupJoinCodeWritten {
-    return result.result.right !== undefined && 'joinCode' in result.result.right;
+    return 'joinCode' in result.result;
 }
 
 function isGroupStateSuccess(
     result: GroupStateWritten | GroupJoinCodeWritten
 ): result is GroupStateWritten {
-    return result.result.right !== undefined && !('joinCode' in result.result.right);
-}
-
-function decodeGroupJoinCodeEither(value: JsonWireValue): GroupJoinCodeWritten['result'] {
-    const result = requireJsonWireRecord(value, 'Group join-code mutation result');
-    if (Object.hasOwn(result, 'left')) {
-        requireExactKeys(result, ['left'], 'Group join-code mutation result');
-        requireString(result.left, 'Group join-code mutation result left');
-        return Either.ofLeft(result.left);
-    }
-    requireExactKeys(result, ['right'], 'Group join-code mutation result');
-    return Either.ofRight(decodeGroupJoinCodeMutationWritten(result.right));
+    return !('joinCode' in result.result);
 }
 
 function decodeGroupJoinCodeMutationWritten(value: JsonWireValue): GroupJoinCodeMutationWritten {
-    const written = requireJsonWireRecord(value, 'Group join-code mutation result right');
+    const written = requireJsonWireRecord(value, 'Group join-code mutation result');
     requireExactKeys(
         written,
         ['joinCode', 'expiresAtEpochMs', 'snapshot', 'event'],
-        'Group join-code mutation result right'
+        'Group join-code mutation result'
     );
     requireString(written.joinCode, 'Group join-code mutation result joinCode');
     const expiresAtEpochMs = requireNonNegativeInteger(

@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { compareStateWriteArtifacts, validateStateWriteArtifact } from '../../../scripts/perf/compare-api-v1-state-write-results.mjs';
 
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { mutationDescriptor, toDescriptorCommand } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { toGroupMutationDescriptorTargetIdentity } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
 import { toScopedGroupMutationCommandId } from '@shared-server/rallar-system/group-state/scoped-group-mutation-command-id.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
-import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import {
@@ -374,10 +374,10 @@ describe('API-v1 state-write final durable evidence', { timeout: 30_000 }, () =>
                 commandHash: `sha256:${'b'.repeat(64)}`,
                 outcome: 'applied',
                 attemptCount: 1,
-                outboxId: null,
                 outboxIds: [entry.key.resourceId],
                 aggregateRef,
-                stateRevision: 4,
+                stateRevision: null,
+                causalRevision: { groupRevision: 4, presenceRevision: 3 },
                 snapshotVersion: 4,
                 acceptedVersion: null,
                 operation: null,
@@ -912,7 +912,6 @@ function groupIdempotencyRecord(
             outcome: 'no-op' as const,
             attemptCount: 1,
             acceptedStorageRevision: 0,
-            stateRevision: 1,
             snapshotVersion: 1,
             causalRevision: { groupRevision: 1, presenceRevision: 0 },
             eventId: null,

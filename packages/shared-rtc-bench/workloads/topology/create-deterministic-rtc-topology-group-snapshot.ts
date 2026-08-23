@@ -13,7 +13,6 @@ export function createDeterministicRtcTopologyGroupSnapshot(
     }
 
     return {
-        stateRevision: membershipVersion,
         causalRevision: {
             groupRevision: membershipVersion,
             presenceRevision: membershipVersion

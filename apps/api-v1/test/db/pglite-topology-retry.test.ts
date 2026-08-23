@@ -6,15 +6,18 @@ import { createGroupStateEventRepository } from '@shared-server/postgres/rallar-
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { AuthSessionRepository, type IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { AppGroupInboxService, toTopologyAppInboxCommand } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { GroupTopologyConfigMutationCommand } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
+import { writeTopologyConfigMutation } from '@shared-server/rallar-system/topology/config/mutation/write-topology-config-mutation.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
+import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
+import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-management-types.ts';
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
@@ -25,7 +28,7 @@ import * as graphTopologyRoutes from '../../src/routes/graph-topology-routes.ts'
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { canonicalAuditStamp } from './pglite-state-mutation-test-runtime.ts';
-import { submitPGliteTopologyCommand, topologyConfigCommand, topologyGroupSnapshot } from './pglite-topology-test-runtime.ts';
+import { requireTopologyMutationOwners, submitPGliteTopologyCommand, topologyConfigCommand, topologyGroupSnapshot } from './pglite-topology-test-runtime.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 
@@ -65,13 +68,12 @@ Deno.test(
             }
             const groupState = createGroupStateService({
                 runtimeRepository: runtime,
-                formationDamping: 'damped',
                 createGroupStateEventStore: createGroupStateEventRepository,
                 authSessionRepository: authSessions,
                 serviceId: 'pglite-topology-route-errors',
                 now: () => nowEpochMs
             });
-            const topology = new GroupTopologyManagementService({
+            const topology = createGroupTopologyOwners({
                 findGroupSnapshotByRef: (ref) => groupRepository.readSnapshot(ref),
                 groupStateRepository: groupRepository,
                 configRepository: new GroupTopologyConfigRepository(runtime),
@@ -80,13 +82,14 @@ Deno.test(
                 now: () => nowEpochMs
             });
             const createAppGroup = (waitMaxElapsedMsecs: number) => {
-                const service = new AppGroupInboxService(
+                const service = new TopologyInboxService(
                     {
                         inboxQueueReader: inboxReader,
                         resourceInboxRepository: resourceInbox,
                         resourceInboxResultsRepository: resourceResults,
                         database: sql,
-                        groupStateService: groupState
+                        groupStateService: groupState,
+                        mutationOwners: requireTopologyMutationOwners(topology)
                     },
                     {
                         serviceId: 'pglite-topology-route-errors',
@@ -100,18 +103,18 @@ Deno.test(
                         }
                     }
                 );
-                service.setTopologyManagementService(topology);
                 return service;
             };
             const appGroup = createAppGroup(5_000);
-            const createRouteApp = (service: AppGroupInboxService) => {
+            const createRouteApp = (service: TopologyInboxService) => {
                 const app = new Hono();
                 graphTopologyRoutes.registerGraphTopologyRoutes(app, {
                     groupStateService: {
                         readCurrentSnapshot: (ref) => groupRepository.readSnapshot(ref)
                     },
                     graphDiagnostics: {} as graphTopologyRoutes.GraphTopologyRouteGraphDiagnostics,
-                    topologyManagement: topology,
+                    topologyQuery: topology.query,
+                    topologyPlanning: topology.planning,
                     processTopologyAppInbox: (authSession, enqueue) => graphTopologyRoutes.processTopologyAppInbox(service, authSession, enqueue),
                     requireApiAuthSession: () => Promise.resolve(authority),
                     adminClientIds: [],
@@ -149,7 +152,7 @@ Deno.test(
             assert.equal(validation.status, 422);
             assert.deepEqual(await validation.json(), {
                 type: 'api-mutation-failure',
-                version: 'canonical.v1',
+                version: 'canonical.v2',
                 code: 'group-topology-config-validation-failed',
                 status: 422,
                 message: 'Group topology config validation failed',
@@ -215,7 +218,7 @@ Deno.test(
             assert.equal(unavailable.status, 503);
             assert.deepEqual(await unavailable.json(), {
                 type: 'api-mutation-failure',
-                version: 'canonical.v1',
+                version: 'canonical.v2',
                 code: 'app-inbox-unavailable',
                 status: 503,
                 message: 'App inbox entry did not complete within the wait budget',
@@ -275,7 +278,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
             await groupRepository.putMember(member);
         }
         const configRepository = new GroupTopologyConfigRepository(runtime);
-        const baselineTopology = new GroupTopologyManagementService({
+        const baselineTopology = createGroupTopologyOwners({
             findGroupSnapshotByRef: (ref) => groupRepository.readSnapshot(ref),
             groupStateRepository: groupRepository,
             configRepository,
@@ -283,7 +286,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
             processRttReader: () => [],
             now: () => nowEpochMs
         });
-        const staleConfigRead = await baselineTopology.readTopologyConfigMutation(
+        const staleConfigRead = await baselineTopology.configMutation!.read(
             topologyConfigCommand(
                 groupRef,
                 'lifecycle-change-after-conflict',
@@ -292,7 +295,6 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
         );
         const groupState = createGroupStateService({
             runtimeRepository: runtime,
-            formationDamping: 'damped',
             createGroupStateEventStore: createGroupStateEventRepository,
             authSessionRepository: authSessions,
             serviceId: 'pglite-topology-retry',
@@ -301,7 +303,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
         let readCount = 0;
         let readsAtFirstRetryRelease = 0;
         let staleReadCount = 0;
-        const topology = new GroupTopologyManagementService({
+        const topology = createGroupTopologyOwners({
             findGroupSnapshotByRef: (ref) => groupRepository.readSnapshot(ref),
             groupStateRepository: groupRepository,
             configRepository,
@@ -309,7 +311,7 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
             processRttReader: () => [],
             now: () => nowEpochMs
         });
-        const configMutation = topology.configMutationService;
+        const configMutation = topology.configMutation;
         assert.ok(configMutation);
         const readTopologyConfigMutation = configMutation.read.bind(configMutation);
         configMutation.read = async (command: GroupTopologyConfigMutationCommand) => {
@@ -339,13 +341,14 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
                 'applied'
             );
         };
-        const appGroup = new AppGroupInboxService(
+        const appGroup = new TopologyInboxService(
             {
                 inboxQueueReader: inboxReader,
                 resourceInboxRepository: resourceInbox,
                 resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
                 database: sql,
-                groupStateService: groupState
+                groupStateService: groupState,
+                mutationOwners: requireTopologyMutationOwners(topology)
             },
             {
                 serviceId: 'pglite-topology-retry',
@@ -359,7 +362,6 @@ Deno.test('PGlite AppGroup rereads lifecycle after a retryable topology conflict
                 }
             }
         );
-        appGroup.setTopologyManagementService(topology);
         const seedCommand = await toTopologyAppInboxCommand({
             actor: { principalId: authority.clientId, sessionId: authority.sessionId },
             groupRef,
@@ -443,7 +445,7 @@ Deno.test(
                     return observation;
                 }
             }
-            const service = new GroupTopologyManagementService({
+            const service = createGroupTopologyOwners({
                 findGroupSnapshotByRef: () => snapshot,
                 groupStateRepository: new PausingGroupStateRepository(runtime),
                 configRepository: topology,
@@ -454,13 +456,14 @@ Deno.test(
                 'pglite-overlapping-archive',
                 'tree'
             );
-            const preparation = await service.prepareTopologyConfigMutation({
+            const mutation = service.configMutation!;
+            const preparation = await mutation.prepare({
                 command,
                 commandHash: await hashMutationCommand(command as JsonWireValue),
                 capturedAtEpochMs: 1_000
             });
             pauseFirstRead = true;
-            const firstReadPromise = service.readTopologyConfigMutation(command);
+            const firstReadPromise = mutation.read(command);
             await observed.promise;
             const current = await groupState.findGroupEntry(groupRef);
             assert.ok(current);
@@ -478,12 +481,12 @@ Deno.test(
             );
             release.resolve();
             const firstRead = await firstReadPromise;
-            const firstComputed = service.computeTopologyConfigMutation(
+            const firstComputed = mutation.compute(
                 preparation,
                 firstRead,
                 1
             );
-            service.validateTopologyConfigMutation(
+            mutation.validate(
                 preparation,
                 firstRead,
                 1,
@@ -494,13 +497,13 @@ Deno.test(
                 throw new Error('Expected topology write');
             }
             await assert.rejects(
-                () => sql.begin((transaction) => service.writeTopologyConfigMutation(transaction, firstComputed)),
+                () => sql.begin((transaction) => writeTopologyConfigMutation(transaction, firstComputed)),
                 /conditional write conflict/
             );
-            const retryRead = await service.readTopologyConfigMutation(command);
+            const retryRead = await mutation.read(command);
             assert.throws(
                 () =>
-                    service.computeTopologyConfigMutation(
+                    mutation.compute(
                         preparation,
                         retryRead,
                         2

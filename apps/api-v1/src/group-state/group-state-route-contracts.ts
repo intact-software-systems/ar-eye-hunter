@@ -1,3 +1,4 @@
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type {
     AuthenticatedGroupMutationEnqueue
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
@@ -7,11 +8,10 @@ import type {
 import type {
     CachedGroupStateService
 } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
 import type {
     StateSyncCacheHydrationInput,
     StateSyncCacheHydrationResult
-} from '@shared-server/rallar-system/state-sync-cache-hydration.ts';
+} from '@shared-server/rallar-system/state-sync/state-sync-cache-hydration.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { GroupStateSnapshotReadOptions, StateSnapshotReadResult } from '@shared/api/state-snapshot-read.ts';
 import type {

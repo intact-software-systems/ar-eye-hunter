@@ -32,7 +32,6 @@ export function createGroupSnapshot(
     });
 
     return {
-        stateRevision: snapshotVersion + sessionIds.length,
         causalRevision: {
             groupRevision: snapshotVersion,
             presenceRevision: sessionIds.length

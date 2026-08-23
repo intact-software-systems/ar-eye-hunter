@@ -5,8 +5,8 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 
 import { createGroupStateTransactionBoundaryHarness } from './group-state-transaction-boundary-fixture.ts';
 
-const EXPECTED_CREATE_GROUP_DURABLE_JSON = '{"status":"created","result":{"right":{"snapshot":' +
-    '{"stateRevision":1,"causalRevision":{"groupRevision":1,"presenceRevision":0},' +
+const EXPECTED_CREATE_GROUP_DURABLE_JSON = '{"status":"created","result":{"snapshot":' +
+    '{"causalRevision":{"groupRevision":1,"presenceRevision":0},' +
     '"group":{"applicationId":"ar-eye-hunter","workspaceId":"default",' +
     '"groupId":"transaction-boundary-room","slug":null,' +
     '"displayName":"Transaction boundary room","description":null,"kind":"room",' +
@@ -39,7 +39,7 @@ const EXPECTED_CREATE_GROUP_DURABLE_JSON = '{"status":"created","result":{"right
     '"causalRevision":{"groupRevision":1,"presenceRevision":0},' +
     '"occurredAtEpochMs":1785628800000,"actor":{"kind":"session",' +
     '"sessionId":"owner-session","principalId":"owner"},"reason":null,' +
-    '"traceId":null,"requestId":"create-transaction-boundary-room","payload":{}}}}}';
+    '"traceId":null,"requestId":"create-transaction-boundary-room","payload":{}}}}';
 
 describe('group-state AppInbox transaction result boundary', () => {
     it('persists the real durable result before exposing the committed snapshot', async () => {
@@ -56,8 +56,7 @@ describe('group-state AppInbox transaction result boundary', () => {
         expect(persisted?.resource).not.toContain('committedSnapshot');
         const rawDurableResult = JSON.parse(persisted!.resource) as Record<string, unknown>;
         expect(Object.keys(rawDurableResult)).toEqual(['status', 'result']);
-        expect(Object.keys(rawDurableResult.result as Record<string, unknown>)).toEqual(['right']);
-        expect(Object.keys((rawDurableResult.result as { right: Record<string, unknown>; }).right)).toEqual(['snapshot', 'event']);
+        expect(Object.keys(rawDurableResult.result as Record<string, unknown>)).toEqual(['snapshot', 'event']);
         expect(rawDurableResult).toEqual(created);
         expect(harness.transactionWriter.read(harness.context)).toEqual({
             state: 'transaction-finalized',
@@ -65,7 +64,7 @@ describe('group-state AppInbox transaction result boundary', () => {
             result: created
         });
         expect(harness.observedSnapshots).toHaveLength(1);
-        expect(harness.observedSnapshots[0]).toEqual(created.result.right?.snapshot);
+        expect(harness.observedSnapshots[0]).toEqual(created.result?.snapshot);
         expect(harness.readWakeCount()).toBe(1);
         expect(harness.outboxEntries.size).toBe(1);
     });
@@ -145,7 +144,7 @@ describe('group-state AppInbox transaction result boundary', () => {
 
     it('passes the exact committed snapshot object to observation only after commit', async () => {
         const committedSnapshot = { snapshot: 'exact-committed-object' };
-        const durableResult = { status: 'ok', result: { right: { durable: true } } };
+        const durableResult = { status: 'ok', result: { durable: true } };
         const readResult = vi.fn().mockResolvedValue({ durableResult, committedSnapshot });
         vi.resetModules();
         vi.doMock('@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts', () => ({
@@ -179,15 +178,15 @@ describe('group-state AppInbox transaction result boundary', () => {
     it('keeps the existing durable-only writer result and serialization unchanged', async () => {
         const harness = await createGroupStateTransactionBoundaryHarness();
         const durableResult = {
-            status: 'legacy-compatible',
-            result: { right: { value: 0, omitted: null } }
+            status: 'durable-only',
+            result: { value: 0, omitted: null }
         } as const;
 
         const returned = await harness.transactionWriter.writeMutation(harness.context, async () => durableResult);
         const persisted = await harness.results.findByKey(harness.context.entry.key);
 
         expect(returned).toBe(durableResult);
-        expect(persisted?.resource).toBe('{"status":"legacy-compatible","result":{"right":{"value":0,"omitted":null}}}');
+        expect(persisted?.resource).toBe('{"status":"durable-only","result":{"value":0,"omitted":null}}');
         expect(Object.keys(JSON.parse(persisted!.resource) as Record<string, unknown>)).toEqual(['status', 'result']);
         expect(harness.transactionWriter.read(harness.context)).toEqual({
             state: 'transaction-finalized',
@@ -285,7 +284,6 @@ function inactiveConnectContext() {
                     resolvedJoinCode: null,
                     joinCodeVerifier: null,
                     internalAuthority: 'none',
-                    formationDamping: 'legacy',
                     authenticatedAuthority: { principalId: 'owner', sessionId: 'inactive-session' }
                 },
                 causalToken: 'causal-token',

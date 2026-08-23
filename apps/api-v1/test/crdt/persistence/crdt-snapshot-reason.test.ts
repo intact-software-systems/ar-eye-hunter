@@ -150,8 +150,9 @@ Deno.test(
 
 function createService(sql: PGliteSql, now: number) {
     const resourceInbox = new ResourceInboxRepository(sql);
-    return createApiCrdtInboxService({
-        inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(resourceInbox)),
+    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+    const service = createApiCrdtInboxService({
+        inboxQueueReader,
         resourceInboxRepository: resourceInbox,
         resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
         database: sql,
@@ -172,6 +173,7 @@ function createService(sql: PGliteSql, now: number) {
         },
         policies: [{ documentType: 'checklist', rollout: 'production' }]
     });
+    return Object.assign(service, { inboxQueueReader });
 }
 
 async function drain(
@@ -179,7 +181,10 @@ async function drain(
     sql: PGliteSql
 ): Promise<void> {
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
-    await service.inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
+    await service.inboxQueueReader.dequeueInbox(
+        InboxQueueReader.INBOX_DEQUEUE_TYPES,
+        toResilienceDto()
+    );
 }
 
 function actor() {

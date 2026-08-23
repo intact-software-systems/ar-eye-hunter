@@ -987,7 +987,6 @@ function groupSnapshot(groupId: string, applicationId = 'rallar-server'): GroupS
     const groupRevision = 3;
     return {
         ...snapshot,
-        stateRevision: groupRevision + snapshot.causalRevision.presenceRevision,
         causalRevision: {
             ...snapshot.causalRevision,
             groupRevision

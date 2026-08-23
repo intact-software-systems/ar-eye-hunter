@@ -210,7 +210,7 @@
         "status": 409,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "app-inbox-idempotency-conflict",
           "status": 409
         }
@@ -233,7 +233,7 @@
         "status": 400,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "api-mutation-request-invalid",
           "status": 400
         }
@@ -257,7 +257,7 @@
         "status": 400,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "api-mutation-request-invalid",
           "status": 400
         }
@@ -603,7 +603,7 @@
         "status": 500,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "api-mutation-unexpected",
           "status": 500
         }
@@ -627,7 +627,7 @@
         "status": 500,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "api-mutation-unexpected",
           "status": 500
         }
@@ -905,7 +905,7 @@
         "status": 409,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "app-inbox-idempotency-conflict",
           "status": 409
         }
@@ -1005,7 +1005,7 @@
         "status": 404,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "crdt-admin-mutation-rejected",
           "status": 404
         }
@@ -1037,7 +1037,7 @@
         "status": 404,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "crdt-admin-mutation-rejected",
           "status": 404
         }
@@ -1118,7 +1118,7 @@
         "status": 409,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "app-inbox-idempotency-conflict",
           "status": 409
         }
@@ -1145,7 +1145,7 @@
         "status": 401,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "authentication-required",
           "status": 401
         }

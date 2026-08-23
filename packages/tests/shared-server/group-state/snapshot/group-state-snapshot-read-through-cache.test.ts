@@ -1,16 +1,15 @@
-import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
+import { type GroupSnapshotPageOptions, type GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import { createCachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { createCachedGroupStateService as createCompatibilityCachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
-import type { GroupSnapshotPageOptions, GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { createGroupStateSnapshotReadThroughCache as createCompatibilityGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts';
 import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { GroupPresenceSummary, GroupRef, GroupScope, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { describe, expect, it } from 'vitest';
 import { configureTestCacheRepositories } from '../../../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
+import { createTestGroupPresenceSummaryTopologyIntent } from '../presence/group-presence-test-runtime.ts';
 import { createGroupSnapshot } from './group-state-snapshot-test-fixtures.ts';
 
 interface CacheConvergenceCommandConstruction {
@@ -20,13 +19,6 @@ interface CacheConvergenceCommandConstruction {
 }
 
 describe('GroupStateSnapshotReadThroughCache', () => {
-    it('keeps canonical snapshot services behind their stable one-hop public paths', () => {
-        expect(createCompatibilityCachedGroupStateService).toBe(createCachedGroupStateService);
-        expect(createCompatibilityGroupStateSnapshotReadThroughCache).toBe(
-            createGroupStateSnapshotReadThroughCache
-        );
-    });
-
     it('hydrates and refreshes by durable state revision', async () => {
         configureTestCacheRepositories();
         const repository = new GroupStateRepository(new FakeRuntimeStateRepository());
@@ -55,12 +47,10 @@ describe('GroupStateSnapshotReadThroughCache', () => {
         });
         const revisionTwo = {
             ...createGroupSnapshot(1, ['session-new']),
-            stateRevision: 2,
             causalRevision: { groupRevision: 2, presenceRevision: 2 }
         } satisfies GroupSnapshot;
         const revisionOne = {
             ...createGroupSnapshot(99, ['session-stale']),
-            stateRevision: 1,
             causalRevision: { groupRevision: 1, presenceRevision: 1 }
         } satisfies GroupSnapshot;
 
@@ -69,7 +59,6 @@ describe('GroupStateSnapshotReadThroughCache', () => {
         expect(
             cache.observe({
                 ...revisionTwo,
-                stateRevision: 99,
                 causalRevision: { groupRevision: 3, presenceRevision: 1 }
             })
         ).toBe('incomparable');
@@ -220,7 +209,7 @@ async function convergePresenceSummaryForCacheTest(
         acceptedCausalRevision
     });
     const work = new GroupPresenceSummaryWork({
-        topologyIntent: { damping: 'legacy' },
+        topologyIntent: createTestGroupPresenceSummaryTopologyIntent(),
         disseminationMode: 'dual-emit',
         runtimeRepository: runtime,
         now: () => 2_001,

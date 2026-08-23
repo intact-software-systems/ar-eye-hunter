@@ -17,7 +17,7 @@ import type {
     RallarRtcTopologyUpdateResult,
     RtcTopologyKindHysteresisWidths,
     RtcTopologyPlanningIntent
-} from '../../services/rallar-rtc-topology-service.ts';
+} from '../runtime/rallar-rtc-topology-service.ts';
 import type { RtcTopologyMetrics } from '../runtime/rtc-topology-metrics.ts';
 import { toCanonicalTopologySessionIds } from './canonical-topology-planning-input.ts';
 import { computeNoRttTopologyNextHops } from './compute-no-rtt-topology-next-hops.ts';

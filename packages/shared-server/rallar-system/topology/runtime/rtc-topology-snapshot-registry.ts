@@ -1,6 +1,6 @@
 import { compareOverlayTopologyCausalTuple, type RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
-import { rtcTopologySemanticEqual } from '../../rtc-topology-semantic-equality.ts';
+import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
 
 export class RtcTopologySnapshotRegistry {
     private readonly snapshotsByOverlayId = new Map<string, RallarOverlayTopologySnapshot>();

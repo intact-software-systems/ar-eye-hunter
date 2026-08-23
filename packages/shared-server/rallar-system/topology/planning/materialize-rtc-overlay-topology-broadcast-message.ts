@@ -3,26 +3,12 @@ import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
-import { DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS } from '../../repositories/RtcTopologyPublicationRepository.ts';
-import { toRtcTopologyPublicationMessageId } from '../../rtc-topology-identifiers.ts';
+import { toRtcTopologyPublicationMessageId } from '../persistence/rtc-topology-identifiers.ts';
 
 export interface RtcOverlayTopologyMessageFacts {
     readonly workId: string;
     readonly createdAtEpochMs: number;
     readonly expiresAtEpochMs: number;
-}
-
-/** @deprecated Compatibility helper for non-retry publication paths only. */
-export function createRtcOverlayTopologyBroadcastMessage(
-    group: GroupSnapshot,
-    snapshot: RallarOverlayTopologySnapshot
-): ALMessage {
-    const createdAtEpochMs = Date.now();
-    return materializeRtcOverlayTopologyBroadcastMessage(group, snapshot, {
-        workId: crypto.randomUUID(),
-        createdAtEpochMs,
-        expiresAtEpochMs: createdAtEpochMs + DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS
-    });
 }
 
 export function materializeRtcOverlayTopologyBroadcastMessage(

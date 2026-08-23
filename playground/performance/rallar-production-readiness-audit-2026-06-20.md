@@ -147,7 +147,7 @@ for live multi-browser RTC needs a non-skipped matrix run in the target topology
   targets, oversized payloads, invalid JSON, and unauthorized room messages before
   fanout in `packages/shared-server/rallar-facade/ws-topic-router.ts:365`.
 - Room authorization resolves scoped group identity, rejects scope mismatch, checks
-  snapshot freshness, and applies `canSendRoomMessage` in
+  snapshot freshness, and applies `canSendGroupMessage` in
   `packages/shared-server/rallar-system/services/ws-topic-room-authorizer.ts:29`.
 - Group policy requires active/live membership for room sends at
   `packages/shared-server/rallar-system/group-policy.ts:341`.

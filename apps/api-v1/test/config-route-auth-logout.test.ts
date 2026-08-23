@@ -82,7 +82,7 @@ Deno.test('logout returns the durable AppInbox failure status', async () => {
     assert.equal(response.status, 403);
     assert.deepEqual(await response.json(), {
         type: 'api-mutation-failure',
-        version: 'canonical.v1',
+        version: 'canonical.v2',
         code: 'auth-logout-authority-differs',
         status: 403,
         message: 'Auth logout authority differs',

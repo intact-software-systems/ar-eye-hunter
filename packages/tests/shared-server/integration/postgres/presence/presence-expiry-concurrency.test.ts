@@ -13,8 +13,8 @@ import { describe, expect, it } from 'vitest';
 import { createTestGroup } from '../../../../create-test-group.ts';
 import { createTestGroupStateRuntime } from '../../../group-state/group-state-test-runtime.ts';
 
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { requireGroupMutationReceipt } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { findDirectResourceOutboxEvidence } from '../../../direct-resource-outbox-evidence.ts';
 import {
     createPostgresAppInboxTestAuthority as testAuthority,
@@ -46,7 +46,6 @@ import {
     cleanupRuntimeState,
     createPostgresClientService,
     createPostgresGroupRuntime,
-    createPublisher,
     createSql,
     GroupPresenceReadBarrier,
     PrincipalReadBarrier,
@@ -120,9 +119,7 @@ describe('Postgres presence expiry concurrency', () => {
                 await seedConnectedClientSession({ sql: setupSql, scope, sessionRef, atEpochMs });
                 const setup = createTestGroupStateRuntime({
                     runtimeRepository: toRuntimeRepository(setupSql),
-                    formationDamping: 'damped',
                     createGroupStateEventStore: createGroupStateEventRepository,
-                    syncPublisher: createPublisher(),
                     now: () => atEpochMs,
                     sleep: () => Promise.resolve(),
                     serviceId: 'postgres-worker-request-id-setup'
@@ -407,9 +404,7 @@ describe('Postgres presence expiry concurrency', () => {
             try {
                 const setup = createTestGroupStateRuntime({
                     runtimeRepository: toRuntimeRepository(setupSql),
-                    formationDamping: 'damped',
                     createGroupStateEventStore: createGroupStateEventRepository,
-                    syncPublisher: createPublisher(),
                     now: () => atEpochMs,
                     sleep: () => Promise.resolve(),
                     serviceId: 'postgres-worker-group-setup'
@@ -486,9 +481,7 @@ describe('Postgres presence expiry concurrency', () => {
             try {
                 const setup = createTestGroupStateRuntime({
                     runtimeRepository: toRuntimeRepository(setupSql),
-                    formationDamping: 'damped',
                     createGroupStateEventStore: createGroupStateEventRepository,
-                    syncPublisher: createPublisher(),
                     now: () => atEpochMs,
                     sleep: () => Promise.resolve(),
                     serviceId: 'postgres-worker-presence-setup'

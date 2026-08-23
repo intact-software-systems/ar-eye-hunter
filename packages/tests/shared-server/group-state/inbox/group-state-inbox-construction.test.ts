@@ -1,7 +1,12 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import type { GroupFormationGroupMutationSink } from '@shared-server/rallar-system/formation-metrics.ts';
+import type { AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import {
+    AppInboxTransactionWriter,
+    type AppInboxMutationTransactionResult,
+    type AppInboxMutationTransactionWriter
+} from '@shared-server/rallar-system/app-inbox/app-inbox-transaction-writer.ts';
 import type {
     GroupMutationAuthority,
     GroupMutationDescriptor,
@@ -9,19 +14,14 @@ import type {
     GroupStateMutationService,
     GroupStateService
 } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { createGroupStateService as createDurableGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import { GroupStateInboxHandler, type GroupStateInboxHandlerDependencies } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
 import { toGroupMutationDescriptor } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
 import type { GroupMutationComputed } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutationWriteResult, type GroupMutationWriteInput } from '@shared-server/rallar-system/group-state/mutation/group-mutation-result.ts';
-import {
-    AppInboxTransactionWriter,
-    type AppInboxMutationTransactionResult,
-    type AppInboxMutationTransactionWriter
-} from '@shared-server/rallar-system/services/app-inbox-transaction-writer.ts';
-import type { AppInboxMessageContext } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { createGroupStateService as createDurableGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
-import type { WsSessionGenerationLifecycleService } from '@shared-server/rallar-system/services/ws-session-generation-lifecycle.ts';
+import type { GroupFormationGroupMutationSink } from '@shared-server/rallar-system/observability/formation-metrics.ts';
+import type { WsSessionGenerationLifecycleService } from '@shared-server/rallar-system/websocket/ws-session-generation-lifecycle.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';

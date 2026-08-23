@@ -4,7 +4,6 @@ import type { ClientMutationCommand } from '@shared-server/rallar-system/client-
 import { computeClientInstanceMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-instance-mutation.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { computeClientPrincipalMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-principal-mutation.ts';
-import { computeClientMutation as legacyComputeClientMutation } from '@shared-server/rallar-system/services/client-state-mutations.ts';
 
 import {
     emptyRead,
@@ -142,10 +141,6 @@ describe('client principal and instance mutation compute', () => {
             /^\{"applicationId":"app-1","workspaceId":"workspace-1","principalId":"alice",/
         );
     });
-
-    it('keeps the legacy dispatcher as the canonical function identity', () => {
-        expect(legacyComputeClientMutation).toBe(computeClientMutation);
-    });
 });
 
 describe('client principal and instance persistence convergence', () => {
@@ -200,8 +195,8 @@ describe('client principal and instance persistence convergence', () => {
             })
         ]);
 
-        expect(profile.result.right?.event?.eventType).toBe('principal-updated');
-        expect(instance.result.right?.event?.eventType).toBe('instance-registered');
+        expect(profile.result?.event?.eventType).toBe('principal-updated');
+        expect(instance.result?.event?.eventType).toBe('instance-registered');
         const after = await snapshot(runtime, 'alice');
         expect(after.principal).toMatchObject({
             displayName: 'After',

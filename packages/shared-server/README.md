@@ -12,8 +12,9 @@ For the current package map, active data flow, and validation commands, see
 - Rallar server facade APIs in `rallar-facade/`.
 - Rallar middleware construction in `rallar-system/middleware/`.
 - Server-side WebSocket topic routing, system topic installation, lifecycle wiring, and queue pub/sub bridge contracts.
-- Server domain services for clients, groups, auth sessions, auth users, request auth, rate limiting, and state sync.
-- Reusable timing event contracts and state-service/app-inbox instrumentation hooks.
+- Domain-owned client, group, auth, CRDT, topology, RTC-RTT, state-sync, presence, and AppInbox modules under
+  `rallar-system/`.
+- Reusable observability contracts and state-service/AppInbox instrumentation hooks.
 - Runtime-state repository contracts plus JSON store helpers.
 - Current Postgres adapters under `postgres/`.
 
@@ -51,12 +52,12 @@ means api-v1 owns:
   reconnect/gap hydration, and closed diagnostics contract. PostgreSQL adapters
   live under `postgres/rtc-topology/**`.
 - `registerAuthUser(...)` and `loginAuthUser(...)` implement auth domain rules without app-local JSON loading.
-- `rallar-system/services/timing.ts` defines timing events and no-op-safe instrumentation helpers. API apps decide
+- `rallar-system/observability/timing.ts` defines timing events and no-op-safe instrumentation helpers. API apps decide
   whether those events go to console, metrics, traces, or tests.
 
 ## Timing And Observability
 
-The shared services accept an optional timing sink. When supplied, group/client state-service methods and app-inbox
+The owning components accept an optional timing sink. When supplied, group/client state methods and AppInbox
 processing emit structured `rallar.timing` events with component, operation, duration, status, scope IDs, and request
 IDs. They do not emit request bodies, auth tokens, or mutation payloads.
 
@@ -81,8 +82,8 @@ retention gaps hydrate open connections before advancing. Reconnect hydration
 uses current durable membership, principal, session generation, presence, and
 expiry facts and fences the final send to the same socket generation.
 
-See the [topology navigation map](./rallar-system/topology/README.md) for module
-ownership, cutover/rollback settings, and validation commands.
+See the [Rallar System navigation map](./rallar-system/README.md) for live
+entry chains, domain ownership, side effects, and validation commands.
 
 App-inbox wait behaviour is configurable by the API app. `apps/api-v1` currently reads:
 
@@ -93,9 +94,8 @@ App-inbox wait behaviour is configurable by the API app. `apps/api-v1` currently
 - `RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS`: maximum completion poll interval. Defaults to `1000`.
 - `RALLAR_APP_INBOX_WAIT_JITTER_RATIO`: completion poll jitter ratio. Defaults to `0.1`.
 
-Potential app-inbox completion notifications are described in
-`rallar-system/app-inbox-completion-notifications.md`. Notifications should be used to wake waiters, while
-`resource_inbox_results` remains the durable source of truth.
+`resource_inbox_results` is the durable completion source of truth. Queue
+notifications may wake workers but never replace durable result reads.
 
 ## Runtime State Storage
 

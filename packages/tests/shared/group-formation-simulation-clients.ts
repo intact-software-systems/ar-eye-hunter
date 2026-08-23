@@ -19,7 +19,6 @@ export type SimulatedClient = Readonly<{
 }>;
 
 export type CreateSimulatedClientOptions = Readonly<{
-    groupFormationMode?: 'bounded-bootstrap' | 'legacy-star';
     maxPeerConnections: number;
     overlayTransitionGraceMs?: number;
     now?: () => number;
@@ -68,7 +67,6 @@ export function createSimulatedClient(
         readableOverlayCache(repositoryManager),
         {
             maxPeerConnections: options.maxPeerConnections,
-            groupFormationMode: options.groupFormationMode ?? 'bounded-bootstrap',
             ...(options.overlayTransitionGraceMs === undefined
                 ? {}
                 : { overlayTransitionGraceMs: options.overlayTransitionGraceMs }),

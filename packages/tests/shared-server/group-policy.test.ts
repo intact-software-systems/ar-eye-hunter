@@ -1,18 +1,18 @@
+import { canGovernGroupMember, canUpdateGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-governance-policy.ts';
 import {
-    canActivateGroupMember,
     canChangeGroupLifecycle,
     canCommandGroupLifecycleTransition,
-    canConnectGroupPresenceSession,
-    canGovernGroupMember,
-    canJoinGroup,
     canMutateActiveGroup,
-    canReadGroupSnapshot,
-    canSendRoomMessage,
-    canUpdateGroupSnapshot,
-    readGroupVisibility,
-    shouldPlanGroupPurge,
-    type GroupPolicyActor
-} from '@shared-server/rallar-system/group-policy.ts';
+    shouldPlanGroupPurge
+} from '@shared-server/rallar-system/group-state/policy/group-lifecycle-policy.ts';
+import {
+    canActivateGroupMember,
+    canConnectGroupPresenceSession,
+    canJoinGroup
+} from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
+import { canSendGroupMessage } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
+import type { GroupPolicyActor } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
+import { canReadGroupSnapshot, readGroupVisibility } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
 import { computeGroupAdmissionDecision } from '@shared/api/group-lifecycle/compute-group-admission-decision.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
@@ -389,7 +389,7 @@ describe('group policy helpers', () => {
 
     it('evaluates room message sends for stale snapshots, live sessions, lifecycle, and member status', () => {
         expect(
-            canSendRoomMessage({
+            canSendGroupMessage({
                 snapshot: snapshot({ activeSessions: [session('alice-session', 'alice')] }),
                 actor: ACTOR,
                 senderSessionId: 'alice-session',
@@ -399,7 +399,7 @@ describe('group policy helpers', () => {
         // Plan decision 5.4: blocked-until-active gates only before activation,
         // and an absent value leaves application data ungated.
         expect(
-            canSendRoomMessage({
+            canSendGroupMessage({
                 snapshot: snapshot({
                     lifecycleState: 'establishing',
                     activeSessions: [session('alice-session', 'alice')]
@@ -410,7 +410,7 @@ describe('group policy helpers', () => {
             })
         ).toMatchObject(denied('group-data-blocked-until-active'));
         expect(
-            canSendRoomMessage({
+            canSendGroupMessage({
                 snapshot: snapshot({ activeSessions: [session('alice-session', 'alice')] }),
                 actor: ACTOR,
                 senderSessionId: 'alice-session',
@@ -418,7 +418,7 @@ describe('group policy helpers', () => {
             })
         ).toEqual({ allowed: true });
         expect(
-            canSendRoomMessage({
+            canSendGroupMessage({
                 snapshot: snapshot({
                     lifecycleState: 'establishing',
                     activeSessions: [session('alice-session', 'alice')]
@@ -428,7 +428,7 @@ describe('group policy helpers', () => {
             })
         ).toEqual({ allowed: true });
         expect(
-            canSendRoomMessage({
+            canSendGroupMessage({
                 snapshot: snapshot({
                     snapshotVersion: 1,
                     activeSessions: [session('alice-session', 'alice')]
@@ -439,7 +439,7 @@ describe('group policy helpers', () => {
             })
         ).toMatchObject(denied('group-policy-denied'));
         expect(
-            canSendRoomMessage({
+            canSendGroupMessage({
                 snapshot: snapshot({
                     status: 'archived',
                     activeSessions: [session('alice-session', 'alice')]
@@ -449,14 +449,14 @@ describe('group policy helpers', () => {
             })
         ).toMatchObject(denied('group-archived'));
         expect(
-            canSendRoomMessage({
+            canSendGroupMessage({
                 snapshot: snapshot({ activeSessions: [] }),
                 actor: ACTOR,
                 senderSessionId: 'alice-session'
             })
         ).toMatchObject(denied('member-not-active'));
         expect(
-            canSendRoomMessage({
+            canSendGroupMessage({
                 snapshot: snapshot({
                     members: [member('alice', { status: 'banned' })],
                     activeSessions: [session('alice-session', 'alice')]
@@ -601,7 +601,7 @@ describe('group policy helpers', () => {
                 )
             ),
             expectCode(
-                canSendRoomMessage({
+                canSendGroupMessage({
                     snapshot: snapshot({
                         lifecycleState: 'establishing',
                         activeSessions: [session('alice-session', 'alice')]
@@ -767,7 +767,6 @@ function snapshot(
         };
 
     return {
-        stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 1 },
         group,
         members,

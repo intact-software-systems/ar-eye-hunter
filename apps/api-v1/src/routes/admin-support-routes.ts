@@ -10,7 +10,7 @@ export type AdminSupportWriteInput<TRequest> = Readonly<{
     request: TRequest;
 }>;
 
-export type AdminSupportServiceLike = Readonly<{
+export type AdminSupportRouteUseCases = Readonly<{
     explainClient(input: AdminSupportWriteInput<unknown>): Promise<unknown>;
     explainGroup(input: AdminSupportWriteInput<unknown>): Promise<unknown>;
     explainRequest(input: AdminSupportWriteInput<unknown>): Promise<unknown>;
@@ -20,7 +20,7 @@ export type AdminSupportServiceLike = Readonly<{
 
 export type AdminSupportRouteDependencies = Readonly<
     ApiAdminAuthDependencies & {
-        support: AdminSupportServiceLike;
+        support: AdminSupportRouteUseCases;
         requireApiAdminSession?: (
             req: { header(name: string): string | undefined; },
             dependencies: ApiAdminAuthDependencies

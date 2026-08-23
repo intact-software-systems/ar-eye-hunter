@@ -439,7 +439,6 @@ function createGroupSnapshot(
         requestId: null
     };
     return {
-        stateRevision: 1,
         causalRevision: { groupRevision, presenceRevision: 4 },
         group: createTestGroup({
             applicationId: 'app-1',

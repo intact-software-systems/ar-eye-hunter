@@ -5,7 +5,7 @@ import {
     requireOneOf,
     requireRecord,
     requireString
-} from '../../services/exact-object-codec.ts';
+} from '../../protocol/exact-object-decoding.ts';
 
 export function decodeExactSnapshotClock(value: unknown): void {
     const clock = requireRecord(value, 'CRDT snapshot clock');
@@ -20,12 +20,12 @@ export function decodeExactSnapshotClock(value: unknown): void {
 
 export function decodeExactCrdtStateSnapshot(value: unknown): void {
     const state = requireRecord(value, 'CRDT state snapshot');
-    requireExactOptionalKeys(
-        state,
-        ['format', 'registers', 'sets', 'maps', 'sequences'],
-        ['counters', 'numbers'],
-        'CRDT state snapshot'
-    );
+    requireExactOptionalKeys({
+        value: state,
+        required: ['format', 'registers', 'sets', 'maps', 'sequences'],
+        optional: ['counters', 'numbers'],
+        label: 'CRDT state snapshot'
+    });
     if (state.format !== 'rallar.crdt.state.v1') {
         throw new TypeError('CRDT state snapshot format is invalid');
     }

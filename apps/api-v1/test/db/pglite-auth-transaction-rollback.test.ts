@@ -1,8 +1,10 @@
 import { PSqlAdmissionMutationCollector } from '@shared-server/postgres/al-runtime/PSqlAdmissionMutationCollector.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { AuthSessionRepository, hashAuthSecret } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/services/auth-credential-issuer.ts';
-import { captureAuthMutationFacts, createAuthMutationService } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
+import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
+import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
+import { captureAuthMutationFacts } from '@shared-server/rallar-system/auth/mutation/read/capture-auth-mutation-facts.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import assert from 'node:assert/strict';
 import { FUTURE_MS, readPGliteDatabaseEpochMs, withPGliteSql } from './pglite-auth-test-harness.ts';

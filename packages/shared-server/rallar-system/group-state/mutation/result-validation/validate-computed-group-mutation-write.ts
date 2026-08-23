@@ -5,7 +5,6 @@ import { jsonEquals } from '@shared/repository/state-utils.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { Group } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { validateGroupEvent } from '../../../persisted-group-event.ts';
 import { computeFormationTimerEntries } from '../../formation-timer-outbox-entry.ts';
 import {
     assertExactKeys,
@@ -13,6 +12,7 @@ import {
     requireNonNegativeSafeInteger,
     requireOneOf
 } from '../../group-state-validation-primitives.ts';
+import { validateGroupEvent } from '../../persistence/persisted-group-event.ts';
 import {
     validatePresenceAdmission,
     validatePresenceSession,

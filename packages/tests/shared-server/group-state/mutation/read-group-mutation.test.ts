@@ -1,13 +1,13 @@
+import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { readGroupMutation } from '@shared-server/rallar-system/group-state/mutation/read/read-group-mutation.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
     groupStateGroupStorageKey,
     groupStateIdempotencyStorageKey,
     groupStateMemberStorageKey,
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey
-} from '@shared-server/rallar-system/group-state-storage-keys.ts';
-import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { readGroupMutation } from '@shared-server/rallar-system/group-state/mutation/read/read-group-mutation.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { describe, expect, it } from 'vitest';
@@ -193,7 +193,6 @@ describe('GroupStateService mutation exact reads', () => {
         const runtime = new MarkerlessReadBatchRuntimeStateRepository();
         const service = createTestGroupStateService({
             runtimeRepository: runtime,
-            formationDamping: 'damped',
             now: () => 1_000,
             randomId: () => 'marker-less-id',
             serviceId: 'marker-less-service'
@@ -295,7 +294,6 @@ async function createSeededService(groupId: string): Promise<SeededGroupStateSer
     let generatedId = 0;
     const service = createTestGroupStateService({
         runtimeRepository: runtime,
-        formationDamping: 'damped',
         now: () => 1_000,
         randomId: () => `batch-read-id-${++generatedId}`,
         serviceId: 'batch-read-service'

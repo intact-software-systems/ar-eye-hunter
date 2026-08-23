@@ -1,5 +1,5 @@
 import {
-    normalizePersistedClientEvent
+    decodePersistedClientEvent
 } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-codec.ts';
 import {
     clientStateWorkspaceStorageKey
@@ -7,16 +7,16 @@ import {
 import {
     validatePersistedClientEvent
 } from '@shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts';
+import {
+    decodePersistedGroupEvent,
+    validatePersistedGroupEvent
+} from '@shared-server/rallar-system/group-state/persistence/persisted-group-event.ts';
+import type { StateEventListQuery } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
+import { DEFAULT_STATE_EVENT_LIST_LIMIT } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
 import type {
     ClientStateEventStore,
     GroupStateEventStore
-} from '@shared-server/rallar-system/repositories/StateEventStore.ts';
-import {
-    normalizePersistedGroupEvent,
-    validatePersistedGroupEvent
-} from '@shared-server/rallar-system/services/group-state-mutations.ts';
-import type { StateEventListQuery } from '@shared-server/rallar-system/state-event-listing.ts';
-import { DEFAULT_STATE_EVENT_LIST_LIMIT } from '@shared-server/rallar-system/state-event-listing.ts';
+} from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import type { ClientEvent, ClientPrincipalRef } from '@shared/api/client-types.ts';
 import type { GroupEvent, GroupRef } from '@shared/api/group-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
@@ -541,7 +541,7 @@ function toValidatedClientEvent(
 ): ClientEvent {
     let event: ClientEvent;
     try {
-        event = normalizePersistedClientEvent(
+        event = decodePersistedClientEvent(
             JSON.parse(row.event_json),
             expected
         );
@@ -585,7 +585,7 @@ function toValidatedGroupEvent(
     let event: GroupEvent;
     try {
         const decoded: unknown = JSON.parse(row.event_json);
-        event = normalizePersistedGroupEvent(decoded, expected);
+        event = decodePersistedGroupEvent(decoded, expected);
     }
     catch (error) {
         throw new GroupStateEventRepositoryInvariantCorruptionError(

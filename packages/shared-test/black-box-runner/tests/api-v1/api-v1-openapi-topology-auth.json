@@ -194,9 +194,11 @@
               "GroupTopologyConfigMutationReceipt": {
                 "required": [
                   "commandId",
+                  "requestId",
                   "commandHash",
                   "operation",
                   "outcome",
+                  "attemptCount",
                   "groupRef",
                   "target",
                   "acceptedVersion",
@@ -205,16 +207,17 @@
                   "acceptedUpdatedAtEpochMs",
                   "acceptedExpiresAtEpochMs",
                   "acceptedCausalRevision",
-                  "outboxId"
+                  "eventId",
+                  "outboxIds"
                 ]
               },
               "GroupTopologyConfigAcceptedCausalRevision": {
                 "required": [
-                  "stateRevision",
                   "snapshotVersion",
                   "metadataVersion",
                   "rosterVersion",
-                  "presenceVersion"
+                  "presenceVersion",
+                  "causalRevision"
                 ],
                 "additionalProperties": false
               }

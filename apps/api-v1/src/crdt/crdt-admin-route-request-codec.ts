@@ -1,5 +1,5 @@
 import { decodeExactDocumentRef } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-value-codec.ts';
-import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
     RALLAR_CRDT_PROTOCOL_VERSION,
     type RallarCrdtDocumentLifecycleState,

@@ -6,26 +6,25 @@ import {
 import {
     ADMIN_APP_INBOX_TOPIC,
     assertAdminPruneStoredIdentity,
-    LEGACY_ADMIN_APP_INBOX_TOPIC,
     toAdminPruneContextId,
     toAdminPruneJobId
 } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-identity.ts';
+import * as AppInboxCommandIdentity from '@shared-server/rallar-system/app-inbox/app-inbox-command-identity.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { validateClientMutationIdempotencyRecord } from '@shared-server/rallar-system/client-state/persistence/validate-persisted-client-state.ts';
+import { validateGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-command.ts';
 import {
     groupMutationIdempotencyKey
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-idempotency-key.ts';
-import * as ClientState from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import * as GroupState from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import * as AppInboxCommandIdentity from '@shared-server/rallar-system/services/app-inbox-command-identity.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
-import { toStrictAppInboxQueueKey } from '@shared-server/rallar-system/services/app-inbox-queue-key.ts';
-import * as ClientMutations from '@shared-server/rallar-system/services/client-state-mutations.ts';
-import * as GroupMutations from '@shared-server/rallar-system/services/group-state-mutations.ts';
-import { decodeJsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { decodeJsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import * as TopologyMutation from '@shared-server/rallar-system/topology/config/mutation/topology-config-mutation-boundary.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateRepositoryLike
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
+import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 
 import {
@@ -348,7 +347,7 @@ async function readClientReceiptByIdentity(
     input: ReadClientReceiptByIdentityInput
 ): Promise<PersistedCommandEvidence> {
     const { runtime, row, commandType, ref, requestId, allowMissing = false } = input;
-    const stored = await new ClientState.ClientStateRepository(
+    const stored = await new ClientStateRepository(
         runtime
     ).findIdempotentClientMutationReceipt(ref, requestId);
     if (!stored && allowMissing) {
@@ -359,7 +358,7 @@ async function readClientReceiptByIdentity(
             commandIds: [requestId]
         };
     }
-    ClientMutations.validateClientMutationIdempotencyRecord(stored);
+    validateClientMutationIdempotencyRecord(stored);
     if (
         stored.requestId !== requestId ||
         stored.receipt.commandId !== requestId ||
@@ -399,7 +398,7 @@ async function readGroupReceipt(input: ReadGroupReceiptInput): Promise<Persisted
         ['authorityProof', 'descriptor', 'command', 'facts', 'causalToken', 'queueResourceId'],
         'group preparation'
     );
-    GroupMutations.validateGroupMutationCommand(prepared.command);
+    validateGroupMutationCommand(prepared.command);
     const command = prepared.command;
     const requestId = readString(command.requestId, 'group requestId');
     const idempotencyKey = groupMutationIdempotencyKey(command);
@@ -424,7 +423,7 @@ async function readGroupReceipt(input: ReadGroupReceiptInput): Promise<Persisted
             commandIds: [command.commandId]
         };
     }
-    const stored = await new GroupState.GroupStateRepository(
+    const stored = await new GroupStateRepository(
         runtime
     ).findIdempotentGroupMutationReceipt(command.aggregateRef, idempotencyKey);
     if (
@@ -547,19 +546,10 @@ async function readAdminPruneEvidence(
         row.ri_topic_id === expectedCurrentKey.topicId &&
         row.fk_ext_bank_id === expectedCurrentKey.contextId &&
         command.jobId === (await toAdminPruneJobId(key));
-    const legacyIdentity = row.ri_topic_id === LEGACY_ADMIN_APP_INBOX_TOPIC &&
-        row.fk_ext_bank_id === command.requestedBy &&
-        command.jobId === row.ri_resource_id &&
-        enqueue.topicId === row.ri_topic_id &&
-        enqueue.resourceId === row.ri_resource_id &&
-        enqueue.contextId === row.fk_ext_bank_id &&
-        enqueue.senderId === command.requestedSessionId;
-    if (!currentIdentity && !legacyIdentity) {
+    if (!currentIdentity) {
         throw new TypeError('Admin prune queue identity differs from physical queue identity');
     }
-    if (currentIdentity) {
-        await assertAdminPruneStoredIdentity(key, enqueue, command);
-    }
+    await assertAdminPruneStoredIdentity(key, enqueue, command);
     return {
         ...toPersistedCommandIdentity(row),
         valid: true,

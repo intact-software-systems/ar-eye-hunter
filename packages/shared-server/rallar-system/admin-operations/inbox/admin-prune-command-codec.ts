@@ -1,6 +1,6 @@
 import { ADMIN_PRUNE_EXPIRED_CATEGORIES, type AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
 import { hashRallarCrdtJson } from '@shared/crdt/crdt-hash.ts';
-import type { JsonWireObject, JsonWireValue } from '../../services/mutation-command-identity.ts';
+import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
 
 const ADMIN_PRUNE_PAGE_SIZE_LIMIT = 500;
 

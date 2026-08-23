@@ -1,15 +1,15 @@
 import {
-    groupStateMemberStorageKey,
-    groupStatePresenceAdmissionStorageKey,
-    groupStatePresenceSessionStorageKey
-} from '@shared-server/rallar-system/group-state-storage-keys.ts';
-import {
-    computeGroupMutation,
-    validateGroupMutation,
     type GroupMutationCommand,
     type GroupMutationFacts,
     type GroupMutationRead
-} from '@shared-server/rallar-system/services/group-state-mutations.ts';
+} from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
+import {
+    groupStateMemberStorageKey,
+    groupStatePresenceAdmissionStorageKey,
+    groupStatePresenceSessionStorageKey
+} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 import {
@@ -145,7 +145,6 @@ describe('convergent group and presence state', () => {
         const internalFacts: GroupMutationFacts = {
             ...publicFacts,
             internalAuthority: 'session-cleanup',
-            formationDamping: 'legacy',
             authenticatedAuthority: null
         };
 

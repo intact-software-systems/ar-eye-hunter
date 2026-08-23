@@ -77,10 +77,13 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
                 enqueueAuthorisedWsClientConnect: rejectUnusedOperation,
                 processAuthenticatedEntryUntilCompletion: rejectUnusedOperation
             },
-            appGroupInboxService: {
-                processAuthenticatedGroupEntryUntilCompletionResult: rejectUnusedOperation,
-                processAuthenticatedTopologyEntryUntilCompletionResult: rejectUnusedOperation,
-                processAuthenticatedHttpTopologyEntryUntilCompletionResult: rejectUnusedOperation
+            groupStateInboxService: {
+                processAuthenticatedGroupEntryUntilCompletionResult: rejectUnusedOperation
+            },
+            topologyInboxService: {
+                processAuthenticatedEntryUntilCompletion: rejectUnusedOperation,
+                processAuthenticatedEntryUntilCompletionResult: rejectUnusedOperation,
+                processAuthenticatedHttpEntryUntilCompletionResult: rejectUnusedOperation
             },
             clientStateService: {
                 listEventPage: rejectUnusedOperation,
@@ -153,10 +156,12 @@ function createInput(): CreateApiV1RouteInstallersInput<ApiV1RouteInstallerRunti
 
 function createTopology(): ApiV1RouteInstallerTopology {
     return {
-        topologyManagement: {
+        topologyQuery: {
             readTopologyView: rejectUnusedOperation,
             readConfig: rejectUnusedOperation,
-            readOverride: rejectUnusedOperation,
+            readOverride: rejectUnusedOperation
+        },
+        topologyPlanning: {
             readTopologyPlanningAuthority: rejectUnusedOperation
         },
         adminClientIds: ['admin'],

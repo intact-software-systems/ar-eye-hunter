@@ -1,4 +1,4 @@
-import { nowMs, recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
+import { nowMs, recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { Context, Next } from 'jsr:@hono/hono@4.11.9';
 import { getApiTimingSink } from './timing-service.ts';
 
@@ -43,9 +43,9 @@ export function createHttpTimingMiddleware(
             if (httpStatus !== 101) {
                 c.header('server-timing', `total;dur=${Math.round(durationMs * 100) / 100}`);
             }
-            recordRallarTiming(
-                timing,
-                {
+            recordRallarTiming({
+                sink: timing,
+                event: {
                     component: 'http',
                     operation: 'request',
                     requestId,
@@ -54,10 +54,10 @@ export function createHttpTimingMiddleware(
                     httpStatus,
                     details
                 },
-                failed ? 'error' : 'ok',
+                status: failed ? 'error' : 'ok',
                 durationMs,
-                thrown ?? (failed ? new Error(`HTTP ${httpStatus}`) : undefined)
-            );
+                error: thrown ?? (failed ? new Error(`HTTP ${httpStatus}`) : undefined)
+            });
         }
     };
 }

@@ -1,7 +1,7 @@
 import { parse } from '@babel/parser';
 import { readFileSync } from 'node:fs';
 
-import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 
 import { findAstNode, type MutationRoutingAstNode } from './mutation-routing-call-graph.ts';
 import { hasExactGroupRegistrationRoot } from './mutation-routing-group-registration.ts';

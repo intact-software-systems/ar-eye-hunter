@@ -1,4 +1,4 @@
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { describe, expect, it } from 'vitest';
 
 import { readApiV1Matrix, readApiV1Recipe, toFlatApiV1RecipeSteps } from './api-v1-recipe-test-fixture.ts';
@@ -257,7 +257,7 @@ describe('API-v1 equal AppInbox HTTP idempotency contract recipe', () => {
                 status: 404,
                 body: {
                     type: 'api-mutation-failure',
-                    version: 'canonical.v1',
+                    version: 'canonical.v2',
                     code: 'crdt-admin-mutation-rejected',
                     status: 404
                 }

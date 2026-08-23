@@ -10,7 +10,7 @@ import type { RallarCrdtJsonValue } from '@shared/crdt/mod.ts';
 import { describe, expect, it } from 'vitest';
 
 const commandId = 'topology-command-1';
-const effectId = `${commandId}:rtc-topology-recompute:1`;
+const effectId = `${commandId}:rtc-topology-recompute:group-revision:group=1;presence=0`;
 const commandHash = `sha256:${'a'.repeat(64)}`;
 const topologyGroupRef = {
     applicationId: 'app-1',
@@ -39,9 +39,14 @@ const topologyReceipt = {
     acceptedUpdatedAtEpochMs: 11,
     acceptedExpiresAtEpochMs: null,
     acceptedConfig,
-    acceptedCausalRevision: null,
+    acceptedCausalRevision: {
+        causalRevision: { groupRevision: 1, presenceRevision: 0 },
+        snapshotVersion: 1,
+        metadataVersion: 1,
+        rosterVersion: 1,
+        presenceVersion: 0
+    },
     eventId: null,
-    outboxId: effectId,
     outboxIds: [effectId]
 };
 const topologyConfig = {
@@ -151,9 +156,19 @@ describe('durable AppInbox result evidence', () => {
             }),
             result_resource: JSON.stringify({
                 commandId: presenceCommandId,
+                requestId: presenceCommandId,
+                commandHash,
+                aggregateRef: topologyGroupRef,
                 outcome: 'applied',
                 attemptCount: 1,
-                outboxIds: [physicalEffectId]
+                acceptedStorageRevision: 1,
+                snapshotVersion: 1,
+                causalRevision: { groupRevision: 1, presenceRevision: 1 },
+                eventId: null,
+                outboxIds: [physicalEffectId],
+                joinCode: null,
+                joinCodeExpiresAtEpochMs: null,
+                rejection: null
             })
         };
         const presenceEffect = {

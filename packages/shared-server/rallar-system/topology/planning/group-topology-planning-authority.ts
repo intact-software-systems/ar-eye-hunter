@@ -2,7 +2,7 @@ import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 import type { GroupTopologyConfigPatch, GroupTopologyConfigView } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
-import type { RtcTopologyKindHysteresisWidths } from '../../services/rallar-rtc-topology-service.ts';
+import type { RtcTopologyKindHysteresisWidths } from '../runtime/rallar-rtc-topology-service.ts';
 
 export type GroupTopologyPlanningSnapshotSelection = 'prefer-current' | 'preserve-known-revision';
 

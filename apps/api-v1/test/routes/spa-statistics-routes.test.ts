@@ -1,4 +1,4 @@
-import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
+import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSpaStatisticsResponse, MyRealtimeSpaStatisticsResponse, WorkspaceSpaStatisticsResponse } from '@shared/api/spa-statistics-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';

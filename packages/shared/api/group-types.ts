@@ -240,8 +240,6 @@ export type GroupPresenceAdmission =
     }>;
 
 export type GroupSnapshot = Readonly<{
-    /** Compatibility projection; causalRevision is authoritative. */
-    stateRevision: number;
     causalRevision: GroupStateCausalRevision;
     group: Group;
     members: readonly GroupMember[];

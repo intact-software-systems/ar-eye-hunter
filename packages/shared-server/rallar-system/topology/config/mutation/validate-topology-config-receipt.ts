@@ -93,34 +93,32 @@ function validateTopologyConfigReceiptAcceptedState(
 }
 
 function validateTopologyConfigReceiptEffect(receipt: GroupTopologyConfigMutationReceipt): void {
-    if (receipt.outboxId !== null) {
-        requireTopologyString(receipt.outboxId, 'Topology config outboxId');
-    }
     if (receipt.eventId !== null) {
         throw new TypeError('Topology config receipt eventId must be null');
     }
     if (
         !Array.isArray(receipt.outboxIds) ||
         receipt.outboxIds.some((outboxId) => typeof outboxId !== 'string') ||
-        receipt.outboxIds.length !== (receipt.outboxId === null ? 0 : 1) ||
-        (receipt.outboxId !== null && receipt.outboxIds[0] !== receipt.outboxId)
+        receipt.outboxIds.length !== (receipt.outcome === 'applied' ? 1 : 0)
     ) {
         throw new TypeError('Topology config receipt outboxIds are invalid');
+    }
+    for (const outboxId of receipt.outboxIds) {
+        requireTopologyString(outboxId, 'Topology config outboxId');
     }
     if (
         receipt.outcome === 'applied' &&
         (Number(receipt.acceptedVersion) <= 0 ||
             receipt.acceptedStorageRevision === null ||
             receipt.acceptedCausalRevision === null ||
-            receipt.outboxId === null)
+            receipt.outboxIds.length !== 1)
     ) {
         throw new TypeError('Topology config applied receipt is incomplete');
     }
     if (
-        (receipt.outcome === 'applied') !== (receipt.outboxId !== null) ||
         (receipt.outcome === 'applied') !== (receipt.acceptedCausalRevision !== null)
     ) {
-        throw new TypeError('Topology config receipt effect does not match outboxId');
+        throw new TypeError('Topology config receipt effect does not match outboxIds');
     }
 }
 
@@ -154,7 +152,7 @@ function validateTopologyConfigReceiptCausalRevision(
         'group-revision',
         `group=${causalRevision.groupRevision};presence=${causalRevision.presenceRevision}`
     ].join(':');
-    if (receipt.outboxId !== expectedOutboxId) {
+    if (receipt.outboxIds[0] !== expectedOutboxId) {
         throw new TypeError('Topology config receipt outbox identity is invalid');
     }
 }
@@ -211,11 +209,9 @@ const topologyConfigReceiptKeys = [
     'acceptedConfig',
     'acceptedCausalRevision',
     'eventId',
-    'outboxId',
     'outboxIds'
 ];
 const topologyConfigAcceptedCausalRevisionKeys = [
-    'stateRevision',
     'causalRevision',
     'snapshotVersion',
     'metadataVersion',
@@ -228,7 +224,6 @@ const acceptedReceiptTimeFields = [
     ['acceptedExpiresAtEpochMs', 'Topology config accepted expiry']
 ] as const;
 const causalReceiptRevisionFields = [
-    'stateRevision',
     'snapshotVersion',
     'metadataVersion',
     'rosterVersion',

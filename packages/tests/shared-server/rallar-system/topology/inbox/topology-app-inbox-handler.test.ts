@@ -18,8 +18,8 @@ import type { GroupStateService } from '@shared-server/rallar-system/group-state
 
 import type { GroupStateAuthorityGuard } from '@shared-server/rallar-system/group-state/persistence/group-state-persistence-contracts.ts';
 
-import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import type { ComputedRtcTopologyOutbox } from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
+import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import type { ComputedRtcTopologyOutbox } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 
 import { createAuthenticatedTopologyEnqueue } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
 
@@ -502,7 +502,6 @@ function configReceipt(): GroupTopologyConfigMutationReceipt {
         acceptedExpiresAtEpochMs: null,
         acceptedConfig: effectiveTopologyConfig(),
         acceptedCausalRevision: {
-            stateRevision: 1,
             causalRevision: { groupRevision: 1, presenceRevision: 0 },
             snapshotVersion: 1,
             metadataVersion: 1,
@@ -553,7 +552,6 @@ function groupAuthorityGuard(): GroupStateAuthorityGuard {
 
 function groupSnapshot(): GroupSnapshot {
     return {
-        stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 0 },
         group: createTestGroup({
             ...GROUP_REF,

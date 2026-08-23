@@ -5,7 +5,7 @@ import type {
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../../../runtime-state/RuntimeStateJsonStore.ts';
-import { toRtcTopologyEntryResourceId } from '../../../services/rtc-topology-outbox-entry.ts';
+import { toRtcTopologyEntryResourceId } from '../../mutation/rtc-topology-outbox-entry.ts';
 import type {
     GroupTopologyConfigGeneration,
     GroupTopologyConfigMutationAcceptedResult,
@@ -40,7 +40,7 @@ interface CreateTopologyConfigReceiptInput {
     readonly acceptedExpiresAtEpochMs: number | null;
     readonly acceptedConfig: EffectiveGroupTopologyConfig | null;
     readonly acceptedCausalRevision: GroupTopologyConfigMutationReceipt['acceptedCausalRevision'];
-    readonly outboxId: string | null;
+    readonly outboxIds: readonly string[];
 }
 
 export interface CreateTopologyConfigNoOpReceiptInput {
@@ -55,7 +55,6 @@ export function createTopologyConfigWriteResult(
 ): GroupTopologyConfigMutationWriteComputed {
     const accepted = topologyWrite.read.groupSnapshot;
     const acceptedCausalRevision = {
-        stateRevision: accepted.stateRevision,
         causalRevision: accepted.causalRevision,
         snapshotVersion: accepted.group.snapshotVersion,
         metadataVersion: accepted.group.metadataVersion,
@@ -109,7 +108,7 @@ export function createTopologyConfigNoOpReceipt(
         acceptedExpiresAtEpochMs: null,
         acceptedConfig: null,
         acceptedCausalRevision: null,
-        outboxId: null
+        outboxIds: []
     });
 }
 
@@ -214,7 +213,7 @@ function createAppliedTopologyConfigReceipt(
                 : null,
         acceptedConfig: acceptedValue === null ? null : { ...acceptedValue.config },
         acceptedCausalRevision,
-        outboxId: toRtcTopologyEntryResourceId(outbox)
+        outboxIds: [toRtcTopologyEntryResourceId(outbox)]
     });
 }
 
@@ -238,8 +237,7 @@ function createTopologyConfigReceipt(
         acceptedConfig: receiptFields.acceptedConfig,
         acceptedCausalRevision: receiptFields.acceptedCausalRevision,
         eventId: null,
-        outboxId: receiptFields.outboxId,
-        outboxIds: receiptFields.outboxId === null ? [] : [receiptFields.outboxId]
+        outboxIds: receiptFields.outboxIds
     };
 }
 

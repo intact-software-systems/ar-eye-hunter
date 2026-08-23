@@ -4,6 +4,7 @@ import { Either } from '@shared/resilience/Either.ts';
 import type { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
+import { toAppQueueKey, toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { PSqlSql } from '../../../postgres/PostgresSqlClient.ts';
 import type { ResourceInboxRepository } from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
 import type { ResourceInboxResultsRepository } from '../../../postgres/resource-inbox/ResourceInboxResultsRepository.ts';
@@ -11,11 +12,11 @@ import {
     AppInboxIdempotencyConflictError,
     AppInboxType,
     type AppInboxMessageContext
-} from '../../services/app-inbox-contracts.ts';
-import type { AppInboxFailure } from '../../services/app-inbox-failure.ts';
-import { toAppQueueKey, toStrictAppInboxQueueKey } from '../../services/app-inbox-queue-key.ts';
-import { AppInboxService, type AppInboxServiceOptions } from '../../services/AppInboxService.ts';
-import type { RallarTimingSink } from '../../services/timing.ts';
+} from '../../app-inbox/app-inbox-contracts.ts';
+import type { AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
+import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
+import { AppInboxQueueClient, type AppInboxOptions } from '../../app-inbox/app-inbox-queue-client.ts';
+import type { RallarTimingSink } from '../../observability/timing.ts';
 import { createCrdtMutationCommand, decodeCrdtMutationCommand } from '../mutation/crdt-mutation-command-codec.ts';
 import {
     CRDT_MUTATION_INBOX_TYPES,
@@ -65,7 +66,7 @@ export namespace AppCrdtInboxService {
     export interface Config {
         readonly serviceId: string;
         readonly timing: RallarTimingSink | undefined;
-        readonly appInbox: AppInboxServiceOptions;
+        readonly appInbox: AppInboxOptions;
     }
 
     export interface HttpAdminCommandReservation {
@@ -79,19 +80,21 @@ export namespace AppCrdtInboxService {
     }
 }
 
-export class AppCrdtInboxService extends AppInboxService {
+export class AppCrdtInboxService {
+    private readonly queueClient: AppInboxQueueClient;
+    private readonly handlers: AppInboxHandlerRegistry;
     private readonly readCurrentSession: ReadCurrentCrdtMutationSession;
     private readonly wakeQueueEngine: () => void;
+    private readonly serviceId: string;
 
     public readonly mutationService: CrdtMutationService;
 
     constructor(dependencies: AppCrdtInboxService.Dependencies, config: AppCrdtInboxService.Config) {
-        super(
+        this.queueClient = new AppInboxQueueClient(
             {
                 inboxQueueReader: dependencies.inboxQueueReader,
                 resourceInboxRepository: dependencies.resourceInboxRepository,
-                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
-                database: dependencies.database
+                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository
             },
             {
                 serviceId: config.serviceId,
@@ -101,6 +104,19 @@ export class AppCrdtInboxService extends AppInboxService {
                 wakeOwningQueue: dependencies.wakeQueueEngine
             }
         );
+        this.handlers = new AppInboxHandlerRegistry(
+            {
+                inboxQueueReader: dependencies.inboxQueueReader,
+                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
+                database: dependencies.database
+            },
+            {
+                serviceId: config.serviceId,
+                timing: config.timing,
+                options: config.appInbox
+            }
+        );
+        this.serviceId = config.serviceId;
         this.mutationService = dependencies.mutationService;
         this.readCurrentSession = dependencies.readCurrentSession;
         this.wakeQueueEngine = dependencies.wakeQueueEngine;
@@ -108,7 +124,7 @@ export class AppCrdtInboxService extends AppInboxService {
             registerCrdtAuditDelivery(dependencies.auditDelivery);
         }
         for (const type of CRDT_MUTATION_INBOX_TYPES) {
-            this.onStateMessage<unknown>(
+            this.handlers.onStateMessage<unknown>(
                 type,
                 async (value, appInboxContext) => await this.processCommand(value, appInboxContext)
             );
@@ -119,7 +135,7 @@ export class AppCrdtInboxService extends AppInboxService {
         command: CrdtMutationCommand
     ): Promise<Either<AppInboxFailure, CrdtMutationResult>> {
         const decoded = decodeCrdtMutationCommand(command);
-        return await this.processEntryUntilCompletionResult(
+        return await this.queueClient.processEntryUntilCompletionResult(
             {
                 type: toCrdtAppInboxType(decoded),
                 topicId: CRDT_APP_INBOX_TOPIC,
@@ -141,7 +157,7 @@ export class AppCrdtInboxService extends AppInboxService {
             resourceId: reservation.requestId,
             contextId: toCrdtHttpAdminContextId(reservation.callerId, reservation.documentKey)
         });
-        const reserved = await this.reserveMaterializedEntry(
+        const reserved = await this.queueClient.reserveMaterializedEntry(
             {
                 type,
                 ...key,
@@ -174,7 +190,7 @@ export class AppCrdtInboxService extends AppInboxService {
                 reservation.semanticHash
             );
         }
-        return await this.waitForReservedEntryResult(
+        return await this.queueClient.waitForReservedEntryResult(
             reserved.enqueue,
             decodeCrdtMutationResult,
             reserved.winner
@@ -183,7 +199,7 @@ export class AppCrdtInboxService extends AppInboxService {
 
     writeCrdtCommandNoWaiting(command: CrdtMutationCommand): void {
         const decoded = decodeCrdtMutationCommand(command);
-        this.processEntryNoWaiting({
+        this.queueClient.processEntryNoWaiting({
             type: toCrdtAppInboxType(decoded),
             topicId: CRDT_APP_INBOX_TOPIC,
             resourceId: decoded.deliveryId,
@@ -212,7 +228,7 @@ export class AppCrdtInboxService extends AppInboxService {
         if (command.operation !== 'append') {
             throw new TypeError('CRDT append command is invalid');
         }
-        await this.enqueue({
+        await this.queueClient.enqueue({
             type: toCrdtAppInboxType(command),
             topicId: CRDT_APP_INBOX_TOPIC,
             resourceId: command.deliveryId,
@@ -249,7 +265,7 @@ export class AppCrdtInboxService extends AppInboxService {
         if (computed.outcome === 'rejected' && isCrdtHttpAdminIdentity({ command, appInboxContext })) {
             throw toCrdtHttpAdminRejection(computed.code);
         }
-        const result = await this.writeMutation(
+        const result = await this.handlers.writeMutation(
             appInboxContext,
             async (transaction) => await this.mutationService.write(transaction, computed)
         );
@@ -281,7 +297,7 @@ interface AssertCrdtAppInboxIdentityInput {
 }
 
 function assertCrdtAppInboxIdentity(input: AssertCrdtAppInboxIdentityInput): void {
-    const legacyKey = toAppQueueKey({
+    const appendKey = toAppQueueKey({
         topicId: CRDT_APP_INBOX_TOPIC,
         resourceId: input.command.deliveryId,
         contextId: input.command.documentKey
@@ -289,9 +305,9 @@ function assertCrdtAppInboxIdentity(input: AssertCrdtAppInboxIdentityInput): voi
     if (
         toCrdtAppInboxType(input.command) !== input.appInboxContext.enqueue.type ||
         !(
-            (legacyKey.resourceId === input.appInboxContext.entry.key.resourceId &&
-                legacyKey.contextId === input.appInboxContext.entry.key.contextId &&
-                legacyKey.topicId === input.appInboxContext.entry.key.topicId) ||
+            (appendKey.resourceId === input.appInboxContext.entry.key.resourceId &&
+                appendKey.contextId === input.appInboxContext.entry.key.contextId &&
+                appendKey.topicId === input.appInboxContext.entry.key.topicId) ||
             isCrdtHttpAdminIdentity(input)
         )
     ) {

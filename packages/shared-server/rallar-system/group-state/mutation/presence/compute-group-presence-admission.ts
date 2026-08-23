@@ -1,5 +1,5 @@
+import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import type { GroupMember, GroupPresenceAdmission, GroupPresenceSession, GroupRef } from '@shared/api/group-types.ts';
-import { GroupPolicyDeniedError } from '../../../group-policy.ts';
 
 import { validatePresenceAdmission } from '../../persistence/validate-persisted-group-presence.ts';
 import { isExactlyAdmitted } from '../aggregate/group-aggregate-mutation-policy.ts';

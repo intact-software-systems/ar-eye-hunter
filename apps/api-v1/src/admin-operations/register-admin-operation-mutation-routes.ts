@@ -23,7 +23,7 @@ import {
     decodeJsonWireValue,
     type JsonWireObject,
     type JsonWireValue
-} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { toApiMutationFailureResponse } from '../routes/api-mutation-route-failure.ts';
 import { readApiMutationRouteRequestId } from '../routes/api-mutation-route-ingress.ts';
 import {

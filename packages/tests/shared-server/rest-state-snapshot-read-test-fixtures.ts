@@ -42,7 +42,6 @@ export function createGroupSnapshot(
 ): GroupSnapshot {
     const audit = createAuditStamp(Math.max(groupRevision, presenceRevision));
     return {
-        stateRevision: Math.max(groupRevision, presenceRevision),
         causalRevision: { groupRevision, presenceRevision },
         group: createTestGroup({
             applicationId: 'app-1',

@@ -1,11 +1,11 @@
 import type { GroupEventType, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupGovernanceAction } from '../../policy/group-governance-policy.ts';
 import {
     canActivateGroupMember,
     canChangeOwnGroupMembership,
     canJoinGroup,
-    type GroupGovernanceAction,
     type GroupPolicyCapacityConfig
-} from '../../../group-policy.ts';
+} from '../../policy/group-membership-admission-policy.ts';
 
 import {
     assertAllowed,

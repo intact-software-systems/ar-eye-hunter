@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { computeClientStateSyncEntries } from '@shared-server/rallar-system/state-sync-publisher.ts';
-import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync-routing.ts';
+import { computeClientStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
+import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync/state-sync-routing.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -11,11 +11,10 @@ import { createTestGroup } from '../create-test-group.ts';
 const NOW_EPOCH_MS = 1_800_000_000_000;
 
 describe('principal state-sync audience', () => {
-    it('stamps principal-audience rows with the principal scope under damped formation', () => {
+    it('stamps principal-audience rows with the principal scope', () => {
         const [entry] = computeClientStateSyncEntries(
             createComputedClientSnapshotStateSync(createClientSnapshot('alice', ['alice-session-1'])),
-            'server-1',
-            'principal'
+            'server-1'
         );
         const message = JSON.parse(entry!.resource) as ALMessage;
 
@@ -28,17 +27,6 @@ describe('principal state-sync audience', () => {
                 principalId: 'alice'
             }
         });
-    });
-
-    it('keeps the legacy world stamp for principal-audience rows under legacy formation', () => {
-        const [entry] = computeClientStateSyncEntries(
-            createComputedClientSnapshotStateSync(createClientSnapshot('alice', ['alice-session-1'])),
-            'server-1',
-            'world'
-        );
-        const message = JSON.parse(entry!.resource) as ALMessage;
-
-        expect(message.targets).toEqual({ mode: 'broadcast', scope: 'world' });
     });
 
     it('resolves principal rows to own sessions plus co-group sessions, never strangers', () => {
@@ -142,8 +130,7 @@ describe('principal state-sync audience', () => {
 function toPrincipalStampedMessage(principalId: string, sessionIds: readonly string[]): ALMessage {
     const [entry] = computeClientStateSyncEntries(
         createComputedClientSnapshotStateSync(createClientSnapshot(principalId, sessionIds)),
-        'server-1',
-        'principal'
+        'server-1'
     );
     return JSON.parse(entry!.resource) as ALMessage;
 }
@@ -253,7 +240,6 @@ function createGroupSnapshot(
         groupId: 'room-1'
     };
     return {
-        stateRevision: 3,
         causalRevision: { groupRevision: 2, presenceRevision: 1 },
         group: createTestGroup({
             ...ref,

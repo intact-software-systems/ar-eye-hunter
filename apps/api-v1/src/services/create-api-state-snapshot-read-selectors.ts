@@ -6,7 +6,7 @@ import {
     createGroupRestSnapshotReadSelector,
     type GroupRestSnapshotReadSelectorDependencies
 } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
-import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
+import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { StateSnapshotReadDiagnosticEvent } from '@shared/api/state-snapshot-read.ts';
 
 export interface ApiStateSnapshotReadSelectors {
@@ -40,9 +40,9 @@ export function createApiStateSnapshotReadSelectors(
 
 function createDiagnostics(timing: RallarTimingSink) {
     return (event: StateSnapshotReadDiagnosticEvent) => {
-        recordRallarTiming(
-            timing,
-            {
+        recordRallarTiming({
+            sink: timing,
+            event: {
                 component: 'rest-state-snapshot-read',
                 operation: event.name,
                 details: {
@@ -53,8 +53,8 @@ function createDiagnostics(timing: RallarTimingSink) {
                     strictMode: event.strictMode
                 }
             },
-            event.result === 'error' ? 'error' : 'ok',
-            event.durationMs
-        );
+            status: event.result === 'error' ? 'error' : 'ok',
+            durationMs: event.durationMs
+        });
     };
 }

@@ -147,7 +147,7 @@ Deno.test('state API rate limiting uses the canonical client mutation failure', 
     assert.equal(response.headers.get('retry-after'), '13');
     assert.deepEqual(await response.json(), {
         type: 'api-mutation-failure',
-        version: 'canonical.v1',
+        version: 'canonical.v2',
         code: 'rate-limited',
         status: 429,
         message: 'Too many state API requests',
@@ -187,7 +187,7 @@ Deno.test('state API circuit breaking uses the canonical client mutation failure
     assert.equal(response.status, 503);
     assert.deepEqual(await response.json(), {
         type: 'api-mutation-failure',
-        version: 'canonical.v1',
+        version: 'canonical.v2',
         code: 'api-mutation-unavailable',
         status: 503,
         message: 'State API is temporarily unavailable',

@@ -3,19 +3,17 @@ import { describe, expect, it, vi } from 'vitest';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 
-import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
+import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
+import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import { AppClientInboxService, AppInboxType } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
-import {
-    createClientStateService,
-    toClientMutationCommand,
-    toClientMutationIssuedSessionAuthority,
-    toUpsertPrincipalCommandInput
-} from '@shared-server/rallar-system/services/client-state-service.ts';
+import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
+import { toClientMutationCommand, toUpsertPrincipalCommandInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
@@ -142,7 +140,6 @@ describe('AppClientInbox authentication', () => {
         await authSessions.putSession(mallory);
         const service = createClientStateService({
             runtimeRepository,
-            formationDamping: 'damped',
             serviceId: 'server-12345678'
         });
         const command = await toClientMutationCommand(
@@ -163,8 +160,7 @@ describe('AppClientInbox authentication', () => {
                 serviceId: 'server-12345678',
                 eventId: 'direct-mallory-targets-alice-event',
                 attemptCount: 1,
-                expireAtEpochMs: Date.now() + 60_000,
-                formationDamping: 'damped'
+                expireAtEpochMs: Date.now() + 60_000
             },
             toClientMutationIssuedSessionAuthority(mallory, SCOPE, 'upsertPrincipal')
         );
@@ -195,7 +191,6 @@ describe('AppClientInbox authentication', () => {
                 database: database,
                 clientStateService: createClientStateService({
                     runtimeRepository,
-                    formationDamping: 'damped',
                     createClientStateEventStore: () => new InMemoryClientStateEventStore(),
                     serviceId: 'server-12345678'
                 })
@@ -303,7 +298,6 @@ async function createRevokedAuthorityRetryHarness() {
             database: database,
             clientStateService: createClientStateService({
                 runtimeRepository,
-                formationDamping: 'damped',
                 createClientStateEventStore: () => new InMemoryClientStateEventStore(),
                 serviceId: 'server-12345678'
             })

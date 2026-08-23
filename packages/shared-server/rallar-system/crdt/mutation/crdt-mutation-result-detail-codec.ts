@@ -5,7 +5,7 @@ import {
     requireOneOf,
     requireRecord,
     requireString
-} from '../../services/exact-object-codec.ts';
+} from '../../protocol/exact-object-decoding.ts';
 import { decodeExactDocumentRef } from './crdt-mutation-value-codec.ts';
 
 export function decodeExactValidationResult(value: object): void {
@@ -28,12 +28,12 @@ export function decodeExactValidationResult(value: object): void {
 
 export function decodeExactIntegrityReport(value: object): void {
     const report = requireRecord(value, 'CRDT integrity report');
-    requireExactOptionalKeys(
-        report,
-        ['valid', 'issues', 'documentKey', 'checkedUpdateCount', 'sequenceGaps'],
-        ['bundleHash'],
-        'CRDT integrity report'
-    );
+    requireExactOptionalKeys({
+        value: report,
+        required: ['valid', 'issues', 'documentKey', 'checkedUpdateCount', 'sequenceGaps'],
+        optional: ['bundleHash'],
+        label: 'CRDT integrity report'
+    });
     if (typeof report.valid !== 'boolean' || !Array.isArray(report.issues)) {
         throw new TypeError('CRDT integrity report validity is invalid');
     }

@@ -61,7 +61,6 @@ export function createRtcTopologyGroupSnapshot(
     }
 
     return {
-        stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 0 },
         group: createTestGroup({
             applicationId,

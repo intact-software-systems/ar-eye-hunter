@@ -1,16 +1,7 @@
-import {
-    createCachedClientStateService as createPackageCachedClientStateService,
-    createClientStateSnapshotReadThroughCache as createPackageClientStateSnapshotReadThroughCache
-} from '@shared-server/mod.ts';
+import { type ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { createCachedClientStateService } from '@shared-server/rallar-system/client-state/snapshot/cached-client-state-service.ts';
-import { createClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
-import { createCachedClientStateService as createLegacyCachedClientStateService } from '@shared-server/rallar-system/services/cached-client-state-service.ts';
-import { createCachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
-import type { ClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
-import {
-    createClientStateSnapshotReadThroughCache as createLegacyClientStateSnapshotReadThroughCache
-} from '@shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts';
-import type { GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { type GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { createCachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
@@ -18,18 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createTestGroup } from '../create-test-group.ts';
 
 describe('cached state services', () => {
-    it('keeps client cache compatibility exports on the canonical factories', () => {
-        expect(createLegacyCachedClientStateService)
-            .toBe(createCachedClientStateService);
-        expect(createLegacyClientStateSnapshotReadThroughCache)
-            .toBe(createClientStateSnapshotReadThroughCache);
-        expect(createPackageCachedClientStateService)
-            .toBe(createCachedClientStateService);
-        expect(createPackageClientStateSnapshotReadThroughCache)
-            .toBe(createClientStateSnapshotReadThroughCache);
-    });
-
-    it('does not expose a legacy direct group mutation from its durable dependency', () => {
+    it('does not expose a direct group mutation from its durable dependency', () => {
         const durable = {
             ...createGroupPhaseService(),
             createGroup: vi.fn()
@@ -69,7 +49,7 @@ describe('cached state services', () => {
         expect(result).toBe(revisioned);
     });
 
-    it('does not expose legacy direct group presence mutations', () => {
+    it('does not expose direct group presence mutations', () => {
         const durable = {
             ...createGroupPhaseService(),
             connectPresenceSession: vi.fn(),
@@ -93,7 +73,7 @@ describe('cached state services', () => {
         const snapshot = createGroupSnapshot(6);
         const conflict = new StateSnapshotRevisionConflictError(
             'Group',
-            snapshot.stateRevision
+            snapshot.group.snapshotVersion
         );
         const service = createCachedGroupStateService({
             durable: createGroupPhaseService(),
@@ -164,19 +144,17 @@ function createGroupPhaseService(): GroupStateService {
         listSnapshots: vi.fn(),
         listSnapshotsPage: vi.fn(),
         readSnapshot: vi.fn(),
-        readStateRevision: vi.fn(),
         readCausalRevision: vi.fn(),
         listEvents: vi.fn(),
         listEventPage: vi.fn()
     } as unknown as GroupStateService;
 }
 
-function createGroupSnapshot(stateRevision: number): GroupSnapshot {
+function createGroupSnapshot(groupRevision: number): GroupSnapshot {
     const audit = createAuditStamp(1);
     return {
-        stateRevision,
         causalRevision: {
-            groupRevision: stateRevision,
+            groupRevision,
             presenceRevision: 1
         },
         group: createTestGroup({

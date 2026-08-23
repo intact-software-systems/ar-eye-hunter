@@ -10,7 +10,7 @@ import { delayAdminRuntimeFactQueries } from './pglite-admin-query-scheduling-te
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 
 const WORKSPACE_CASES = [
-    { workspaceId: '_', workspaceKey: '%5F' },
+    { workspaceId: '_', workspaceKey: '_' },
     { workspaceId: '%5F', workspaceKey: '%255F' },
     { workspaceId: 'a:b', workspaceKey: 'a%3Ab' },
     { workspaceId: 'a%3Ab', workspaceKey: 'a%253Ab' }
@@ -105,7 +105,7 @@ Deno.test('PGlite client events isolate lookalike workspace keys across every re
                 rows.map((row) => [JSON.parse(row.event_json).workspaceId, row.workspace_key])
             ),
             {
-                _: '%5F',
+                _: '_',
                 '%5F': '%255F',
                 'a:b': 'a%3Ab',
                 'a%3Ab': 'a%253Ab'
@@ -152,7 +152,7 @@ Deno.test('PGlite admin state scopes recent events while system totals stay glob
 Deno.test('PGlite admin online principals exclude omitted persisted workspace identity', async () => {
     await withPGliteSql(async (sql) => {
         await insertClientSession(sql, {
-            keyWorkspace: '%5F',
+            keyWorkspace: '_',
             principalId: 'kept',
             workspaceId: '_'
         });
@@ -171,7 +171,7 @@ Deno.test('PGlite admin online principals exclude omitted persisted workspace id
 Deno.test('PGlite admin online principals exclude empty persisted workspace identity', async () => {
     await withPGliteSql(async (sql) => {
         await insertClientSession(sql, {
-            keyWorkspace: '%5F',
+            keyWorkspace: '_',
             principalId: 'kept',
             workspaceId: '_'
         });
@@ -191,7 +191,7 @@ Deno.test('PGlite admin online principals exclude empty persisted workspace iden
 Deno.test('PGlite admin online principals exclude non-string persisted workspace identity', async () => {
     await withPGliteSql(async (sql) => {
         await insertClientSession(sql, {
-            keyWorkspace: '%5F',
+            keyWorkspace: '_',
             principalId: 'kept',
             workspaceId: '_'
         });
@@ -215,7 +215,7 @@ Deno.test('PGlite scoped admin state starts events before facts and shares activ
         const applicationId = 'shared-activity-cutoff';
         await insertClientSession(sql, {
             applicationId,
-            keyWorkspace: '%5F',
+            keyWorkspace: '_',
             principalId: 'boundary-client',
             workspaceId: '_',
             expiresAtEpochMs: activityCutoffEpochMs + 1
@@ -272,7 +272,7 @@ Deno.test('PGlite global admin state preserves independent query and response cl
         const applicationId = 'global-query-clocks';
         await insertClientSession(sql, {
             applicationId,
-            keyWorkspace: '%5F',
+            keyWorkspace: '_',
             principalId: 'boundary-client',
             workspaceId: '_',
             expiresAtEpochMs: 1_500
@@ -411,7 +411,7 @@ async function insertActiveGroup(
     )
     values (
       ${'group-state:groups'},
-      ${`app=${input.applicationId}:ws=%5F:group=${input.groupId}`},
+      ${`app=${input.applicationId}:ws=_:group=${input.groupId}`},
       ${value},
       ${new Date('9999-12-31T23:59:59Z')}
     )
@@ -433,10 +433,10 @@ async function insertAdminStateEventBoundaries(
       snapshot_version, occurred_at_epoch_ms, event_json
     )
     values
-      (${input.applicationId}, ${'%5F'}, ${'boundary-client'}, ${'client-old'},
+      (${input.applicationId}, ${'_'}, ${'boundary-client'}, ${'client-old'},
         ${'session-connected'}, ${1},
         ${input.clientObservedAtEpochMs - input.recentEventWindowMs - 1}, ${'{}'}),
-      (${input.applicationId}, ${'%5F'}, ${'boundary-client'}, ${'client-recent'},
+      (${input.applicationId}, ${'_'}, ${'boundary-client'}, ${'client-recent'},
         ${'session-connected'}, ${1},
         ${input.clientObservedAtEpochMs - input.recentEventWindowMs + 1}, ${'{}'})
   `;
@@ -446,10 +446,10 @@ async function insertAdminStateEventBoundaries(
       snapshot_version, occurred_at_epoch_ms, event_json
     )
     values
-      (${input.applicationId}, ${'%5F'}, ${'boundary-group'}, ${'group-old'},
+      (${input.applicationId}, ${'_'}, ${'boundary-group'}, ${'group-old'},
         ${'session-connected'}, ${1},
         ${input.groupObservedAtEpochMs - input.recentEventWindowMs - 1}, ${'{}'}),
-      (${input.applicationId}, ${'%5F'}, ${'boundary-group'}, ${'group-recent'},
+      (${input.applicationId}, ${'_'}, ${'boundary-group'}, ${'group-recent'},
         ${'session-connected'}, ${1},
         ${input.groupObservedAtEpochMs - input.recentEventWindowMs + 1}, ${'{}'})
   `;

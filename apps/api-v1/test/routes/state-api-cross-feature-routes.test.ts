@@ -18,9 +18,9 @@ import {
 } from '../client-state/client-state-route-test-runtime.ts';
 import {
     createGroupStateRouteEvent,
-    createPredecessorGroupStateRouteAuthSession,
-    createPredecessorGroupStateRouteSnapshot,
-    createPredecessorGroupStateRouteTestDependencies
+    createLiveGroupStateRouteAuthSession,
+    createOwnerGroupStateRouteSnapshot,
+    createRejectingGroupStateRouteTestDependencies
 } from '../group-state/group-state-route-test-runtime.ts';
 
 Deno.test(
@@ -28,7 +28,7 @@ Deno.test(
     async () => {
         await withStrictReadAuth(false, async () => {
             const clientSnapshot = createClientSnapshot('alice');
-            const groupSnapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
+            const groupSnapshot = createOwnerGroupStateRouteSnapshot('room-1', ['alice']);
             const hydrationInputs: unknown[] = [];
             const clientDeps = createClientRouteDeps({
                 session: createAuthSession('alice'),
@@ -40,8 +40,8 @@ Deno.test(
                     return Promise.resolve({ clientSnapshotCount: 1, groupSnapshotCount: 0 });
                 }
             });
-            const groupDeps = createPredecessorGroupStateRouteTestDependencies({
-                session: createPredecessorGroupStateRouteAuthSession('alice'),
+            const groupDeps = createRejectingGroupStateRouteTestDependencies({
+                session: createLiveGroupStateRouteAuthSession('alice'),
                 groupService: {
                     readSnapshot: () => Promise.resolve(groupSnapshot)
                 },
@@ -93,8 +93,8 @@ Deno.test(
                     listEventPage: () => Promise.resolve(clientPage)
                 }
             });
-            const groupDeps = createPredecessorGroupStateRouteTestDependencies({
-                session: createPredecessorGroupStateRouteAuthSession('alice'),
+            const groupDeps = createRejectingGroupStateRouteTestDependencies({
+                session: createLiveGroupStateRouteAuthSession('alice'),
                 groupService: {
                     listEvents: () => Promise.reject(new Error('full group history should not be loaded')),
                     listEventPage: () => Promise.resolve(groupPage)
@@ -140,8 +140,8 @@ Deno.test(
                     }
                 }
             });
-            const groupDeps = createPredecessorGroupStateRouteTestDependencies({
-                session: createPredecessorGroupStateRouteAuthSession('alice'),
+            const groupDeps = createRejectingGroupStateRouteTestDependencies({
+                session: createLiveGroupStateRouteAuthSession('alice'),
                 groupService: {
                     listEvents: () => Promise.reject(new Error('full group history should not be loaded')),
                     listRecentEvents: (_ref, query) => {

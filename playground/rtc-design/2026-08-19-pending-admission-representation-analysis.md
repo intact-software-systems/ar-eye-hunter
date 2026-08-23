@@ -46,7 +46,7 @@ join path reads neither today — extending both, symmetrically with the validat
 slice's wiring.
 
 **The WS relay choke point** is `RallarServerWsFacade.handle → authorizeDynamicTopic`
-(`ws-topic-router.ts:423,691-722`) → `createGroupRoomWsAuthorizer` → `canSendRoomMessage`. The
+(`ws-topic-router.ts:423,691-722`) → `createGroupRoomWsAuthorizer` → `canSendGroupMessage`. The
 authorizer already pays one durable snapshot read per room message, so `lifecycleState` is free
 there; the policy document is not on the snapshot and nothing on the relay path reads it. The CRDT
 live topics (`room.crdt`/`app.crdt`) flow through the **same** authorizer.
@@ -213,7 +213,7 @@ a recipe leg rather than left as prose.
 
 One added denial at the existing per-message policy predicate, plus acquisition:
 
-- **Predicate**: `canSendRoomMessage` gains the resolved data-policy value in its input and denies
+- **Predicate**: `canSendGroupMessage` gains the resolved data-policy value in its input and denies
   with a new reason code (`group-data-blocked-until-active`) when
   `preActivationAppData === 'blocked-until-active'` and `snapshot.group.lifecycleState !== 'active'`.
   `lifecycleState` is already on the snapshot the authorizer loads per message.
@@ -250,7 +250,7 @@ different runtime surface (WS relay, no AppInbox mutation):
   symmetric); `computeJoin` and upsert-activation take the decision; grant/decline commands through
   the command census, routes in the existing admission route file under the `join-admission` quota;
   OpenAPI; the recipes below; the mandatory medium-scale gate.
-- **5c — data-policy gate and recipe.** The `canSendRoomMessage` predicate + authorizer policy read
+- **5c — data-policy gate and recipe.** The `canSendGroupMessage` predicate + authorizer policy read
   - CRDT classification + its recipe. Small, independent, separately revertible.
 
 (A two-way split folding 5c into 5b is workable if three PRs feel heavy; the data gate's different

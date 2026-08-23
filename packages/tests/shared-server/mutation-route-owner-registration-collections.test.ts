@@ -6,8 +6,9 @@ import { findMutationBoundaryViolationsFromRoots } from './mutation-boundary-ana
 import { MUTATION_ROUTE_INVENTORY, validateMutationRouteInventory } from './mutation-routing-inventory.ts';
 
 const FIXTURES = 'packages/tests/shared-server/fixtures/mutation-boundary-capability-receivers';
-const GROUP_OWNER = 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts';
+const GROUP_OWNER = 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 const GROUP_TYPES = 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
+const TOPOLOGY_OWNER = 'packages/shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 const AUTH_OWNER = 'packages/shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 const CRDT_OWNER = 'packages/shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
 const CRDT_TYPES = 'packages/shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
@@ -84,11 +85,12 @@ describe('Mutation route owner registration collections contracts', () => {
         );
     });
 
-    it('binds topology loops to their live types', () => {
-        const group = readFileSync(GROUP_OWNER, 'utf8');
-        const withoutTopology = group.replace('  AppInboxType.TOPOLOGY_CONFIG_PUT,\n', '');
+    it('binds topology registrations to the topology owner types', () => {
+        const topology = readFileSync(TOPOLOGY_OWNER, 'utf8');
+        const withoutTopology = topology.replace('    AppInboxType.TOPOLOGY_CONFIG_PUT,\n', '');
+        expect(withoutTopology).not.toBe(topology);
 
-        expect(validateWithOverrides(new Map([[GROUP_OWNER, withoutTopology]]))).toEqual(
+        expect(validateWithOverrides(new Map([[TOPOLOGY_OWNER, withoutTopology]]))).toEqual(
             expect.arrayContaining([
                 expect.stringContaining('TOPOLOGY_CONFIG_PUT owner dispatch is not connected')
             ])

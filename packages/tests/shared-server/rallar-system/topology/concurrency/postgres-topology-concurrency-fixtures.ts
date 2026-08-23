@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import type { AppInboxFailure } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { createTestGroup } from '../../../../create-test-group.ts';
@@ -162,7 +162,6 @@ export function topologyGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
         requestId: null
     };
     return {
-        stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 0 },
         group: createTestGroup({
             ...groupRef,

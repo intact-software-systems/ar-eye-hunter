@@ -18,11 +18,8 @@ import { getSql } from '../db/db.ts';
 import { toPSqlSql } from '../db/to-p-sql-sql.ts';
 import { toResilienceDto } from '../middleware-resilience.ts';
 import { readApiGroupCapacityConfig } from '../runtime/group-formation/group-capacity-config.ts';
-import {
-    readApiGroupFormationDampingConfig,
-    readApiGroupFormationTopologyIntent
-} from '../runtime/group-formation/group-formation-damping-config.ts';
 import { readApiGroupStateDisseminationConfig } from '../runtime/group-formation/group-state-dissemination-config.ts';
+import { readApiGroupFormationTopologyIntent } from '../runtime/group-formation/read-api-group-formation-topology-intent.ts';
 import { readApiRtcTopologyReplayConfig } from '../runtime/rtc-topology/rtc-topology-replay-config.ts';
 
 import { readConfiguredCrdtPolicies } from '../crdt/create-api-crdt-inbox-factory.ts';
@@ -37,7 +34,7 @@ import {
     readApiRtcRttRefinementGateConfig
 } from '../services/rtc-topology-config.ts';
 import { createRuntimeStateExpiryLifecycle } from '../services/runtime-state-expiry-startup.ts';
-import { getApiAppInboxServiceOptions, getApiTimingSink } from '../services/timing-service.ts';
+import { getApiAppInboxOptions, getApiTimingSink } from '../services/timing-service.ts';
 import { createApiV1RoomWsAuthorizer } from '../services/ws-topic-room-authorizer.ts';
 import { createApiV1BackgroundTaskLifecycle } from './api-v1-background-task-lifecycle.ts';
 import type { ApiV1Runtime } from './api-v1-runtime.ts';
@@ -45,7 +42,6 @@ import { createApiV1AdminServices, readApiV1WebSocketStatus } from './create-api
 import { createApiV1RouteInstallers } from './create-api-v1-route-installers.ts';
 import { createApiV1Runtime } from './create-api-v1-runtime.ts';
 import { createApiV1SystemInstallers } from './create-api-v1-system-installers.ts';
-import { createApiV1TopologyServices } from './create-api-v1-topology-services.ts';
 import { createRallarServer } from './create-rallar-server.ts';
 
 export interface CreateDefaultRallarServerOptions {
@@ -62,6 +58,7 @@ export function createDefaultRallarServer(
     const database = toPSqlSql(getSql());
     const nowEpochMs = Date.now;
     const timing = getApiTimingSink();
+    const rtcTopologyOptions = getApiRtcTopologyServiceOptions();
 
     const backgroundTasks = createApiV1BackgroundTaskLifecycle({
         runtimeStateExpiry: createRuntimeStateExpiryLifecycle()
@@ -74,7 +71,9 @@ export function createDefaultRallarServer(
         crdtPolicies,
         backgroundTasks,
         nowEpochMs,
-        timing
+        timing,
+        rtcTopologyOptions,
+        rttRefinementGateConfig: readApiRtcRttRefinementGateConfig()
     });
 
     const crdtLogRepository = new PSqlCrdtLogRepository(database, {
@@ -82,21 +81,7 @@ export function createDefaultRallarServer(
     });
     const runtimeStateRepository = createRuntimeStateRepository(database);
     const authUserRepository = createAuthUserRepository(runtimeStateRepository);
-    const rtcTopologyOptions = getApiRtcTopologyServiceOptions();
-    const topology = createApiV1TopologyServices({
-        runtimeStateRepository,
-        groupStateService: runtime.groupStateService,
-        groupInbox: runtime.appGroupInboxService,
-        groupFormationRttMutation: runtime.groupFormationMetrics.rttMutation,
-        webSocketServer: runtime.wsQBoxServerService.socket,
-        topologyReplayMetrics: runtime.rtcTopologyReplay,
-        serviceId: myServerId,
-        adminClientIds: readAdminClientIds(),
-        rtcTopologyOptions,
-        rttRefinementGateConfig: readApiRtcRttRefinementGateConfig(),
-        nowEpochMs,
-        timing
-    });
+    const topology = runtime.topologyServices;
 
     const appAdminInboxService = runtime.appAdminInboxService;
     const appCrdtInboxService = runtime.appCrdtInboxService;
@@ -122,12 +107,12 @@ export function createDefaultRallarServer(
         readGroupFormationMetrics: runtime.groupFormationMetrics.readMetrics,
         resetGroupFormationMetrics: runtime.groupFormationMetrics.resetMetrics,
         crdtAdminRepository: crdtLogRepository,
-        topologyManagement: topology.topologyManagement,
+        topologyQuery: topology.topologyQuery,
         clientStateService: runtime.clientStateService,
         groupStateService: runtime.groupStateService,
         appAdminInboxService,
         crdtAdminMutations,
-        appGroupInboxService: runtime.appGroupInboxService
+        topologyInboxService: runtime.topologyInboxService
     });
 
     const systemInstallers = createApiV1SystemInstallers({
@@ -180,6 +165,8 @@ interface CreateDefaultApiV1RuntimeInput {
     readonly backgroundTasks: ReturnType<typeof createApiV1BackgroundTaskLifecycle>;
     readonly nowEpochMs: () => number;
     readonly timing: ReturnType<typeof getApiTimingSink>;
+    readonly rtcTopologyOptions: ReturnType<typeof getApiRtcTopologyServiceOptions>;
+    readonly rttRefinementGateConfig: ReturnType<typeof readApiRtcRttRefinementGateConfig>;
 }
 
 function createDefaultApiV1Runtime(
@@ -195,8 +182,7 @@ function createDefaultApiV1Runtime(
         authCredentialSecret: input.authCredentialSecret,
         nowEpochMs: input.nowEpochMs,
         timing: input.timing,
-        appInboxOptions: getApiAppInboxServiceOptions(),
-        clientFormationDamping: readApiGroupFormationDampingConfig().damping,
+        appInboxOptions: getApiAppInboxOptions(),
         groupCapacity: readApiGroupCapacityConfig(),
         groupStateDissemination: readApiGroupStateDisseminationConfig().dissemination,
         createGroupFormationTopologyIntent: readApiGroupFormationTopologyIntent,
@@ -206,6 +192,8 @@ function createDefaultApiV1Runtime(
             input.databaseConfig
         ).replay,
         adminClientIds: readConfiguredAdminClientIds(),
+        rtcTopologyOptions: input.rtcTopologyOptions,
+        rttRefinementGateConfig: input.rttRefinementGateConfig,
         crdtPolicies: input.crdtPolicies,
         resilience: {
             inbox: toResilienceDto(),

@@ -1,4 +1,4 @@
-import { toRtcTopologyEntryResourceId } from '../../../services/rtc-topology-outbox-entry.ts';
+import { toRtcTopologyEntryResourceId } from '../../mutation/rtc-topology-outbox-entry.ts';
 import { computeTopologyConfigMutation } from './compute-topology-config-mutation.ts';
 import type {
     GroupTopologyConfigMutationComputed,
@@ -27,7 +27,7 @@ export function validateTopologyConfigMutation(
     }
     if (
         computed.outcome === 'write' &&
-        computed.receipt.outboxId !== toRtcTopologyEntryResourceId(computed.outbox)
+        computed.receipt.outboxIds[0] !== toRtcTopologyEntryResourceId(computed.outbox)
     ) {
         throw new TypeError('Topology config receipt outbox differs from intent');
     }

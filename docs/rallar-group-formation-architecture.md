@@ -67,7 +67,7 @@ reconfiguring  -- fail-formation ------->  forming
 `reconfiguring` is a distinct state, not `establishing` with a flag: the read surface tells a group
 that was active and is repairing its overlay apart from one that has never been active. The data
 gate does not read that difference — under `blocked-until-active` both block, because
-`canSendRoomMessage` tests only `lifecycleState !== 'active'` (see
+`canSendGroupMessage` tests only `lifecycleState !== 'active'` (see
 [Pre-Activation Data Gating](#pre-activation-data-gating)).
 
 A transition from any other state is the typed denial `lifecycle-transition-invalid`
@@ -594,7 +594,7 @@ flow.
 
 `data.preActivationAppData: 'blocked-until-active'` gates WS-relayed, room-scoped application data
 until the group's `lifecycleState` is `active`. It is one added denial at the existing per-message
-predicate: `canSendRoomMessage` in `group-policy.ts` denies `group-data-blocked-until-active` when
+predicate: `canSendGroupMessage` in `group-policy.ts` denies `group-data-blocked-until-active` when
 the resolved value is `blocked-until-active` and the group is not `active` — so `forming`,
 `establishing`, and `reconfiguring` all block, which is the meaning `reconfiguring` exists to carry.
 
@@ -616,7 +616,7 @@ authorizer runs and which activation needs.
 On the wire the denial is the generic NACK: the room authorizer maps every policy denial to reason
 `unauthorized`, and the `group-data-blocked-until-active` code never leaves the server — it appears
 only in the authorizer's rejection log line. No HTTP route supplies `preActivationAppData` to
-`canSendRoomMessage`, so no HTTP response carries it either; it exists only in the
+`canSendGroupMessage`, so no HTTP response carries it either; it exists only in the
 `GroupPolicyReasonCode` vocabulary. `api-v1-group-data-policy` pins the gate end to end: a
 `room.match` send before activation is NACKed `unauthorized` and never reaches the other member, a
 `room.crdt` sync request flows while blocked, `allowed` groups and groups whose policy omits the
@@ -811,7 +811,7 @@ writing this document:
 - `packages/shared/api/group-types.ts` and `group-policy-types.ts`: the aggregate fields, the
   `pending` member status, event types, and the `GroupPolicyReasonCode` vocabulary.
 - `packages/shared-server/rallar-system/group-policy.ts`: the gates — `canJoinGroup`,
-  `canCommandGroupLifecycleTransition`, `canDecideGroupAdmission`, `canSendRoomMessage`.
+  `canCommandGroupLifecycleTransition`, `canDecideGroupAdmission`, `canSendGroupMessage`.
 - `packages/shared-server/rallar-system/group-state/mutation/aggregate/compute-lifecycle-transition.ts`:
   the transition compute, electorate re-pin, outcome recording, and timer arming.
 - `packages/shared-server/rallar-system/group-state/mutation/membership/compute-group-admission-mutation.ts`
@@ -828,7 +828,7 @@ writing this document:
   the time leg.
 - `packages/shared-server/rallar-system/topology/planning/select-group-topology-planning-snapshot.ts`:
   the FORMING planning gate.
-- `packages/shared-server/rallar-system/rtc-topology/policy/rtc-rtt-measurement-policy.ts`,
+- `packages/shared-server/rallar-system/rtc-rtt/policy/rtc-rtt-measurement-policy.ts`,
   `apps/api-v1/src/composition/create-api-v1-topology-services.ts`,
   `packages/shared-server/rallar-system/ws-system-topics.ts`: RTT acceptance and the per-group
   reporting degree limit.

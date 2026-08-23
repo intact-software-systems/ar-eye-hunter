@@ -2,7 +2,7 @@ import type { GroupTopologyConfigPatch } from '@shared/api/graph-topology-manage
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 import type * as persistence from '../../group-state/persistence/group-state-persistence-contracts.ts';
-import type { ComputedRtcTopologyOutbox } from '../../services/rtc-topology-outbox-entry.ts';
+import type { ComputedRtcTopologyOutbox } from '../mutation/rtc-topology-outbox-entry.ts';
 import type { GroupTopologyPlanningAuthority } from '../planning/group-topology-planning-authority.ts';
 
 export interface GroupTopologyReconfigureCommand {

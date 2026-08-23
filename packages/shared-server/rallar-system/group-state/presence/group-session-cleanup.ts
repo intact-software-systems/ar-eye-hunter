@@ -1,7 +1,7 @@
+import { type AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import type { AuthSessionRepository } from '../../repositories/AuthSessionRepository.ts';
-import type { IssuedAuthSession } from '../../repositories/AuthSessionRepository.ts';
 import type { GroupStateRepository } from '../persistence/group-state-repository.ts';
 
 export interface GroupSessionCleanupInput {

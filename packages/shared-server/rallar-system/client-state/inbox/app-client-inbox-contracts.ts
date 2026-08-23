@@ -1,3 +1,4 @@
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type {
     ConnectClientSessionRequest,
     DisconnectClientSessionRequest,
@@ -6,8 +7,7 @@ import type {
     UpsertClientInstanceRequest,
     UpsertClientPrincipalRequest
 } from '@shared/api/state-types.ts';
-import type { IssuedAuthSession } from '../../repositories/AuthSessionRepository.ts';
-import { AppInboxType } from '../../services/AppInboxService.ts';
+import { AppInboxType } from '../../app-inbox/app-inbox-queue-client.ts';
 import type { RegisterAuthorisedWsClientInput } from '../client-state-service-contracts.ts';
 
 export type ClientPrincipalUpsertAppInboxPayload = Readonly<{

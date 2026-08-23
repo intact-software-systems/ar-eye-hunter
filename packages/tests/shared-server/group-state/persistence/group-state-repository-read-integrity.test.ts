@@ -1,4 +1,5 @@
-import { computeGroupMutation, type GroupMutationCommand, type GroupMutationRead } from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import { type GroupMutationCommand, type GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { describe, expect, it } from 'vitest';
 import {
     admissionFor,
@@ -192,7 +193,6 @@ describe('convergent group and presence state', () => {
                 outcome: 'no-op' as const,
                 attemptCount: 1,
                 acceptedStorageRevision: null,
-                stateRevision: 1_000_000,
                 snapshotVersion: 1,
                 causalRevision: { groupRevision: 1, presenceRevision: 0 },
                 eventId: null,

@@ -3,17 +3,17 @@ import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 
 import {
-    toAuthenticatedClientMutationContextId
-} from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
-import {
     AppInboxType,
     type AppInboxType as AppInboxTypeValue
-} from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
+} from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import {
+    toAuthenticatedClientMutationContextId
+} from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
 import {
     decodeJsonWireValue,
     type JsonWireObject,
     type JsonWireValue
-} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
 export interface StateWriteAppInboxCommand {
     readonly commandId: string;

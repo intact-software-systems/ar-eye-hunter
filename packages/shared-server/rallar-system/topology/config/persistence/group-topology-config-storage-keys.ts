@@ -53,14 +53,6 @@ export function groupTopologyGenerationSourceStorageKey(
         : groupTopologyOverrideStorageKey(ref);
 }
 
-export function legacyGroupTopologySourceStorageKey(ref: GroupRef): string {
-    return [
-        `app=${encodeURIComponent(ref.applicationId)}`,
-        `ws=${encodeURIComponent(ref.workspaceId ?? '_')}`,
-        `group=${encodeURIComponent(ref.groupId)}`
-    ].join(':');
-}
-
 export function decodeGroupTopologyStorageKey(storageKey: string): GroupRef {
     try {
         return decodeGroupStateGroupStorageKey(storageKey);

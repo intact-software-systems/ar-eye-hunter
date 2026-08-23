@@ -4,8 +4,8 @@ import {
     createGroupFormationMetricsRecorder,
     emptyGroupFormationMetrics,
     toGroupFormationOperationKind
-} from '@shared-server/rallar-system/formation-metrics.ts';
-import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/services/rtc-topology-outbox-entry.ts';
+} from '@shared-server/rallar-system/observability/formation-metrics.ts';
+import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 
 describe('group formation metrics recorder', () => {

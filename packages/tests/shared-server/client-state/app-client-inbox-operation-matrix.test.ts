@@ -12,10 +12,11 @@ import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryCont
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
+import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/app-inbox-handler-registry.ts';
+import { AppInboxQueueClient, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type { ClientStateService, ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
-import { AppInboxService, AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
@@ -23,7 +24,6 @@ import {
     CLIENT_STATE_TEST_SCOPE as SCOPE,
     createAutoAuthorizingClientStateService,
     createClientStateServiceStub,
-    createPublisher,
     processAppInbox,
     requireRightSnapshot
 } from './app-client-inbox-mutation-test-harness.ts';
@@ -32,7 +32,7 @@ import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-
 describe('AppClientInbox operation matrix', () => {
     it('registers the established eight client mutation families in order', () => {
         const registration = vi
-            .spyOn(AppInboxService.prototype, 'onStateMessage')
+            .spyOn(AppInboxHandlerRegistry.prototype, 'onStateMessage')
             .mockImplementation(() => undefined);
         try {
             createClientInboxServiceForRegistration();
@@ -142,12 +142,10 @@ function createMutationProcessingHarness() {
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
-    const publisher = createPublisher();
     const runtimeRepository = new FakeRuntimeStateRepository();
     const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
     return {
         connectedAtEpochMs: Date.now(),
-        publisher,
         reader,
         service: new AppClientInboxService(
             {
@@ -300,6 +298,4 @@ function expectMutationProcessingResults(
         lastHeartbeatAtEpochMs: harness.connectedAtEpochMs + 1
     });
     expect(requireRightSnapshot(results.disconnected).activeSessions).toHaveLength(0);
-    expect(harness.publisher.publishClientSnapshot).not.toHaveBeenCalled();
-    expect(harness.publisher.publishClientEvent).not.toHaveBeenCalled();
 }

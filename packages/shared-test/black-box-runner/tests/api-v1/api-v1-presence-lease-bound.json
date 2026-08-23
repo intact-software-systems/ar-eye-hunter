@@ -174,7 +174,7 @@
         "status": 400,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "group-mutation-rejected",
           "status": 400
         }
@@ -201,7 +201,7 @@
         "status": 400,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "group-mutation-rejected",
           "status": 400
         }
@@ -308,7 +308,7 @@
         "status": 400,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "client-mutation-rejected",
           "status": 400
         }

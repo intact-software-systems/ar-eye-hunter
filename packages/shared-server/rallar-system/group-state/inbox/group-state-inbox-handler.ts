@@ -1,10 +1,13 @@
-import type { GroupFormationGroupMutationSink, GroupFormationMutationOutcome } from '../../formation-metrics.ts';
-import type { AppInboxMutationTransactionWriter } from '../../services/app-inbox-transaction-writer.ts';
-import type { AppInboxMessageContext } from '../../services/AppInboxService.ts';
+import type { AppInboxMessageContext } from '../../app-inbox/app-inbox-queue-client.ts';
+import type { AppInboxMutationTransactionWriter } from '../../app-inbox/app-inbox-transaction-writer.ts';
+import type {
+    GroupFormationGroupMutationSink,
+    GroupFormationMutationOutcome
+} from '../../observability/formation-metrics.ts';
 import type {
     WsSessionGenerationLifecycleComputed,
     WsSessionGenerationLifecycleService
-} from '../../services/ws-session-generation-lifecycle.ts';
+} from '../../websocket/ws-session-generation-lifecycle.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type {
     AuthorizedGroupMutation,
@@ -14,7 +17,7 @@ import type {
     GroupStateMutationService,
     GroupStateService
 } from '../group-state-service-contracts.ts';
-import type { GroupMutationComputed } from '../mutation/group-mutation-contracts.ts';
+import { GroupMutationRejectedError, type GroupMutationComputed } from '../mutation/group-mutation-contracts.ts';
 import { createTransactionBoundGroupStateRepository } from '../persistence/group-state-repository.ts';
 import { processGroupPresenceConnect, type InactiveGroupPresenceResult } from '../presence/group-presence-service.ts';
 import { readGroupStateInboxResult, type GroupStateInboxDurableResult } from './group-state-inbox-result.ts';
@@ -109,6 +112,11 @@ export class GroupStateInboxHandler {
     private async commitMutation(
         input: CommitGroupStateMutationInput
     ): Promise<GroupStateInboxDurableResult> {
+        if (input.computed.outcome === 'rejected') {
+            throw new GroupMutationRejectedError(
+                input.computed.receipt.rejection ?? 'Group mutation rejected'
+            );
+        }
         const { durableResult, afterCommitResult } = await this.dependencies.transactionWriter
             .writeMutationWithAfterCommitResult(
                 input.context,
@@ -145,8 +153,6 @@ export class GroupStateInboxHandler {
             input.command,
             input.computed.outcome === 'write'
                 ? 'write'
-                : input.computed.outcome === 'rejected'
-                ? 'rejected'
                 : 'noOp'
         );
         return durableResult;

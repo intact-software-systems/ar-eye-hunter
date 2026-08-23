@@ -1,5 +1,5 @@
-import { hashMutationCommand, type JsonWireValue } from '../services/mutation-command-identity.ts';
-import { createWsSessionGenerationLifecycleService } from '../services/ws-session-generation-lifecycle.ts';
+import { hashMutationCommand, type JsonWireValue } from '../protocol/json-wire-identity.ts';
+import { createWsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
 import {
     authorizeGroupMutation,
     GroupMutationAuthorizationError,
@@ -111,7 +111,6 @@ function createAuthorityDependencies(
         now,
         randomId,
         serviceId: dependencies.serviceId,
-        formationDamping: dependencies.formationDamping,
         capacity: dependencies.capacity,
         readCausalRevision: async (ref) => await repositoryFor(dependencies.runtimeRepository).readCausalRevision(ref)
     };
@@ -132,7 +131,6 @@ function createInternalMutationPreparer(
             resolvedJoinCode: null,
             joinCodeVerifier: null,
             internalAuthority,
-            formationDamping: dependencies.formationDamping,
             ...(dependencies.capacity ? { capacity: dependencies.capacity } : {}),
             authenticatedAuthority: null
         };
@@ -206,7 +204,6 @@ function createQueryOperations(
     | 'listSnapshots'
     | 'listSnapshotsPage'
     | 'readSnapshot'
-    | 'readStateRevision'
     | 'readCausalRevision'
     | 'readIssuedAuthSession'
     | 'listEvents'
@@ -220,7 +217,6 @@ function createQueryOperations(
         listSnapshots: async (scope) => await repositoryFor(runtime).listSnapshots(scope),
         listSnapshotsPage: async (scope, options) => await repositoryFor(runtime).listSnapshotsPage(scope, options),
         readSnapshot: async (ref) => await repositoryFor(runtime).readSnapshot(ref),
-        readStateRevision: async (ref) => await repositoryFor(runtime).readStateRevision(ref),
         readCausalRevision: async (ref) => await repositoryFor(runtime).readCausalRevision(ref),
         readIssuedAuthSession: async (sessionId) => await dependencies.authSessionRepository.findBySessionId(sessionId),
         listEvents: async (ref) => await repositoryFor(runtime).listEvents(ref),

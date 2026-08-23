@@ -1,16 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
+import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { type GroupMutationDescriptor } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import { toGroupMutationDescriptor } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
-import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import type { GroupMutationDescriptor } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { SCOPE } from './group-state-inbox-test-runtime.ts';
 
 const groupId = 'descriptor-room';
 const actor = { actorPrincipalId: 'owner', actorSessionId: 'owner-session' };
 
-describe('AppGroupInboxService authenticated mutation descriptors', () => {
+describe('GroupStateInboxService authenticated mutation descriptors', () => {
     it('maps every authenticated GROUP_* AppInbox variant to one exact descriptor', () => {
         for (const testCase of descriptorCases) {
             expect(toGroupMutationDescriptor(testCase.enqueue as AuthenticatedGroupMutationEnqueue), testCase.name).toEqual(testCase.descriptor);

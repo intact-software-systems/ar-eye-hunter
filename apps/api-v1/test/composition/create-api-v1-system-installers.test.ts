@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
-import type { RallarWsLifecycleHandlers } from '@shared-server/rallar-system/services/ws-lifecycle-service.ts';
+import type { RallarWsLifecycleHandlers } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
@@ -149,7 +149,8 @@ function createInput(): CreateApiV1SystemInstallersInput<ApiV1SystemInstallerTop
         topology: {
             rtcTopologyService: {},
             rtcTopologyOptions: {},
-            topologyManagement: {},
+            topologyQuery: {},
+            topologyPlanning: {},
             topologyConfigRepository: {},
             groupStateRepository: {
                 readLifecyclePolicy: rejectUnusedCrdtRead
@@ -196,14 +197,16 @@ function createRuntime(
                 return Promise.resolve(toResourceEntry('test-client-disconnect', input));
             }
         },
-        appGroupInboxService: {
+        groupStateInboxService: {
             enqueueGroupSessionCleanup: (input) => {
                 calls.groupCleanup = input;
                 events.push('group-cleanup');
                 return Promise.resolve(0);
             },
-            enqueueRtcRtt: () => Promise.reject(new Error('RTC RTT enqueue not used')),
             enqueueFormationCriterionCommand: () => Promise.reject(new Error('formation criterion enqueue not used'))
+        },
+        rtcRttInboxService: {
+            enqueue: () => Promise.reject(new Error('RTC RTT enqueue not used'))
         },
         appCrdtInboxService: includeCrdt ? {} : undefined,
         backgroundTasks: {

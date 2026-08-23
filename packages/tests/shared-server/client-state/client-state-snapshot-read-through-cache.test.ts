@@ -4,7 +4,6 @@ import {
     createClientStateSnapshotReadThroughCache,
     toClientStateSnapshotRepositoryKey
 } from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
-import { toClientStateSnapshotRepositoryKey as toLegacyClientStateSnapshotRepositoryKey } from '@shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts';
 import type { AuditStamp, ClientInstance, ClientPrincipal, ClientSession, ClientSnapshot } from '@shared/api/client-types.ts';
 import {
     findClientStateSnapshotByPrincipalId,
@@ -28,17 +27,16 @@ describe('ClientStateSnapshotReadThroughCache', () => {
         vi.useRealTimers();
     });
 
-    it('keeps the public cache-key wrapper identity across compatibility paths', () => {
+    it('keeps package and shared cache-key behavior aligned', () => {
         const ref = {
             applicationId: 'app-1',
             workspaceId: 'workspace-a',
             principalId: 'alice'
         };
 
-        expect(toPackageClientStateSnapshotRepositoryKey).toBe(toClientStateSnapshotRepositoryKey);
-        expect(toLegacyClientStateSnapshotRepositoryKey).toBe(toClientStateSnapshotRepositoryKey);
         expect(toClientStateSnapshotRepositoryKey).not.toBe(toSharedClientStateSnapshotRepositoryKey);
-        const expectedKey = '["client-state-snapshot","app-1",["present","workspace-a"],"alice"]';
+        const expectedKey = '["client-state-snapshot","app-1","workspace-a","alice"]';
+        expect(toPackageClientStateSnapshotRepositoryKey(ref)).toBe(expectedKey);
         expect(toClientStateSnapshotRepositoryKey(ref)).toBe(expectedKey);
         expect(toSharedClientStateSnapshotRepositoryKey(ref)).toBe(expectedKey);
     });

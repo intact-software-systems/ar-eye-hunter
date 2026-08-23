@@ -7,10 +7,6 @@ import {
     sameClientPrincipalState,
     sameClientSessionState
 } from '@shared-server/rallar-system/client-state/client-state-semantic-equality.ts';
-import {
-    isClientJsonObject as legacyIsClientJsonObject,
-    sameClientPrincipalState as legacySameClientPrincipalState
-} from '@shared-server/rallar-system/services/client-state-semantic-equality.ts';
 
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { connectCommand, emptyRead, instanceCommand, principalCommand, readAfterWrite, requireWrite } from './client-mutation-compute-test-fixtures.ts';
@@ -83,11 +79,6 @@ describe('client state semantic equality', () => {
         ).toBe(false);
         expect(isClientJsonObject({})).toBe(true);
         expect(isClientJsonObject([])).toBe(false);
-    });
-
-    it('keeps legacy semantic exports as canonical identities', () => {
-        expect(legacyIsClientJsonObject).toBe(isClientJsonObject);
-        expect(legacySameClientPrincipalState).toBe(sameClientPrincipalState);
     });
 });
 

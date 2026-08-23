@@ -1,7 +1,7 @@
 import type { GroupScope } from '@shared/api/group-types.ts';
 
-import type { RallarTimingEventInput, RallarTimingSink } from '../services/timing.ts';
-import { timeRallarAsync } from '../services/timing.ts';
+import type { RallarTimingEventInput, RallarTimingSink } from '../observability/timing.ts';
+import { timeRallarAsync } from '../observability/timing.ts';
 import type { GroupStateMutationCommand, GroupStateService } from './group-state-service-contracts.ts';
 
 export interface CreateTimedGroupStateServiceInput {
@@ -121,7 +121,6 @@ function createTimedSnapshotOperations(
     | 'listSnapshots'
     | 'listSnapshotsPage'
     | 'readSnapshot'
-    | 'readStateRevision'
     | 'readCausalRevision'
 > {
     return {
@@ -145,13 +144,6 @@ function createTimedSnapshotOperations(
                 operation: 'readSnapshot',
                 details: toScopeTimingDetails(ref),
                 action: async () => await service.readSnapshot(ref)
-            }),
-        readStateRevision: async (ref) =>
-            await timeGroupStateOperation({
-                ...input,
-                operation: 'readStateRevision',
-                details: toScopeTimingDetails(ref),
-                action: async () => await service.readStateRevision(ref)
             }),
         readCausalRevision: async (ref) =>
             await timeGroupStateOperation({

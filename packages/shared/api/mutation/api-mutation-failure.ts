@@ -34,7 +34,7 @@ export interface ApiMutationFailureRetry {
 
 export interface ApiMutationFailure {
     readonly type: 'api-mutation-failure';
-    readonly version: 'canonical.v1';
+    readonly version: 'canonical.v2';
     readonly code: string;
     readonly status: number;
     readonly message: string;
@@ -62,7 +62,7 @@ export function decodeApiMutationFailure(
     }
     if (
         value.type !== 'api-mutation-failure' ||
-        value.version !== 'canonical.v1' ||
+        value.version !== 'canonical.v2' ||
         !isNonEmptyString(value.code) ||
         !isHttpFailureStatus(value.status) ||
         !isNonEmptyString(value.message)

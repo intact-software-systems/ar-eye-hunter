@@ -129,7 +129,7 @@ function createApp(
     options:
         & Partial<Omit<adminSupportRoutes.AdminSupportRouteDependencies, 'support'>>
         & {
-            support?: Partial<adminSupportRoutes.AdminSupportServiceLike>;
+            support?: Partial<adminSupportRoutes.AdminSupportRouteUseCases>;
         } = {}
 ): Hono {
     const app = new Hono();
@@ -144,8 +144,8 @@ function createApp(
 }
 
 function createSupport(
-    overrides: Partial<adminSupportRoutes.AdminSupportServiceLike> = {}
-): adminSupportRoutes.AdminSupportServiceLike {
+    overrides: Partial<adminSupportRoutes.AdminSupportRouteUseCases> = {}
+): adminSupportRoutes.AdminSupportRouteUseCases {
     return {
         explainClient: () => Promise.resolve(createNarrative('client')),
         explainGroup: () => Promise.resolve(createNarrative('group')),

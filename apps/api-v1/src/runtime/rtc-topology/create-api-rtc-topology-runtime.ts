@@ -5,17 +5,15 @@ import {
 import {
     PSqlRtcTopologyReplayRepository
 } from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-replay-repository.ts';
-import type { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { type GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
     RtcTopologyExecutionRepository
-} from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
-import {
-    DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
-    RtcTopologyPublicationRepository
-} from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
+} from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import {
     RtcTopologySnapshotRepository
-} from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
+} from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import { DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
+import { RtcTopologyPublicationRepository } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository.ts';
 import {
     RtcTopologyReconnectHydrator,
     type RtcTopologyHydrationIdentity

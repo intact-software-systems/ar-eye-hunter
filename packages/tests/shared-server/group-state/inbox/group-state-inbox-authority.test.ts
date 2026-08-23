@@ -5,24 +5,24 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createAppInboxTestDatabase, type AppInboxTestDatabase } from '../../app-inbox-test-database.ts';
 
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { type GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import {
-    AppGroupInboxService,
-    AppInboxType,
-    type AppInboxEnqueueInput,
+    GroupStateInboxService,
     type GroupCreateAppInboxPayload,
     type GroupMemberUpsertAppInboxPayload,
     type GroupPresenceConnectAppInboxPayload,
     type GroupPresenceHeartbeatAppInboxPayload,
     type GroupUpdateAppInboxPayload
-} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import { createGroupStateService, type GroupStateWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 
-import type { GroupMutationReceipt } from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import { type GroupMutationReceipt } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { authSession } from '../group-state-test-runtime.ts';
 import {
@@ -37,7 +37,7 @@ import {
     waitForQueueEntry
 } from './group-state-inbox-test-runtime.ts';
 
-describe('AppGroupInboxService authenticated authority', () => {
+describe('GroupStateInboxService authenticated authority', () => {
     it('fails closed before a direct user mutation can read or write without authority', async () => {
         const harness = await createAuthorityHarness(['owner']);
         await createRoom(harness, 'direct-missing-authority', 'Before');
@@ -52,40 +52,9 @@ describe('AppGroupInboxService authenticated authority', () => {
         ).toBe('Before');
     });
 
-    it('rejects a raw user inbox call without authority before enqueue', async () => {
+    it('exposes no unauthenticated queue-processing entry point', async () => {
         const harness = await createAuthorityHarness(['owner']);
-        const input: AppInboxEnqueueInput<GroupCreateAppInboxPayload> = {
-            type: AppInboxType.GROUP_CREATE,
-            resourceId: 'raw-missing-authority',
-            contextId: 'ar-eye-hunter:default:raw-missing-authority',
-            senderId: 'owner',
-            data: {
-                scope: SCOPE,
-                request: {
-                    groupId: 'raw-missing-authority',
-                    displayName: 'Must Not Exist',
-                    kind: 'room',
-                    joinMode: 'open',
-                    createdByPrincipalId: 'owner',
-                    actorPrincipalId: 'owner',
-                    actorSessionId: 'owner-session',
-                    requestId: 'raw-missing-authority'
-                }
-            }
-        };
-
-        await expect(
-            Reflect.apply(harness.service.processEntryUntilCompletion, harness.service, [input])
-        ).rejects.toMatchObject({ status: 403 });
-        expect(
-            await harness.repository.readSnapshot({
-                ...SCOPE,
-                groupId: 'raw-missing-authority'
-            })
-        ).toBeUndefined();
-        expect(
-            (await harness.queueEntries()).filter((entry) => entry.status === EntityStatus.NEW)
-        ).toHaveLength(0);
+        expect(Reflect.get(harness.service, 'processEntryUntilCompletion')).toBeUndefined();
     });
 
     it('isolates one request id across distinct group mutation operations', async () => {
@@ -193,36 +162,15 @@ describe('AppGroupInboxService authenticated authority', () => {
         });
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
-        expect((await pending).left).toContain('authenticated group mutation intent is malformed');
+        expect((await pending).left?.message).toContain(
+            'authenticated group mutation intent is malformed'
+        );
         expect(
             await harness.repository.readSnapshot({
                 ...SCOPE,
                 groupId: 'raw-extra-proof'
             })
         ).toBeUndefined();
-    });
-
-    it('rejects legacy maintenance inbox types and exposes no maintenance method', async () => {
-        const harness = await createAuthorityHarness(['owner']);
-        expect(Reflect.get(harness.groupStateService, 'expireExpiredPresenceSessions')).toBeUndefined();
-        expect(
-            Reflect.get(harness.groupStateService, 'disconnectPresenceSessionsBySessionIdWritten')
-        ).toBeUndefined();
-
-        await expect(
-            Reflect.apply(harness.service.processEntryUntilCompletion, harness.service, [
-                {
-                    type: 'GROUP_EXPIRED_PRESENCE_SESSIONS',
-                    resourceId: 'raw-expiry',
-                    contextId: 'raw-expiry',
-                    senderId: 'attacker',
-                    data: { atEpochMs: harness.nowEpochMs }
-                }
-            ])
-        ).rejects.toMatchObject({ status: 403 });
-        expect(
-            (await harness.queueEntries()).filter((entry) => entry.status === EntityStatus.NEW)
-        ).toHaveLength(0);
     });
 
     it('rejects an attacker bearer that claims the owner actor', async () => {
@@ -246,7 +194,6 @@ describe('AppGroupInboxService authenticated authority', () => {
         const groupStateService = createGroupStateService(
             {
                 runtimeRepository,
-                formationDamping: 'damped',
                 serviceId: 'server-12345678',
                 now: () => nowEpochMs,
                 authSessionRepository: authSessions
@@ -256,7 +203,7 @@ describe('AppGroupInboxService authenticated authority', () => {
                     authSessionRepository: AuthSessionRepository;
                 }>
         );
-        const service = new AppGroupInboxService(
+        const service = new GroupStateInboxService(
             {
                 inboxQueueReader: reader,
                 resourceInboxRepository: queue,

@@ -1,10 +1,16 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
-import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
+import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
-import { convergeSummaryForTest, createService, requireSnapshot, seedOpenGroup } from './group-presence-test-runtime.ts';
+import {
+    convergeSummaryForTest,
+    createService,
+    createTestGroupPresenceSummaryTopologyIntent,
+    requireSnapshot,
+    seedOpenGroup
+} from './group-presence-test-runtime.ts';
 
 const BASE_EPOCH_MS = Date.now();
 
@@ -322,7 +328,7 @@ describe('group presence concurrency', () => {
             expect(admission?.value.admittedSessions).toEqual([]);
 
             const work = new GroupPresenceSummaryWork({
-                topologyIntent: { damping: 'legacy' },
+                topologyIntent: createTestGroupPresenceSummaryTopologyIntent(),
                 disseminationMode: 'dual-emit',
                 runtimeRepository: runtime,
                 now: () => BASE_EPOCH_MS + 3_000,

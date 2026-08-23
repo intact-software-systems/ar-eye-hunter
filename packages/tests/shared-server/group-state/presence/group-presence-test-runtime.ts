@@ -1,14 +1,22 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
-import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
-import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
+import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-import { vi } from 'vitest';
+import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { createTestGroupStateRuntime, createTestGroupStateService, type TestAuthenticatedGroupStateService } from '../group-state-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
+
+export function createTestGroupPresenceSummaryTopologyIntent() {
+    return {
+        damping: 'damped' as const,
+        outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
+        recomputeDebounceMs: 0
+    };
+}
 
 export function createService(
     runtimeRepository: GroupBarrierRepository,
@@ -21,8 +29,6 @@ export function createService(
     const currentNow = () => (typeof nowEpochMs === 'function' ? nowEpochMs() : nowEpochMs);
     return createTestGroupStateService({
         runtimeRepository,
-        syncPublisher: createPublisher(),
-        formationDamping: 'damped',
         now: currentNow,
         randomId: injectedRandomId ?? (() => `id-${currentNow()}-${++id}`),
         sleep,
@@ -38,7 +44,6 @@ export function createMaintenance(
 ) {
     return createTestGroupStateRuntime({
         runtimeRepository,
-        formationDamping: 'damped',
         now: () => nowEpochMs,
         randomId: () => `maintenance-${nowEpochMs}`,
         sleep,
@@ -114,15 +119,6 @@ export async function requireSnapshot(runtime: GroupBarrierRepository, groupId: 
         throw new Error(`Missing group snapshot: ${groupId}`);
     }
     return snapshot;
-}
-
-export function createPublisher(): StateSyncPublisher {
-    return {
-        publishClientSnapshot: vi.fn(() => Promise.resolve()),
-        publishClientEvent: vi.fn(() => Promise.resolve()),
-        publishGroupSnapshot: vi.fn(() => Promise.resolve()),
-        publishGroupEvent: vi.fn(() => Promise.resolve())
-    };
 }
 
 interface CorruptFirstEntryInput {

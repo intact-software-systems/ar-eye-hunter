@@ -1,6 +1,6 @@
 import type { RallarCrdtSnapshotEnvelope } from '@shared/crdt/mod.ts';
 
-import { requireString } from '../../services/exact-object-codec.ts';
+import { requireString } from '../../protocol/exact-object-decoding.ts';
 import type { CrdtCanonicalSnapshotEnvelope } from './crdt-mutation-contracts.ts';
 
 export function requireCrdtCanonicalSnapshotReason(value: unknown): asserts value is string {

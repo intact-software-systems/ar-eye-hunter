@@ -1,10 +1,10 @@
-import type {
-    ClientMutationAuthority,
-    ClientMutationCommand,
-    ClientMutationFacts,
-    ClientMutationOperation,
-    ClientMutationRead
-} from '@shared-server/rallar-system/services/client-state-mutations.ts';
+import {
+    type ClientMutationAuthority,
+    type ClientMutationCommand,
+    type ClientMutationFacts,
+    type ClientMutationOperation,
+    type ClientMutationRead
+} from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 
 export const CLIENT_MUTATION_TEST_SCOPE = {
     applicationId: 'app-1',
@@ -103,8 +103,7 @@ export function validFacts(): ClientMutationFacts {
         eventId: 'event-1',
         commandHash: `sha256:${'a'.repeat(64)}`,
         attemptCount: 1,
-        expireAtEpochMs: 10_000,
-        formationDamping: 'damped'
+        expireAtEpochMs: 10_000
     };
 }
 

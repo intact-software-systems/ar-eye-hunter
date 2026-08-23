@@ -3,22 +3,21 @@ import { expect, it } from 'vitest';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 
+import { AppInboxType, type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { requireGroupStateWritten } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result-codec.ts';
 import {
-    type AppGroupInboxService,
-    type AppInboxEnqueueInput,
     type GroupCreateAppInboxPayload,
-    type GroupPresenceConnectAppInboxPayload
-} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+    type GroupPresenceConnectAppInboxPayload,
+    type GroupStateInboxService
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 
-import { toAuthorisedWsClientConnectEnqueue } from '@shared-server/rallar-system/services/authorised-ws-client-app-inbox.ts';
+import { toAuthorisedWsClientConnectEnqueue } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 
-import type { GroupStateWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { type GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import { processNext, waitForQueuedType } from './app-inbox-queue-entry-test-helpers.ts';
 import { createAppInboxWsCloseHarness as createHarness, createAuthorisedWsCloseFacts as closeFacts } from './app-inbox-ws-close-test-harness.ts';
 
@@ -120,9 +119,9 @@ async function createRoom(
 }
 
 function processAuthenticated(
-    service: AppGroupInboxService,
+    service: GroupStateInboxService,
     authority: IssuedAuthSession,
     enqueue: AuthenticatedGroupMutationEnqueue
-): ReturnType<AppGroupInboxService['processAuthenticatedGroupEntryUntilCompletion']> {
+): ReturnType<GroupStateInboxService['processAuthenticatedGroupEntryUntilCompletion']> {
     return service.processAuthenticatedGroupEntryUntilCompletion(enqueue, authority);
 }

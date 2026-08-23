@@ -4,7 +4,7 @@ import { isTuplePreservingGroupLivenessReduction } from '@shared/repository/grou
 import { GroupStateSnapshotIncomparableError } from '@shared/repository/group-state-snapshots-repository.ts';
 import { StateSnapshotRevisionConflictError } from '@shared/repository/state-snapshot-revision.ts';
 
-import { rtcTopologySemanticEqual } from '../../rtc-topology-semantic-equality.ts';
+import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
 import type { GroupTopologyPlanningSnapshotSelection } from './group-topology-planning-authority.ts';
 
 export function isGroupTopologyActiveAt(
@@ -60,7 +60,7 @@ export function selectGroupTopologyPlanningSnapshot(
         !rtcTopologySemanticEqual(currentGroup, knownGroup) &&
         !isTuplePreservingGroupLivenessReduction(currentGroup, knownGroup)
     ) {
-        throw new StateSnapshotRevisionConflictError('Group', knownGroup.stateRevision);
+        throw new StateSnapshotRevisionConflictError('Group', knownGroup.group.snapshotVersion);
     }
     return currentGroup;
 }

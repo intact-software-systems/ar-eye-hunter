@@ -1,11 +1,11 @@
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type {
     AuthenticatedGroupMutationEnqueue
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import {
     validateGroupMutationRequest,
     validateGroupPresenceMutationRequest
-} from '@shared-server/rallar-system/services/group-state-mutations.ts';
+} from '@shared-server/rallar-system/group-state/mutation/command-validation/group-mutation-request-validation.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 
 import type { GroupStateRouteCommandInput } from './group-state-route-contracts.ts';

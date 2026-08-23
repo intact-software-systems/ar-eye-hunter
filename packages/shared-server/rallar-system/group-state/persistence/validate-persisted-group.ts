@@ -216,10 +216,8 @@ export function validateScopedValue(
     label: string
 ): void {
     requireNonEmptyString(value.applicationId, `${label} applicationId`);
+    requireNonEmptyString(value.workspaceId, `${label} workspaceId`);
     requireNonEmptyString(value.groupId, `${label} groupId`);
-    if (value.workspaceId !== undefined) {
-        requireNonEmptyString(value.workspaceId, `${label} workspaceId`);
-    }
     if (
         value.applicationId !== ref.applicationId ||
         value.workspaceId !== ref.workspaceId ||

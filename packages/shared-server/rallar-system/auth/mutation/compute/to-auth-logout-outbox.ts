@@ -2,7 +2,7 @@ import { Temporal } from '@js-temporal/polyfill';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-import { toAppQueueCreatedBy } from '../../../services/app-inbox-queue-key.ts';
+import { toAppQueueCreatedBy } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { LogoutAuthSessionCommand } from '../auth-mutation-contracts.ts';
 
 export function toAuthLogoutOutbox(

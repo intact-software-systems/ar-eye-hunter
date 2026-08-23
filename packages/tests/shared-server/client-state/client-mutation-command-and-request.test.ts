@@ -1,9 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import {
-    clientStatePrincipalStorageKey as compatibilityClientStatePrincipalStorageKey,
-    clientStateWorkspaceStorageKey as compatibilityClientStateWorkspaceStorageKey
-} from '@shared-server/rallar-system/client-state-storage-keys.ts';
+import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/client-state-validation-primitives.ts';
 import {
     toClientMutationIssuedSessionAuthority,
     toClientMutationSystemAuthority
@@ -15,20 +12,14 @@ import {
     toUpsertPrincipalCommandInput,
     type ClientMutationPersistedFacts
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { validateClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-command.ts';
 import {
     clientStateInstanceStorageKey,
     clientStatePrincipalStorageKey,
     clientStateSessionStorageKey,
     decodeClientPrincipalStorageKey
 } from '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
-import { ClientStateRepository as compatibilityClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import { ClientMutationRejectedError, validateClientMutationCommand } from '@shared-server/rallar-system/services/client-state-mutations.ts';
-import {
-    toClientMutationCommand as legacyToClientMutationCommand,
-    toConnectCommandInput as legacyToConnectCommandInput
-} from '@shared-server/rallar-system/services/client-state-service.ts';
-import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { ClientSession } from '@shared/api/client-types.ts';
 import type { ConnectClientSessionRequest } from '@shared/api/state-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -105,8 +96,7 @@ describe('client mutation command and request projection', () => {
             serviceId: 'client-state',
             eventId: 'event-1',
             attemptCount: 1,
-            expireAtEpochMs: 10_000,
-            formationDamping: 'damped'
+            expireAtEpochMs: 10_000
         };
 
         const command = await toClientMutationCommand(input, facts, authority);
@@ -151,15 +141,10 @@ describe('client mutation command and request projection', () => {
             operation: 'expireSession'
         });
     });
-
-    it('keeps legacy command exports as the canonical function identities', () => {
-        expect(legacyToClientMutationCommand).toBe(toClientMutationCommand);
-        expect(legacyToConnectCommandInput).toBe(toConnectCommandInput);
-    });
 });
 
-describe('client mutation command and compatibility contracts', () => {
-    it('keeps canonical encoded keys and compatibility repository identities stable', () => {
+describe('client mutation command contracts', () => {
+    it('keeps canonical encoded keys stable', () => {
         const principal = {
             applicationId: 'app:/%',
             workspaceId: '_',
@@ -167,10 +152,8 @@ describe('client mutation command and compatibility contracts', () => {
         };
         const principalKey = clientStatePrincipalStorageKey(principal);
 
-        expect(principalKey).toBe('app=app%3A%2F%25:ws=%5F:principal=alice%20smith');
+        expect(principalKey).toBe('app=app%3A%2F%25:ws=_:principal=alice%20smith');
         expect(decodeClientPrincipalStorageKey(principalKey)).toEqual(principal);
-        expect(compatibilityClientStatePrincipalStorageKey(principal)).toBe(principalKey);
-        expect(compatibilityClientStateWorkspaceStorageKey(principal.workspaceId)).toBe('%5F');
         expect(clientStateInstanceStorageKey({ ...principal, clientInstanceId: 'web/1' })).toBe(
             `${principalKey}:instance=web%2F1`
         );
@@ -181,7 +164,6 @@ describe('client mutation command and compatibility contracts', () => {
                 sessionId: 'session:1'
             })
         ).toBe(`${principalKey}:instance=web%2F1:session=session%3A1`);
-        expect(compatibilityClientStateRepository).toBe(ClientStateRepository);
     });
 
     it('requires generation identity and exposes no caller command hash', () => {

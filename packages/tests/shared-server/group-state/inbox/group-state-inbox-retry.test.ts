@@ -4,11 +4,13 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createAppInboxTestDatabase } from '../../app-inbox-test-database.ts';
 
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-import { AppGroupInboxService, AppInboxType } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 
-import { AppInboxIdempotencyConflictError } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { GroupMutationAuthorizationError, type GroupStateWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { AppInboxIdempotencyConflictError } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { GroupMutationAuthorizationError } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
+import { type GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { authSession } from '../group-state-test-runtime.ts';
@@ -32,7 +34,7 @@ interface RetryAttempt {
     readonly authorized: boolean;
 }
 
-describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, () => {
+describe('GroupStateInboxService authenticated authority', { timeout: 30_000 }, () => {
     it(
         'restarts the AppInbox group operation ' + 'and denies a retry after authority changes',
         async () => {
@@ -85,7 +87,6 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
                         resolvedJoinCode: null,
                         joinCodeVerifier: null,
                         internalAuthority: 'none',
-                        formationDamping: 'legacy',
                         authenticatedAuthority: {
                             principalId: 'owner',
                             sessionId: 'owner-session'
@@ -122,7 +123,7 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
                     throw new RuntimeStateWriteConflictError();
                 })
             };
-            const service = new AppGroupInboxService(
+            const service = new GroupStateInboxService(
                 {
                     inboxQueueReader: reader,
                     resourceInboxRepository: queue,
@@ -165,7 +166,7 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
             await new Promise((resolve) => setTimeout(resolve, 5));
             await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
-            expect((await pending).left).toContain('Forbidden:');
+            expect((await pending).left?.message).toContain('Forbidden:');
             expect(attempts).toEqual([
                 { attempt: 1, outcome: 'conflict', authorized: true },
                 { attempt: 2, outcome: 'denied', authorized: false }
@@ -214,7 +215,11 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
             }
         };
         const denied = await processAs(harness, 'member', updateInput);
-        expect(denied.left).toContain('Forbidden:');
+        expect(denied.left).toMatchObject({
+            code: 'forbidden-role',
+            status: 403,
+            message: 'Only active group owners/admins can update groups.'
+        });
 
         await processAs(harness, 'owner', {
             type: AppInboxType.GROUP_MEMBER_ROLE_SET,
@@ -260,7 +265,7 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
             }
         };
         const initialNoOp = await processAs(harness, 'owner', targetInput);
-        expect(requireGroupStateResult(initialNoOp).result.right?.event).toBeNull();
+        expect(requireGroupStateResult(initialNoOp).result?.event).toBeNull();
 
         await processAs(harness, 'owner', {
             ...targetInput,
@@ -277,7 +282,7 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
 
         const retried = await processAs(harness, 'owner', targetInput);
         expect(retried).toEqual(initialNoOp);
-        expect(requireGroupStateResult(retried).result.right?.event).toBeNull();
+        expect(requireGroupStateResult(retried).result?.event).toBeNull();
         expect(await readDisplayName(harness, 'causal-noop-room')).toBe('Changed Name');
     });
 
@@ -393,7 +398,7 @@ describe('AppGroupInboxService authenticated authority', { timeout: 30_000 }, ()
 
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
-        expect((await pending).left).toContain('Forbidden:');
+        expect((await pending).left?.message).toContain('Forbidden:');
         expect(await readDisplayName(harness, 'queued-revocation-room')).toBe('Before Revocation');
         expect(await listRoomEvents(harness, 'queued-revocation-room')).toHaveLength(1);
     });

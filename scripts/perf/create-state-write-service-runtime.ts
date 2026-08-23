@@ -18,26 +18,25 @@ import {
 } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 
-import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
+import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 
-import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 
-import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
+import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 
-import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import type { RallarTimingEvent, RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
+import type { RallarTimingEvent, RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 
-import {
-    GroupTopologyManagementService
-} from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
 import type { Sql } from 'postgres';
 
 import { toPSqlSql } from '../../apps/api-v1/src/db/to-p-sql-sql.ts';
@@ -54,7 +53,8 @@ export interface StateWriteServiceRuntimeContext {
 
 export interface StateWriteServiceRuntime {
     client: AppClientInboxService;
-    group: AppGroupInboxService;
+    group: GroupStateInboxService;
+    topology: TopologyInboxService;
     inbox: InboxQueueReader;
     resilience: ResilienceDto;
     serviceId: string;
@@ -82,7 +82,6 @@ export function createStateWriteServiceRuntime({
     const authSessionRepository = new AuthSessionRepository(runtimeRepository);
     const groupState = createGroupStateService({
         runtimeRepository,
-        formationDamping: 'damped',
         createGroupStateEventStore: createGroupStateEventRepository,
         serviceId,
         timing,
@@ -101,7 +100,6 @@ export function createStateWriteServiceRuntime({
             database: instrumentedSql,
             clientStateService: createClientStateService({
                 runtimeRepository,
-                formationDamping: 'damped',
                 createClientStateEventStore: createClientStateEventRepository,
                 serviceId,
                 timing
@@ -113,7 +111,7 @@ export function createStateWriteServiceRuntime({
             options: STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS.client
         }
     );
-    const group = new AppGroupInboxService(
+    const group = new GroupStateInboxService(
         {
             inboxQueueReader: inbox,
             resourceInboxRepository: resourceInbox,
@@ -127,17 +125,36 @@ export function createStateWriteServiceRuntime({
             options: STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS.group
         }
     );
-    group.setTopologyManagementService(
-        new GroupTopologyManagementService({
-            findGroupSnapshotByRef: (ref) => groupState.readSnapshot(ref),
-            groupStateRepository: new GroupStateRepository(runtimeRepository),
-            configRepository: new GroupTopologyConfigRepository(runtimeRepository),
-            topologyService: new RallarRtcTopologyService(),
+    const topologyOwners = createGroupTopologyOwners({
+        findGroupSnapshotByRef: (ref) => groupState.readSnapshot(ref),
+        groupStateRepository: new GroupStateRepository(runtimeRepository),
+        configRepository: new GroupTopologyConfigRepository(runtimeRepository),
+        topologyService: new RallarRtcTopologyService(),
+        timing,
+        serviceId
+    });
+    if (!topologyOwners.configMutation || !topologyOwners.reconfigureMutation) {
+        throw new TypeError('State-write topology mutation owners are required');
+    }
+    const topology = new TopologyInboxService(
+        {
+            inboxQueueReader: inbox,
+            resourceInboxRepository: resourceInbox,
+            resourceInboxResultsRepository: results,
+            database: instrumentedSql,
+            groupStateService: groupState,
+            mutationOwners: {
+                configMutationService: topologyOwners.configMutation,
+                reconfigureMutation: topologyOwners.reconfigureMutation
+            }
+        },
+        {
+            serviceId,
             timing,
-            serviceId
-        })
+            options: STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS.group
+        }
     );
-    return { client, group, inbox, resilience: createBenchmarkResilience(), serviceId };
+    return { client, group, topology, inbox, resilience: createBenchmarkResilience(), serviceId };
 }
 
 function createBenchmarkResilience(): ResilienceDto {

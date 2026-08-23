@@ -1,5 +1,4 @@
-import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
-import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
+import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateTransactionalRepositoryLike
@@ -21,13 +20,6 @@ const scope = {
     workspaceId: 'perf-workspace'
 };
 
-const noOpPublisher: StateSyncPublisher = {
-    publishClientSnapshot: async () => {},
-    publishClientEvent: async () => {},
-    publishGroupSnapshot: async () => {},
-    publishGroupEvent: async () => {}
-};
-
 type RunResult = Readonly<{
     run: number;
     durationMs: number;
@@ -42,8 +34,6 @@ async function main(): Promise<void> {
     const repository = new CountingRuntimeStateRepository();
     const service = createClientStateService({
         runtimeRepository: repository,
-        formationDamping: 'damped',
-        syncPublisher: noOpPublisher,
         now: () => 1_700_000_000_000,
         serviceId: 'client-list-fanout-bench'
     });

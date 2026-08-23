@@ -21,17 +21,6 @@ import {
     type ClientMutationOperation
 } from '../client-mutation-contracts.ts';
 
-export {
-    CLIENT_EVENT_TYPES,
-    CLIENT_INSTANCE_STATUSES,
-    CLIENT_MUTATION_OPERATIONS,
-    CLIENT_PLATFORMS,
-    CLIENT_PRESENCE_STATES,
-    CLIENT_PRINCIPAL_STATUSES,
-    CLIENT_SESSION_STATUSES,
-    CLIENT_TRANSPORTS
-} from '../client-mutation-contracts.ts';
-
 type OperationInputValidation = Readonly<{
     operation: ClientMutationOperation;
     input: ClientValidationRecord;

@@ -44,7 +44,7 @@ function apiHttpError(status: number, bodyText = ''): ApiHttpError {
 function canonicalConflictBody(): string {
     return JSON.stringify({
         type: 'api-mutation-failure',
-        version: 'canonical.v1',
+        version: 'canonical.v2',
         code: 'idempotency-conflict',
         status: 409,
         message: 'Request identity was already used for different semantic intent',

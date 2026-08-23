@@ -6,7 +6,7 @@ import {
     requireOneOf,
     requireRecord,
     requireString
-} from '../../services/exact-object-codec.ts';
+} from '../../protocol/exact-object-decoding.ts';
 import type {
     CrdtLifecycleFieldAction,
     CrdtMutationCommand,

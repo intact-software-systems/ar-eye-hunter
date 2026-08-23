@@ -1,6 +1,8 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 
+import { type AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { toGroupAppInboxOperation } from '@shared-server/rallar-system/app-inbox/logical-app-inbox-command.ts';
 import { toDescriptorCommand } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import type {
     GroupMutationDescriptor
@@ -9,22 +11,18 @@ import {
     toGroupMutationDescriptorTargetIdentity
 } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
 import { validateGroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/command-validation/validate-group-mutation-command.ts';
+import { type GroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/result-validation/validate-group-mutation-result.ts';
 import {
     toScopedGroupMutationCommandIdFromIdentity
 } from '@shared-server/rallar-system/group-state/scoped-group-mutation-command-id.ts';
-import { toGroupAppInboxOperation } from '@shared-server/rallar-system/services/app-inbox-command-wire.ts';
-import { type AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
-import {
-    validateGroupMutationIdempotencyRecord,
-    type GroupMutationIdempotencyRecord
-} from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import {
     decodeJsonWireValue,
     hashMutationCommand,
     serializeCanonicalMutationCommand,
     type JsonWireObject,
     type JsonWireValue
-} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+} from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
 import type { Sql } from 'postgres';
 

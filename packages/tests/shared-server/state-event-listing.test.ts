@@ -5,7 +5,7 @@ import {
     listStateEventsPage,
     MAX_STATE_EVENT_LIST_LIMIT,
     readStateEventListQuery
-} from '@shared-server/rallar-system/state-event-listing.ts';
+} from '@shared-server/rallar-system/state-events/state-event-listing.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
@@ -41,7 +41,7 @@ describe('state event listing', () => {
         ).toEqual(['event-2', 'event-3']);
     });
 
-    it('keeps legacy recent-list semantics by ignoring cursor params', () => {
+    it('keeps the recent window stable when cursor parameters are present', () => {
         const events = [
             createClientEvent('event-1', 'principal-created', 1_000),
             createClientEvent('event-2', 'principal-updated', 2_000),

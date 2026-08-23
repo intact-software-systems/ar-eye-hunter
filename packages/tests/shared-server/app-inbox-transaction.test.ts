@@ -1,12 +1,12 @@
-import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
+import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 
-import { readPersistedAppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
-import { AppInboxReservationConflictError, AppInboxType, classifyAppInboxError } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { readPersistedAppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
+import { AppInboxReservationConflictError, AppInboxType, classifyAppInboxError } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 
-import { GroupMutationAuthorizationError } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { GroupMutationAuthorizationError } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 
-import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
-import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
 import { GroupTopologyConfigValidationError } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { EntityStatus, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
@@ -23,7 +23,7 @@ import {
     waitForRegisteredHandlerEntry
 } from './app-inbox-transaction-test-runtime.ts';
 
-describe('AppInboxService transaction ownership', () => {
+describe('AppInboxHandlerRegistry transaction ownership', () => {
     it('commits mutation, outbox, result, and completion in one transaction', async () => {
         const harness = createAtomicHarness();
         const receipt = { status: 'accepted', revision: 2 } as const;
@@ -175,8 +175,8 @@ describe('AppInboxService transaction ownership', () => {
     });
 });
 
-describe('AppInboxService registered handler finalization', () => {
-    it('skips legacy result persistence after a transaction-owned commit', async () => {
+describe('AppInboxHandlerRegistry registered handler finalization', () => {
+    it('skips duplicate result persistence after a transaction-owned commit', async () => {
         const timing: RallarTimingEvent[] = [];
         const harness = createRegisteredHandlerHarness({
             failResultWriteAfter: 1,
@@ -229,18 +229,18 @@ describe('AppInboxService registered handler finalization', () => {
         );
     });
 
-    it('persists a legacy handler result exactly once', async () => {
+    it('persists a non-transactional handler result exactly once', async () => {
         const harness = createRegisteredHandlerHarness();
         harness.service.onStateMessage(AppInboxType.GROUP_CREATE, async () => ({
             status: 'accepted',
-            source: 'legacy'
+            source: 'handler'
         }));
 
         const pending = harness.service.processEntryUntilCompletion(harness.enqueue);
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
         await expect(pending).resolves.toMatchObject({
-            right: { status: 'accepted', source: 'legacy' }
+            right: { status: 'accepted', source: 'handler' }
         });
         expect(harness.results.replaceCalls).toBe(1);
     });

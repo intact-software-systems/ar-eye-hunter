@@ -5,8 +5,9 @@ import {
 } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
 import type { Group } from '@shared/api/group-types.ts';
 
-import { canCommandGroupLifecycleTransition, GroupPolicyDeniedError } from '../../../group-policy.ts';
 import { computeFormationTimerEntries } from '../../formation-timer-outbox-entry.ts';
+import { canCommandGroupLifecycleTransition } from '../../policy/group-lifecycle-policy.ts';
+import { GroupPolicyDeniedError } from '../../policy/group-policy-result.ts';
 import { GroupMutationRejectedError } from '../group-mutation-contracts.ts';
 import type {
     GroupLifecycleTransitionOperation,
@@ -86,7 +87,7 @@ export function computeLifecycleTransition(
     else {
         assertAllowed(
             canCommandGroupLifecycleTransition({
-                snapshot: toPolicySnapshot(read, facts.nowEpochMs),
+                snapshot: toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs),
                 actor: {
                     principalId: command.input.actorPrincipalId ?? undefined,
                     sessionId: command.input.actorSessionId ?? undefined

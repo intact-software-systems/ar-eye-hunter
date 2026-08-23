@@ -11,14 +11,13 @@ import {
     decodeAdminPruneCommand,
     type AdminPruneCommand
 } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
-import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import {
     AppAdminInboxService,
     createAdminPruneIdempotencyIdentity,
-    LEGACY_ADMIN_APP_INBOX_TOPIC,
     type AdminPruneEnqueueResult
 } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
 import { decodeAdminPruneWork } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
@@ -27,8 +26,8 @@ import {
     decodeAdminPruneAggregate,
     toAdminPruneAggregateKey
 } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
-import { AppInboxIdempotencyConflictError, AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
+import { AppInboxIdempotencyConflictError, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { createResilience, TestResourceInbox, TestResourceInboxResults, waitForQueueEntry } from '../group-state/inbox/group-state-inbox-test-runtime.ts';
 
@@ -246,9 +245,9 @@ describe('AppAdminInboxService initial prune command', () => {
         ]);
     });
 
-    it('replays predecessor category order for the same reordered set', async () => {
+    it('replays the first category order for the same reordered set', async () => {
         const harness = createAdminInboxHarness();
-        const requestId = 'predecessor-order-replay';
+        const requestId = 'first-order-replay';
         await completePrune(harness, createAdminSession('admin', 'admin-session'), {
             requestId,
             categories: ['resource-inbox-results', 'runtime-state'],
@@ -270,35 +269,6 @@ describe('AppAdminInboxService initial prune command', () => {
             'runtime-state'
         ]);
         expect(harness.readWorkCounts()).toEqual(beforeReplay);
-    });
-
-    it('processes an already queued legacy command under its historical key', async () => {
-        const harness = createAdminInboxHarness();
-        const command = await createAdminPruneCommand({
-            jobId: 'legacy-active-prune-job',
-            requestedBy: 'admin',
-            requestedSessionId: 'legacy-session',
-            capturedAtEpochMs: INITIAL_TIME_EPOCH_MS,
-            expireAtEpochMs: INITIAL_TIME_EPOCH_MS + RETRY_EXPIRY_OFFSET_MS,
-            dryRun: true,
-            categories: ['runtime-state'],
-            appData: null,
-            pageSize: 25
-        });
-        const entry = await harness.service.enqueue({
-            type: AppInboxType.ADMIN_PRUNE_EXPIRED,
-            topicId: LEGACY_ADMIN_APP_INBOX_TOPIC,
-            resourceId: command.jobId,
-            contextId: command.requestedBy,
-            senderId: command.requestedSessionId,
-            data: command
-        });
-
-        await dequeueInitialCommand(harness);
-
-        expect(await harness.queue.getItem(entry.key)).toMatchObject({
-            status: EntityStatus.COMPLETED
-        });
     });
 
     it.each<AdminPruneConflictCase>([

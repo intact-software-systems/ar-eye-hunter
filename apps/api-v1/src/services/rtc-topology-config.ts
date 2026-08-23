@@ -2,8 +2,8 @@ import {
     DEFAULT_RTT_REFINEMENT_MIN_INTERVAL_MS,
     DEFAULT_RTT_VIVALDI_DELTA_MS,
     type RtcRttRefinementGateConfig
-} from '@shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-gate.ts';
-import type { RallarRtcTopologyServiceOptions } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+} from '@shared-server/rallar-system/rtc-rtt/topic/rtc-rtt-refinement-gate.ts';
+import type { RallarRtcTopologyServiceOptions } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 
 type EnvReader = Readonly<{
     get(name: string): string | undefined;

@@ -2,12 +2,12 @@ import type { GroupRef, GroupStateCausalRevision } from '@shared/api/group-types
 import type { StateScope } from '@shared/api/state-types.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
 
+import { type AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import type { PersistedAuthSession } from '../auth/persistence/auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
 import { authSessionProofSecret } from '../auth/sessions/auth-session-proof-secret.ts';
-import type { GroupPolicyCapacityConfig } from '../group-policy.ts';
-import type { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
-import { hashMutationCommand, type JsonWireValue } from '../services/mutation-command-identity.ts';
+import { hashMutationCommand, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 import { toAggregateMutationCommand, toMembershipMutationCommand } from './group-mutation-command.ts';
 import { toPresenceMutationCommand } from './group-presence-mutation-command.ts';
 import {
@@ -36,7 +36,6 @@ export interface GroupMutationAuthorityDependencies {
     readonly now: () => number;
     readonly randomId: () => string;
     readonly serviceId: string;
-    readonly formationDamping: 'damped' | 'legacy';
     readonly capacity?: GroupPolicyCapacityConfig;
     readonly readCausalRevision: (ref: GroupRef) => Promise<GroupStateCausalRevision | undefined>;
 }
@@ -119,7 +118,6 @@ async function prepareAuthorizedGroupMutation(
         resolvedJoinCode,
         joinCodeVerifier: await toJoinCodeVerifier(resolvedJoinCode),
         internalAuthority: 'none',
-        formationDamping: dependencies.formationDamping,
         ...(dependencies.capacity ? { capacity: dependencies.capacity } : {}),
         authenticatedAuthority: {
             principalId: authorized.authorityProof.principalId,

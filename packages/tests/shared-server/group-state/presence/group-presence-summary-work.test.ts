@@ -1,12 +1,12 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
-import { GroupPresenceSummaryWork as CompatibilityGroupPresenceSummaryWork } from '@shared-server/rallar-system/services/GroupPresenceSummaryWork.ts';
+import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { computeGroupPresenceSummaryEntry, type GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
+import { createTestGroupPresenceSummaryTopologyIntent } from './group-presence-test-runtime.ts';
 
 type ReservedSummary = Readonly<{
     entry: ResourceEntry;
@@ -128,15 +128,11 @@ const INVALID_SUMMARY_SCENARIOS: readonly InvalidSummaryScenario[] = [
 ];
 
 describe('GroupPresenceSummaryWork canonical persisted command', () => {
-    it('keeps the canonical queue worker behind the stable one-hop public path', () => {
-        expect(CompatibilityGroupPresenceSummaryWork).toBe(GroupPresenceSummaryWork);
-    });
-
     it.each(INVALID_SUMMARY_SCENARIOS)('rejects $name before read or effects', async ({ mutate }) => {
         const begin = vi.fn();
         const wakeQueue = vi.fn();
         const worker = new GroupPresenceSummaryWork({
-            topologyIntent: { damping: 'legacy' },
+            topologyIntent: createTestGroupPresenceSummaryTopologyIntent(),
             disseminationMode: 'dual-emit',
             runtimeRepository: new FakeRuntimeStateRepository(),
             database: Object.assign(async () => undefined, { begin }) as never,
@@ -164,7 +160,7 @@ describe('GroupPresenceSummaryWork canonical persisted command', () => {
 
     it('exposes single-attempt presence-summary phases for a queue-owned transaction', () => {
         const work = new GroupPresenceSummaryWork({
-            topologyIntent: { damping: 'legacy' },
+            topologyIntent: createTestGroupPresenceSummaryTopologyIntent(),
             disseminationMode: 'dual-emit',
             runtimeRepository: new GroupBarrierRepository(),
             now: () => BASE_EPOCH_MS,

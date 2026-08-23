@@ -64,7 +64,6 @@ function groupEvidenceCase(commandType: string, eventType: GroupEventType) {
     });
     const snapshot = {
         ...fixture,
-        stateRevision: 10,
         causalRevision: { groupRevision: 8, presenceRevision: 2 },
         group: { ...fixture.group, snapshotVersion: 8, presenceVersion: 2 }
     };
@@ -95,7 +94,6 @@ function groupEvidenceCase(commandType: string, eventType: GroupEventType) {
             identityKind: 'physical-resource-id' as const,
             requestId: logicalId,
             aggregateRef: groupRef,
-            stateRevision: 9,
             causalRevision: { groupRevision: 8, presenceRevision: 1 },
             snapshotVersion: 8,
             eventId: event.eventId,
@@ -122,10 +120,8 @@ function groupEvidenceCase(commandType: string, eventType: GroupEventType) {
             result_resource: JSON.stringify({
                 status: 'ok',
                 result: {
-                    right: {
-                        snapshot: candidateSnapshot,
-                        event: candidateEvent
-                    }
+                    snapshot: candidateSnapshot,
+                    event: candidateEvent
                 }
             })
         };
@@ -194,7 +190,6 @@ describe('durable group event semantics evidence', () => {
         });
         const groupAhead = {
             ...fixture,
-            stateRevision: 11,
             causalRevision: { groupRevision: 9, presenceRevision: 2 },
             group: { ...fixture.group, snapshotVersion: 9, presenceVersion: 2 }
         };
@@ -212,7 +207,6 @@ describe('durable group event semantics evidence', () => {
         });
         const snapshotAhead = {
             ...fixture,
-            stateRevision: 12,
             causalRevision: { groupRevision: 9, presenceRevision: 3 },
             group: { ...fixture.group, snapshotVersion: 9, presenceVersion: 3 }
         };
@@ -237,7 +231,6 @@ describe('durable group event semantics evidence', () => {
         });
         const regressed = {
             ...fixture,
-            stateRevision: causal.groupRevision + causal.presenceRevision,
             causalRevision: causal,
             group: {
                 ...fixture.group,

@@ -5,8 +5,8 @@ import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/
 import {
     ResourceInboxResultsRepository
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
-import { AppInboxService, AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import { AppInboxQueueClient, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { EntityStatus, toResourceEntryWithUpdatedResource } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
@@ -35,15 +35,14 @@ export async function readPGliteAppInboxFailure(
 ) {
     const inbox = new ResourceInboxRepository(sql);
     const results = new ResourceInboxResultsRepository(sql);
-    const service = new AppInboxService(
+    const service = new AppInboxQueueClient(
         {
             inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(inbox)),
             resourceInboxRepository: inbox,
-            resourceInboxResultsRepository: results,
-            database: sql
+            resourceInboxResultsRepository: results
         },
         {
-            serviceId: 'pglite-legacy-failure-reader',
+            serviceId: 'pglite-failure-reader',
             options: {
                 waitMaxElapsedMsecs: 5_000,
                 waitRetryIntervalMsecs: 1,
@@ -55,7 +54,7 @@ export async function readPGliteAppInboxFailure(
     const enqueue = {
         type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
         resourceId,
-        contextId: 'legacy-context',
+        contextId: 'failure-context',
         data: { requestId: resourceId }
     } as const;
     const typedPending = service.processEntryUntilCompletionResult(enqueue, (value) => value);
@@ -84,9 +83,7 @@ export async function readPGliteAppInboxFailure(
             new Date()
         )
     );
-    const typed = await typedPending;
-    const legacy = await service.processEntryUntilCompletion(enqueue);
-    return { typed, legacy };
+    return await typedPending;
 }
 
 export async function waitForPGliteQueueRow(

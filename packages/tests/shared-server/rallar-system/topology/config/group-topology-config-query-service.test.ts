@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import { GroupTopologyConfigQueryService } from '@shared-server/rallar-system/topology/config/group-topology-config-query-service.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { FakeRuntimeStateRepository } from '../../../fake-runtime-state-repository.ts';
@@ -12,7 +12,7 @@ import { createTopologyTestEffectiveConfig, createTopologyTestGroupRef } from '.
 const GROUP_REF = createTopologyTestGroupRef('workspace-1');
 
 describe('GroupTopologyConfigQueryService', () => {
-    it('reads generation readiness before the exact durable config pair', async () => {
+    it('reads the exact durable config pair', async () => {
         const phases: string[] = [];
         const repository = new GroupTopologyConfigRepository(new FakeRuntimeStateRepository());
         const durable = storedConfig('tree');
@@ -25,24 +25,18 @@ describe('GroupTopologyConfigQueryService', () => {
                 override: { entry: { revision: 2 }, value: temporary }
             } as never;
         });
-        const query = createQuery({
-            repository,
-            ensure: async () => {
-                phases.push('ready');
-            }
-        });
+        const query = createQuery(repository);
 
         await expect(query.readConfig(GROUP_REF)).resolves.toMatchObject({
             durable,
             temporary,
             effective: { topologyKind: 'mesh' }
         });
-        expect(phases).toEqual(['ready', 'read']);
+        expect(phases).toEqual(['read']);
     });
 
-    it('uses server defaults without readiness or persistence in local mode', async () => {
-        const ensure = vi.fn();
-        const query = createQuery({ repository: undefined, ensure });
+    it('uses server defaults without persistence in local mode', async () => {
+        const query = createQuery(undefined);
 
         await expect(query.readConfig(GROUP_REF)).resolves.toMatchObject({
             effective: {
@@ -52,7 +46,6 @@ describe('GroupTopologyConfigQueryService', () => {
             durable: null,
             temporary: null
         });
-        expect(ensure).not.toHaveBeenCalled();
     });
 
     it('prefers the persisted topology snapshot and preserves the complete scoped view', async () => {
@@ -63,7 +56,6 @@ describe('GroupTopologyConfigQueryService', () => {
             findGroupSnapshotByRef: async () => group,
             readLocalTopologySnapshot: () => localSnapshot,
             readPersistedTopologySnapshot: async () => persistedSnapshot,
-            readiness: { ensure: async () => undefined },
             serverDefaults: { topologyKind: 'tree', degreeLimit: 7 }
         });
 
@@ -74,41 +66,26 @@ describe('GroupTopologyConfigQueryService', () => {
         });
     });
 
-    it('rejects direct config writes that bypass AppInbox execution', async () => {
-        const service = new GroupTopologyManagementService({
+    it('does not expose direct config writes outside AppInbox execution', () => {
+        const service = createGroupTopologyOwners({
             findGroupSnapshotByRef: async () => undefined,
             topologyService: new RallarRtcTopologyService({ now: () => 20_000 }),
             processRttReader: () => [],
             now: () => 20_000
         });
 
-        await expect(
-            service.putConfig({
-                groupRef: GROUP_REF,
-                config: { topologyKind: 'mesh' },
-                updatedByPrincipalId: 'owner',
-                requestId: 'bypass-put'
-            })
-        ).rejects.toThrow(/AppInbox execution/);
-        await expect(
-            service.deleteConfig({
-                groupRef: GROUP_REF,
-                updatedByPrincipalId: 'owner',
-                requestId: 'bypass-delete'
-            })
-        ).rejects.toThrow(/AppInbox execution/);
+        expect('putConfig' in service).toBe(false);
+        expect('deleteConfig' in service).toBe(false);
     });
 });
 
-function createQuery(input: {
-    repository: GroupTopologyConfigRepository | undefined;
-    ensure: () => Promise<void>;
-}): GroupTopologyConfigQueryService {
+function createQuery(
+    repository: GroupTopologyConfigRepository | undefined
+): GroupTopologyConfigQueryService {
     return new GroupTopologyConfigQueryService({
         findGroupSnapshotByRef: async () => undefined,
         readLocalTopologySnapshot: () => undefined,
-        configRepository: input.repository,
-        readiness: { ensure: input.ensure },
+        configRepository: repository,
         serverDefaults: { topologyKind: 'tree', degreeLimit: 7 }
     });
 }

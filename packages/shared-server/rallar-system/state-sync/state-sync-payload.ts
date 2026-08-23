@@ -2,8 +2,7 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import { validateGroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
-import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 export type StateSyncScope = Readonly<{
     applicationId: string;
@@ -28,12 +27,7 @@ export type StateSyncPayload =
         kind: 'group-event';
         scope: StateSyncScope;
         groupId: string;
-        /**
-         * The persisted immutable delivery audience carried by a delta-envelope
-         * row. Undefined for legacy bare-event and overlay rows, whose audience
-         * still resolves through the snapshot caches.
-         */
-        audienceSessionIds: readonly string[] | undefined;
+        audienceSessionIds: readonly string[];
     }>
     | Readonly<{
         kind: 'invalid';
@@ -119,17 +113,6 @@ export function parseStateSyncPayload(message: ALMessage): StateSyncPayload | un
             }
             case AppTopics.groupStateEvent: {
                 const payload = JSON.parse(message.payload.resource);
-                if (isGroupEvent(payload)) {
-                    if (!hasMatchingExplicitGroupAudience(message, payload)) {
-                        return { kind: 'invalid' };
-                    }
-                    return {
-                        kind: 'group-event',
-                        scope: payload,
-                        groupId: payload.groupId,
-                        audienceSessionIds: undefined
-                    };
-                }
                 validateGroupStateDeltaEnvelope(payload);
                 if (!hasMatchingExplicitGroupAudience(message, payload.event)) {
                     return { kind: 'invalid' };
@@ -139,21 +122,6 @@ export function parseStateSyncPayload(message: ALMessage): StateSyncPayload | un
                     scope: payload.event,
                     groupId: payload.event.groupId,
                     audienceSessionIds: payload.audienceSessionIds
-                };
-            }
-            case AppTopics.overlayTopology: {
-                const snapshot = JSON.parse(message.payload.resource);
-                if (
-                    !isOverlayTopologySnapshot(snapshot) ||
-                    !hasMatchingExplicitGroupAudience(message, snapshot.groupRef)
-                ) {
-                    return { kind: 'invalid' };
-                }
-                return {
-                    kind: 'group-event',
-                    scope: snapshot.groupRef,
-                    groupId: snapshot.groupRef.groupId,
-                    audienceSessionIds: undefined
                 };
             }
             default:
@@ -172,7 +140,7 @@ export function sameScope(
     right: StateSyncScope
 ): boolean {
     return left.applicationId === right.applicationId &&
-        (left.workspaceId ?? '') === (right.workspaceId ?? '');
+        left.workspaceId === right.workspaceId;
 }
 
 function hasMatchingExplicitGroupAudience(
@@ -185,7 +153,7 @@ function hasMatchingExplicitGroupAudience(
         : targets?.mode === 'broadcast' && targets.groupRef !== undefined
         ? targets.groupRef
         : undefined;
-    return targetRef === undefined ||
+    return targetRef !== undefined &&
         (
             targetRef.applicationId === groupRef.applicationId &&
             targetRef.workspaceId === groupRef.workspaceId &&
@@ -198,23 +166,7 @@ function isStateSyncTopic(typeId: string): boolean {
         typeId === AppTopics.clientStateEvent ||
         typeId === AppTopics.groupStateSnapshot ||
         typeId === AppTopics.groupDirectorySnapshot ||
-        typeId === AppTopics.groupStateEvent ||
-        typeId === AppTopics.overlayTopology;
-}
-
-function isOverlayTopologySnapshot(
-    value: unknown
-): value is RallarOverlayTopologySnapshot {
-    if (!isRecord(value) || !isRecord(value.groupRef)) {
-        return false;
-    }
-
-    const groupRef = value.groupRef;
-    return typeof groupRef.groupId === 'string' &&
-        hasStateSyncScope(groupRef) &&
-        typeof value.overlayId === 'string' &&
-        typeof value.topology === 'string' &&
-        isRecord(value.nextHopsBySessionId);
+        typeId === AppTopics.groupStateEvent;
 }
 
 function isClientSnapshot(value: unknown): value is ClientSnapshot {
@@ -241,16 +193,9 @@ function isGroupSnapshot(value: unknown): value is GroupSnapshot {
         Array.isArray(value.activeSessions);
 }
 
-function isGroupEvent(value: unknown): value is GroupEvent {
-    return isRecord(value) &&
-        typeof value.groupId === 'string' &&
-        typeof value.snapshotVersion === 'number' &&
-        hasStateSyncScope(value);
-}
-
 function hasStateSyncScope(value: Record<string, unknown>): value is StateSyncScope {
     return typeof value.applicationId === 'string' &&
-        (value.workspaceId === undefined || typeof value.workspaceId === 'string');
+        typeof value.workspaceId === 'string';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

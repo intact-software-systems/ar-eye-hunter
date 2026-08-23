@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { initWsLifecycle } from '@shared-server/rallar-system/services/ws-lifecycle-service.ts';
+import { initWsLifecycle } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { toKeyAsString, toResourceEntryWithKey } from '@shared/queuebox/ResourceEntry.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';

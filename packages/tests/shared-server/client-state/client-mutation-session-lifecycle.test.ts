@@ -29,13 +29,8 @@ import {
     snapshot
 } from './client-mutation-concurrency-test-runtime.ts';
 import { CLIENT_MUTATION_TEST_SCOPE as SCOPE, clientMutationPrincipalRef as principalRef } from './client-mutation-validation-test-fixtures.ts';
-import {
-    CLIENT_MUTATION_SERVICE_SCOPE,
-    createPublisher as createServicePublisher,
-    seedConnectedSession,
-    toClientPrincipalRef
-} from './client-state-service-test-fixtures.ts';
-import { createLegacyClientStateTestDriver as createClientStateService } from './client-state-test-runtime.ts';
+import { CLIENT_MUTATION_SERVICE_SCOPE, seedConnectedSession, toClientPrincipalRef } from './client-state-service-test-fixtures.ts';
+import { createClientStateTestDriver as createClientStateService } from './client-state-test-runtime.ts';
 
 function requireConnect(command: ClientMutationCommand) {
     if (command.operation !== 'connectSession') {
@@ -152,7 +147,6 @@ describe('client mutation durable session ordering', () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const service = createClientStateService({
             runtimeRepository,
-            syncPublisher: createServicePublisher(),
             now: () => 10_000,
             serviceId: 'client-service'
         });
@@ -184,7 +178,7 @@ describe('client mutation durable session ordering', () => {
         });
         const durable = await service.readSnapshot(toClientPrincipalRef('alice'));
 
-        expect(second.result.right?.snapshot).toEqual(durable);
+        expect(second.result?.snapshot).toEqual(durable);
         expect(durable?.activeSessions.map((session) => session.sessionId)).toEqual([
             'ws-session-a',
             'ws-session-z'
@@ -203,7 +197,6 @@ describe('client mutation durable session ordering', () => {
         }
         const service = createClientStateService({
             runtimeRepository,
-            syncPublisher: createServicePublisher(),
             now: () => 2_000,
             serviceId: 'client-service'
         });
@@ -221,11 +214,11 @@ describe('client mutation durable session ordering', () => {
             }
         );
 
-        expect(written.result.right?.event?.eventType).toBe('session-heartbeat');
-        expect(written.result.right?.snapshot.principal.snapshotVersion).toBe(
+        expect(written.result?.event?.eventType).toBe('session-heartbeat');
+        expect(written.result?.snapshot.principal.snapshotVersion).toBe(
             (before?.principal.snapshotVersion ?? 0) + 1
         );
-        expect(written.result.right?.snapshot.stateRevision).toBeGreaterThan(
+        expect(written.result?.snapshot.stateRevision).toBeGreaterThan(
             before?.stateRevision ?? 0
         );
     });
@@ -262,7 +255,7 @@ describe('client mutation session concurrency', () => {
         );
         runtime.releasePrincipalReadBarrier();
         await expiry;
-        expect(reconnect.result.right?.event?.eventType).toBe('session-connected');
+        expect(reconnect.result?.event?.eventType).toBe('session-connected');
         const stored = await new ClientStateRepository(runtime).findSession({
             ...principalRef('alice'),
             clientInstanceId: 'browser',

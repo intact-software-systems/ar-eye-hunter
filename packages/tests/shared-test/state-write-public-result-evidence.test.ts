@@ -32,7 +32,6 @@ function createCanonicalNewerPresenceEvidence() {
     });
     const snapshot = {
         ...fixture,
-        stateRevision: 10,
         causalRevision: { groupRevision: 8, presenceRevision: 2 },
         group: { ...fixture.group, snapshotVersion: 8, presenceVersion: 2 }
     };
@@ -65,7 +64,6 @@ function createCanonicalNewerPresenceEvidence() {
             identityKind: 'physical-resource-id',
             requestId: logicalId,
             aggregateRef: groupRef,
-            stateRevision: 9,
             causalRevision: { groupRevision: 8, presenceRevision: 1 },
             snapshotVersion: 8,
             eventId: event.eventId
@@ -86,10 +84,8 @@ function createCanonicalNewerPresenceEvidence() {
             result_resource: JSON.stringify({
                 status: 'ok',
                 result: {
-                    right: {
-                        snapshot: candidateSnapshot,
-                        event: candidateEvent
-                    }
+                    snapshot: candidateSnapshot,
+                    event: candidateEvent
                 }
             })
         };
@@ -119,10 +115,8 @@ describe('durable AppInbox public result evidence', () => {
             result_resource: JSON.stringify({
                 status: 'ok',
                 result: {
-                    right: {
-                        snapshot: {},
-                        event: null
-                    }
+                    snapshot: {},
+                    event: null
                 }
             })
         };
@@ -160,17 +154,15 @@ describe('durable AppInbox public result evidence', () => {
             result_resource: JSON.stringify({
                 status: 'ok',
                 result: {
-                    right: {
-                        snapshot: {
-                            stateRevision: mismatch.stateRevision,
-                            principal: {
-                                applicationId: 'app-1',
-                                workspaceId: 'workspace-1',
-                                principalId: mismatch.principalId
-                            }
-                        },
-                        event: { eventId: 'event-1', requestId: mismatch.requestId, snapshotVersion: 4 }
-                    }
+                    snapshot: {
+                        stateRevision: mismatch.stateRevision,
+                        principal: {
+                            applicationId: 'app-1',
+                            workspaceId: 'workspace-1',
+                            principalId: mismatch.principalId
+                        }
+                    },
+                    event: { eventId: 'event-1', requestId: mismatch.requestId, snapshotVersion: 4 }
                 }
             })
         };
@@ -224,17 +216,15 @@ describe('durable AppInbox public result evidence', () => {
             result_resource: JSON.stringify({
                 status: 'ok',
                 result: {
-                    right: {
-                        snapshot: {
-                            stateRevision: 8,
-                            group: {
-                                applicationId: 'app-1',
-                                workspaceId: 'workspace-1',
-                                groupId: 'group-2'
-                            }
-                        },
-                        event: { eventId: 'group-event-1', requestId: logicalId, snapshotVersion: 8 }
-                    }
+                    snapshot: {
+                        causalRevision: { groupRevision: 8, presenceRevision: 0 },
+                        group: {
+                            applicationId: 'app-1',
+                            workspaceId: 'workspace-1',
+                            groupId: 'group-2'
+                        }
+                    },
+                    event: { eventId: 'group-event-1', requestId: logicalId, snapshotVersion: 8 }
                 }
             })
         };
@@ -264,7 +254,7 @@ describe('durable AppInbox public result evidence', () => {
                         workspaceId: 'workspace-1',
                         groupId: 'group-1'
                     },
-                    stateRevision: 8,
+                    causalRevision: { groupRevision: 8, presenceRevision: 0 },
                     snapshotVersion: 8,
                     eventId: 'group-event-1'
                 }
@@ -299,7 +289,6 @@ describe('durable AppInbox public result evidence', () => {
         };
         const snapshot = {
             ...canonicalSnapshot,
-            stateRevision: 10,
             causalRevision: { groupRevision: 8, presenceRevision: 2 },
             group: {
                 ...canonicalSnapshot.group,
@@ -319,10 +308,8 @@ describe('durable AppInbox public result evidence', () => {
             result_resource: JSON.stringify({
                 status: 'ok',
                 result: {
-                    right: {
-                        snapshot,
-                        event
-                    }
+                    snapshot,
+                    event
                 }
             })
         };
@@ -342,7 +329,6 @@ describe('durable AppInbox public result evidence', () => {
                 identityKind: 'physical-resource-id' as const,
                 requestId: logicalId,
                 aggregateRef: groupRef,
-                stateRevision: 9,
                 causalRevision: { groupRevision: 8, presenceRevision: 1 },
                 snapshotVersion: 8,
                 eventId: 'group-event-1'
@@ -371,7 +357,6 @@ describe('durable AppInbox public result evidence', () => {
                 { ...snapshot, causalRevision: { groupRevision: 9, presenceRevision: 2 } },
                 {
                     ...snapshot,
-                    stateRevision: 8,
                     causalRevision: { groupRevision: 8, presenceRevision: 0 }
                 }
             ]
@@ -381,10 +366,8 @@ describe('durable AppInbox public result evidence', () => {
                 result_resource: JSON.stringify({
                     status: 'ok',
                     result: {
-                        right: {
-                            snapshot: invalidSnapshot,
-                            event
-                        }
+                        snapshot: invalidSnapshot,
+                        event
                     }
                 })
             };
@@ -398,7 +381,10 @@ describe('durable AppInbox public result evidence', () => {
         for (
             const receipt of [
                 receiptWithoutCausalRevision,
-                { ...authoritative[0]!.receipt!, stateRevision: 10 }
+                {
+                    ...authoritative[0]!.receipt!,
+                    causalRevision: { groupRevision: 9, presenceRevision: 1 }
+                }
             ]
         ) {
             expect(evidence(result, [{ ...authoritative[0]!, receipt }])).toMatchObject({
@@ -418,10 +404,8 @@ describe('durable AppInbox public result evidence', () => {
                 result_resource: JSON.stringify({
                     status: 'ok',
                     result: {
-                        right: {
-                            snapshot,
-                            event: invalidEvent
-                        }
+                        snapshot,
+                        event: invalidEvent
                     }
                 })
             };
@@ -436,7 +420,6 @@ describe('durable AppInbox public result evidence', () => {
         const { snapshot, event, evidence } = createCanonicalNewerPresenceEvidence();
 
         expect(evidence({
-            stateRevision: snapshot.stateRevision,
             causalRevision: snapshot.causalRevision,
             group: snapshot.group
         }, event)).toMatchObject({

@@ -1,4 +1,4 @@
-import { initialiseRallarServerCacheRepositories } from '@shared-server/rallar-system/cache-repositories.ts';
+import { initialiseRallarServerCacheRepositories } from '@shared-server/rallar-system/middleware/cache-repositories.ts';
 import { configureOverlayRepository } from '@shared/repository/overlays-repository.ts';
 
 const MINUTE_MS = 60_000;

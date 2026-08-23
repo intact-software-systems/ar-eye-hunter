@@ -28,7 +28,7 @@ it('covers unauthenticated CRDT mutations through the public admin route', () =>
         status: 401,
         body: {
             type: 'api-mutation-failure',
-            version: 'canonical.v1',
+            version: 'canonical.v2',
             code: 'authentication-required',
             status: 401
         }

@@ -49,12 +49,19 @@ export interface ApiV1RouteInstallerRuntime extends ApiV1StateSnapshotRouteRunti
         ApiV1Runtime['appClientInboxService'],
         'enqueueAuthorisedWsClientConnect' | 'processAuthenticatedEntryUntilCompletion'
     >;
+    readonly topologyInboxService: Pick<
+        ApiV1Runtime['topologyInboxService'],
+        | 'processAuthenticatedEntryUntilCompletion'
+        | 'processAuthenticatedEntryUntilCompletionResult'
+        | 'processAuthenticatedHttpEntryUntilCompletionResult'
+    >;
     readonly groupsRepository: Pick<ApiV1Runtime['groupsRepository'], 'readSnapshot'>;
     readonly clientsRepository: Pick<ApiV1Runtime['clientsRepository'], 'readSnapshot'>;
 }
 
 export interface ApiV1RouteInstallerTopology {
-    readonly topologyManagement: graphTopologyRoutes.GraphTopologyRouteTopologyManagement;
+    readonly topologyQuery: graphTopologyRoutes.GraphTopologyRouteQuery;
+    readonly topologyPlanning: graphTopologyRoutes.GraphTopologyRoutePlanning;
     readonly adminClientIds: readonly string[];
     readonly groupStateRepository: Readonly<{
         readLifecyclePolicy: graphTopologyRoutes.GraphTopologyRouteDependencies['readLifecyclePolicy'];
@@ -63,7 +70,7 @@ export interface ApiV1RouteInstallerTopology {
 
 export interface ApiV1RouteInstallerAdminServices {
     readonly operations: AdminOperationsRouteService;
-    readonly support: adminSupportRoutes.AdminSupportServiceLike;
+    readonly support: adminSupportRoutes.AdminSupportRouteUseCases;
     readonly statistics: spaStatisticsRoutes.SpaStatisticsRouteService;
 }
 
@@ -218,10 +225,11 @@ function createApiV1StateRouteInstallers<
             graphTopologyRoutes.registerGraphTopologyRoutes(app, {
                 groupStateService: snapshots.graphGroupStateService,
                 graphDiagnostics: { readScopedGlobalGraphDiagnostic, readGroupGraphDiagnostic },
-                topologyManagement: input.topology.topologyManagement,
+                topologyQuery: input.topology.topologyQuery,
+                topologyPlanning: input.topology.topologyPlanning,
                 processTopologyAppInbox: (authority, enqueue) =>
                     graphTopologyRoutes.processTopologyAppInbox(
-                        input.runtime.appGroupInboxService,
+                        input.runtime.topologyInboxService,
                         authority,
                         enqueue
                     ),

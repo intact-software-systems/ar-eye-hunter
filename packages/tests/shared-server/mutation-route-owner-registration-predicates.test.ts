@@ -6,7 +6,7 @@ import { findMutationBoundaryViolationsFromRoots } from './mutation-boundary-ana
 import { MUTATION_ROUTE_INVENTORY, validateMutationRouteInventory } from './mutation-routing-inventory.ts';
 
 const FIXTURES = 'packages/tests/shared-server/fixtures/mutation-boundary-capability-receivers';
-const GROUP_OWNER = 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts';
+const GROUP_OWNER = 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 const AUTH_OWNER = 'packages/shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 
 describe('Mutation route owner registration predicates contracts', () => {

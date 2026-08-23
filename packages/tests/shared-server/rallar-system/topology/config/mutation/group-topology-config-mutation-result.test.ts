@@ -32,7 +32,7 @@ describe('topology config mutation result reconstruction', () => {
 
         expect(computed).toMatchObject({
             outcome: 'claim',
-            receipt: { outcome: 'no-op', eventId: null, outboxId: null, outboxIds: [] },
+            receipt: { outcome: 'no-op', eventId: null, outboxIds: [] },
             result: { kind: 'delete', deleted: false }
         });
     });
@@ -72,7 +72,6 @@ describe('topology config mutation result reconstruction', () => {
                             },
                             acceptedCausalRevision: null,
                             eventId: null,
-                            outboxId: null,
                             outboxIds: []
                         }
                     },

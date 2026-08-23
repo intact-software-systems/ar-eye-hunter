@@ -6,7 +6,7 @@ import { createDefaultRallarServer } from '@api-v1/src/composition/create-defaul
 import { requireApiAuthSession, toAuthErrorResponse } from '@api-v1/src/services/request-auth-service.ts';
 import { isRelicCommand, type RelicCommand } from '@relic-hunters/mod.ts';
 import { assertRelicProductionEnv } from '@shared-server/http/production-env-hardening.ts';
-import { isGroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
+import { isGroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { configuration } from './config-repo.ts';

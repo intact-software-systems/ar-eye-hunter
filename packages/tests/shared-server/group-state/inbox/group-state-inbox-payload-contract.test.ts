@@ -1,5 +1,6 @@
 import { describe, expectTypeOf, it } from 'vitest';
 
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import {
     type AuthenticatedGroupMutationEnqueue,
     type AuthenticatedGroupMutationPayloadByType,
@@ -10,7 +11,6 @@ import {
     type GroupUpdateAppInboxPayload
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import { toGroupMutationDescriptor } from '@shared-server/rallar-system/group-state/inbox/to-group-mutation-descriptor.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 describe('authenticated group mutation enqueue payload contract', () => {
     it('maps each membership inbox discriminator to its declared payload type', () => {

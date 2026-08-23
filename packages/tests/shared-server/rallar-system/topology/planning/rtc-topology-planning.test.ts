@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import { planRallarRtcTopologySnapshot } from '@shared-server/rallar-system/topology/planning/plan-rallar-rtc-topology-snapshot.ts';
 import { RtcTopologyPlanner } from '@shared-server/rallar-system/topology/planning/rtc-topology-planner.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { RtcTopologyMetrics } from '@shared-server/rallar-system/topology/runtime/rtc-topology-metrics.ts';
 
 import { createCentralRtcTopologyRttMeasurements, createRtcTopologyGroupSnapshot, createRtcTopologyMemberIds } from '../rtc-topology-test-fixtures.ts';
@@ -235,7 +235,6 @@ describe('RTC topology planning options and revisions', () => {
         const first = service.updateGroupTopology(group);
         const second = service.updateGroupTopology({
             ...group,
-            stateRevision: 2,
             causalRevision: { ...group.causalRevision, groupRevision: 2 },
             group: { ...group.group, snapshotVersion: 2 }
         });
@@ -323,7 +322,6 @@ describe('RTC topology planning options and revisions', () => {
         });
         const causallyAdvancedGroup = {
             ...group,
-            stateRevision: 2,
             causalRevision: { ...group.causalRevision, groupRevision: 2 },
             group: { ...group.group, snapshotVersion: 2 }
         };

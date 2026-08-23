@@ -44,8 +44,7 @@ export function validateClientMutationFacts(facts: unknown): void {
             'eventId',
             'commandHash',
             'attemptCount',
-            'expireAtEpochMs',
-            'formationDamping'
+            'expireAtEpochMs'
         ],
         'Client mutation facts'
     );
@@ -55,9 +54,6 @@ export function validateClientMutationFacts(facts: unknown): void {
     requireSha256(value.commandHash, 'Client mutation facts.commandHash');
     requirePositiveSafeInteger(value.attemptCount, 'Client mutation facts.attemptCount');
     requireTimestamp(value.expireAtEpochMs, 'Client mutation facts.expireAtEpochMs');
-    if (value.formationDamping !== 'damped' && value.formationDamping !== 'legacy') {
-        rejectClientMutation('Client mutation facts.formationDamping is invalid');
-    }
     if ((value.expireAtEpochMs as number) <= (value.nowEpochMs as number)) {
         rejectClientMutation('Client mutation facts.expireAtEpochMs must follow nowEpochMs');
     }

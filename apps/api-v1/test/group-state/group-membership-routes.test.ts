@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 import type { GroupStateRouteAuthSession } from '../../src/group-state/group-state-route-contracts.ts';
 import { toGroupStateCommand } from '../../src/group-state/to-group-state-command.ts';
@@ -11,9 +11,9 @@ import {
     createGroupStateRouteAuthSession,
     createGroupStateRouteSnapshot,
     createGroupStateRouteTestRuntime,
-    createPredecessorGroupStateRouteAuthSession,
-    createPredecessorGroupStateRouteSnapshot,
-    createPredecessorGroupStateRouteTestRuntime,
+    createLiveGroupStateRouteAuthSession,
+    createOwnerGroupStateRouteSnapshot,
+    createRejectingGroupStateRouteTestRuntime,
     postGroupStateMutation,
     postGroupStateMutationWithHeaders,
     putGroupStateMutation,
@@ -231,10 +231,10 @@ Deno.test(
 );
 
 async function verifyGroupGovernanceRoutes(): Promise<void> {
-    const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice', 'bob']);
+    const snapshot = createOwnerGroupStateRouteSnapshot('room-1', ['alice', 'bob']);
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
-    const { app } = createPredecessorGroupStateRouteTestRuntime({
-        session: createPredecessorGroupStateRouteAuthSession('alice'),
+    const { app } = createRejectingGroupStateRouteTestRuntime({
+        session: createLiveGroupStateRouteAuthSession('alice'),
         groupService: {},
         processGroupAppInbox: (_authority, input) => {
             enqueued.push(input);
@@ -252,7 +252,7 @@ async function verifyGroupGovernanceRoutes(): Promise<void> {
 }
 
 async function requestGovernanceRoutes(
-    app: ReturnType<typeof createPredecessorGroupStateRouteTestRuntime>['app']
+    app: ReturnType<typeof createRejectingGroupStateRouteTestRuntime>['app']
 ): Promise<Response[]> {
     return await Promise.all([
         postGroupStateMutationWithHeaders(app, `${API_BASE}/members/bob/remove`, {

@@ -15,9 +15,9 @@ import {
 } from '@shared-server/rallar-system/admin-operations/inbox/app-admin-inbox-service.ts';
 import { AdminPrunePageWorker } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-worker.ts';
 
-import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
-import type { AppInboxServiceOptions } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 
 export interface ApiAdminPruneCurrentAuthority {
     readSession(sessionId: string): Promise<
@@ -41,7 +41,7 @@ export interface CreateApiAdminInboxServiceInput {
     database: PSqlSql;
     serviceId: string;
     timing?: RallarTimingSink;
-    options?: AppInboxServiceOptions;
+    options?: AppInboxOptions;
     currentAuthority: ApiAdminPruneCurrentAuthority;
 }
 

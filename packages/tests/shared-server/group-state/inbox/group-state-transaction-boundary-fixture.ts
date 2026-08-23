@@ -5,14 +5,19 @@ import type { CreateGroupRequest } from '@shared/api/state-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
+import {
+    AppInboxType,
+    SIMPLER_GROUP_STATE_APP_INBOX_TOPIC,
+    type AppInboxMessageContext
+} from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/app-inbox-transaction-writer.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import type { GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateInboxHandler } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import { AuthSessionRepository, type IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { AppInboxTransactionWriter } from '@shared-server/rallar-system/services/app-inbox-transaction-writer.ts';
-import { AppInboxType, SIMPLER_GROUP_STATE_APP_INBOX_TOPIC, type AppInboxMessageContext } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
 import { createAppInboxTestDatabase, type AppInboxTestDatabaseStage } from '../../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { authSession } from '../group-state-test-runtime.ts';
@@ -142,7 +147,6 @@ async function createTransactionBoundaryGroupStateService(
     await authSessions.putSession(authority);
     const groupStateService = createGroupStateService({
         runtimeRepository: storage.runtimeRepository,
-        formationDamping: 'damped',
         createGroupStateEventStore: () => storage.database.groupEventStore,
         serviceId: 'server-12345678',
         now: () => NOW_EPOCH_MS,

@@ -59,10 +59,7 @@ export function memberFor(principalId: string): GroupMember {
 export function requireJoinCodeResult(
     written: Awaited<ReturnType<TestAuthenticatedGroupStateService['rotateGroupJoinCode']>>
 ) {
-    if (!written.result.right) {
-        throw new Error(written.result.left ?? 'Expected join-code rotation result');
-    }
-    return written.result.right;
+    return written.result;
 }
 
 export function createMutationCommand(
@@ -193,7 +190,6 @@ export function createMutationFacts(): GroupMutationFacts {
         resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: 'none',
-        formationDamping: 'legacy',
         authenticatedAuthority: {
             principalId: 'alice',
             sessionId: 'alice-session'

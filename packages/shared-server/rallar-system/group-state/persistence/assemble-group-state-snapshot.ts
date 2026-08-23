@@ -1,5 +1,4 @@
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
-import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type {
     Group,
     GroupMember,
@@ -9,7 +8,7 @@ import type {
     GroupSnapshot
 } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
-import { isLogicallyActiveSession } from '../../repositories/session-expiry.ts';
+import { isLogicallyActiveSession } from '../../presence/session-expiry.ts';
 import { groupStateGroupStorageKey } from './group-state-storage-keys.ts';
 
 export type GroupStateSnapshotAssemblyInput = Readonly<{
@@ -87,10 +86,6 @@ export function assembleGroupStateSnapshot(
     };
     assertStoredRoster(input, activeMembers, invariantContext);
     const snapshot: GroupSnapshot = {
-        stateRevision: toGroupSnapshotStateRevision(
-            causalRevision.groupRevision,
-            causalRevision.presenceRevision
-        ),
         causalRevision,
         group: { ...input.group, presenceVersion: presenceRevision },
         members: input.members,

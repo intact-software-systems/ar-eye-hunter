@@ -3,8 +3,8 @@ import {
     readRuntimeStateEntriesByPrefix,
     RUNTIME_STATE_PREFIX_READ_PAGE_SIZE
 } from '@shared-server/postgres/al-runtime/runtime-state-prefix-reader.ts';
-import { filterStateEventsForList } from '@shared-server/rallar-system/state-event-listing.ts';
-import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync-routing.ts';
+import { filterStateEventsForList } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
+import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync/state-sync-routing.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateEntryPageOptions,

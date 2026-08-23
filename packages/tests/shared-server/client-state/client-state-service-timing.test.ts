@@ -2,14 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { createTimedClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-timing.ts';
-import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 
 import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import type { ClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
 
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
-import { CLIENT_MUTATION_SERVICE_SCOPE, createPublisher as createServicePublisher } from './client-state-service-test-fixtures.ts';
-import { createLegacyClientStateTestDriver as createClientStateService } from './client-state-test-runtime.ts';
+import { CLIENT_MUTATION_SERVICE_SCOPE } from './client-state-service-test-fixtures.ts';
+import { createClientStateTestDriver as createClientStateService } from './client-state-test-runtime.ts';
 
 describe('client-state service timing', () => {
     it('preserves timed phase identities, results, rejections, and argument identities', async () => {
@@ -71,8 +71,7 @@ const TIMED_COMMAND = {
         eventId: 'event-timed',
         commandHash: `sha256:${'a'.repeat(64)}`,
         attemptCount: 1,
-        expireAtEpochMs: 2,
-        formationDamping: 'damped'
+        expireAtEpochMs: 2
     },
     input: {}
 } as never as ClientMutationCommand;
@@ -101,7 +100,6 @@ function createTimedClientStateServiceFixture(): TimedClientStateServiceFixture 
     const writeFailure = new Error('write failure must propagate');
     const service: ClientStateService = {
         sessionGenerationLifecycle: {} as never,
-        formationDamping: 'damped',
         listSnapshots: async () => [],
         readSnapshot: async () => undefined,
         readPresenceSnapshot: async () => undefined,
@@ -143,7 +141,6 @@ describe('client mutation service timing', () => {
         const timingEvents: RallarTimingEvent[] = [];
         const service = createClientStateService({
             runtimeRepository: new FakeRuntimeStateRepository(),
-            syncPublisher: createServicePublisher(),
             now: () => 1_000,
             serviceId: 'client-service',
             timing: (event) => timingEvents.push(event)

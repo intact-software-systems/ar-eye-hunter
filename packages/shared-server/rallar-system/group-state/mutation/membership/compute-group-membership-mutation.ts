@@ -1,6 +1,6 @@
+import { canJoinGroup } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import type { GroupEventType, GroupMember } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
-import { canJoinGroup } from '../../../group-policy.ts';
 
 import { readJoinCode } from '../aggregate/compute-group-aggregate-mutation.ts';
 import {
@@ -44,7 +44,7 @@ export function computeJoin(
 ): GroupMutationComputed {
     assertPrincipalAuthority(command, command.targetPrincipalId);
     const stored = requireGroup(read, command.aggregateRef);
-    const snapshot = toPolicySnapshot(read, facts.nowEpochMs);
+    const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs);
     const joinCodeMetadata = readJoinCode(stored.value.metadata);
     assertAllowed(
         canJoinGroup({
@@ -255,7 +255,7 @@ export function computeUpsertMember(
     const isSelf = command.input.actorPrincipalId === command.targetPrincipalId;
     assertUpsertAuthority({ command, read, facts, isSelf });
     assertUpsertRoleChange(command, read, isSelf);
-    const snapshot = toPolicySnapshot(read, facts.nowEpochMs);
+    const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs);
     assertUpsertActivationAllowed({
         command,
         snapshot,

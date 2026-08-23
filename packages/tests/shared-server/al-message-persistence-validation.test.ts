@@ -1,4 +1,4 @@
-import { validatePersistedALMessage } from '@shared-server/rallar-system/services/al-message-persistence-validation.ts';
+import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import { describe, expect, it } from 'vitest';
 
 describe('persisted AL message validation', () => {

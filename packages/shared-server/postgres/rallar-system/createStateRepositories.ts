@@ -1,11 +1,11 @@
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { AuthUserRepository } from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
 import type {
     ClientStateEventStore,
     GroupStateEventStore
-} from '@shared-server/rallar-system/repositories/StateEventStore.ts';
+} from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import type { PSqlSql } from '../PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '../runtime-state/PSqlRuntimeStateRepository.ts';

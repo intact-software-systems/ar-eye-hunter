@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import type { GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
-import type { RallarTimingEvent, RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
+import type { RallarTimingEvent, RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 import {
     createGroupStateServiceTimingFake,
@@ -35,7 +35,6 @@ describe('group-state service timing boundary', () => {
         const timingEvents: RallarTimingEvent[] = [];
         const runtime = createTestGroupStateRuntime({
             runtimeRepository: new FakeRuntimeStateRepository(),
-            formationDamping: 'damped',
             now: () => 1_000,
             serviceId: 'timing-service',
             timing: (event) => timingEvents.push(event)
@@ -54,28 +53,26 @@ describe('group-state service timing boundary', () => {
         ]);
     });
 
-    it('characterizes every asynchronous predecessor service operation and leaves compute/validate untimed', async () => {
+    it('characterizes every asynchronous service operation and leaves compute/validate untimed', async () => {
         const timingEvents: RallarTimingEvent[] = [];
         const runtime = createTestGroupStateRuntime({
             runtimeRepository: new FakeRuntimeStateRepository(),
-            formationDamping: 'damped',
             now: () => 1_000,
             serviceId: 'timing-service',
             timing: (event) => timingEvents.push(event)
         });
-        const snapshot = await createPredecessorTimingSnapshot(runtime);
+        const snapshot = await createTimingSnapshot(runtime);
 
-        await invokePredecessorPreparationOperations(runtime);
-        await invokePredecessorStateReadOperations(runtime, snapshot);
-        expectPredecessorTimingInventory(timingEvents);
-        expectPredecessorTimingDetails(timingEvents);
+        await invokePreparationOperations(runtime);
+        await invokeStateReadOperations(runtime, snapshot);
+        expectTimingInventory(timingEvents);
+        expectTimingDetails(timingEvents);
     });
 
-    it('propagates a predecessor rejection and records one matching error timing event', async () => {
+    it('propagates a service rejection and records one matching error timing event', async () => {
         const timingEvents: RallarTimingEvent[] = [];
         const runtime = createTestGroupStateRuntime({
             runtimeRepository: new FakeRuntimeStateRepository(),
-            formationDamping: 'damped',
             now: () => 1_000,
             serviceId: 'timing-service',
             timing: (event) => timingEvents.push(event)
@@ -132,7 +129,7 @@ describe('group-state service timing boundary', () => {
     });
 });
 
-type PredecessorTimingRuntime = ReturnType<typeof createTestGroupStateRuntime>;
+type ServiceTimingRuntime = ReturnType<typeof createTestGroupStateRuntime>;
 
 interface CreateTimedGroupStateServiceInput {
     readonly service: GroupStateService;
@@ -142,7 +139,7 @@ interface CreateTimedGroupStateServiceInput {
 
 type CreateTimedGroupStateService = (input: CreateTimedGroupStateServiceInput) => GroupStateService;
 
-async function createPredecessorTimingSnapshot(runtime: PredecessorTimingRuntime) {
+async function createTimingSnapshot(runtime: ServiceTimingRuntime) {
     const created = await runtime.service.createGroup(scope, {
         groupId: 'timing-room',
         displayName: 'Timing room',
@@ -151,14 +148,14 @@ async function createPredecessorTimingSnapshot(runtime: PredecessorTimingRuntime
         createdByPrincipalId: 'owner',
         requestId: 'timing-create'
     });
-    const snapshot = created.result.right?.snapshot;
+    const snapshot = created.result?.snapshot;
     if (!snapshot) {
         throw new Error('Expected a created group snapshot');
     }
     return snapshot;
 }
 
-async function invokePredecessorPreparationOperations(runtime: PredecessorTimingRuntime) {
+async function invokePreparationOperations(runtime: ServiceTimingRuntime) {
     await expect(runtime.durable.prepareExpiredPresenceMutations(1_000)).resolves.toEqual([]);
     await expect(
         runtime.durable.prepareSessionCleanupMutations({
@@ -176,9 +173,9 @@ async function invokePredecessorPreparationOperations(runtime: PredecessorTiming
     ).resolves.toEqual([]);
 }
 
-async function invokePredecessorStateReadOperations(
-    runtime: PredecessorTimingRuntime,
-    snapshot: Awaited<ReturnType<typeof createPredecessorTimingSnapshot>>
+async function invokeStateReadOperations(
+    runtime: ServiceTimingRuntime,
+    snapshot: Awaited<ReturnType<typeof createTimingSnapshot>>
 ) {
     const ref = { ...scope, groupId: 'timing-room' };
     await expect(runtime.durable.listSnapshots(scope)).resolves.toEqual([snapshot]);
@@ -189,7 +186,6 @@ async function invokePredecessorStateReadOperations(
         nextGroupKey: 'app=app-1:ws=workspace-1:group=timing-room'
     });
     await expect(runtime.durable.readSnapshot(ref)).resolves.toEqual(snapshot);
-    await expect(runtime.durable.readStateRevision(ref)).resolves.toBe(1);
     await expect(runtime.durable.readCausalRevision(ref)).resolves.toEqual({
         groupRevision: 1,
         presenceRevision: 0
@@ -206,7 +202,7 @@ async function invokePredecessorStateReadOperations(
     await expect(runtime.durable.observeSnapshot(snapshot)).resolves.toBe(snapshot);
 }
 
-function expectPredecessorTimingInventory(timingEvents: readonly RallarTimingEvent[]): void {
+function expectTimingInventory(timingEvents: readonly RallarTimingEvent[]): void {
     const operationCounts = Map.groupBy(timingEvents, (event) => event.operation);
     expect([...operationCounts.keys()]).toEqual([
         'prepareMutation',
@@ -216,7 +212,6 @@ function expectPredecessorTimingInventory(timingEvents: readonly RallarTimingEve
         'listSnapshots',
         'listSnapshotsPage',
         'readSnapshot',
-        'readStateRevision',
         'readCausalRevision',
         'readIssuedAuthSession',
         'listEvents',
@@ -231,7 +226,7 @@ function expectPredecessorTimingInventory(timingEvents: readonly RallarTimingEve
     expect(operationCounts.has('validate')).toBe(false);
 }
 
-function expectPredecessorTimingDetails(timingEvents: readonly RallarTimingEvent[]): void {
+function expectTimingDetails(timingEvents: readonly RallarTimingEvent[]): void {
     const operationCounts = Map.groupBy(timingEvents, (event) => event.operation);
     expect(operationCounts.get('prepareMutation')?.[0]).toMatchObject({
         component: 'group-state-service',
@@ -377,7 +372,6 @@ const SCOPE_TIMING_OPERATIONS: ReadonlySet<TimedAsyncOperation> = new Set([
     'listSnapshots',
     'listSnapshotsPage',
     'readSnapshot',
-    'readStateRevision',
     'readCausalRevision',
     'listEvents',
     'listRecentEvents',

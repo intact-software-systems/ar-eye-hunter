@@ -63,98 +63,41 @@ it('fails closed without consuming corrupt digest-key ticket rows', async () => 
     }
 });
 
-it('caps legacy plaintext compatibility scans and never falls back to full reads', async () => {
-    const runtime = new FakeRuntimeStateRepository();
-    const findAll = vi.spyOn(runtime, 'findAllEntries');
-    const page = vi.fn(
-        async (
-            namespace: string,
-            keyPrefix: string,
-            options: Readonly<{ afterKey?: string; limit: number; }>
-        ) => (await runtime.findEntriesByPrefix(namespace, keyPrefix))
-            .filter((entry) => options.afterKey === undefined || entry.key > options.afterKey)
-            .slice(0, options.limit)
-    );
-    Object.assign(runtime, { findEntriesByPrefixPage: page });
-    for (let index = 0; index < 300; index += 1) {
-        const token = `legacy-token-${String(index).padStart(3, '0')}`;
-        await runtime.upsert(
-            'auth-sessions:by-token',
-            `token=${encodeURIComponent(token)}`,
-            JSON.stringify({
-                clientId: `client-${index}`,
-                username: `user-${index}`,
-                sessionId: `session-${index}`,
-                accessToken: token,
-                issuedAtEpochMs: 1_000,
-                expiresAtEpochMs: Date.now() + 60_000
-            }),
-            Date.now() + 60_000
-        );
-    }
+it('preserves normal empty outcomes for current auth storage', preservesCurrentAuthOutcomes);
 
-    await expect(
-        new AuthSessionRepository(runtime).findLegacySessionByAccessTokenDigestEntry('missing-digest')
-    ).rejects.toThrow(/limit/u);
-    expect(findAll).not.toHaveBeenCalled();
-    expect(page).toHaveBeenCalledTimes(1);
-    expect(page.mock.calls[0]?.[2].limit).toBeLessThanOrEqual(129);
-});
-
-it('disables direct legacy compatibility at its explicit deadline', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date('2027-01-01T00:00:00.000Z'));
-    try {
-        const runtime = new FakeRuntimeStateRepository();
-        const page = vi.spyOn(runtime, 'findEntriesByPrefixPage');
-
-        await expect(
-            new AuthSessionRepository(runtime).findLegacySessionByAccessTokenDigestEntry(
-                'missing-digest'
-            )
-        ).resolves.toBeUndefined();
-        expect(page).not.toHaveBeenCalled();
-    }
-    finally {
-        vi.useRealTimers();
-    }
-});
-
-it('preserves normal empty auth outcomes after the legacy cutoff', preservesCutoffOutcomes);
-
-async function preservesCutoffOutcomes(): Promise<void> {
+async function preservesCurrentAuthOutcomes(): Promise<void> {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2027-01-01T00:00:00.000Z'));
     try {
         const capturedAtEpochMs = Date.now();
-        const session = createCutoffSession(capturedAtEpochMs);
-        await expectCutoffSessionOutcomes(session);
-        await expectCutoffConsumeOutcomes();
+        const session = createCurrentSession(capturedAtEpochMs);
+        await expectCurrentSessionOutcomes(session);
+        await expectCurrentConsumeOutcomes();
     }
     finally {
         vi.useRealTimers();
     }
 }
 
-async function expectCutoffSessionOutcomes(
-    session: ReturnType<typeof createCutoffSession>
+async function expectCurrentSessionOutcomes(
+    session: ReturnType<typeof createCurrentSession>
 ): Promise<void> {
     await expect(
-        runCutoffOperation((service) => service.logoutSession({ requestId: 'cutoff-logout', session }))
+        runCurrentOperation((service) => service.logoutSession({ requestId: 'current-logout', session }))
     ).resolves.toMatchObject({ right: { loggedOut: true } });
     await expect(
-        runCutoffOperation((service) =>
+        runCurrentOperation((service) =>
             service.issueWebSocketTicket({
-                requestId: 'cutoff-ws-issue',
+                requestId: 'current-ws-issue',
                 session,
                 ttlMs: 30_000
             })
         )
     ).resolves.toMatchObject({ left: { status: 401 } });
     await expect(
-        runCutoffOperation((service) =>
+        runCurrentOperation((service) =>
             service.issueAgentSessionTickets({
-                requestId: 'cutoff-agent-issue',
+                requestId: 'current-agent-issue',
                 session,
                 ticketTtlMs: 30_000,
                 agents: [{ agentId: 'agent-1' }]
@@ -163,38 +106,38 @@ async function expectCutoffSessionOutcomes(
     ).resolves.toMatchObject({ left: { status: 401 } });
 }
 
-async function expectCutoffConsumeOutcomes(): Promise<void> {
+async function expectCurrentConsumeOutcomes(): Promise<void> {
     await expect(
-        runCutoffOperation((service) =>
+        runCurrentOperation((service) =>
             service.consumeWebSocketTicket({
-                requestId: 'cutoff-ws-missing',
+                requestId: 'current-ws-missing',
                 ticket: 'missing-ws-ticket',
-                expectedSessionId: 'cutoff-session'
+                expectedSessionId: 'current-session'
             })
         )
     ).resolves.toMatchObject({ left: { status: 404 } });
     await expect(
-        runCutoffOperation((service) =>
+        runCurrentOperation((service) =>
             service.consumeAgentSessionTicket({
-                requestId: 'cutoff-agent-missing',
+                requestId: 'current-agent-missing',
                 ticket: 'missing-agent-ticket'
             })
         )
     ).resolves.toMatchObject({ left: { status: 404 } });
 }
 
-function createCutoffSession(capturedAtEpochMs: number) {
+function createCurrentSession(capturedAtEpochMs: number) {
     return {
-        clientId: 'cutoff-client',
-        accessToken: 'cutoff-access-token',
-        username: 'cutoff-user',
-        sessionId: 'cutoff-session',
+        clientId: 'current-client',
+        accessToken: 'current-access-token',
+        username: 'current-user',
+        sessionId: 'current-session',
         issuedAtEpochMs: capturedAtEpochMs,
         expiresAtEpochMs: capturedAtEpochMs + 60_000
     };
 }
 
-async function runCutoffOperation<Result>(
+async function runCurrentOperation<Result>(
     operation: (service: AppAuthInboxService) => Promise<Result>
 ): Promise<Result> {
     const queue = new TestResourceInbox();
@@ -209,12 +152,12 @@ async function runCutoffOperation<Result>(
             database: createAppInboxTestDatabase(queue, results, { runtimeRepository: runtime }),
             authMutationService: createAuthMutationService({
                 runtimeRepository: runtime,
-                serviceId: 'cutoff-auth-service'
+                serviceId: 'current-auth-service'
             }),
-            credentialIssuer: createHmacAuthCredentialIssuer('cutoff-auth-secret-0123456789abcdef')
+            credentialIssuer: createHmacAuthCredentialIssuer('current-auth-secret-0123456789abcdef')
         },
         {
-            serviceId: 'cutoff-auth-service'
+            serviceId: 'current-auth-service'
         }
     );
     const pending = operation(service);
@@ -223,7 +166,7 @@ async function runCutoffOperation<Result>(
     return await pending;
 }
 
-it('does not scan or accept explicit legacy rows after the cutoff', async () => {
+it('does not scan or accept explicit predecessor rows after the current', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2027-01-01T00:00:00.000Z'));
     try {
@@ -232,14 +175,14 @@ it('does not scan or accept explicit legacy rows after the cutoff', async () => 
         const page = vi.spyOn(runtime, 'findEntriesByPrefixPage');
         const findEntry = vi.spyOn(runtime, 'findEntry');
         const expiresAtEpochMs = Date.now() + 60_000;
-        const token = 'cutoff-legacy-token';
+        const token = 'current-predecessor-token';
         await runtime.upsert(
             'auth-sessions:by-token',
             `token=${encodeURIComponent(token)}`,
             JSON.stringify({
-                clientId: 'legacy-client',
-                username: 'legacy-user',
-                sessionId: 'legacy-session',
+                clientId: 'predecessor-client',
+                username: 'predecessor-user',
+                sessionId: 'predecessor-session',
                 accessToken: token,
                 issuedAtEpochMs: Date.now(),
                 expiresAtEpochMs
@@ -248,8 +191,8 @@ it('does not scan or accept explicit legacy rows after the cutoff', async () => 
         );
         for (
             const [namespace, ticket, agentId] of [
-                ['auth-sessions:ws-tickets', 'legacy-ws-ticket', undefined],
-                ['auth-sessions:agent-session-tickets', 'legacy-agent-ticket', 'agent-1']
+                ['auth-sessions:ws-tickets', 'predecessor-ws-ticket', undefined],
+                ['auth-sessions:agent-session-tickets', 'predecessor-agent-ticket', 'agent-1']
             ] as const
         ) {
             await runtime.upsert(
@@ -257,8 +200,8 @@ it('does not scan or accept explicit legacy rows after the cutoff', async () => 
                 `ticket=${encodeURIComponent(ticket)}`,
                 JSON.stringify({
                     ticket,
-                    sessionId: 'legacy-session',
-                    clientId: 'legacy-client',
+                    sessionId: 'predecessor-session',
+                    clientId: 'predecessor-client',
                     ...(agentId ? { agentId } : {}),
                     issuedAtEpochMs: Date.now(),
                     expiresAtEpochMs
@@ -268,9 +211,9 @@ it('does not scan or accept explicit legacy rows after the cutoff', async () => 
         }
 
         await expect(repository.findByAccessToken(token)).resolves.toBeUndefined();
-        await expect(repository.consumeWebSocketTicket('legacy-ws-ticket')).resolves.toBeUndefined();
+        await expect(repository.consumeWebSocketTicket('predecessor-ws-ticket')).resolves.toBeUndefined();
         await expect(
-            repository.consumeAgentSessionTicket('legacy-agent-ticket')
+            repository.consumeAgentSessionTicket('predecessor-agent-ticket')
         ).resolves.toBeUndefined();
         expect(page).not.toHaveBeenCalled();
         expect(findEntry).not.toHaveBeenCalledWith(

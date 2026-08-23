@@ -11,7 +11,7 @@ import {
     toAdminPruneJobId
 } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-identity.ts';
 import { toAdminPruneOutbox } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-page-codec.ts';
-import { toStrictAppInboxQueueKey } from '@shared-server/rallar-system/services/app-inbox-queue-key.ts';
+import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 
 import type { ApiV1StateWriteEvidenceSqlParameter } from '@shared-test/black-box-runner/state-write-evidence/api-v1-state-write-evidence-contracts.ts';
 import {

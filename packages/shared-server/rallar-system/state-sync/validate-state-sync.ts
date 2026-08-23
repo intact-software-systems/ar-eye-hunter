@@ -11,7 +11,7 @@ import type {
     ComputedClientStateSyncEffect,
     ComputedGroupStateSync,
     ComputedGroupStateSyncEffect
-} from '../state-sync-publisher.ts';
+} from './state-sync-entry-computation.ts';
 
 export function validateComputedStateSyncFacts(
     computed: ComputedClientStateSync | ComputedGroupStateSync,

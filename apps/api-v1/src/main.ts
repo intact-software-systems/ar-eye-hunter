@@ -10,7 +10,6 @@ import {
     STATE_SNAPSHOT_READ_EXPOSED_HEADERS
 } from './routes/state-snapshot-read/state-snapshot-read-exposed-headers.ts';
 import { startApiProcess } from './runtime/api-process-startup.ts';
-import { logGroupFormationDampingConfig } from './runtime/group-formation/group-formation-damping-config.ts';
 import { logGroupStateDisseminationConfig } from './runtime/group-formation/group-state-dissemination-config.ts';
 import {
     stopApiOnRtcTopologyDeliveryHealthFailure
@@ -34,7 +33,6 @@ logPGliteSchemaInitConfig();
 logDatabasePubSubConfig();
 const rtcTopologyReplayConfig = readApiRtcTopologyReplayConfig();
 logRtcTopologyReplayConfig(console.log, rtcTopologyReplayConfig);
-logGroupFormationDampingConfig(console.log);
 logGroupStateDisseminationConfig(console.log);
 const rallar = createDefaultRallarServer();
 addEventListener('unload', () => {

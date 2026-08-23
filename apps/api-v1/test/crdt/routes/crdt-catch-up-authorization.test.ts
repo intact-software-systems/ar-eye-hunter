@@ -189,7 +189,7 @@ Deno.test(
         assert.equal(response.status, 403);
         assert.deepEqual(await readJsonRecord(response), {
             type: 'api-mutation-failure',
-            version: 'canonical.v1',
+            version: 'canonical.v2',
             code: 'api-mutation-403',
             status: 403,
             message: 'Forbidden: CRDT admin authorization required.',

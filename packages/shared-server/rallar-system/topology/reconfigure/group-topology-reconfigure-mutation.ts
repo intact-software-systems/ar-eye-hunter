@@ -5,9 +5,11 @@ import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-
 import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
 import { PSqlRuntimeStateRepository } from '../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
-import { canMutateActiveGroup, canUpdateGroupSnapshot, GroupPolicyDeniedError } from '../../group-policy.ts';
 import { GroupStateRepository } from '../../group-state/persistence/group-state-repository.ts';
-import { writeRtcTopologyOutbox } from '../../services/rtc-topology-outbox-entry.ts';
+import { canUpdateGroupSnapshot } from '../../group-state/policy/group-governance-policy.ts';
+import { canMutateActiveGroup } from '../../group-state/policy/group-lifecycle-policy.ts';
+import { GroupPolicyDeniedError } from '../../group-state/policy/group-policy-result.ts';
+import { writeRtcTopologyOutbox } from '../mutation/rtc-topology-outbox-entry.ts';
 import type {
     GroupTopologyPlanningAuthority,
     ReadGroupTopologyPlanningAuthorityInput

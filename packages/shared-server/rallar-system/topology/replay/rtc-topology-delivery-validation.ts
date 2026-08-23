@@ -1,9 +1,9 @@
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { isKeysEqual } from '@shared/queuebox/ResourceEntry.ts';
 
-import type { RtcTopologyPublication } from '../../rtc-topology-publication-contract.ts';
-import { validateRtcTopologyPublication } from '../../rtc-topology-publication-validation.ts';
-import { computeRtcTopologyPublicationOutbox } from '../../services/rtc-topology-ws-outbox-entry.ts';
+import type { RtcTopologyPublication } from '../publication/rtc-topology-publication.ts';
+import { computeRtcTopologyPublicationOutbox } from '../publication/rtc-topology-ws-outbox-entry.ts';
+import { validateRtcTopologyPublication } from '../publication/validate-rtc-topology-publication.ts';
 import type { RtcTopologyDeliveryAppendInput } from './rtc-topology-delivery-contracts.ts';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;

@@ -72,61 +72,61 @@ export const reviewedDispositions = Object.freeze([
     // keep these exact symbols reviewed while the checker treats all unknown
     // annotations as propagation, regardless of that immediate normalization.
     Object.freeze({
-        path: 'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+        path: 'packages/shared-server/rallar-system/rtc-rtt/persistence/' +
             'rtc-rtt-persistence-validation-primitives.ts',
         rule: 'boundary.unknown',
         symbol: 'readRtcRttPersistedRecord'
     }),
     Object.freeze({
-        path: 'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+        path: 'packages/shared-server/rallar-system/rtc-rtt/persistence/' +
             'rtc-rtt-persistence-validation-primitives.ts',
         rule: 'boundary.unknown',
         symbol: 'assertExactRtcRttPersistedKeys'
     }),
     Object.freeze({
-        path: 'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+        path: 'packages/shared-server/rallar-system/rtc-rtt/persistence/' +
             'rtc-rtt-persistence-validation-primitives.ts',
         rule: 'boundary.unknown',
         symbol: 'assertNonEmptyRtcRttString'
     }),
     Object.freeze({
-        path: 'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+        path: 'packages/shared-server/rallar-system/rtc-rtt/persistence/' +
             'rtc-rtt-persistence-validation-primitives.ts',
         rule: 'boundary.unknown',
         symbol: 'assertRtcRttSafeInteger'
     }),
     Object.freeze({
-        path: 'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+        path: 'packages/shared-server/rallar-system/rtc-rtt/persistence/' +
             'rtc-rtt-persistence-validation-primitives.ts',
         rule: 'boundary.unknown',
         symbol: 'validateRtcRttCommandHash'
     }),
     Object.freeze({
-        path: 'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+        path: 'packages/shared-server/rallar-system/rtc-rtt/persistence/' +
             'rtc-rtt-persistence-validation.ts',
         rule: 'boundary.unknown',
         symbol: 'validateRtcRttMutationReceipt'
     }),
     Object.freeze({
-        path: 'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+        path: 'packages/shared-server/rallar-system/rtc-rtt/persistence/' +
             'rtc-rtt-persistence-validation.ts',
         rule: 'boundary.unknown',
         symbol: 'validateRtcRttMeasurement'
     }),
     Object.freeze({
-        path: 'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+        path: 'packages/shared-server/rallar-system/rtc-rtt/persistence/' +
             'rtc-rtt-persistence-validation.ts',
         rule: 'boundary.unknown',
         symbol: 'validateRtcRttEndpointAdmission'
     }),
     Object.freeze({
-        path: 'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+        path: 'packages/shared-server/rallar-system/rtc-rtt/persistence/' +
             'rtc-rtt-persistence-validation.ts',
         rule: 'boundary.unknown',
         symbol: 'validateCanonicalGroupRef'
     }),
     Object.freeze({
-        path: 'packages/shared-server/rallar-system/rtc-topology/persistence/' +
+        path: 'packages/shared-server/rallar-system/rtc-rtt/persistence/' +
             'rtc-rtt-persistence-validation.ts',
         rule: 'boundary.unknown',
         symbol: 'validateExpectedRevision'

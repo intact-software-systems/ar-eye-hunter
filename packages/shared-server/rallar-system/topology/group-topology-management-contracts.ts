@@ -9,13 +9,13 @@ import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
 import type { GroupStateRepository } from '../group-state/persistence/group-state-repository.ts';
-import type { RtcTopologySnapshotRepository } from '../repositories/RtcTopologySnapshotRepository.ts';
-import type { RtcRttRepository } from '../rtc-topology/persistence/rtc-rtt-repository.ts';
-import type { RallarRtcTopologyService } from '../services/rallar-rtc-topology-service.ts';
-import type { RallarTimingSink } from '../services/timing.ts';
+import type { RallarTimingSink } from '../observability/timing.ts';
+import type { RtcRttRepository } from '../rtc-rtt/persistence/rtc-rtt-repository.ts';
 import type { GroupTopologyServerOptions } from './config/group-topology-config.ts';
 import type * as mutationContracts from './config/mutation/group-topology-config-mutation-contracts.ts';
 import type { GroupTopologyConfigRepository } from './config/persistence/group-topology-config-repository.ts';
+import type { RtcTopologySnapshotRepository } from './persistence/rtc-topology-snapshot-repository.ts';
+import type { RallarRtcTopologyService } from './runtime/rallar-rtc-topology-service.ts';
 
 export type GroupTopologyPublisher = (
     message: ALMessage,
@@ -30,7 +30,7 @@ export type GroupTopologyGroupSnapshotReader = (
     }>
 ) => GroupSnapshot | undefined | Promise<GroupSnapshot | undefined>;
 
-export interface GroupTopologyManagementServiceOptions {
+export interface GroupTopologyOwnersOptions {
     readonly findGroupSnapshotByRef: GroupTopologyGroupSnapshotReader;
     readonly groupStateRepository?: GroupStateRepository;
     readonly configRepository?: GroupTopologyConfigRepository;

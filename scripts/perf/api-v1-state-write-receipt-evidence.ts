@@ -1,6 +1,7 @@
-import type { ClientMutationIdempotencyRecord } from '@shared-server/rallar-system/services/client-state-mutations.ts';
-import type { GroupMutationIdempotencyRecord } from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import { type ClientMutationIdempotencyRecord } from '@shared-server/rallar-system/client-state/persistence/client-state-persistence-contracts.ts';
+import { type GroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import type { GroupTopologyConfigMutationReceipt } from '@shared/api/graph-topology-management-types.ts';
+import type { GroupStateCausalRevision } from '@shared/api/group-types.ts';
 
 type AggregateRef = Readonly<{
     applicationId: string;
@@ -16,10 +17,10 @@ export type AuthoritativeResultBinding = Readonly<{
     commandHash: string;
     outcome: string;
     attemptCount: number;
-    outboxId: string | null;
     outboxIds: readonly string[];
     aggregateRef: AggregateRef;
     stateRevision: number | null;
+    causalRevision: GroupStateCausalRevision | null;
     snapshotVersion: number | null;
     acceptedVersion: number | null;
     operation: string | null;
@@ -52,10 +53,10 @@ export function projectClientReceiptEvidence(
         commandHash: record.receipt.commandHash,
         outcome: record.receipt.outcome,
         attemptCount: record.receipt.attemptCount,
-        outboxId: null,
         outboxIds: record.receipt.outboxIds,
         aggregateRef: record.receipt.aggregateRef,
         stateRevision: record.receipt.stateRevision,
+        causalRevision: null,
         snapshotVersion: record.receipt.snapshotVersion,
         acceptedVersion: null,
         operation: null,
@@ -94,10 +95,10 @@ export function projectGroupReceiptEvidence(
             commandHash: receipt.commandHash,
             outcome: receipt.outcome,
             attemptCount: receipt.attemptCount,
-            outboxId: null,
             outboxIds: receipt.outboxIds,
             aggregateRef: receipt.aggregateRef,
-            stateRevision: receipt.stateRevision,
+            stateRevision: null,
+            causalRevision: receipt.causalRevision,
             snapshotVersion: receipt.snapshotVersion,
             acceptedVersion: null,
             operation: null,
@@ -129,10 +130,10 @@ export function projectTopologyReceiptEvidence(
             commandHash: receipt.commandHash,
             outcome: receipt.outcome,
             attemptCount: receipt.attemptCount,
-            outboxId: receipt.outboxId,
             outboxIds: receipt.outboxIds,
             aggregateRef: receipt.groupRef,
-            stateRevision: receipt.acceptedCausalRevision?.stateRevision ?? null,
+            stateRevision: null,
+            causalRevision: null,
             snapshotVersion: receipt.acceptedCausalRevision?.snapshotVersion ?? null,
             acceptedVersion: receipt.acceptedVersion,
             operation: receipt.operation,

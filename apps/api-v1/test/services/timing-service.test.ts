@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { getApiAppInboxServiceOptions } from '../../src/services/timing-service.ts';
+import { getApiAppInboxOptions } from '../../src/services/timing-service.ts';
 
 Deno.test('API app inbox options are read from environment', () => {
     const original = snapshotEnv([
@@ -17,7 +17,7 @@ Deno.test('API app inbox options are read from environment', () => {
         Deno.env.set('RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS', '750');
         Deno.env.set('RALLAR_APP_INBOX_WAIT_JITTER_RATIO', '0.05');
 
-        assert.deepEqual(getApiAppInboxServiceOptions(), {
+        assert.deepEqual(getApiAppInboxOptions(), {
             phaseTiming: true,
             waitMaxElapsedMsecs: 45_000,
             waitRetryIntervalMsecs: 125,
@@ -46,7 +46,7 @@ Deno.test('API app inbox options fall back when environment is unset or invalid'
         Deno.env.delete('RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS');
         Deno.env.delete('RALLAR_APP_INBOX_WAIT_JITTER_RATIO');
 
-        assert.deepEqual(getApiAppInboxServiceOptions(), {
+        assert.deepEqual(getApiAppInboxOptions(), {
             phaseTiming: false,
             waitMaxElapsedMsecs: 30_000,
             waitRetryIntervalMsecs: 250,

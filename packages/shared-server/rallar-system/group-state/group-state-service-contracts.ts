@@ -27,18 +27,17 @@ import type {
     UpdateGroupRequest,
     UpsertGroupMemberRequest
 } from '@shared/api/state-types.ts';
-import type { Either } from '@shared/resilience/Either.ts';
 
+import { type AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import type { PersistedAuthSession } from '../auth/persistence/auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from '../auth/persistence/auth-session-types.ts';
-import type { GroupPolicyCapacityConfig } from '../group-policy.ts';
-import type { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
-import type { GroupStateEventStore } from '../repositories/StateEventStore.ts';
-import type { RallarTimingSink } from '../services/timing.ts';
-import type { WsSessionGenerationLifecycleService } from '../services/ws-session-generation-lifecycle.ts';
-import type { StateEventListQuery } from '../state-event-listing.ts';
+import type { RallarTimingSink } from '../observability/timing.ts';
+import type { StateEventListQuery } from '../state-events/state-event-listing.ts';
+import type { GroupStateEventStore } from '../state-events/state-event-store.ts';
+import type { WsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
 import type {
     GroupMutationCommand,
     GroupMutationComputed,
@@ -60,8 +59,8 @@ export type GroupMutationWritten = Readonly<{
 }>;
 
 export type GroupStateWritten = Readonly<{
-    status: 'created' | 'ok' | 'error';
-    result: Either<string, GroupMutationWritten>;
+    status: 'created' | 'ok';
+    result: GroupMutationWritten;
 }>;
 
 export type GroupJoinCodeMutationWritten =
@@ -69,8 +68,8 @@ export type GroupJoinCodeMutationWritten =
     & Readonly<{ event: GroupEvent | null; }>;
 
 export type GroupJoinCodeWritten = Readonly<{
-    status: 'ok' | 'error';
-    result: Either<string, GroupJoinCodeMutationWritten>;
+    status: 'ok';
+    result: GroupJoinCodeMutationWritten;
 }>;
 
 export type GroupSnapshotPageOptions = Readonly<{
@@ -191,7 +190,6 @@ export type GroupStateService =
             options: GroupSnapshotPageOptions
         ): Promise<GroupSnapshotPage>;
         readSnapshot(ref: GroupRef): Promise<GroupSnapshot | undefined>;
-        readStateRevision(ref: GroupRef): Promise<number | undefined>;
         readCausalRevision(ref: GroupRef): Promise<GroupStateCausalRevision | undefined>;
         readIssuedAuthSession(sessionId: string): Promise<PersistedAuthSession | undefined>;
         listEvents(ref: GroupRef): Promise<readonly GroupEvent[]>;
@@ -206,7 +204,6 @@ export type GroupStateRuntime = Readonly<{
 
 export type GroupStateServiceDependencies = Readonly<{
     runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
-    formationDamping: 'damped' | 'legacy';
     /**
      * Operational capacity defaults from runtime configuration; absent when the
      * runtime configures none, which keeps stored-cap-only admission.

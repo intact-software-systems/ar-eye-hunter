@@ -631,7 +631,7 @@ snapshot.
 
 Deliverables:
 
-- update `packages/shared-server/rallar-system/state-sync-publisher.ts` so
+- update `packages/shared-server/rallar-system/state-sync/state-sync-publisher.ts` so
   local recipient caches are current before room-scoped live fanout depends on
   them
 - persist and restore the current Relic room id in

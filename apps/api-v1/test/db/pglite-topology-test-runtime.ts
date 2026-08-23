@@ -4,29 +4,31 @@ import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-delivery-repository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { type IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
-import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts';
-import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import type { GroupTopologyConfigMutationCommand } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
+import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import {
-    AppGroupInboxService,
     type TopologyAppInboxCommand
-} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-system/services/rtc-topology-ws-outbox-entry.ts';
+} from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
+import type { TopologyAppInboxMutationOwners } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
+import type { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import {
     createRtcTopologyOutboxPublisher,
     createRtcTopologyWorkHandler,
     writeRtcTopologyOutbox
-} from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
-import type { GroupTopologyConfigMutationCommand } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
-import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
+} from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
+import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
+import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
+import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
+import { materializeRtcOverlayTopologyBroadcastMessage } from '@shared-server/rallar-system/topology/planning/materialize-rtc-overlay-topology-broadcast-message.ts';
+import { computeRtcTopologyPublicationOutbox } from '@shared-server/rallar-system/topology/publication/rtc-topology-ws-outbox-entry.ts';
 import {
-    GroupTopologyManagementService,
-    materializeRtcOverlayTopologyBroadcastMessage
-} from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+    createGroupTopologyOwners,
+    type GroupTopologyOwners
+} from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 
 import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
@@ -35,7 +37,7 @@ import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-
 import type { Group, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
-import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
@@ -67,7 +69,7 @@ interface RtcTopologyDeliveryEntryRow {
     readonly sequence: number;
 }
 export function submitPGliteTopologyCommand(
-    appGroup: AppGroupInboxService,
+    appGroup: TopologyInboxService,
     authority: IssuedAuthSession,
     command: TopologyAppInboxCommand
 ) {
@@ -80,7 +82,7 @@ export function submitPGliteTopologyCommand(
         : command.operation === 'deleteOverride'
         ? AppInboxType.TOPOLOGY_OVERRIDE_DELETE
         : AppInboxType.TOPOLOGY_RECONFIGURE;
-    return appGroup.processAuthenticatedTopologyEntryUntilCompletionResult(
+    return appGroup.processAuthenticatedEntryUntilCompletionResult(
         {
             type,
             resourceId: command.requestId,
@@ -94,6 +96,18 @@ export function submitPGliteTopologyCommand(
         },
         authority
     );
+}
+
+export function requireTopologyMutationOwners(
+    owners: GroupTopologyOwners
+): TopologyAppInboxMutationOwners {
+    if (!owners.configMutation || !owners.reconfigureMutation) {
+        throw new TypeError('Complete topology mutation owners are required');
+    }
+    return {
+        configMutationService: owners.configMutation,
+        reconfigureMutation: owners.reconfigureMutation
+    };
 }
 
 export function topologyConfigCommand(
@@ -149,7 +163,7 @@ export async function createPGliteTopologyWorkFixture(
     const topologySnapshotRepository = new RtcTopologySnapshotRepository(
         runtimeRepository
     );
-    const topologyManagement = new GroupTopologyManagementService({
+    const topologyManagement = createGroupTopologyOwners({
         findGroupSnapshotByRef: () => groupSnapshot,
         topologyService: new RallarRtcTopologyService({ now: () => nowEpochMs }),
         topologySnapshotRepository,
@@ -196,12 +210,13 @@ export async function createPGliteTopologyWorkFixture(
         envelope.resourceId,
         0
     ].join(':');
-    const authority = await topologyManagement.readTopologyPlanningAuthority(
+    const authority = await topologyManagement.planning.readTopologyPlanningAuthority({
         groupRef,
-        {},
-        groupSnapshot
-    );
-    const topology = topologyManagement.computeTopologyFromAuthority(
+        requestOptions: {},
+        knownGroup: groupSnapshot,
+        snapshotSelection: 'prefer-current'
+    });
+    const topology = topologyManagement.planning.computeTopologyFromAuthority(
         authority,
         undefined
     ).snapshot;
@@ -246,7 +261,7 @@ export async function createPGliteTopologyWorkFixture(
     const handler = createRtcTopologyWorkHandler({
         runtime,
         database: sql,
-        topologyPlanning: topologyManagement.planningService,
+        topologyPlanning: topologyManagement.planning,
         executionRepository,
         topologyDelivery: {
             publisherStreamId,
@@ -304,7 +319,6 @@ export async function readRtcTopologyDeliveryState(
 
 export function topologyGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
     return {
-        stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 0 },
         group: {
             ...groupFixture(groupRef, 'Topology room'),
@@ -360,7 +374,6 @@ export function topologyGroupSnapshotWithSessions(
         disconnectReason: null
     });
     return {
-        stateRevision: 3,
         causalRevision: { groupRevision: 2, presenceRevision: 1 },
         group: {
             ...base.group,
@@ -405,7 +418,6 @@ export function topologyGroupSnapshotWithSessionIds(
     }));
     return {
         ...base,
-        stateRevision: 3,
         causalRevision: { groupRevision: 2, presenceRevision: 1 },
         group: {
             ...base.group,
@@ -506,7 +518,6 @@ export async function createPGliteRemovalPlanningScenario(
     assert.ok(durable);
     const staleTerminal: GroupSnapshot = {
         ...current,
-        stateRevision: 0,
         causalRevision: { groupRevision: 0, presenceRevision: 0 },
         group: {
             ...current.group,
@@ -525,7 +536,7 @@ export async function createPGliteRemovalPlanningScenario(
         nextHopsBySessionId: {}
     });
     assert.equal(await snapshots.observeSnapshot(previous), 'inserted');
-    const service = new GroupTopologyManagementService({
+    const service = createGroupTopologyOwners({
         findGroupSnapshotByRef: (ref) => groups.readSnapshot(ref),
         groupStateRepository: groups,
         configRepository: new GroupTopologyConfigRepository(runtime),
@@ -534,11 +545,12 @@ export async function createPGliteRemovalPlanningScenario(
         processRttReader: () => [],
         now: () => nowEpochMs
     });
-    const authority = await service.readTopologyPlanningAuthority(
+    const authority = await service.planning.readTopologyPlanningAuthority({
         groupRef,
-        {},
-        staleTerminal
-    );
+        requestOptions: {},
+        knownGroup: staleTerminal,
+        snapshotSelection: 'prefer-current'
+    });
     assert.deepEqual(authority.group, durable);
     return { authority, previous, service };
 }

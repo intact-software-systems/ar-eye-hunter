@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state-storage-keys.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import { GroupTopologyConfigRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository-contracts.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import {
@@ -29,7 +29,7 @@ describe('group topology config repository scope isolation', () => {
             workspaceId: '_',
             groupId: 'room-1'
         };
-        const noncanonicalKey = groupStateGroupStorageKey(groupRef).replace('%5F', '%5f');
+        const noncanonicalKey = groupStateGroupStorageKey(groupRef).replace('app=app-1', 'app=%61pp-1');
         await runtimeRepository.insertIfAbsent(
             GROUP_TOPOLOGY_CONFIG_NAMESPACE,
             noncanonicalKey,
@@ -211,7 +211,6 @@ function createCanonicalMutationBoundaryContract(groupRef: GroupRef): CanonicalR
                     acceptedConfig: null,
                     acceptedCausalRevision: null,
                     eventId: null,
-                    outboxId: null,
                     outboxIds: []
                 }
             }),
@@ -312,8 +311,7 @@ function createWrongStoredMutationBoundary(
                 acceptedUpdatedAtEpochMs: null,
                 acceptedExpiresAtEpochMs: null,
                 acceptedConfig: null,
-                acceptedCausalRevision: null,
-                outboxId: null
+                acceptedCausalRevision: null
             }
         },
         read: () => repository.findMutationRecord(groupRef, 'expected-request')

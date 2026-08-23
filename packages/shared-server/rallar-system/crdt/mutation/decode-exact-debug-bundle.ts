@@ -12,7 +12,7 @@ import {
     requireOneOf,
     requireRecord,
     requireString
-} from '../../services/exact-object-codec.ts';
+} from '../../protocol/exact-object-decoding.ts';
 import {
     decodeExactDocumentMetadata,
     decodeExactDocumentRef,
@@ -29,9 +29,9 @@ export function decodeExactDebugBundle(value: unknown): RallarCrdtDebugBundle {
 
 function validateExactDebugBundle(bundle: object): asserts bundle is RallarCrdtDebugBundle {
     const fields = requireRecord(bundle, 'CRDT debug bundle');
-    requireExactOptionalKeys(
-        fields,
-        [
+    requireExactOptionalKeys({
+        value: fields,
+        required: [
             'format',
             'exportedAtEpochMs',
             'reason',
@@ -41,9 +41,9 @@ function validateExactDebugBundle(bundle: object): asserts bundle is RallarCrdtD
             'redaction',
             'integrity'
         ],
-        ['metadata', 'snapshot', 'health'],
-        'CRDT debug bundle'
-    );
+        optional: ['metadata', 'snapshot', 'health'],
+        label: 'CRDT debug bundle'
+    });
     if (fields.format !== 'rallar.crdt.debug-bundle.v1') {
         throw new TypeError('CRDT debug bundle format is invalid');
     }
@@ -96,12 +96,12 @@ function decodeExactRecords(
 
 function decodeExactRedaction(value: unknown): void {
     const redaction = requireRecord(value, 'CRDT debug redaction');
-    requireExactOptionalKeys(
-        redaction,
-        ['payloadsRedacted'],
-        ['sensitiveFields', 'reason'],
-        'CRDT debug redaction'
-    );
+    requireExactOptionalKeys({
+        value: redaction,
+        required: ['payloadsRedacted'],
+        optional: ['sensitiveFields', 'reason'],
+        label: 'CRDT debug redaction'
+    });
     if (typeof redaction.payloadsRedacted !== 'boolean') {
         throw new TypeError('CRDT debug redaction flag is invalid');
     }
@@ -122,12 +122,12 @@ function decodeExactBundleIntegrity(
     records: readonly Record<string, unknown>[]
 ): void {
     const integrity = requireRecord(value, 'CRDT debug bundle integrity');
-    requireExactOptionalKeys(
-        integrity,
-        ['bundleHash', 'documentRefHash', 'updateHashes', 'updateCount', 'sequenceGaps'],
-        ['snapshotHash', 'firstAppendSequence', 'lastAppendSequence'],
-        'CRDT debug bundle integrity'
-    );
+    requireExactOptionalKeys({
+        value: integrity,
+        required: ['bundleHash', 'documentRefHash', 'updateHashes', 'updateCount', 'sequenceGaps'],
+        optional: ['snapshotHash', 'firstAppendSequence', 'lastAppendSequence'],
+        label: 'CRDT debug bundle integrity'
+    });
     requireString(integrity.bundleHash, 'debug bundle hash');
     requireString(integrity.documentRefHash, 'debug bundle document ref hash');
     if ('snapshotHash' in integrity) {
@@ -180,7 +180,12 @@ function decodeExactHealth(value: unknown): void {
         'liveSyncRequestCount',
         'liveSyncResponseCount'
     ];
-    requireExactOptionalKeys(health, required, optional, 'CRDT debug health');
+    requireExactOptionalKeys({
+        value: health,
+        required,
+        optional,
+        label: 'CRDT debug health'
+    });
     requireString(health.replicaId, 'CRDT debug health replicaId');
     for (const field of required.slice(1)) {
         requireEpoch(health[field], `CRDT debug health ${field}`);
@@ -225,12 +230,12 @@ function decodeExactHealth(value: unknown): void {
     }
     if ('quota' in health) {
         const quota = requireRecord(health.quota, 'CRDT debug health quota');
-        requireExactOptionalKeys(
-            quota,
-            [],
-            ['usageBytes', 'quotaBytes', 'nearingLimit'],
-            'health quota'
-        );
+        requireExactOptionalKeys({
+            value: quota,
+            required: [],
+            optional: ['usageBytes', 'quotaBytes', 'nearingLimit'],
+            label: 'health quota'
+        });
         if ('usageBytes' in quota) {
             requireEpoch(quota.usageBytes, 'CRDT health quota usageBytes');
         }

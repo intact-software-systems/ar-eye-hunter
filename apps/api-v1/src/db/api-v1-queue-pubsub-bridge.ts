@@ -1,7 +1,7 @@
 import type {
     QueueBoxPubSubBridge,
     QueueBoxPubSubDelivery
-} from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
+} from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import type { ApiV1DatabasePubSubConfig } from './database-pubsub-config.ts';
 import { createDisabledQueuePubSubBridge, createLocalQueuePubSubBridge } from './local-queue-pubsub-bridge.ts';
 import { createPostgresQueuePubSubBridge } from './postgres-queue-pubsub-bridge.ts';

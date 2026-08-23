@@ -1,12 +1,14 @@
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
 
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { createAuthorityHarness, waitForQueueEntry } from '../../../group-state/inbox/group-state-inbox-test-runtime.ts';
 
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
+import type { TopologyAppInboxMutationOwners } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
+import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 
-describe('AppGroup topology result decoding', () => {
+describe('topology inbox result decoding', () => {
     it('returns the exact terminal left for a malformed completed topology result', async () => {
         const harness = await createAuthorityHarness(['owner']);
         const authority = harness.sessions.owner;
@@ -27,7 +29,18 @@ describe('AppGroup topology result decoding', () => {
                 config: { topologyKind: 'tree' }
             }
         });
-        const pending = harness.service.processAuthenticatedTopologyEntryUntilCompletion(
+        const service = new TopologyInboxService(
+            {
+                inboxQueueReader: harness.reader,
+                resourceInboxRepository: harness.queue,
+                resourceInboxResultsRepository: harness.results,
+                database: harness.database,
+                groupStateService: harness.groupStateService,
+                mutationOwners: {} as TopologyAppInboxMutationOwners
+            },
+            { serviceId: 'topology-result-decoding' }
+        );
+        const pending = service.processAuthenticatedEntryUntilCompletion(
             {
                 type: AppInboxType.TOPOLOGY_CONFIG_PUT,
                 resourceId: command.requestId,
@@ -55,7 +68,7 @@ describe('AppGroup topology result decoding', () => {
 
         const result = await pending;
         expect(result.right).toBeUndefined();
-        expect(JSON.parse(result.left ?? '{}')).toEqual({
+        expect(result.left).toEqual({
             type: 'app-inbox-failure',
             version: 'canonical.v2',
             code: 'TypeError',

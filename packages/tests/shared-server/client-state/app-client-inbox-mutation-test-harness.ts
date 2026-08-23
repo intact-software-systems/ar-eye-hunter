@@ -1,7 +1,8 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { vi } from 'vitest';
 
-import { AuthSessionRepository, type IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
@@ -11,18 +12,19 @@ import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
-import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
-import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
-import { AppClientInboxService, AppInboxType } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import {
-    createClientStateService,
     type ClientMutationWritten,
     type ClientStateService,
     type ClientStateWritten
-} from '@shared-server/rallar-system/services/client-state-service.ts';
+} from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
+import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
+import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 
-import { createWsSessionGenerationLifecycleService } from '@shared-server/rallar-system/services/ws-session-generation-lifecycle.ts';
+import { createWsSessionGenerationLifecycleService } from '@shared-server/rallar-system/websocket/ws-session-generation-lifecycle.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
@@ -59,27 +61,7 @@ function requireClientStateWrittenSnapshot(written: ClientStateWritten): ClientS
 }
 
 function requireClientMutationWritten(written: ClientStateWritten): ClientMutationWritten {
-    const result = written.result as
-        | ClientStateWritten['result']
-        | {
-            left?: string;
-            right?: ClientMutationWritten;
-        };
-
-    if ('fold' in result && typeof result.fold === 'function') {
-        return result.fold(
-            (error) => {
-                throw new Error(error);
-            },
-            (value) => value
-        );
-    }
-
-    if (result.right) {
-        return result.right;
-    }
-
-    throw new Error(result.left ?? 'Client mutation failed');
+    return written.result;
 }
 
 export async function processAppInbox<V>(
@@ -229,7 +211,6 @@ export function createClientStateServiceStub(
         sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(
             new FakeRuntimeStateRepository()
         ),
-        formationDamping: 'damped',
         listSnapshots: vi.fn(),
         readSnapshot: vi.fn(),
         readPresenceSnapshot: vi.fn(),
@@ -255,7 +236,6 @@ export function createAutoAuthorizingClientStateService(
     const authSessions = new AuthSessionRepository(runtimeRepository);
     const durable = createClientStateService({
         runtimeRepository,
-        formationDamping: 'damped',
         createClientStateEventStore: () => eventStore,
         serviceId: 'server-12345678'
     });
@@ -277,15 +257,6 @@ export function createAutoAuthorizingClientStateService(
             }
             return await durable.read(command);
         }
-    };
-}
-
-export function createPublisher() {
-    return {
-        publishClientSnapshot: vi.fn(async () => undefined),
-        publishClientEvent: vi.fn(async () => undefined),
-        publishGroupSnapshot: vi.fn(async () => undefined),
-        publishGroupEvent: vi.fn(async () => undefined)
     };
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { canCommandGroupLifecycleTransition } from '@shared-server/rallar-system/group-policy.ts';
+import { canCommandGroupLifecycleTransition } from '@shared-server/rallar-system/group-state/policy/group-lifecycle-policy.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupLifecycleTransition } from '@shared/api/group-lifecycle/group-lifecycle-transitions.ts';
@@ -35,7 +35,6 @@ function member(principalId: string, role: GroupMember['role']): GroupMember {
 function snapshot(overrides: Partial<Group>, members: readonly GroupMember[]): GroupSnapshot {
     const group = createTestGroup(overrides);
     return {
-        stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 0 },
         group,
         members,
@@ -152,8 +151,8 @@ describe('canCommandGroupLifecycleTransition', () => {
     });
 
     it('keeps the zero-manager fallback typed when nothing resolves', () => {
-        // A legacy row decodes an empty electorate: elected selection resolves
-        // nobody until the next epoch advance re-pins it.
+        // A corrupt empty electorate resolves nobody until the next epoch
+        // advance re-pins it.
         expect(
             command({
                 overrides: { lifecycleState: 'forming', formationElectorate: [] },

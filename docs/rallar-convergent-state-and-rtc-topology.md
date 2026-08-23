@@ -25,8 +25,7 @@ Rallar uses strong data contracts to enable permissive distributed execution.
 Authoritative persisted, replicated, queued, event, snapshot, and response
 records require their causal and lifecycle fields. Optional fields are
 appropriate only when absence has domain meaning and consumers test that
-absence; they are not a compatibility mechanism for authoritative state.
-Sparse request, query, patch, builder, and migration inputs use separate types.
+absence. Sparse request, query, patch, and builder inputs use separate types.
 
 Once input is well formed, convergence is optimistic:
 
@@ -41,18 +40,10 @@ authorization failures, equal-revision/different-content conflicts, violated
 topology invariants, resource caps, and exhausted bounded retries. In
 particular, permissive convergence never means authorizing from stale state.
 
-Compatibility is a product decision rather than an implicit implementation
-default. A plan that retains a revisionless shape, legacy work envelope, or
-fallback authorization path must obtain explicit human approval and state its
-retirement conditions.
-
 Durable scoped key encodings are part of the concurrency contract. A key must
 be injective over field name, presence/type, and value; string escaping alone
 cannot distinguish an absent scope from a valid sentinel-looking identifier.
 Every derived child key and list prefix must use the same canonical encoder.
-Ambiguous legacy rows may be migrated only when their stored value proves the
-target scope and the destination is claimed conditionally; never guess, fan one
-row into multiple scopes, or keep a permanent dual-read fallback.
 
 ## Implemented Convergent Database Writes
 
@@ -152,16 +143,15 @@ processing.
 `snapshotVersion` remains the public domain version. It advances for semantic
 group or client changes according to the existing state-service rules.
 
-`stateRevision` is the causal storage order used by server caches and RTC
-topology. For snapshots assembled from runtime-state rows:
+Client `stateRevision` is the causal storage order used by client caches. For
+client snapshots assembled from runtime-state rows:
 
 ```text
 stateRevision = RuntimeStateEntry.revision + 1
 ```
 
-The first committed aggregate row therefore has revision `1`. Group and client
-repositories attach the revision from the aggregate group or principal row to
-direct reads, lists, and pages.
+The first committed principal row therefore has revision `1`. Client
+repositories attach it to direct reads, lists, and pages.
 
 Group authority is the required `GroupStateCausalRevision` tuple
 `{ groupRevision, presenceRevision }`. Metadata and roster changes advance the
@@ -172,15 +162,18 @@ tuple rather than forcing both domains through one scalar write guard.
 
 ### Revisioned observation
 
-Group and client caches use the following policy:
+Client caches use scalar revision ordering. Group caches use causal tuple
+ordering, where one tuple dominates another only when neither component
+regresses:
 
-| Current cache | Incoming snapshot                   | Result              |
-| ------------- | ----------------------------------- | ------------------- |
-| Missing       | Any                                 | Insert              |
-| Revision N    | Revision greater than N             | Advance             |
-| Revision N    | Revision less than N                | Ignore as stale     |
-| Revision N    | Same revision and same content      | Duplicate/no-op     |
-| Revision N    | Same revision and different content | Invariant violation |
+| Current cache | Incoming snapshot                     | Result                   |
+| ------------- | ------------------------------------- | ------------------------ |
+| Missing       | Any                                   | Insert                   |
+| Present       | Scalar/tuple dominates current        | Advance                  |
+| Present       | Scalar/tuple is dominated             | Ignore as stale          |
+| Present       | Equal authority and same content      | Duplicate/no-op          |
+| Present       | Equal authority and different content | Invariant violation      |
+| Present       | Group tuple is incomparable           | Explicit causal conflict |
 
 An equal causal revision with different content throws
 `StateSnapshotRevisionConflictError`. Silently choosing one would make a data
@@ -202,9 +195,8 @@ then decorates the durable services with:
 
 The decorators implement the existing state-service interfaces. A successful
 mutation is observed only after its durable promise resolves, and before the
-application inbox service publishes WS or topology work. Every snapshot and
-idempotent result must carry `stateRevision`; revisionless compatibility is not
-supported.
+application inbox handler publishes WS or topology work. Client results carry
+`stateRevision`; group results carry `GroupStateCausalRevision`.
 
 General reads use asynchronous read-through caching. Point-read convergence has
 a narrower rule: reads without a revision floor use the durable current
@@ -222,8 +214,7 @@ Client cache keys contain the complete principal identity:
 ```
 
 This prevents two workspaces with the same `principalId` from sharing cached
-state. Principal-only repository helpers remain compatibility aliases and are
-not used by production composition.
+state.
 
 WebSocket state callbacks observe the same process-owned services. The
 state-sync publisher is publication-only and does not independently mutate a
@@ -256,10 +247,6 @@ are atomic with accepted authority. Their QueueBox workers drain them after
 commit. Retry after process death reuses the same receipt and direct outbox
 identity rather than applying the state mutation again.
 
-The old post-commit order—mutate state, publish directly, then try to enqueue
-topology work—is historical only. It could expose committed state without a
-durable publication intent and must not be copied.
-
 ## RTT Refresh Work
 
 RTT refresh is a latest-value workload and may coalesce while pending:
@@ -268,7 +255,7 @@ RTT refresh is a latest-value workload and may coalesce while pending:
 type RtcTopologyRttRefreshWork = {
     kind: 'rtt-refresh';
     groupSnapshot: GroupSnapshot;
-    requestedGroupStateRevision: number;
+    requestedGroupStateCausalRevision: GroupStateCausalRevision;
     requestedRttVersion: number;
     overlayId: string;
     requestedAtEpochMs: number;
@@ -290,14 +277,14 @@ RTT measurements themselves remain latest-value inputs read during execution.
 
 ## Topology Calculation And Latest State
 
-`RallarRtcTopologyService` is the supported package facade and process-lifecycle boundary.
+`RallarRtcTopologyService` owns the process-lifecycle boundary.
 `RtcTopologyPlanner` owns kind, option, incremental/full, no-RTT, and weighted-path selection;
 `createRtcRoomGraph` owns weighted sparse/complete graph decisions; and
 `planRallarRtcTopologySnapshot(...)` owns the caller-visible changed/version/timestamp planning
 result. `RtcTopologySnapshotRegistry`, `RtcTopologyRttRebuildScheduler`, and `RtcTopologyMetrics`
 own accepted process observations, pending RTT work, and mutable counters respectively.
-`GroupTopologyManagementService` continues to coordinate config and RTT authority reads,
-validation, and durable observation through the supported facade.
+Config query, config mutation, reconfiguration, planning, execution, and runtime owners are
+constructed directly; there is no broad topology-management facade.
 
 Every work item calculates from its embedded snapshot. It must not replace
 revision N with the current cache value N+1. Graph planning occurs outside the
@@ -314,10 +301,11 @@ retry boundary.
 The durable latest-topology repository compares:
 
 ```text
-(sourceGroupStateRevision, topologyVersion)
+(sourceGroupStateCausalRevision, topologyVersion)
 ```
 
-The greater tuple wins. An unchanged graph keeps its topology version but
+The causally dominant group tuple wins; incomparable tuples fail at the
+current corruption/conflict boundary. An unchanged graph keeps its topology version but
 still produces a snapshot and publication with the new group revision. This
 allows consumers to observe that topology has been reconciled for every
 causal group revision without inventing a graph change.
@@ -349,7 +337,7 @@ transaction. A publication contains:
 - a deterministic `publicationId`;
 - the deterministic queue `workId`;
 - the scoped `groupRef`;
-- `sourceGroupStateRevision` and overlay version;
+- `sourceGroupStateCausalRevision` and overlay version;
 - the exact recipient session ids;
 - the exact AL topology message;
 - its creation time.
@@ -357,7 +345,7 @@ transaction. A publication contains:
 Publication and work-index records use the existing runtime-state store and a
 24-hour retention window. Exact-key validation uses the existing composite
 primary key, so no SQL migration is required. Publication identity contains the
-work execution id and the accepted `(sourceGroupStateRevision, overlayVersion)`
+work execution id and the accepted `(sourceGroupStateCausalRevision, overlayVersion)`
 tuple. `createdAtEpochMs` comes from the work's immutable request time.
 
 The work index makes retry behavior explicit. Once a work item has persisted a
@@ -492,7 +480,7 @@ publication can reinsert a removed client or group snapshot until causal
 tombstones exist.
 
 `RallarOverlayTopologySnapshot` and `OverlayInfo` require
-`sourceGroupStateRevision` and `state`. Browser overlay repositories use the
+`sourceGroupStateCausalRevision` and `state`. Browser overlay repositories use the
 same revision ordering rule as server state caches:
 
 - source revision is compared before overlay version;
@@ -609,97 +597,38 @@ The comparative result gate validates the artifact and durable receipt/outbox
 linkage before evaluating latency, throughput, SQL/resource counts, transaction
 duration, and retry exhaustion.
 
-## Deployment And Compatibility
+## Current Deployment Contract
 
-The public meaning of `snapshotVersion` and existing imports remain unchanged,
-but snapshot and topology response shapes now require `stateRevision`,
-`sourceGroupStateRevision`, and topology `state`. Revisionless snapshots,
-missing topology causal fields, legacy outbox work, and nondurable topology
-handling are not supported.
+Client snapshots use `stateRevision`. Group snapshots use only
+`GroupStateCausalRevision`; topology snapshots use
+`sourceGroupStateCausalRevision` and `state`. Stored work and API payloads must
+match these current shapes exactly.
 
-Deploy the schema first, then deploy all writers with replay disabled so every
-accepted publication appends a process-stream entry. Enable replay only after
-all writers are log-capable. Replay now defaults to enabled; QueueBox workers
-remain enabled by default. `RALLAR_API_QUEUE_WORKERS=disabled` is a
-PostgreSQL-only proof/operations mode for a passive process.
+Durable topology replay is part of the current runtime. It defaults to enabled,
+and QueueBox workers remain enabled by default.
+`RALLAR_API_QUEUE_WORKERS=disabled` is a PostgreSQL-only proof/operations mode
+for a passive process. `RALLAR_RTC_TOPOLOGY_REPLAY=disabled` disables replay and
+reconnect/gap hydration without changing the durable schema.
 
-Rollback sets `RALLAR_RTC_TOPOLOGY_REPLAY=disabled`. That stops replay and
-reconnect/gap hydration but deliberately leaves stream registration, logging,
-lease renewal, fixed-retention compaction, and schema in place so a later
-cutover does not create a new unlogged interval. Do not drop the delivery tables
-or disable standard QueueBox workers as part of this rollback.
-
-Existing REST paths, database schema, generated manifests, and browser runtime
-import paths remain compatible. Point-read floor queries, authoritative
-response headers, and metadata-bearing browser readers are additive;
-`findStateGroup(...)` preserves its body-only return shape. The required
-response fields and the two-work-type topology queue contract remain the
-intentional coordinated-deployment boundary described by this architecture.
+Point-read floor queries and authoritative response headers expose the current
+causal contract. The two-work-type topology queue contract is the coordinated
+deployment boundary described by this architecture.
 
 ## Source Map
 
-- `packages/shared/api/group-types.ts` and `client-types.ts`: mandatory state
-  revision contracts.
-- `packages/shared/api/overlay-topology.ts`: topology causal tuple and browser
-  conversion.
-- `packages/shared/repository/state-snapshot-revision.ts`: shared monotonic
-  state observation policy.
-- `packages/shared/repository/group-state-snapshots-repository.ts` and
-  `client-state-snapshots-repository.ts`: process latest-value caches.
-- `packages/shared-server/runtime-state/RuntimeStateJsonStore.ts`: entry-aware
-  runtime-state reads and exact-key batches.
-- `packages/shared-server/rallar-system/repositories/GroupStateRepository.ts`
-  and `ClientStateRepository.ts`: durable snapshot revision attachment.
-- `packages/shared-server/rallar-system/services/cached-group-state-service.ts`
-  and `cached-client-state-service.ts`: process-owned service decorators.
-- `packages/shared-server/rallar-system/services/RtcTopologyOutboxWork.ts`:
-  immutable group work, RTT successors, and terminal handling.
-- `packages/shared-server/rallar-system/services/rallar-rtc-topology-service.ts`:
-  supported topology facade and process-lifecycle coordination.
-- `packages/shared-server/rallar-system/topology/planning/rtc-topology-planner.ts`:
-  topology kind, option, incremental/full, no-RTT, and weighted-path selection.
-- `packages/shared-server/rallar-system/topology/planning/create-rtc-room-graph.ts`:
-  weighted sparse/complete room graph decisions.
-- `packages/shared-server/rallar-system/topology/planning/compute-no-rtt-topology-next-hops.ts`:
-  deterministic no-RTT dispatch, star/mesh calculation, and canonical output translation.
-- `packages/shared-server/rallar-system/topology/planning/compute-no-rtt-tree-next-hops.ts`:
-  deterministic no-RTT tree construction and distance state.
-- `packages/shared-server/rallar-system/topology/planning/update-no-rtt-tree-attachment-selection.ts`:
-  no-RTT tree parent and nearest-vertex selection policy.
-- `packages/shared-server/rallar-system/topology/planning/plan-rallar-rtc-topology-snapshot.ts`:
-  caller-visible snapshot change, version, timestamp, and canonical next-hop result.
-- `packages/shared-server/rallar-system/topology/runtime/rtc-topology-snapshot-registry.ts`:
-  accepted process observations and causal conflict decisions.
-- `packages/shared-server/rallar-system/topology/runtime/rtc-topology-rtt-rebuild-scheduler.ts`:
-  pending RTT deadlines, coalescing, claims, delays, and cleanup.
-- `packages/shared-server/rallar-system/topology/runtime/rtc-topology-metrics.ts`:
-  topology counters, duration observations, and reset behavior.
-- `packages/shared-server/rallar-system/topology/group-topology-management-service.ts`:
-  topology config, validation, durable latest observation, and removal plans.
-- `packages/shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts`:
-  monotonic durable latest topology.
-- `packages/shared-server/rallar-system/repositories/RtcTopologyPublicationRepository.ts`:
-  immutable publications and work index.
-- `packages/shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts`:
-  atomic topology/publication/work-index acceptance.
-- `packages/shared-server/rallar-system/topology/replay/**`: stream/log
-  validation, bounded replay, current repair, diagnostics, and reconnect/gap
-  hydration.
-- `packages/shared-server/postgres/rtc-topology/**`: PostgreSQL stream, append,
-  cursor, compaction, and retirement adapters.
-- `packages/shared-server/rallar-system/pubsub/RtcTopologyClusterTransport.ts`:
-  deprecated compatibility-only public transport data; production composition
-  no longer owns or requires it.
-- `packages/shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts`:
-  durable queue-key publication, actual listener readiness, and bounded
-  cluster-receive diagnostics.
-- `packages/shared-server/rallar-system/middleware/RallarMiddleware.ts`:
-  queue bridge installation and combined runtime readiness ownership.
-- `apps/api-v1/src/runtime/rtc-topology/**`: process stream registration,
-  readiness, replay configuration, health shutdown, and metrics composition.
-- `apps/api-v1/src/composition/create-default-rallar-server.ts` and its explicit composition owners:
-  single-owner API defaults, runtime construction, topology/admin services, installers, and final
-  application assembly.
+- [`packages/shared-server/rallar-system/README.md`](../packages/shared-server/rallar-system/README.md)
+  is the live server call-entry, ownership, side-effect, and test map.
+- `packages/shared/api/group-types.ts` and `client-types.ts` own the current
+  state contracts.
+- `packages/shared/api/overlay-topology.ts` owns topology causal ordering and
+  browser conversion.
+- `packages/shared/repository/group-state-snapshot-revision.ts` and
+  `state-snapshot-revision.ts` own group-tuple and client-scalar observation.
+- `packages/shared-server/rallar-system/topology/{mutation,persistence,publication,replay,runtime}/`
+  own topology work through delivery.
+- `packages/shared-server/rallar-system/queue-pubsub/` owns durable queue wake-up.
+- `apps/api-v1/src/composition/` constructs the direct owners and installs the
+  HTTP and WebSocket entry points.
 
 ## Verification
 
@@ -712,11 +641,11 @@ Focused concurrency coverage lives in:
 - `packages/tests/shared-server/rtc-topology-replay-service.test.ts`
 - `packages/tests/shared-server/rtc-topology-reconnect-hydrator.test.ts`
 - `packages/tests/shared-server/rtc-topology-cluster-transport.test.ts`
-- `packages/tests/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository-read-write.test.ts`
-- `packages/tests/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository-convergence.test.ts`
-- `packages/tests/shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-persistence-corruption.test.ts`
-- `packages/tests/shared-server/rallar-system/rtc-topology/rtc-topology-snapshot-repository.test.ts`
-- `packages/tests/shared-server/rallar-system/rtc-topology/rtc-topology-publication-repository.test.ts`
+- `packages/tests/shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository-read-write.test.ts`
+- `packages/tests/shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository-convergence.test.ts`
+- `packages/tests/shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-corruption.test.ts`
+- `packages/tests/shared-server/rallar-system/rtc-rtt/rtc-topology-snapshot-repository.test.ts`
+- `packages/tests/shared-server/rallar-system/rtc-rtt/rtc-topology-publication-repository.test.ts`
 - `packages/tests/shared-server/group-topology-management-service.test.ts`
 - `packages/tests/shared-server/queuebox-pubsub-bridge.test.ts`
 - `packages/tests/shared-server/rallar-middleware.test.ts`

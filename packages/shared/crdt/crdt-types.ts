@@ -318,7 +318,6 @@ export type RallarCrdtSnapshotMetadata = Readonly<{
     reason?: string;
     crdtState?: RallarCrdtCrdtStateSnapshot;
     sequenceState?: RallarCrdtSequenceSnapshotState;
-    unsafeLegacyCollectionCompaction?: boolean;
 }>;
 
 export type RallarCrdtSequenceSnapshotState = Readonly<Record<string, RallarCrdtSequenceSnapshotPathState>>;

@@ -54,7 +54,6 @@ it('refreshes a bound room with one tokenless durable point read', async () => {
     const observed = createRoomSnapshot('room-1', ['session-1']);
     const current = {
         ...observed,
-        stateRevision: observed.stateRevision + 1,
         group: {
             ...observed.group,
             snapshotVersion: observed.group.snapshotVersion + 1
@@ -120,7 +119,6 @@ it('preserves a newer publication that races targeted 404 cleanup', async () => 
     const observed = createRoomSnapshot('room-1', ['session-1']);
     const newer = {
         ...observed,
-        stateRevision: observed.stateRevision + 1,
         causalRevision: {
             groupRevision: observed.causalRevision.groupRevision + 1,
             presenceRevision: observed.causalRevision.presenceRevision

@@ -1,18 +1,18 @@
 import assert from 'node:assert/strict';
 
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
-import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/services/GroupPresenceSummaryWork.ts';
+import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 
-import { APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import { GROUP_PRESENCE_SUMMARY_TOPIC as APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 
-import { toAuthorisedWsClientConnectEnqueue } from '@shared-server/rallar-system/services/authorised-ws-client-app-inbox.ts';
+import { toAuthorisedWsClientConnectEnqueue } from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import {
@@ -136,7 +136,10 @@ Deno.test('PGlite group presence completion can precede its causal summary revis
         const groupRef = { ...SCOPE, groupId };
         const outboxReader = new OutboxQueueReader(new PSqlQueueBox(harness.resourceInbox));
         const summaryWork = new GroupPresenceSummaryWork({
-            topologyIntent: { damping: 'legacy' },
+            topologyIntent: {
+                outboxQueueReader: outboxReader,
+                recomputeDebounceMs: 0
+            },
             disseminationMode: 'dual-emit',
             runtimeRepository: harness.runtime,
             database: sql,

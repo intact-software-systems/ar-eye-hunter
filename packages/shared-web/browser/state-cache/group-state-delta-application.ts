@@ -1,5 +1,5 @@
 import { validateAuthoritativeGroupSnapshot } from '@shared/api/authoritative-state-validation.ts';
-import { compareGroupCausalRevision, toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
+import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import { validateGroupStateDeltaEnvelope, type GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -93,10 +93,6 @@ export function toGroupSnapshotFromDeltaEnvelope(
     }
     const resulting = envelope.resultingCausalRevision;
     const snapshot: GroupSnapshot = {
-        stateRevision: toGroupSnapshotStateRevision(
-            resulting.groupRevision,
-            resulting.presenceRevision
-        ),
         causalRevision: resulting,
         group: envelope.group,
         members: toDeltaMembers(cached.members, envelope.members),

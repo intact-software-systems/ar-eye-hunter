@@ -1,4 +1,3 @@
-import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type { GroupPolicyResult } from '@shared/api/group-policy-types.ts';
 import type {
     Group,
@@ -6,16 +5,14 @@ import type {
     GroupMemberStatus,
     GroupPresenceAdmission,
     GroupPresenceSession,
+    GroupRef,
     GroupRole,
     GroupSnapshot
 } from '@shared/api/group-types.ts';
 
-import {
-    canGovernGroupMember,
-    canMutateActiveGroup,
-    GroupPolicyDeniedError,
-    type GroupGovernanceAction
-} from '../../../group-policy.ts';
+import { canGovernGroupMember, type GroupGovernanceAction } from '../../policy/group-governance-policy.ts';
+import { canMutateActiveGroup } from '../../policy/group-lifecycle-policy.ts';
+import { GroupPolicyDeniedError } from '../../policy/group-policy-result.ts';
 import type { GroupMutationCommand, GroupMutationFacts, GroupMutationRead } from '../group-mutation-contracts.ts';
 import { currentCausalRevision, requireGroup } from '../group-mutation-result.ts';
 
@@ -35,12 +32,12 @@ interface AssertNotLastOwnerInput {
     readonly nextRole: GroupRole;
 }
 
-export function toPolicySnapshot(read: GroupMutationRead, nowEpochMs: number): GroupSnapshot {
-    const stored = requireGroup(read, {
-        applicationId: '',
-        workspaceId: '',
-        groupId: ''
-    });
+export function toPolicySnapshot(
+    read: GroupMutationRead,
+    ref: GroupRef,
+    nowEpochMs: number
+): GroupSnapshot {
+    const stored = requireGroup(read, ref);
     const members = [read.actorMember, read.targetMember, read.authorityMember, read.directorMember]
         .filter((member): member is GroupMember => member !== null)
         .filter(
@@ -72,10 +69,6 @@ export function toPolicySnapshot(read: GroupMutationRead, nowEpochMs: number): G
     const activePrincipals = new Set(activeSessions.map((session) => session.principalId));
     const causalRevision = currentCausalRevision(read);
     return {
-        stateRevision: toGroupSnapshotStateRevision(
-            causalRevision.groupRevision,
-            causalRevision.presenceRevision
-        ),
         causalRevision,
         group: {
             ...stored.value,
@@ -110,7 +103,7 @@ export function assertGovernance(input: AssertGroupMutationGovernanceInput): voi
     assertActive(stored.value, facts.nowEpochMs);
     assertAllowed(
         canGovernGroupMember({
-            snapshot: toPolicySnapshot(read, facts.nowEpochMs),
+            snapshot: toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs),
             actor: {
                 principalId: command.input.actorPrincipalId ?? undefined,
                 sessionId: command.input.actorSessionId ?? undefined

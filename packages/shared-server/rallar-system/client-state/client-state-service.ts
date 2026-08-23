@@ -1,11 +1,11 @@
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { ClientSession } from '@shared/api/client-types.ts';
-import { AuthSessionRepository } from '../repositories/AuthSessionRepository.ts';
-import { toClientSessionExpiryCandidate } from '../repositories/session-expiry.ts';
-import { createWsSessionGenerationLifecycleService } from '../services/ws-session-generation-lifecycle.ts';
+import { toClientSessionExpiryCandidate } from '../presence/session-expiry.ts';
+import { createWsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
 import { type ClientStateService, type ClientStateServiceDependencies } from './client-state-service-contracts.ts';
 import { createTimedClientStateService } from './client-state-service-timing.ts';
 import { computeClientMutation } from './mutation/compute/compute-client-mutation.ts';
-import { readClientMutation } from './mutation/read/read-client-mutation.ts';
+import { readClientMutation } from './mutation/read-client-mutation.ts';
 import { validateClientMutation } from './mutation/result-validation/validate-client-mutation.ts';
 import { writeClientMutation } from './mutation/write/write-client-mutation.ts';
 import {
@@ -24,7 +24,6 @@ export function createClientStateService(
         });
     const service: ClientStateService = {
         sessionGenerationLifecycle: createWsSessionGenerationLifecycleService(runtimeRepository),
-        formationDamping: dependencies.formationDamping,
         listSnapshots: async (scope) => await repositoryFor(runtimeRepository).listSnapshots(scope),
         readSnapshot: async (ref) => await repositoryFor(runtimeRepository).readSnapshot(ref),
         readPresenceSnapshot: async (ref) => await repositoryFor(runtimeRepository).readPresenceSnapshot(ref),

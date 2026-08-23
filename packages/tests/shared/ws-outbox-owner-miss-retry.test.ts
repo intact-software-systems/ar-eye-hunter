@@ -1,11 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import {
     installQueueBoxPubSubBridge,
     type QueueBoxPubSubBridge,
     type QueueBoxPubSubMessage
-} from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
-import { requeueRemoteWsOutboxDeliveryFailure } from '@shared-server/rallar-system/pubsub/RemoteWsOutboxDeliveryFailure.ts';
-import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
+} from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
+import { requeueRemoteWsOutboxDeliveryFailure } from '@shared-server/rallar-system/queue-pubsub/requeue-remote-ws-outbox-delivery-failure.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { ALAdmissionBackendConflictError } from '@shared/alm/ALAdmissionBackendConflictError.ts';
 import { createALOutboundAdmissionStore, createInMemoryALOutboundAdmissionState, type ALOutboundAdmissionStore } from '@shared/alm/ALOutboundAdmissionStore.ts';

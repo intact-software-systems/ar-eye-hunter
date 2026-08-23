@@ -1,6 +1,6 @@
+import { type GroupMutationIdempotencyRecord, type GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { groupStateGroupStorageKey, groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
-import { type GroupMutationIdempotencyRecord, type GroupMutationRead } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import type { AuditStamp, Group } from '@shared/api/group-types.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
@@ -45,13 +45,13 @@ describe('GroupStateRepository persistence', () => {
             })
         ).toEqual([explicitSentinelGroup]);
     });
-    it('fails closed when an absent-scope direct read decodes a legacy explicit-sentinel group', async () => {
+    it('fails closed when an absent-scope direct read decodes an explicit-sentinel group', async () => {
         const runtime = new FakeRuntimeStateRepository();
         const repository = new GroupStateRepository(runtime);
         const absentRef = {
-            applicationId: 'legacy-boundary-app',
-            workspaceId: 'legacy-workspace',
-            groupId: 'legacy-boundary-group'
+            applicationId: 'sentinel-boundary-app',
+            workspaceId: 'sentinel-workspace',
+            groupId: 'sentinel-boundary-group'
         };
         const explicitSentinelGroup: Group = {
             ...createIdentityMutationRead().group!.value,
@@ -117,7 +117,6 @@ describe('GroupStateRepository persistence', () => {
                 outcome: 'no-op',
                 attemptCount: 1,
                 acceptedStorageRevision: 0,
-                stateRevision: 1,
                 snapshotVersion: 1,
                 causalRevision: { groupRevision: 1, presenceRevision: 0 },
                 eventId: null,
@@ -128,7 +127,7 @@ describe('GroupStateRepository persistence', () => {
             }
         };
         const { commandHash: _missingCommandHash, ...missingCommandHash } = valid;
-        const { aggregateRef: _legacyAggregateRef, ...legacyIdentityFree } = valid;
+        const { aggregateRef: _predecessorAggregateRef, ...predecessorIdentityFree } = valid;
         const invalidRecords: readonly [string, unknown][] = [
             ['malformed SHA', { ...valid, commandHash: 'sha256:not-a-digest' }],
             ['empty receipt', { ...valid, receipt: {} }],
@@ -159,7 +158,7 @@ describe('GroupStateRepository persistence', () => {
                 }
             ],
             [
-                'mismatched derived state revision',
+                'unexpected scalar revision projection',
                 {
                     ...valid,
                     receipt: { ...valid.receipt, stateRevision: 2 }
@@ -306,14 +305,13 @@ describe('GroupStateRepository persistence', () => {
                         ...valid.receipt,
                         outcome: 'rejected',
                         acceptedStorageRevision: null,
-                        stateRevision: 1,
                         snapshotVersion: 0,
                         causalRevision: { groupRevision: 0, presenceRevision: 1 },
                         rejection: 'rejected'
                     }
                 }
             ],
-            ['legacy identity-free no-event record', legacyIdentityFree]
+            ['predecessor identity-free no-event record', predecessorIdentityFree]
         ];
 
         const validRuntime = new FakeRuntimeStateRepository();
@@ -335,7 +333,6 @@ describe('GroupStateRepository persistence', () => {
                 requestId: absentRequestId,
                 outcome: 'rejected',
                 acceptedStorageRevision: null,
-                stateRevision: 0,
                 snapshotVersion: 0,
                 causalRevision: { groupRevision: 0, presenceRevision: 0 },
                 rejection: 'Group creation rejected'

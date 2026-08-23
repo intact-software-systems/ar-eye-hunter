@@ -16,13 +16,13 @@ import {
     type RuntimeStateEntryValue
 } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type { RuntimeStateRepositoryLike } from '../../../runtime-state/RuntimeStateRepository.ts';
-import type { ClientStateEventStore } from '../../repositories/StateEventStore.ts';
-import { filterStateEventsForList, type StateEventListQuery } from '../../state-event-listing.ts';
+import { filterStateEventsForList, type StateEventListQuery } from '../../state-events/state-event-listing.ts';
+import type { ClientStateEventStore } from '../../state-events/state-event-store.ts';
 import {
-    normalizePersistedClientEvent,
-    normalizePersistedClientInstance,
-    normalizePersistedClientPrincipal,
-    normalizePersistedClientSession
+    decodePersistedClientEvent,
+    decodePersistedClientInstance,
+    decodePersistedClientPrincipal,
+    decodePersistedClientSession
 } from './client-state-persistence-codec.ts';
 import {
     ClientStateRepositoryInvariantCorruptionError,
@@ -171,7 +171,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
 
     async listEvents(ref: ClientPrincipalRef): Promise<readonly ClientEvent[]> {
         return (await this.events.listClientEvents(ref)).map((event) =>
-            normalizePersistedClientEventForRepository(event, ref)
+            decodePersistedClientEventForRepository(event, ref)
         );
     }
 
@@ -182,7 +182,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
         const events = this.events.listRecentClientEvents
             ? await this.events.listRecentClientEvents(ref, query)
             : filterStateEventsForList(await this.events.listClientEvents(ref), query);
-        return events.map((event) => normalizePersistedClientEventForRepository(event, ref));
+        return events.map((event) => decodePersistedClientEventForRepository(event, ref));
     }
 
     async listEventPage(
@@ -192,7 +192,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
         const page = await this.events.listClientEventPage(ref, query);
         return {
             ...page,
-            events: page.events.map((event) => normalizePersistedClientEventForRepository(event, ref))
+            events: page.events.map((event) => decodePersistedClientEventForRepository(event, ref))
         };
     }
 
@@ -230,7 +230,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
         return withClientStateRepositoryInvariantError(stored.entry.key, () => {
             const keyRef = decodeClientPrincipalStorageKey(stored.entry.key);
             assertExpectedClientStorageIdentity(keyRef, expected, 'principal');
-            const value = normalizePersistedClientPrincipal(stored.value, keyRef);
+            const value = decodePersistedClientPrincipal(stored.value, keyRef);
             if (clientStatePrincipalStorageKey(value) !== stored.entry.key) {
                 throw new TypeError('Stored client principal identity differs from its canonical slot');
             }
@@ -247,7 +247,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
             if (expected) {
                 assertExpectedClientStorageIdentity(keyRef, expected, 'instance');
             }
-            const value = normalizePersistedClientInstance(stored.value, keyRef);
+            const value = decodePersistedClientInstance(stored.value, keyRef);
             if (clientStateInstanceStorageKey(value) !== stored.entry.key) {
                 throw new TypeError('Stored client instance identity differs from its canonical slot');
             }
@@ -264,7 +264,7 @@ export class ClientStateRepositoryReads extends RuntimeStateJsonStore {
             if (expected) {
                 assertExpectedClientStorageIdentity(keyRef, expected, 'session');
             }
-            const value = normalizePersistedClientSession(stored.value, keyRef);
+            const value = decodePersistedClientSession(stored.value, keyRef);
             if (clientStateSessionStorageKey(value) !== stored.entry.key) {
                 throw new TypeError('Stored client session identity differs from its canonical slot');
             }
@@ -307,12 +307,12 @@ export function assertCanonicalClientStateIdempotencyRecord(
     }
 }
 
-export function normalizePersistedClientEventForRepository(
+export function decodePersistedClientEventForRepository(
     event: unknown,
     expected: ClientPrincipalRef
 ): ClientEvent {
     return withClientStateRepositoryInvariantError(
         clientStatePrincipalStorageKey(expected),
-        () => normalizePersistedClientEvent(event, expected)
+        () => decodePersistedClientEvent(event, expected)
     );
 }

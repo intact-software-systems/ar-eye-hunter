@@ -235,7 +235,6 @@ function expectAppliedReceipt(
         acceptedExpiresAtEpochMs: input.command === 'put-override' ? input.request.expiresAtEpochMs : null,
         acceptedConfig,
         acceptedCausalRevision: {
-            stateRevision: 1,
             causalRevision: { groupRevision: 1, presenceRevision: 0 },
             snapshotVersion: 1,
             metadataVersion: 1,
@@ -243,7 +242,6 @@ function expectAppliedReceipt(
             presenceVersion: 0
         },
         eventId: null,
-        outboxId: output.outboxIds[0],
         outboxIds: output.outboxIds
     });
     expect(output.outboxIds).toHaveLength(1);

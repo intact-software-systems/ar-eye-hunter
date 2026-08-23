@@ -1,5 +1,5 @@
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import {
-    AppInboxType,
     type GroupAdmissionDeclineAppInboxPayload,
     type GroupAdmissionGrantAppInboxPayload,
     type GroupCreateAppInboxPayload,
@@ -16,10 +16,10 @@ import {
     type GroupPresenceDisconnectAppInboxPayload,
     type GroupPresenceHeartbeatAppInboxPayload,
     type GroupUpdateAppInboxPayload
-} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+} from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { describe, expect, it } from 'vitest';
 
-import * as AppGroupInboxModule from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import * as GroupStateInboxModule from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import {
     createGovernedOperationCase,
     createInviteOperationCase,
@@ -30,7 +30,7 @@ import {
 } from './group-state-inbox-operation-matrix-runtime.ts';
 import { createAuthorityHarness, SCOPE } from './group-state-inbox-test-runtime.ts';
 
-describe('AppGroupInboxService authenticated authority', () => {
+describe('GroupStateInboxService authenticated authority', () => {
     it('exposes transaction-injected mutation phases without direct mutation bypasses', async () => {
         const harness = await createAuthorityHarness(['owner']);
         expect(harness.groupStateService).toMatchObject({
@@ -55,7 +55,7 @@ describe('AppGroupInboxService authenticated authority', () => {
     });
 
     it('advertises every authenticated group operation covered by the real handler matrix', () => {
-        expect(Reflect.get(AppGroupInboxModule, 'AUTHENTICATED_GROUP_INBOX_TYPES')).toEqual([
+        expect(Reflect.get(GroupStateInboxModule, 'AUTHENTICATED_GROUP_INBOX_TYPES')).toEqual([
             AppInboxType.GROUP_CREATE,
             AppInboxType.GROUP_UPDATE,
             AppInboxType.GROUP_DIRECTOR_APPOINT,

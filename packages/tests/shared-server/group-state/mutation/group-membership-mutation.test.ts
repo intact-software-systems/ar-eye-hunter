@@ -1,4 +1,4 @@
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
@@ -11,7 +11,6 @@ function createService(runtimeRepository: GroupBarrierRepository, nowEpochMs: nu
     let id = 0;
     return createTestGroupStateService({
         runtimeRepository,
-        formationDamping: 'damped',
         now: () => nowEpochMs,
         randomId: () => `id-${nowEpochMs}-${++id}`,
         serviceId: 'group-service'

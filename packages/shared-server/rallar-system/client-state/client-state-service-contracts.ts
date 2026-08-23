@@ -8,14 +8,13 @@ import type {
     ClientSnapshot
 } from '@shared/api/client-types.ts';
 import type { StateEventPage } from '@shared/api/state-event-types.ts';
-import { Either } from '@shared/resilience/Either.ts';
 import type { PSqlTransactionSql } from '../../postgres/PostgresSqlClient.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '../../runtime-state/RuntimeStateRepository.ts';
 import type { PersistedAuthSession } from '../auth/persistence/auth-persistence-contracts.ts';
-import type { ClientSessionExpiryCandidate } from '../repositories/session-expiry.ts';
-import type { ClientStateEventStore } from '../repositories/StateEventStore.ts';
-import type { WsSessionGenerationLifecycleService } from '../services/ws-session-generation-lifecycle.ts';
-import type { StateEventListQuery } from '../state-event-listing.ts';
+import type { ClientSessionExpiryCandidate } from '../presence/session-expiry.ts';
+import type { StateEventListQuery } from '../state-events/state-event-listing.ts';
+import type { ClientStateEventStore } from '../state-events/state-event-store.ts';
+import type { WsSessionGenerationLifecycleService } from '../websocket/ws-session-generation-lifecycle.ts';
 import type {
     ClientMutationCommand,
     ClientMutationComputed,
@@ -45,12 +44,11 @@ export type ClientMutationWritten = Readonly<{
 
 export type ClientStateWritten = Readonly<{
     status: 'ok';
-    result: Either<string, ClientMutationWritten>;
+    result: ClientMutationWritten;
 }>;
 
 export type ClientStateService = Readonly<{
     sessionGenerationLifecycle: WsSessionGenerationLifecycleService;
-    formationDamping: 'damped' | 'legacy';
     listSnapshots(scope: ClientScope): Promise<readonly ClientSnapshot[]>;
     readSnapshot(ref: ClientPrincipalRef): Promise<ClientSnapshot | undefined>;
     readPresenceSnapshot(ref: ClientPrincipalRef): Promise<ClientPresenceSnapshot | undefined>;
@@ -84,12 +82,11 @@ export type ClientStateMutationService = Pick<ClientStateService, 'read' | 'comp
 
 export type ClientStateServiceDependencies = Readonly<{
     runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
-    formationDamping: 'damped' | 'legacy';
     createClientStateEventStore?: (
         runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike
     ) => ClientStateEventStore;
     serviceId: string;
-    timing?: import('../services/timing.ts').RallarTimingSink;
+    timing?: import('../observability/timing.ts').RallarTimingSink;
 }>;
 
 export function requiresClientWrite(
@@ -127,9 +124,9 @@ export function toClientStateWritten(
     }
     return {
         status: 'ok',
-        result: Either.ofRight({
+        result: {
             snapshot: computed.snapshot,
             event: computed.event
-        })
+        }
     };
 }

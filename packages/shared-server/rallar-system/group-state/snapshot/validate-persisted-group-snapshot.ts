@@ -1,6 +1,4 @@
-import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { validatePersistedGroupPresenceSession } from '../persistence/validate-persisted-group-presence.ts';
 import { validatePersistedGroup, validatePersistedGroupMember } from '../persistence/validate-persisted-group.ts';
 
@@ -16,7 +14,6 @@ interface PersistedGroupSnapshotValidation {
 export function validatePersistedGroupSnapshot(value: unknown): asserts value is GroupSnapshot {
     const snapshot = requireRecord(value, 'Stored group snapshot');
     assertExactRequiredKeys(snapshot, [
-        'stateRevision',
         'causalRevision',
         'group',
         'members',
@@ -41,15 +38,9 @@ function validatePersistedGroupSnapshotRevisions(
     assertExactRequiredKeys(causal, ['groupRevision', 'presenceRevision']);
     requireSafeInteger(causal.groupRevision, 1, 'group revision');
     requireSafeInteger(causal.presenceRevision, 0, 'presence revision');
-    requireSafeInteger(snapshot.stateRevision, 1, 'state revision');
     requireSafeInteger(snapshot.memberCount, 0, 'member count');
     requireSafeInteger(snapshot.onlineMemberCount, 0, 'online member count');
     if (
-        snapshot.stateRevision !==
-            toGroupSnapshotStateRevision(
-                causal.groupRevision as number,
-                causal.presenceRevision as number
-            ) ||
         group.presenceVersion !== causal.presenceRevision
     ) {
         throw new TypeError('Stored group snapshot revisions are inconsistent');
@@ -122,15 +113,16 @@ function canonicalGroupRef(group: PersistedSnapshotRecord): GroupRef {
     if (
         typeof group.applicationId !== 'string' ||
         group.applicationId.length === 0 ||
+        typeof group.workspaceId !== 'string' ||
+        group.workspaceId.length === 0 ||
         typeof group.groupId !== 'string' ||
-        group.groupId.length === 0 ||
-        (group.workspaceId !== undefined && typeof group.workspaceId !== 'string')
+        group.groupId.length === 0
     ) {
         throw new TypeError('Stored group snapshot group identity is invalid');
     }
     return {
         applicationId: group.applicationId,
-        workspaceId: typeof group.workspaceId === 'string' ? group.workspaceId : DEFAULT_STATE_WORKSPACE_ID,
+        workspaceId: group.workspaceId,
         groupId: group.groupId
     };
 }

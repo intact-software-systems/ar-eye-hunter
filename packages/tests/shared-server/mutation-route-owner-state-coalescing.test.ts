@@ -16,7 +16,7 @@ import { collectRoutingExecutionPaths, type RoutingExecutionPath } from './mutat
 import { MUTATION_ROUTE_INVENTORY, validateMutationRouteInventory } from './mutation-routing-inventory.ts';
 import { knownRegistrationTypes, unknownRegistrationTypes, type RegistrationTypeCollection } from './mutation-routing-registration-predicate.ts';
 
-const GROUP_OWNER = 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts';
+const GROUP_OWNER = 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 const { collection: LIVE_GROUP_COLLECTION, loopStart: LOOP_START, loopEnd: LOOP_END, classStart: CLASS_START } = readGroupOwnerAnchors();
 const TYPE_MAP = `const C19_TYPE_MAP = new Map([
     [AppInboxType.GROUP_CREATE, AppInboxType.GROUP_UPDATE],

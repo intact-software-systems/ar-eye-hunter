@@ -40,10 +40,10 @@ export const ROUTING_SOURCE_MARKERS = {
     'packages/shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts': [
         'mutationIngress.enqueueUpdate'
     ],
-    'packages/shared-server/rallar-system/rtc-topology/topic/init-rtc-rtt-topic.ts': [
+    'packages/shared-server/rallar-system/rtc-rtt/topic/init-rtc-rtt-topic.ts': [
         'enqueueRtcRttMutation'
     ],
-    'packages/shared-server/rallar-system/services/ws-lifecycle-service.ts': [
+    'packages/shared-server/rallar-system/websocket/ws-lifecycle-service.ts': [
         'enqueueClientSessionDisconnect',
         'enqueueGroupSessionCleanup'
     ],

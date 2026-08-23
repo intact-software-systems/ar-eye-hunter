@@ -1,4 +1,4 @@
-import { computeClientStateSyncEntries } from '../../../state-sync-publisher.ts';
+import { computeClientStateSyncEntries } from '../../../state-sync/state-sync-entry-computation.ts';
 import { ClientMutationRejectedError } from '../../client-state-validation-primitives.ts';
 import type {
     ClientMutationCommand,
@@ -138,11 +138,7 @@ function validateClientMutationOutbox(
     computed: Extract<ClientMutationComputed, { outcome: 'write'; }>
 ): void {
     const expectedOutboxEntries = computed.stateSync.flatMap((stateSync) =>
-        computeClientStateSyncEntries(
-            stateSync,
-            command.facts.serviceId,
-            command.facts.formationDamping === 'damped' ? 'principal' : 'world'
-        )
+        computeClientStateSyncEntries(stateSync, command.facts.serviceId)
     );
     if (
         JSON.stringify(expectedOutboxEntries) !== JSON.stringify(computed.outboxEntries) ||

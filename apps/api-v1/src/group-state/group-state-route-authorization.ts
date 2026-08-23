@@ -1,9 +1,7 @@
 import { authorizationDenied } from '@shared-server/http/request-auth-service.ts';
-import {
-    canReadGroupSnapshot,
-    canUpdateGroupSnapshot,
-    GroupPolicyDeniedError
-} from '@shared-server/rallar-system/group-policy.ts';
+import { canUpdateGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-governance-policy.ts';
+import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
+import { canReadGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { UpsertGroupMemberRequest } from '@shared/api/state-types.ts';
 

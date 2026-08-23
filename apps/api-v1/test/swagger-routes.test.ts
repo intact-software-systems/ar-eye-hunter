@@ -133,9 +133,7 @@ Deno.test('OpenAPI JSON exposes mandatory convergent group state fields', async 
         'groupRevision',
         'presenceRevision'
     ]);
-    assert.ok(schemas.GroupSnapshot.required?.includes('stateRevision'));
     assert.ok(schemas.GroupSnapshot.required?.includes('causalRevision'));
-    assert.ok(schemas.GroupSnapshot.properties?.stateRevision);
     assert.ok(schemas.GroupSnapshot.properties?.causalRevision);
     assert.ok(schemas.GroupPresenceSession.required?.includes('generationId'));
     assert.ok(schemas.GroupPresenceSession.required?.includes('generationVersion'));
@@ -287,14 +285,12 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
         'acceptedConfig',
         'acceptedCausalRevision',
         'eventId',
-        'outboxId',
         'outboxIds'
     ]);
     assert.deepEqual(topologyReceipt.properties?.eventId, { type: 'null' });
     assert.deepEqual(
         json.components.schemas.GroupTopologyConfigAcceptedCausalRevision.required,
         [
-            'stateRevision',
             'snapshotVersion',
             'metadataVersion',
             'rosterVersion',
@@ -360,6 +356,10 @@ Deno.test('OpenAPI JSON includes scoped graph and topology management contracts'
         json.components.schemas.ApiMutationFailure.required,
         ['type', 'version', 'code', 'status', 'message', 'issues', 'denial', 'retry']
     );
+    const mutationFailureVersion = json.components.schemas.ApiMutationFailure.properties?.version as {
+        enum?: string[];
+    };
+    assert.deepEqual(mutationFailureVersion.enum, ['canonical.v2']);
 
     assertAuthContract(
         'GET scoped global graph',
