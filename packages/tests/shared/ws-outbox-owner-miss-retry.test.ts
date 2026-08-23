@@ -16,7 +16,8 @@ import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
-import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import type { WsOutboxDeliveryOutcome } from '@shared/services/ws-queue-box-server-contracts.ts';
+import { ConnectionContext, JsonWebSocketServer, type EncodedJsonWebSocketMessage } from '@shared/websocket/JsonWebSocketServer.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 describe('durable WS outbox owner misses', () => {
@@ -34,7 +35,7 @@ describe('durable WS outbox owner misses', () => {
         );
         await outbox.enqueue(entry);
         const ownerSocket = createSocket();
-        const misses: unknown[] = [];
+        const misses: WsOutboxDeliveryOutcome[] = [];
         const nonOwner = new WsQueueBoxServerService(
             new InMemoryQueueBox(),
             outbox,
@@ -59,7 +60,7 @@ describe('durable WS outbox owner misses', () => {
 
         await nonOwner.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
 
-        expect(readEntry(outbox).status).toBe(EntityStatus.RETRY);
+        expect((await readEntry(outbox)).status).toBe(EntityStatus.RETRY);
         expect(misses.length).toBeGreaterThanOrEqual(1);
         expect(misses.every((outcome) =>
             JSON.stringify(outcome) === JSON.stringify({
@@ -71,7 +72,7 @@ describe('durable WS outbox owner misses', () => {
         vi.advanceTimersByTime(1);
         await owner.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
 
-        expect(readEntry(outbox).status).toBe(EntityStatus.COMPLETED);
+        expect((await readEntry(outbox)).status).toBe(EntityStatus.COMPLETED);
         expect(ownerSocket.sendEncoded).toHaveBeenCalledWith('writer-session', expect.anything());
     });
 
@@ -145,7 +146,7 @@ describe('durable WS outbox owner misses', () => {
 
         await nonOwner.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
 
-        expect(readEntry(outbox).status).toBe(EntityStatus.COMPLETED);
+        expect((await readEntry(outbox)).status).toBe(EntityStatus.COMPLETED);
         expect(ownerSocket.sendEncoded).toHaveBeenCalledWith('writer-session', expect.anything());
     });
 
@@ -227,7 +228,7 @@ describe('durable WS outbox owner misses', () => {
             createResilience()
         );
 
-        expect(remoteSocket.sendEncoded).not.toHaveBeenCalled();
+        expect(remoteSocket.encodedSends).toEqual([]);
 
         bus.releaseSecondSubscription();
         await remoteReadiness;
@@ -241,7 +242,7 @@ describe('durable WS outbox owner misses', () => {
             createResilience()
         );
 
-        expect(remoteSocket.sendEncoded).toHaveBeenCalledOnce();
+        expect(remoteSocket.encodedSends).toHaveLength(1);
         expect(remoteSocket.sendEncoded).toHaveBeenCalledWith(
             'writer-session',
             expect.objectContaining({ text: expect.stringContaining('published-after-readiness') })
@@ -265,7 +266,7 @@ describe('durable WS outbox owner misses', () => {
 
         await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
 
-        expect(readEntry(outbox)).toMatchObject({
+        expect(await readEntry(outbox)).toMatchObject({
             status: EntityStatus.RETRY,
             dequeueAudit: { attempts: 1 }
         });
@@ -296,7 +297,7 @@ describe('durable WS outbox owner misses', () => {
 
         await service.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
 
-        expect(readEntry(outbox).status).toBe(EntityStatus.RETRY);
+        expect((await readEntry(outbox)).status).toBe(EntityStatus.RETRY);
     });
 
     it.each(['before', 'after'] as const)(
@@ -344,7 +345,7 @@ describe('durable WS outbox owner misses', () => {
             await claimant.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
             await bus.drain?.();
 
-            const retry = readEntry(outbox);
+            const retry = await readEntry(outbox);
             expect(retry.status).toBe(EntityStatus.RETRY);
             expect(retry.resource).toBe(original.resource);
             expect((JSON.parse(retry.resource) as ALMessage).id.msgId).toBe('durable-reply-1');
@@ -362,7 +363,7 @@ describe('durable WS outbox owner misses', () => {
             await claimant.dequeueOutbox(WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES, createResilience());
             await bus.drain?.();
 
-            expect(readEntry(outbox)).toMatchObject({
+            expect(await readEntry(outbox)).toMatchObject({
                 status: EntityStatus.COMPLETED,
                 resource: original.resource,
                 dequeueAudit: { attempts: 2 }
@@ -387,16 +388,19 @@ function createUnicastMessage(
 }
 
 function createSocket() {
-    const send = vi.fn();
-    const sendEncoded = vi.fn();
-    const socket = {
-        connections: new Map([['writer-session', { id: 'writer-session', isOpen: true }]]),
-        onMessageDo: () => undefined,
-        encode: vi.fn((message: ALMessage) => ({ text: JSON.stringify(message) })),
-        send,
-        sendEncoded
-    } as unknown as JsonWebSocketServer;
-    return { socket, send, sendEncoded };
+    const socket = new JsonWebSocketServer();
+    socket.connections.set(
+        'writer-session',
+        new ConnectionContext('writer-session', { readyState: 1 } as WebSocket)
+    );
+    const send = vi.spyOn(socket, 'send');
+    const encodedSends: Array<[string, EncodedJsonWebSocketMessage]> = [];
+    const sendEncoded = vi.spyOn(socket, 'sendEncoded').mockImplementation(
+        (connectionId: string, encoded: EncodedJsonWebSocketMessage) => {
+            encodedSends.push([connectionId, encoded]);
+        }
+    );
+    return { socket, send, sendEncoded, encodedSends };
 }
 
 function createService(
@@ -485,12 +489,16 @@ function createResilience(): ResilienceDto {
     );
 }
 
-function readEntry(queue: InMemoryQueueBox): ResourceEntry {
-    const entries = [...(queue as unknown as { data: Map<string, ResourceEntry>; }).data.values()];
-    if (!entries[0]) {
+async function readEntry(queue: InMemoryQueueBox): Promise<ResourceEntry> {
+    const entry = await queue.getItem({
+        topicId: 'app.crdt',
+        resourceId: 'reply-1',
+        contextId: 'rallar-server'
+    });
+    if (!entry) {
         throw new Error('Expected queued entry');
     }
-    return entries[0];
+    return entry;
 }
 
 function proxyAdmissionStore(

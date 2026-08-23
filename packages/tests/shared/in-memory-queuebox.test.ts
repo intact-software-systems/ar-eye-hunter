@@ -84,12 +84,16 @@ describe('InMemoryQueueBox', () => {
         const replacement = createEntry('presence.state.v1', 'resource-1', {
             resource: JSON.stringify({ version: 2 })
         });
-        const enqueueIt = vi.fn(() => false);
+        let predicateVisited = false;
+        const enqueueIt = () => {
+            predicateVisited = true;
+            return false;
+        };
 
         await queue.enqueue(expired);
 
         expect(await queue.enqueueIf(replacement, enqueueIt)).toBeUndefined();
-        expect(enqueueIt).not.toHaveBeenCalled();
+        expect(predicateVisited).toBe(false);
         expect((await queue.getItem(expired.key))?.resource).toBe(replacement.resource);
     });
 

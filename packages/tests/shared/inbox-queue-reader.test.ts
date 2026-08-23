@@ -12,15 +12,17 @@ describe('InboxQueueReader', () => {
     it('dispatches app inbox messages to the registered payload type callback', async () => {
         const queue = new InMemoryQueueBox();
         const reader = new InboxQueueReader(queue);
-        const onMessage = vi.fn<OnMessageCallback['onMessage']>(async () => undefined);
+        const dispatched: Parameters<OnMessageCallback['onMessage']>[0][] = [];
+        const onMessage: OnMessageCallback['onMessage'] = async (dispatchedMessage) => {
+            dispatched.push(dispatchedMessage);
+        };
         const message = createAppInboxMessage('group-state.create.v1');
 
         reader.onInboxMessageDo('group-state.create.v1', { onMessage });
         await reader.enqueueIfAbsent(message);
         await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
-        expect(onMessage).toHaveBeenCalledOnce();
-        expect(onMessage.mock.calls[0][0]).toEqual(message);
+        expect(dispatched).toEqual([message]);
         expect(readOnlyEntry(queue)?.status).toBe(EntityStatus.COMPLETED);
     });
 

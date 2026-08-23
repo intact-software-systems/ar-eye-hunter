@@ -128,12 +128,16 @@ describe('IndexedDbQueueBox', () => {
         const replacement = createEntry(typeId, 'resource-1', {
             resource: JSON.stringify({ version: 2 })
         });
-        const enqueueIt = vi.fn(() => false);
+        let predicateVisited = false;
+        const enqueueIt = () => {
+            predicateVisited = true;
+            return false;
+        };
 
         await queue.enqueue(expired);
 
         expect(await queue.enqueueIf(replacement, enqueueIt)).toBeUndefined();
-        expect(enqueueIt).not.toHaveBeenCalled();
+        expect(predicateVisited).toBe(false);
         expect((await queue.getItem(expired.key))?.resource).toBe(replacement.resource);
     });
 
@@ -705,14 +709,22 @@ describe('IndexedDbQueueBox', () => {
         const queue = new IndexedDbQueueBox({
             dbName: `indexeddb-queue-${crypto.randomUUID()}`
         });
-        const openCursor = vi.spyOn(IDBIndex.prototype, 'openCursor');
+        let cursorOpened = false;
+        const openCursorImplementation = IDBIndex.prototype.openCursor;
+        const openCursor = vi.spyOn(IDBIndex.prototype, 'openCursor').mockImplementation(function(
+            this: IDBIndex,
+            ...args: Parameters<IDBIndex['openCursor']>
+        ) {
+            cursorOpened = true;
+            return Reflect.apply(openCursorImplementation, this, args);
+        });
 
         await expect(queue.reserveOverdueRetryEntries(
             new Set(['type-a']),
             Date.now(),
             { maxToReserve: 1, maxAttempts: 2, maxToScan: 0 }
         )).rejects.toThrow(/at least the number of requested types/u);
-        expect(openCursor).not.toHaveBeenCalled();
+        expect(cursorOpened).toBe(false);
         openCursor.mockRestore();
     });
 

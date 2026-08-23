@@ -75,8 +75,13 @@ describe('PSqlQueueBox', () => {
             resource: JSON.stringify({ resourceId: 'entry-1', version: 2 })
         });
         const enqueueIt = vi.fn(() => false);
+        let replacementWritten = false;
         const repo = createRepo({
-            findAnyByKey: vi.fn(async () => previous)
+            findAnyByKey: vi.fn(async () => previous),
+            replace: async (entry) => {
+                replacementWritten = true;
+                return entry;
+            }
         });
 
         const queue = new PSqlQueueBox(repo as never);
@@ -84,7 +89,7 @@ describe('PSqlQueueBox', () => {
 
         expect(returned).toBe(previous);
         expect(enqueueIt).toHaveBeenCalledWith(previous);
-        expect(repo.entries.replace).not.toHaveBeenCalled();
+        expect(replacementWritten).toBe(false);
     });
 
     it('enqueueIf overwrites active entries when the predicate returns true', async () => {
@@ -110,7 +115,11 @@ describe('PSqlQueueBox', () => {
             expiryTs: Temporal.Now.instant().subtract({ seconds: 1 })
         });
         const replacement = createEntry('entry-1');
-        const enqueueIt = vi.fn(() => false);
+        let predicateVisited = false;
+        const enqueueIt = () => {
+            predicateVisited = true;
+            return false;
+        };
         const repo = createRepo({
             findAnyByKey: vi.fn(async () => expired)
         });
@@ -119,7 +128,7 @@ describe('PSqlQueueBox', () => {
         const returned = await queue.enqueueIf(replacement, enqueueIt);
 
         expect(returned).toBeUndefined();
-        expect(enqueueIt).not.toHaveBeenCalled();
+        expect(predicateVisited).toBe(false);
         expect(repo.entries.replace).toHaveBeenCalledWith(replacement);
     });
 
@@ -533,8 +542,13 @@ describe('PSqlResultsQueueBox', () => {
             resource: JSON.stringify({ resourceId: 'entry-1', version: 2 })
         });
         const enqueueIt = vi.fn(() => false);
+        let replacementWritten = false;
         const repo = createResultsRepo({
-            findAnyByKey: vi.fn(async () => previous)
+            findAnyByKey: vi.fn(async () => previous),
+            replace: async (entry) => {
+                replacementWritten = true;
+                return entry;
+            }
         });
 
         const queue = new PSqlResultsQueueBox(repo as never);
@@ -542,7 +556,7 @@ describe('PSqlResultsQueueBox', () => {
 
         expect(returned).toBe(previous);
         expect(enqueueIt).toHaveBeenCalledWith(previous);
-        expect(repo.replace).not.toHaveBeenCalled();
+        expect(replacementWritten).toBe(false);
     });
 
     it('enqueueIf overwrites active entries when the predicate returns true', async () => {
@@ -568,7 +582,11 @@ describe('PSqlResultsQueueBox', () => {
             expiryTs: Temporal.Now.instant().subtract({ seconds: 1 })
         });
         const replacement = createEntry('entry-1');
-        const enqueueIt = vi.fn(() => false);
+        let predicateVisited = false;
+        const enqueueIt = () => {
+            predicateVisited = true;
+            return false;
+        };
         const repo = createResultsRepo({
             findAnyByKey: vi.fn(async () => expired)
         });
@@ -577,7 +595,7 @@ describe('PSqlResultsQueueBox', () => {
         const returned = await queue.enqueueIf(replacement, enqueueIt);
 
         expect(returned).toBeUndefined();
-        expect(enqueueIt).not.toHaveBeenCalled();
+        expect(predicateVisited).toBe(false);
         expect(repo.replace).toHaveBeenCalledWith(replacement);
     });
 });

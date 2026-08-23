@@ -32,9 +32,17 @@ describe('enqueue and dequeue', () => {
                 }]])
             )
             .mockResolvedValue(new Map());
-        const releaseEntries = vi.fn();
+        let releaseRuns = 0;
+        const releaseEntries = vi.fn(async () => {
+            releaseRuns += 1;
+            return new Map();
+        });
         const recoverFinalization = vi.fn(async () => undefined);
-        const domainComputer = vi.fn(async () => 'domain-result');
+        let domainComputations = 0;
+        const domainComputer = vi.fn(async () => {
+            domainComputations += 1;
+            return 'domain-result';
+        });
         const repository = createDequeueRepository({
             reserveRetryExhaustionFinalizations: reserveFinalizations,
             releaseEntries
@@ -73,8 +81,8 @@ describe('enqueue and dequeue', () => {
             dueAgeMs: 6 * 60 * 1000,
             finalizedAtEpochMs
         }));
-        expect(domainComputer).not.toHaveBeenCalled();
-        expect(releaseEntries).not.toHaveBeenCalled();
+        expect(domainComputations).toBe(0);
+        expect(releaseRuns).toBe(0);
         expect(dequeued.get((Reservator as unknown as { FINALIZATION: Reservator; }).FINALIZATION))
             .toBeDefined();
     });
@@ -85,24 +93,33 @@ describe('enqueue and dequeue', () => {
             ...attempt21,
             dequeueAudit: { ...attempt21.dequeueAudit, attempts: 22 }
         };
-        const reserveFinalizations = vi.fn()
-            .mockResolvedValueOnce(
-                new Map([[attempt21.key, {
-                    entry: attempt21,
-                    selectedDueTs: Temporal.Instant.from('2026-01-01T00:00:00Z')
-                }]])
-            )
-            .mockResolvedValueOnce(
-                new Map([[attempt22.key, {
-                    entry: attempt22,
-                    selectedDueTs: Temporal.Instant.from('2026-01-01T00:00:00Z')
-                }]])
-            );
-        const releaseEntries = vi.fn();
-        const domainComputer = vi.fn(async () => 'domain-result');
-        const recoverFinalization = vi.fn()
-            .mockRejectedValueOnce(new Error('finalization write rolled back'))
-            .mockResolvedValueOnce(attempt22);
+        let reservationRuns = 0;
+        const reserveFinalizations = vi.fn(async () => {
+            reservationRuns += 1;
+            const entry = reservationRuns === 1 ? attempt21 : attempt22;
+            return new Map([[entry.key, {
+                entry,
+                selectedDueTs: Temporal.Instant.from('2026-01-01T00:00:00Z')
+            }]]);
+        });
+        let releaseRuns = 0;
+        const releaseEntries = vi.fn(async () => {
+            releaseRuns += 1;
+            return new Map();
+        });
+        let domainComputations = 0;
+        const domainComputer = vi.fn(async () => {
+            domainComputations += 1;
+            return 'domain-result';
+        });
+        const recoveryAttempts: number[] = [];
+        const recoverFinalization = vi.fn(async (value: { reservationAttempt: number; }) => {
+            recoveryAttempts.push(value.reservationAttempt);
+            if (recoveryAttempts.length === 1) {
+                throw new Error('finalization write rolled back');
+            }
+            return attempt22;
+        });
         const repository = createDequeueRepository({
             reserveRetryExhaustionFinalizations: reserveFinalizations,
             releaseEntries
@@ -121,13 +138,12 @@ describe('enqueue and dequeue', () => {
         const first = await createController().dequeueForCompute(domainComputer);
         const second = await createController().dequeueForCompute(domainComputer);
 
-        expect(reserveFinalizations).toHaveBeenCalledTimes(2);
-        expect(recoverFinalization.mock.calls.map(([value]) => value.reservationAttempt))
-            .toEqual([21, 22]);
+        expect(reservationRuns).toBe(2);
+        expect(recoveryAttempts).toEqual([21, 22]);
         expect(first.get(Reservator.FINALIZATION)?.values().next().value?.left).toBeDefined();
         expect(second.get(Reservator.FINALIZATION)?.values().next().value?.right).toBeDefined();
-        expect(domainComputer).not.toHaveBeenCalled();
-        expect(releaseEntries).not.toHaveBeenCalled();
+        expect(domainComputations).toBe(0);
+        expect(releaseRuns).toBe(0);
     });
 
     it('data successfully queued', async () => {
@@ -514,7 +530,11 @@ describe('resource inbox retry and fairness lanes', () => {
         for (let index = 0; index < ResilienceDto.MAX_NUM_DEQUEUE_IN_WINDOW; index += 1) {
             expect(resilience.checkFairness.lockEntryRateLimiter.allow()).toBe(true);
         }
-        const fairnessSelector = vi.fn(async () => new Map());
+        let fairnessSelections = 0;
+        const fairnessSelector = vi.fn(async () => {
+            fairnessSelections += 1;
+            return new Map();
+        });
         const repository = createDequeueRepository({
             reserveOverdueRetryEntries: fairnessSelector
         });
@@ -528,7 +548,7 @@ describe('resource inbox retry and fairness lanes', () => {
             resilience
         ).dequeueForCompute(async () => 'done');
 
-        expect(fairnessSelector).not.toHaveBeenCalled();
+        expect(fairnessSelections).toBe(0);
         expect(resilience.checkReserveTimeouts.lockEntryRateLimiter.isAllowed()).toBe(true);
     });
 

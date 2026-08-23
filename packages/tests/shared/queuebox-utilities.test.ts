@@ -1,7 +1,9 @@
+import { Temporal } from '@js-temporal/polyfill';
 import { newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -66,32 +68,39 @@ describe('QueueBoxUtilities', () => {
     });
 
     it('short-circuits defaultDequeue when resilience blocks dequeuing', async () => {
-        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {
+        const warnings: string[] = [];
+        const warn = vi.spyOn(console, 'warn').mockImplementation((message) => {
+            warnings.push(String(message));
         });
 
         try {
             const queue = new InMemoryQueueBox();
             const entry = QueueBoxUtilities.toResourceEntry('demo', { ok: true });
-            const onDequeued = vi.fn<(entry: ResourceEntry) => Promise<void>>();
+            const dequeuedEntries: ResourceEntry[] = [];
+            const onDequeued = async (dequeued: ResourceEntry) => {
+                dequeuedEntries.push(dequeued);
+            };
 
             await queue.enqueue(entry);
+            const duration = Temporal.Duration.from({ seconds: 10 });
+            const resilience = ResilienceDto.toResilienceDto(
+                new CircuitBreakerPolicy(1, duration, duration, duration),
+                1,
+                1,
+                1,
+                1
+            );
+            resilience.circuitBreaker.failureCount(2);
 
             await QueueBoxUtilities.defaultDequeue(
                 queue,
                 new Set(['demo']),
-                {
-                    isNotAllowedThroughToDequeue: () => true,
-                    circuitBreaker: {
-                        state: {
-                            get: () => 'OPEN'
-                        }
-                    }
-                } as unknown as ResilienceDto,
+                resilience,
                 onDequeued
             );
 
-            expect(onDequeued).not.toHaveBeenCalled();
-            expect(warn).toHaveBeenCalledOnce();
+            expect(dequeuedEntries).toEqual([]);
+            expect(warnings).toHaveLength(1);
         }
         finally {
             warn.mockRestore();

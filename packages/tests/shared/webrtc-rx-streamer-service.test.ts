@@ -1,5 +1,8 @@
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import type { WebRtcHeartbeatServiceInputDto } from '@shared/services/WebRtcHeartbeatService.ts';
 import { WebRtcRxStreamerService, type RttMeasurementCallbacks } from '@shared/services/WebRtcRxStreamerService.ts';
+import type { OnQRtcMessageCallback } from '@shared/webrtc/QRtcClientCallbacks.ts';
+import type { QRtcMediaPolicy } from '@shared/webrtc/QRtcPeerConnection.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockState = vi.hoisted(() => ({
@@ -19,13 +22,18 @@ vi.mock('@shared/services/WebRtcHeartbeatService.ts', () => {
             }
             | undefined;
         public readonly start = vi.fn((callbacks) => {
+            this.startCount += 1;
             this.callbacks = callbacks;
         });
-        public readonly stop = vi.fn();
+        public readonly stop = vi.fn(() => {
+            this.stopCount += 1;
+        });
+        public startCount = 0;
+        public stopCount = 0;
 
-        public readonly input: unknown;
+        public readonly input: WebRtcHeartbeatServiceInputDto;
 
-        constructor(input: unknown) {
+        constructor(input: WebRtcHeartbeatServiceInputDto) {
             this.input = input;
             mockState.heartbeats.push(this);
         }
@@ -99,7 +107,7 @@ describe('WebRtcRxStreamerService', () => {
         await lifecycle?.onOpen?.();
 
         expect(mockState.heartbeats).toHaveLength(1);
-        expect(mockState.heartbeats[0].start).toHaveBeenCalledOnce();
+        expect(mockState.heartbeats[0].startCount).toBe(1);
 
         const remoteStream = createMediaStream('remote-1');
         const remoteEvent = createTrackEvent(remoteStream);
@@ -154,11 +162,11 @@ describe('WebRtcRxStreamerService', () => {
         service.stopLocalMedia('video');
         service.setMediaPolicy(policy);
 
-        expect(peer.media.setLocalMediaStream).toHaveBeenCalledWith(localStream);
-        expect(peer.media.setLocalAudioEnabled).toHaveBeenLastCalledWith(true);
-        expect(peer.media.setLocalVideoEnabled).toHaveBeenLastCalledWith(true);
-        expect(peer.media.stopLocalMedia).toHaveBeenCalledWith('video');
-        expect(peer.connection.applyMediaPolicy).toHaveBeenLastCalledWith(policy);
+        expect(peer.media.localMediaStream).toBe(localStream);
+        expect(peer.media.localAudioEnabled).toBe(true);
+        expect(peer.media.localVideoEnabled).toBe(true);
+        expect(peer.media.stoppedMediaKinds).toContain('video');
+        expect(peer.connection.appliedMediaPolicy).toBe(policy);
 
         await lifecycle?.onOpen?.();
 
@@ -167,12 +175,12 @@ describe('WebRtcRxStreamerService', () => {
 
         await lifecycle?.onOpen?.();
 
-        expect(firstHeartbeat.stop).toHaveBeenCalledOnce();
+        expect(firstHeartbeat.stopCount).toBe(1);
         expect(mockState.heartbeats).toHaveLength(2);
 
         await lifecycle?.onClose?.();
 
-        expect(mockState.heartbeats[1].stop).toHaveBeenCalledOnce();
+        expect(mockState.heartbeats[1].stopCount).toBe(1);
 
         service.removePeer(peer as never);
 
@@ -193,10 +201,10 @@ describe('WebRtcRxStreamerService', () => {
             createFakeMulticastManager() as never,
             { sessionId: 'self' }
         );
-        const onHeartbeat = vi.fn<RttMeasurementCallbacks['onHeartbeat']>(
-            async () => {
-            }
-        );
+        const measurements: Parameters<RttMeasurementCallbacks['onHeartbeat']>[0][] = [];
+        const onHeartbeat: RttMeasurementCallbacks['onHeartbeat'] = async (measurement) => {
+            measurements.push(measurement);
+        };
         service.onRttMeasurementDo('rtt', { onHeartbeat });
 
         const peer = createPeerDto('peer-1');
@@ -218,7 +226,7 @@ describe('WebRtcRxStreamerService', () => {
             version: 2
         });
 
-        expect(onHeartbeat.mock.calls.map(([rtt]) => rtt.version)).toEqual([2, 3]);
+        expect(measurements.map((rtt) => rtt.version)).toEqual([2, 3]);
     });
 
     it('does not start RTT heartbeats for peers outside the reporting set', async () => {
@@ -259,7 +267,7 @@ describe('WebRtcRxStreamerService', () => {
 
         service.setRttReportingPeerIds([]);
 
-        expect(mockState.heartbeats[0].stop).toHaveBeenCalledOnce();
+        expect(mockState.heartbeats[0].stopCount).toBe(1);
     });
 
     it('starts RTT heartbeat for an already-open peer when it enters the reporting set', async () => {
@@ -289,7 +297,7 @@ class FakeRtcChannel {
         onError?: () => Promise<void>;
         onClose?: () => Promise<void>;
     }>();
-    public readonly messageCallbacks = new Map<string, unknown>();
+    public readonly messageCallbacks = new Map<string, OnQRtcMessageCallback>();
     public readonly onRtcCallbacksDo = vi.fn(
         (
             id: string,
@@ -303,7 +311,7 @@ class FakeRtcChannel {
             return this;
         }
     );
-    public readonly onRtcMessageDo = vi.fn((id: string, callback: unknown) => {
+    public readonly onRtcMessageDo = vi.fn((id: string, callback: OnQRtcMessageCallback) => {
         this.messageCallbacks.set(id, callback);
         return this;
     });
@@ -319,6 +327,10 @@ class FakeRtcChannel {
 
 class FakeRtcMedia {
     public readonly remoteStreamCallbacks = new Map<string, RemoteStreamCallback>();
+    public localMediaStream: MediaStream | undefined;
+    public localAudioEnabled: boolean | undefined;
+    public localVideoEnabled: boolean | undefined;
+    public readonly stoppedMediaKinds: string[] = [];
     public readonly onRemoteStreamDo = vi.fn(
         (id: string, cb: RemoteStreamCallback) => {
             this.remoteStreamCallbacks.set(id, cb);
@@ -330,11 +342,18 @@ class FakeRtcMedia {
     });
     public readonly setParameters = vi.fn(async () => {
     });
-    public readonly setLocalMediaStream = vi.fn(async () => {
+    public readonly setLocalMediaStream = vi.fn(async (stream: MediaStream) => {
+        this.localMediaStream = stream;
     });
-    public readonly setLocalAudioEnabled = vi.fn();
-    public readonly setLocalVideoEnabled = vi.fn();
-    public readonly stopLocalMedia = vi.fn();
+    public readonly setLocalAudioEnabled = vi.fn((enabled: boolean) => {
+        this.localAudioEnabled = enabled;
+    });
+    public readonly setLocalVideoEnabled = vi.fn((enabled: boolean) => {
+        this.localVideoEnabled = enabled;
+    });
+    public readonly stopLocalMedia = vi.fn((kind: string) => {
+        this.stoppedMediaKinds.push(kind);
+    });
 
     async emitRemoteStream(stream: MediaStream, event: RTCTrackEvent): Promise<void> {
         for (const callback of this.remoteStreamCallbacks.values()) {
@@ -344,9 +363,11 @@ class FakeRtcMedia {
 }
 
 type MockHeartbeatService = {
-    readonly input: unknown;
+    readonly input: WebRtcHeartbeatServiceInputDto;
     readonly start: ReturnType<typeof vi.fn>;
     readonly stop: ReturnType<typeof vi.fn>;
+    readonly startCount: number;
+    readonly stopCount: number;
     callbacks?:
         | {
             onHeartbeat: (result: {
@@ -365,13 +386,17 @@ type RemoteStreamCallback = (
 ) => Promise<void>;
 
 function createPeerDto(peerId: string) {
+    const connection = {
+        appliedMediaPolicy: undefined as QRtcMediaPolicy | undefined,
+        applyMediaPolicy: vi.fn((policy: QRtcMediaPolicy) => {
+            connection.appliedMediaPolicy = policy;
+        })
+    };
     return {
         peerId,
         channel: new FakeRtcChannel(),
         media: new FakeRtcMedia(),
-        connection: {
-            applyMediaPolicy: vi.fn()
-        }
+        connection
     };
 }
 
@@ -390,7 +415,7 @@ function createMediaStream(id: string): MediaStream {
 }
 
 function createTrackEvent(stream: MediaStream): RTCTrackEvent {
-    return {
-        streams: [stream]
-    } as unknown as RTCTrackEvent;
+    const event = new Event('track') as RTCTrackEvent;
+    Object.defineProperty(event, 'streams', { value: [stream] });
+    return event;
 }

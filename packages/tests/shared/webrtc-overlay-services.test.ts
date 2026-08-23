@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { newALMulticastMessage, newALUnicastMessage, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALMulticastMessage, newALUnicastMessage, newALUntargetedMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType, type OverlayInfo } from '@shared/api/api-config.ts';
 import { WebRtcOverlayMulticastManager } from '@shared/multicast/WebRtcOverlayMulticastManager.ts';
 import { WebRtcOverlayMulticastService } from '@shared/multicast/WebRtcOverlayMulticastService.ts';
@@ -115,7 +115,7 @@ describe('WebRtc overlay services', () => {
     });
 
     it('skips outbound messages without targets or next hop', async () => {
-        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const warnings = captureWarnings();
         const queue = new InMemoryQueueBox(new Map());
         const connectionService = createConnectionService(['peer-1']);
         const manager = new WebRtcOverlayMulticastManager(
@@ -146,12 +146,12 @@ describe('WebRtc overlay services', () => {
             status: 'no-route',
             entries: []
         });
-        expect(warn).not.toHaveBeenCalled();
+        expect(warnings).toEqual([]);
         expect(await reserveRtcOutbox(queue)).toHaveLength(0);
     });
 
     it('skips multicast sends when overlay context is missing', async () => {
-        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const warnings = captureWarnings();
         const queue = new InMemoryQueueBox(new Map());
         const connectionService = createConnectionService(['peer-1']);
         const manager = new WebRtcOverlayMulticastManager(
@@ -183,15 +183,15 @@ describe('WebRtc overlay services', () => {
             status: 'no-route',
             entries: []
         });
-        expect(warn).toHaveBeenCalledTimes(2);
-        expect(warn).toHaveBeenCalledWith(
+        expect(warnings).toHaveLength(2);
+        expect(warnings).toContain(
             'No GroupSnapshot found for overlayId/groupId group-1'
         );
         expect(await reserveRtcOutbox(queue)).toHaveLength(0);
     });
 
     it('skips multicast sends when no next hop is planned', async () => {
-        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const warnings = captureWarnings();
         const queue = new InMemoryQueueBox(new Map());
         const connectionService = createConnectionService([]);
         const context = createOverlayContext(['self', 'peer-1'], []);
@@ -224,7 +224,7 @@ describe('WebRtc overlay services', () => {
             status: 'no-route',
             entries: []
         });
-        expect(warn).not.toHaveBeenCalled();
+        expect(warnings).toEqual([]);
         expect(await reserveRtcOutbox(queue)).toHaveLength(0);
     });
 
@@ -286,12 +286,12 @@ describe('WebRtc overlay services', () => {
             status: 'sent-immediate',
             entries: []
         });
-        expect(channel.send).toHaveBeenCalledOnce();
+        expect(channel.sendCalls).toHaveLength(1);
         expect(await reserveRtcOutbox(queue)).toHaveLength(0);
     });
 
-    it('rejects a legacy bare overlay fallback when its groupRef belongs to another workspace', async () => {
-        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    it('rejects a bare overlay fallback when its groupRef belongs to another workspace', async () => {
+        const warnings = captureWarnings();
         const queue = new InMemoryQueueBox(new Map());
         const channel = createOpenRtcChannel();
         const connectionService = createConnectionService(['peer-b'], {
@@ -352,8 +352,8 @@ describe('WebRtc overlay services', () => {
             status: 'no-route',
             entries: []
         });
-        expect(channel.send).not.toHaveBeenCalled();
-        expect(warn).toHaveBeenCalledWith(
+        expect(channel.sendCalls).toEqual([]);
+        expect(warnings).toContainEqual(
             expect.stringContaining('does not match scoped target')
         );
     });
@@ -395,7 +395,7 @@ describe('WebRtc overlay services', () => {
             status: 'sent-immediate',
             entries: []
         });
-        expect(channel.send).toHaveBeenCalledOnce();
+        expect(channel.sendCalls).toHaveLength(1);
         expect(await reserveRtcOutbox(queue)).toHaveLength(0);
     });
 
@@ -439,7 +439,7 @@ describe('WebRtc overlay services', () => {
             entries: [],
             reason: 'RTC enqueue rate limit exceeded'
         });
-        expect(channel.send).toHaveBeenCalledTimes(2);
+        expect(channel.sendCalls).toHaveLength(2);
         expect(await reserveRtcOutbox(queue)).toHaveLength(0);
     });
 
@@ -477,7 +477,7 @@ describe('WebRtc overlay services', () => {
             entries: [],
             reason: 'RTC enqueue circuit breaker open'
         });
-        expect(channel.send).not.toHaveBeenCalled();
+        expect(channel.sendCalls).toEqual([]);
         expect(await reserveRtcOutbox(queue)).toHaveLength(0);
     });
 
@@ -572,7 +572,7 @@ describe('WebRtc overlay services', () => {
     });
 
     it('skips expired multicast sends without outbox entries', async () => {
-        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const warnings = captureWarnings();
         const queue = new InMemoryQueueBox(new Map());
         const connectionService = createConnectionService(['peer-1']);
         const context = createOverlayContext(['self', 'peer-1'], ['peer-1']);
@@ -608,7 +608,7 @@ describe('WebRtc overlay services', () => {
             status: 'expired',
             entries: []
         });
-        expect(warn).not.toHaveBeenCalled();
+        expect(warnings).toEqual([]);
         expect(await reserveRtcOutbox(queue)).toHaveLength(0);
     });
 
@@ -674,18 +674,15 @@ describe('WebRtc overlay services', () => {
             createResilienceDto()
         );
 
-        const storedEntry = [
-            ...((queue as unknown as { data: Map<string, ResourceEntry>; }).data
-                .values())
-        ][0];
+        const storedEntry = await queue.getItem(msg.route);
 
         expect(connectionService.readPeer).toHaveBeenCalledWith('peer-1');
-        expect(storedEntry.status).toBe(EntityStatus.COMPLETED);
+        expect(storedEntry?.status).toBe(EntityStatus.COMPLETED);
 
         peer.channel = createOpenRtcChannel();
         await vi.advanceTimersByTimeAsync(50);
 
-        expect(peer.channel.send).toHaveBeenCalledOnce();
+        expect(peer.channel.sendCalls).toHaveLength(1);
     });
 });
 
@@ -703,7 +700,7 @@ async function reserveRtcOutbox(queue: InMemoryQueueBox): Promise<readonly Resou
 
 function createConnectionService(
     connectedPeerIds: readonly string[],
-    peersById: Record<string, unknown> = {}
+    peersById: Record<string, { channel?: ReturnType<typeof createOpenRtcChannel>; }> = {}
 ) {
     return {
         input: {
@@ -715,12 +712,24 @@ function createConnectionService(
 }
 
 function createOpenRtcChannel() {
+    const sendCalls: ALMessage[][] = [];
     return {
-        send: vi.fn(async () => Promise.resolve()),
+        sendCalls,
+        send: async (...args: ALMessage[]) => {
+            sendCalls.push(args);
+        },
         readHealth: () => ({
             readyState: 'open' as const
         })
     };
+}
+
+function captureWarnings(): string[] {
+    const warnings: string[] = [];
+    vi.spyOn(console, 'warn').mockImplementation((...args) => {
+        warnings.push(args.map(String).join(' '));
+    });
+    return warnings;
 }
 
 function createUnicastRtcMessage(senderId: string, resourceId: string) {
