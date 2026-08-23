@@ -4,19 +4,9 @@ import type { RallarTimingEvent } from '@shared-server/rallar-system/observabili
 import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { createTestGroupStateRuntime, createTestGroupStateService, type TestAuthenticatedGroupStateService } from '../group-state-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
-
-export function createTestGroupPresenceSummaryTopologyIntent() {
-    return {
-        damping: 'damped' as const,
-        outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
-        recomputeDebounceMs: 0
-    };
-}
 
 export function createService(
     runtimeRepository: GroupBarrierRepository,

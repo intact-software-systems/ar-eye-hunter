@@ -24,7 +24,6 @@ import { createApiV1AdminServices, readApiV1WebSocketStatus } from './create-api
 import { createApiV1RouteInstallers } from './create-api-v1-route-installers.ts';
 import { createApiV1Runtime } from './create-api-v1-runtime.ts';
 import { createApiV1SystemInstallers } from './create-api-v1-system-installers.ts';
-import { createApiV1TopologyServices } from './create-api-v1-topology-services.ts';
 import { createRallarServer } from './create-rallar-server.ts';
 
 export interface CreateDefaultRallarServerInput {
@@ -65,6 +64,18 @@ function constructDefaultRallarServer(
     const database = input.databaseLifecycle.database;
     const nowEpochMs = Date.now;
     const timing = createApiTimingSink(configuration.observability);
+    const planning = configuration.topology.planning;
+    const rtcTopologyOptions = {
+        topologyKind: planning.topologyKind,
+        degreeLimit: planning.degreeLimit,
+        rttReportingDegreeLimit: planning.rttReportingDegreeLimit,
+        treeMinSize: planning.treeMinSize,
+        meshMinSize: planning.meshMinSize,
+        meshParamK: planning.meshParamK,
+        meshExitWidth: planning.meshExitWidth,
+        treeExitWidth: planning.treeExitWidth,
+        rttRebuildDebounceMs: configuration.topology.recompute.rttRebuildDebounceMs
+    };
 
     const runtime = createApiV1Runtime({
         database,
@@ -86,6 +97,8 @@ function constructDefaultRallarServer(
         topologyReplay: configuration.topology.replay,
         topologyDelivery: configuration.topology.delivery,
         adminClientIds: configuration.authentication.adminClientIds,
+        rtcTopologyOptions,
+        rttRefinementGateConfig: configuration.topology.rttRefinement,
         crdtPolicies: configuration.crdt.documentTypePolicies,
         resilience: {
             inbox: toResilienceDto(configuration.topology.queueResilience),
@@ -100,32 +113,7 @@ function constructDefaultRallarServer(
     });
     const runtimeStateRepository = createRuntimeStateRepository(database);
     const authUserRepository = createAuthUserRepository(runtimeStateRepository);
-    const planning = configuration.topology.planning;
-    const rtcTopologyOptions = {
-        topologyKind: planning.topologyKind,
-        degreeLimit: planning.degreeLimit,
-        rttReportingDegreeLimit: planning.rttReportingDegreeLimit,
-        treeMinSize: planning.treeMinSize,
-        meshMinSize: planning.meshMinSize,
-        meshParamK: planning.meshParamK,
-        meshExitWidth: planning.meshExitWidth,
-        treeExitWidth: planning.treeExitWidth,
-        rttRebuildDebounceMs: configuration.topology.recompute.rttRebuildDebounceMs
-    };
-    const topology = createApiV1TopologyServices({
-        runtimeStateRepository,
-        groupStateService: runtime.groupStateService,
-        groupInbox: runtime.appGroupInboxService,
-        groupFormationRttMutation: runtime.groupFormationMetrics.rttMutation,
-        webSocketServer: runtime.wsQBoxServerService.socket,
-        topologyReplayMetrics: runtime.rtcTopologyReplay,
-        serviceId: myServerId,
-        adminClientIds: configuration.authentication.adminClientIds,
-        rtcTopologyOptions,
-        rttRefinementGateConfig: configuration.topology.rttRefinement,
-        nowEpochMs,
-        timing
-    });
+    const topology = runtime.topologyServices;
 
     const appAdminInboxService = runtime.appAdminInboxService;
     const appCrdtInboxService = runtime.appCrdtInboxService;
@@ -151,12 +139,12 @@ function constructDefaultRallarServer(
         readGroupFormationMetrics: runtime.groupFormationMetrics.readMetrics,
         resetGroupFormationMetrics: runtime.groupFormationMetrics.resetMetrics,
         crdtAdminRepository: crdtLogRepository,
-        topologyManagement: topology.topologyManagement,
+        topologyQuery: topology.topologyQuery,
         clientStateService: runtime.clientStateService,
         groupStateService: runtime.groupStateService,
         appAdminInboxService,
         crdtAdminMutations,
-        appGroupInboxService: runtime.appGroupInboxService
+        topologyInboxService: runtime.topologyInboxService
     });
 
     const systemInstallers = createApiV1SystemInstallers({

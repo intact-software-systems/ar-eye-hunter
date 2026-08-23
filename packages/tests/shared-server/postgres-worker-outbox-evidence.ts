@@ -130,9 +130,7 @@ function expectedGroupPresenceSummaryWsEntries(
     // The event row carries the delta envelope; the bare member-state:event
     // payload went with snapshot-per-change.
     const expectedEffects = [
-        ['member-state:delta-envelope', AppTopics.groupStateEvent],
-        ['member-state:snapshot', AppTopics.groupStateSnapshot],
-        ['scope-directory:snapshot', AppTopics.groupDirectorySnapshot]
+        ['member-state:delta-envelope', AppTopics.groupStateEvent]
     ] as const;
     return expectedEffects.map(([effect, topicId]) => {
         const matching = entries.filter((entry) =>

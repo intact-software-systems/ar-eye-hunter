@@ -88,7 +88,7 @@ Deno.test(
             assert.deepEqual(await readDurableEffects(sql), { mutations: 0, work: 0 });
 
             await fixture.send(SESSION_A, message(SESSION_A, 'transport-1', update('update-1')));
-            await drain(fixture.service, sql, 1);
+            await drain(fixture, sql, 1);
 
             const [persisted] = await sql<PersistedActorRow[]>`
             select actor_id, principal_id, session_id from crdt_updates
@@ -100,7 +100,7 @@ Deno.test(
             });
 
             await fixture.send(SESSION_B, message(SESSION_B, 'transport-2', update('update-1')));
-            await drain(fixture.service, sql, 2);
+            await drain(fixture, sql, 2);
             const replayResults = await readResults(sql);
             assert.deepEqual(
                 replayResults.map((result) => ({
@@ -115,7 +115,7 @@ Deno.test(
 
             await fixture.send(SESSION_B, message(SESSION_B, 'transport-3', update('update-2')));
             await fixture.revokeAuthSession(SESSION_B);
-            await drain(fixture.service, sql, 3);
+            await drain(fixture, sql, 3);
             const revoked = (await readResults(sql)).at(-1);
             assert.equal(revoked?.status, 'rejected');
             assert.match(String(revoked?.code), /authentication|authorization/);
@@ -139,7 +139,7 @@ Deno.test('production app-scope authorization rejects a foreign application cont
             SESSION_A,
             message(SESSION_A, 'foreign-transport', update('foreign-update', foreign))
         );
-        await drain(fixture.service, sql, 1);
+        await drain(fixture, sql, 1);
 
         const [result] = await readResults(sql);
         assert.equal(result?.status, 'rejected');
@@ -157,8 +157,9 @@ async function createFixture(
     await clients.insertPrincipal(principal());
     await clients.insertInstance(instance());
     const resourceInbox = new ResourceInboxRepository(sql);
+    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
     const service = createApiCrdtInboxService({
-        inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(resourceInbox)),
+        inboxQueueReader,
         resourceInboxRepository: resourceInbox,
         resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
         database: sql,
@@ -202,6 +203,7 @@ async function createFixture(
     });
     return {
         service,
+        inboxQueueReader,
         send: async (connectionId: string, value: ReturnType<typeof message>) => {
             const socket = sockets.get(connectionId);
             assert.ok(socket);
@@ -232,12 +234,15 @@ async function createFixture(
 }
 
 async function drain(
-    service: Awaited<ReturnType<typeof createFixture>>['service'],
+    fixture: Awaited<ReturnType<typeof createFixture>>,
     sql: Parameters<Parameters<typeof withPGliteSql>[0]>[0],
     expectedResults: number
 ): Promise<void> {
     await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
-    await service.inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
+    await fixture.inboxQueueReader.dequeueInbox(
+        InboxQueueReader.INBOX_DEQUEUE_TYPES,
+        toResilienceDto()
+    );
     for (let attempt = 0; attempt < 50; attempt += 1) {
         if ((await readResults(sql)).length >= expectedResults) {
             return;
@@ -398,10 +403,10 @@ class FakeSocket extends EventTarget implements WebSocket {
     readonly readyState = WebSocket.OPEN;
     readonly url = 'ws://test.invalid';
     binaryType: BinaryType = 'blob';
-    onclose: ((this: WebSocket, event: CloseEvent) => void) | null = null;
-    onerror: ((this: WebSocket, event: Event) => void) | null = null;
-    onmessage: ((this: WebSocket, event: MessageEvent) => void) | null = null;
-    onopen: ((this: WebSocket, event: Event) => void) | null = null;
+    onclose: ((this: WebSocket, event: CloseEvent) => unknown) | null = null;
+    onerror: ((this: WebSocket, event: Event) => unknown) | null = null;
+    onmessage: ((this: WebSocket, event: MessageEvent) => unknown) | null = null;
+    onopen: ((this: WebSocket, event: Event) => unknown) | null = null;
 
     close(): void {}
 

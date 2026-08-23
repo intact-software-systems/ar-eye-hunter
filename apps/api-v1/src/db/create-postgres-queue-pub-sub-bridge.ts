@@ -2,7 +2,7 @@ import type {
     QueueBoxPubSubBridge,
     QueueBoxPubSubMessage,
     QueueBoxPubSubMessageKey
-} from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
+} from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-contracts.ts';
 import type { ApiV1DatabaseNotificationPort } from './api-v1-database-lifecycle.ts';
 
 export function createPostgresQueuePubSubBridge(

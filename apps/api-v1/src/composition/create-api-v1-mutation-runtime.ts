@@ -12,6 +12,12 @@ import {
     ResourceInboxResultsRepository
 } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import {
+    createAppInboxRetryExhaustionHandler,
+    createAppInboxRetryExhaustionRecoveryHandler,
+    type AppInboxOptions
+} from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import {
     createHmacAuthCredentialIssuer
@@ -23,35 +29,26 @@ import {
     createCachedClientStateService
 } from '@shared-server/rallar-system/client-state/snapshot/cached-client-state-service.ts';
 import { ClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
-import {
-    createGroupFormationMetricsRecorder,
-    type RallarGroupFormationMetricsRecorder
-} from '@shared-server/rallar-system/formation-metrics.ts';
-import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-policy.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import type {
-    GroupPresenceSummaryTopologyIntent,
-    GroupStateDisseminationMode
-} from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
+    GroupPolicyCapacityConfig
+} from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import {
     GroupPresenceSummaryWork
-} from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
+} from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import {
     createCachedGroupStateService
 } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import { GroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
-import type { CreateRallarMiddlewareOptions } from '@shared-server/rallar-system/middleware/RallarMiddleware.ts';
-import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import type { CreateRallarMiddlewareOptions } from '@shared-server/rallar-system/middleware/rallar-middleware.ts';
 import {
-    createAppInboxRetryExhaustionHandler,
-    createAppInboxRetryExhaustionRecoveryHandler,
-    type AppInboxServiceOptions
-} from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
-import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
+    createGroupFormationMetricsRecorder,
+    type RallarGroupFormationMetricsRecorder
+} from '@shared-server/rallar-system/observability/formation-metrics.ts';
+import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { DequeueResourceEntryOptions, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
 import { createApiCrdtDocumentAuthorizer } from '../crdt/create-api-crdt-document-authorizer.ts';
@@ -73,21 +70,21 @@ export interface CreateApiV1MutationRuntimeInput {
     readonly authCredentialSecret: string;
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
-    readonly appInboxOptions: AppInboxServiceOptions;
-    readonly clientFormationDamping: 'damped';
+    readonly appInboxOptions: AppInboxOptions;
     readonly groupCapacity: GroupPolicyCapacityConfig;
-    readonly groupStateDissemination: Extract<GroupStateDisseminationMode, 'delta-primary'>;
-    readonly createGroupFormationTopologyIntent: (
-        outboxQueueReader: OutboxQueueReader
-    ) => GroupPresenceSummaryTopologyIntent;
+    readonly groupFormationRecomputeDebounceMs: number;
     readonly adminClientIds: readonly string[];
     readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[];
     readonly resilience: ApiV1MutationRuntimeResilience;
 }
 
 export interface ApiV1MutationRuntime {
+    readonly database: PSqlSql;
+    readonly serviceId: string;
+    readonly appInboxOptions: AppInboxOptions;
     readonly queueBox: PSqlQueueBox;
     readonly resourceInboxRepository: ResourceInboxRepository;
+    readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
     readonly webSocketServer: JsonWebSocketServer;
     readonly runtimeStateRepository: PSqlRuntimeStateRepository;
     readonly authSessionRepository: ReturnType<typeof createAuthSessionRepository>;
@@ -96,8 +93,9 @@ export interface ApiV1MutationRuntime {
     readonly clientSnapshotCache: ClientStateSnapshotReadThroughCache;
     readonly groupSnapshotCache: GroupStateSnapshotReadThroughCache;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
+    readonly groupStateService: ReturnType<typeof createCachedGroupStateService>;
     readonly appInboxDequeueOptions: DequeueResourceEntryOptions;
-    readonly createAppGroupInboxService: CreateRallarMiddlewareOptions['createAppGroupInboxService'];
+    readonly createGroupStateInboxService: CreateRallarMiddlewareOptions['createGroupStateInboxService'];
     readonly createAppClientInboxService: CreateRallarMiddlewareOptions['createAppClientInboxService'];
     readonly createAppAuthInboxService: NonNullable<CreateRallarMiddlewareOptions['createAppAuthInboxService']>;
     readonly createAppAdminInboxService: NonNullable<CreateRallarMiddlewareOptions['createAppAdminInboxService']>;
@@ -110,7 +108,7 @@ interface ApiV1StateMutationDependencies {
     readonly serviceId: string;
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
-    readonly appInboxOptions: AppInboxServiceOptions;
+    readonly appInboxOptions: AppInboxOptions;
     readonly resourceInboxRepository: ResourceInboxRepository;
     readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
     readonly runtimeStateRepository: PSqlRuntimeStateRepository;
@@ -133,16 +131,9 @@ interface ApiV1MutationResources {
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
 }
 
-interface CreateAppGroupInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
-    readonly groupCapacity: GroupPolicyCapacityConfig;
-    readonly groupStateDissemination: Extract<GroupStateDisseminationMode, 'delta-primary'>;
-    readonly createGroupFormationTopologyIntent: (
-        outboxQueueReader: OutboxQueueReader
-    ) => GroupPresenceSummaryTopologyIntent;
-}
-
-interface CreateAppClientInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
-    readonly clientFormationDamping: 'damped';
+interface CreateGroupStateInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
+    readonly groupStateService: ReturnType<typeof createCachedGroupStateService>;
+    readonly groupFormationRecomputeDebounceMs: number;
 }
 
 interface CreateAppAuthInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
@@ -155,10 +146,25 @@ export function createApiV1MutationRuntime(
     const resources = createApiV1MutationResources(input.database);
     const stateDependencies = createApiV1StateMutationDependencies(input, resources);
     const mutationFactories = createApiV1MutationInboxFactories(input, resources);
+    const groupStateService = createCachedGroupStateService({
+        durable: createGroupStateService({
+            runtimeRepository: resources.runtimeStateRepository,
+            capacity: input.groupCapacity,
+            authSessionRepository: resources.authSessionRepository,
+            createGroupStateEventStore: createGroupStateEventRepository,
+            serviceId: input.serviceId,
+            timing: input.timing
+        }),
+        cache: resources.groupSnapshotCache
+    });
 
     return {
+        database: input.database,
+        serviceId: input.serviceId,
+        appInboxOptions: input.appInboxOptions,
         queueBox: resources.queueBox,
         resourceInboxRepository: resources.resourceInboxRepository,
+        resourceInboxResultsRepository: resources.resourceInboxResultsRepository,
         webSocketServer: new JsonWebSocketServer(),
         runtimeStateRepository: resources.runtimeStateRepository,
         authSessionRepository: resources.authSessionRepository,
@@ -167,17 +173,14 @@ export function createApiV1MutationRuntime(
         clientSnapshotCache: resources.clientSnapshotCache,
         groupSnapshotCache: resources.groupSnapshotCache,
         groupFormationMetrics: resources.groupFormationMetrics,
+        groupStateService,
         appInboxDequeueOptions: createAppInboxDequeueOptions(input),
-        createAppGroupInboxService: createAppGroupInboxServiceFactory({
+        createGroupStateInboxService: createGroupStateInboxServiceFactory({
             ...stateDependencies,
-            groupCapacity: input.groupCapacity,
-            groupStateDissemination: input.groupStateDissemination,
-            createGroupFormationTopologyIntent: input.createGroupFormationTopologyIntent
+            groupStateService,
+            groupFormationRecomputeDebounceMs: input.groupFormationRecomputeDebounceMs
         }),
-        createAppClientInboxService: createAppClientInboxServiceFactory({
-            ...stateDependencies,
-            clientFormationDamping: input.clientFormationDamping
-        }),
+        createAppClientInboxService: createAppClientInboxServiceFactory(stateDependencies),
         createAppAuthInboxService: createAppAuthInboxServiceFactory({
             ...stateDependencies,
             authCredentialSecret: input.authCredentialSecret
@@ -269,45 +272,31 @@ function createApiV1MutationInboxFactories(
     });
 }
 
-function createAppGroupInboxServiceFactory(
-    input: CreateAppGroupInboxServiceFactoryInput
-): CreateRallarMiddlewareOptions['createAppGroupInboxService'] {
+function createGroupStateInboxServiceFactory(
+    input: CreateGroupStateInboxServiceFactoryInput
+): CreateRallarMiddlewareOptions['createGroupStateInboxService'] {
     return ({ inboxQueueReader, outboxQueueReader, wakeQueueEngine }) => {
-        const topologyIntent = input.createGroupFormationTopologyIntent(outboxQueueReader);
-        const groupStateService = createCachedGroupStateService({
-            durable: createGroupStateService({
-                runtimeRepository: input.runtimeStateRepository,
-                formationDamping: topologyIntent.damping,
-                capacity: input.groupCapacity,
-                authSessionRepository: input.authSessionRepository,
-                createGroupStateEventStore: createGroupStateEventRepository,
-                serviceId: input.serviceId,
-                timing: input.timing
-            }),
-            cache: input.groupSnapshotCache
-        });
         const presenceSummary = new GroupPresenceSummaryWork({
             runtimeRepository: input.runtimeStateRepository,
-            topologyIntent,
-            disseminationMode: input.groupStateDissemination,
+            outboxQueueReader,
+            recomputeDebounceMs: input.groupFormationRecomputeDebounceMs,
             database: input.database,
             serviceId: input.serviceId,
             wakeQueue: wakeQueueEngine,
             now: input.nowEpochMs,
-            timing: input.timing,
             formationMetrics: input.groupFormationMetrics.presenceSummary
         });
         outboxQueueReader.onOutboxMessageDo(AppOutboxType.GROUP_PRESENCE_SUMMARY, {
             onMessage: async (message, entry) => await presenceSummary.processReservedEntry(message, entry)
         });
 
-        return new AppGroupInboxService(
+        return new GroupStateInboxService(
             {
                 inboxQueueReader: inboxQueueReader,
                 resourceInboxRepository: input.resourceInboxRepository,
                 resourceInboxResultsRepository: input.resourceInboxResultsRepository,
                 database: input.database,
-                groupStateService: groupStateService
+                groupStateService: input.groupStateService
             },
             {
                 serviceId: input.serviceId,
@@ -321,13 +310,12 @@ function createAppGroupInboxServiceFactory(
 }
 
 function createAppClientInboxServiceFactory(
-    input: CreateAppClientInboxServiceFactoryInput
+    input: ApiV1StateMutationDependencies
 ): CreateRallarMiddlewareOptions['createAppClientInboxService'] {
     return ({ inboxQueueReader, wakeQueueEngine }) => {
         const clientStateService = createCachedClientStateService({
             durable: createClientStateService({
                 runtimeRepository: input.runtimeStateRepository,
-                formationDamping: input.clientFormationDamping,
                 createClientStateEventStore: createClientStateEventRepository,
                 serviceId: input.serviceId,
                 timing: input.timing
@@ -395,9 +383,9 @@ function createAppInboxDequeueOptions(
             timing: input.timing
         }),
         onRetryExhaustionTelemetry: (exhaustion) => {
-            recordRallarTiming(
-                input.timing,
-                {
+            recordRallarTiming({
+                sink: input.timing,
+                event: {
                     component: 'app-inbox-handler',
                     operation: 'retry-exhaustion',
                     requestId: exhaustion.entry.key.resourceId,
@@ -412,9 +400,9 @@ function createAppInboxDequeueOptions(
                         dueAgeMs: exhaustion.dueAgeMs
                     }
                 },
-                'ok',
-                0
-            );
+                status: 'ok',
+                durationMs: 0
+            });
         }
     };
 }

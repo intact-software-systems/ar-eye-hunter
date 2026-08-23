@@ -6,10 +6,11 @@ import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-
 import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { GroupPresenceSummary, GroupRef, GroupScope, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import type { GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { describe, expect, it } from 'vitest';
 import { configureTestCacheRepositories } from '../../../cache-repository-config.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
-import { createTestGroupPresenceSummaryTopologyIntent } from '../presence/group-presence-test-runtime.ts';
 import { createGroupSnapshot } from './group-state-snapshot-test-fixtures.ts';
 
 interface CacheConvergenceCommandConstruction {
@@ -209,8 +210,8 @@ async function convergePresenceSummaryForCacheTest(
         acceptedCausalRevision
     });
     const work = new GroupPresenceSummaryWork({
-        topologyIntent: createTestGroupPresenceSummaryTopologyIntent(),
-        disseminationMode: 'dual-emit',
+        outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
+        recomputeDebounceMs: 0,
         runtimeRepository: runtime,
         now: () => 2_001,
         serviceId: 'cache-convergence-test'

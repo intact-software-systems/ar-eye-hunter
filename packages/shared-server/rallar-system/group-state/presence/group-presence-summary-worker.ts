@@ -26,19 +26,13 @@ import {
     computeGroupPresenceSummaryWork,
     validateGroupPresenceSummaryComputedWork,
     type GroupPresenceSummaryComputedWork,
-    type GroupPresenceSummaryWorkRead,
-    type GroupStateDisseminationMode
+    type GroupPresenceSummaryWorkRead
 } from './group-presence-summary-effects.ts';
-
-export interface GroupPresenceSummaryTopologyIntent {
-    readonly outboxQueueReader: OutboxQueueReader;
-    readonly recomputeDebounceMs: number;
-}
 
 export interface GroupPresenceSummaryWorkOptions {
     readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
-    readonly topologyIntent: GroupPresenceSummaryTopologyIntent;
-    readonly disseminationMode: GroupStateDisseminationMode;
+    readonly outboxQueueReader: OutboxQueueReader;
+    readonly recomputeDebounceMs: number;
     readonly database?: PSqlSql;
     readonly now?: () => number;
     readonly serviceId: string;
@@ -55,7 +49,7 @@ export class GroupPresenceSummaryWork {
         this.options = options;
         this.now = options.now ?? Date.now;
         this.coalescedTopologyWorkService = new CoalescedAppOutboxWorkService(
-            options.topologyIntent.outboxQueueReader,
+            options.outboxQueueReader,
             options.serviceId,
             this.now
         );
@@ -97,8 +91,7 @@ export class GroupPresenceSummaryWork {
         return computeGroupPresenceSummaryWork(work, read, {
             serviceId: this.options.serviceId,
             nowEpochMs: this.now(),
-            recomputeDebounceMs: this.options.topologyIntent.recomputeDebounceMs,
-            disseminationMode: this.options.disseminationMode
+            recomputeDebounceMs: this.options.recomputeDebounceMs
         });
     }
 
@@ -113,8 +106,7 @@ export class GroupPresenceSummaryWork {
             computed,
             options: {
                 serviceId: this.options.serviceId,
-                recomputeDebounceMs: this.options.topologyIntent.recomputeDebounceMs,
-                disseminationMode: this.options.disseminationMode
+                recomputeDebounceMs: this.options.recomputeDebounceMs
             }
         });
     }
@@ -138,12 +130,10 @@ export class GroupPresenceSummaryWork {
         for (const entry of computed.downstreamOutboxEntries) {
             await outbox.writeIfAbsentOrMatch(entry);
         }
-        if (computed.coalescedTopologyWork) {
-            await this.coalescedTopologyWorkService.write(
-                transaction,
-                computed.coalescedTopologyWork
-            );
-        }
+        await this.coalescedTopologyWorkService.write(
+            transaction,
+            computed.coalescedTopologyWork
+        );
     }
 
     public async processReservedEntry(
@@ -179,7 +169,7 @@ export class GroupPresenceSummaryWork {
             resourceId: toRtcTopologyCoalescedGroupRevisionResourceId(toScopedOverlayId(ref)),
             contextId: groupStateGroupStorageKey(ref)
         });
-        return (await this.options.topologyIntent.outboxQueueReader.outbox.getItem(key)) ?? null;
+        return (await this.options.outboxQueueReader.outbox.getItem(key)) ?? null;
     }
 
     private recordFormationMetrics(computed: GroupPresenceSummaryComputedWork): void {
@@ -187,9 +177,7 @@ export class GroupPresenceSummaryWork {
             this.options.formationMetrics?.({
                 downstreamTopicIds: [
                     ...computed.downstreamOutboxEntries.map((entry) => entry.key.topicId),
-                    ...(computed.coalescedTopologyWork
-                        ? [APP_OUTBOX_RTC_TOPOLOGY_TOPIC]
-                        : [])
+                    APP_OUTBOX_RTC_TOPOLOGY_TOPIC
                 ]
             });
         }

@@ -1,5 +1,4 @@
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
-import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type {
     GroupEvent,
     GroupMember,
@@ -17,11 +16,6 @@ import {
     type StateSyncAudience
 } from '../../state-sync/state-sync-entry-computation.ts';
 import {
-    computeRtcTopologyEntry,
-    deriveRtcTopologyEntryResourceId,
-    type ComputedRtcTopologyOutbox
-} from '../../topology/mutation/rtc-topology-outbox-entry.ts';
-import {
     computeCoalescedRtcTopologyGroupRevisionWork
 } from '../../topology/replay/rtc-topology-coalesced-group-revision-work.ts';
 import { assembleGroupStateSnapshot } from '../persistence/assemble-group-state-snapshot.ts';
@@ -31,8 +25,6 @@ import {
     type GroupPresenceSummaryComputed,
     type GroupPresenceSummaryRead
 } from './compute-group-presence-summary.ts';
-
-export type GroupStateDisseminationMode = 'dual-emit' | 'delta-primary';
 
 export interface GroupPresenceSummaryWorkRead {
     readonly presence: GroupPresenceSummaryRead;
@@ -44,14 +36,13 @@ export interface GroupPresenceSummaryComputedWork {
     readonly summary: GroupPresenceSummaryComputed;
     readonly snapshot: GroupSnapshot;
     readonly downstreamOutboxEntries: readonly ResourceEntry[];
-    readonly coalescedTopologyWork: ComputedCoalescedAppOutboxWork | null;
+    readonly coalescedTopologyWork: ComputedCoalescedAppOutboxWork;
 }
 
 export interface ComputeGroupPresenceSummaryWorkOptions {
     readonly serviceId: string;
     readonly nowEpochMs: number;
     readonly recomputeDebounceMs: number;
-    readonly disseminationMode: GroupStateDisseminationMode;
 }
 
 export interface ComputeGroupPresenceSummaryOutboxInput {
@@ -61,8 +52,6 @@ export interface ComputeGroupPresenceSummaryOutboxInput {
     readonly snapshot: GroupSnapshot;
     readonly audience: StateSyncAudience;
     readonly serviceId: string;
-    readonly disseminationMode: GroupStateDisseminationMode;
-    readonly includePerCommandTopologyEntry: boolean;
 }
 
 export interface ComputeGroupStateDeltaEnvelopeInput {
@@ -181,9 +170,7 @@ function toGroupPresenceSummaryOutboxInput(
             workspaceId: work.aggregateRef.workspaceId,
             resourceId: work.aggregateRef.groupId
         },
-        serviceId: options.serviceId,
-        disseminationMode: options.disseminationMode,
-        includePerCommandTopologyEntry: false
+        serviceId: options.serviceId
     };
 }
 
@@ -191,7 +178,7 @@ export function computeGroupPresenceSummaryOutboxEntries(
     input: ComputeGroupPresenceSummaryOutboxInput
 ): readonly ResourceEntry[] {
     const { work, audience, serviceId } = input;
-    const eventEntries = computeGroupStateSyncEntries(
+    return computeGroupStateSyncEntries(
         {
             commandId: work.commandId,
             aggregateRef: work.aggregateRef,
@@ -200,33 +187,6 @@ export function computeGroupPresenceSummaryOutboxEntries(
             createdAtEpochMs: work.createdAtEpochMs,
             expireAtEpochMs: work.expireAtEpochMs,
             effects: [computeGroupStateEventEffect(input)]
-        },
-        serviceId
-    );
-    const snapshotEntries = input.disseminationMode === 'delta-primary'
-        ? []
-        : computeGroupSnapshotSyncEntries(input);
-    return input.includePerCommandTopologyEntry
-        ? [...eventEntries, ...snapshotEntries, computeGroupPresenceTopologyOutboxEntry(input)]
-        : [...eventEntries, ...snapshotEntries];
-}
-
-function computeGroupSnapshotSyncEntries(
-    input: ComputeGroupPresenceSummaryOutboxInput
-): readonly ResourceEntry[] {
-    const { work, summary, snapshot, audience, serviceId } = input;
-    return computeGroupStateSyncEntries(
-        {
-            commandId: work.commandId,
-            aggregateRef: work.aggregateRef,
-            acceptedCausalRevision: snapshot.causalRevision,
-            audience,
-            createdAtEpochMs: summary.summary.computedAtEpochMs,
-            expireAtEpochMs: work.expireAtEpochMs,
-            effects: [
-                { effectKind: 'member-state', payloadKind: 'snapshot', payload: snapshot },
-                { effectKind: 'scope-directory', payloadKind: 'snapshot', payload: snapshot }
-            ]
         },
         serviceId
     );
@@ -321,28 +281,4 @@ function computeGroupStateDeltaSessions(
     return snapshot.activeSessions.filter(
         (session) => session.principalId === principalId
     );
-}
-
-function computeGroupPresenceTopologyOutboxEntry(
-    input: ComputeGroupPresenceSummaryOutboxInput
-): ResourceEntry {
-    const { work, summary, snapshot, serviceId } = input;
-    const identity = {
-        commandId: work.commandId,
-        effectKind: 'rtc-topology-recompute',
-        payloadKind: 'group-revision',
-        acceptedCausalRevision: snapshot.causalRevision
-    } as const;
-    const computed: ComputedRtcTopologyOutbox = {
-        ...identity,
-        aggregateRef: work.aggregateRef,
-        groupSnapshot: snapshot,
-        senderId: serviceId,
-        resourceId: deriveRtcTopologyEntryResourceId(identity),
-        requestOptions: toCanonicalGroupTopologyConfigPatch({}),
-        publish: true,
-        createdAtEpochMs: summary.summary.computedAtEpochMs,
-        expireAtEpochMs: work.expireAtEpochMs
-    };
-    return computeRtcTopologyEntry(computed);
 }

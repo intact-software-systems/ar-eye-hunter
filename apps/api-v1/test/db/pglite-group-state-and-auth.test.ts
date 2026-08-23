@@ -246,11 +246,8 @@ Deno.test(
                 }
             );
             const summaryWork = new GroupPresenceSummaryWork({
-                topologyIntent: {
-                    outboxQueueReader: outboxReader,
-                    recomputeDebounceMs: 0
-                },
-                disseminationMode: 'dual-emit',
+                outboxQueueReader: outboxReader,
+                recomputeDebounceMs: 0,
                 runtimeRepository: runtime,
                 database: sql,
                 serviceId: 'pglite-group-service',
@@ -457,13 +454,10 @@ Deno.test(
             const repository = new GroupStateRepository(runtime);
             const summaryBefore = await repository.findPresenceSummaryEntry(ref);
             const work = new GroupPresenceSummaryWork({
-                topologyIntent: {
-                    outboxQueueReader: new OutboxQueueReader(
-                        new PSqlQueueBox(new ResourceInboxRepository(sql))
-                    ),
-                    recomputeDebounceMs: 0
-                },
-                disseminationMode: 'dual-emit',
+                outboxQueueReader: new OutboxQueueReader(
+                    new PSqlQueueBox(new ResourceInboxRepository(sql))
+                ),
+                recomputeDebounceMs: 0,
                 runtimeRepository: runtime,
                 database: sql,
                 serviceId: 'pglite-summary-fence',

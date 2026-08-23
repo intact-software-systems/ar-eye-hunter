@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/rallar-middleware.ts';
-import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
 import { createApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
 import { findCurrentClientSnapshot } from '../../src/crdt/create-api-crdt-document-authorizer.ts';
@@ -10,7 +9,6 @@ import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 
 Deno.test('mutation runtime keeps one database identity and performs no construction query', () => {
     const databaseProbe = createDatabaseProbe();
-    let topologyIntentCreations = 0;
     const mutation = createApiV1MutationRuntime({
         database: databaseProbe.database,
         serviceId: 'api-test',
@@ -19,14 +17,7 @@ Deno.test('mutation runtime keeps one database identity and performs no construc
         timing: () => {},
         appInboxOptions: { nowEpochMs: () => 1_000 },
         groupCapacity: { defaultMaxMembers: 10 },
-        groupStateDissemination: 'delta-primary',
-        createGroupFormationTopologyIntent: (outboxQueueReader: OutboxQueueReader) => {
-            topologyIntentCreations += 1;
-            return {
-                outboxQueueReader,
-                recomputeDebounceMs: 250
-            };
-        },
+        groupFormationRecomputeDebounceMs: 250,
         adminClientIds: ['admin-1'],
         crdtPolicies: [{ documentType: '*', rollout: 'disabled' }],
         resilience: {
@@ -38,7 +29,6 @@ Deno.test('mutation runtime keeps one database identity and performs no construc
 
     assert.equal(mutation.runtimeStateRepository.sql, databaseProbe.database);
     assert.equal(mutation.queueBox.repo, mutation.resourceInboxRepository);
-    assert.equal(topologyIntentCreations, 1);
     assert.equal(databaseProbe.queryCount(), 0);
     assert.equal(databaseProbe.transactionCount(), 0);
 
@@ -66,7 +56,6 @@ Deno.test('mutation runtime keeps one database identity and performs no construc
     assert.ok(runtime.groupStateInboxService);
     assert.ok(runtime.appClientInboxService);
     assert.ok(runtime.appAuthInboxService);
-    assert.equal(topologyIntentCreations, 1);
     assert.equal(databaseProbe.queryCount(), 0);
     assert.equal(databaseProbe.transactionCount(), 0);
 });

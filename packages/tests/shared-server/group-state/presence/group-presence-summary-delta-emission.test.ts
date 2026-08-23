@@ -3,14 +3,9 @@ import {
     computeGroupStateDeltaEnvelope,
     validateGroupPresenceSummaryOutboxEntries,
     type GroupPresenceSummaryComputedWork,
-    type GroupPresenceSummaryWorkRead,
-    type GroupStateDisseminationMode
+    type GroupPresenceSummaryWorkRead
 } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts';
-import {
-    GroupPresenceSummaryWork,
-    type GroupPresenceSummaryTopologyIntent
-} from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
-import { computeGroupStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
+import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
@@ -26,70 +21,24 @@ import { createService } from './group-presence-test-runtime.ts';
 
 const BASE_EPOCH_MS = Date.now();
 
-describe('group presence summary dissemination emission', () => {
-    // Both snapshot rows are asserted against a directly constructed expectation
-    // rather than against a second run in the retired snapshot-per-change mode,
-    // which is what this used as its reference before that mode was removed.
-    it('keeps both snapshot rows and carries the envelope on the event row under dual-emit', async () => {
-        const scenario = await createConnectedScenario('emit-dual-rows');
+describe('group presence summary delta emission', () => {
+    it('emits only the canonical envelope event row', async () => {
+        const result = await computeSummaryWork(await createConnectedScenario('emit-delta-row'));
 
-        const dual = await computeSummaryWork(scenario, 'dual-emit');
-        const { command, computed } = dual;
-        const expectedSnapshotEntries = computeGroupStateSyncEntries(
-            {
-                commandId: command.commandId,
-                aggregateRef: command.aggregateRef,
-                acceptedCausalRevision: computed.snapshot.causalRevision,
-                audience: {
-                    kind: 'group' as const,
-                    applicationId: command.aggregateRef.applicationId,
-                    workspaceId: command.aggregateRef.workspaceId,
-                    resourceId: command.aggregateRef.groupId
-                },
-                createdAtEpochMs: computed.summary.summary.computedAtEpochMs,
-                expireAtEpochMs: command.expireAtEpochMs,
-                effects: [
-                    { effectKind: 'member-state', payloadKind: 'snapshot', payload: computed.snapshot },
-                    { effectKind: 'scope-directory', payloadKind: 'snapshot', payload: computed.snapshot }
-                ]
-            },
-            'summary-worker'
-        );
-
-        expect(topicIds(dual.computed.downstreamOutboxEntries)).toEqual([
-            AppTopics.groupStateEvent,
-            AppTopics.groupStateSnapshot,
-            AppTopics.groupDirectorySnapshot
+        expect(topicIds(result.computed.downstreamOutboxEntries)).toEqual([
+            AppTopics.groupStateEvent
         ]);
-        expect(dual.computed.downstreamOutboxEntries.slice(1)).toEqual(expectedSnapshotEntries);
-        const eventRow = dual.computed.downstreamOutboxEntries[0]!;
+        const eventRow = result.computed.downstreamOutboxEntries[0]!;
         expect((JSON.parse(eventRow.resource) as ALMessage).id.msgId).toContain(
             ':member-state:delta-envelope:'
         );
         expect(readEventRowPayload(eventRow)).toEqual(
             computeGroupStateDeltaEnvelope({
-                event: dual.command.event,
-                summary: dual.computed.summary,
-                summaryPredecessorCausalRevision: dual.read.presence.current?.value.causalRevision ?? null,
-                snapshot: dual.computed.snapshot
+                event: result.command.event,
+                summary: result.computed.summary,
+                summaryPredecessorCausalRevision: result.read.presence.current?.value.causalRevision ?? null,
+                snapshot: result.computed.snapshot
             })
-        );
-    });
-
-    it('emits only the envelope event row under delta-primary', async () => {
-        const scenario = await createConnectedScenario('emit-delta-primary-rows');
-
-        const dual = await computeSummaryWork(scenario, 'dual-emit');
-        const deltaPrimary = await computeSummaryWork(scenario, 'delta-primary');
-
-        expect(deltaPrimary.computed.downstreamOutboxEntries).toEqual([
-            dual.computed.downstreamOutboxEntries[0]
-        ]);
-        expect(topicIds(deltaPrimary.computed.downstreamOutboxEntries)).not.toContain(
-            AppTopics.groupStateSnapshot
-        );
-        expect(topicIds(deltaPrimary.computed.downstreamOutboxEntries)).not.toContain(
-            AppTopics.groupDirectorySnapshot
         );
     });
 
@@ -114,7 +63,7 @@ describe('group presence summary dissemination emission', () => {
         'rejects %s through the deterministic recomputation mirror',
         async (_label, tamper) => {
             const scenario = await createConnectedScenario('emit-tampered-envelope');
-            const { work, command, read, computed } = await computeSummaryWork(scenario, 'dual-emit');
+            const { work, command, read, computed } = await computeSummaryWork(scenario);
 
             expect(() => work.validate(command, read, computed)).not.toThrow();
 
@@ -140,9 +89,7 @@ describe('group presence summary dissemination emission', () => {
                         workspaceId: command.aggregateRef.workspaceId,
                         resourceId: command.aggregateRef.groupId
                     },
-                    serviceId: 'summary-worker',
-                    disseminationMode: 'dual-emit',
-                    includePerCommandTopologyEntry: false
+                    serviceId: 'summary-worker'
                 })
             ).toThrow('Presence-summary downstream outbox entries are not canonical');
         }
@@ -180,10 +127,7 @@ async function createConnectedScenario(groupId: string): Promise<ConnectedScenar
     return { runtime, groupId };
 }
 
-async function computeSummaryWork(
-    scenario: ConnectedScenario,
-    disseminationMode: GroupStateDisseminationMode
-): Promise<
+async function computeSummaryWork(scenario: ConnectedScenario): Promise<
     Readonly<{
         work: GroupPresenceSummaryWork;
         command: GroupPresenceSummaryWorkData;
@@ -192,8 +136,8 @@ async function computeSummaryWork(
     }>
 > {
     const work = new GroupPresenceSummaryWork({
-        topologyIntent: dampedTopologyIntent(),
-        disseminationMode,
+        outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
+        recomputeDebounceMs: 0,
         runtimeRepository: scenario.runtime,
         now: () => BASE_EPOCH_MS + 1_000,
         serviceId: 'summary-worker'
@@ -221,21 +165,13 @@ async function computeSummaryWork(
     return { work, command, read, computed };
 }
 
-function dampedTopologyIntent(): GroupPresenceSummaryTopologyIntent {
-    return {
-        damping: 'damped',
-        outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
-        recomputeDebounceMs: 0
-    };
-}
-
 function topicIds(entries: readonly ResourceEntry[]): readonly string[] {
     return entries.map((entry) => entry.key.topicId);
 }
 
-function readEventRowPayload(entry: ResourceEntry): unknown {
+function readEventRowPayload(entry: ResourceEntry): GroupStateDeltaEnvelope {
     const message = JSON.parse(entry.resource) as ALMessage;
-    return JSON.parse(message.payload.resource);
+    return JSON.parse(message.payload.resource) as GroupStateDeltaEnvelope;
 }
 
 function tamperEventRowEnvelope(

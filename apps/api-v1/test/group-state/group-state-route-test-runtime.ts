@@ -217,6 +217,25 @@ export function createDeletedGroupStateRouteSnapshot(
     };
 }
 
+export async function withStrictGroupStateRouteReadAuth(
+    enabled: boolean,
+    action: () => Promise<void>
+): Promise<void> {
+    const previous = Deno.env.get('RALLAR_STATE_STRICT_READ_AUTH');
+    Deno.env.set('RALLAR_STATE_STRICT_READ_AUTH', enabled ? 'true' : 'false');
+    try {
+        await action();
+    }
+    finally {
+        if (previous === undefined) {
+            Deno.env.delete('RALLAR_STATE_STRICT_READ_AUTH');
+        }
+        else {
+            Deno.env.set('RALLAR_STATE_STRICT_READ_AUTH', previous);
+        }
+    }
+}
+
 export function createGroupStateRouteEvent(eventId: string): GroupEvent {
     return {
         ...TEST_GROUP_SCOPE,
