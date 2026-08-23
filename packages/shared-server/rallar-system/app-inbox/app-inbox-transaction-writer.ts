@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { PSqlResourceInboxFinalizationRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-finalization-repository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
 import {
@@ -122,7 +122,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
                 );
                 await this.finish(
                     context,
-                    repositories.inbox,
+                    repositories.finalization,
                     EntityStatus.COMPLETED,
                     this.options.nowEpochMs()
                 );
@@ -150,7 +150,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
                 );
                 await this.finish(
                     context,
-                    repositories.inbox,
+                    repositories.finalization,
                     EntityStatus.FAILED,
                     this.options.nowEpochMs()
                 );
@@ -179,7 +179,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         write: (
             transaction: PSqlSql,
             repositories: Readonly<{
-                inbox: PSqlResourceInboxRepository;
+                finalization: PSqlResourceInboxFinalizationRepository;
                 results: ResourceInboxResultsRepository;
             }>
         ) => Promise<R>
@@ -198,7 +198,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
                     this.options.database,
                     async (transaction) =>
                         await write(transaction, {
-                            inbox: createPSqlResourceInboxRepository(transaction),
+                            finalization: new PSqlResourceInboxFinalizationRepository(transaction),
                             results: new ResourceInboxResultsRepository(transaction)
                         })
                 )
@@ -225,11 +225,11 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
 
     private async finish(
         context: AppInboxMessageContext,
-        inbox: PSqlResourceInboxRepository,
+        finalization: PSqlResourceInboxFinalizationRepository,
         status: typeof EntityStatus.COMPLETED | typeof EntityStatus.FAILED,
         completedAtEpochMs: number
     ): Promise<void> {
-        const completed = await inbox.finalization.finishReserved(
+        const completed = await finalization.finishReserved(
             context.entry.key,
             context.entry.dequeueAudit.attempts,
             status,

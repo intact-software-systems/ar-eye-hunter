@@ -1,5 +1,5 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import { requireConditionalWrite } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { AuthSessionRepository } from '../../persistence/auth-session-repository.ts';
 import { requireIssueSessionLifecycle } from '../../sessions/require-issue-session-lifecycle.ts';
@@ -64,6 +64,8 @@ export async function writeAuthLogout(
         )
     );
     if (computed.logoutOutbox) {
-        await createPSqlResourceInboxRepository(transaction).entries.writeIfAbsentOrMatch(computed.logoutOutbox);
+        await new PSqlResourceInboxEntryRepository(transaction).writeIfAbsentOrMatch(
+            computed.logoutOutbox
+        );
     }
 }

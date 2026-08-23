@@ -2,7 +2,7 @@ import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvid
 import { GroupLifecyclePolicyRepository } from '../../persistence/group-lifecycle-policy-repository.ts';
 
 import type { PSqlSql } from '../../../../postgres/p-sql-sql.ts';
-import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '../../../../queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { PSqlResourceInboxEntryRepository } from '../../../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 import {
     isRuntimeStateGuardedBatchRepositoryLike,
     type RuntimeStateGuardedBatch,
@@ -111,9 +111,9 @@ export async function writeGroupMutation(
     }
 
     await repository.appendEvent(computed.event);
-    const outbox = createPSqlResourceInboxRepository(transaction);
+    const outbox = new PSqlResourceInboxEntryRepository(transaction);
     for (const entry of computed.outboxEntries) {
-        await outbox.entries.writeIfAbsentOrMatch(entry);
+        await outbox.writeIfAbsentOrMatch(entry);
     }
     return computed.receipt;
 }
