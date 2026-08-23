@@ -775,7 +775,7 @@ describe('GroupStateRepository', () => {
         await expect(groupRepository.readSnapshot(group)).resolves.toBeUndefined();
     });
 
-    it('uses one current group authority snapshot without a compatibility reread', async () => {
+    it('uses one current group authority snapshot without an extra reread', async () => {
         const repository = new FakeRuntimeStateRepository();
         const groupRepository = createTestGroupStateRepository(repository, new TestGroupStateEventStore());
         const group = createGroup();

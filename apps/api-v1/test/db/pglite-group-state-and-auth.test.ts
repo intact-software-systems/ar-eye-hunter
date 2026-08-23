@@ -74,7 +74,7 @@ interface StringValueRow {
 }
 
 Deno.test(
-    'PGlite AppInbox accepts current typed failures and rejects predecessor shapes',
+    'PGlite AppInbox accepts current typed failures and rejects non-current shapes',
     async () => {
         await withPGliteSql(async (sql) => {
             const baseFailure = {
@@ -87,7 +87,7 @@ Deno.test(
                 error: 'Forbidden: Invite required.',
                 code: 'group-invite-required',
                 message: 'Invite required.',
-                details: { groupId: 'predecessor-room' }
+                details: { groupId: 'non-current-room' }
             } as const;
             const canonicalFailure = {
                 type: 'app-inbox-failure',
@@ -99,11 +99,11 @@ Deno.test(
                 denial: null,
                 retry: null
             } as const;
-            const predecessorRetryExhaustion = {
+            const nonCurrentRetryExhaustion = {
                 type: 'app-inbox-retry-exhausted',
                 commandIdentity: {
-                    contextId: 'predecessor-context',
-                    resourceId: 'predecessor-retry',
+                    contextId: 'non-current-context',
+                    resourceId: 'non-current-retry',
                     topicId: 'app-inbox.group-state',
                     operation: 'GROUP_CREATE',
                     operationSource: 'command'
@@ -120,11 +120,11 @@ Deno.test(
                 dueAgeMs: 5,
                 exhaustedAtEpochMs: 1_000
             } as const;
-            const predecessorRetryRecovery = {
+            const nonCurrentRetryRecovery = {
                 type: 'app-inbox-retry-exhausted',
                 commandIdentity: {
-                    contextId: 'predecessor-context',
-                    resourceId: 'predecessor-recovery',
+                    contextId: 'non-current-context',
+                    resourceId: 'non-current-recovery',
                     topicId: 'app-inbox.group-state',
                     operation: 'GROUP_CREATE',
                     operationSource: 'command'
@@ -149,10 +149,10 @@ Deno.test(
             );
             assert.deepEqual(current.left, canonicalFailure);
 
-            const predecessorCases = [
+            const nonCurrentCases = [
                 {
                     name: 'raw-string',
-                    resource: 'predecessor raw failure'
+                    resource: 'non-current raw failure'
                 },
                 {
                     name: 'base-object',
@@ -164,11 +164,11 @@ Deno.test(
                 },
                 {
                     name: 'retry-exhaustion',
-                    resource: predecessorRetryExhaustion
+                    resource: nonCurrentRetryExhaustion
                 },
                 {
                     name: 'retry-recovery',
-                    resource: predecessorRetryRecovery
+                    resource: nonCurrentRetryRecovery
                 },
                 {
                     name: 'malformed',
@@ -176,10 +176,10 @@ Deno.test(
                 }
             ] as const;
 
-            for (const testCase of predecessorCases) {
+            for (const testCase of nonCurrentCases) {
                 const result = await readPGliteAppInboxFailure(
                     sql,
-                    `predecessor-failure-${testCase.name}`,
+                    `non-current-failure-${testCase.name}`,
                     testCase.resource
                 );
                 assert.deepEqual(result.left, {

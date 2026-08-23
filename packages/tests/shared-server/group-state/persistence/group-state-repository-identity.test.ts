@@ -128,7 +128,7 @@ describe('GroupStateRepository persistence', () => {
             }
         };
         const { commandHash: _missingCommandHash, ...missingCommandHash } = valid;
-        const { aggregateRef: _predecessorAggregateRef, ...predecessorIdentityFree } = valid;
+        const { aggregateRef: _aggregateRef, ...identityFree } = valid;
         const invalidRecords: readonly [string, unknown][] = [
             ['malformed SHA', { ...valid, commandHash: 'sha256:not-a-digest' }],
             ['empty receipt', { ...valid, receipt: {} }],
@@ -312,7 +312,7 @@ describe('GroupStateRepository persistence', () => {
                     }
                 }
             ],
-            ['predecessor identity-free no-event record', predecessorIdentityFree]
+            ['identity-free no-event record', identityFree]
         ];
 
         const validRuntime = new FakeRuntimeStateRepository();

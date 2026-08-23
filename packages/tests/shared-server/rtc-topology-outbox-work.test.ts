@@ -30,16 +30,6 @@ import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
 
 describe('RTC topology APP_OUTBOX work', () => {
-    /*
-     * Task 7 coverage migration (18 old direct-handler cases):
-     * - 3 authority/causal cases -> 5 pure topology computation and mutation
-     *   comparison cases.
-     * - 9 replay/corruption cases -> 17 retained immutable-envelope tests plus
-     *   the publication repository corruption matrix.
-     * - 5 inner-retry/fanout cases -> 3 PGlite replay/collision/fence tests and
-     *   ResourceInbox retry-policy tests.
-     * - 1 RTT coalescing case -> RTT compute/admission and AppInbox tests.
-     */
     it('lets ResourceInbox retry the handler-owned write and reservation-fenced completion transaction', () => {
         const source = readFileSync(
             new URL(

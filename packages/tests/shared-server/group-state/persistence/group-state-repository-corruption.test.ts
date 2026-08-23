@@ -236,11 +236,11 @@ describe('GroupStateRepository persistence', () => {
             .toHaveProperty('aggregateRef')
             .toEqualTypeOf<GroupRef>();
         const ref = {
-            applicationId: 'predecessor-receipt-app',
-            workspaceId: 'predecessor-receipt-workspace',
-            groupId: 'predecessor-receipt-group'
+            applicationId: 'identity-free-receipt-app',
+            workspaceId: 'identity-free-receipt-workspace',
+            groupId: 'identity-free-receipt-group'
         };
-        const requestId = 'predecessor-request';
+        const requestId = 'identity-free-request';
         const receipt = {
             commandId: requestId,
             commandHash: `sha256:${'1'.repeat(64)}`,
@@ -253,7 +253,7 @@ describe('GroupStateRepository persistence', () => {
             joinCodeExpiresAtEpochMs: null,
             rejection: null
         } as const;
-        const predecessorRecord = {
+        const identityFreeRecord = {
             requestId,
             commandHash: receipt.commandHash,
             receipt
@@ -264,7 +264,7 @@ describe('GroupStateRepository persistence', () => {
             await runtime.upsert(
                 'group-state:idempotent',
                 groupStateIdempotencyStorageKey(ref, requestId),
-                JSON.stringify(predecessorRecord),
+                JSON.stringify(identityFreeRecord),
                 Number.MAX_SAFE_INTEGER
             );
             const repository = createTestGroupStateRepository(runtime);

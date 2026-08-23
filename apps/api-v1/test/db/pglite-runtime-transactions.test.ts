@@ -185,9 +185,9 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const ref = {
-                applicationId: 'pglite-legacy-scope-app',
+                applicationId: 'pglite-noncanonical-scope-app',
                 workspaceId: 'main',
-                groupId: 'pglite-legacy-scope-group'
+                groupId: 'pglite-noncanonical-scope-group'
             };
             // Deliberately degenerate: a noncanonical row carrying the sentinel workspace and
             // partial audit stamps. It must stay a hand-built payload, because the point
@@ -214,7 +214,7 @@ Deno.test(
         store_namespace, store_key, store_value, expire_at_ts
       ) values (
         'group-state:groups',
-        'app=pglite-legacy-scope-app:ws=main:group=pglite-legacy-scope-group',
+        'app=pglite-noncanonical-scope-app:ws=main:group=pglite-noncanonical-scope-group',
         ${JSON.stringify(storedGroup)},
         ${new Date(FUTURE_MS)}
       )

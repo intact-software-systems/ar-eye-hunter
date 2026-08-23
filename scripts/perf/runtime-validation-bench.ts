@@ -109,7 +109,7 @@ function makeEvent(index: number): JsonRecord {
     };
 }
 
-function runLegacyEventPipeline(rowJson: readonly string[], limit: number): number {
+function runEagerEventPipeline(rowJson: readonly string[], limit: number): number {
     const parsed = rowJson.map((value) => JSON.parse(value));
     return listRecentStateEvents(parsed as never[], { limit }).length;
 }
@@ -339,11 +339,11 @@ async function benchEvents(results: BenchResult[]): Promise<void> {
         for (let run = 1; run <= RUNS; run++) {
             results.push(
                 await measure(
-                    'events.legacy.parse-all-and-slice',
+                    'events.eager.parse-all-and-slice',
                     `${size} rows`,
                     run,
                     { rows: size, rowBytes: bytes, limit },
-                    () => runLegacyEventPipeline(rows, limit)
+                    () => runEagerEventPipeline(rows, limit)
                 )
             );
             results.push(
