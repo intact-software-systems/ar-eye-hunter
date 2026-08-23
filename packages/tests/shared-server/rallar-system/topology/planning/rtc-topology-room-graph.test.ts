@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import { computeCanonicalTopologyPairWeight } from '@shared-server/rallar-system/topology/planning/canonical-topology-planning-input.ts';
 import {
     createRtcRoomGraph,
     materializeSparseRtcRoomGraphFallback,
     type CreateRtcRoomGraphResult
 } from '@shared-server/rallar-system/topology/planning/create-rtc-room-graph.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 
 import {
     createCentralRtcTopologyRttMeasurements,

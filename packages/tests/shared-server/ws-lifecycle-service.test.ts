@@ -1,4 +1,4 @@
-import { initWsLifecycle } from '@shared-server/rallar-system/services/ws-lifecycle-service.ts';
+import { initWsLifecycle } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { describe, expect, it, vi } from 'vitest';
 

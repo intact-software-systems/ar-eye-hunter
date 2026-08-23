@@ -1,5 +1,4 @@
 import { GroupId, PeerId } from '../api/api-config.ts';
-import type { RtcGroupFormationMode } from '../rtc/group-formation-mode.ts';
 
 export type WebRtcGroupManagerState = {
     readonly groupIds: readonly GroupId[];
@@ -13,7 +12,6 @@ export type WebRtcGroupManagerState = {
 
 export type WebRtcGroupManagerOptions = Readonly<{
     maxPeerConnections?: number;
-    groupFormationMode?: RtcGroupFormationMode;
     overlayTransitionGraceMs?: number;
     now?: () => number;
     onDesiredPeerIdsChanged?: () => void;

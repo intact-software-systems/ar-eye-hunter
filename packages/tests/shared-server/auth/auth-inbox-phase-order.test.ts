@@ -17,12 +17,12 @@ import type {
     AuthMutationResult
 } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
 
-import { materializeAuthMutationIntent } from '@shared-server/rallar-system/auth/mutation/materialize-auth-mutation-intent.ts';
-import type { AppInboxMessageContext } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
+import type { AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type {
     AppInboxMutationTransactionResult,
     AppInboxMutationTransactionWriter
-} from '@shared-server/rallar-system/services/app-inbox-transaction-writer.ts';
+} from '@shared-server/rallar-system/app-inbox/app-inbox-transaction-writer.ts';
+import { materializeAuthMutationIntent } from '@shared-server/rallar-system/auth/mutation/materialize-auth-mutation-intent.ts';
 
 const decodeOrderCase = 'decodes before queue identity validation and exits before mutation phases on mismatch';
 

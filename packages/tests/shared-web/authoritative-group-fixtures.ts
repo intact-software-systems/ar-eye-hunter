@@ -83,7 +83,6 @@ export function createGroupSnapshotFixture(
         ? [ownerPrincipalId]
         : input.sessionIds;
     return {
-        stateRevision: 1 + input.sessionIds.length,
         causalRevision: {
             groupRevision: 1,
             presenceRevision: input.sessionIds.length

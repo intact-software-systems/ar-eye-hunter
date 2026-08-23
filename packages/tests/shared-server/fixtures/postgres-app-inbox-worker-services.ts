@@ -9,25 +9,26 @@ import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource
 
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 
 import { GROUP_TOPOLOGY_CONFIG_NAMESPACE } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-runtime-namespaces.ts';
 
-import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
+import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 
-import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 
-import { createClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
+import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 
-import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
 
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import type { RuntimeStateReadBatchSelection, RuntimeStateReadBatchSelector } from '@shared-server/runtime-state/RuntimeStateReadBatch.ts';
 
 import type { PostgresAppInboxWorkerTrace, TopologyReadBarrierPrimitive } from './postgres-app-inbox-worker-runtime.ts';
@@ -43,7 +44,8 @@ export interface CreatePostgresAppInboxWorkerServicesInput {
 
 export interface PostgresAppInboxWorkerServices {
     readonly client: AppClientInboxService;
-    readonly group: AppGroupInboxService;
+    readonly group: GroupStateInboxService;
+    readonly topology: TopologyInboxService;
     readonly authSessions: AuthSessionRepository;
     readonly resourceInbox: ResourceInboxRepository;
     readonly resourceInboxResults: ResourceInboxResultsRepository;
@@ -62,13 +64,11 @@ export function createPostgresAppInboxWorkerServices(
     const waitOptions = createPostgresAppInboxWorkerWaitOptions(input.atEpochMs);
     const clientState = createClientStateService({
         runtimeRepository,
-        formationDamping: 'damped',
         createClientStateEventStore: createClientStateEventRepository,
         serviceId: input.serviceId
     });
     const groupState = createGroupStateService({
         runtimeRepository,
-        formationDamping: 'damped',
         createGroupStateEventStore: createGroupStateEventRepository,
         authSessionRepository: authSessions,
         now: () => input.atEpochMs,
@@ -88,7 +88,7 @@ export function createPostgresAppInboxWorkerServices(
             options: waitOptions
         }
     );
-    const group = new AppGroupInboxService(
+    const group = new GroupStateInboxService(
         {
             inboxQueueReader: inbox,
             resourceInboxRepository: resourceInbox,
@@ -102,17 +102,35 @@ export function createPostgresAppInboxWorkerServices(
             options: waitOptions
         }
     );
-    group.setTopologyManagementService(
-        new GroupTopologyManagementService({
-            findGroupSnapshotByRef: (ref) => groupState.readSnapshot(ref),
-            groupStateRepository: new GroupStateRepository(runtimeRepository),
-            configRepository: new GroupTopologyConfigRepository(topologyRuntimeRepository),
-            topologyService: new RallarRtcTopologyService(),
-            now: () => input.atEpochMs,
-            serviceId: input.serviceId
-        })
+    const topologyOwners = createGroupTopologyOwners({
+        findGroupSnapshotByRef: (ref) => groupState.readSnapshot(ref),
+        groupStateRepository: new GroupStateRepository(runtimeRepository),
+        configRepository: new GroupTopologyConfigRepository(topologyRuntimeRepository),
+        topologyService: new RallarRtcTopologyService(),
+        now: () => input.atEpochMs,
+        serviceId: input.serviceId
+    });
+    if (!topologyOwners.configMutation || !topologyOwners.reconfigureMutation) {
+        throw new TypeError('PostgreSQL worker topology mutation owners are required');
+    }
+    const topology = new TopologyInboxService(
+        {
+            inboxQueueReader: inbox,
+            resourceInboxRepository: resourceInbox,
+            resourceInboxResultsRepository: resourceInboxResults,
+            database: input.transactionSql,
+            groupStateService: groupState,
+            mutationOwners: {
+                configMutationService: topologyOwners.configMutation,
+                reconfigureMutation: topologyOwners.reconfigureMutation
+            }
+        },
+        {
+            serviceId: input.serviceId,
+            options: waitOptions
+        }
     );
-    return { client, group, authSessions, resourceInbox, resourceInboxResults, inbox };
+    return { client, group, topology, authSessions, resourceInbox, resourceInboxResults, inbox };
 }
 
 function createTopologyRuntimeRepository(

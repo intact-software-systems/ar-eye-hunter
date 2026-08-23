@@ -1,18 +1,17 @@
-import type { GroupStateWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { type GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { AuditStamp, GroupEvent, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { Either } from '@shared/resilience/Either.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import type {
     AuthenticatedGroupMutationEnqueue
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type {
     GroupStateInboxDurableResult
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 import type {
@@ -72,10 +71,10 @@ export function createGroupStateRouteTestRuntime(
     return { app, session };
 }
 
-export function createPredecessorGroupStateRouteTestRuntime(
+export function createRejectingGroupStateRouteTestRuntime(
     input: GroupStateRouteTestRuntimeInput = {}
 ): GroupStateRouteTestRuntime {
-    const session = input.session ?? createPredecessorGroupStateRouteAuthSession('alice');
+    const session = input.session ?? createLiveGroupStateRouteAuthSession('alice');
     const processGroupAppInbox = input.processGroupAppInbox ?? rejectUnexpectedGroupMutation;
     return createGroupStateRouteTestRuntime({ ...input, session, processGroupAppInbox });
 }
@@ -102,10 +101,10 @@ export function createGroupStateRouteTestDependencies(
     };
 }
 
-export function createPredecessorGroupStateRouteTestDependencies(
+export function createRejectingGroupStateRouteTestDependencies(
     input: GroupStateRouteTestRuntimeInput = {}
 ): GroupStateRouteDependencies {
-    const session = input.session ?? createPredecessorGroupStateRouteAuthSession('alice');
+    const session = input.session ?? createLiveGroupStateRouteAuthSession('alice');
     const processGroupAppInbox = input.processGroupAppInbox ?? rejectUnexpectedGroupMutation;
     return createGroupStateRouteTestDependencies({ ...input, session, processGroupAppInbox });
 }
@@ -123,7 +122,7 @@ export function createGroupStateRouteAuthSession(
     };
 }
 
-export function createPredecessorGroupStateRouteAuthSession(
+export function createLiveGroupStateRouteAuthSession(
     clientId: string
 ): AuthSession & GroupStateRouteAuthSession {
     return {
@@ -141,7 +140,6 @@ export function createGroupStateRouteSnapshot(
     activePrincipalIds: readonly string[] = ['alice']
 ): GroupSnapshot {
     return {
-        stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 0 },
         group: createTestGroup({
             ...TEST_GROUP_SCOPE,
@@ -163,7 +161,7 @@ export function createGroupStateRouteSnapshot(
     };
 }
 
-export function createPredecessorGroupStateRouteSnapshot(
+export function createOwnerGroupStateRouteSnapshot(
     groupId: string,
     activePrincipalIds: readonly string[] = ['alice']
 ): GroupSnapshot {
@@ -247,7 +245,7 @@ export function createGroupStateRouteEvent(eventId: string): GroupEvent {
 export function toGroupStateWritten(snapshot: GroupSnapshot): GroupStateWritten {
     return {
         status: 'ok',
-        result: Either.ofRight({ snapshot, event: null })
+        result: { snapshot, event: null }
     };
 }
 
@@ -349,12 +347,12 @@ function toGroupStateRouteDurableResult(
     if (entry.type === AppInboxType.GROUP_JOIN_CODE_ROTATE) {
         return {
             status: 'ok',
-            result: Either.ofRight({
+            result: {
                 joinCode: entry.data.request.joinCode ?? 'test-join-code',
                 expiresAtEpochMs: entry.data.request.expiresAtEpochMs ?? 1,
                 snapshot,
                 event: null
-            })
+            }
         };
     }
     if (
@@ -374,7 +372,6 @@ function toGroupStateRouteDurableResult(
             outcome: 'applied',
             attemptCount: 1,
             acceptedStorageRevision: 1,
-            stateRevision: snapshot.stateRevision,
             snapshotVersion: snapshot.group.snapshotVersion,
             causalRevision: snapshot.causalRevision,
             eventId: null,

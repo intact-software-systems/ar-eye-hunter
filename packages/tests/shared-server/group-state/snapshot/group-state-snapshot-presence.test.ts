@@ -1,5 +1,4 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type { AuditStamp, Group, GroupPresenceSession } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 import { auditStamp } from '../group-state-concurrency-test-fixtures.ts';
@@ -111,7 +110,6 @@ describe('group snapshot presence', () => {
                     groupRevision: 2,
                     presenceRevision
                 });
-                expect(snapshot.stateRevision).toBe(toGroupSnapshotStateRevision(2, presenceRevision!));
                 expect(snapshot.group.presenceVersion).toBe(presenceRevision);
             }
         }

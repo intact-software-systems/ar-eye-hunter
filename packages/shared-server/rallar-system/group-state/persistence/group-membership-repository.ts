@@ -1,12 +1,12 @@
 import type { GroupMember, GroupRef } from '@shared/api/group-types.ts';
 import { RuntimeStateJsonStore, type RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type { RuntimeStateRepositoryLike } from '../../../runtime-state/RuntimeStateRepository.ts';
-import { normalizePersistedGroupMember } from './group-state-persistence-codec.ts';
+import { decodePersistedGroupMember } from './group-state-persistence-codec.ts';
 import {
     assertGroupRefIdentity,
     assertTrustedGroupRef,
     decodeStoredGroupStateKey,
-    normalizeStoredGroupStateValue,
+    decodeStoredGroupStateValue,
     throwGroupStateIdentityCorruption
 } from './group-state-persistence-contracts.ts';
 import { MEMBERS_NAMESPACE } from './group-state-runtime-namespaces.ts';
@@ -34,11 +34,11 @@ export function canonicalStoredMember(
 ): RuntimeStateEntryValue<GroupMember> {
     const decoded = decodeStoredGroupStateKey(stored.entry.key, decodeGroupStateMemberStorageKey);
     assertTrustedGroupRef(decoded, expected, stored.entry.key);
-    const value = normalizeStoredGroupStateValue(
+    const value = decodeStoredGroupStateValue(
         stored.value,
         decoded,
         stored.entry.key,
-        normalizePersistedGroupMember,
+        decodePersistedGroupMember,
         'Stored group member value is invalid'
     );
     assertGroupRefIdentity(value, decoded, stored.entry.key);

@@ -11,17 +11,17 @@ import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateRepositoryLike
 } from '../../../runtime-state/RuntimeStateRepository.ts';
-import { toSessionPurgeAfterEpochMs } from '../../repositories/session-expiry.ts';
+import { toSessionPurgeAfterEpochMs } from '../../presence/session-expiry.ts';
 import {
-    normalizePersistedGroupPresenceAdmission,
-    normalizePersistedGroupPresenceSession,
-    normalizePersistedGroupPresenceSummary
+    decodePersistedGroupPresenceAdmission,
+    decodePersistedGroupPresenceSession,
+    decodePersistedGroupPresenceSummary
 } from './group-state-persistence-codec.ts';
 import {
     assertGroupRefIdentity,
     assertTrustedGroupRef,
     decodeStoredGroupStateKey,
-    normalizeStoredGroupStateValue,
+    decodeStoredGroupStateValue,
     throwGroupStateIdentityCorruption
 } from './group-state-persistence-contracts.ts';
 import {
@@ -157,11 +157,11 @@ export function canonicalStoredSession(
         decodeGroupStatePresenceSessionStorageKey
     );
     assertTrustedGroupRef(decoded, expected, stored.entry.key);
-    const value = normalizeStoredGroupStateValue(
+    const value = decodeStoredGroupStateValue(
         stored.value,
         decoded,
         stored.entry.key,
-        normalizePersistedGroupPresenceSession,
+        decodePersistedGroupPresenceSession,
         'Stored group presence session value is invalid'
     );
     assertGroupRefIdentity(value, decoded, stored.entry.key);
@@ -183,11 +183,11 @@ export function canonicalStoredAdmission(
         decodeGroupStatePresenceAdmissionStorageKey
     );
     assertTrustedGroupRef(decoded, expected, stored.entry.key);
-    const value = normalizeStoredGroupStateValue(
+    const value = decodeStoredGroupStateValue(
         stored.value,
         decoded,
         stored.entry.key,
-        normalizePersistedGroupPresenceAdmission,
+        decodePersistedGroupPresenceAdmission,
         'Stored group presence admission value is invalid'
     );
     assertGroupRefIdentity(value, decoded, stored.entry.key);
@@ -206,11 +206,11 @@ export function canonicalStoredSummary(
 ): RuntimeStateEntryValue<GroupPresenceSummary> {
     const decoded = decodeStoredGroupStateKey(stored.entry.key, decodeGroupStateGroupStorageKey);
     assertTrustedGroupRef(decoded, expected, stored.entry.key);
-    const value = normalizeStoredGroupStateValue(
+    const value = decodeStoredGroupStateValue(
         stored.value,
         decoded,
         stored.entry.key,
-        normalizePersistedGroupPresenceSummary,
+        decodePersistedGroupPresenceSummary,
         'Stored group presence summary value is invalid'
     );
     assertGroupRefIdentity(value, decoded, stored.entry.key);

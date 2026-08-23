@@ -1,4 +1,18 @@
-import { clientStatePrincipalStorageKey as compatibilityClientStatePrincipalStorageKey } from '@shared-server/rallar-system/client-state-storage-keys.ts';
+import { createClientStateService as createClientMutationService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
+import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/client-state-validation-primitives.ts';
+import { toClientMutationSystemAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
+import { toClientMutationCommand, toExpiryCommandInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import {
+    type ClientMutationAuthority,
+    type ClientMutationCommand,
+    type ClientMutationFacts,
+    type ClientMutationOperation,
+    type ClientMutationRead
+} from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import { validateClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-command.ts';
+import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
+import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import {
     ClientStateRepository,
     ClientStateRepositoryInvariantCorruptionError
@@ -9,29 +23,9 @@ import {
     clientStateSessionStorageKey,
     decodeClientPrincipalStorageKey
 } from '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
-import { ClientStateRepository as compatibilityClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import { toClientSessionExpiryCandidate } from '@shared-server/rallar-system/repositories/session-expiry.ts';
-import { defaultClientStateEventStoreFor } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
-import {
-    ClientMutationRejectedError,
-    computeClientMutation,
-    validateClientMutation,
-    validateClientMutationCommand,
-    type ClientMutationAuthority,
-    type ClientMutationCommand,
-    type ClientMutationFacts,
-    type ClientMutationOperation,
-    type ClientMutationRead
-} from '@shared-server/rallar-system/services/client-state-mutations.ts';
-import {
-    ClientMutationIdempotencyConflictError,
-    createClientStateService as createClientMutationService,
-    toClientMutationCommand,
-    toClientMutationSystemAuthority,
-    toExpiryCommandInput
-} from '@shared-server/rallar-system/services/client-state-service.ts';
-import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
-import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import { toClientSessionExpiryCandidate } from '@shared-server/rallar-system/presence/session-expiry.ts';
+import { defaultClientStateEventStoreFor } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type {
     RuntimeStateConditionalWriteResult,
@@ -65,7 +59,7 @@ import {
     validPrincipalValue
 } from './client-mutation-validation-test-fixtures.ts';
 import {
-    createLegacyClientStateTestDriver as createClientStateService,
+    createClientStateTestDriver as createClientStateService,
     failNextClientStateTestOutboxWrite,
     getClientStateTestOutbox
 } from './client-state-test-runtime.ts';

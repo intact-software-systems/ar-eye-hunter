@@ -1,16 +1,6 @@
 import { OverlayInfo } from '@shared/api/api-config.ts';
-import { isOverlayForGroupRef, toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import {
-    compareGroupCausalRevision,
-    readGroupCausalRevision,
-    readGroupCreatedAtEpochMs,
-    readGroupCreatedByPrincipalId,
-    readGroupDisplayName,
-    readGroupMemberSessionIds,
-    readGroupUpdatedAtEpochMs,
-    readGroupVersion,
-    type AnyGroupPresence
-} from '@shared/api/group-client-views.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     configureObservableLatestRepository,
@@ -122,16 +112,6 @@ export function readableOverlayCache(
     return requireOverlayRepository(manager).readable();
 }
 
-export function createAndSetStarOverlays(
-    groups: readonly AnyGroupPresence[],
-    manager?: RepositoryManager
-): void {
-    for (const group of groups) {
-        const overlay = toStarOverlay(group);
-        setOverlayById(overlay.overlayId, overlay, manager);
-    }
-}
-
 export function updateNextHopSessionIds(
     overlayId: string,
     nextHopSessionIds: string[],
@@ -172,18 +152,6 @@ export function removeOverlayByGroupRef(
     manager?: RepositoryManager
 ): boolean {
     return removeOverlayById(toScopedOverlayId(groupRef), manager);
-}
-
-export function removeLegacyOverlayByGroupIdIfMatches(
-    groupRef: GroupRef,
-    manager?: RepositoryManager
-): boolean {
-    const overlay = findOverlayById(groupRef.groupId, manager);
-    if (!overlay || !isOverlayForGroupRef(overlay, groupRef)) {
-        return false;
-    }
-
-    return removeOverlayById(groupRef.groupId, manager);
 }
 
 export function removeOverlayById(
@@ -327,23 +295,5 @@ function toOverlayRepositoryChange(
         version: event.value?.overlayVersion ?? event.previous?.overlayVersion ?? 0,
         previousVersion: event.previous?.overlayVersion,
         manager
-    };
-}
-
-function toStarOverlay(group: AnyGroupPresence): OverlayInfo {
-    return {
-        sourceGroupStateCausalRevision: readGroupCausalRevision(group),
-        provenance: 'bootstrap',
-        state: 'active',
-        name: readGroupDisplayName(group),
-        overlayId: toScopedOverlayId(group.group),
-        groupRef: group.group,
-        topology: 'star',
-        createdByClientId: readGroupCreatedByPrincipalId(group),
-        createdAtEpochMs: readGroupCreatedAtEpochMs(group),
-        nextHopSessionIds: readGroupMemberSessionIds(group),
-        degreeLimit: Math.max(1, readGroupMemberSessionIds(group).length - 1),
-        overlayVersion: readGroupVersion(group),
-        updatedAtEpochMs: readGroupUpdatedAtEpochMs(group)
     };
 }

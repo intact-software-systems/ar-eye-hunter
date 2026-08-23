@@ -244,7 +244,7 @@ Deno.test('CRDT admin routes preserve retryable mutation failure status', async 
         assert.equal(response.status, status);
         assert.deepEqual(await readJsonObject(response), {
             type: 'api-mutation-failure',
-            version: 'canonical.v1',
+            version: 'canonical.v2',
             code: status === 503 ? 'api-mutation-unavailable' : 'api-mutation-429',
             status,
             message: `mutation unavailable ${status}`,

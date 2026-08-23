@@ -4,7 +4,7 @@ import {
     timeRallarAsync,
     type RallarTimingEventInput,
     type RallarTimingSink
-} from '../services/timing.ts';
+} from '../observability/timing.ts';
 import type { ClientStateService } from './client-state-service-contracts.ts';
 import type { ClientMutationCommand } from './mutation/client-mutation-contracts.ts';
 
@@ -62,22 +62,22 @@ function timeClientMutationCompute<T>(
     const startedAtEpochMs = nowMs();
     try {
         const result = action();
-        recordRallarTiming(
-            input.timing,
-            toMutationTiming('mutation.compute', command, input.serviceId),
-            'ok',
-            nowMs() - startedAtEpochMs
-        );
+        recordRallarTiming({
+            sink: input.timing,
+            event: toMutationTiming('mutation.compute', command, input.serviceId),
+            status: 'ok',
+            durationMs: nowMs() - startedAtEpochMs
+        });
         return result;
     }
     catch (error) {
-        recordRallarTiming(
-            input.timing,
-            toMutationTiming('mutation.compute', command, input.serviceId),
-            'error',
-            nowMs() - startedAtEpochMs,
+        recordRallarTiming({
+            sink: input.timing,
+            event: toMutationTiming('mutation.compute', command, input.serviceId),
+            status: 'error',
+            durationMs: nowMs() - startedAtEpochMs,
             error
-        );
+        });
         throw error;
     }
 }
@@ -90,22 +90,22 @@ function timeClientMutationValidate<T>(
     const startedAtEpochMs = nowMs();
     try {
         const result = action();
-        recordRallarTiming(
-            input.timing,
-            toMutationTiming('mutation.validate', command, input.serviceId),
-            'ok',
-            nowMs() - startedAtEpochMs
-        );
+        recordRallarTiming({
+            sink: input.timing,
+            event: toMutationTiming('mutation.validate', command, input.serviceId),
+            status: 'ok',
+            durationMs: nowMs() - startedAtEpochMs
+        });
         return result;
     }
     catch (error) {
-        recordRallarTiming(
-            input.timing,
-            toMutationTiming('mutation.validate', command, input.serviceId),
-            'error',
-            nowMs() - startedAtEpochMs,
+        recordRallarTiming({
+            sink: input.timing,
+            event: toMutationTiming('mutation.validate', command, input.serviceId),
+            status: 'error',
+            durationMs: nowMs() - startedAtEpochMs,
             error
-        );
+        });
         throw error;
     }
 }

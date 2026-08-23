@@ -1,5 +1,4 @@
-import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { AppInboxService, SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { AppInboxQueueClient, SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
@@ -7,11 +6,9 @@ import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 import * as clientStateRoutes from '../../src/routes/client-state-routes.ts';
 
-type SqlValue = Parameters<PSqlSql>[0][number];
-
 Deno.test('HTTP wait timeout leaves its durable AppInbox row eligible', async () => {
     const queue = new InMemoryQueueBox(new Map());
-    const service = new AppInboxService(
+    const service = new AppInboxQueueClient(
         {
             inboxQueueReader: new InboxQueueReader(queue),
             resourceInboxRepository: {
@@ -23,8 +20,7 @@ Deno.test('HTTP wait timeout leaves its durable AppInbox row eligible', async ()
             resourceInboxResultsRepository: {
                 replace: (entry) => Promise.resolve(entry),
                 findByKey: () => Promise.resolve(undefined)
-            },
-            database: createUnusedDatabase()
+            }
         },
         {
             serviceId: 'server-12345678',
@@ -88,7 +84,7 @@ Deno.test('HTTP wait timeout leaves its durable AppInbox row eligible', async ()
     const failure = await response.json();
     assert.equal(failure.code, 'app-inbox-unavailable');
     assert.equal(failure.type, 'api-mutation-failure');
-    assert.equal(failure.version, 'canonical.v1');
+    assert.equal(failure.version, 'canonical.v2');
     assert.equal(failure.retry.kind, 'unavailable');
     assert.equal(directMutationFallbacks, 0);
     const [key] = await queue.getAllKeys();
@@ -99,14 +95,3 @@ Deno.test('HTTP wait timeout leaves its durable AppInbox row eligible', async ()
     assert.equal(row?.status, EntityStatus.NEW);
     assert.equal(row?.dequeueAudit.attempts, 0);
 });
-
-function createUnusedDatabase(): PSqlSql {
-    function query<T>(_strings: TemplateStringsArray, ..._values: SqlValue[]): Promise<T>;
-    function query(_values: readonly SqlValue[]): ReturnType<PSqlSql>;
-    function query(): never {
-        throw new Error('Timeout route test must not start a database write');
-    }
-    return Object.assign(query, {
-        begin: async <T>(): Promise<T> => await Promise.reject(new Error('Timeout route test must not start a transaction'))
-    });
-}

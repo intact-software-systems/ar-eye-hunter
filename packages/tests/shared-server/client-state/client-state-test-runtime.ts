@@ -1,3 +1,5 @@
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import {
     requiresClientWrite,
     toClientStateWritten,
@@ -11,9 +13,8 @@ import {
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import { toClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import type { ClientMutationComputed } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
-import { AuthSessionRepository, type IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { defaultClientStateEventStoreFor, type InMemoryClientStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
-import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import { defaultClientStateEventStoreFor, type InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 
@@ -46,15 +47,11 @@ interface ClientStateTestExecutorInput {
     readonly nextSequence: () => number;
 }
 
-interface LegacyClientStateTestDriverDependencies {
+interface ClientStateTestDriverDependencies {
     readonly runtimeRepository: RuntimeStateOptimisticTransactionalRepositoryLike;
     readonly now?: () => number;
     readonly serviceId: string;
     readonly timing?: RallarTimingSink;
-    readonly syncPublisher?: unknown;
-    readonly authSessionRepository?: unknown;
-    readonly randomId?: unknown;
-    readonly sleep?: unknown;
 }
 
 export type { ClientStatePhaseTestDriver } from './client-state-test-driver-contracts.ts';
@@ -69,7 +66,6 @@ export function createClientStatePhaseTestDriver(
     const serviceId = options.serviceId ?? 'client-service';
     const service = createClientStateService({
         runtimeRepository,
-        formationDamping: 'damped',
         createClientStateEventStore: () => eventStore,
         serviceId,
         timing: options.timing
@@ -91,8 +87,8 @@ export function createClientStatePhaseTestDriver(
     return createClientStateTestDriverOperations(context);
 }
 
-export function createLegacyClientStateTestDriver(
-    dependencies: LegacyClientStateTestDriverDependencies
+export function createClientStateTestDriver(
+    dependencies: ClientStateTestDriverDependencies
 ): ClientStatePhaseTestDriver {
     return createClientStatePhaseTestDriver(
         dependencies.runtimeRepository,
@@ -143,8 +139,7 @@ async function computeClientStateTestMutation(
             serviceId: context.serviceId,
             eventId: `test-client-event:${input.commandId}:${context.nextSequence()}`,
             attemptCount: attempt,
-            expireAtEpochMs: TEST_AUTH_EXPIRES_AT_EPOCH_MS,
-            formationDamping: 'damped'
+            expireAtEpochMs: TEST_AUTH_EXPIRES_AT_EPOCH_MS
         },
         authority
     );

@@ -10,7 +10,6 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 
 import type { GroupTopologyGroupSnapshotReader } from '../group-topology-management-contracts.ts';
 import { resolveGroupTopologyConfig, type GroupTopologyServerOptions } from './group-topology-config.ts';
-import type { GroupTopologyConfigGenerationReadiness } from './maintenance/group-topology-config-generation-readiness.ts';
 import { GroupTopologyConfigRepository } from './persistence/group-topology-config-repository.ts';
 
 export interface GroupTopologyConfigQueryServiceDependencies {
@@ -22,7 +21,6 @@ export interface GroupTopologyConfigQueryServiceDependencies {
         groupRef: GroupRef
     ) => Promise<RallarOverlayTopologySnapshot | undefined>;
     readonly configRepository?: GroupTopologyConfigRepository;
-    readonly readiness: Pick<GroupTopologyConfigGenerationReadiness, 'ensure'>;
     readonly serverDefaults?: GroupTopologyServerOptions;
 }
 
@@ -60,7 +58,6 @@ export class GroupTopologyConfigQueryService {
     }
 
     async readOverride(groupRef: GroupRef): Promise<StoredGroupTopologyOverride | undefined> {
-        await this.dependencies.readiness.ensure(groupRef);
         return await this.dependencies.configRepository?.findOverride(groupRef);
     }
 
@@ -76,7 +73,6 @@ export class GroupTopologyConfigQueryService {
             });
         }
 
-        await this.dependencies.readiness.ensure(groupRef);
         const { config, override } = await readConsistentTopologyConfigPair(repository, groupRef);
         return resolveGroupTopologyConfig({
             serverOptions: this.dependencies.serverDefaults,

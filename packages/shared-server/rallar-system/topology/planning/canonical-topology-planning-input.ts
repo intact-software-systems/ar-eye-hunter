@@ -1,4 +1,4 @@
-import { compareRtcTopologyIdentifiers } from '../../rtc-topology-identifiers.ts';
+import { compareRtcTopologyIdentifiers } from '../persistence/rtc-topology-identifiers.ts';
 
 /**
  * Planning input order is canonical, never arrival order: identical member

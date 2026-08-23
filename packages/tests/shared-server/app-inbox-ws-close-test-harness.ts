@@ -1,19 +1,21 @@
 import type { StateScope } from '@shared/api/state-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 
-import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
+import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 
-import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import { createClientStateService, type ClientStateService } from '@shared-server/rallar-system/services/client-state-service.ts';
-import { createGroupStateService, type GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { type ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
+import { type GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './auth/auth-app-inbox-test-runtime.ts';
 import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
@@ -81,7 +83,6 @@ export async function createAppInboxWsCloseHarness(
     await authSessions.putSession(authSession);
     const groupState = createGroupStateService({
         runtimeRepository,
-        formationDamping: 'damped',
         authSessionRepository: authSessions,
         createGroupStateEventStore: () => database.groupEventStore,
         serviceId: 'server-12345678',
@@ -89,7 +90,6 @@ export async function createAppInboxWsCloseHarness(
     });
     const clientState = createClientStateService({
         runtimeRepository,
-        formationDamping: 'damped',
         createClientStateEventStore: () => database.clientEventStore,
         serviceId: 'server-12345678'
     });
@@ -105,7 +105,7 @@ export async function createAppInboxWsCloseHarness(
             serviceId: 'server-12345678'
         }
     );
-    const group = new AppGroupInboxService(
+    const group = new GroupStateInboxService(
         {
             inboxQueueReader: reader,
             resourceInboxRepository: queue,
@@ -129,7 +129,7 @@ export async function createAppInboxWsCloseHarness(
             serviceId: 'server-12345678'
         }
     );
-    new AppGroupInboxService(
+    new GroupStateInboxService(
         {
             inboxQueueReader: secondReader,
             resourceInboxRepository: queue,

@@ -7,20 +7,12 @@ export function authTokenDigestKey(accessTokenDigest: string): string {
     return keyPart('token-digest', accessTokenDigest);
 }
 
-export function authLegacyTokenKey(accessToken: string): string {
-    return keyPart('token', accessToken);
-}
-
 export function authSessionKey(sessionId: string): string {
     return keyPart('session', sessionId);
 }
 
 export function authTicketDigestKey(ticketDigest: string): string {
     return keyPart('ticket-digest', ticketDigest);
-}
-
-export function authLegacyTicketKey(ticket: string): string {
-    return keyPart('ticket', ticket);
 }
 
 function keyPart(name: string, value: string): string {

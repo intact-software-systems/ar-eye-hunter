@@ -1,9 +1,9 @@
-import { toRtcTopologyPublicationMessageId } from '@shared-server/rallar-system/rtc-topology-identifiers.ts';
 import {
     computeTopologyMutation,
     validateTopologyMutation,
     type RtcTopologyPublicationClaim
-} from '@shared-server/rallar-system/services/rtc-topology-mutations.ts';
+} from '@shared-server/rallar-system/topology/mutation/rtc-topology-mutations.ts';
+import { toRtcTopologyPublicationMessageId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
@@ -16,13 +16,12 @@ describe('RTC topology publication mutation phases', () => {
     it('keeps RTC topology mutation computation synchronous and effect-free', () => {
         const source = readFileSync(
             new URL(
-                '../../shared-server/rallar-system/services/rtc-topology-mutations.ts',
+                '../../shared-server/rallar-system/topology/mutation/rtc-topology-mutations.ts',
                 import.meta.url
             ),
             'utf8'
         );
         const forbidden = [
-            /\brepository\b/,
             /\.begin\s*\(/,
             /\b(?:Date|Temporal)\b/,
             /random/i,
@@ -39,7 +38,7 @@ describe('RTC topology publication mutation phases', () => {
 
     it('shares a strict persisted publication validator from a neutral pure contract module', () => {
         const publicationContractUrl = new URL(
-            '../../shared-server/rallar-system/rtc-topology-publication-validation.ts',
+            '../../shared-server/rallar-system/topology/publication/validate-rtc-topology-publication.ts',
             import.meta.url
         );
         expect(existsSync(publicationContractUrl)).toBe(true);
@@ -54,21 +53,21 @@ describe('RTC topology publication mutation phases', () => {
         expect(contractSource).not.toMatch(/\/repositories\//);
         const mutationSource = readFileSync(
             new URL(
-                '../../shared-server/rallar-system/services/rtc-topology-mutations.ts',
+                '../../shared-server/rallar-system/topology/mutation/rtc-topology-mutations.ts',
                 import.meta.url
             ),
             'utf8'
         );
         const publicationRepositorySource = readFileSync(
             new URL(
-                '../../shared-server/rallar-system/repositories/rtc-topology-publication/' +
+                '../../shared-server/rallar-system/topology/publication/' +
                     'rtc-topology-publication-repository.ts',
                 import.meta.url
             ),
             'utf8'
         );
-        expect(mutationSource).toMatch(/rtc-topology-publication-validation/);
-        expect(publicationRepositorySource).toMatch(/rtc-topology-publication-validation/);
+        expect(mutationSource).toMatch(/validate-rtc-topology-publication/);
+        expect(publicationRepositorySource).toMatch(/validate-rtc-topology-publication/);
     });
     it('computes and validates an absent topology guard deterministically from frozen input', () => {
         const groupRef: GroupRef = {

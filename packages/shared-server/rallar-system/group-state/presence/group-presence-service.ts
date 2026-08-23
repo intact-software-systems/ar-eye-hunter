@@ -1,13 +1,13 @@
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
-import type { AppInboxEnqueueInput } from '../../services/AppInboxService.ts';
-import { AppInboxType } from '../../services/AppInboxService.ts';
+import type { AppInboxEnqueueInput } from '../../app-inbox/app-inbox-queue-client.ts';
+import { AppInboxType } from '../../app-inbox/app-inbox-queue-client.ts';
 import type {
     WsSessionGenerationCloseFacts,
     WsSessionGenerationLifecycleComputed,
     WsSessionGenerationLifecycleService,
     WsSessionHighWaterIdentity
-} from '../../services/ws-session-generation-lifecycle.ts';
+} from '../../websocket/ws-session-generation-lifecycle.ts';
 import type {
     GroupMutationPreparation,
     GroupStateMutationCommand,

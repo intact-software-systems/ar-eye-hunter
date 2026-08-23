@@ -1,3 +1,11 @@
+import {
+    type GroupMutationCommand,
+    type GroupMutationFacts,
+    type GroupMutationIdempotencyRecord,
+    type GroupMutationRead
+} from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import { decodePersistedGroupMember } from '@shared-server/rallar-system/group-state/persistence/group-state-persistence-codec.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
     groupStateGroupStorageKey,
@@ -7,15 +15,7 @@ import {
     groupStatePresenceSessionStorageKey,
     groupStatePresenceSummaryStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
-import {
-    computeGroupMutation,
-    normalizePersistedGroupMember,
-    validatePersistedGroupMember,
-    type GroupMutationCommand,
-    type GroupMutationFacts,
-    type GroupMutationIdempotencyRecord,
-    type GroupMutationRead
-} from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import { validatePersistedGroupMember } from '@shared-server/rallar-system/group-state/persistence/validate-persisted-group.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceAdmission, GroupPresenceSession, GroupPresenceSummary, GroupRef } from '@shared/api/group-types.ts';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
@@ -55,7 +55,7 @@ describe('GroupStateRepository persistence', () => {
             expect(() => validatePersistedGroupMember(contradictoryMember, ref)).toThrow(
                 /lifecycle|audit/
             );
-            expect(() => normalizePersistedGroupMember(contradictoryMember, ref)).toThrow(
+            expect(() => decodePersistedGroupMember(contradictoryMember, ref)).toThrow(
                 /lifecycle|audit/
             );
         }
@@ -65,14 +65,14 @@ describe('GroupStateRepository persistence', () => {
         const runtime = new FakeRuntimeStateRepository();
         const repository = new GroupStateRepository(runtime);
         const absentScope = {
-            applicationId: 'legacy-list-app',
-            workspaceId: 'legacy-list-workspace'
+            applicationId: 'wrong-scope-list-app',
+            workspaceId: 'wrong-scope-list-workspace'
         };
         const explicitSentinelGroup: Group = {
             ...createCorruptionMutationRead().group!.value,
             ...absentScope,
             workspaceId: '_',
-            groupId: 'legacy-list-group',
+            groupId: 'wrong-scope-list-group',
             activeMemberCount: 0
         };
 
@@ -235,11 +235,11 @@ describe('GroupStateRepository persistence', () => {
             .toHaveProperty('aggregateRef')
             .toEqualTypeOf<GroupRef>();
         const ref = {
-            applicationId: 'legacy-receipt-app',
-            workspaceId: 'legacy-receipt-workspace',
-            groupId: 'legacy-receipt-group'
+            applicationId: 'predecessor-receipt-app',
+            workspaceId: 'predecessor-receipt-workspace',
+            groupId: 'predecessor-receipt-group'
         };
-        const requestId = 'legacy-request';
+        const requestId = 'predecessor-request';
         const receipt = {
             commandId: requestId,
             commandHash: `sha256:${'1'.repeat(64)}`,
@@ -252,7 +252,7 @@ describe('GroupStateRepository persistence', () => {
             joinCodeExpiresAtEpochMs: null,
             rejection: null
         } as const;
-        const legacyRecord = {
+        const predecessorRecord = {
             requestId,
             commandHash: receipt.commandHash,
             receipt
@@ -263,7 +263,7 @@ describe('GroupStateRepository persistence', () => {
             await runtime.upsert(
                 'group-state:idempotent',
                 groupStateIdempotencyStorageKey(ref, requestId),
-                JSON.stringify(legacyRecord),
+                JSON.stringify(predecessorRecord),
                 Number.MAX_SAFE_INTEGER
             );
             const repository = new GroupStateRepository(runtime);
@@ -372,7 +372,6 @@ function createMutationFacts(): GroupMutationFacts {
         resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: 'none',
-        formationDamping: 'legacy',
         authenticatedAuthority: { principalId: 'alice', sessionId: 'alice-session' }
     };
 }

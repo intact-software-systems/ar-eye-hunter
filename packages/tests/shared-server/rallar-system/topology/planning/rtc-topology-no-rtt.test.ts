@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
 import { toCanonicalTopologySessionIds } from '@shared-server/rallar-system/topology/planning/canonical-topology-planning-input.ts';
 import { computeNoRttTopologyNextHops } from '@shared-server/rallar-system/topology/planning/compute-no-rtt-topology-next-hops.ts';
 import { computeNoRttTreeNextHops } from '@shared-server/rallar-system/topology/planning/compute-no-rtt-tree-next-hops.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 
 import { createRtcTopologyGroupSnapshot, createRtcTopologyMemberIds } from '../rtc-topology-test-fixtures.ts';
 

@@ -13,7 +13,7 @@ export class GroupBarrierRepository extends FakeRuntimeStateRepository {
     presenceSummaryGuards = 0;
     conditionalOperations: string[] = [];
     hotPathListReads = 0;
-    compatibilitySnapshotListReads = 0;
+    snapshotListReads = 0;
     serializeGroupTestTransactions = true;
     private groupReadsRemaining = 0;
     private groupReadsArrived = 0;
@@ -89,7 +89,7 @@ export class GroupBarrierRepository extends FakeRuntimeStateRepository {
         this.presenceSummaryGuards = 0;
         this.conditionalOperations = [];
         this.hotPathListReads = 0;
-        this.compatibilitySnapshotListReads = 0;
+        this.snapshotListReads = 0;
     }
 
     override findEntriesByPrefix(
@@ -106,7 +106,7 @@ export class GroupBarrierRepository extends FakeRuntimeStateRepository {
             (namespace === 'group-state:members' || namespace === 'group-state:sessions') &&
             new Error().stack?.includes('readStableStateSnapshot')
         ) {
-            this.compatibilitySnapshotListReads += 1;
+            this.snapshotListReads += 1;
         }
         return super.findEntriesByPrefix(namespace, keyPrefix);
     }

@@ -1,4 +1,4 @@
-import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 
 import type { MutationRoutingAstNode } from './mutation-routing-call-graph.ts';
 import { hasExactCrdtAdminRouteDefinition } from './mutation-routing-http-registration.ts';

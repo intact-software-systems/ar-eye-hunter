@@ -2,8 +2,8 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
 import { ADMIN_PRUNE_EXPIRED_CATEGORIES } from '@shared/api/admin-operations-types.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { toAppQueueCreatedBy, toAppQueueKey } from '../../services/app-inbox-queue-key.ts';
 import type { AdminPruneCommand } from '../inbox/admin-prune-command-codec.ts';
 import type { AdminPrunePageWork } from './admin-prune-page-codec.ts';
 

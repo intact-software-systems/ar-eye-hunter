@@ -1,10 +1,10 @@
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
 
 import { createAuthorityHarness, SCOPE, waitForQueueEntry } from './group-state-inbox-test-runtime.ts';
 
-describe('AppGroup durable result decoding', () => {
+describe('group-state AppInbox durable result decoding', () => {
     it('returns the exact terminal left for a malformed completed group result', async () => {
         const harness = await createAuthorityHarness(['owner']);
         const authority = harness.sessions.owner;
@@ -50,7 +50,7 @@ describe('AppGroup durable result decoding', () => {
 
         const result = await pending;
         expect(result.right).toBeUndefined();
-        expect(JSON.parse(result.left ?? '{}')).toEqual({
+        expect(result.left).toEqual({
             type: 'app-inbox-failure',
             version: 'canonical.v2',
             code: 'TypeError',

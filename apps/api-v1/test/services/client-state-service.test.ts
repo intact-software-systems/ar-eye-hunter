@@ -1,5 +1,4 @@
-import type { ClientMutationWritten, ClientStateWritten } from '@shared-server/rallar-system/services/client-state-service.ts';
-import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
+import { type ClientMutationWritten, type ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import type {
     RuntimeStateConditionalDeleteResult,
     RuntimeStateConditionalWriteResult,
@@ -9,9 +8,7 @@ import type {
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import assert from 'node:assert/strict';
-import {
-    createLegacyClientStateTestDriver as createClientStateService
-} from '../../../../packages/tests/shared-server/client-state/client-state-test-runtime.ts';
+import { createClientStateTestDriver as createClientStateService } from '../../../../packages/tests/shared-server/client-state/client-state-test-runtime.ts';
 
 const TEST_SCOPE: StateScope = {
     applicationId: 'app-1',
@@ -20,20 +17,8 @@ const TEST_SCOPE: StateScope = {
 const INITIAL_EXPIRES_AT_EPOCH_MS = 4_102_444_821_000;
 const REFRESHED_EXPIRES_AT_EPOCH_MS = 4_102_444_822_000;
 
-const NO_OP_SYNC_PUBLISHER: StateSyncPublisher = {
-    publishClientSnapshot: async () => {
-    },
-    publishClientEvent: async () => {
-    },
-    publishGroupSnapshot: async () => {
-    },
-    publishGroupEvent: async () => {
-    }
-};
-
 Deno.test('heartbeatSession refreshes TTL through an outbox-owned aggregate transition', async () => {
-    const syncPublisher = createRecordingStateSyncPublisher();
-    const service = createTestClientStateService(syncPublisher);
+    const service = createTestClientStateService();
 
     await service.connectSession(
         TEST_SCOPE,
@@ -49,7 +34,6 @@ Deno.test('heartbeatSession refreshes TTL through an outbox-owned aggregate tran
             expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS
         }
     );
-    syncPublisher.reset();
 
     const before = await readSnapshot(service);
     const refreshed = requireClientStateWrittenSnapshot(
@@ -82,13 +66,10 @@ Deno.test('heartbeatSession refreshes TTL through an outbox-owned aggregate tran
         refreshed.activeSessions[0].expiresAtEpochMs,
         REFRESHED_EXPIRES_AT_EPOCH_MS
     );
-    assert.equal(syncPublisher.clientSnapshots.length, 0);
-    assert.equal(syncPublisher.clientEvents.length, 0);
 });
 
 Deno.test('heartbeatSession returns an event when presence state changes without publishing directly', async () => {
-    const syncPublisher = createRecordingStateSyncPublisher();
-    const service = createTestClientStateService(syncPublisher);
+    const service = createTestClientStateService();
 
     await service.connectSession(
         TEST_SCOPE,
@@ -104,7 +85,6 @@ Deno.test('heartbeatSession returns an event when presence state changes without
             expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS
         }
     );
-    syncPublisher.reset();
 
     const before = await readSnapshot(service);
     const refreshedWritten = await service.heartbeatSession(
@@ -130,14 +110,11 @@ Deno.test('heartbeatSession returns an event when presence state changes without
     );
     assert.equal(refreshed.principal.snapshotVersion, before.principal.snapshotVersion + 1);
     assert.equal(refreshed.activeSessions[0].presenceState, 'away');
-    assert.equal(syncPublisher.clientSnapshots.length, 0);
-    assert.equal(syncPublisher.clientEvents.length, 0);
     assert.equal(event.eventType, 'session-heartbeat');
 });
 
 Deno.test('upsertPrincipal ignores unchanged profile state', async () => {
-    const syncPublisher = createRecordingStateSyncPublisher();
-    const service = createTestClientStateService(syncPublisher);
+    const service = createTestClientStateService();
 
     const created = requireClientStateWrittenSnapshot(
         await service.upsertPrincipal(TEST_SCOPE, 'client-1', {
@@ -148,7 +125,6 @@ Deno.test('upsertPrincipal ignores unchanged profile state', async () => {
             actorPrincipalId: 'client-1'
         })
     );
-    syncPublisher.reset();
 
     const unchanged = requireClientStateWrittenSnapshot(
         await service.upsertPrincipal(TEST_SCOPE, 'client-1', {
@@ -162,19 +138,15 @@ Deno.test('upsertPrincipal ignores unchanged profile state', async () => {
 
     assert.equal(unchanged.principal.profileVersion, created.principal.profileVersion);
     assert.equal(unchanged.principal.snapshotVersion, created.principal.snapshotVersion);
-    assert.equal(syncPublisher.clientSnapshots.length, 0);
-    assert.equal(syncPublisher.clientEvents.length, 0);
 });
 
 Deno.test('upsertInstance bumps profile version only for semantic instance changes', async () => {
-    const syncPublisher = createRecordingStateSyncPublisher();
-    const service = createTestClientStateService(syncPublisher);
+    const service = createTestClientStateService();
 
     await service.upsertPrincipal(TEST_SCOPE, 'client-1', {
         username: 'client-1',
         actorPrincipalId: 'client-1'
     });
-    syncPublisher.reset();
 
     const registered = requireClientStateWrittenSnapshot(
         await service.upsertInstance(
@@ -188,7 +160,6 @@ Deno.test('upsertInstance bumps profile version only for semantic instance chang
             }
         )
     );
-    syncPublisher.reset();
 
     const unchanged = requireClientStateWrittenSnapshot(
         await service.upsertInstance(
@@ -219,8 +190,6 @@ Deno.test('upsertInstance bumps profile version only for semantic instance chang
     assert.equal(unchanged.principal.snapshotVersion, registered.principal.snapshotVersion);
     assert.equal(updated.principal.profileVersion, registered.principal.profileVersion + 1);
     assert.equal(updated.principal.snapshotVersion, registered.principal.snapshotVersion + 1);
-    assert.equal(syncPublisher.clientSnapshots.length, 0);
-    assert.equal(syncPublisher.clientEvents.length, 0);
     assert.equal(updatedEvent.eventType, 'instance-updated');
 });
 
@@ -355,45 +324,12 @@ Deno.test('semantic client mutations advance snapshotVersion', async () => {
     );
 });
 
-function createTestClientStateService(
-    syncPublisher: StateSyncPublisher = NO_OP_SYNC_PUBLISHER
-) {
+function createTestClientStateService() {
     return createClientStateService({
         runtimeRepository: new FakeRuntimeStateRepository(),
-        syncPublisher,
         now: () => 1_000,
         serviceId: 'test-service'
     });
-}
-
-function createRecordingStateSyncPublisher() {
-    const clientSnapshots: ClientSnapshot[] = [];
-    const clientEvents: ClientEvent[] = [];
-
-    return {
-        clientSnapshots,
-        clientEvents,
-        reset() {
-            clientSnapshots.length = 0;
-            clientEvents.length = 0;
-        },
-        publishClientSnapshot: (snapshot: ClientSnapshot) => {
-            clientSnapshots.push(snapshot);
-            return Promise.resolve();
-        },
-        publishClientEvent: (event: ClientEvent) => {
-            clientEvents.push(event);
-            return Promise.resolve();
-        },
-        publishGroupSnapshot: async () => {
-        },
-        publishGroupEvent: async () => {
-        }
-    } satisfies StateSyncPublisher & {
-        clientSnapshots: ClientSnapshot[];
-        clientEvents: ClientEvent[];
-        reset(): void;
-    };
 }
 
 function requireClientStateWrittenSnapshot(
@@ -416,12 +352,7 @@ function requireClientStateWrittenEvent(
 function requireClientMutationWritten(
     written: ClientStateWritten
 ): ClientMutationWritten {
-    const mutation = written.result.right;
-    if (!mutation) {
-        throw new Error(written.result.left ?? 'Client mutation failed');
-    }
-
-    return mutation;
+    return written.result;
 }
 
 async function readSnapshot(

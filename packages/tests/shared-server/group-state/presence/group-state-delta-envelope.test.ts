@@ -2,7 +2,7 @@ import { GroupStateRepository } from '@shared-server/rallar-system/group-state/p
 import {
     GroupPresenceSummaryWork,
     type GroupPresenceSummaryTopologyIntent
-} from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
+} from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { validateGroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';

@@ -1,4 +1,4 @@
-import { AppInboxType } from '../../services/app-inbox-contracts.ts';
+import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AuthMutationCommand, AuthMutationIntent } from '../mutation/auth-mutation-contracts.ts';
 
 export const AUTH_STATE_APP_INBOX_TOPIC = 'app-inbox.auth-state';

@@ -10,8 +10,8 @@ import { toClientSnapshotLastSeenAtEpochMs } from '@shared/api/group-client-view
 
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type { RuntimeStateEntry, RuntimeStateRepositoryLike } from '../../../runtime-state/RuntimeStateRepository.ts';
-import { readStableStateSnapshot } from '../../repositories/state-snapshot-read.ts';
-import type { ClientStateEventStore } from '../../repositories/StateEventStore.ts';
+import type { ClientStateEventStore } from '../../state-events/state-event-store.ts';
+import { readStableStateSnapshot } from '../../state-events/state-snapshot-read.ts';
 import { toClientPresenceState } from '../client-presence-state.ts';
 import { assembleClientStateSnapshot, toActiveClientSessions } from './assemble-client-state-snapshot.ts';
 import { toLiveClientStateEntryValue, type ClientPrincipalSnapshotRead } from './client-state-persistence-contracts.ts';

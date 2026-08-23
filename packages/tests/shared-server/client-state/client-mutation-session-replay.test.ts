@@ -3,64 +3,58 @@ import { describe, expect, it } from 'vitest';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
-import { CLIENT_MUTATION_SERVICE_SCOPE as SCOPE, createPublisher, seedConnectedSession, toClientPrincipalRef } from './client-state-service-test-fixtures.ts';
-import { createLegacyClientStateTestDriver as createClientStateService } from './client-state-test-runtime.ts';
+import { CLIENT_MUTATION_SERVICE_SCOPE as SCOPE, seedConnectedSession, toClientPrincipalRef } from './client-state-service-test-fixtures.ts';
+import { createClientStateTestDriver as createClientStateService } from './client-state-test-runtime.ts';
 
 describe('client mutation session replay', () => {
     it('replays connectSession with the same requestId and preserves the original event', async () => {
-        const { first, principalRef, publisher, runtimeRepository, second } = await runConnectReplay();
+        const { first, principalRef, runtimeRepository, second } = await runConnectReplay();
 
         expect(second).toMatchObject({
             status: 'ok',
             result: {
-                right: {
-                    snapshot: {
-                        principal: {
-                            snapshotVersion: 1,
-                            presenceVersion: 1
-                        },
-                        activeSessions: [
-                            {
-                                sessionId: 'session-1',
-                                connectedAtEpochMs: 2_000,
-                                lastHeartbeatAtEpochMs: 2_000
-                            }
-                        ]
-                    }
+                snapshot: {
+                    principal: {
+                        snapshotVersion: 1,
+                        presenceVersion: 1
+                    },
+                    activeSessions: [
+                        {
+                            sessionId: 'session-1',
+                            connectedAtEpochMs: 2_000,
+                            lastHeartbeatAtEpochMs: 2_000
+                        }
+                    ]
                 }
             }
         });
-        expect(first.result.right?.event?.eventType).toBe('session-connected');
-        expect(second.result.right?.event).toEqual(first.result.right?.event);
+        expect(first.result?.event?.eventType).toBe('session-connected');
+        expect(second.result?.event).toEqual(first.result?.event);
 
         const repository = new ClientStateRepository(runtimeRepository);
         expect((await repository.listEvents(principalRef)).map((event) => event.eventType)).toEqual([
             'session-connected'
         ]);
         expect((await repository.readSnapshot(principalRef))?.principal.snapshotVersion).toBe(1);
-        expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
-        expect(publisher.publishClientEvent).not.toHaveBeenCalled();
     });
 
     it('replays disconnectSession with generated timestamps without losing the original event', async () => {
-        const { first, principalRef, publisher, runtimeRepository, second } = await runDisconnectReplay();
+        const { first, principalRef, runtimeRepository, second } = await runDisconnectReplay();
 
         expect(second).toMatchObject({
             status: 'ok',
             result: {
-                right: {
-                    snapshot: {
-                        principal: {
-                            snapshotVersion: 2,
-                            presenceVersion: 2
-                        },
-                        activeSessions: []
-                    }
+                snapshot: {
+                    principal: {
+                        snapshotVersion: 2,
+                        presenceVersion: 2
+                    },
+                    activeSessions: []
                 }
             }
         });
-        expect(first.result.right?.event?.eventType).toBe('session-disconnected');
-        expect(second.result.right?.event).toEqual(first.result.right?.event);
+        expect(first.result?.event?.eventType).toBe('session-disconnected');
+        expect(second.result?.event).toEqual(first.result?.event);
 
         const repository = new ClientStateRepository(runtimeRepository);
         expect(
@@ -76,18 +70,14 @@ describe('client mutation session replay', () => {
             'session-connected',
             'session-disconnected'
         ]);
-        expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
-        expect(publisher.publishClientEvent).not.toHaveBeenCalled();
     });
 });
 
 async function runConnectReplay() {
     const runtimeRepository = new FakeRuntimeStateRepository();
-    const publisher = createPublisher();
     let now = 2_000;
     const service = createClientStateService({
         runtimeRepository,
-        syncPublisher: publisher,
         now: () => now,
         serviceId: 'client-service'
     });
@@ -115,17 +105,15 @@ async function runConnectReplay() {
         'session-1',
         request
     );
-    return { first, principalRef, publisher, runtimeRepository, second };
+    return { first, principalRef, runtimeRepository, second };
 }
 
 async function runDisconnectReplay() {
     const runtimeRepository = new FakeRuntimeStateRepository();
     await seedConnectedSession(runtimeRepository, 'alice', 'alice-browser', 'session-1');
-    const publisher = createPublisher();
     let now = 4_000;
     const service = createClientStateService({
         runtimeRepository,
-        syncPublisher: publisher,
         now: () => now,
         serviceId: 'client-service'
     });
@@ -152,5 +140,5 @@ async function runDisconnectReplay() {
         'session-1',
         request
     );
-    return { first, principalRef, publisher, runtimeRepository, second };
+    return { first, principalRef, runtimeRepository, second };
 }

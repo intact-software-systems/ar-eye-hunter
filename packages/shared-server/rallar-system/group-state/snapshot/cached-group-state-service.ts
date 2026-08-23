@@ -8,7 +8,6 @@ export type CachedGroupStateServiceCache = Readonly<{
         options?: Readonly<{
             minSnapshotVersion?: number;
             minCausalRevision?: GroupStateCausalRevision;
-            minStateRevision?: number;
         }>
     ): Promise<GroupSnapshot | undefined>;
     observe(snapshot: GroupSnapshot): StateSnapshotObservation;
@@ -24,7 +23,6 @@ export type CachedGroupStateService =
             options: Readonly<{
                 minSnapshotVersion?: number;
                 minCausalRevision?: GroupStateCausalRevision;
-                minStateRevision?: number;
             }>
         ): Promise<GroupSnapshot | undefined>;
     }>;
@@ -60,7 +58,6 @@ export function createCachedGroupStateService(
         readSnapshotAtLeast: async (ref, readOptions) => await options.cache.findOrLoadByRef(ref, readOptions),
         listSnapshots: async (scope) => await options.durable.listSnapshots(scope),
         listSnapshotsPage: async (scope, pageOptions) => await options.durable.listSnapshotsPage(scope, pageOptions),
-        readStateRevision: async (ref) => await options.durable.readStateRevision(ref),
         readCausalRevision: async (ref) => await options.durable.readCausalRevision(ref),
         readIssuedAuthSession: async (sessionId) => await options.durable.readIssuedAuthSession(sessionId),
         listEvents: async (ref) => await options.durable.listEvents(ref),

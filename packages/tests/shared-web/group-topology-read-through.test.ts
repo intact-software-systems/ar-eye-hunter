@@ -153,7 +153,6 @@ function createWebRtcGroupManager(): WebRtcGroupManager {
 function createGroupSnapshot(groupId: string, sessionIds: readonly string[]): GroupSnapshot {
     const ownerPrincipalId = sessionIds[0] ?? 'owner';
     return {
-        stateRevision: 2,
         causalRevision: { groupRevision: 1, presenceRevision: 1 },
         group: createTestGroup({
             applicationId: DEFAULT_STATE_APPLICATION_ID,

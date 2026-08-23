@@ -14,16 +14,16 @@ describe('GroupStateRepository authority fence', () => {
         await repository.insertGroup(group);
         await repository.putMember(owner);
         const inserted = await repository.findGroupEntry(group);
-        const semanticallyValidLegacyRaw = JSON.stringify(group, null, 2);
+        const reformattedCanonicalRaw = JSON.stringify(group, null, 2);
         await runtime.upsert(
             'group-state:groups',
             inserted!.entry.key,
-            semanticallyValidLegacyRaw,
+            reformattedCanonicalRaw,
             inserted!.entry.expireAtTimestamp
         );
         const observation = await repository.readSnapshotWithAuthorityGuard(group);
         const before = observation!.authorityGuard.entry;
-        expect(before.value).toBe(semanticallyValidLegacyRaw);
+        expect(before.value).toBe(reformattedCanonicalRaw);
 
         await expect(repository.advanceAuthorityFence(observation!.authorityGuard)).resolves.toEqual({
             status: 'applied',
@@ -99,7 +99,7 @@ describe('GroupStateRepository authority fence', () => {
         const expected = await new GroupStateRepository(fallbackRuntime).readSnapshotWithAuthorityGuard(
             group
         );
-        runtime.rejectLegacyReads = true;
+        runtime.rejectIndividualReads = true;
 
         const observation = await repository.readSnapshotWithAuthorityGuard(group);
         const groupKey = groupStateGroupStorageKey(group);
@@ -156,11 +156,11 @@ class BatchReadRuntimeStateRepository extends FakeRuntimeStateRepository {
     readonly runtimeStateReadBatchCapability = true as const;
     readonly runtimeStateReadBatchConsistency = 'single-database-snapshot' as const;
     readonly batchReadCalls: BatchReadSelector[][] = [];
-    rejectLegacyReads = false;
+    rejectIndividualReads = false;
 
     override findEntry(namespace: string, key: string): Promise<RuntimeStateEntry | undefined> {
-        if (this.rejectLegacyReads) {
-            throw new Error('legacy findEntry called');
+        if (this.rejectIndividualReads) {
+            throw new Error('individual findEntry called');
         }
         return super.findEntry(namespace, key);
     }
@@ -169,8 +169,8 @@ class BatchReadRuntimeStateRepository extends FakeRuntimeStateRepository {
         namespace: string,
         keyPrefix: string
     ): Promise<readonly RuntimeStateEntry[]> {
-        if (this.rejectLegacyReads) {
-            throw new Error('legacy findEntriesByPrefix called');
+        if (this.rejectIndividualReads) {
+            throw new Error('individual findEntriesByPrefix called');
         }
         return super.findEntriesByPrefix(namespace, keyPrefix);
     }

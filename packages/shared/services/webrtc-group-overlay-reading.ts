@@ -1,4 +1,4 @@
-import { isOverlayForGroupRef, toScopedOverlayId } from '@shared/api/api-type-utils.ts';
+import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { OverlayInfo, PeerId } from '../api/api-config.ts';
 import type { GroupRef } from '../api/group-types.ts';
 import type { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
@@ -14,18 +14,9 @@ export function readOverlayForGroup(
     }
 
     const scopedOverlayId = toScopedOverlayId(groupRef);
-    const scoped = overlayCache.read(scopedOverlayId) ??
+    const overlay = overlayCache.read(scopedOverlayId) ??
         overlayCache.peek(scopedOverlayId);
-    if (scoped) {
-        return scoped.state === 'removed' ? undefined : scoped;
-    }
-
-    const legacy = overlayCache.read(groupRef.groupId) ??
-        overlayCache.peek(groupRef.groupId);
-    return legacy && legacy.state !== 'removed' &&
-            isOverlayForGroupRef(legacy, groupRef)
-        ? legacy
-        : undefined;
+    return overlay?.state === 'removed' ? undefined : overlay;
 }
 
 export function readAuthoritativeOverlayForGroup(

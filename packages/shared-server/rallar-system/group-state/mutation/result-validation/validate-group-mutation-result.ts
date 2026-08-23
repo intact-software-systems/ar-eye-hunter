@@ -1,4 +1,3 @@
-import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 import {
@@ -23,7 +22,6 @@ const MUTATION_RECEIPT_KEYS = [
     'outcome',
     'attemptCount',
     'acceptedStorageRevision',
-    'stateRevision',
     'snapshotVersion',
     'causalRevision',
     'eventId',
@@ -101,18 +99,11 @@ function validateMutationReceiptRevisions(receipt: Record<string, unknown>, labe
             `${label} acceptedStorageRevision`
         );
     }
-    requireNonNegativeSafeInteger(receipt.stateRevision, `${label} stateRevision`);
     requireNonNegativeSafeInteger(receipt.snapshotVersion, `${label} snapshotVersion`);
     const causalRevision = receipt.causalRevision;
     validateCausalRevision(causalRevision, label);
     if (receipt.snapshotVersion !== causalRevision.groupRevision) {
         throw new TypeError(`${label} snapshotVersion differs from causalRevision`);
-    }
-    if (
-        receipt.stateRevision !==
-            toGroupSnapshotStateRevision(causalRevision.groupRevision, causalRevision.presenceRevision)
-    ) {
-        throw new TypeError(`${label} stateRevision differs from causalRevision`);
     }
 }
 

@@ -1,5 +1,5 @@
 import { RequestAuthFailure } from '@shared-server/http/request-auth-service.ts';
-import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type {
     ApiMutationFailure,
     ApiMutationFailureDenial,
@@ -35,7 +35,7 @@ export class ApiMutationRouteFailure extends Error {
 export function createApiMutationFailure(input: ApiMutationFailureInput): ApiMutationFailure {
     return {
         type: 'api-mutation-failure',
-        version: 'canonical.v1',
+        version: 'canonical.v2',
         code: input.code,
         status: input.status,
         message: input.message,

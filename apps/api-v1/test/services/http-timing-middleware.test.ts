@@ -1,4 +1,4 @@
-import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import { Hono, type Context, type Next } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 import { createHttpTimingMiddleware } from '../../src/services/http-timing-middleware.ts';

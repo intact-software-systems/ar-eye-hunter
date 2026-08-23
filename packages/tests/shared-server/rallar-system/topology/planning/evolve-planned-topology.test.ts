@@ -1,5 +1,5 @@
 import { validateGroupTopologyNextHops } from '@shared-graph/group-topology-validation.ts';
-import { RallarRtcTopologyService, type RallarRtcTopologyUpdateResult } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { RallarRtcTopologyService, type RallarRtcTopologyUpdateResult } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 import { createTestGroup } from '../../../../create-test-group.ts';
@@ -224,7 +224,6 @@ function createGroupSnapshot(
     const ownerPrincipalId = [...memberSessionIds].sort()[0];
 
     return {
-        stateRevision: presenceRevision,
         causalRevision: { groupRevision: 1, presenceRevision },
         group: createTestGroup({
             applicationId,

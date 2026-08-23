@@ -8,17 +8,16 @@ import {
     type RuntimeStateConditionalWriteResult,
     type RuntimeStateRepositoryLike
 } from '../../../runtime-state/RuntimeStateRepository.ts';
-import { validatePersistedGroupEvent } from '../../persisted-group-event.ts';
-import type { GroupStateEventStore } from '../../repositories/StateEventStore.ts';
-import { filterStateEventsForList, type StateEventListQuery } from '../../state-event-listing.ts';
+import { filterStateEventsForList, type StateEventListQuery } from '../../state-events/state-event-listing.ts';
+import type { GroupStateEventStore } from '../../state-events/state-event-store.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
 import { validateGroupMutationIdempotencyRecord } from '../mutation/result-validation/validate-group-mutation-result.ts';
-import { normalizePersistedGroup } from './group-state-persistence-codec.ts';
+import { decodePersistedGroup } from './group-state-persistence-codec.ts';
 import {
     assertGroupRefIdentity,
     decodeStoredGroupStateKey,
+    decodeStoredGroupStateValue,
     GroupStateRepositoryInvariantCorruptionError,
-    normalizeStoredGroupStateValue,
     throwGroupStateIdentityCorruption,
     type GroupStateAuthorityGuard
 } from './group-state-persistence-contracts.ts';
@@ -29,6 +28,7 @@ import {
     groupStateGroupStorageKey,
     groupStateIdempotencyStorageKey
 } from './group-state-storage-keys.ts';
+import { validatePersistedGroupEvent } from './persisted-group-event.ts';
 import { validatePersistedGroup } from './validate-persisted-group.ts';
 
 export class GroupAggregateRepository extends RuntimeStateJsonStore {
@@ -170,11 +170,11 @@ export function canonicalStoredGroup(
     if (isGroupRef(expectedScope)) {
         assertGroupRefIdentity(decoded, expectedScope, stored.entry.key);
     }
-    const value = normalizeStoredGroupStateValue(
+    const value = decodeStoredGroupStateValue(
         stored.value,
         decoded,
         stored.entry.key,
-        normalizePersistedGroup,
+        decodePersistedGroup,
         'Stored group value is invalid'
     );
     assertGroupRefIdentity(value, decoded, stored.entry.key);
@@ -215,11 +215,11 @@ function assertGroupStateAuthorityGuard(
     }
     let value: Group;
     try {
-        value = normalizeStoredGroupStateValue(
+        value = decodeStoredGroupStateValue(
             JSON.parse(entry.value) as unknown,
             guard.groupRef,
             entry.key,
-            normalizePersistedGroup,
+            decodePersistedGroup,
             'Stored authority-fence group value is invalid'
         );
     }

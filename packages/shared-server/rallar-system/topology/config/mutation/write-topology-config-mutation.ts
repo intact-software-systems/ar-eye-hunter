@@ -2,7 +2,7 @@ import type { PSqlTransactionSql } from '../../../../postgres/PostgresSqlClient.
 import { PSqlRuntimeStateRepository } from '../../../../postgres/runtime-state/PSqlRuntimeStateRepository.ts';
 import { RuntimeStateWriteConflictError } from '../../../../runtime-state/optimistic-runtime-state-write.ts';
 import { GroupStateRepository } from '../../../group-state/persistence/group-state-repository.ts';
-import { writeRtcTopologyOutbox } from '../../../services/rtc-topology-outbox-entry.ts';
+import { writeRtcTopologyOutbox } from '../../mutation/rtc-topology-outbox-entry.ts';
 import { GroupTopologyConfigRepository } from '../persistence/group-topology-config-repository.ts';
 import type * as mutationContracts from './group-topology-config-mutation-contracts.ts';
 

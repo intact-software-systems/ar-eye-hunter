@@ -3,7 +3,7 @@ import type {
     GroupMutationFacts,
     GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { computeGroupMutation } from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import type { AuditStamp } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 
@@ -54,7 +54,6 @@ describe('group presence mutation computation', () => {
         const facts: GroupMutationFacts = {
             ...createMutationFacts(),
             internalAuthority: 'session-cleanup',
-            formationDamping: 'legacy',
             authenticatedAuthority: null
         };
         const appointment = createMutationCommand({
@@ -106,7 +105,7 @@ describe('heartbeat lease renewal classification', () => {
         const computed = computeGroupMutation({
             command: heartbeat(),
             read: createHeartbeatRead(),
-            facts: { ...createMutationFacts(), formationDamping: 'damped' }
+            facts: createMutationFacts()
         });
 
         expect(computed.outcome).toBe('write');
@@ -135,7 +134,7 @@ describe('heartbeat lease renewal classification', () => {
         const computed = computeGroupMutation({
             command: heartbeat(),
             read: lapsed,
-            facts: { ...createMutationFacts(), formationDamping: 'damped' }
+            facts: createMutationFacts()
         });
 
         expect(computed.outcome).toBe('write');
@@ -163,7 +162,7 @@ describe('heartbeat lease renewal classification', () => {
         const computed = computeGroupMutation({
             command: heartbeat(),
             read: unlisted,
-            facts: { ...createMutationFacts(), formationDamping: 'damped' }
+            facts: createMutationFacts()
         });
 
         expect(computed.outcome).toBe('write');
@@ -171,21 +170,6 @@ describe('heartbeat lease renewal classification', () => {
             return;
         }
         expect(computed.outboxEntries).toHaveLength(1);
-    });
-
-    it('keeps the legacy expansion for every heartbeat under legacy formation', () => {
-        const computed = computeGroupMutation({
-            command: heartbeat(),
-            read: createHeartbeatRead(),
-            facts: { ...createMutationFacts(), formationDamping: 'legacy' }
-        });
-
-        expect(computed.outcome).toBe('write');
-        if (computed.outcome !== 'write') {
-            return;
-        }
-        expect(computed.outboxEntries).toHaveLength(1);
-        expect(computed.receipt.outboxIds).toHaveLength(1);
     });
 });
 
@@ -326,7 +310,6 @@ function createMutationFacts(): GroupMutationFacts {
         resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: 'none',
-        formationDamping: 'legacy',
         authenticatedAuthority: {
             principalId: 'alice',
             sessionId: 'alice-session'

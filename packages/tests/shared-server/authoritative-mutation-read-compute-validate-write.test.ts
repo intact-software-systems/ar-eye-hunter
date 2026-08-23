@@ -7,15 +7,13 @@ import { findMutationBoundaryViolations } from './mutation-boundary-analysis.ts'
 
 // Retain permanently as cross-domain semantic phase-order evidence.
 const read = (file: string): string => readFileSync(file, 'utf8');
-const serviceRoot = 'packages/shared-server/rallar-system/services';
 const authRoot = 'packages/shared-server/rallar-system/auth';
-const repositoryRoot = 'packages/shared-server/rallar-system/repositories';
 const groupStateRoot = 'packages/shared-server/rallar-system/group-state';
 const topologyInboxRoot = 'packages/shared-server/rallar-system/topology/inbox';
 const topologyRoot = 'packages/shared-server/rallar-system/topology';
 const adminInboxRoot = 'packages/shared-server/rallar-system/admin-operations/inbox';
-const rtcInboxRoot = 'packages/shared-server/rallar-system/rtc-topology/inbox';
-const rtcMutationRoot = 'packages/shared-server/rallar-system/rtc-topology/mutation';
+const rtcInboxRoot = 'packages/shared-server/rallar-system/rtc-rtt/inbox';
+const rtcMutationRoot = 'packages/shared-server/rallar-system/rtc-rtt/mutation';
 const persistenceRoot = `${groupStateRoot}/persistence`;
 const validationPrimitivesPath = `${groupStateRoot}/group-state-validation-primitives.ts`;
 const oldValidationPath = `${groupStateRoot}/mutation/group-state-validation-primitives.ts`;
@@ -39,7 +37,9 @@ const sources = {
     authHandler: read(`${authRoot}/inbox/auth-inbox-handler.ts`),
     appClient: read('packages/shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts'),
     appCrdt: read('packages/shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts'),
-    appGroup: read(`${serviceRoot}/AppGroupInboxService.ts`),
+    groupInbox: read(`${groupStateRoot}/inbox/group-state-inbox-service.ts`),
+    topologyInbox: read(`${topologyInboxRoot}/topology-inbox-service.ts`),
+    rtcInbox: read(`${rtcInboxRoot}/rtc-rtt-inbox-service.ts`),
     topologyHandler: read(`${topologyInboxRoot}/topology-app-inbox-handler.ts`),
     rtcHandler: read(`${rtcInboxRoot}/rtc-rtt-app-inbox-handler.ts`),
     groupHandler: read(`${groupStateRoot}/inbox/group-state-inbox-handler.ts`),
@@ -48,8 +48,8 @@ const sources = {
     group: read(`${groupStateRoot}/mutation/write/write-group-mutation.ts`),
     topologyConfig: read(`${topologyRoot}/config/mutation/write-topology-config-mutation.ts`),
     topologyReconfigure: read(`${topologyRoot}/reconfigure/group-topology-reconfigure-mutation.ts`),
-    topologyWorker: read(`${serviceRoot}/RtcTopologyOutboxWork.ts`),
-    topologyRepository: read(`${repositoryRoot}/RtcTopologyExecutionRepository.ts`),
+    topologyWorker: read(`${topologyRoot}/mutation/rtc-topology-outbox-work.ts`),
+    topologyRepository: read(`${topologyRoot}/persistence/rtc-topology-execution-repository.ts`),
     rtt: read(`${rtcMutationRoot}/write-rtc-rtt-mutation.ts`)
 };
 
@@ -82,8 +82,7 @@ it('keeps group-state service and inbox ownership in the target modules', () => 
     ) {
         expect(existsSync(file), file).toBe(true);
     }
-    expect(read(`${serviceRoot}/group-state-service.ts`)).not.toContain('createGroupStateRuntime(');
-    expect(read(`${serviceRoot}/group-state-service.ts`)).not.toContain('toDescriptorCommand(');
+    expect(read(`${groupStateRoot}/group-state-service.ts`)).not.toContain('toDescriptorCommand(');
     expect(sources.groupHandler).toContain('export class GroupStateInboxHandler');
     expect(sources.groupService).not.toContain('../services/group-state-mutations.ts');
 });
@@ -146,7 +145,7 @@ it.each([
             'this.read(command)',
             'this.compute(read)',
             'this.validate(computed)',
-            'this.writeMutation(context'
+            'this.handlers.writeMutation(context'
         ]
     },
     {
@@ -237,8 +236,8 @@ it('keeps AppInbox as the only retry and transaction owner for HTTP and WS mutat
     }
     expect(sources.topologyHandler).toContain('this.dependencies.transactionWriter.writeMutation(');
     expect(sources.rtcHandler).toContain('this.dependencies.writeMutation(');
-    expect(sources.appGroup).toContain('AppInboxType.RTC_RTT_SUBMIT');
-    expect(sources.appGroup).toContain('AppInboxType.TOPOLOGY_RECONFIGURE');
+    expect(sources.rtcInbox).toContain('AppInboxType.RTC_RTT_SUBMIT');
+    expect(sources.topologyInbox).toContain('AppInboxType.TOPOLOGY_RECONFIGURE');
 });
 
 it('keeps transport boundaries free of direct mutators and persistence owners', () => {
@@ -279,8 +278,8 @@ it('writes RTT admission, measurement, receipt, and direct APP_OUTBOX rows atomi
 });
 
 it('keeps all topology and RTT computed effects direct and mandatory', () => {
-    const topologyEntry = read(`${serviceRoot}/rtc-topology-outbox-entry.ts`);
-    const topologyWsEntry = read(`${serviceRoot}/rtc-topology-ws-outbox-entry.ts`);
+    const topologyEntry = read(`${topologyRoot}/mutation/rtc-topology-outbox-entry.ts`);
+    const topologyWsEntry = read(`${topologyRoot}/publication/rtc-topology-ws-outbox-entry.ts`);
     for (
         const field of [
             'commandId',
@@ -302,7 +301,17 @@ it('keeps all topology and RTT computed effects direct and mandatory', () => {
 });
 
 it('does not reintroduce intermediate state-mutation intents on Task 7 paths', () => {
-    for (const source of [sources.appGroup, sources.topologyConfig, sources.topologyReconfigure, sources.rtt, sources.topologyWorker]) {
+    for (
+        const source of [
+            sources.groupInbox,
+            sources.topologyInbox,
+            sources.rtcInbox,
+            sources.topologyConfig,
+            sources.topologyReconfigure,
+            sources.rtt,
+            sources.topologyWorker
+        ]
+    ) {
         expect(source).not.toContain('StateMutation' + 'OutboxWork');
     }
     expect(sources.topologyConfig).not.toContain('StateMutation' + 'OutboxRepository');

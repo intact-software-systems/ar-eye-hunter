@@ -2,12 +2,8 @@ import { computeGroupAdmissionDecision } from '@shared/api/group-lifecycle/compu
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupMember } from '@shared/api/group-types.ts';
-import {
-    canActivateGroupMember,
-    canDecideGroupAdmission,
-    GroupPolicyDeniedError,
-    type GroupPolicyActor
-} from '../../../group-policy.ts';
+import { canActivateGroupMember, canDecideGroupAdmission } from '../../policy/group-membership-admission-policy.ts';
+import { GroupPolicyDeniedError, type GroupPolicyActor } from '../../policy/group-policy-result.ts';
 
 import { assertAllowed, toPolicySnapshot } from '../aggregate/group-aggregate-mutation-policy.ts';
 import type {
@@ -63,7 +59,7 @@ export function computeGrantGroupAdmission(
 ): GroupMutationComputed {
     const stored = requireGroup(read, command.aggregateRef);
     const policy = requireReadableLifecyclePolicy(read);
-    const snapshot = toPolicySnapshot(read, facts.nowEpochMs);
+    const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs);
     assertAllowed(
         canDecideGroupAdmission({
             snapshot,
@@ -112,7 +108,7 @@ export function computeDeclineGroupAdmission(
     const policy = requireReadableLifecyclePolicy(read);
     assertAllowed(
         canDecideGroupAdmission({
-            snapshot: toPolicySnapshot(read, facts.nowEpochMs),
+            snapshot: toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs),
             actor: toCommandActor(command),
             policy,
             activeMemberPrincipalIds: requireAdmissionRoster(read),

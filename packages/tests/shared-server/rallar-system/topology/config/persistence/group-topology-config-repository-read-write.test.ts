@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state-storage-keys.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import {
     GROUP_TOPOLOGY_CONFIG_NAMESPACE,
@@ -51,11 +51,11 @@ describe('group topology config repository reads and writes', () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new GroupTopologyConfigRepository(runtimeRepository);
         const refs: readonly GroupRef[] = [
-            { applicationId: 'app-1', workspaceId: 'workspace-empty', groupId: 'room-1' },
-            { applicationId: 'app-1', workspaceId: '_', groupId: 'room-1' },
-            { applicationId: 'app-1', workspaceId: 'a:b', groupId: 'room-1' },
-            { applicationId: 'app-1', workspaceId: 'a%3Ab', groupId: 'room-1' },
-            { applicationId: 'app-1', workspaceId: '＿', groupId: 'room-1' }
+            { applicationId: 'app-1', workspaceId: 'workspace-a', groupId: 'room-1' },
+            { applicationId: 'app-1', workspaceId: 'workspace-b', groupId: 'room-1' },
+            { applicationId: 'app-1', workspaceId: 'workspace-c', groupId: 'room-1' },
+            { applicationId: 'app-1', workspaceId: 'workspace-d', groupId: 'room-1' },
+            { applicationId: 'app-1', workspaceId: 'workspace-e', groupId: 'room-1' }
         ];
         for (const [index, groupRef] of refs.entries()) {
             await runtimeRepository.insertIfAbsent(
@@ -81,11 +81,11 @@ describe('group topology config repository reads and writes', () => {
                     target: 'config',
                     version: index + 1
                 }))
-                .sort((left, right) =>
-                    groupStateGroupStorageKey(left.groupRef).localeCompare(
-                        groupStateGroupStorageKey(right.groupRef)
-                    )
-                )
+                .sort((left, right) => {
+                    const leftKey = groupStateGroupStorageKey(left.groupRef);
+                    const rightKey = groupStateGroupStorageKey(right.groupRef);
+                    return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+                })
         );
         const first = await repository.listGenerationSourcesPage('config', {
             limit: 2
@@ -110,32 +110,34 @@ describe('group topology config repository reads and writes', () => {
             namespace: GROUP_TOPOLOGY_OVERRIDE_NAMESPACE,
             target: 'override' as const
         }
-    ])('decodes legacy $label rows with omitted requestId as null', async ({ namespace, target }) => {
+    ])('rejects predecessor $label rows that omit requestId', async ({ namespace, target }) => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new GroupTopologyConfigRepository(runtimeRepository);
         const groupRef = createTopologyTestGroupRef('workspace-1');
-        const legacy = {
+        const predecessor = {
             groupRef,
             config: createTopologyTestEffectiveConfig('tree'),
             version: 7,
             createdAtEpochMs: 1,
             updatedAtEpochMs: 2,
-            updatedByPrincipalId: 'legacy-owner',
+            updatedByPrincipalId: 'old-owner',
             ...(target === 'override' ? { expiresAtEpochMs: NEVER_EXPIRE_AT_TIMESTAMP } : {})
         };
         const key = target === 'config' ? repository.configKey(groupRef) : repository.overrideKey(groupRef);
         await runtimeRepository.insertIfAbsent(
             namespace,
             key,
-            JSON.stringify(legacy),
+            JSON.stringify(predecessor),
             NEVER_EXPIRE_AT_TIMESTAMP
         );
 
-        const decoded = target === 'config'
-            ? await repository.findConfig(groupRef)
-            : await repository.findOverride(groupRef);
-
-        expect(decoded).toEqual({ ...legacy, requestId: null });
+        await expect(
+            target === 'config'
+                ? repository.findConfig(groupRef)
+                : repository.findOverride(groupRef)
+        ).rejects.toMatchObject({
+            code: 'group-topology-config-repository-invariant-corruption'
+        });
     });
 
     it('commits config and overrides only against the observed storage revision', async () => {

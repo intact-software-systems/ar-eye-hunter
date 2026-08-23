@@ -45,7 +45,6 @@ export function createDeltaEnvelopeFixtureGroupSnapshot(
 ): GroupSnapshot {
     const audit = createDeltaEnvelopeFixtureAuditStamp();
     return {
-        stateRevision: 2_000_002,
         causalRevision: { groupRevision: 2, presenceRevision: 2 },
         group: createTestGroup({
             applicationId: DELTA_ENVELOPE_FIXTURE_GROUP_REF.applicationId,

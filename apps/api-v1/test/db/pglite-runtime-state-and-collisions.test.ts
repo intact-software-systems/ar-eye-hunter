@@ -6,18 +6,17 @@ import { ClientStateEventCollisionError } from '@shared-server/postgres/rallar-s
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { AuthSessionRepository, type IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import {
-    AppGroupInboxService,
-    toTopologyAppInboxCommand,
-    type TopologyAppInboxRequestPayload
-} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import type { GroupTopologyConfigMutationCommand } from '@shared-server/rallar-system/topology/config/mutation/group-topology-config-mutation-contracts.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
+import type { TopologyAppInboxRequestPayload } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
+import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
+import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import {
     isRuntimeStateGuardedBatchRepositoryLike,
     type RuntimeStateGuardedBatch,
@@ -32,7 +31,7 @@ import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import { waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { createPGliteClientEventCollisionFixture } from './pglite-client-event-collision-test-runtime.ts';
-import { submitPGliteTopologyCommand, topologyGroupSnapshot, topologyOverrideCommand } from './pglite-topology-test-runtime.ts';
+import { requireTopologyMutationOwners, submitPGliteTopologyCommand, topologyGroupSnapshot, topologyOverrideCommand } from './pglite-topology-test-runtime.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 const PAST_MS = Date.parse('2000-01-01T00:00:00.000Z');
@@ -664,26 +663,26 @@ Deno.test(
                 await groupStateRepository.putMember(member);
             }
             const configRepository = new GroupTopologyConfigRepository(runtime);
-            const baselineService = new GroupTopologyManagementService({
+            const baselineService = createGroupTopologyOwners({
                 findGroupSnapshotByRef: (ref) => groupStateRepository.readSnapshot(ref),
                 groupStateRepository,
                 configRepository,
                 topologyService: new RallarRtcTopologyService(),
                 now: () => nowEpochMs
             });
-            const staleOverrideRead = await baselineService.readTopologyConfigMutation(
+            const staleOverrideRead = await baselineService.configMutation!.read(
                 topologyOverrideCommand(groupRef, 'pglite-topology-b', 'mesh')
             );
             let staleReadCount = 0;
             let delegatedReadCount = 0;
-            const topology = new GroupTopologyManagementService({
+            const topology = createGroupTopologyOwners({
                 findGroupSnapshotByRef: (ref) => groupStateRepository.readSnapshot(ref),
                 groupStateRepository,
                 configRepository,
                 topologyService: new RallarRtcTopologyService(),
                 now: () => nowEpochMs
             });
-            const configMutation = topology.configMutationService;
+            const configMutation = topology.configMutation;
             assert.ok(configMutation);
             const readTopologyConfigMutation = configMutation.read.bind(configMutation);
             configMutation.read = async (command: GroupTopologyConfigMutationCommand) => {
@@ -696,19 +695,19 @@ Deno.test(
             };
             const groupState = createGroupStateService({
                 runtimeRepository: runtime,
-                formationDamping: 'damped',
                 createGroupStateEventStore: createGroupStateEventRepository,
                 authSessionRepository: authSessions,
                 serviceId: 'pglite-topology-cross-target',
                 now: () => nowEpochMs
             });
-            const appGroup = new AppGroupInboxService(
+            const appGroup = new TopologyInboxService(
                 {
                     inboxQueueReader: inboxReader,
                     resourceInboxRepository: resourceInbox,
                     resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
                     database: sql,
-                    groupStateService: groupState
+                    groupStateService: groupState,
+                    mutationOwners: requireTopologyMutationOwners(topology)
                 },
                 {
                     serviceId: 'pglite-topology-cross-target',
@@ -722,7 +721,6 @@ Deno.test(
                     }
                 }
             );
-            appGroup.setTopologyManagementService(topology);
             const submit = async (
                 requestId: string,
                 payload: TopologyAppInboxRequestPayload
@@ -808,7 +806,7 @@ Deno.test(
     `;
             assert.deepEqual(
                 outboxRows.map((row) => (JSON.parse(row.ri_resource) as ALMessage).id.msgId).sort(),
-                [firstReceipt.receipt.outboxId, secondReceipt.receipt.outboxId].sort()
+                [firstReceipt.receipt.outboxIds[0], secondReceipt.receipt.outboxIds[0]].sort()
             );
         });
     }

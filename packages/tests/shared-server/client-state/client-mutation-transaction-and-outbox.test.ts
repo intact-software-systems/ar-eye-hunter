@@ -5,8 +5,8 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { toUpsertPrincipalCommandInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 
@@ -26,8 +26,8 @@ import { createRollbackHarness, processRollbackMutation } from './client-mutatio
 import { createHandlerHarness } from './client-mutation-transaction-boundary-fixture.ts';
 
 const SCOPE = { applicationId: 'ar-eye-hunter', workspaceId: 'default' } as const;
-const EXPECTED_DURABLE_JSON = '{"status":"ok","result":{"right":{"snapshot":{"snapshotVersion":4,"stateRevision":3},' +
-    '"event":{"eventId":"event-4"}}}}';
+const EXPECTED_DURABLE_JSON = '{"status":"ok","result":{"snapshot":{"snapshotVersion":4,"stateRevision":3},' +
+    '"event":{"eventId":"event-4"}}}';
 
 describe('client mutation transaction and outbox', () => {
     it('persists durable JSON bytes before observing the exact committed snapshot', async () => {
@@ -58,7 +58,7 @@ describe('client mutation transaction and outbox', () => {
         expect(harness.actions).toEqual(['write', 'commit', 'observe']);
         expect(harness.observedSnapshots).toHaveLength(1);
         expect(harness.observedSnapshots[0]).toBe(harness.committedSnapshot);
-        expect(result.result.right?.snapshot).toBe(harness.committedSnapshot);
+        expect(result.result?.snapshot).toBe(harness.committedSnapshot);
     });
 
     it('does not observe a snapshot when transaction finalization rejects', async () => {
@@ -152,7 +152,7 @@ interface RetryHarnessState {
     readonly phases: string[];
     readonly serviceLocalSleeps: number[];
     writeAttempt: number;
-    legacyAttempt: number;
+    serviceMethodAttempt: number;
 }
 
 function createRetryHarness() {
@@ -163,7 +163,7 @@ function createRetryHarness() {
         phases: [],
         serviceLocalSleeps: [],
         writeAttempt: 0,
-        legacyAttempt: 0
+        serviceMethodAttempt: 0
     };
     return {
         queue,
@@ -187,11 +187,11 @@ function createRetryHarness() {
 function createRetryClientState(state: RetryHarnessState) {
     return createClientStateServiceStub({
         upsertPrincipal: vi.fn(async () => {
-            state.legacyAttempt += 1;
-            if (state.legacyAttempt === 1) {
+            state.serviceMethodAttempt += 1;
+            if (state.serviceMethodAttempt === 1) {
                 throw new RuntimeStateWriteConflictError();
             }
-            return { status: 'ok', result: { right: { accepted: true } } };
+            return { status: 'ok', result: { accepted: true } };
         }),
         read: vi.fn(async () => {
             state.phases.push('read');

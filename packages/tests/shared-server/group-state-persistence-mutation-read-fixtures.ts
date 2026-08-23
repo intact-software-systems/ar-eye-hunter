@@ -1,4 +1,4 @@
-import type { GroupMutationRead } from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import { type GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import type { AuditStamp } from '@shared/api/group-types.ts';
 
 import { createTestGroup } from '../create-test-group.ts';

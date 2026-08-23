@@ -383,8 +383,8 @@
         "status": 400,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
-          "code": "app-inbox-malformed-command",
+          "version": "canonical.v2",
+          "code": "group-mutation-rejected",
           "status": 400
         }
       }
@@ -437,8 +437,8 @@
         "status": 400,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
-          "code": "app-inbox-malformed-command",
+          "version": "canonical.v2",
+          "code": "group-mutation-rejected",
           "status": 400
         }
       }

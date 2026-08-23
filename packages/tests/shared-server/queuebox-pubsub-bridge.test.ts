@@ -1,11 +1,11 @@
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import {
     installQueueBoxPubSubBridge,
     toPubSubMessage,
     toResourceEntryFromPubSubMessage,
     type QueueBoxPubSubBridge,
     type QueueBoxPubSubMessage
-} from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
-import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
+} from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
@@ -150,11 +150,20 @@ describe('QueueBoxPubSubBridge', () => {
         expect(bridge.publish).toHaveBeenCalledTimes(2);
         expect(bridge.publish).toHaveBeenCalledWith(
             'queuebox-events',
-            toPubSubMessage('queuebox-events', 'publisher-1', entry)
+            toPubSubMessage({
+                channel: 'queuebox-events',
+                publisherId: 'publisher-1',
+                entry
+            })
         );
         expect(bridge.publish).toHaveBeenCalledWith(
             'queuebox-events',
-            toPubSubMessage('queuebox-events', 'publisher-1', entry, { delivery: 'key' })
+            toPubSubMessage({
+                channel: 'queuebox-events',
+                publisherId: 'publisher-1',
+                entry,
+                delivery: 'key'
+            })
         );
         expect(bridge.subscribe).toHaveBeenCalledWith(
             'queuebox-events',
@@ -166,7 +175,11 @@ describe('QueueBoxPubSubBridge', () => {
     it('keeps full-entry delivery as the default pub/sub envelope', () => {
         const entry = createWsEntry();
 
-        expect(toPubSubMessage('queuebox-events', 'publisher-1', entry)).toEqual({
+        expect(toPubSubMessage({
+            channel: 'queuebox-events',
+            publisherId: 'publisher-1',
+            entry
+        })).toEqual({
             key: entry.key,
             channel: 'queuebox-events',
             publisherId: 'publisher-1',
@@ -178,12 +191,12 @@ describe('QueueBoxPubSubBridge', () => {
 
     it('can build key-only envelopes without embedding the queue payload', () => {
         const entry = createWsEntry();
-        const message = toPubSubMessage(
-            'queuebox-events',
-            'publisher-1',
+        const message = toPubSubMessage({
+            channel: 'queuebox-events',
+            publisherId: 'publisher-1',
             entry,
-            { delivery: 'key' }
-        );
+            delivery: 'key'
+        });
 
         expect(message).toEqual({
             key: entry.key,
@@ -215,7 +228,11 @@ describe('QueueBoxPubSubBridge', () => {
 
         const entry = createWsEntry();
         await bridge.subscriber?.(
-            toPubSubMessage('queuebox-events', 'publisher-2', entry)
+            toPubSubMessage({
+                channel: 'queuebox-events',
+                publisherId: 'publisher-2',
+                entry
+            })
         );
 
         expect(enqueueIfAbsent).toHaveBeenCalledTimes(1);
@@ -250,12 +267,12 @@ describe('QueueBoxPubSubBridge', () => {
         });
 
         await bridge.subscriber?.(
-            toPubSubMessage(
-                'queuebox-events',
-                'publisher-2',
+            toPubSubMessage({
+                channel: 'queuebox-events',
+                publisherId: 'publisher-2',
                 entry,
-                { delivery: 'key' }
-            )
+                delivery: 'key'
+            })
         );
 
         expect(getItem).toHaveBeenCalledWith(entry.key);
@@ -305,10 +322,19 @@ describe('QueueBoxPubSubBridge', () => {
         });
 
         await bridge.subscriber?.(
-            toPubSubMessage('queuebox-events', 'publisher-2', entry, { delivery: 'key' })
+            toPubSubMessage({
+                channel: 'queuebox-events',
+                publisherId: 'publisher-2',
+                entry,
+                delivery: 'key'
+            })
         );
         await bridge.subscriber?.(
-            toPubSubMessage('queuebox-events', 'publisher-2', entry)
+            toPubSubMessage({
+                channel: 'queuebox-events',
+                publisherId: 'publisher-2',
+                entry
+            })
         );
 
         expect(onValidatedOutboxKeyReceived).toHaveBeenCalledOnce();
@@ -339,12 +365,12 @@ describe('QueueBoxPubSubBridge', () => {
         });
 
         await bridge.subscriber?.(
-            toPubSubMessage(
-                'queuebox-events',
-                'publisher-2',
+            toPubSubMessage({
+                channel: 'queuebox-events',
+                publisherId: 'publisher-2',
                 entry,
-                { delivery: 'key' }
-            )
+                delivery: 'key'
+            })
         );
 
         expect(enqueueIfAbsent).not.toHaveBeenCalled();
@@ -386,7 +412,10 @@ describe('QueueBoxPubSubBridge', () => {
         });
 
         await bridge.subscriber?.(
-            toPubSubMessage('queuebox-events', 'publisher-2', entry, {
+            toPubSubMessage({
+                channel: 'queuebox-events',
+                publisherId: 'publisher-2',
+                entry,
                 delivery: 'key'
             })
         );

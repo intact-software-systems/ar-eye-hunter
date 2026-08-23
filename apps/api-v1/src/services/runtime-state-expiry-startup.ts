@@ -1,8 +1,6 @@
 export type RuntimeStateExpiryStartupBarrierOptions = Readonly<{
-    backfillTopologyGenerations: () => Promise<Readonly<{ advanced: number; }>>;
     initialiseRtcRttReceiptFamilyCleanup: () => Promise<void>;
     initialiseRuntimeStateExpiryEviction: () => Promise<number>;
-    onGenerationsBackfilled?: (advanced: number) => void;
     isCurrentGeneration?: () => boolean;
     onDetachedRuntimeStateExpiryEvictionFailure?: (error: unknown) => void;
 }>;
@@ -107,15 +105,9 @@ export function createRuntimeStateExpiryLifecycle(): RuntimeStateExpiryLifecycle
     return lifecycle;
 }
 
-/**
- * Keeps generic runtime-state expiry fail-closed until legacy topology
- * config/override generations have been preserved outside expiring rows.
- */
 export async function runRuntimeStateExpiryStartupBarrier(
     options: RuntimeStateExpiryStartupBarrierOptions
 ): Promise<void> {
-    const { advanced } = await options.backfillTopologyGenerations();
-    options.onGenerationsBackfilled?.(advanced);
     let cleanupFailure: unknown;
     let cleanupFailed = false;
     try {

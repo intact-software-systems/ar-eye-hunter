@@ -1,3 +1,14 @@
+import {
+    decodeGroupStateGroupStorageKey,
+    decodeGroupStateMemberStorageKey,
+    decodeGroupStatePresenceSessionStorageKey,
+    groupStateScopeStorageKey
+} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { validatePersistedGroupPresenceSession } from '@shared-server/rallar-system/group-state/persistence/validate-persisted-group-presence.ts';
+import {
+    validatePersistedGroup,
+    validatePersistedGroupMember
+} from '@shared-server/rallar-system/group-state/persistence/validate-persisted-group.ts';
 import type {
     AdminCountByStatus,
     AdminCountByTypeStatus,
@@ -12,17 +23,6 @@ import type {
     AdminOperationsReadInput,
     AdminOperationsStatsReader
 } from '../../rallar-system/admin-operations/admin-operations-service.ts';
-import {
-    decodeGroupStateGroupStorageKey,
-    decodeGroupStateMemberStorageKey,
-    decodeGroupStatePresenceSessionStorageKey,
-    groupStateScopeStorageKey
-} from '../../rallar-system/group-state-storage-keys.ts';
-import {
-    validatePersistedGroup,
-    validatePersistedGroupMember,
-    validatePersistedGroupPresenceSession
-} from '../../rallar-system/services/group-state-mutations.ts';
 import type { PSqlSql } from '../PostgresSqlClient.ts';
 import { groupEventWorkspaceKey } from '../rallar-system/group-event-workspace-key.ts';
 import { PSqlClientStateAdminStatsReader } from './p-sql-client-state-admin-stats-reader.ts';
@@ -662,9 +662,7 @@ function readCanonicalGroupMemberIdentity(
     }
     return JSON.stringify([
         decoded.applicationId,
-        decoded.workspaceId === undefined
-            ? ['workspace-absent']
-            : ['workspace-present', decoded.workspaceId],
+        decoded.workspaceId,
         decoded.groupId,
         principalId
     ]);

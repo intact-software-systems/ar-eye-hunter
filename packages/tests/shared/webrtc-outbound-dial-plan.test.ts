@@ -2,24 +2,6 @@ import { computeOutboundDialPlan } from '@shared/services/webrtc-outbound-dial-p
 import { describe, expect, it } from 'vitest';
 
 describe('computeOutboundDialPlan', () => {
-    it('keeps legacy-star dialing unbounded', () => {
-        const connectablePeerIds = Array.from(
-            { length: 49 },
-            (_, index) => `peer-${index}`
-        );
-
-        expect(
-            computeOutboundDialPlan({
-                mode: 'legacy-star',
-                maxPeerConnections: 10,
-                knownPeerIds: new Set(),
-                desiredPeerIds: new Set(connectablePeerIds),
-                connectablePeerIds,
-                serverDesiredPeerIds: new Set()
-            })
-        ).toEqual({ peersToConnect: connectablePeerIds, deferredPeerIds: [] });
-    });
-
     it('caps new dials at the connection budget and defers the rest', () => {
         const connectablePeerIds = Array.from(
             { length: 49 },
@@ -27,7 +9,6 @@ describe('computeOutboundDialPlan', () => {
         );
 
         const plan = computeOutboundDialPlan({
-            mode: 'bounded-bootstrap',
             maxPeerConnections: 10,
             knownPeerIds: new Set(),
             desiredPeerIds: new Set(connectablePeerIds),
@@ -41,7 +22,6 @@ describe('computeOutboundDialPlan', () => {
 
     it('always ensures known desired peers and only budgets new dials', () => {
         const plan = computeOutboundDialPlan({
-            mode: 'bounded-bootstrap',
             maxPeerConnections: 3,
             knownPeerIds: new Set(['peer-a', 'peer-b']),
             desiredPeerIds: new Set(['peer-a', 'peer-b', 'peer-c', 'peer-d']),
@@ -55,7 +35,6 @@ describe('computeOutboundDialPlan', () => {
 
     it('prioritizes server-overlay-desired peers over bootstrap peers', () => {
         const plan = computeOutboundDialPlan({
-            mode: 'bounded-bootstrap',
             maxPeerConnections: 2,
             knownPeerIds: new Set(),
             desiredPeerIds: new Set(['peer-boot-1', 'peer-server-1', 'peer-boot-2', 'peer-server-2']),
@@ -77,7 +56,6 @@ describe('computeOutboundDialPlan', () => {
         // the dial of a newly desired peer: the retained-eviction pass owns
         // trimming that overflow.
         const plan = computeOutboundDialPlan({
-            mode: 'bounded-bootstrap',
             maxPeerConnections: 5,
             knownPeerIds: new Set(['old-a', 'old-b', 'old-c', 'old-d', 'old-e']),
             desiredPeerIds: new Set(['peer-new']),
@@ -91,7 +69,6 @@ describe('computeOutboundDialPlan', () => {
 
     it('defers everything when desired connections already fill the budget', () => {
         const plan = computeOutboundDialPlan({
-            mode: 'bounded-bootstrap',
             maxPeerConnections: 2,
             knownPeerIds: new Set(['peer-a', 'peer-b']),
             desiredPeerIds: new Set(['peer-a', 'peer-b', 'peer-c']),

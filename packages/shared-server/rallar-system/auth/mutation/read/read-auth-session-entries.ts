@@ -6,13 +6,7 @@ export async function readAuthSessionEntries(
     expected: Readonly<{ sessionId: string; accessTokenDigest: string; }>
 ): Promise<AuthSessionEntries> {
     const bySession = await sessions.readSessionBySessionIdEntry(expected.sessionId);
-    let byToken = await sessions.readSessionByAccessTokenDigestEntry(expected.accessTokenDigest);
-    if (!byToken.value && !byToken.expiredEntry) {
-        const legacy = await sessions.findLegacySessionByAccessTokenDigestEntry(
-            expected.accessTokenDigest
-        );
-        byToken = { value: legacy, expiredEntry: undefined };
-    }
+    const byToken = await sessions.readSessionByAccessTokenDigestEntry(expected.accessTokenDigest);
     return {
         byToken: byToken.value ?? null,
         bySession: bySession.value ?? null,

@@ -5,7 +5,7 @@ import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology
 import type { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 
-import { validatePersistedALMessage } from '../../services/al-message-persistence-validation.ts';
+import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
 import type { RtcTopologyReplayDiagnosticsSink } from './rtc-topology-replay-diagnostics.ts';
 import {
     RTC_TOPOLOGY_RECONNECT_BATCH_WINDOW_MS,

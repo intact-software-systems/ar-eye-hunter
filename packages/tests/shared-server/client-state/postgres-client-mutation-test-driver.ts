@@ -1,5 +1,7 @@
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { createClientStateEventRepository } from '@shared-server/postgres/rallar-system/createStateRepositories.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { requiresClientWrite } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 import {
@@ -12,8 +14,7 @@ import {
     toExpiryCommandInput
 } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import type { ClientMutationCommandInput, ClientMutationComputed } from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
-import { AuthSessionRepository, type IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import type { ClientStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
+import type { ClientStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import type { ConnectClientSessionRequest, StateScope } from '@shared/api/state-types.ts';
@@ -60,7 +61,6 @@ export function createPostgresClientPhaseDriver(
 ): PostgresClientPhaseDriver {
     const service = createClientStateService({
         runtimeRepository: options.runtimeRepository,
-        formationDamping: 'damped',
         createClientStateEventStore: options.createClientStateEventStore ?? createClientStateEventRepository,
         serviceId: options.serviceId
     });
@@ -102,8 +102,7 @@ function createPostgresClientMutationExecutor(
                     serviceId: options.serviceId,
                     eventId: `postgres-client-event:${commandInput.commandId}`,
                     attemptCount: attempt,
-                    expireAtEpochMs: options.atEpochMs + 24 * 60 * 60 * 1_000,
-                    formationDamping: 'damped'
+                    expireAtEpochMs: options.atEpochMs + 24 * 60 * 60 * 1_000
                 },
                 commandInput.operation === 'expireSession'
                     ? toClientMutationSystemAuthority(options.serviceId)

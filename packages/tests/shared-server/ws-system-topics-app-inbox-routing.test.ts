@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { initRallarSystemWsTopics, type InitRallarSystemWsTopicsOptions } from '@shared-server/rallar-system/ws-system-topics.ts';
+import { initRallarSystemWsTopics, type InitRallarSystemWsTopicsOptions } from '@shared-server/rallar-system/websocket/ws-system-topics.ts';
 import {
     AppTopics,
     ConnectionContext,
@@ -47,7 +47,6 @@ describe('Rallar system WS AppInbox routing', () => {
         const durableRow = { key: { resourceId: 'rtt-1' } } as ResourceEntry;
         const enqueueRtcRttMutation = vi.fn(() => Promise.resolve(durableRow));
         const options: DurableRtcRttOptions = {
-            rtcTopologyRuntimeState: { repository: new FakeRuntimeStateRepository() },
             enqueueRtcRttMutation
         };
         initRallarSystemWsTopics(service, options);

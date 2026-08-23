@@ -16,7 +16,6 @@ import * as groupStateSnapshotsRepository from '@shared/repository/group-state-s
 import * as overlaysRepository from '@shared/repository/overlays-repository.ts';
 import { pairKey } from '@shared/repository/rtt-repository.ts';
 import { resolveBootstrapDegree } from '@shared/rtc/bootstrap-peer-selection.ts';
-import { resolveRtcGroupFormationMode, type RtcGroupFormationMode } from '@shared/rtc/group-formation-mode.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import {
     QRtcPeerDto,
@@ -70,7 +69,6 @@ export type MiddlewareInitOptions = Readonly<{
     dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
     maxPeerConnections?: number;
     rttReportingDegreeLimit?: number;
-    groupFormationMode?: RtcGroupFormationMode;
     bootstrapDegree?: number;
     scope?: StateScope;
     onAuthInvalid?: (error: unknown) => void | Promise<void>;
@@ -272,9 +270,6 @@ export async function initialiseMiddleware(
             }
         );
 
-    const groupFormationMode = resolveRtcGroupFormationMode(
-        options.groupFormationMode
-    );
     const bootstrapDegree = resolveBootstrapDegree({
         bootstrapDegree: options.bootstrapDegree,
         maxPeerConnections: options.maxPeerConnections
@@ -287,7 +282,6 @@ export async function initialiseMiddleware(
         overlaysRepository.readableOverlayCache(),
         {
             maxPeerConnections: options.maxPeerConnections,
-            groupFormationMode,
             onDesiredPeerIdsChanged: refreshRttReportingPeers
         }
     );
@@ -316,7 +310,6 @@ export async function initialiseMiddleware(
         scope: options.scope,
         rereadGroupSnapshots,
         groupFormation: {
-            mode: groupFormationMode,
             bootstrapDegree
         }
     };

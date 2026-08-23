@@ -1,14 +1,13 @@
 import { ADMIN_PRUNE_EXPIRED_CATEGORIES, type AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
 import type { Key } from '@shared/queuebox/ResourceEntry.ts';
 
-import { AppInboxType, type AppInboxMessageContext } from '../../services/app-inbox-contracts.ts';
-import { toStrictAppInboxQueueKey } from '../../services/app-inbox-queue-key.ts';
-import { AppInboxIdempotencyConflictError } from '../../services/AppInboxService.ts';
-import { hashCanonicalCommand } from '../../services/canonical-command-hash.ts';
+import { toStrictAppInboxQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import { AppInboxType, type AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
+import { AppInboxIdempotencyConflictError } from '../../app-inbox/app-inbox-queue-client.ts';
+import { hashCanonicalCommand } from '../../app-inbox/hash-canonical-command.ts';
 import type { AdminPruneAppData, AdminPruneCommand } from './admin-prune-command-codec.ts';
 
 export const ADMIN_APP_INBOX_TOPIC = AppInboxType.ADMIN_PRUNE_EXPIRED;
-export const LEGACY_ADMIN_APP_INBOX_TOPIC = 'app-inbox.admin-operations';
 
 export interface AdminPruneIdempotencyIdentityInput {
     readonly requestId: string;
@@ -132,14 +131,10 @@ export async function assertAdminPruneQueueIdentity(
     }).contextId;
     const strictIdentity = command.jobId === (await toAdminPruneJobId(context.entry.key)) &&
         context.entry.key.contextId === strictContextId;
-    const legacyIdentity = command.jobId === context.entry.key.resourceId &&
-        command.requestedBy === context.entry.key.contextId;
     if (
         context.enqueue.type !== AppInboxType.ADMIN_PRUNE_EXPIRED ||
-        !(
-            (context.entry.key.topicId === ADMIN_APP_INBOX_TOPIC && strictIdentity) ||
-            (context.entry.key.topicId === LEGACY_ADMIN_APP_INBOX_TOPIC && legacyIdentity)
-        ) ||
+        context.entry.key.topicId !== ADMIN_APP_INBOX_TOPIC ||
+        !strictIdentity ||
         context.enqueue.senderId !== command.requestedSessionId
     ) {
         throw new TypeError('Admin prune AppInbox identity differs from queue key');

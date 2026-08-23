@@ -25,8 +25,8 @@ const executablePaths = [
     'workloads/browser-lifecycle/rtc-data-channel-browser-soak.mjs',
     'topology-delivery/delivery-log-bench.ts',
     'topology-replay/replay-drain-operation-counts.ts',
-    'diagnostics/room-graph/rtc-room-graph-no-rtt-bench.ts',
-    'diagnostics/rtt-group-scan/rtc-rtt-group-scan-bench.ts',
+    'diagnostics/rtc-room-graph-no-rtt-bench.ts',
+    'diagnostics/rtc-rtt-group-scan-bench.ts',
     'diagnostics/rtt-traffic/rtc-topology-rtt-traffic-metrics.ts'
 ] as const;
 
@@ -74,8 +74,8 @@ describe('shared RTC benchmark navigation contract', () => {
         const packageJson = fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8');
         for (
             const diagnostic of [
-                'diagnostics/room-graph/rtc-room-graph-no-rtt-bench.ts',
-                'diagnostics/rtt-group-scan/rtc-rtt-group-scan-bench.ts',
+                'diagnostics/rtc-room-graph-no-rtt-bench.ts',
+                'diagnostics/rtc-rtt-group-scan-bench.ts',
                 'diagnostics/rtt-traffic/rtc-topology-rtt-traffic-metrics.ts'
             ]
         ) {

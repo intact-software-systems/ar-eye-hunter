@@ -2,13 +2,13 @@ import { Temporal } from '@js-temporal/polyfill';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
+import type { AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxTransactionWriter } from '@shared-server/rallar-system/app-inbox/app-inbox-transaction-writer.ts';
 import { ClientStateInboxHandler } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts';
 import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
 import { toUpsertPrincipalCommandInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-import { AppInboxTransactionWriter } from '@shared-server/rallar-system/services/app-inbox-transaction-writer.ts';
-import type { AppInboxMessageContext } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { EntityStatus, NEVER_EXPIRE_TS, toKeyAsString, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -63,7 +63,6 @@ export async function createHandlerHarness(options: Readonly<{ failTransaction?:
             }
         },
         sessionGenerationLifecycle: {} as never,
-        formationDamping: 'damped',
         expiryCandidates: { listExpiredSessionCandidates: async () => [] },
         snapshotObserver: {
             observeSnapshot: async (snapshot) => {

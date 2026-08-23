@@ -1,9 +1,9 @@
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import type {
-    GroupMutationDescriptor,
-    GroupMutationPreparation,
-    GroupStateService
-} from '@shared-server/rallar-system/services/group-state-service.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import {
+    type GroupMutationDescriptor,
+    type GroupMutationPreparation,
+    type GroupStateService
+} from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
 import type { ClientEvent } from '@shared/api/client-types.ts';
 import type { AuditStamp, Group, GroupEvent, GroupRef } from '@shared/api/group-types.ts';
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';

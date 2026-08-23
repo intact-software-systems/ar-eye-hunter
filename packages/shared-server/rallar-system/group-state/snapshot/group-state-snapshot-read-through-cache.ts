@@ -1,11 +1,9 @@
 import {
     compareGroupCausalRevision,
     readGroupCausalRevision,
-    readGroupStateRevision,
     readGroupVersion
 } from '@shared/api/group-client-views.ts';
 import type { GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
-import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { ObservableLoanedRepository } from '@shared/cache/ObservableLoanedRepository.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import {
@@ -16,7 +14,7 @@ import {
     toGroupStateSnapshotRepositoryKey
 } from '@shared/repository/group-state-snapshots-repository.ts';
 import type { StateSnapshotObservation } from '@shared/repository/state-snapshot-revision.ts';
-import { isGroupSnapshotPresenceFresh, type RallarSnapshotPresenceClock } from '../../snapshot-presence.ts';
+import { isGroupSnapshotPresenceFresh, type RallarSnapshotPresenceClock } from '../../presence/snapshot-presence.ts';
 import type { GroupStateRepository } from '../persistence/group-state-repository.ts';
 
 const DEFAULT_TTL_MS = 60_000;
@@ -30,17 +28,14 @@ export type GroupStateSnapshotReadThroughCacheOptions = Readonly<{
 
 export type FindOrLoadGroupStateSnapshotOptions = Readonly<{
     minSnapshotVersion?: number;
-    /** Authoritative lower bound. Prefer this over minStateRevision. */
     minCausalRevision?: GroupStateCausalRevision;
-    /** Compatibility projection only. */
-    minStateRevision?: number;
 }>;
 
 export class GroupStateSnapshotNotFoundError extends Error {
     readonly ref: GroupRef;
 
     constructor(ref: GroupRef) {
-        const identity = [ref.applicationId, ref.workspaceId ?? '', ref.groupId].join('/');
+        const identity = [ref.applicationId, ref.workspaceId, ref.groupId].join('/');
         super(`Group snapshot not found for ${identity}`);
         this.ref = ref;
         this.name = 'GroupStateSnapshotNotFoundError';
@@ -162,9 +157,7 @@ export class GroupStateSnapshotReadThroughCache {
             (options.minCausalRevision === undefined ||
                 ['equal', 'dominates'].includes(
                     compareGroupCausalRevision(readGroupCausalRevision(snapshot), options.minCausalRevision)
-                )) &&
-            (options.minStateRevision === undefined ||
-                readGroupStateRevision(snapshot) >= options.minStateRevision)
+                ))
         );
     }
 
@@ -188,7 +181,7 @@ function toGroupRef(key: string): GroupRef {
 
     return {
         applicationId,
-        workspaceId: workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
+        workspaceId,
         groupId
     };
 }

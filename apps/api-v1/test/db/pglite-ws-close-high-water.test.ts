@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import { runInTransaction } from '@shared-server/postgres/run-in-transaction.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { createWsSessionGenerationLifecycleService } from '@shared-server/rallar-system/services/ws-session-generation-lifecycle.ts';
+import { createWsSessionGenerationLifecycleService } from '@shared-server/rallar-system/websocket/ws-session-generation-lifecycle.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';

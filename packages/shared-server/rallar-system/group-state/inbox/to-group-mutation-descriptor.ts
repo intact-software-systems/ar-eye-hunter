@@ -1,4 +1,4 @@
-import { AppInboxType } from '../../services/AppInboxService.ts';
+import { AppInboxType } from '../../app-inbox/app-inbox-queue-client.ts';
 import { GroupMutationAuthorizationError, mutationDescriptor } from '../group-mutation-authority.ts';
 import type { GroupMutationDescriptor } from '../group-state-service-contracts.ts';
 import type { GroupMutationCommand } from '../mutation/group-mutation-contracts.ts';

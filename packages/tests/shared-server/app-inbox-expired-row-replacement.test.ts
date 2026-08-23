@@ -2,21 +2,22 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { describe, expect, it } from 'vitest';
 
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { AppAuthInboxService } from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
-import { AppGroupInboxService, AppInboxType, type GroupCreateAppInboxPayload } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
+import { GroupStateInboxService, type GroupCreateAppInboxPayload } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 
-import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/services/auth-credential-issuer.ts';
+import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 
-import { createAuthMutationService } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
+import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 
-import { hashAuthSecret } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
-import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
 import { createResilience, readEntries, TestResourceInbox, TestResourceInboxResults, waitForQueuedEntry } from './auth/auth-app-inbox-test-runtime.ts';
 import { createClientStatePhaseTestDriver, failNextClientStateTestOutboxWrite } from './client-state/client-state-test-runtime.ts';
@@ -225,13 +226,12 @@ describe('AppInbox expired row replacement', () => {
             });
             const groupState = createGroupStateService({
                 runtimeRepository: runtime,
-                formationDamping: 'damped',
                 createGroupStateEventStore: () => database.groupEventStore,
                 serviceId: 'expired-group-service',
                 now: () => nowEpochMs,
                 authSessionRepository: sessions
             });
-            const service = new AppGroupInboxService(
+            const service = new GroupStateInboxService(
                 {
                     inboxQueueReader: reader,
                     resourceInboxRepository: queue,

@@ -3,7 +3,8 @@ import type {
     GroupMutationFacts,
     GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { computeGroupMutation, validateGroupMutation } from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
 import type { AuditStamp } from '@shared/api/group-types.ts';
 import { describe, expect, it } from 'vitest';
 
@@ -180,7 +181,6 @@ function createMutationFacts(): GroupMutationFacts {
         resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: 'none',
-        formationDamping: 'legacy',
         authenticatedAuthority: {
             principalId: 'alice',
             sessionId: 'alice-session'

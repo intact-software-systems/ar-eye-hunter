@@ -68,7 +68,7 @@ describe('group presence-summary causal identity', () => {
         expect(runtime.groupGuards).toBe(0);
         expect(runtime.presenceGuards).toBe(100);
         expect(runtime.hotPathListReads).toBe(0);
-        expect(runtime.compatibilitySnapshotListReads).toBe(0);
+        expect(runtime.snapshotListReads).toBe(0);
 
         await createService(runtime, baseEpochMs + 4_000).heartbeatPresenceSession(
             SCOPE,
@@ -79,10 +79,10 @@ describe('group presence-summary causal identity', () => {
                 actorPrincipalId: 'member-0',
                 lastHeartbeatAtEpochMs: baseEpochMs + 4_000,
                 expiresAtEpochMs: baseEpochMs + 70_000,
-                requestId: 'compatibility-heartbeat'
+                requestId: 'snapshot-heartbeat'
             }
         );
-        expect(runtime.compatibilitySnapshotListReads).toBeGreaterThan(0);
+        expect(runtime.snapshotListReads).toBeGreaterThan(0);
     });
 
     it('preserves UTC wall-clock fields returned as Date values by postgres', () => {
@@ -222,7 +222,6 @@ function mutationFacts(): GroupMutationFacts {
         resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: 'none',
-        formationDamping: 'legacy',
         authenticatedAuthority: {
             principalId: 'member',
             sessionId: 'member-session'

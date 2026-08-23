@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {
     createGroupStateRouteSnapshot,
     createGroupStateRouteTestRuntime,
-    createPredecessorGroupStateRouteAuthSession,
-    createPredecessorGroupStateRouteSnapshot,
-    createPredecessorGroupStateRouteTestRuntime
+    createLiveGroupStateRouteAuthSession,
+    createOwnerGroupStateRouteSnapshot,
+    createRejectingGroupStateRouteTestRuntime
 } from './group-state-route-test-runtime.ts';
 
 const API_BASE = '/api/state/apps/app-1/workspaces/workspace-1/groups';
@@ -147,7 +147,7 @@ const GROUP_STATE_ROUTE_MATCHES: readonly GroupStateRouteMatch[] = [
 ];
 
 Deno.test(
-    'group state route registration retains all 26 Hono handlers in predecessor order',
+    'group state route registration retains all 26 Hono handlers in declared order',
     () => {
         const runtime = createGroupStateRouteTestRuntime({ installStateAuthentication: false });
         const registeredRoutes = (runtime.app as unknown as {
@@ -203,9 +203,9 @@ Deno.test(
     }
 );
 
-Deno.test('moved group route auth retains predecessor token and timing shape', () => {
+Deno.test('group route auth retains token and timing shape', () => {
     const before = Date.now();
-    const session = createPredecessorGroupStateRouteAuthSession('alice');
+    const session = createLiveGroupStateRouteAuthSession('alice');
     const after = Date.now();
 
     assert.equal(session.accessToken, 'token');
@@ -216,14 +216,14 @@ Deno.test('moved group route auth retains predecessor token and timing shape', (
 });
 
 Deno.test('moved group snapshots retain first-active-principal ownership', () => {
-    const snapshot = createPredecessorGroupStateRouteSnapshot('room-2', ['bob']);
+    const snapshot = createOwnerGroupStateRouteSnapshot('room-2', ['bob']);
 
     assert.equal(snapshot.group.ownerPrincipalId, 'bob');
     assert.equal(snapshot.members[0]?.role, 'owner');
 });
 
 Deno.test('moved group route runtime rejects unexpected mutations by default', async () => {
-    const { app } = createPredecessorGroupStateRouteTestRuntime();
+    const { app } = createRejectingGroupStateRouteTestRuntime();
     const response = await app.request(mutationPath(API_BASE), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -237,7 +237,7 @@ Deno.test('moved group route runtime rejects unexpected mutations by default', a
     assert.equal(response.status, 500);
     assert.deepEqual(await response.json(), {
         type: 'api-mutation-failure',
-        version: 'canonical.v1',
+        version: 'canonical.v2',
         code: 'api-mutation-unexpected',
         status: 500,
         message: 'API mutation failed unexpectedly',

@@ -1,4 +1,18 @@
-import { clientStatePrincipalStorageKey as compatibilityClientStatePrincipalStorageKey } from '@shared-server/rallar-system/client-state-storage-keys.ts';
+import { createClientStateService as createClientMutationService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
+import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/client-state-validation-primitives.ts';
+import { toClientMutationSystemAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
+import { toClientMutationCommand, toExpiryCommandInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import {
+    type ClientMutationAuthority,
+    type ClientMutationCommand,
+    type ClientMutationFacts,
+    type ClientMutationOperation,
+    type ClientMutationRead
+} from '@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts';
+import { validateClientMutationCommand } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-command.ts';
+import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
+import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
+import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import {
     ClientStateRepository,
     ClientStateRepositoryInvariantCorruptionError
@@ -9,28 +23,8 @@ import {
     clientStateSessionStorageKey,
     decodeClientPrincipalStorageKey
 } from '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
-import { ClientStateRepository as compatibilityClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import { toClientSessionExpiryCandidate } from '@shared-server/rallar-system/repositories/session-expiry.ts';
-import {
-    ClientMutationRejectedError,
-    computeClientMutation,
-    validateClientMutation,
-    validateClientMutationCommand,
-    type ClientMutationAuthority,
-    type ClientMutationCommand,
-    type ClientMutationFacts,
-    type ClientMutationOperation,
-    type ClientMutationRead
-} from '@shared-server/rallar-system/services/client-state-mutations.ts';
-import {
-    ClientMutationIdempotencyConflictError,
-    createClientStateService as createClientMutationService,
-    toClientMutationCommand,
-    toClientMutationSystemAuthority,
-    toExpiryCommandInput
-} from '@shared-server/rallar-system/services/client-state-service.ts';
-import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
-import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import { toClientSessionExpiryCandidate } from '@shared-server/rallar-system/presence/session-expiry.ts';
 import { RuntimeStateWriteConflictError } from '@shared-server/runtime-state/optimistic-runtime-state-write.ts';
 import type {
     RuntimeStateConditionalWriteResult,
@@ -46,7 +40,6 @@ import {
     AlwaysConflictingPrincipalRepository,
     CLIENT_MUTATION_BASE_EPOCH_MS as BASE_EPOCH_MS,
     connect,
-    createPublisher,
     createService,
     deepFreeze,
     outboxFor,
@@ -65,7 +58,7 @@ import {
     validPrincipalValue
 } from './client-mutation-validation-test-fixtures.ts';
 import {
-    createLegacyClientStateTestDriver as createClientStateService,
+    createClientStateTestDriver as createClientStateService,
     failNextClientStateTestOutboxWrite,
     getClientStateTestOutbox
 } from './client-state-test-runtime.ts';
@@ -73,16 +66,13 @@ import {
 describe('client mutation transaction convergence', () => {
     it('commits a deterministic outbox intent without direct publication and survives a stop before drain', async () => {
         const runtime = new AggregateBarrierRepository();
-        const publisher = createPublisher();
-        const service = createService(runtime, 1_000, publisher);
+        const service = createService(runtime, 1_000);
         const written = await service.upsertPrincipal(SCOPE, 'alice', {
             username: 'alice',
             requestId: 'stop-after-commit'
         });
 
-        expect(written.result.right?.event?.eventType).toBe('principal-created');
-        expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
-        expect(publisher.publishClientEvent).not.toHaveBeenCalled();
+        expect(written.result?.event?.eventType).toBe('principal-created');
         const persisted = await outboxFor(runtime, ['stop-after-commit']);
         expect(persisted).toHaveLength(2);
         expect(persisted.every((entry) => entry.typeId === 'WS_OUTBOX')).toBe(true);
@@ -95,7 +85,7 @@ describe('client mutation transaction convergence', () => {
         failNextClientStateTestOutboxWrite(runtime);
 
         await expect(
-            createService(runtime, 1_000, createPublisher(), (event) => timing.push(event)).upsertPrincipal(SCOPE, 'alice', {
+            createService(runtime, 1_000, (event) => timing.push(event)).upsertPrincipal(SCOPE, 'alice', {
                 username: 'alice',
                 displayName: 'Should roll back',
                 requestId: 'client-outbox-collision'
@@ -128,7 +118,6 @@ describe('client mutation transaction convergence', () => {
         const timing: RallarTimingEvent[] = [];
         const service = createClientStateService({
             runtimeRepository: runtime,
-            syncPublisher: createPublisher(),
             now: () => 1_000,
             randomId: () => 'event-conflict',
             sleep: (delayMs: number) => {
@@ -160,7 +149,6 @@ describe('client mutation transaction convergence', () => {
         const timing: RallarTimingEvent[] = [];
         const service = createClientStateService({
             runtimeRepository: runtime,
-            syncPublisher: createPublisher(),
             now: () => 1_000,
             randomId: () => 'event-order',
             sleep: () => Promise.resolve(),

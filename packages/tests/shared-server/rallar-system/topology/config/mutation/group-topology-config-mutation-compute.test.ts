@@ -42,9 +42,9 @@ describe('group topology config mutation compute', () => {
         expect(() =>
             validateMutationRecord(input, {
                 ...first.receipt,
-                outboxId: 'state-mutation-attacker-selected'
+                outboxIds: ['state-mutation-attacker-selected']
             })
-        ).toThrow('Topology config receipt outboxIds are invalid');
+        ).toThrow('Topology config receipt outbox identity is invalid');
         expect(() => validateMutationRecord(input, { ...first.receipt, acceptedConfig: null })).toThrow(
             'accepted config does not match operation'
         );

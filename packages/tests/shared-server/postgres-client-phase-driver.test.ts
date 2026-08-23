@@ -1,4 +1,4 @@
-import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
+import { InMemoryClientStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import type { RuntimeStateEntry } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { describe, expect, it } from 'vitest';
 import { createPostgresClientPhaseDriver } from './client-state/postgres-client-mutation-test-driver.ts';

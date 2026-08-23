@@ -7,7 +7,7 @@ import type {
     WsSessionGenerationLifecycleComputed,
     WsSessionGenerationLifecycleRead,
     WsSessionGenerationLifecycleService
-} from '@shared-server/rallar-system/services/ws-session-generation-lifecycle.ts';
+} from '@shared-server/rallar-system/websocket/ws-session-generation-lifecycle.ts';
 
 describe('group presence connect decision', () => {
     it('returns inactive without reading or computing a group mutation', async () => {
@@ -235,7 +235,6 @@ function connectCommand(): GroupStateMutationCommand {
             resolvedJoinCode: null,
             joinCodeVerifier: null,
             internalAuthority: 'none',
-            formationDamping: 'legacy',
             authenticatedAuthority: { principalId: 'owner', sessionId: 'session-1' }
         }
     };

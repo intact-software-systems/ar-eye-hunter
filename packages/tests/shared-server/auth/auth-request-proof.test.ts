@@ -140,7 +140,7 @@ it('keeps same-user sessions independent when one session logs out', async () =>
     });
 });
 
-it('returns the normal invalid-bearer denial after the legacy cutoff', async () => {
+it('returns the current invalid-bearer denial without scanning unrelated rows', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2027-01-01T00:00:00.000Z'));
     try {

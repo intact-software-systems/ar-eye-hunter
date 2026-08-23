@@ -2,7 +2,7 @@ import type {
     QueueBoxPubSubBridge,
     QueueBoxPubSubMessage,
     QueueBoxPubSubMessageKey
-} from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
+} from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import * as dbListen from './db-listen.ts';
 import * as dbNotify from './db-notify.ts';
 

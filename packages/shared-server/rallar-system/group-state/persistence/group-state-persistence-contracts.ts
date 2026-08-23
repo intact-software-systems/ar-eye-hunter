@@ -1,7 +1,7 @@
 import type { GroupRef, GroupScope, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
-import type { GroupStateEventStore } from '../../repositories/StateEventStore.ts';
+import type { GroupStateEventStore } from '../../state-events/state-event-store.ts';
 
 export type GroupStateRepositoryOptions = Readonly<{
     events?: GroupStateEventStore;
@@ -108,20 +108,20 @@ export function decodeStoredGroupStateKey<T>(
     }
 }
 
-export function normalizeStoredGroupStateValue<T>(
+export function decodeStoredGroupStateValue<T>(
     value: unknown,
     ref: GroupRef,
     storageKey: string,
-    normalize: (value: unknown, ref: GroupRef) => T,
-    fallback: string
+    decode: (value: unknown, ref: GroupRef) => T,
+    invalidValueMessage: string
 ): T {
     try {
-        return normalize(value, ref);
+        return decode(value, ref);
     }
     catch (error) {
         throw new GroupStateRepositoryInvariantCorruptionError(
             storageKey,
-            error instanceof Error ? error.message : fallback
+            error instanceof Error ? error.message : invalidValueMessage
         );
     }
 }

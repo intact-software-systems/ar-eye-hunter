@@ -934,38 +934,6 @@ describe('browser data caches state scope filtering', () => {
             nextHopSessionIds: ['session-c']
         });
     });
-
-    it('restores the unconditional full-membership star in legacy-star mode', async () => {
-        const manager = createWebRtcGroupManager();
-        const clientData: ClientInfo = {
-            clientId: 'alice',
-            sessionId: 'session-a',
-            isOnline: true
-        };
-        const memberSessionIds = Array.from(
-            { length: 8 },
-            (_, index) => `session-${String.fromCharCode(97 + index)}`
-        );
-        const group = createGroupSnapshot(
-            'room-legacy',
-            DEFAULT_STATE_APPLICATION_ID,
-            DEFAULT_STATE_WORKSPACE_ID,
-            memberSessionIds,
-            1
-        );
-
-        await dataCaches.hydrateStateCaches(manager as never, clientData, [], [group], {
-            groupFormation: { mode: 'legacy-star', bootstrapDegree: 5 }
-        });
-
-        const overlay = findOverlayById(toScopedOverlayId(group.group));
-        expect(overlay).toMatchObject({
-            provenance: 'bootstrap',
-            topology: 'star',
-            degreeLimit: 7
-        });
-        expect(overlay?.nextHopSessionIds).toEqual(memberSessionIds);
-    });
 });
 
 function createWebRtcGroupManager() {
@@ -1047,7 +1015,6 @@ function createGroupSnapshot(
         throw new TypeError('Group fixture requires an owner');
     }
     return {
-        stateRevision: snapshotVersion * 2,
         causalRevision: {
             groupRevision: snapshotVersion,
             presenceRevision: snapshotVersion
@@ -1211,7 +1178,6 @@ function withGroupCausalRevision(
 ): GroupSnapshot {
     return {
         ...snapshot,
-        stateRevision: causalRevision.groupRevision + causalRevision.presenceRevision,
         causalRevision,
         group: {
             ...snapshot.group,
@@ -1233,7 +1199,7 @@ function createGroupStateDeltaEnvelope(
             applicationId: resulting.group.applicationId,
             workspaceId: resulting.group.workspaceId,
             groupId: resulting.group.groupId,
-            eventId: `event-${resulting.group.groupId}-${resulting.stateRevision}`,
+            eventId: `event-${resulting.group.groupId}-g${resulting.causalRevision.groupRevision}-p${resulting.causalRevision.presenceRevision}`,
             eventType: 'session-heartbeat',
             snapshotVersion: resulting.group.snapshotVersion,
             causalRevision: resulting.causalRevision,

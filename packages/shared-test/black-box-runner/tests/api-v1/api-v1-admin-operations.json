@@ -65,7 +65,7 @@
         "status": 401,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "authentication-required",
           "status": 401
         }
@@ -281,7 +281,7 @@
         "status": 400,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "api-mutation-request-invalid",
           "status": 400
         }
@@ -313,7 +313,7 @@
         "status": 400,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "api-mutation-request-invalid",
           "status": 400
         }

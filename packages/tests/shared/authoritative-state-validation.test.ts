@@ -414,25 +414,9 @@ describe('authoritative network state validation', () => {
         expect(() =>
             validateAuthoritativeGroupSnapshot({
                 ...group,
-                stateRevision: 2,
                 causalRevision: { groupRevision: 0, presenceRevision: 2 }
             }, scope)
         ).toThrow(/groupRevision|group revision/);
-    });
-
-    it('rejects a zero canonical state revision', () => {
-        const noPresence = createGroupSnapshotFixture({
-            ...scope,
-            groupId: 'room-zero-revision',
-            sessionIds: []
-        });
-        expect(() =>
-            validateAuthoritativeGroupSnapshot({
-                ...noPresence,
-                stateRevision: 0,
-                causalRevision: { groupRevision: 0, presenceRevision: 0 }
-            }, scope)
-        ).toThrow(/stateRevision|state revision/);
     });
 
     it.each([

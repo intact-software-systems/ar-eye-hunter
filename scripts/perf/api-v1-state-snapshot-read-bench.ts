@@ -221,7 +221,6 @@ function clientSnapshot(stateRevision: number): ClientSnapshot {
 
 function groupSnapshot(groupRevision: number, presenceRevision: number): GroupSnapshot {
     return {
-        stateRevision: groupRevision + presenceRevision,
         causalRevision: { groupRevision, presenceRevision }
     } as GroupSnapshot;
 }

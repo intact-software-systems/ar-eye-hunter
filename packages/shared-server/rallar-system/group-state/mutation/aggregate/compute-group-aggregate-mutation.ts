@@ -8,7 +8,7 @@ import { validateGroupLifecyclePolicy } from '@shared/api/group-lifecycle/valida
 import type { AuditStamp, Group, GroupEventType, GroupStatus } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
 
-import { GroupPolicyDeniedError } from '../../../group-policy.ts';
+import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import { toExpiredAwareInsertCandidate } from '../../presence/group-expired-state-authority.ts';
 import {
     nextInitialGroupSnapshotVersion,
@@ -177,7 +177,7 @@ export function computeDirector(
             'Forbidden: Cannot appoint a director without a local session.'
         );
     }
-    const snapshot = toPolicySnapshot(read, facts.nowEpochMs);
+    const snapshot = toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs);
     const eligibility = resolveRallarGroupDirectorAppointmentEligibility({
         snapshot,
         principalId,

@@ -1,12 +1,9 @@
 import { decodeAdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { decodeAuthMutationIntent } from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-intent.ts';
 import { decodeCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
-import { validateRtcRttMeasurement } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
-import {
-    decodeJsonWireValue,
-    type JsonWireValue
-} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { validateRtcRttMeasurement } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation.ts';
 
 export interface ExactStandaloneCommandIdsInput {
     readonly type: AppInboxType;

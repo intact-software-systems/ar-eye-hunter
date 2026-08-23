@@ -1,8 +1,8 @@
 import { decodeAuthMutationResult } from '@shared-server/mod.ts';
 import type { AdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
 import { decodeAdminPruneEnqueueResultForCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-codec.ts';
+import { readPersistedAppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import * as CrdtResult from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
-import { readPersistedAppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
 import type { RallarCrdtJsonValue } from '@shared/crdt/mod.ts';
 
 import {
@@ -216,14 +216,12 @@ export function validatePersistedAppInboxResult(
             : invalid(result, 'malformed-topology-reconfigure-result');
     }
     if (input.commandType.startsWith('GROUP_')) {
-        const either = record(result.result);
-        const right = record(either?.right);
-        const left = either?.left;
-        const validStatus = ['ok', 'created', 'error'].includes(String(result.status));
-        const validEither = right
-            ? record(right.snapshot) !== undefined && Object.hasOwn(right, 'event')
-            : typeof left === 'string';
-        if (!validStatus || !validEither) {
+        const written = record(result.result);
+        const validStatus = ['ok', 'created'].includes(String(result.status));
+        const validWritten = written !== undefined &&
+            record(written.snapshot) !== undefined &&
+            Object.hasOwn(written, 'event');
+        if (!validStatus || !validWritten) {
             return invalid(result, 'malformed-group-result');
         }
         if (input.authoritativeReceipt) {
@@ -322,18 +320,15 @@ function toResultReceipt(receipt: AuthoritativeResultReceipt): ResultEvidenceRec
 
 function validateClientWritten(value: unknown): boolean {
     const result = record(value);
-    const either = record(result?.result);
-    const right = record(either?.right);
+    const written = record(result?.result);
     return Boolean(
         result &&
             exactKeys(result, ['status', 'result']) &&
             result.status === 'ok' &&
-            either &&
-            exactKeys(either, ['right']) &&
-            right &&
-            exactKeys(right, ['snapshot', 'event']) &&
-            record(right.snapshot) &&
-            (right.event === null || record(right.event))
+            written &&
+            exactKeys(written, ['snapshot', 'event']) &&
+            record(written.snapshot) &&
+            (written.event === null || record(written.event))
     );
 }
 
@@ -361,7 +356,6 @@ function validateReceiptResult(input: ValidateReceiptResultInput): ResultEvidenc
             'outcome',
             'attemptCount',
             'acceptedStorageRevision',
-            'stateRevision',
             'snapshotVersion',
             'causalRevision',
             'eventId',
@@ -387,7 +381,6 @@ function validateReceiptResult(input: ValidateReceiptResultInput): ResultEvidenc
             'acceptedConfig',
             'acceptedCausalRevision',
             'eventId',
-            'outboxId',
             'outboxIds'
         ];
     const commandId = readMatchingId(receipt.commandId, commandIds);
@@ -395,9 +388,7 @@ function validateReceiptResult(input: ValidateReceiptResultInput): ResultEvidenc
     const commandHash = nonEmptyString(receipt.commandHash);
     const outcome = nonEmptyString(receipt.outcome);
     if (
-        !(identityKind === 'logical-msg-id'
-            ? exactKeys(receipt, allowedKeys)
-            : hasOnlyKeys(receipt, allowedKeys)) ||
+        !exactKeys(receipt, allowedKeys) ||
         !commandId ||
         !outboxIds ||
         typeof receipt.outcome !== 'string' ||
@@ -455,11 +446,6 @@ function readUniqueIds(value: unknown): readonly string[] | undefined {
 
 function exactKeys(value: RecordValue, keys: readonly string[]): boolean {
     return JSON.stringify(Object.keys(value).toSorted()) === JSON.stringify([...keys].toSorted());
-}
-
-function hasOnlyKeys(value: RecordValue, keys: readonly string[]): boolean {
-    const allowed = new Set(keys);
-    return Object.keys(value).every((key) => allowed.has(key));
 }
 
 function sameIds(left: readonly string[], right: readonly string[]): boolean {

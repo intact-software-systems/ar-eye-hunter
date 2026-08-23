@@ -11,21 +11,16 @@ import process from 'node:process';
 import postgres, { type Sql } from 'postgres';
 
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
-import {
-    AuthSessionRepository,
-    type IssuedAuthSession
-} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import {
-    AppGroupInboxService,
-    toTopologyAppInboxCommand
-} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 
 import type {
     AuthenticatedGroupMutationEnqueue
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import {
     deriveAppInboxAttemptObservations,
     type AppInboxAttemptObservation
@@ -723,7 +718,7 @@ async function executeMutation({
                 }
             });
             await runAppInboxMutation(runtime, () =>
-                runtime.group.processAuthenticatedTopologyEntryUntilCompletion(
+                runtime.topology.processAuthenticatedEntryUntilCompletion(
                     {
                         type: AppInboxType.TOPOLOGY_CONFIG_PUT,
                         topicId: AppInboxType.TOPOLOGY_CONFIG_PUT,

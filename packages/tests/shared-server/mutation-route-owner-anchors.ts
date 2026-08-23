@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 // became a no-op, and the analyzer reported no issues against sources nobody had actually mutated.
 // Deriving each anchor from the file keeps the coupling to the *construct* rather than its layout.
 
-export const GROUP_OWNER_PATH = 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts';
+export const GROUP_OWNER_PATH = 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 
 export interface GroupOwnerAnchors {
     readonly source: string;
@@ -35,12 +35,12 @@ export function readGroupOwnerAnchors(): GroupOwnerAnchors {
         ),
         loopEnd: matchAnchor(
             source,
-            /[^\S\r\n]*this\.onStateMessage<GroupPresenceSessionCleanupAppInboxPayload>\(/u,
+            /[^\S\r\n]*this\.handlers\.onStateMessage<GroupPresenceSessionCleanupAppInboxPayload>\(/u,
             'group presence cleanup registration'
         ),
         classStart: matchAnchor(
             source,
-            /class AppGroupInboxService extends AppInboxService \{/u,
+            /export class GroupStateInboxService \{/u,
             'group owner class header'
         )
     };

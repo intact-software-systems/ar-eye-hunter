@@ -249,8 +249,7 @@ async function command(
             serviceId: 'client-service',
             eventId: `event:${input.commandId}`,
             attemptCount: 1,
-            expireAtEpochMs: 20_000,
-            formationDamping: 'damped'
+            expireAtEpochMs: 20_000
         },
         authority
     );

@@ -1,16 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { groupStateGroupStorageKey, groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state-storage-keys.ts';
+import { groupStateGroupStorageKey, groupStateIdempotencyStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 
 import { FakeRuntimeStateRepository } from '../../../../fake-runtime-state-repository.ts';
 
 describe('group topology config repository keys', () => {
-    it('uses canonical optional-workspace keys across every topology namespace', () => {
+    it('uses canonical required-workspace keys across every topology namespace', () => {
         const repository = new GroupTopologyConfigRepository(new FakeRuntimeStateRepository());
         const refs: readonly GroupRef[] = [
-            { applicationId: 'app:key', workspaceId: '', groupId: 'room:key' },
             { applicationId: 'app:key', workspaceId: '_', groupId: 'room:key' },
             { applicationId: 'app:key', workspaceId: 'a:b', groupId: 'room:key' },
             { applicationId: 'app:key', workspaceId: 'a%3Ab', groupId: 'room:key' },
@@ -39,19 +38,19 @@ describe('group topology config repository keys', () => {
             groupId: 'group:%3A'
         };
 
-        expect(repository.configKey(ref)).toBe('app=app%3Akey:ws=%5F:group=group%3A%253A');
-        expect(repository.overrideKey(ref)).toBe('app=app%3Akey:ws=%5F:group=group%3A%253A');
+        expect(repository.configKey(ref)).toBe('app=app%3Akey:ws=_:group=group%3A%253A');
+        expect(repository.overrideKey(ref)).toBe('app=app%3Akey:ws=_:group=group%3A%253A');
         expect(repository.generationKey(ref, 'config')).toBe(
-            'app=app%3Akey:ws=%5F:group=group%3A%253A:target=config'
+            'app=app%3Akey:ws=_:group=group%3A%253A:target=config'
         );
         expect(repository.generationKey(ref, 'override')).toBe(
-            'app=app%3Akey:ws=%5F:group=group%3A%253A:target=override'
+            'app=app%3Akey:ws=_:group=group%3A%253A:target=override'
         );
         expect(repository.invariantGenerationKey(ref)).toBe(
-            'app=app%3Akey:ws=%5F:group=group%3A%253A:invariant=effective-config'
+            'app=app%3Akey:ws=_:group=group%3A%253A:invariant=effective-config'
         );
         expect(repository.mutationKey(ref, 'target=config')).toBe(
-            'app=app%3Akey:ws=%5F:group=group%3A%253A:request=target%3Dconfig'
+            'app=app%3Akey:ws=_:group=group%3A%253A:request=target%3Dconfig'
         );
 
         expect(

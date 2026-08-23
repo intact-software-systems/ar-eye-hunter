@@ -32,7 +32,7 @@ describe('group topology config repository corruption handling', () => {
         ).rejects.toBeInstanceOf(GroupTopologyConfigRepositoryInvariantCorruptionError);
     });
 
-    it('does not treat a malformed legacy row with an extra field as compatible', async () => {
+    it('rejects a malformed noncanonical row with an extra field', async () => {
         const runtimeRepository = new FakeRuntimeStateRepository();
         const repository = new GroupTopologyConfigRepository(runtimeRepository);
         const groupRef = createTopologyTestGroupRef('workspace-1');
@@ -45,7 +45,7 @@ describe('group topology config repository corruption handling', () => {
                 version: 1,
                 createdAtEpochMs: 1,
                 updatedAtEpochMs: 1,
-                updatedByPrincipalId: 'legacy-owner',
+                updatedByPrincipalId: 'noncanonical-owner',
                 unexpected: true
             }),
             NEVER_EXPIRE_AT_TIMESTAMP
@@ -90,7 +90,7 @@ describe('group topology config repository corruption handling', () => {
                     version: 7,
                     createdAtEpochMs: 1,
                     updatedAtEpochMs: 1,
-                    updatedByPrincipalId: 'legacy-owner',
+                    updatedByPrincipalId: 'noncanonical-owner',
                     requestId: null,
                     expiresAtEpochMs: 1_000
                 }),
@@ -163,8 +163,7 @@ describe('group topology config repository corruption handling', () => {
                             acceptedUpdatedAtEpochMs: null,
                             acceptedExpiresAtEpochMs: null,
                             acceptedConfig: null,
-                            acceptedCausalRevision: null,
-                            outboxId: null
+                            acceptedCausalRevision: null
                         }
                     },
                     read: () => repository.findMutationRecord(groupRef, requestId)
@@ -308,8 +307,7 @@ function createExpiredMutationRecordSeed(
                 acceptedUpdatedAtEpochMs: null,
                 acceptedExpiresAtEpochMs: null,
                 acceptedConfig: null,
-                acceptedCausalRevision: null,
-                outboxId: null
+                acceptedCausalRevision: null
             }
         },
         read: () => repository.findMutationRecord(groupRef, 'expected-request')

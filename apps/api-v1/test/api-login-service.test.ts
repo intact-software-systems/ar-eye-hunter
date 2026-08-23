@@ -1,4 +1,4 @@
-import { AuthUserRepository } from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
+import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import type { RuntimeStateEntry, RuntimeStateTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import assert from 'node:assert/strict';
 import { login, readAuthorisedClients, register } from '../src/services/api-login-service.ts';

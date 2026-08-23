@@ -3,43 +3,25 @@ import type {
     StoredGroupTopologyOverride
 } from '@shared/api/graph-topology-management-types.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import {
     readStoredTopologyConfigBoundary,
     readStoredTopologyOverrideBoundary
 } from '../mutation/topology-config-mutation-boundary.ts';
 
-const LEGACY_CONFIG_KEYS = [
-    'groupRef',
-    'config',
-    'version',
-    'createdAtEpochMs',
-    'updatedAtEpochMs',
-    'updatedByPrincipalId'
-] as const;
-
-const LEGACY_OVERRIDE_KEYS = [...LEGACY_CONFIG_KEYS, 'expiresAtEpochMs'] as const;
-
 export function decodeStoredGroupTopologyConfig(
     value: unknown,
     expectedRef?: GroupRef
 ): StoredGroupTopologyConfig {
-    const normalized = hasExactKeys(value, LEGACY_CONFIG_KEYS)
-        ? { ...value, requestId: null }
-        : value;
-    const validationRef = expectedRef ?? storedTopologyGroupRef(normalized);
-    return readStoredTopologyConfigBoundary(normalized, validationRef);
+    const validationRef = expectedRef ?? storedTopologyGroupRef(value);
+    return readStoredTopologyConfigBoundary(value, validationRef);
 }
 
 export function decodeStoredGroupTopologyOverride(
     value: unknown,
     expectedRef?: GroupRef
 ): StoredGroupTopologyOverride {
-    const normalized = hasExactKeys(value, LEGACY_OVERRIDE_KEYS)
-        ? { ...value, requestId: null }
-        : value;
-    const validationRef = expectedRef ?? storedTopologyGroupRef(normalized);
-    return readStoredTopologyOverrideBoundary(normalized, validationRef);
+    const validationRef = expectedRef ?? storedTopologyGroupRef(value);
+    return readStoredTopologyOverrideBoundary(value, validationRef);
 }
 
 export function storedTopologyGroupRef(value: unknown): GroupRef {
@@ -54,8 +36,8 @@ export function storedTopologyGroupRef(value: unknown): GroupRef {
     if (
         typeof candidate.applicationId !== 'string' ||
         candidate.applicationId.trim().length === 0 ||
-        (candidate.workspaceId !== undefined &&
-            (typeof candidate.workspaceId !== 'string' || candidate.workspaceId.trim().length === 0)) ||
+        typeof candidate.workspaceId !== 'string' ||
+        candidate.workspaceId.trim().length === 0 ||
         typeof candidate.groupId !== 'string' ||
         candidate.groupId.trim().length === 0
     ) {
@@ -63,20 +45,7 @@ export function storedTopologyGroupRef(value: unknown): GroupRef {
     }
     return {
         applicationId: candidate.applicationId,
-        workspaceId: typeof candidate.workspaceId === 'string'
-            ? candidate.workspaceId
-            : DEFAULT_STATE_WORKSPACE_ID,
+        workspaceId: candidate.workspaceId,
         groupId: candidate.groupId
     };
-}
-
-function hasExactKeys(
-    value: unknown,
-    expectedKeys: readonly string[]
-): value is Record<string, unknown> {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-        return false;
-    }
-    const actualKeys = Object.keys(value).sort();
-    return JSON.stringify(actualKeys) === JSON.stringify([...expectedKeys].sort());
 }

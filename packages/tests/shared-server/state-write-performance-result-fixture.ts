@@ -26,10 +26,12 @@ export function binding(command: any, operationId: string): any {
         commandHash: `sha256:${'a'.repeat(64)}`,
         outcome: 'applied',
         attemptCount: 1,
-        outboxId: topology ? effectIds(command)[0] : null,
         outboxIds: effectIds(command),
         aggregateRef,
-        stateRevision: 1,
+        stateRevision: command.kind === 'profile-instance' ? 1 : null,
+        causalRevision: command.kind === 'profile-instance' || topology
+            ? null
+            : { groupRevision: 1, presenceRevision: 0 },
         snapshotVersion: 1,
         acceptedVersion: topology ? 1 : null,
         operation: topology ? 'putConfig' : null,
@@ -41,7 +43,6 @@ export function binding(command: any, operationId: string): any {
         acceptedConfig: topology ? topologyConfig() : null,
         acceptedCausalRevision: topology
             ? {
-                stateRevision: 1,
                 causalRevision: { groupRevision: 1, presenceRevision: 0 },
                 snapshotVersion: 1,
                 metadataVersion: 1,
@@ -74,7 +75,6 @@ export function durableResult(command: any, operationId: string): any {
                 eventId: authoritative.eventId,
                 operation: authoritative.operation,
                 target: authoritative.target,
-                outboxId: authoritative.outboxId,
                 outcome: authoritative.outcome,
                 attemptCount: authoritative.attemptCount,
                 outboxIds: authoritative.outboxIds
@@ -96,8 +96,8 @@ export function durableResult(command: any, operationId: string): any {
             requestId: authoritative.requestId,
             commandHash: authoritative.commandHash,
             aggregateRef: authoritative.aggregateRef,
-            stateRevision: authoritative.stateRevision,
             snapshotVersion: authoritative.snapshotVersion,
+            causalRevision: authoritative.causalRevision,
             eventId: authoritative.eventId,
             outcome: 'applied',
             attemptCount: 1,
@@ -108,20 +108,20 @@ export function durableResult(command: any, operationId: string): any {
     return {
         status: 'ok',
         result: {
-            right: {
-                snapshot: {
-                    stateRevision: authoritative.stateRevision,
-                    [aggregateField]: {
-                        ...authoritative.aggregateRef,
-                        snapshotVersion: authoritative.snapshotVersion
-                    }
-                },
-                event: {
+            snapshot: {
+                ...(command.kind === 'profile-instance'
+                    ? { stateRevision: authoritative.stateRevision }
+                    : { causalRevision: authoritative.causalRevision }),
+                [aggregateField]: {
                     ...authoritative.aggregateRef,
-                    eventId: authoritative.eventId,
-                    requestId: authoritative.requestId,
                     snapshotVersion: authoritative.snapshotVersion
                 }
+            },
+            event: {
+                ...authoritative.aggregateRef,
+                eventId: authoritative.eventId,
+                requestId: authoritative.requestId,
+                snapshotVersion: authoritative.snapshotVersion
             }
         }
     };

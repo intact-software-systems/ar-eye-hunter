@@ -1,4 +1,4 @@
-import { createGroupStateRuntime } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { createGroupStateRuntime } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 
@@ -6,7 +6,6 @@ describe('GroupStateService retry ownership', () => {
     it('exposes single-attempt phases and leaves complete retries to AppGroupInbox', () => {
         const service = createGroupStateRuntime({
             runtimeRepository: new FakeRuntimeStateRepository(),
-            formationDamping: 'damped',
             authSessionRepository: { findBySessionId: () => Promise.resolve(undefined) },
             serviceId: 'single-attempt-group-service'
         }).service;

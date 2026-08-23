@@ -7,24 +7,21 @@ import { PSqlClientStateEventRepository, PSqlGroupStateEventRepository } from '@
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
-import {
-    createClientStateService,
-    requiresClientWrite,
-    toClientMutationCommand,
-    toClientMutationIssuedSessionAuthority,
-    toUpsertPrincipalCommandInput
-} from '@shared-server/rallar-system/services/client-state-service.ts';
-import { APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared-server/rallar-system/services/group-state-mutations.ts';
-import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/services/GroupPresenceSummaryWork.ts';
-import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { requiresClientWrite } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
+import { toClientMutationIssuedSessionAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
+import { toClientMutationCommand, toUpsertPrincipalCommandInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
+import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import { GROUP_PRESENCE_SUMMARY_TOPIC as APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
@@ -77,7 +74,7 @@ interface StringValueRow {
 }
 
 Deno.test(
-    'PGlite AppInbox decodes exact legacy failure versions without weakening canonical rows',
+    'PGlite AppInbox accepts current typed failures and rejects predecessor shapes',
     async () => {
         await withPGliteSql(async (sql) => {
             const baseFailure = {
@@ -90,10 +87,11 @@ Deno.test(
                 error: 'Forbidden: Invite required.',
                 code: 'group-invite-required',
                 message: 'Invite required.',
-                details: { groupId: 'legacy-room' }
+                details: { groupId: 'predecessor-room' }
             } as const;
             const canonicalFailure = {
                 type: 'app-inbox-failure',
+                version: 'canonical.v2',
                 code: 'client-mutation-rejected',
                 status: 422,
                 message: 'Canonical validation failed',
@@ -101,11 +99,11 @@ Deno.test(
                 denial: null,
                 retry: null
             } as const;
-            const legacyRetryExhaustion = {
+            const predecessorRetryExhaustion = {
                 type: 'app-inbox-retry-exhausted',
                 commandIdentity: {
-                    contextId: 'legacy-context',
-                    resourceId: 'legacy-retry',
+                    contextId: 'predecessor-context',
+                    resourceId: 'predecessor-retry',
                     topicId: 'app-inbox.group-state',
                     operation: 'GROUP_CREATE',
                     operationSource: 'command'
@@ -122,11 +120,11 @@ Deno.test(
                 dueAgeMs: 5,
                 exhaustedAtEpochMs: 1_000
             } as const;
-            const legacyRetryRecovery = {
+            const predecessorRetryRecovery = {
                 type: 'app-inbox-retry-exhausted',
                 commandIdentity: {
-                    contextId: 'legacy-context',
-                    resourceId: 'legacy-recovery',
+                    contextId: 'predecessor-context',
+                    resourceId: 'predecessor-recovery',
                     topicId: 'app-inbox.group-state',
                     operation: 'GROUP_CREATE',
                     operationSource: 'command'
@@ -144,88 +142,56 @@ Deno.test(
                 selectedDueAtEpochMs: 700,
                 finalizedAtEpochMs: 1_000
             } as const;
-            const cases = [
+            const current = await readPGliteAppInboxFailure(
+                sql,
+                'current-failure',
+                canonicalFailure
+            );
+            assert.deepEqual(current.left, canonicalFailure);
+
+            const predecessorCases = [
                 {
                     name: 'raw-string',
-                    resource: 'legacy raw failure',
-                    version: 'legacy-string.v0',
-                    code: 'app-inbox-legacy-string',
-                    status: 500,
-                    legacy: 'legacy raw failure'
+                    resource: 'predecessor raw failure'
                 },
                 {
                     name: 'base-object',
-                    resource: baseFailure,
-                    version: 'legacy-object.v0',
-                    code: baseFailure.code,
-                    status: baseFailure.status,
-                    legacy: JSON.stringify(baseFailure)
+                    resource: baseFailure
                 },
                 {
                     name: 'policy-denial',
-                    resource: policyDenial,
-                    version: 'legacy-policy-denial.v0',
-                    code: policyDenial.code,
-                    status: 403,
-                    legacy: JSON.stringify(policyDenial)
-                },
-                {
-                    name: 'canonical',
-                    resource: canonicalFailure,
-                    version: 'canonical.v1',
-                    code: canonicalFailure.code,
-                    status: canonicalFailure.status,
-                    legacy: JSON.stringify(canonicalFailure)
+                    resource: policyDenial
                 },
                 {
                     name: 'retry-exhaustion',
-                    resource: legacyRetryExhaustion,
-                    version: 'legacy-retry-exhausted.v0',
-                    code: 'app-inbox-retry-exhausted',
-                    status: 503,
-                    legacy: JSON.stringify(legacyRetryExhaustion)
+                    resource: predecessorRetryExhaustion
                 },
                 {
                     name: 'retry-recovery',
-                    resource: legacyRetryRecovery,
-                    version: 'legacy-retry-exhausted.v0',
-                    code: 'app-inbox-retry-exhausted',
-                    status: 503,
-                    legacy: JSON.stringify(legacyRetryRecovery)
+                    resource: predecessorRetryRecovery
                 },
                 {
                     name: 'malformed',
-                    resource: { error: 'partial impostor', code: 'forged' },
-                    version: 'malformed.v0',
-                    code: 'app-inbox-malformed-persisted-failure',
-                    status: 500
+                    resource: { error: 'partial impostor', code: 'forged' }
                 }
             ] as const;
 
-            for (const testCase of cases) {
+            for (const testCase of predecessorCases) {
                 const result = await readPGliteAppInboxFailure(
                     sql,
-                    `legacy-failure-${testCase.name}`,
+                    `predecessor-failure-${testCase.name}`,
                     testCase.resource
                 );
-                assert.ok(result.typed.left, testCase.name);
-                assert.equal(
-                    Reflect.get(result.typed.left, 'version'),
-                    testCase.version,
-                    testCase.name
-                );
-                assert.equal(result.typed.left.code, testCase.code, testCase.name);
-                assert.equal(result.typed.left.status, testCase.status, testCase.name);
-                if ('legacy' in testCase) {
-                    assert.equal(result.legacy.left, testCase.legacy, testCase.name);
-                }
-                if (testCase.name === 'policy-denial') {
-                    assert.deepEqual(result.typed.left.denial, {
-                        code: policyDenial.code,
-                        message: policyDenial.message,
-                        details: policyDenial.details
-                    });
-                }
+                assert.deepEqual(result.left, {
+                    type: 'app-inbox-failure',
+                    version: 'malformed.v0',
+                    code: 'app-inbox-malformed-persisted-failure',
+                    status: 500,
+                    message: 'Persisted AppInbox failure is malformed',
+                    issues: null,
+                    denial: null,
+                    retry: null
+                }, testCase.name);
             }
         });
     }
@@ -254,13 +220,12 @@ Deno.test(
             await authSessions.putSession(authority);
             const groupState = createGroupStateService({
                 runtimeRepository: runtime,
-                formationDamping: 'damped',
                 createGroupStateEventStore: createGroupStateEventRepository,
                 authSessionRepository: authSessions,
                 serviceId: 'pglite-group-service',
                 now: () => nowEpochMs
             });
-            const appGroup = new AppGroupInboxService(
+            const appGroup = new GroupStateInboxService(
                 {
                     inboxQueueReader: inboxReader,
                     resourceInboxRepository: resourceInbox,
@@ -282,7 +247,6 @@ Deno.test(
             );
             const summaryWork = new GroupPresenceSummaryWork({
                 topologyIntent: {
-                    damping: 'damped',
                     outboxQueueReader: outboxReader,
                     recomputeDebounceMs: 0
                 },
@@ -412,13 +376,12 @@ Deno.test(
             await authSessions.putSession(authority);
             const groupState = createGroupStateService({
                 runtimeRepository: runtime,
-                formationDamping: 'damped',
                 createGroupStateEventStore: createGroupStateEventRepository,
                 authSessionRepository: authSessions,
                 serviceId: 'pglite-summary-fence',
                 now: () => nowEpochMs
             });
-            const appGroup = new AppGroupInboxService(
+            const appGroup = new GroupStateInboxService(
                 {
                     inboxQueueReader: inboxReader,
                     resourceInboxRepository: resourceInbox,
@@ -494,7 +457,12 @@ Deno.test(
             const repository = new GroupStateRepository(runtime);
             const summaryBefore = await repository.findPresenceSummaryEntry(ref);
             const work = new GroupPresenceSummaryWork({
-                topologyIntent: { damping: 'legacy' },
+                topologyIntent: {
+                    outboxQueueReader: new OutboxQueueReader(
+                        new PSqlQueueBox(new ResourceInboxRepository(sql))
+                    ),
+                    recomputeDebounceMs: 0
+                },
                 disseminationMode: 'dual-emit',
                 runtimeRepository: runtime,
                 database: sql,
@@ -527,14 +495,14 @@ Deno.test(
 );
 
 Deno.test(
-    'group event workspace keys preserve ordinary values and isolate sentinels and lookalikes',
+    'group event workspace keys encode every required value canonically',
     () => {
-        const workspaces = [undefined, '_', '%5F', 'main', 'a:b', 'a%3Ab', '＿'];
+        const workspaces = ['_', '%5F', 'main', 'a:b', 'a%3Ab', '＿'];
         const keys = workspaces.map(groupEventWorkspaceKey);
-        assert.equal(groupEventWorkspaceKey(undefined), '_');
-        assert.equal(groupEventWorkspaceKey('_'), '%5F');
+        assert.equal(groupEventWorkspaceKey('_'), '_');
         assert.equal(groupEventWorkspaceKey('main'), 'main');
         assert.equal(new Set(keys).size, workspaces.length);
+        assert.throws(() => groupEventWorkspaceKey(''));
     }
 );
 
@@ -638,7 +606,6 @@ Deno.test(
             const repository = new ClientStateRepository(runtime, { events });
             const service = createClientStateService({
                 runtimeRepository: runtime,
-                formationDamping: 'damped',
                 createClientStateEventStore: () => events,
                 serviceId: 'pglite-client-service'
             });
@@ -673,8 +640,7 @@ Deno.test(
                         serviceId: 'pglite-client-service',
                         eventId: `${commandId}-event`,
                         attemptCount: 1,
-                        expireAtEpochMs: FUTURE_MS,
-                        formationDamping: 'damped'
+                        expireAtEpochMs: FUTURE_MS
                     },
                     toClientMutationIssuedSessionAuthority(authority, scope, 'upsertPrincipal')
                 );

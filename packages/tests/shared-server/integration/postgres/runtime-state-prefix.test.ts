@@ -233,7 +233,7 @@ describe('Postgres runtime-state prefix selection', () => {
         const namespace = `runtime-workspace-isolation-${crypto.randomUUID()}`;
         const applicationId = `runtime-workspace-app-${crypto.randomUUID()}`;
         const workspaceCases = [
-            { workspaceId: '_', workspaceKey: '%5F' },
+            { workspaceId: '_', workspaceKey: '_' },
             { workspaceId: '%5F', workspaceKey: '%255F' },
             { workspaceId: 'a:b', workspaceKey: 'a%3Ab' },
             { workspaceId: 'a%3Ab', workspaceKey: 'a%253Ab' }

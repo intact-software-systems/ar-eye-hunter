@@ -3,15 +3,23 @@ import { PSqlAdminSupportReader } from '@shared-server/postgres/admin-support/PS
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import type { RallarServerWsStatus } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import { AdminOperationsService } from '@shared-server/rallar-system/admin-operations/admin-operations-service.ts';
+import type {
+    AdminSupportTopologyQuery,
+    AdminSupportUseCases
+} from '@shared-server/rallar-system/admin-support/admin-support-contracts.ts';
 import {
-    AdminSupportService,
-    type AdminSupportTopologyManagement
-} from '@shared-server/rallar-system/admin-support/AdminSupportService.ts';
+    createAdminSupportUseCases
+} from '@shared-server/rallar-system/admin-support/create-admin-support-use-cases.ts';
+import {
+    createSpaStatisticsUseCases
+} from '@shared-server/rallar-system/admin-support/statistics/create-spa-statistics-use-cases.ts';
+import type {
+    SpaStatisticsUseCases
+} from '@shared-server/rallar-system/admin-support/statistics/spa-statistics-contracts.ts';
 import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-import type { RallarGroupFormationMetricsRecorder } from '@shared-server/rallar-system/formation-metrics.ts';
 import type { CachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
-import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
-import { SpaStatisticsService } from '@shared-server/rallar-system/spa-statistics/SpaStatisticsService.ts';
+import type { RallarGroupFormationMetricsRecorder } from '@shared-server/rallar-system/observability/formation-metrics.ts';
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { RallarCrdtAdminReadRepository } from '@shared/crdt/mod.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
@@ -37,7 +45,7 @@ export interface CreateApiV1AdminServicesInput {
     readonly readGroupFormationMetrics: RallarGroupFormationMetricsRecorder['readMetrics'];
     readonly resetGroupFormationMetrics: RallarGroupFormationMetricsRecorder['resetMetrics'];
     readonly crdtAdminRepository: RallarCrdtAdminReadRepository;
-    readonly topologyManagement: AdminSupportTopologyManagement;
+    readonly topologyQuery: AdminSupportTopologyQuery;
     readonly clientStateService: Pick<ClientStateService, 'readSnapshot' | 'readPresenceSnapshot' | 'listRecentEvents'>;
     readonly groupStateService: Pick<
         CachedGroupStateService,
@@ -50,13 +58,13 @@ export interface CreateApiV1AdminServicesInput {
     >;
     readonly appAdminInboxService: ApiAdminPruneMutationPort;
     readonly crdtAdminMutations: CrdtAdminMutations;
-    readonly appGroupInboxService: ApiTopologyRecomputeMutationPort;
+    readonly topologyInboxService: ApiTopologyRecomputeMutationPort;
 }
 
 export interface ApiV1AdminServices {
     readonly operations: AdminOperationsService;
-    readonly support: AdminSupportService;
-    readonly statistics: SpaStatisticsService;
+    readonly support: AdminSupportUseCases;
+    readonly statistics: SpaStatisticsUseCases;
 }
 
 export function createApiV1AdminServices(
@@ -82,23 +90,23 @@ export function createApiV1AdminServices(
             mutationGateway: createApiAdminMutationGateway({
                 appAdmin: input.appAdminInboxService,
                 crdtAdminMutations: input.crdtAdminMutations,
-                appGroup: input.appGroupInboxService,
+                topologyInbox: input.topologyInboxService,
                 now: input.nowEpochMs
             }),
             timing: input.timing
         }),
-        support: new AdminSupportService({
+        support: createAdminSupportUseCases({
             now: input.nowEpochMs,
             serverId: input.serviceId,
             reader: new PSqlAdminSupportReader(input.database),
             clientStateService: input.clientStateService,
             groupStateService: input.groupStateService,
-            topologyManagement: input.topologyManagement,
+            topologyQuery: input.topologyQuery,
             wsStatus: readWebSocketStatus,
             crdtAdminRepository: input.crdtAdminRepository,
             timing: input.timing
         }),
-        statistics: new SpaStatisticsService({
+        statistics: createSpaStatisticsUseCases({
             now: input.nowEpochMs,
             clientStateService: input.clientStateService,
             groupStateService: input.groupStateService,

@@ -7,8 +7,8 @@ import type {
     UpsertClientInstanceRequest,
     UpsertClientPrincipalRequest
 } from '@shared/api/state-types.ts';
-import type { ClientSessionExpiryCandidate } from '../../repositories/session-expiry.ts';
-import { hashMutationCommand, type JsonWireValue } from '../../services/mutation-command-identity.ts';
+import type { ClientSessionExpiryCandidate } from '../../presence/session-expiry.ts';
+import { hashMutationCommand, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import { ClientMutationRejectedError } from '../client-state-validation-primitives.ts';
 
 import type {

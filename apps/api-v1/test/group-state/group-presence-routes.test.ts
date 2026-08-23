@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import type { GroupMutationReceipt } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import type { InactiveGroupPresenceResult } from '@shared-server/rallar-system/group-state/presence/group-presence-service.ts';
 
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 import type { ProcessGroupAppInbox } from '../../src/group-state/group-state-route-contracts.ts';
 import { toGroupStateCommand } from '../../src/group-state/to-group-state-command.ts';
@@ -15,9 +15,9 @@ import {
     createGroupStateRouteAuthSession,
     createGroupStateRouteSnapshot,
     createGroupStateRouteTestRuntime,
-    createPredecessorGroupStateRouteAuthSession,
-    createPredecessorGroupStateRouteSnapshot,
-    createPredecessorGroupStateRouteTestRuntime,
+    createLiveGroupStateRouteAuthSession,
+    createOwnerGroupStateRouteSnapshot,
+    createRejectingGroupStateRouteTestRuntime,
     TEST_GROUP_SCOPE
 } from './group-state-route-test-runtime.ts';
 
@@ -168,7 +168,6 @@ Deno.test('group presence response retains the current snapshot', async () => {
             outcome: 'applied',
             attemptCount: 1,
             acceptedStorageRevision: 1,
-            stateRevision: 1,
             snapshotVersion: 1,
             causalRevision: { groupRevision: 1, presenceRevision: 1 },
             eventId: null,
@@ -206,7 +205,6 @@ Deno.test('group presence response rejects before reading its current snapshot',
                     outcome: 'rejected',
                     attemptCount: 1,
                     acceptedStorageRevision: null,
-                    stateRevision: 1,
                     snapshotVersion: 1,
                     causalRevision: { groupRevision: 1, presenceRevision: 1 },
                     eventId: null,
@@ -341,7 +339,7 @@ Deno.test('group presence route rejects a receipt before its cleanup read', asyn
     assert.equal(response.status, 400);
     assert.deepEqual(decodeApiMutationFailure(await response.json()), {
         type: 'api-mutation-failure',
-        version: 'canonical.v1',
+        version: 'canonical.v2',
         code: 'group-mutation-rejected',
         status: 400,
         message: 'Presence rejected by current authority',
@@ -402,7 +400,6 @@ function createGroupPresenceReceipt(
         outcome: input.outcome,
         attemptCount: 1,
         acceptedStorageRevision: input.outcome === 'rejected' ? null : 1,
-        stateRevision: 1,
         snapshotVersion: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 1 },
         eventId: null,
@@ -445,12 +442,12 @@ Deno.test('group REST presence lifecycle requires a valid generation before enqu
 function createPresenceValidationRuntime(
     processCalls: AuthenticatedGroupMutationEnqueue[]
 ): {
-    readonly app: ReturnType<typeof createPredecessorGroupStateRouteTestRuntime>['app'];
+    readonly app: ReturnType<typeof createRejectingGroupStateRouteTestRuntime>['app'];
     readonly sessionPath: string;
 } {
-    const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
-    const { app } = createPredecessorGroupStateRouteTestRuntime({
-        session: createPredecessorGroupStateRouteAuthSession('alice'),
+    const snapshot = createOwnerGroupStateRouteSnapshot('room-1', ['alice']);
+    const { app } = createRejectingGroupStateRouteTestRuntime({
+        session: createLiveGroupStateRouteAuthSession('alice'),
         groupService: {
             readCurrentSnapshot: () => Promise.resolve(snapshot)
         },
@@ -468,7 +465,7 @@ function createPresenceValidationRuntime(
 }
 
 async function verifyMalformedPresenceRequests(
-    app: ReturnType<typeof createPredecessorGroupStateRouteTestRuntime>['app'],
+    app: ReturnType<typeof createRejectingGroupStateRouteTestRuntime>['app'],
     sessionPath: string
 ): Promise<void> {
     const malformed = [
@@ -508,7 +505,7 @@ async function verifyMalformedPresenceRequests(
 }
 
 async function verifyValidPresenceRequests(
-    app: ReturnType<typeof createPredecessorGroupStateRouteTestRuntime>['app'],
+    app: ReturnType<typeof createRejectingGroupStateRouteTestRuntime>['app'],
     sessionPath: string
 ): Promise<void> {
     for (

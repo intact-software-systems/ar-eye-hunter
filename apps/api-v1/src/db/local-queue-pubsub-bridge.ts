@@ -1,7 +1,7 @@
 import type {
     QueueBoxPubSubBridge,
     QueueBoxPubSubMessage
-} from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
+} from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 
 type LocalQueuePubSubSubscriber = Readonly<{
     ignoredPublisherId?: string;

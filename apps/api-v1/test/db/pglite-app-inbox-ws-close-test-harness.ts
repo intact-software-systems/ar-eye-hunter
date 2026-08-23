@@ -6,20 +6,16 @@ import {
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { AppClientInboxService } from '@shared-server/rallar-system/services/AppClientInboxService.ts';
-import { AppGroupInboxService } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import {
-    createClientStateService,
-    type ClientStateService
-} from '@shared-server/rallar-system/services/client-state-service.ts';
-import {
-    createGroupStateService,
-    type GroupStateService
-} from '@shared-server/rallar-system/services/group-state-service.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { type ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
+import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { type GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
 import { FUTURE_MS } from './pglite-auth-test-harness.ts';
@@ -49,13 +45,11 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql) {
     const groupEvents = createGroupStateEventRepository(runtime);
     const clientState = createClientStateService({
         runtimeRepository: runtime,
-        formationDamping: 'damped',
         createClientStateEventStore: createClientStateEventRepository,
         serviceId: 'pglite-close-test'
     });
     const groupState = createGroupStateService({
         runtimeRepository: runtime,
-        formationDamping: 'damped',
         createGroupStateEventStore: createGroupStateEventRepository,
         authSessionRepository: authSessions,
         serviceId: 'pglite-close-test'
@@ -74,7 +68,7 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql) {
             options: options
         }
     );
-    const group = new AppGroupInboxService(
+    const group = new GroupStateInboxService(
         {
             inboxQueueReader: reader,
             resourceInboxRepository: resourceInbox,
@@ -102,7 +96,7 @@ export async function createPGliteAppInboxWsCloseHarness(sql: PGliteSql) {
             options: options
         }
     );
-    new AppGroupInboxService(
+    new GroupStateInboxService(
         {
             inboxQueueReader: secondReader,
             resourceInboxRepository: resourceInbox,

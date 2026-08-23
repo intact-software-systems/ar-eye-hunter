@@ -7,7 +7,6 @@ import {
 } from '../api/group-client-views.ts';
 import type { GroupRef } from '../api/group-types.ts';
 import { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
-import { resolveRtcGroupFormationMode } from '../rtc/group-formation-mode.ts';
 import { normalizeRttReportingDegreeLimit, selectRttReportingPeers } from '../rtc/rtt-reporting-policy.ts';
 import {
     clonePeerOwners,
@@ -322,7 +321,6 @@ export class WebRtcGroupManager {
         );
 
         const dialPlan = computeOutboundDialPlan({
-            mode: resolveRtcGroupFormationMode(this.options.groupFormationMode),
             maxPeerConnections: this.maxPeerConnections(),
             knownPeerIds,
             desiredPeerIds,

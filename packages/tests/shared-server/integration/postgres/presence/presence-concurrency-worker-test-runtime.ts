@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect } from 'vitest';
 
-import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { findDirectResourceOutboxEvidence } from '../../../direct-resource-outbox-evidence.ts';
 import { findSingleRetriedAppInboxAttemptSequence, waitForPostgresAppInboxWorkerParticipants } from '../../../fixtures/postgres-app-inbox-worker-runtime.ts';
 import { readOwnedAppInboxResourceIds } from '../../../postgres-app-inbox-attempt-evidence.ts';

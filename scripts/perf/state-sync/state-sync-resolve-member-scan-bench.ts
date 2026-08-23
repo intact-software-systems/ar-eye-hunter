@@ -1,4 +1,4 @@
-import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync-routing.ts';
+import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync/state-sync-routing.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';

@@ -1,5 +1,5 @@
-import type { InstallQueueBoxPubSubBridgeOptions } from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
-import type { RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
+import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import type { InstallQueueBoxPubSubBridgeOptions } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import {
     isRtcTopologyPublicationOutboxEntry
 } from '@shared-server/rallar-system/topology/replay/is-rtc-topology-publication-outbox-entry.ts';

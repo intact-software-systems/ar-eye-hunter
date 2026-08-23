@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
 import { decodePersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-persistence-contracts.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 
@@ -30,15 +29,15 @@ describe('auth persisted session codecs', () => {
         }
     });
 
-    it('rejects malformed legacy plaintext session rows instead of widening them', async () => {
+    it('rejects malformed current session rows and ignores plaintext token keys', async () => {
         const runtime = new FakeRuntimeStateRepository();
         const repository = new AuthSessionRepository(runtime);
         const expiresAtEpochMs = Date.now() + 60_000;
-        const accessToken = 'legacy-malformed-token';
+        const accessToken = 'predecessor-malformed-token';
         const malformed = JSON.stringify({
-            clientId: 'legacy-client',
-            username: 'legacy-user',
-            sessionId: 'legacy-malformed-session',
+            clientId: 'predecessor-client',
+            username: 'predecessor-user',
+            sessionId: 'predecessor-malformed-session',
             accessToken,
             issuedAtEpochMs: 1_000,
             expiresAtEpochMs,
@@ -46,7 +45,7 @@ describe('auth persisted session codecs', () => {
         });
         await runtime.upsert(
             'auth-sessions:by-session',
-            'session=legacy-malformed-session',
+            'session=predecessor-malformed-session',
             malformed,
             expiresAtEpochMs
         );
@@ -57,10 +56,9 @@ describe('auth persisted session codecs', () => {
             expiresAtEpochMs
         );
 
-        await expect(repository.findBySessionId('legacy-malformed-session')).rejects.toThrow(TypeError);
-        await expect(repository.findByAccessToken(accessToken)).rejects.toThrow(TypeError);
-        await expect(
-            repository.findLegacySessionByAccessTokenDigestEntry(await hashAuthSecret(accessToken))
-        ).rejects.toThrow(TypeError);
+        await expect(repository.findBySessionId('predecessor-malformed-session')).rejects.toThrow(
+            TypeError
+        );
+        await expect(repository.findByAccessToken(accessToken)).resolves.toBeUndefined();
     });
 });

@@ -2,16 +2,17 @@ import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { AuthSessionRepository, hashAuthSecret } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { AppAuthInboxService } from '@shared-server/rallar-system/services/AppAuthInboxService.ts';
-import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/services/auth-credential-issuer.ts';
-import { createAuthMutationService } from '@shared-server/rallar-system/services/auth-state-mutations.ts';
+import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
+import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
+import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import assert from 'node:assert/strict';
 import { toResilienceDto } from '../../src/middleware-resilience.ts';
 import { readPGliteDatabaseEpochMs, waitForPGliteQueueRow, withPGliteSql } from './pglite-auth-test-harness.ts';
 
-import { AuthUserRepository } from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
+import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 
 Deno.test('PGlite AppAuth atomically commits auth state, results, completion, and ticket CAS', async () => {
     await withPGliteSql(async (sql) => {

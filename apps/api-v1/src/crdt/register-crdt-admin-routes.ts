@@ -1,10 +1,7 @@
 import type { Context, Hono } from 'jsr:@hono/hono@4.11.9';
 
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
-import {
-    decodeJsonWireValue,
-    type JsonWireObject
-} from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import { decodeJsonWireValue, type JsonWireObject } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import {
     RALLAR_CRDT_PROTOCOL_VERSION,

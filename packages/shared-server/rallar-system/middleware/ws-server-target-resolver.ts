@@ -5,9 +5,9 @@ import { compareGroupCausalRevision, readGroupCausalRevision } from '@shared/api
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { WsServerResolvedRecipient, WsServerTargetResolver } from '@shared/services/WsQueueBoxServerService.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import { isClientSnapshotSessionLive, isGroupSnapshotSessionLive } from '../snapshot-presence.ts';
-import { resolveStateSyncRecipients } from '../state-sync-routing.ts';
+import { isClientSnapshotSessionLive, isGroupSnapshotSessionLive } from '../presence/snapshot-presence.ts';
 import { parseStateSyncPayload, readGroupSnapshotStateSyncPayload } from '../state-sync/state-sync-payload.ts';
+import { resolveStateSyncRecipients } from '../state-sync/state-sync-routing.ts';
 import type { RallarGroupSnapshotResolverOptions } from './rallar-middleware-options.ts';
 
 export function createWsServerTargetResolver(

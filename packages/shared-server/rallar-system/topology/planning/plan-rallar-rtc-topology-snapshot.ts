@@ -9,9 +9,9 @@ import {
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
 
-import { compareRtcTopologyIdentifiers } from '../../rtc-topology-identifiers.ts';
-import { rtcTopologySemanticEqual } from '../../rtc-topology-semantic-equality.ts';
-import type { RallarRtcTopologyUpdateResult } from '../../services/rallar-rtc-topology-service.ts';
+import { compareRtcTopologyIdentifiers } from '../persistence/rtc-topology-identifiers.ts';
+import { rtcTopologySemanticEqual } from '../persistence/rtc-topology-semantic-equal.ts';
+import type { RallarRtcTopologyUpdateResult } from '../runtime/rallar-rtc-topology-service.ts';
 
 export function planRallarRtcTopologySnapshot(
     input: Readonly<{

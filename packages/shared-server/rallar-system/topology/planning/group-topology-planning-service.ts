@@ -9,13 +9,7 @@ import { readGroupCreatedByPrincipalId, readGroupMemberSessionIds } from '@share
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 
-import { compareRtcTopologyIdentifiers } from '../../rtc-topology-identifiers.ts';
-import { filterRtcRttMeasurementsForGroup } from '../../rtc-topology/policy/rtc-rtt-measurement-policy.ts';
-import {
-    RallarRtcTopologyService,
-    type RallarRtcTopologyUpdateResult,
-    type RtcTopologyPlanningIntent
-} from '../../services/rallar-rtc-topology-service.ts';
+import { filterRtcRttMeasurementsForGroup } from '../../rtc-rtt/policy/rtc-rtt-measurement-policy.ts';
 import type { GroupTopologyConfigQueryService } from '../config/group-topology-config-query-service.ts';
 import type { GroupTopologyServerOptions } from '../config/group-topology-config.ts';
 import { GroupTopologyValidationError } from '../group-topology-errors.ts';
@@ -25,11 +19,18 @@ import type {
     ReconcileGroupTopologyResult,
     ReconfigureGroupTopologyInput
 } from '../group-topology-management-contracts.ts';
+import { compareRtcTopologyIdentifiers } from '../persistence/rtc-topology-identifiers.ts';
+import { DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS } from '../publication/rtc-topology-publication-repository-contracts.ts';
+import {
+    RallarRtcTopologyService,
+    type RallarRtcTopologyUpdateResult,
+    type RtcTopologyPlanningIntent
+} from '../runtime/rallar-rtc-topology-service.ts';
 import type {
     GroupTopologyPlanningAuthority,
     ReadGroupTopologyPlanningAuthorityInput
 } from './group-topology-planning-authority.ts';
-import { createRtcOverlayTopologyBroadcastMessage } from './materialize-rtc-overlay-topology-broadcast-message.ts';
+import { materializeRtcOverlayTopologyBroadcastMessage } from './materialize-rtc-overlay-topology-broadcast-message.ts';
 import {
     isGroupTopologyPlannableAt,
     selectGroupTopologyPlanningSnapshot
@@ -291,8 +292,13 @@ export class GroupTopologyPlanningService {
             this.recordTopologyPublication(false);
             return false;
         }
+        const createdAtEpochMs = this.dependencies.topologyService.readNowEpochMs();
         await resolvedPublisher(
-            createRtcOverlayTopologyBroadcastMessage(group, result.snapshot),
+            materializeRtcOverlayTopologyBroadcastMessage(group, result.snapshot, {
+                workId: crypto.randomUUID(),
+                createdAtEpochMs,
+                expiresAtEpochMs: createdAtEpochMs + DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS
+            }),
             result.snapshot
         );
         this.recordTopologyPublication(true);

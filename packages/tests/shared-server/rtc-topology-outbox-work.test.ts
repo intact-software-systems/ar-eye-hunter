@@ -1,25 +1,25 @@
 import type { VivaldiNodeData } from '@shared-graph/graph/vivaldi.ts';
 import type { GroupMutationCommand } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
-import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
-import { toRtcRttMutationReceiptId, toRtcRttTopologyOutboxId } from '@shared-server/rallar-system/rtc-topology/mutation/rtc-rtt-mutation-identifiers.ts';
-import { RtcRttRefinementGate } from '@shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-gate.ts';
-import { RtcRttRefinementService } from '@shared-server/rallar-system/rtc-topology/topic/rtc-rtt-refinement-service.ts';
-import { toAppQueueKey } from '@shared-server/rallar-system/services/app-inbox-queue-key.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { toRtcRttMutationReceiptId, toRtcRttTopologyOutboxId } from '@shared-server/rallar-system/rtc-rtt/mutation/rtc-rtt-mutation-identifiers.ts';
+import { RtcRttRefinementGate } from '@shared-server/rallar-system/rtc-rtt/topic/rtc-rtt-refinement-gate.ts';
+import { RtcRttRefinementService } from '@shared-server/rallar-system/rtc-rtt/topic/rtc-rtt-refinement-service.ts';
 import {
     createRtcTopologyOutboxPublisher,
     createRtcTopologyWorkHandler,
     type RtcTopologyGroupRevisionWork,
     type RtcTopologyRttRefreshWork
-} from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
-import { GroupTopologyManagementService as ConcreteGroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+} from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
+import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
+import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { readRtcTopologyWorkEnvelope } from '@shared-server/rallar-system/topology/replay/rtc-topology-work-codec.ts';
+import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { createDefaultGroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { GroupPresenceSummary, GroupRef, GroupSnapshot, GroupStateCausalRevision } from '@shared/api/group-types.ts';
 import { EntityStatus, InMemoryQueueBox, type ALMessage } from '@shared/mod.ts';
+import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
@@ -95,20 +95,20 @@ describe('RTC topology APP_OUTBOX work', () => {
         const entries = await entriesIn(queue);
         expect(entries).toHaveLength(2);
         expect(entries.map((entry) => readEnvelope(entry).resourceId).sort()).toEqual([
-            expect.stringContaining('group-revision:1'),
-            expect.stringContaining('group-revision:2')
+            expect.stringContaining('group-revision:group=1;presence=0'),
+            expect.stringContaining('group-revision:group=2;presence=0')
         ]);
         expect(entries.map(readWork)).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
                     kind: 'group-revision',
-                    sourceGroupStateRevision: 1,
+                    sourceGroupStateCausalRevision: { groupRevision: 1, presenceRevision: 0 },
                     groupSnapshot: revision1,
                     requestedAtEpochMs: 100
                 }),
                 expect.objectContaining({
                     kind: 'group-revision',
-                    sourceGroupStateRevision: 2,
+                    sourceGroupStateCausalRevision: { groupRevision: 2, presenceRevision: 0 },
                     groupSnapshot: revision2,
                     requestedAtEpochMs: 100
                 })
@@ -133,11 +133,11 @@ describe('RTC topology APP_OUTBOX work', () => {
         const entries = await entriesIn(queue);
         expect(entries).toHaveLength(1);
         expect(readWork(entries[0]!)).toMatchObject({
-            sourceGroupStateRevision: 1,
+            sourceGroupStateCausalRevision: { groupRevision: 1, presenceRevision: 0 },
             groupSnapshot: revision1
         });
-        expect(first).toEqual({ effectiveSnapshotRevision: 1 });
-        expect(duplicate).toEqual({ effectiveSnapshotRevision: 1 });
+        expect(first).toEqual({ effectiveCausalRevision: { groupRevision: 1, presenceRevision: 0 } });
+        expect(duplicate).toEqual({ effectiveCausalRevision: { groupRevision: 1, presenceRevision: 0 } });
     });
 
     it('rejects equal-causal queued and finder authority with different content', async () => {
@@ -156,7 +156,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         await runtime.publisher.enqueueForGroupSnapshot(queuedGroup);
         const [entry] = await entriesIn(queue);
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const topologyManagement = new ConcreteGroupTopologyManagementService({
+        const topologyManagement = createGroupTopologyOwners({
             findGroupSnapshotByRef: () => corruptFinderGroup,
             topologyService: new RallarRtcTopologyService({ now: () => 10 }),
             topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository),
@@ -167,7 +167,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
             }),
-            topologyPlanning: topologyManagement.planningService,
+            topologyPlanning: topologyManagement.planning,
             executionRepository: new RtcTopologyExecutionRepository(runtimeRepository)
         });
 
@@ -194,7 +194,7 @@ describe('RTC topology APP_OUTBOX work', () => {
                 }>
             ) => (options?.minCausalRevision ? undefined : incomparableFinderGroup)
         );
-        const topologyManagement = new ConcreteGroupTopologyManagementService({
+        const topologyManagement = createGroupTopologyOwners({
             findGroupSnapshotByRef,
             topologyService: new RallarRtcTopologyService({ now: () => 10 }),
             topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository),
@@ -205,7 +205,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
             }),
-            topologyPlanning: topologyManagement.planningService,
+            topologyPlanning: topologyManagement.planning,
             executionRepository: new RtcTopologyExecutionRepository(runtimeRepository)
         });
 
@@ -244,7 +244,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             status: 'applied'
         });
         const findGroupSnapshotByRef = vi.fn(() => queuedGroup);
-        const topologyManagement = new ConcreteGroupTopologyManagementService({
+        const topologyManagement = createGroupTopologyOwners({
             findGroupSnapshotByRef,
             groupStateRepository,
             topologyService: new RallarRtcTopologyService({ now: () => 10 }),
@@ -256,7 +256,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
             }),
-            topologyPlanning: topologyManagement.planningService,
+            topologyPlanning: topologyManagement.planning,
             executionRepository: new RtcTopologyExecutionRepository(runtimeRepository)
         });
 
@@ -382,14 +382,14 @@ describe('RTC topology APP_OUTBOX work', () => {
             };
         }
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const topologyManagement = new ConcreteGroupTopologyManagementService({
+        const topologyManagement = createGroupTopologyOwners({
             findGroupSnapshotByRef: () => group,
             topologyService: new RallarRtcTopologyService({ now: () => 10 }),
             topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository),
             processRttReader: () => []
         });
         const readAuthority = vi.spyOn(
-            topologyManagement.planningService,
+            topologyManagement.planning,
             'readTopologyPlanningAuthority'
         );
         const handler = createRtcTopologyWorkHandler({
@@ -397,7 +397,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
             }),
-            topologyPlanning: topologyManagement.planningService,
+            topologyPlanning: topologyManagement.planning,
             executionRepository: new RtcTopologyExecutionRepository(runtimeRepository)
         });
 
@@ -435,14 +435,14 @@ describe('RTC topology APP_OUTBOX work', () => {
             }
         };
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const topologyManagement = new ConcreteGroupTopologyManagementService({
+        const topologyManagement = createGroupTopologyOwners({
             findGroupSnapshotByRef: () => group,
             topologyService: new RallarRtcTopologyService({ now: () => 10 }),
             topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository),
             processRttReader: () => []
         });
         const readAuthority = vi.spyOn(
-            topologyManagement.planningService,
+            topologyManagement.planning,
             'readTopologyPlanningAuthority'
         );
         const handler = createRtcTopologyWorkHandler({
@@ -450,7 +450,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
             }),
-            topologyPlanning: topologyManagement.planningService,
+            topologyPlanning: topologyManagement.planning,
             executionRepository: new RtcTopologyExecutionRepository(runtimeRepository)
         });
 
@@ -491,14 +491,14 @@ describe('RTC topology APP_OUTBOX work', () => {
             }
         };
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const topologyManagement = new ConcreteGroupTopologyManagementService({
+        const topologyManagement = createGroupTopologyOwners({
             findGroupSnapshotByRef: () => group,
             topologyService: new RallarRtcTopologyService({ now: () => 10 }),
             topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository),
             processRttReader: () => []
         });
         const readAuthority = vi.spyOn(
-            topologyManagement.planningService,
+            topologyManagement.planning,
             'readTopologyPlanningAuthority'
         );
         const handler = createRtcTopologyWorkHandler({
@@ -506,7 +506,7 @@ describe('RTC topology APP_OUTBOX work', () => {
             database: createAppInboxTestDatabase(queue, {
                 replace: async (entry) => entry
             }),
-            topologyPlanning: topologyManagement.planningService,
+            topologyPlanning: topologyManagement.planning,
             executionRepository: new RtcTopologyExecutionRepository(runtimeRepository)
         });
 
@@ -623,7 +623,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         expect(readWork(entry)).toMatchObject({
             kind: 'rtt-refresh',
             groupSnapshot: revision2,
-            requestedGroupStateRevision: 2,
+            requestedGroupStateCausalRevision: { groupRevision: 2, presenceRevision: 0 },
             requestedRttVersion: 2,
             rtt: { ...rtt, version: 2 },
             requestedAtEpochMs: 1_200
@@ -940,14 +940,13 @@ function predictedNodes(distanceMs: number): ReadonlyMap<string, VivaldiNodeData
     ]);
 }
 
-function createGroupSnapshot(stateRevision: number): GroupSnapshot {
+function createGroupSnapshot(groupRevision: number): GroupSnapshot {
     const applicationId = 'app-1';
     const workspaceId = 'workspace-1';
     const groupId = 'room-1';
     return {
-        stateRevision,
         causalRevision: {
-            groupRevision: stateRevision,
+            groupRevision,
             presenceRevision: 0
         },
         group: createTestGroup({
@@ -957,12 +956,12 @@ function createGroupSnapshot(stateRevision: number): GroupSnapshot {
             displayName: groupId,
             activeMemberCount: 1,
             ownerPrincipalId: 'owner',
-            snapshotVersion: stateRevision,
+            snapshotVersion: groupRevision,
             metadataVersion: 1,
             rosterVersion: 1,
             presenceVersion: 0,
             created: createAuditStamp(1),
-            updated: createAuditStamp(stateRevision)
+            updated: createAuditStamp(groupRevision)
         }),
         members: [
             {
@@ -973,7 +972,7 @@ function createGroupSnapshot(stateRevision: number): GroupSnapshot {
                 role: 'owner',
                 status: 'active',
                 joined: createAuditStamp(1),
-                updated: createAuditStamp(stateRevision),
+                updated: createAuditStamp(groupRevision),
                 left: null,
                 removed: null,
                 banned: null,
@@ -991,8 +990,7 @@ function createGroupSnapshotWithCausalRevision(
     groupRevision: number,
     presenceRevision: number
 ): GroupSnapshot {
-    const stateRevision = groupRevision + presenceRevision;
-    const snapshot = createGroupSnapshot(stateRevision);
+    const snapshot = createGroupSnapshot(groupRevision);
     return {
         ...snapshot,
         causalRevision: { groupRevision, presenceRevision },

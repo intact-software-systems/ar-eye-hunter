@@ -1,16 +1,14 @@
 const systemRoot = 'packages/shared-server/rallar-system';
-const serviceRoot = `${systemRoot}/services`;
 const groupStateRoot = `${systemRoot}/group-state`;
 const topologyMutationRoot = `${systemRoot}/topology/config/mutation`;
 const topologyRoot = `${systemRoot}/topology`;
-const rtcMutationRoot = `${systemRoot}/rtc-topology/mutation`;
+const rtcMutationRoot = `${systemRoot}/rtc-rtt/mutation`;
 
 export const authoritativeMutationRuntimeSourcePaths = [
-    `${serviceRoot}/AppInboxService.ts`,
+    `${systemRoot}/app-inbox/app-inbox-queue-client.ts`,
     `${systemRoot}/client-state/client-state-service.ts`,
     `${systemRoot}/client-state/mutation/write/write-client-mutation.ts`,
     `${systemRoot}/client-state/inbox/client-state-inbox-handler.ts`,
-    `${serviceRoot}/group-state-service.ts`,
     `${groupStateRoot}/group-mutation-authority.ts`,
     `${groupStateRoot}/group-mutation-command.ts`,
     `${groupStateRoot}/group-presence-mutation-command.ts`,
@@ -21,8 +19,7 @@ export const authoritativeMutationRuntimeSourcePaths = [
     `${groupStateRoot}/inbox/to-group-mutation-descriptor.ts`,
     `${groupStateRoot}/inbox/group-state-inbox-result.ts`,
     `${systemRoot}/topology/inbox/topology-app-inbox-handler.ts`,
-    `${systemRoot}/rtc-topology/inbox/rtc-rtt-app-inbox-handler.ts`,
-    `${serviceRoot}/group-state-mutations.ts`,
+    `${systemRoot}/rtc-rtt/inbox/rtc-rtt-app-inbox-handler.ts`,
     `${topologyMutationRoot}/group-topology-config-mutation-contracts.ts`,
     `${topologyMutationRoot}/topology-config-mutation-idempotency.ts`,
     `${topologyMutationRoot}/compute-topology-config-mutation.ts`,
@@ -36,17 +33,16 @@ export const authoritativeMutationRuntimeSourcePaths = [
     `${topologyRoot}/config/group-topology-config-mutation-service.ts`,
     `${topologyMutationRoot}/write-topology-config-mutation.ts`,
     `${topologyRoot}/reconfigure/group-topology-reconfigure-mutation.ts`,
-    `${groupStateRoot}/presence/group-presence-summary-work.ts`,
+    `${groupStateRoot}/presence/group-presence-summary-worker.ts`,
     `${rtcMutationRoot}/rtc-rtt-mutation-contracts.ts`,
     `${rtcMutationRoot}/compute-rtc-rtt-mutation.ts`,
     `${rtcMutationRoot}/validate-rtc-rtt-mutation.ts`,
     `${rtcMutationRoot}/read-rtc-rtt-mutation.ts`,
     `${rtcMutationRoot}/write-rtc-rtt-mutation.ts`,
     `${rtcMutationRoot}/execute-rtc-rtt-mutation.ts`,
-    `${serviceRoot}/canonical-command-hash.ts`,
-    `${systemRoot}/repositories/RtcTopologyPublicationRepository.ts`,
-    `${systemRoot}/repositories/RtcTopologyScalarAuthorityMigration.ts`,
-    `${systemRoot}/middleware/RallarMiddleware.ts`,
+    `${systemRoot}/protocol/json-wire-identity.ts`,
+    `${systemRoot}/topology/publication/rtc-topology-publication-repository.ts`,
+    `${systemRoot}/middleware/rallar-middleware.ts`,
     'packages/shared-server/mod.ts',
     'apps/api-v1/src/composition/create-api-v1-mutation-runtime.ts'
 ] as const;

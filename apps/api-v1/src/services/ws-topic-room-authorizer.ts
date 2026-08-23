@@ -1,5 +1,5 @@
-import type { CachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
-import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/services/ws-topic-room-authorizer.ts';
+import { type CachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
+import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 
 import type {
     GroupLifecyclePolicyRead

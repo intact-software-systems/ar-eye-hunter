@@ -1,5 +1,4 @@
 import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
-import { Either } from '@shared/resilience/Either.ts';
 
 import type { GroupStateMutationCommand } from '../group-state-service-contracts.ts';
 import type { GroupJoinCodeWritten, GroupStateWritten } from '../group-state-service-contracts.ts';
@@ -83,35 +82,29 @@ function toJoinCodeResult(
     event: GroupEvent | null
 ): GroupJoinCodeWritten {
     if (receipt.outcome === 'rejected') {
-        return {
-            status: 'error',
-            result: Either.ofLeft(receipt.rejection ?? 'Join-code rotation rejected')
-        };
+        throw new TypeError('Rejected join-code mutation reached success result assembly');
     }
     if (receipt.joinCode === null || receipt.joinCodeExpiresAtEpochMs === null) {
         throw new TypeError('Join-code mutation result is incomplete');
     }
     return {
         status: 'ok',
-        result: Either.ofRight({
+        result: {
             joinCode: receipt.joinCode,
             expiresAtEpochMs: receipt.joinCodeExpiresAtEpochMs,
             snapshot,
             event
-        })
+        }
     };
 }
 
 function toGroupMutationResult(input: ToGroupMutationResultInput): GroupStateWritten {
     const { command, event, receipt, snapshot } = input;
     if (receipt.outcome === 'rejected') {
-        return {
-            status: 'error',
-            result: Either.ofLeft(receipt.rejection ?? 'Group mutation rejected')
-        };
+        throw new TypeError('Rejected group mutation reached success result assembly');
     }
     return {
         status: command.command.operation === 'createGroup' ? 'created' : 'ok',
-        result: Either.ofRight({ snapshot, event })
+        result: { snapshot, event }
     };
 }

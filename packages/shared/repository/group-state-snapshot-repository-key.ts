@@ -1,13 +1,13 @@
 export type GroupStateSnapshotRepositoryRef = Readonly<{
     applicationId: string;
-    workspaceId?: string;
+    workspaceId: string;
     groupId: string;
 }>;
 
 type GroupStateSnapshotRepositoryKey = readonly [
     kind: 'group-state-snapshot',
     applicationId: string,
-    workspaceId: readonly [kind: 'absent'] | readonly [kind: 'present', value: string],
+    workspaceId: string,
     groupId: string
 ];
 
@@ -20,10 +20,13 @@ type GroupStateSnapshotRepositoryJsonValue =
     | { readonly [key: string]: GroupStateSnapshotRepositoryJsonValue; };
 
 export function toGroupStateSnapshotRepositoryKey(ref: GroupStateSnapshotRepositoryRef): string {
+    if (![ref.applicationId, ref.workspaceId, ref.groupId].every(isNonEmptyString)) {
+        throw new TypeError('Group state snapshot repository identity is invalid');
+    }
     const key: GroupStateSnapshotRepositoryKey = [
         'group-state-snapshot',
         ref.applicationId,
-        ref.workspaceId === undefined ? ['absent'] : ['present', ref.workspaceId],
+        ref.workspaceId,
         ref.groupId
     ];
     return JSON.stringify(key);
@@ -36,9 +39,7 @@ export function fromGroupStateSnapshotRepositoryKey(key: string): GroupStateSnap
     }
 
     const [, applicationId, workspaceId, groupId] = parsed;
-    return workspaceId[0] === 'present'
-        ? { applicationId, workspaceId: workspaceId[1], groupId }
-        : { applicationId, groupId };
+    return { applicationId, workspaceId, groupId };
 }
 
 function isGroupStateSnapshotRepositoryKey(
@@ -48,18 +49,16 @@ function isGroupStateSnapshotRepositoryKey(
         !Array.isArray(value) ||
         value.length !== 4 ||
         value[0] !== 'group-state-snapshot' ||
-        typeof value[1] !== 'string' ||
-        typeof value[3] !== 'string'
+        !isNonEmptyString(value[1]) ||
+        !isNonEmptyString(value[2]) ||
+        !isNonEmptyString(value[3])
     ) {
         return false;
     }
 
-    const workspaceId = value[2];
-    return (
-        Array.isArray(workspaceId) &&
-        ((workspaceId.length === 1 && workspaceId[0] === 'absent') ||
-            (workspaceId.length === 2 &&
-                workspaceId[0] === 'present' &&
-                typeof workspaceId[1] === 'string'))
-    );
+    return true;
+}
+
+function isNonEmptyString(value: GroupStateSnapshotRepositoryJsonValue): value is string {
+    return typeof value === 'string' && value.length > 0;
 }

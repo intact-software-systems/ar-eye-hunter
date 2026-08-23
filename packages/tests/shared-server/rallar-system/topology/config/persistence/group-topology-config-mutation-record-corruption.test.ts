@@ -39,7 +39,6 @@ describe('group topology config mutation record corruption', () => {
                     acceptedConfig: null,
                     acceptedCausalRevision: null,
                     eventId: null,
-                    outboxId: null,
                     outboxIds: []
                 }
             }),
@@ -81,6 +80,19 @@ describe('group topology config mutation record corruption', () => {
         const groupRef = createTopologyTestGroupRef('workspace-1');
         const requestId = `invalid-receipt-${index}`;
         const commandHash = `sha256:${'b'.repeat(64)}`;
+        const acceptedCausalRevision = {
+            causalRevision: { groupRevision: 1, presenceRevision: 0 },
+            snapshotVersion: 1,
+            metadataVersion: 1,
+            rosterVersion: 0,
+            presenceVersion: 0
+        };
+        const outboxId = [
+            requestId,
+            'rtc-topology-recompute',
+            'group-revision',
+            'group=1;presence=0'
+        ].join(':');
         await runtimeRepository.insertIfAbsent(
             GROUP_TOPOLOGY_CONFIG_MUTATION_NAMESPACE,
             repository.mutationKey(groupRef, requestId),
@@ -103,10 +115,9 @@ describe('group topology config mutation record corruption', () => {
                     acceptedUpdatedAtEpochMs: null,
                     acceptedExpiresAtEpochMs: null,
                     acceptedConfig: null,
-                    acceptedCausalRevision: null,
+                    acceptedCausalRevision,
                     eventId: null,
-                    outboxId: null,
-                    outboxIds: [],
+                    outboxIds: [outboxId],
                     ...receipt
                 }
             }),
@@ -148,7 +159,6 @@ describe('group topology config mutation record corruption', () => {
                         acceptedConfig: createTopologyTestEffectiveConfig('tree'),
                         acceptedCausalRevision: null,
                         eventId: null,
-                        outboxId: null,
                         outboxIds: []
                     }
                 }),
@@ -182,7 +192,6 @@ describe('group topology config mutation record corruption', () => {
         const requestId = 'expected-request';
         const commandHash = `sha256:${'c'.repeat(64)}`;
         const acceptedCausalRevision = {
-            stateRevision: 2,
             causalRevision: { groupRevision: 2, presenceRevision: 0 },
             snapshotVersion: 1,
             metadataVersion: 1,
@@ -219,7 +228,6 @@ describe('group topology config mutation record corruption', () => {
                     acceptedConfig: createTopologyTestEffectiveConfig('tree'),
                     acceptedCausalRevision,
                     eventId: null,
-                    outboxId,
                     outboxIds: [outboxId],
                     ...receipt
                 }

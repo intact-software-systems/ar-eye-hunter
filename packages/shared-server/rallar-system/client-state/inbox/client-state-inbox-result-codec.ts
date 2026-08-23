@@ -2,10 +2,9 @@ import {
     validateAuthoritativeClientEvent,
     validateAuthoritativeClientSnapshot
 } from '@shared/api/authoritative-state-validation.ts';
-import { Either } from '@shared/resilience/Either.ts';
 
-import { requireExactKeys, requireString } from '../../services/exact-object-codec.ts';
-import type { JsonWireObject, JsonWireValue } from '../../services/mutation-command-identity.ts';
+import { requireExactKeys, requireString } from '../../protocol/exact-object-decoding.ts';
+import type { JsonWireObject, JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { ClientStateWritten } from '../client-state-service-contracts.ts';
 
 export interface InactiveAuthorisedWsSessionResult {
@@ -22,7 +21,7 @@ export function decodeClientStateWritten(value: JsonWireValue): ClientStateWritt
     if (written.status !== 'ok') {
         throw new TypeError('Client state result status is invalid');
     }
-    return { status: 'ok', result: decodeClientMutationEither(written.result) };
+    return { status: 'ok', result: decodeClientMutationWritten(written.result) };
 }
 
 export function decodeAuthorisedWsClientMutationResult(
@@ -55,16 +54,9 @@ export function decodeExpiredClientSessionsResult(
     return value.map(decodeClientStateWritten);
 }
 
-function decodeClientMutationEither(value: JsonWireValue): ClientStateWritten['result'] {
-    const result = requireJsonWireRecord(value, 'Client state mutation result');
-    if (Object.hasOwn(result, 'left')) {
-        requireExactKeys(result, ['left'], 'Client state mutation result');
-        requireString(result.left, 'Client state mutation result left');
-        return Either.ofLeft(result.left);
-    }
-    requireExactKeys(result, ['right'], 'Client state mutation result');
-    const written = requireJsonWireRecord(result.right, 'Client state mutation result right');
-    requireExactKeys(written, ['snapshot', 'event'], 'Client state mutation result right');
+function decodeClientMutationWritten(value: JsonWireValue): ClientStateWritten['result'] {
+    const written = requireJsonWireRecord(value, 'Client state mutation result');
+    requireExactKeys(written, ['snapshot', 'event'], 'Client state mutation result');
     validateAuthoritativeClientSnapshot(written.snapshot);
     if (written.event !== null) {
         validateAuthoritativeClientEvent(written.event, {
@@ -73,7 +65,7 @@ function decodeClientMutationEither(value: JsonWireValue): ClientStateWritten['r
             principalId: written.snapshot.principal.principalId
         });
     }
-    return Either.ofRight({ snapshot: written.snapshot, event: written.event });
+    return { snapshot: written.snapshot, event: written.event };
 }
 
 function requireJsonWireRecord(value: JsonWireValue, label: string): JsonWireObject {

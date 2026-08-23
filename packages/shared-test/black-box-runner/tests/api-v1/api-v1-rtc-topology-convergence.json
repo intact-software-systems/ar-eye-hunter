@@ -242,7 +242,6 @@
       "expect": {
         "status": 200,
         "body": {
-          "stateRevision": "integer",
           "group": {
             "groupId": "{groupId}"
           }
@@ -267,7 +266,6 @@
       "expect": {
         "status": 200,
         "body": {
-          "stateRevision": "integer",
           "group": {
             "groupId": "{groupId}"
           }
@@ -293,7 +291,6 @@
       "expect": {
         "status": 200,
         "body": {
-          "stateRevision": "integer",
           "group": {
             "groupId": "{groupId}"
           }
@@ -319,7 +316,6 @@
       "expect": {
         "status": 200,
         "body": {
-          "stateRevision": "integer",
           "group": {
             "groupId": "{groupId}"
           }
@@ -564,7 +560,6 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "stateRevision": "integer",
                   "group": {
                     "groupId": "{groupId}"
                   }
@@ -618,7 +613,6 @@
               "expect": {
                 "status": 200,
                 "body": {
-                  "stateRevision": "integer",
                   "group": {
                     "groupId": "{groupId}"
                   }

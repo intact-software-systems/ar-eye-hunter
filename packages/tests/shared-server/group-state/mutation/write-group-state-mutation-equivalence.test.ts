@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
+import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
@@ -39,7 +39,6 @@ async function runScenario(
     let generatedId = 0;
     const service = createTestGroupStateService({
         runtimeRepository: runtime,
-        formationDamping: 'damped',
         createGroupStateEventStore: () => eventStore,
         now: () => nowEpochMs,
         randomId: () => `equivalence-id-${++generatedId}`,

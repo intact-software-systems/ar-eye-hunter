@@ -56,7 +56,7 @@ to vary by machine, Postgres state, runtime version, cache warmth, and load.
 | `client-list-fanout-bench.ts`                        | Client snapshot fanout/pagination workload.                                                                                                                                       |
 | `group-list-fanout-bench.ts`                         | Group snapshot fanout/pagination workload.                                                                                                                                        |
 | `state-sync/state-sync-resolve-member-scan-bench.ts` | State-sync member resolution scan workload.                                                                                                                                       |
-| `state-sync-send-fanout-bench.ts`                    | State-sync send fanout workload.                                                                                                                                                  |
+| `state-sync/state-sync-send-fanout-bench.ts`         | State-sync send fanout workload.                                                                                                                                                  |
 
 ## RTC/WebRTC benchmark package
 

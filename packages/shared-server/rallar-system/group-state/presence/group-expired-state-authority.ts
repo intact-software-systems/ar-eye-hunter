@@ -22,15 +22,18 @@ export function validateGroupExpiredStateAuthority(
         groupStateGroupStorageKey(input.ref),
         'Group read'
     );
-    if (input.expiredTargetPresenceEntry && input.targetSessionId === null) {
-        throw new TypeError('Presence read has expired authority without a target session');
+    if (input.targetSessionId === null) {
+        if (input.expiredTargetPresenceEntry) {
+            throw new TypeError('Presence read has expired authority without a target session');
+        }
+        return;
     }
     validateRuntimeStateExpiredAuthority(
         input.targetPresence,
         input.expiredTargetPresenceEntry,
         groupStatePresenceSessionStorageKey({
             ...input.ref,
-            sessionId: input.targetSessionId ?? ''
+            sessionId: input.targetSessionId
         }),
         'Presence read'
     );

@@ -7,14 +7,14 @@ import type { GroupLifecyclePolicy } from '@shared/api/group-lifecycle/group-lif
 import type { Group, GroupRef } from '@shared/api/group-types.ts';
 import { fnv1a64 } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { AppOutboxType } from '../services/AppOutboxService.ts';
+import { AppOutboxType } from '../app-outbox/app-outbox-type.ts';
 import type {
     GroupLifecycleTransitionOperation,
     GroupMutationCommand,
     GroupMutationFacts
 } from './mutation/group-mutation-contracts.ts';
 
-import { toAppQueueCreatedBy, toAppQueueKey } from '../services/app-inbox-queue-key.ts';
+import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { groupStateGroupStorageKey } from './persistence/group-state-storage-keys.ts';
 
 export const APP_OUTBOX_FORMATION_TIMER_TOPIC = 'app-outbox.formation-timer';

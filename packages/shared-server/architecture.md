@@ -3,17 +3,16 @@
 `packages/shared-server` owns reusable Rallar server-side domain code. It stays
 independent of one HTTP app, deployment process, and environment configuration.
 `apps/api-v1` composes routes, runtime IDs, OpenAPI, database lifecycle, and
-deployment settings around these shared services.
+deployment settings around these shared domain owners.
 
 ## Current Public Surface
 
-- `mod.ts` is the broad compatibility barrel for facades, middleware,
-  repositories, auth, state services, WS topics, and runtime-state helpers.
+- `mod.ts` is a curated package barrel for useful current cross-package
+  contracts. In-repo implementations import canonical owners directly.
 - `rallar-facade/` composes reusable REST, WebSocket, system, and data behavior.
-- `rallar-system/services/` owns client/group state, topology, state sync,
-  app-inbox processing, authorization, timing, and routing.
-- `rallar-system/repositories/` owns durable state, compact mutation receipts,
-  direct resource-inbox effects, topology publications, and QueueBox contracts.
+- `rallar-system/` is organized by domain and lifecycle owner: AppInbox,
+  client/group/auth/CRDT state, topology, RTC-RTT, state sync, WebSocket,
+  presence, observability, and queue pub/sub.
 - `runtime-state/` exposes conditional and transactional capabilities;
   `postgres/` supplies the concrete Postgres adapters.
 
@@ -195,15 +194,9 @@ not current or approved exceptions.
 
 ## Documentation And Validation
 
-- [Group-state server navigation map](./rallar-system/group-state/README.md)
-  links the canonical group-state construction, queue, mutation, and cache
-  owners without duplicating their runtime contracts.
-- [Client-state server navigation map](./rallar-system/client-state/README.md)
-  links the canonical command and validation owners and records the unchanged
-  AppInbox mutation timeline without duplicating runtime contracts.
-- [RTC topology server navigation map](./rallar-system/topology/README.md)
-  links planning, accepted publication, durable delivery replay, reconnect
-  hydration, and PostgreSQL ownership boundaries.
+- [Rallar System navigation map](./rallar-system/README.md) records the live
+  startup and call-entry chains, construction order, domain owners, side
+  effects, focused tests, and public-export guidance.
 - `rallar-server-repositories.md` inventories current persistence and data flow.
 - `rallar-server-repositories-improvements.md` is the historical hardening log.
 - `../../docs/rallar-convergent-state-and-rtc-topology.md` describes the

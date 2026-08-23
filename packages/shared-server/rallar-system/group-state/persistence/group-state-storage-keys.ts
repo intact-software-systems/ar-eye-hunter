@@ -1,28 +1,19 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
-import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 
 type GroupMemberStorageRef = GroupRef & Readonly<{ principalId: string; }>;
 type GroupSessionStorageRef = GroupRef & Readonly<{ sessionId: string; }>;
 
 function keyPart(name: string, value: string): string {
-    return `${name}=${encodeURIComponent(value)}`;
-}
-
-function workspaceKeyPart(workspaceId: string | undefined): string {
-    if (workspaceId === undefined) {
-        return 'ws=_';
+    if (typeof value !== 'string' || value.length === 0) {
+        throw new TypeError(`Group-state storage key ${name} must be a non-empty string`);
     }
-    // Keep the historical absent-workspace namespace while ensuring that the
-    // valid explicit identifier "_" cannot alias it. Percent is itself escaped
-    // by encodeURIComponent, so "%5F" and the explicit sentinel remain distinct.
-    const encoded = workspaceId === '_' ? '%5F' : encodeURIComponent(workspaceId);
-    return `ws=${encoded}`;
+    return `${name}=${encodeURIComponent(value)}`;
 }
 
 export function groupStateScopeStorageKey(
     scope: Pick<GroupRef, 'applicationId' | 'workspaceId'>
 ): string {
-    return [keyPart('app', scope.applicationId), workspaceKeyPart(scope.workspaceId)].join(':');
+    return [keyPart('app', scope.applicationId), keyPart('ws', scope.workspaceId)].join(':');
 }
 
 export function groupStateGroupStorageKey(ref: GroupRef): string {
@@ -35,16 +26,14 @@ export function decodeGroupStateGroupStorageKey(storageKey: string): GroupRef {
         throw new TypeError('Group-state group storage key has invalid arity');
     }
     const applicationId = decodeKeyPart(parts[0], 'app');
-    const workspaceId = decodeWorkspaceKeyPart(parts[1]);
+    const workspaceId = decodeKeyPart(parts[1], 'ws');
     const groupId = decodeKeyPart(parts[2], 'group');
     const ref: GroupRef = {
         applicationId,
-        workspaceId: workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
+        workspaceId,
         groupId
     };
-    const canonicalStorageKey = workspaceId === undefined
-        ? [keyPart('app', applicationId), 'ws=_', keyPart('group', groupId)].join(':')
-        : groupStateGroupStorageKey(ref);
+    const canonicalStorageKey = groupStateGroupStorageKey(ref);
     if (canonicalStorageKey !== storageKey) {
         throw new TypeError('Group-state group storage key is not canonical');
     }
@@ -121,14 +110,7 @@ function decodeChildStorageKey<Name extends string>(
     const ref = decodeGroupStateGroupStorageKey(parts.slice(0, 3).join(':'));
     const value = decodeKeyPart(parts[3], partName);
     const decoded = { ...ref, [propertyName]: value } as GroupRef & Readonly<Record<Name, string>>;
-    const canonicalStorageKey = canonicalKeyFor(decoded);
-    const normalizedStorageKey = parts[1] === 'ws=_'
-        ? canonicalStorageKey.replace(
-            `:ws=${encodeURIComponent(DEFAULT_STATE_WORKSPACE_ID)}:`,
-            ':ws=_:'
-        )
-        : canonicalStorageKey;
-    if (normalizedStorageKey !== storageKey) {
+    if (canonicalKeyFor(decoded) !== storageKey) {
         throw new TypeError(`Group-state ${partName} storage key is not canonical`);
     }
     return decoded;
@@ -140,17 +122,13 @@ function decodeKeyPart(part: string | undefined, name: string): string {
         throw new TypeError(`Group-state storage key is missing ${name}`);
     }
     try {
-        return decodeURIComponent(part.slice(prefix.length));
+        const value = decodeURIComponent(part.slice(prefix.length));
+        if (value.length === 0) {
+            throw new TypeError(`Group-state storage key ${name} must be a non-empty string`);
+        }
+        return value;
     }
     catch {
         throw new TypeError(`Group-state storage key has invalid ${name} encoding`);
     }
-}
-
-function decodeWorkspaceKeyPart(part: string | undefined): string | undefined {
-    if (part === 'ws=_') {
-        return undefined;
-    }
-    const workspaceId = decodeKeyPart(part, 'ws');
-    return workspaceId;
 }

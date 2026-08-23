@@ -1,4 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
@@ -17,18 +18,14 @@ import { requireGroupStateWritten } from '@shared-server/rallar-system/group-sta
 
 import type { GroupStateInboxDurableResult } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
 
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import {
-    AppGroupInboxService,
-    AppInboxService,
-    AppInboxType,
-    type AppInboxEnqueueInput,
-    type AppInboxServiceOptions,
-    type GroupCreateAppInboxPayload
-} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
-import { createGroupStateService, type GroupStateService, type GroupStateWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { AppInboxType, type AppInboxEnqueueInput, type AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { type GroupStateService, type GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import type { GroupCreateAppInboxPayload } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
+import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { authSession } from '../group-state-test-runtime.ts';
 import { TestResourceInbox, TestResourceInboxResults } from './group-state-inbox-resource-fixtures.ts';
@@ -46,7 +43,7 @@ export interface AuthorityHarness {
     readonly repository: GroupStateRepository;
     readonly authSessions: AuthSessionRepository;
     readonly groupStateService: GroupStateService;
-    readonly service: AppGroupInboxService;
+    readonly service: GroupStateInboxService;
     readonly database: AppInboxTestDatabase;
     readonly reader: InboxQueueReader;
     readonly queue: TestResourceInbox;
@@ -56,7 +53,7 @@ export interface AuthorityHarness {
 }
 interface HarnessOptions {
     readonly wakeQueue?: () => void;
-    readonly serviceOptions?: AppInboxServiceOptions;
+    readonly serviceOptions?: AppInboxOptions;
 }
 
 export function listRoomEvents(harness: AuthorityHarness, groupId: string) {
@@ -90,7 +87,6 @@ export async function createAuthorityHarness(
     const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
     const groupStateService = createGroupStateService({
         runtimeRepository,
-        formationDamping: 'damped',
         createGroupStateEventStore: () => database.groupEventStore,
         serviceId: 'server-12345678',
         now: () => nowEpochMs,
@@ -132,13 +128,13 @@ interface AuthorityAppInboxServiceInput {
     readonly database: AppInboxTestDatabase;
     readonly groupStateService: GroupStateService;
     readonly wakeQueue?: () => void;
-    readonly serviceOptions?: AppInboxServiceOptions;
+    readonly serviceOptions?: AppInboxOptions;
 }
 
 function createAuthorityAppInboxService(
     input: AuthorityAppInboxServiceInput
-): AppGroupInboxService {
-    return new AppGroupInboxService(
+): GroupStateInboxService {
+    return new GroupStateInboxService(
         {
             inboxQueueReader: input.reader,
             resourceInboxRepository: input.queue,
@@ -194,7 +190,7 @@ export async function createRoom(
 }
 
 interface ProcessAuthenticatedInput {
-    readonly service: AppGroupInboxService;
+    readonly service: GroupStateInboxService;
     readonly reader: InboxQueueReader;
     readonly authority: IssuedAuthSession;
     readonly input: AuthenticatedGroupMutationEnqueue;
@@ -202,7 +198,7 @@ interface ProcessAuthenticatedInput {
 
 export async function processAuthenticated(
     request: ProcessAuthenticatedInput
-): ReturnType<AppGroupInboxService['processAuthenticatedGroupEntryUntilCompletion']> {
+): ReturnType<GroupStateInboxService['processAuthenticatedGroupEntryUntilCompletion']> {
     const pending = request.service.processAuthenticatedGroupEntryUntilCompletion(
         request.input,
         request.authority
@@ -221,10 +217,10 @@ export async function processAuthenticated(
 }
 
 export function requireGroupStateResult(
-    result: Either<string, GroupStateInboxDurableResult>
+    result: Either<AppInboxFailure, GroupStateInboxDurableResult>
 ): GroupStateWritten {
     return result.fold((error) => {
-        throw new Error(error);
+        throw new Error(error.message);
     }, requireGroupStateWritten);
 }
 

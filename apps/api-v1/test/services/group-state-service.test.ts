@@ -1,6 +1,5 @@
-import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
-import type { GroupStateWritten } from '@shared-server/rallar-system/services/group-state-service.ts';
-import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
+import { type GroupStateWritten } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
@@ -8,7 +7,7 @@ import type {
 } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import { readRallarGroupDirectorFromSnapshot } from '@shared/api/group-director.ts';
 import type { GroupPolicyReasonCode } from '@shared/api/group-policy-types.ts';
-import type { GroupEvent, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
 import assert from 'node:assert/strict';
 import {
@@ -23,17 +22,6 @@ const TEST_SCOPE: StateScope = {
 };
 const INITIAL_EXPIRES_AT_EPOCH_MS = 4_102_444_821_000;
 const REFRESHED_EXPIRES_AT_EPOCH_MS = 4_102_444_822_000;
-
-const NO_OP_SYNC_PUBLISHER: StateSyncPublisher = {
-    publishClientSnapshot: async () => {
-    },
-    publishClientEvent: async () => {
-    },
-    publishGroupSnapshot: async () => {
-    },
-    publishGroupEvent: async () => {
-    }
-};
 
 Deno.test('connectPresenceSession rejects missing and non-active group members', async () => {
     const service = createTestGroupStateService();
@@ -209,8 +197,7 @@ Deno.test('semantic group mutations advance snapshotVersion', async () => {
 });
 
 Deno.test('heartbeatPresenceSession refreshes TTL without publishing unchanged snapshots', async () => {
-    const syncPublisher = createRecordingStateSyncPublisher();
-    const service = createTestGroupStateService(syncPublisher);
+    const service = createTestGroupStateService();
 
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -228,7 +215,6 @@ Deno.test('heartbeatPresenceSession refreshes TTL without publishing unchanged s
         lastHeartbeatAtEpochMs: 1_000,
         expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS
     });
-    syncPublisher.reset();
 
     const before = await readSnapshot(service);
     const refreshed = snapshotFromGroupStateWritten(
@@ -249,13 +235,10 @@ Deno.test('heartbeatPresenceSession refreshes TTL without publishing unchanged s
 
     assert.equal(refreshed.group.presenceVersion, before.group.presenceVersion);
     assert.deepEqual(refreshed.activeSessions, []);
-    assert.equal(syncPublisher.groupSnapshots.length, 0);
-    assert.equal(syncPublisher.groupEvents.length, 0);
 });
 
 Deno.test('updateGroup ignores unchanged metadata state', async () => {
-    const syncPublisher = createRecordingStateSyncPublisher();
-    const service = createTestGroupStateService(syncPublisher);
+    const service = createTestGroupStateService();
 
     const created = snapshotFromGroupStateWritten(
         await service.createGroup(TEST_SCOPE, {
@@ -266,7 +249,6 @@ Deno.test('updateGroup ignores unchanged metadata state', async () => {
             actorPrincipalId: 'owner-1'
         })
     );
-    syncPublisher.reset();
 
     const unchanged = snapshotFromGroupStateWritten(
         await service.updateGroup(TEST_SCOPE, 'group-1', {
@@ -277,8 +259,6 @@ Deno.test('updateGroup ignores unchanged metadata state', async () => {
     );
 
     assert.equal(unchanged.group.metadataVersion, created.group.metadataVersion);
-    assert.equal(syncPublisher.groupSnapshots.length, 0);
-    assert.equal(syncPublisher.groupEvents.length, 0);
 });
 
 Deno.test('archived and deleted groups reject member activation and presence mutations', async () => {
@@ -880,7 +860,7 @@ Deno.test('createGroupInvite lets owners and admins invite members', async () =>
     const adminInvite = snapshotFromGroupStateWritten(adminInviteWritten);
 
     assertMember(adminInvite, 'member-2', 'member', 'invited');
-    assert.equal(adminInviteWritten.result.right?.event?.eventType, 'member-invited');
+    assert.equal(adminInviteWritten.result?.event?.eventType, 'member-invited');
     const invited = adminInvite.members.find((member) => member.principalId === 'member-2');
     assert.equal(invited?.invitedByPrincipalId, 'admin-1');
     assert.equal(invited?.invitationExpiresAtEpochMs, 1_000 + 7 * 24 * 60 * 60 * 1000);
@@ -953,7 +933,7 @@ Deno.test('acceptGroupInvite enforces invite expiry and activates valid invites'
     const accepted = snapshotFromGroupStateWritten(acceptedWritten);
 
     assertMember(accepted, 'member-1', 'member', 'active');
-    assert.equal(acceptedWritten.result.right?.event?.eventType, 'member-joined');
+    assert.equal(acceptedWritten.result?.event?.eventType, 'member-joined');
 });
 
 Deno.test('revoked invites and banned members cannot be accepted', async () => {
@@ -981,7 +961,7 @@ Deno.test('revoked invites and banned members cannot be accepted', async () => {
             requestId: 'revoke-member'
         }
     );
-    assert.equal(revokedWritten.result.right?.event?.eventType, 'member-left');
+    assert.equal(revokedWritten.result?.event?.eventType, 'member-left');
     await assertPolicyRejects(
         () =>
             service.acceptGroupInvite(TEST_SCOPE, 'group-1', {
@@ -1178,7 +1158,7 @@ Deno.test('membership governance operations enforce hierarchy and emit member ev
         }
     );
     const removed = snapshotFromGroupStateWritten(removedWritten);
-    assert.equal(removedWritten.result.right?.event?.eventType, 'member-removed');
+    assert.equal(removedWritten.result?.event?.eventType, 'member-removed');
     assertMember(removed, 'member-1', 'member', 'removed');
 
     const bannedWritten = await service.banGroupMember(
@@ -1192,7 +1172,7 @@ Deno.test('membership governance operations enforce hierarchy and emit member ev
         }
     );
     const banned = snapshotFromGroupStateWritten(bannedWritten);
-    assert.equal(bannedWritten.result.right?.event?.eventType, 'member-banned');
+    assert.equal(bannedWritten.result?.event?.eventType, 'member-banned');
     assertMember(banned, 'member-2', 'member', 'banned');
 
     await assertPolicyRejects(
@@ -1225,7 +1205,7 @@ Deno.test('membership governance operations enforce hierarchy and emit member ev
         }
     );
     const unbanned = snapshotFromGroupStateWritten(unbannedWritten);
-    assert.equal(unbannedWritten.result.right?.event?.eventType, 'member-unbanned');
+    assert.equal(unbannedWritten.result?.event?.eventType, 'member-unbanned');
     assertMember(unbanned, 'member-2', 'member', 'left');
 
     const promotedWritten = await service.setGroupMemberRole(
@@ -1240,7 +1220,7 @@ Deno.test('membership governance operations enforce hierarchy and emit member ev
         }
     );
     const promoted = snapshotFromGroupStateWritten(promotedWritten);
-    assert.equal(promotedWritten.result.right?.event?.eventType, 'member-role-changed');
+    assert.equal(promotedWritten.result?.event?.eventType, 'member-role-changed');
     assertMember(promoted, 'member-3', 'admin', 'active');
 
     const transferredWritten = await service.transferGroupOwnership(
@@ -1255,7 +1235,7 @@ Deno.test('membership governance operations enforce hierarchy and emit member ev
     );
     const transferred = snapshotFromGroupStateWritten(transferredWritten);
     assert.equal(
-        transferredWritten.result.right?.event?.eventType,
+        transferredWritten.result?.event?.eventType,
         'ownership-transferred'
     );
     assertMember(transferred, 'owner-1', 'admin', 'active');
@@ -1314,8 +1294,7 @@ Deno.test('last-owner protection applies to leave remove ban and demote operatio
 });
 
 Deno.test('appointDirector lets an active member become director when owner is offline', async () => {
-    const syncPublisher = createRecordingStateSyncPublisher();
-    const service = createTestGroupStateService(syncPublisher);
+    const service = createTestGroupStateService();
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
         displayName: 'Room 1',
@@ -1342,7 +1321,6 @@ Deno.test('appointDirector lets an active member become director when owner is o
         lastHeartbeatAtEpochMs: 1_000,
         expiresAtEpochMs: INITIAL_EXPIRES_AT_EPOCH_MS
     });
-    syncPublisher.reset();
 
     const written = await service.appointDirector(TEST_SCOPE, 'group-1', {
         actorPrincipalId: 'member-1',
@@ -1358,9 +1336,7 @@ Deno.test('appointDirector lets an active member become director when owner is o
     assert.equal(appointment?.epoch, 1);
     assert.equal(appointment?.heartbeatTtlMs, 9_000);
     assert.equal(appointed.group.metadata.keep, true);
-    assert.equal(written.result.right?.event?.eventType, 'group-updated');
-    assert.equal(syncPublisher.groupSnapshots.length, 0);
-    assert.equal(syncPublisher.groupEvents.length, 0);
+    assert.equal(written.result?.event?.eventType, 'group-updated');
 });
 
 Deno.test('appointDirector does not replay cached appointments to a different actor', async () => {
@@ -1523,8 +1499,7 @@ Deno.test('appointDirector denies member fallback while owner is online or direc
 });
 
 Deno.test('upsertMember and connectPresenceSession ignore unchanged semantic state', async () => {
-    const syncPublisher = createRecordingStateSyncPublisher();
-    const service = createTestGroupStateService(syncPublisher);
+    const service = createTestGroupStateService();
 
     await service.createGroup(TEST_SCOPE, {
         groupId: 'group-1',
@@ -1533,7 +1508,6 @@ Deno.test('upsertMember and connectPresenceSession ignore unchanged semantic sta
         createdByPrincipalId: 'owner-1',
         actorPrincipalId: 'owner-1'
     });
-    syncPublisher.reset();
 
     const joined = snapshotFromGroupStateWritten(
         await service.upsertMember(TEST_SCOPE, 'group-1', 'member-1', {
@@ -1542,7 +1516,6 @@ Deno.test('upsertMember and connectPresenceSession ignore unchanged semantic sta
             actorPrincipalId: 'owner-1'
         })
     );
-    syncPublisher.reset();
 
     const unchangedMember = snapshotFromGroupStateWritten(
         await service.upsertMember(
@@ -1570,7 +1543,6 @@ Deno.test('upsertMember and connectPresenceSession ignore unchanged semantic sta
             }
         )
     );
-    syncPublisher.reset();
     const unchangedPresence = snapshotFromGroupStateWritten(
         await service.connectPresenceSession(
             TEST_SCOPE,
@@ -1589,19 +1561,13 @@ Deno.test('upsertMember and connectPresenceSession ignore unchanged semantic sta
     assert.equal(unchangedMember.group.rosterVersion, joined.group.rosterVersion);
     assert.equal(unchangedPresence.group.presenceVersion, connected.group.presenceVersion);
     assert.deepEqual(unchangedPresence.activeSessions, []);
-    assert.equal(syncPublisher.groupSnapshots.length, 0);
-    assert.equal(syncPublisher.groupEvents.length, 0);
 });
 
-function createTestGroupStateService(
-    syncPublisher: StateSyncPublisher = NO_OP_SYNC_PUBLISHER
-):
+function createTestGroupStateService():
     & TestAuthenticatedGroupStateService
     & Pick<TestGroupStateMaintenanceService, 'expireExpiredPresenceSessions'> {
     const runtime = createTestGroupStateRuntime({
         runtimeRepository: new FakeRuntimeStateRepository(),
-        formationDamping: 'damped',
-        syncPublisher,
         now: () => 1_000,
         serviceId: 'test-service'
     });
@@ -1640,36 +1606,6 @@ async function createGovernanceGroup(
     }
 }
 
-function createRecordingStateSyncPublisher() {
-    const groupSnapshots: GroupSnapshot[] = [];
-    const groupEvents: GroupEvent[] = [];
-
-    return {
-        groupSnapshots,
-        groupEvents,
-        reset() {
-            groupSnapshots.length = 0;
-            groupEvents.length = 0;
-        },
-        publishClientSnapshot: async () => {
-        },
-        publishClientEvent: async () => {
-        },
-        publishGroupSnapshot: (snapshot: GroupSnapshot) => {
-            groupSnapshots.push(snapshot);
-            return Promise.resolve();
-        },
-        publishGroupEvent: (event: GroupEvent) => {
-            groupEvents.push(event);
-            return Promise.resolve();
-        }
-    } satisfies StateSyncPublisher & {
-        groupSnapshots: GroupSnapshot[];
-        groupEvents: GroupEvent[];
-        reset(): void;
-    };
-}
-
 async function readSnapshot(
     service: ReturnType<typeof createTestGroupStateService>
 ): Promise<GroupSnapshot> {
@@ -1704,7 +1640,7 @@ function assertSnapshotVersion(snapshot: GroupSnapshot, expected: number): void 
 }
 
 function assertEventSnapshotVersion(written: GroupStateWritten, expected: number): void {
-    const event = written.result.right?.event;
+    const event = written.result?.event;
     if (!event) {
         throw new Error('Expected group mutation to return an event');
     }
@@ -1727,23 +1663,13 @@ async function assertPolicyRejects(
 }
 
 function snapshotFromGroupStateWritten(written: GroupStateWritten): GroupSnapshot {
-    const snapshot = written.result.right?.snapshot;
-    if (!snapshot) {
-        throw new Error(written.result.left ?? 'Expected createGroup to return a snapshot');
-    }
-
-    return snapshot;
+    return written.result.snapshot;
 }
 
 function joinCodeResponseFromGroupJoinCodeWritten(
     written: Awaited<ReturnType<ReturnType<typeof createTestGroupStateService>['rotateGroupJoinCode']>>
 ) {
-    const response = written.result.right;
-    if (!response) {
-        throw new Error(written.result.left ?? 'Expected rotateGroupJoinCode to return a response');
-    }
-
-    return response;
+    return written.result;
 }
 
 class FakeRuntimeStateRepository implements RuntimeStateOptimisticTransactionalRepositoryLike {

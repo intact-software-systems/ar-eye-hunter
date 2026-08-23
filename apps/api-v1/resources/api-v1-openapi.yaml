@@ -2989,7 +2989,7 @@ components:
           enum: [api-mutation-failure]
         version:
           type: string
-          enum: [canonical.v1]
+          enum: [canonical.v2]
         code:
           type: string
           minLength: 1
@@ -4865,7 +4865,6 @@ components:
     GroupSnapshot:
       type: object
       required:
-        - stateRevision
         - causalRevision
         - group
         - members
@@ -4873,10 +4872,6 @@ components:
         - memberCount
         - onlineMemberCount
       properties:
-        stateRevision:
-          type: integer
-          format: int64
-          minimum: 0
         causalRevision:
           $ref: '#/components/schemas/GroupStateCausalRevision'
         group:
@@ -5741,7 +5736,6 @@ components:
     GroupTopologyConfigAcceptedCausalRevision:
       type: object
       required:
-        - stateRevision
         - snapshotVersion
         - metadataVersion
         - rosterVersion
@@ -5749,10 +5743,6 @@ components:
         - causalRevision
       additionalProperties: false
       properties:
-        stateRevision:
-          type: integer
-          format: int64
-          minimum: 0
         snapshotVersion:
           type: integer
           format: int64
@@ -5791,7 +5781,6 @@ components:
         - acceptedConfig
         - acceptedCausalRevision
         - eventId
-        - outboxId
         - outboxIds
       properties:
         commandId:
@@ -5845,9 +5834,6 @@ components:
             - $ref: '#/components/schemas/GroupTopologyConfigAcceptedCausalRevision'
         eventId:
           type: 'null'
-        outboxId:
-          type: string
-          nullable: true
         outboxIds:
           type: array
           items:

@@ -264,7 +264,7 @@
         "status": 403,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "member-banned",
           "status": 403
         }
@@ -289,7 +289,7 @@
         "status": 403,
         "body": {
           "type": "api-mutation-failure",
-          "version": "canonical.v1",
+          "version": "canonical.v2",
           "code": "member-banned",
           "status": 403
         }

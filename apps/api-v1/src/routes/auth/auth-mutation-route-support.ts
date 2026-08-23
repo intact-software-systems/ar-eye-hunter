@@ -1,6 +1,6 @@
 import type { Context } from 'jsr:@hono/hono@4.11.9';
 
-import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type {
     ApiMutationFailureJsonObject,
     ApiMutationFailureJsonValue

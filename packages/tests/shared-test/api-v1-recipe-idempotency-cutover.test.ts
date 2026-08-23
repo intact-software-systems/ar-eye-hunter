@@ -1,4 +1,4 @@
-import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -472,7 +472,7 @@ describe('API-v1 recipe mutation identity cutover', () => {
                 status: 500,
                 body: {
                     type: 'api-mutation-failure',
-                    version: 'canonical.v1',
+                    version: 'canonical.v2',
                     code: 'api-mutation-unexpected',
                     status: 500
                 }
@@ -629,7 +629,7 @@ function hasCanonicalFailureExpectation(request: CoveredRecipeRequest): boolean 
     return (
         typeof request.expectedBody?.code === 'string' &&
         request.expectedBody?.type === 'api-mutation-failure' &&
-        request.expectedBody.version === 'canonical.v1' &&
+        request.expectedBody.version === 'canonical.v2' &&
         request.expectedBody.status === request.expectedStatus
     );
 }

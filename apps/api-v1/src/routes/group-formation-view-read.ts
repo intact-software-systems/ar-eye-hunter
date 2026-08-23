@@ -10,10 +10,11 @@ import {
 } from '@shared/api/group-lifecycle/resolve-group-lifecycle-managers.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import type { GraphTopologyRouteTopologyManagement } from './graph-topology-routes.ts';
+import type { GraphTopologyRoutePlanning, GraphTopologyRouteQuery } from './graph-topology-routes.ts';
 
 export interface ReadGroupFormationViewDependencies {
-    readonly topologyManagement: GraphTopologyRouteTopologyManagement;
+    readonly topologyQuery: GraphTopologyRouteQuery;
+    readonly topologyPlanning: GraphTopologyRoutePlanning;
     readonly readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
 }
 
@@ -23,8 +24,12 @@ export async function readGroupFormationView(
     deps: ReadGroupFormationViewDependencies
 ): Promise<GroupFormationView> {
     const [authority, view] = await Promise.all([
-        deps.topologyManagement.readTopologyPlanningAuthority(groupRef, undefined, snapshot),
-        deps.topologyManagement.readTopologyView(groupRef) as Promise<
+        deps.topologyPlanning.readTopologyPlanningAuthority({
+            groupRef,
+            knownGroup: snapshot,
+            snapshotSelection: 'prefer-current'
+        }),
+        deps.topologyQuery.readTopologyView(groupRef) as Promise<
             Readonly<{ snapshot: RallarOverlayTopologySnapshot | null; }>
         >
     ]);

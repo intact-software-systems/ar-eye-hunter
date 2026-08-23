@@ -1,5 +1,6 @@
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { GroupMutationIdempotencyConflictError } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { groupStateMaintenanceRequestId } from '@shared-server/rallar-system/group-state/group-presence-mutation-command.ts';
+import { GroupMutationIdempotencyConflictError } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { describe, expect, it } from 'vitest';
 import { BASE_EPOCH_MS, requireJoinCodeResult } from './group-state-concurrency-test-fixtures.ts';
 import { GroupBarrierRepository } from './group-state-concurrency-test-runtime.ts';
@@ -8,13 +9,6 @@ import { createService, seedOpenGroup } from './presence/group-presence-test-run
 
 describe('convergent group and presence state', () => {
     it('builds collision-safe maintenance identities from the complete semantic command', async () => {
-        const module = (await import('@shared-server/rallar-system/services/group-state-service.ts')) as Record<string, unknown>;
-        const requestIdFor = module.groupStateMaintenanceRequestId;
-        expect(requestIdFor).toBeTypeOf('function');
-        if (typeof requestIdFor !== 'function') {
-            return;
-        }
-
         const command = {
             operation: 'disconnectPresence',
             aggregateRef: {
@@ -152,19 +146,19 @@ describe('convergent group and presence state', () => {
             ]
         ] as const;
         const requestIds = [
-            requestIdFor('expiry', command),
-            ...variants.map(([kind, variant]) => requestIdFor(kind, variant))
+            groupStateMaintenanceRequestId('expiry', command),
+            ...variants.map(([kind, variant]) => groupStateMaintenanceRequestId(kind, variant))
         ];
 
         expect(new Set(requestIds).size).toBe(requestIds.length);
         expect(
-            requestIdFor('expiry', {
+            groupStateMaintenanceRequestId('expiry', {
                 ...command,
                 aggregateRef: { ...command.aggregateRef, groupId: 'a:b' },
                 sessionId: 'c'
             })
         ).not.toBe(
-            requestIdFor('expiry', {
+            groupStateMaintenanceRequestId('expiry', {
                 ...command,
                 aggregateRef: { ...command.aggregateRef, groupId: 'a' },
                 sessionId: 'b:c'

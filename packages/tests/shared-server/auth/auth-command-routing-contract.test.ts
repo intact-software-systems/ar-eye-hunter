@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { toAuthAppInboxType, toAuthCommandContextId, toAuthCommandSenderId } from '@shared-server/rallar-system/auth/inbox/auth-app-inbox-routing.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
 
 const user = {
     clientId: 'client-register',

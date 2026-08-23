@@ -14,7 +14,7 @@ import {
 import type { GroupMutationCommand } from '../../group-state/mutation/group-mutation-contracts.ts';
 import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
 
-import type { RtcTopologyExecutionRepository } from '../../repositories/RtcTopologyExecutionRepository.ts';
+import type { RtcTopologyExecutionRepository } from '../persistence/rtc-topology-execution-repository.ts';
 import type { GroupTopologyPlanningAuthority } from '../planning/group-topology-planning-authority.ts';
 import type { GroupTopologyPlanningService } from '../planning/group-topology-planning-service.ts';
 import type { PersistedRtcTopologyWork } from './rtc-topology-work-codec.ts';

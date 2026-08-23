@@ -35,7 +35,8 @@ const FORBIDDEN_DIRECT_MUTATORS = new Set([
 ]);
 
 const FORBIDDEN_MUTATING_IMPORTS = new Set([
-    'GroupTopologyManagementService',
+    'GroupTopologyConfigMutationService',
+    'GroupTopologyReconfigureMutation',
     'GroupTopologyConfigRepository',
     'GroupStateRepository',
     'RtcRttRepository',
@@ -43,7 +44,8 @@ const FORBIDDEN_MUTATING_IMPORTS = new Set([
 ]);
 
 const FORBIDDEN_IMPORT_STEMS = [
-    'GroupTopologyManagementService',
+    'GroupTopologyConfigMutationService',
+    'GroupTopologyReconfigureMutation',
     'GroupTopologyConfigRepository',
     'GroupStateRepository',
     'RtcRttRepository',
@@ -153,12 +155,12 @@ function mutationBoundaryFiles(): readonly string[] {
         'packages/shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts',
         'apps/api-v1/src/services/request-auth-service.ts',
         'packages/shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts',
-        'packages/shared-server/rallar-system/ws-system-topics.ts',
-        'packages/shared-server/rallar-system/rtc-topology/topic/init-rtc-rtt-topic.ts',
-        'packages/shared-server/rallar-system/ws-rtc-topology-runtime.ts',
-        'packages/shared-server/rallar-system/services/authorised-ws-client-app-inbox.ts',
+        'packages/shared-server/rallar-system/websocket/ws-system-topics.ts',
+        'packages/shared-server/rallar-system/rtc-rtt/topic/init-rtc-rtt-topic.ts',
+        'packages/shared-server/rallar-system/rtc-rtt/rtc-rtt-runtime-state.ts',
+        'packages/shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts',
         'packages/shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts',
-        'packages/shared-server/rallar-system/services/ws-lifecycle-service.ts'
+        'packages/shared-server/rallar-system/websocket/ws-lifecycle-service.ts'
     ];
 }
 

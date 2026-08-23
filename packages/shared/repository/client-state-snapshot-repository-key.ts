@@ -1,13 +1,13 @@
 export type ClientStateSnapshotRepositoryRef = Readonly<{
     applicationId: string;
-    workspaceId?: string;
+    workspaceId: string;
     principalId: string;
 }>;
 
 type ClientStateSnapshotRepositoryKey = readonly [
     kind: 'client-state-snapshot',
     applicationId: string,
-    workspaceId: readonly [kind: 'absent'] | readonly [kind: 'present', value: string],
+    workspaceId: string,
     principalId: string
 ];
 
@@ -20,10 +20,13 @@ type ClientStateSnapshotRepositoryJsonValue =
     | { readonly [key: string]: ClientStateSnapshotRepositoryJsonValue; };
 
 export function toClientStateSnapshotRepositoryKey(ref: ClientStateSnapshotRepositoryRef): string {
+    if (![ref.applicationId, ref.workspaceId, ref.principalId].every(isNonEmptyString)) {
+        throw new TypeError('Client state snapshot repository identity is invalid');
+    }
     const key: ClientStateSnapshotRepositoryKey = [
         'client-state-snapshot',
         ref.applicationId,
-        ref.workspaceId === undefined ? ['absent'] : ['present', ref.workspaceId],
+        ref.workspaceId,
         ref.principalId
     ];
     return JSON.stringify(key);
@@ -38,9 +41,7 @@ export function fromClientStateSnapshotRepositoryKey(
     }
 
     const [, applicationId, workspaceId, principalId] = parsed;
-    return workspaceId[0] === 'present'
-        ? { applicationId, workspaceId: workspaceId[1], principalId }
-        : { applicationId, principalId };
+    return { applicationId, workspaceId, principalId };
 }
 
 function isClientStateSnapshotRepositoryKey(
@@ -50,18 +51,16 @@ function isClientStateSnapshotRepositoryKey(
         !Array.isArray(value) ||
         value.length !== 4 ||
         value[0] !== 'client-state-snapshot' ||
-        typeof value[1] !== 'string' ||
-        typeof value[3] !== 'string'
+        !isNonEmptyString(value[1]) ||
+        !isNonEmptyString(value[2]) ||
+        !isNonEmptyString(value[3])
     ) {
         return false;
     }
 
-    const workspaceId = value[2];
-    return (
-        Array.isArray(workspaceId) &&
-        ((workspaceId.length === 1 && workspaceId[0] === 'absent') ||
-            (workspaceId.length === 2 &&
-                workspaceId[0] === 'present' &&
-                typeof workspaceId[1] === 'string'))
-    );
+    return true;
+}
+
+function isNonEmptyString(value: ClientStateSnapshotRepositoryJsonValue): value is string {
+    return typeof value === 'string' && value.length > 0;
 }

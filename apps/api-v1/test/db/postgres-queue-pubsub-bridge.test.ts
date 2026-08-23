@@ -1,4 +1,4 @@
-import type { QueueBoxPubSubMessage } from '@shared-server/rallar-system/pubsub/QueueBoxPubSubBridge.ts';
+import type { QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import assert from 'node:assert/strict';
 import { queuePubSubDeliveryForConfig } from '../../src/db/api-v1-queue-pubsub-bridge.ts';
 import { createPostgresQueuePubSubBridge } from '../../src/db/postgres-queue-pubsub-bridge.ts';

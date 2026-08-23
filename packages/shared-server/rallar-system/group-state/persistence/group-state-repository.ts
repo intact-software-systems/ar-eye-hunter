@@ -17,8 +17,8 @@ import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateRepositoryLike
 } from '../../../runtime-state/RuntimeStateRepository.ts';
-import { defaultGroupStateEventStoreFor } from '../../repositories/StateEventStore.ts';
-import type { StateEventListQuery } from '../../state-event-listing.ts';
+import type { StateEventListQuery } from '../../state-events/state-event-listing.ts';
+import { defaultGroupStateEventStoreFor } from '../../state-events/state-event-store.ts';
 import type { GroupMutationIdempotencyRecord } from '../mutation/group-mutation-contracts.ts';
 import { GroupAggregateRepository } from './group-aggregate-repository.ts';
 import { GroupMembershipRepository } from './group-membership-repository.ts';

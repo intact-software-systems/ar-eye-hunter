@@ -1,6 +1,7 @@
 import type { GroupEventType, GroupPresenceSession } from '@shared/api/group-types.ts';
 import { jsonEquals } from '@shared/repository/state-utils.ts';
-import { canConnectGroupPresenceSession, GroupPolicyDeniedError } from '../../../group-policy.ts';
+import { canConnectGroupPresenceSession } from '../../policy/group-membership-admission-policy.ts';
+import { GroupPolicyDeniedError } from '../../policy/group-policy-result.ts';
 
 import { isPresenceTimestampWithinSkew } from '../../../presence/presence-lease.ts';
 import { requirePositiveSafeInteger } from '../../group-state-validation-primitives.ts';
@@ -46,7 +47,7 @@ export function computeConnectPresence(
     }
     assertAllowed(
         canConnectGroupPresenceSession({
-            snapshot: toPolicySnapshot(read, facts.nowEpochMs),
+            snapshot: toPolicySnapshot(read, command.aggregateRef, facts.nowEpochMs),
             actor: {
                 principalId: command.input.principalId,
                 sessionId: command.input.actorSessionId ?? undefined
@@ -269,16 +270,13 @@ export function computeHeartbeatPresence(
  * expand a presence summary: the session is already listed by the stored
  * summary and its lease had not lapsed at read time, so no online/offline
  * transition can be observed. Anything not provably pure — including a
- * lapsed-lease revival — expands as before. Legacy mode never classifies.
+ * lapsed-lease revival — expands normally.
  */
 export function isPureLeaseRenewalHeartbeat(
     command: Extract<GroupMutationCommand, { operation: 'heartbeatPresence'; }>,
     read: GroupMutationRead,
     facts: GroupMutationFacts
 ): boolean {
-    if (facts.formationDamping !== 'damped') {
-        return false;
-    }
     const existing = read.targetPresence;
     return (
         existing !== null &&

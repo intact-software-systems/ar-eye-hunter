@@ -2,7 +2,7 @@ import { validateAuthoritativeClientSnapshot } from '@shared/api/authoritative-s
 import type { ClientInstance, ClientPrincipal, ClientSession, ClientSnapshot } from '@shared/api/client-types.ts';
 import { toClientSnapshotLastSeenAtEpochMs } from '@shared/api/group-client-views.ts';
 
-import { isLogicallyActiveSession } from '../../repositories/session-expiry.ts';
+import { isLogicallyActiveSession } from '../../presence/session-expiry.ts';
 import { ClientStateRepositoryInvariantCorruptionError } from './client-state-persistence-contracts.ts';
 import {
     clientStatePrincipalStorageKey,

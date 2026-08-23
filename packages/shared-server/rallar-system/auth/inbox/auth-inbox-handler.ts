@@ -1,8 +1,8 @@
-import type { AppInboxMutationTransactionWriter } from '@shared-server/rallar-system/services/app-inbox-transaction-writer.ts';
+import type { AppInboxMutationTransactionWriter } from '@shared-server/rallar-system/app-inbox/app-inbox-transaction-writer.ts';
 
-import type { AppInboxMessageContext } from '../../services/app-inbox-contracts.ts';
-import { toAppQueueKey } from '../../services/app-inbox-queue-key.ts';
-import type { JsonWireValue } from '../../services/mutation-command-identity.ts';
+import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
+import type { AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
+import type { JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import type { AuthMutationService } from '../auth-mutation-service.ts';
 import type { AuthCredentialIssuer } from '../credentials/auth-credential-issuer.ts';
 import type { AuthMutationResult } from '../mutation/auth-mutation-contracts.ts';

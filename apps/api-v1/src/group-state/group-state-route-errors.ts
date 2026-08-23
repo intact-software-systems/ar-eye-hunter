@@ -1,5 +1,7 @@
-import { GroupPolicyDeniedError, isGroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
-import { GROUP_POLICY_REASON_CODES, type GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
+import {
+    GroupPolicyDeniedError,
+    isGroupPolicyDeniedError
+} from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import type { ApiMutationFailure } from '@shared/api/mutation/api-mutation-failure.ts';
 
 import {
@@ -9,29 +11,6 @@ import {
 } from '../routes/api-mutation-route-failure.ts';
 import { toApiMutationFailureJsonObject } from '../routes/to-api-mutation-failure-json-object.ts';
 import { isGroupAdmissionRateLimitedError } from '../services/group-admission-rate-limit.ts';
-
-interface GroupAppInboxRouteFailure {
-    readonly code: string;
-    readonly message: string;
-    readonly status: number;
-}
-
-const GROUP_POLICY_REASON_CODE_SET = new Set<string>(GROUP_POLICY_REASON_CODES);
-
-export function toGroupAppInboxError(failure: string): Error {
-    const denial = readAppInboxPolicyDenial(failure);
-    if (denial) {
-        return new GroupPolicyDeniedError(denial);
-    }
-
-    const routeFailure = readGroupAppInboxRouteFailure(failure);
-    return routeFailure
-        ? Object.assign(new Error(routeFailure.message), {
-            code: routeFailure.code,
-            status: routeFailure.status
-        })
-        : new Error(failure);
-}
 
 export function toGroupStateErrorResponse(
     context: {
@@ -105,53 +84,6 @@ export function toGroupMutationErrorResponse<Failure>(
         context,
         error instanceof Error ? error : new Error(String(error))
     );
-}
-
-function readGroupAppInboxRouteFailure(value: string): GroupAppInboxRouteFailure | undefined {
-    try {
-        const parsed = JSON.parse(value) as unknown;
-        if (!isRecord(parsed)) {
-            return undefined;
-        }
-
-        const { code, message, status } = parsed;
-        return typeof code === 'string' && code.length > 0 &&
-                typeof message === 'string' && message.length > 0 &&
-                Number.isSafeInteger(status) && Number(status) >= 400 && Number(status) <= 599
-            ? { code, message, status: Number(status) }
-            : undefined;
-    }
-    catch {
-        return undefined;
-    }
-}
-
-function readAppInboxPolicyDenial(value: string): GroupPolicyDenied | undefined {
-    try {
-        const parsed = JSON.parse(value) as unknown;
-        if (!isRecord(parsed)) {
-            return undefined;
-        }
-
-        const { code, message } = parsed;
-        if (
-            typeof code !== 'string' ||
-            !GROUP_POLICY_REASON_CODE_SET.has(code) ||
-            typeof message !== 'string'
-        ) {
-            return undefined;
-        }
-
-        return {
-            allowed: false,
-            code: code as GroupPolicyDenied['code'],
-            message,
-            details: isRecord(parsed.details) ? parsed.details : undefined
-        };
-    }
-    catch {
-        return undefined;
-    }
 }
 
 function readErrorStatus(error: unknown): number | undefined {

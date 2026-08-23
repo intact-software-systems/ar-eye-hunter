@@ -6,15 +6,15 @@ import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ResourceInboxInvariantCorruptionError, ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
+import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
+import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work-service.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
-import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
-import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/repositories/RtcTopologySnapshotRepository.ts';
-import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
-import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/services/CoalescedAppOutboxWorkService.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import { createRtcTopologyOutboxPublisher, createRtcTopologyWorkHandler } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+import { createRtcTopologyOutboxPublisher, createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
+import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
+import { RtcTopologySnapshotRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-snapshot-repository.ts';
 import { computeCoalescedRtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/replay/rtc-topology-coalesced-group-revision-work.ts';
+import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -656,7 +656,7 @@ Deno.test(
             );
             const runtimeRepository = new PSqlRuntimeStateRepository(sql);
             const topologyService = new RallarRtcTopologyService({ now: () => nowEpochMs });
-            const topologyManagement = new GroupTopologyManagementService({
+            const topologyManagement = createGroupTopologyOwners({
                 findGroupSnapshotByRef: () => currentSnapshot,
                 topologyService,
                 topologySnapshotRepository: new RtcTopologySnapshotRepository(runtimeRepository),
@@ -682,7 +682,7 @@ Deno.test(
                     now: () => nowEpochMs
                 }),
                 database: sql,
-                topologyPlanning: topologyManagement.planningService,
+                topologyPlanning: topologyManagement.planning,
                 executionRepository
             });
             const toCoalescedComputed = (snapshot: GroupSnapshot, previousEntry: ResourceEntry | null) =>
@@ -759,7 +759,6 @@ Deno.test(
             );
             await runCoalescedIntent({
                 ...grownSnapshot,
-                stateRevision: 5,
                 causalRevision: { groupRevision: 2, presenceRevision: 3 },
                 group: { ...grownSnapshot.group, presenceVersion: 3 }
             });

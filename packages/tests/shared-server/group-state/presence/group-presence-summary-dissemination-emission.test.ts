@@ -1,14 +1,16 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
     computeGroupStateDeltaEnvelope,
-    GroupPresenceSummaryWork,
     validateGroupPresenceSummaryOutboxEntries,
     type GroupPresenceSummaryComputedWork,
-    type GroupPresenceSummaryTopologyIntent,
     type GroupPresenceSummaryWorkRead,
     type GroupStateDisseminationMode
-} from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
-import { computeGroupStateSyncEntries } from '@shared-server/rallar-system/state-sync-publisher.ts';
+} from '@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts';
+import {
+    GroupPresenceSummaryWork,
+    type GroupPresenceSummaryTopologyIntent
+} from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
+import { computeGroupStateSyncEntries } from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';

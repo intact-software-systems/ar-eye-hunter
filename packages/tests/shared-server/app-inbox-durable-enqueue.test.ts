@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { AppInboxType } from '@shared-server/rallar-system/services/app-inbox-contracts.ts';
-import { AppInboxService, SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { AppInboxQueueClient, SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
@@ -63,12 +63,12 @@ describe('AppInbox durable enqueue', () => {
     });
 });
 
-function createService(queue: DurableEnqueueQueue, wakeQueue?: () => void): AppInboxService {
+function createService(queue: DurableEnqueueQueue, wakeQueue?: () => void): AppInboxQueueClient {
     const results = {
         replace: async (entry: ResourceEntry) => entry,
         findByKey: (_key: Key) => Promise.resolve(undefined)
     };
-    return new AppInboxService(
+    return new AppInboxQueueClient(
         {
             inboxQueueReader: new InboxQueueReader(queue),
             resourceInboxRepository: queue,

@@ -10,10 +10,6 @@ import { validateClientMutationCommand } from '@shared-server/rallar-system/clie
 import { validateClientMutationRequest } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-request.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
-import {
-    ClientMutationRejectedError as LegacyClientMutationRejectedError,
-    validateClientMutationCommand as legacyValidateClientMutationCommand
-} from '@shared-server/rallar-system/services/client-state-mutations.ts';
 
 import { deepFreeze } from './client-mutation-concurrency-test-runtime.ts';
 import {
@@ -90,18 +86,8 @@ describe('client mutation validation', () => {
         );
     });
 
-    it('keeps the legacy validator and error constructor identities canonical', () => {
-        expect(legacyValidateClientMutationCommand).toBe(validateClientMutationCommand);
-        expect(LegacyClientMutationRejectedError).toBe(ClientMutationRejectedError);
-    });
-
-    it('keeps closed mutation inventories owned by the lower contract module', async () => {
+    it('keeps closed mutation inventories owned by the contract module', async () => {
         const contracts = (await import('@shared-server/rallar-system/client-state/mutation/client-mutation-contracts.ts')) as Record<string, unknown>;
-        const compatibility =
-            (await import('@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-operation-input.ts')) as Record<
-                string,
-                unknown
-            >;
 
         for (
             const [inventory, values] of [
@@ -145,7 +131,6 @@ describe('client mutation validation', () => {
         ) {
             expect(contracts[inventory], inventory).toBeDefined();
             expect([...(contracts[inventory] as ReadonlySet<string>)], inventory).toEqual(values);
-            expect(compatibility[inventory], inventory).toBe(contracts[inventory]);
         }
     });
 });
@@ -173,8 +158,7 @@ function validFacts(): ClientMutationFacts {
         eventId: 'event-1',
         commandHash: `sha256:${'0'.repeat(64)}`,
         attemptCount: 1,
-        expireAtEpochMs: 2_000,
-        formationDamping: 'damped'
+        expireAtEpochMs: 2_000
     };
 }
 

@@ -1,4 +1,4 @@
-import { createWsServerTargetResolver } from '@shared-server/rallar-system/middleware/RallarMiddleware.ts';
+import { createWsServerTargetResolver } from '@shared-server/rallar-system/middleware/rallar-middleware.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/mod.ts';
 import { describe, expect, it } from 'vitest';
 

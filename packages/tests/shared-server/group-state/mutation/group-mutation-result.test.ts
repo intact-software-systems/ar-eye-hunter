@@ -6,7 +6,7 @@ import type {
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
 import { validateGroupMutationIdempotencyRecord } from '@shared-server/rallar-system/group-state/mutation/result-validation/validate-group-mutation-result.ts';
 import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import type { AuditStamp, GroupPresenceAdmission, GroupPresenceSummary } from '@shared/api/group-types.ts';
 import { computeGroupPresenceSummaryEntry } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { describe, expect, it } from 'vitest';
@@ -22,7 +22,6 @@ function createService(runtimeRepository: GroupBarrierRepository, nowEpochMs: nu
     let id = 0;
     return createTestGroupStateService({
         runtimeRepository,
-        formationDamping: 'damped',
         now: () => nowEpochMs,
         randomId: () => `id-${nowEpochMs}-${++id}`,
         serviceId: 'group-service'
@@ -65,7 +64,6 @@ function idempotencyRecord() {
             outcome: 'no-op',
             attemptCount: 1,
             acceptedStorageRevision: 0,
-            stateRevision: 1,
             snapshotVersion: 1,
             causalRevision: { groupRevision: 1, presenceRevision: 0 },
             eventId: null,
@@ -101,7 +99,7 @@ describe('group mutation receipt causal invariants', () => {
         it('does not persist a rejected receipt, event, or outbox effect', async () => {
             const runtime = new GroupBarrierRepository();
             await seedOpenGroup(runtime, 'ephemeral-rejection-room');
-            const result = await createService(runtime, 2_000).createGroup(SCOPE, {
+            const mutation = createService(runtime, 2_000).createGroup(SCOPE, {
                 groupId: 'ephemeral-rejection-room',
                 displayName: 'Duplicate',
                 kind: 'room',
@@ -109,7 +107,7 @@ describe('group mutation receipt causal invariants', () => {
                 actorPrincipalId: 'alice',
                 requestId: 'rejected-duplicate-create'
             });
-            expect(result).toMatchObject({ status: 'error' });
+            await expect(mutation).rejects.toThrow('Group already exists: ephemeral-rejection-room');
             const repository = new GroupStateRepository(runtime);
             expect(
                 await repository.findIdempotentGroupMutationReceipt(
@@ -351,7 +349,6 @@ function createMutationFacts(): GroupMutationFacts {
         resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: 'none',
-        formationDamping: 'legacy',
         authenticatedAuthority: {
             principalId: 'alice',
             sessionId: 'alice-session'

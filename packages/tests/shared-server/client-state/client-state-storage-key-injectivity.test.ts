@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { clientStateWorkspaceStorageKey as compatibilityClientStateWorkspaceStorageKey } from '@shared-server/rallar-system/client-state-storage-keys.ts';
 import {
     clientStateIdempotencyStorageKey,
     clientStateInstanceStorageKey,
@@ -14,7 +13,7 @@ import {
 } from '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
 
 const workspaceStorageKeys = [
-    { workspaceId: '_', storageKey: '%5F' },
+    { workspaceId: '_', storageKey: '_' },
     { workspaceId: '%5F', storageKey: '%255F' },
     { workspaceId: 'a:b', storageKey: 'a%3Ab' },
     { workspaceId: 'a%b', storageKey: 'a%25b' },
@@ -31,15 +30,6 @@ const clientStateStorageKeyDecoders = [
 ] as const;
 
 const noncanonicalClientStateStorageKeys = [
-    {
-        form: 'legacy workspace alias',
-        keys: [
-            'app=app:ws=_:principal=principal',
-            'app=app:ws=_:principal=principal:instance=instance',
-            'app=app:ws=_:principal=principal:instance=instance:session=session',
-            'app=app:ws=_:principal=principal:request=request'
-        ]
-    },
     {
         form: 'lowercase escape',
         keys: [
@@ -145,7 +135,7 @@ describe('client-state storage-key workspace injectivity', () => {
     });
 
     it('rejects missing and empty workspace components through the public helper', () => {
-        const unsafeClientStateWorkspaceStorageKey = compatibilityClientStateWorkspaceStorageKey as (
+        const unsafeClientStateWorkspaceStorageKey = clientStateWorkspaceStorageKey as (
             workspaceId?: string
         ) => string;
 

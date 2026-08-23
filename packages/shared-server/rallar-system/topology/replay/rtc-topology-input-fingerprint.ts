@@ -3,13 +3,13 @@ import { readGroupDisplayName, readGroupMemberSessionIds } from '@shared/api/gro
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import { RuntimeStateJsonStore } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type { RuntimeStateRepositoryLike } from '../../../runtime-state/RuntimeStateRepository.ts';
-import { groupStateGroupStorageKey } from '../../group-state-storage-keys.ts';
 import { sha256CanonicalJson } from '../../group-state/mutation/group-state-crypto.ts';
-import { compareRtcTopologyIdentifiers } from '../../rtc-topology-identifiers.ts';
-import type { RtcTopologyKindHysteresisWidths } from '../../services/rallar-rtc-topology-service.ts';
+import { compareRtcTopologyIdentifiers } from '../persistence/rtc-topology-identifiers.ts';
 import type { GroupTopologyPlanningAuthority } from '../planning/group-topology-planning-authority.ts';
+import type { RtcTopologyKindHysteresisWidths } from '../runtime/rallar-rtc-topology-service.ts';
 
 export const RTC_TOPOLOGY_INPUT_FINGERPRINTS_NAMESPACE = 'rtc-topology:input-fingerprints';
 

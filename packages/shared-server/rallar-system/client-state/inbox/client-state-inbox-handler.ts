@@ -1,12 +1,12 @@
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import type { PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
-import type { AppInboxMessageContext } from '../../services/app-inbox-contracts.ts';
-import type { AppInboxMutationTransactionWriter } from '../../services/app-inbox-transaction-writer.ts';
+import type { AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
+import type { AppInboxMutationTransactionWriter } from '../../app-inbox/app-inbox-transaction-writer.ts';
 import {
     type WsSessionGenerationFacts,
     type WsSessionGenerationLifecycleComputed,
     type WsSessionGenerationLifecycleService
-} from '../../services/ws-session-generation-lifecycle.ts';
+} from '../../websocket/ws-session-generation-lifecycle.ts';
 import {
     requiresClientWrite,
     toClientStateWritten,
@@ -44,7 +44,6 @@ export interface ClientStateInboxHandlerDependencies {
     readonly snapshotObserver: Pick<ClientStateService, 'observeSnapshot'>;
     readonly transactionWriter: AppInboxMutationTransactionWriter;
     readonly serviceId: string;
-    readonly formationDamping: 'damped' | 'legacy';
 }
 
 export interface ClientStateInboxAfterCommitResult {
@@ -344,7 +343,7 @@ export class ClientStateInboxHandler {
 function toClientMutationPersistedFacts(
     context: AppInboxMessageContext,
     commandId: string,
-    dependencies: Pick<ClientStateInboxHandlerDependencies, 'serviceId' | 'formationDamping'>
+    dependencies: Pick<ClientStateInboxHandlerDependencies, 'serviceId'>
 ): Omit<ClientMutationPersistedFacts, 'commandHash'> {
     return {
         nowEpochMs: context.message.id.ts,
@@ -357,8 +356,7 @@ function toClientMutationPersistedFacts(
             ])
         }`,
         attemptCount: context.entry.dequeueAudit.attempts,
-        expireAtEpochMs: Number(context.entry.audit.expiryTs.epochMilliseconds),
-        formationDamping: dependencies.formationDamping
+        expireAtEpochMs: Number(context.entry.audit.expiryTs.epochMilliseconds)
     };
 }
 

@@ -5,30 +5,28 @@ import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 
+import { toRtcTopologyPublicationId } from '@shared-server/rallar-system/topology/persistence/rtc-topology-identifiers.ts';
+import { hashRtcTopologyExecutionCommand } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication-repository-contracts.ts';
+import { type RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import type { PSqlSql, PSqlTransactionSql } from '../../../postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '../../../postgres/resource-inbox/ResourceInboxRepository.ts';
 import { runInTransaction } from '../../../postgres/run-in-transaction.ts';
 import { RuntimeStateWriteConflictError } from '../../../runtime-state/optimistic-runtime-state-write.ts';
-import type { RtcTopologyExecutionRepository } from '../../repositories/RtcTopologyExecutionRepository.ts';
-import {
-    hashRtcTopologyExecutionCommand,
-    toRtcTopologyPublicationId,
-    type RtcTopologyPublication
-} from '../../repositories/RtcTopologyPublicationRepository.ts';
-import type { RtcRttRefinementService } from '../../rtc-topology/topic/rtc-rtt-refinement-service.ts';
+import type { RallarTimingSink } from '../../observability/timing.ts';
+import type { RtcRttRefinementService } from '../../rtc-rtt/topic/rtc-rtt-refinement-service.ts';
 import {
     computeTopologyMutation,
     validateTopologyMutation,
     type RtcTopologyMutationComputed
-} from '../../services/rtc-topology-mutations.ts';
-import { writeRtcTopologyPublicationOutbox } from '../../services/rtc-topology-ws-outbox-entry.ts';
-import type { RtcTopologyWorkRuntime } from '../../services/RtcTopologyOutboxWork.ts';
-import type { RallarTimingSink } from '../../services/timing.ts';
+} from '../mutation/rtc-topology-mutations.ts';
+import type { RtcTopologyWorkRuntime } from '../mutation/rtc-topology-outbox-work.ts';
+import type { RtcTopologyExecutionRepository } from '../persistence/rtc-topology-execution-repository.ts';
 import type { GroupTopologyPlanningService } from '../planning/group-topology-planning-service.ts';
 import {
     materializeRtcOverlayTopologyBroadcastMessage,
     type RtcOverlayTopologyMessageFacts
 } from '../planning/materialize-rtc-overlay-topology-broadcast-message.ts';
+import { writeRtcTopologyPublicationOutbox } from '../publication/rtc-topology-ws-outbox-entry.ts';
 import { finishRtcTopologyReservation, finishRtcTopologyWork } from './finish-rtc-topology-work.ts';
 import { isChangeGatedGroupRevisionWork } from './rtc-topology-coalesced-group-revision-work.ts';
 import type { RtcTopologyDeliveryAppendPort } from './rtc-topology-delivery-append-port.ts';

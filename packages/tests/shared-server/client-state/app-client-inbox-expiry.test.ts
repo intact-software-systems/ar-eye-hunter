@@ -10,13 +10,13 @@ import type { ClientStateWritten } from '@shared-server/rallar-system/client-sta
 
 import { createClientStateService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
 
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import {
     type ClientExpiredSessionsAppInboxPayload,
     type ClientSessionConnectAppInboxPayload
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 import { toAuthenticatedClientMutationContextId } from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { createResilience } from '../auth/auth-app-inbox-test-runtime.ts';
@@ -46,12 +46,10 @@ it(
         const reader = new InboxQueueReader(queue);
         const results = new ClientExpiryTestResourceInboxResults();
         const runtimeRepository = new FakeRuntimeStateRepository();
-        const publisher = createPublisher();
         const expiresAtEpochMs = Date.now() - 1_000;
         const database = createAppInboxTestDatabase(queue, results, { runtimeRepository });
         const clientStateService = createClientStateService({
             runtimeRepository,
-            formationDamping: 'damped',
             createClientStateEventStore: () => database.clientEventStore,
             serviceId: 'server-12345678'
         });
@@ -75,14 +73,12 @@ it(
         );
 
         expect(expired.right).toHaveLength(1);
-        expect(expired.right?.[0].result.right?.event).toMatchObject({
+        expect(expired.right?.[0].result?.event).toMatchObject({
             eventType: 'session-expired',
             reason: 'expired',
             sessionId: 'alice-session'
         });
-        expect(expired.right?.[0].result.right?.snapshot.activeSessions).toEqual([]);
-        expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
-        expect(publisher.publishClientEvent).not.toHaveBeenCalled();
+        expect(expired.right?.[0].result?.snapshot.activeSessions).toEqual([]);
     }
 );
 
@@ -155,7 +151,6 @@ it('expires stale sessions once and leaves publication to the app inbox', async 
     const expiresAtEpochMs = Date.now() - 1_000;
     await seedConnectedSession(runtimeRepository, expiresAtEpochMs);
 
-    const publisher = createPublisher();
     const now = expiresAtEpochMs + 1;
     const service = createClientStatePhaseTestDriver(runtimeRepository, () => now);
     const principalRef = toClientPrincipalRef('alice');
@@ -165,12 +160,12 @@ it('expires stale sessions once and leaves publication to the app inbox', async 
 
     expect(first).toHaveLength(1);
     expect(second).toEqual([]);
-    expect(first[0].result.right?.event).toMatchObject({
+    expect(first[0].result?.event).toMatchObject({
         eventType: 'session-expired',
         reason: 'expired',
         sessionId: 'session-1'
     });
-    expect(first[0].result.right?.snapshot).toMatchObject({
+    expect(first[0].result?.snapshot).toMatchObject({
         principal: { snapshotVersion: 2, presenceVersion: 2 },
         activeSessions: [],
         isOnline: false
@@ -192,8 +187,6 @@ it('expires stale sessions once and leaves publication to the app inbox', async 
         'session-connected',
         'session-expired'
     ]);
-    expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
-    expect(publisher.publishClientEvent).not.toHaveBeenCalled();
 });
 
 it('does not rewrite an expired session when a late disconnect cleanup arrives', async () => {
@@ -221,7 +214,7 @@ it('does not rewrite an expired session when a late disconnect cleanup arrives',
         }
     );
 
-    expect(lateDisconnect.result.right?.event).toBeNull();
+    expect(lateDisconnect.result?.event).toBeNull();
     const repository = new ClientStateRepository(runtimeRepository);
     expect(
         await repository.findSession({
@@ -267,8 +260,8 @@ it('ignores a late heartbeat from an expired connection generation', async () =>
         }
     );
 
-    expect(lateHeartbeat.result.right?.event).toBeNull();
-    expect(lateHeartbeat.result.right?.snapshot.activeSessions).toHaveLength(0);
+    expect(lateHeartbeat.result?.event).toBeNull();
+    expect(lateHeartbeat.result?.snapshot.activeSessions).toHaveLength(0);
 
     const repository = new ClientStateRepository(runtimeRepository);
     expect(
@@ -378,13 +371,4 @@ async function seedConnectedSession(
 
 function toClientPrincipalRef(principalId: string): ClientPrincipalRef {
     return { ...SCOPE, principalId };
-}
-
-function createPublisher() {
-    return {
-        publishClientSnapshot: vi.fn(async () => undefined),
-        publishClientEvent: vi.fn(async () => undefined),
-        publishGroupSnapshot: vi.fn(async () => undefined),
-        publishGroupEvent: vi.fn(async () => undefined)
-    };
 }

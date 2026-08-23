@@ -1,9 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
-import {
-    hashAuthSecret,
-    type IssuedAuthSession,
-    type PersistedAuthSession
-} from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
+import { type PersistedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-persistence-contracts.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import assert from 'node:assert/strict';
 import { createApiV1SqlClient } from '../../src/db/db.ts';

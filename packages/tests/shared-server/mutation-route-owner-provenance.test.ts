@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { findMutationBoundaryViolationsFromRoots } from './mutation-boundary-analysis.ts';
 import { MUTATION_ROUTE_INVENTORY, validateMutationRouteInventory } from './mutation-routing-inventory.ts';
 
@@ -96,12 +96,12 @@ it('rejects a cross-file admin handoff with the wrong type and dead correct evid
     }
     const source = readFileSync(item.enqueueSourcePath, 'utf8');
     const mutated = source.replace(
-        'processAuthenticatedHttpTopologyEntryUntilCompletionResult(',
-        'processAuthenticatedTopologyEntryUntilCompletionResult('
+        'processAuthenticatedHttpEntryUntilCompletionResult(',
+        'processAuthenticatedEntryUntilCompletionResult('
     ) +
         '\nfunction deadAdminType(): void { ' +
         'void AppInboxType.TOPOLOGY_RECONFIGURE; ' +
-        'void processAuthenticatedHttpTopologyEntryUntilCompletionResult; }\n';
+        'void processAuthenticatedHttpEntryUntilCompletionResult; }\n';
     expect(mutated).not.toBe(source);
 
     expect(validateWithOverride(item.enqueueSourcePath, mutated)).toEqual(

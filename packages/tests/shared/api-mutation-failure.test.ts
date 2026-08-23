@@ -5,7 +5,7 @@ describe('API mutation failure contract', () => {
     it('decodes the complete canonical API mutation failure without changing its values', () => {
         const failure = {
             type: 'api-mutation-failure',
-            version: 'canonical.v1',
+            version: 'canonical.v2',
             code: 'mutation-rate-limited',
             status: 429,
             message: 'Retry after 250 milliseconds',
@@ -58,6 +58,10 @@ describe('API mutation failure contract', () => {
     it.each([
         {
             ...canonicalUnavailableFailure(),
+            version: 'canonical.v1'
+        },
+        {
+            ...canonicalUnavailableFailure(),
             status: 399
         },
         {
@@ -102,7 +106,7 @@ describe('API mutation failure contract', () => {
 function canonicalUnavailableFailure() {
     return {
         type: 'api-mutation-failure',
-        version: 'canonical.v1',
+        version: 'canonical.v2',
         code: 'app-inbox-unavailable',
         status: 503,
         message: 'App inbox entry did not complete within the wait budget',

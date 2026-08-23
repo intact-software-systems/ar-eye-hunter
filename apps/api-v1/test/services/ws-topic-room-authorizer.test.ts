@@ -1,6 +1,7 @@
-import { createCachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
-import type { GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { type GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { createCachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import { newALEventRoute, newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
+import { compareGroupCausalRevision } from '@shared/api/group-client-views.ts';
 import type { AuditStamp, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import assert from 'node:assert/strict';
 
@@ -118,7 +119,6 @@ Deno.test('API room authorization observes remote bans and deletion across warm 
     assert.equal(await authorizer(input), true);
     const bannedSnapshot: GroupSnapshot = {
         ...createSnapshot(),
-        stateRevision: 4,
         causalRevision: { groupRevision: 3, presenceRevision: 1 },
         group: {
             ...createSnapshot().group,
@@ -284,9 +284,15 @@ function createIndependentCache(
             return cached;
         },
         observe: (snapshot: GroupSnapshot) => {
+            const order = cached === undefined
+                ? null
+                : compareGroupCausalRevision(snapshot.causalRevision, cached.causalRevision);
+            if (order === 'incomparable') {
+                throw new TypeError('Test cache received incomparable group snapshots');
+            }
             const observation = cached === undefined
                 ? 'inserted' as const
-                : snapshot.stateRevision > cached.stateRevision
+                : order === 'dominates'
                 ? 'advanced' as const
                 : 'duplicate' as const;
             if (observation !== 'duplicate') {
@@ -299,7 +305,6 @@ function createIndependentCache(
 
 function createSnapshot(): GroupSnapshot {
     return {
-        stateRevision: 3,
         causalRevision: { groupRevision: 2, presenceRevision: 1 },
         group: createTestGroup({
             applicationId: 'app-1',

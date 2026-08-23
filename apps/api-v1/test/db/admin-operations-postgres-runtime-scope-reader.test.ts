@@ -53,44 +53,17 @@ Deno.test('PSqlAdminOperationsStatsReader uses encoded runtime-state scope keys'
 });
 
 Deno.test(
-    'PSqlAdminOperationsStatsReader isolates explicit sentinel group state and events',
+    'PSqlAdminOperationsStatsReader reads the current underscore workspace identity',
     async () => {
         await withPGliteSql(async (sql) => {
             const applicationId = 'ops-sentinel-app';
-            for (const index of [1, 2]) {
-                await insertRuntimeState(sql, {
-                    namespace: 'group-state:groups',
-                    key: `app=${applicationId}:ws=_:group=absent-${index}`,
-                    value: {
-                        applicationId,
-                        groupId: `absent-${index}`,
-                        status: 'active'
-                    }
-                });
-                await sql`
-        insert into group_state_events (
-          application_id, workspace_key, group_id, event_id, event_type,
-          snapshot_version, occurred_at_epoch_ms, event_json
-        ) values (
-          ${applicationId}, '_', ${`absent-${index}`}, ${`absent-event-${index}`},
-          'group-updated', ${index}, ${1_700_000_000_000 + index},
-          ${
-                    JSON.stringify({
-                        applicationId,
-                        groupId: `absent-${index}`,
-                        eventId: `absent-event-${index}`
-                    })
-                }
-        )
-      `;
-            }
             await insertRuntimeState(sql, {
                 namespace: 'group-state:groups',
-                key: `app=${applicationId}:ws=%5F:group=explicit-sentinel`,
+                key: `app=${applicationId}:ws=_:group=current-group`,
                 value: {
                     applicationId,
                     workspaceId: '_',
-                    groupId: 'explicit-sentinel',
+                    groupId: 'current-group',
                     status: 'active'
                 }
             });
@@ -99,14 +72,14 @@ Deno.test(
         application_id, workspace_key, group_id, event_id, event_type,
         snapshot_version, occurred_at_epoch_ms, event_json
       ) values (
-        ${applicationId}, '%5F', 'explicit-sentinel', 'explicit-event',
+        ${applicationId}, '_', 'current-group', 'current-event',
         'group-updated', 1, 1700000000001,
         ${
                 JSON.stringify({
                     applicationId,
                     workspaceId: '_',
-                    groupId: 'explicit-sentinel',
-                    eventId: 'explicit-event'
+                    groupId: 'current-group',
+                    eventId: 'current-event'
                 })
             }
       )
@@ -136,7 +109,7 @@ Deno.test(
             };
             await insertRuntimeState(sql, {
                 namespace: 'group-state:groups',
-                key: `app=${scope.applicationId}:ws=%5F:group=corrupt-group`,
+                key: `app=${scope.applicationId}:ws=_:group=corrupt-group`,
                 value: {
                     applicationId: scope.applicationId,
                     workspaceId: 'wrong-workspace',
@@ -732,19 +705,30 @@ Deno.test('PSqlAdminOperationsStatsReader rejects global noncanonical group keys
 });
 
 Deno.test(
-    'PSqlAdminOperationsStatsReader distinguishes absent and explicit sentinel workspaces globally',
+    'PSqlAdminOperationsStatsReader joins current group member and session identities globally',
     async () => {
         await withPGliteSql(async (sql) => {
             await insertRuntimeState(sql, {
                 namespace: 'group-state:members',
                 key: 'app=ops-global-sentinel:ws=_:group=room:member=alice',
-                value: { status: 'active' }
+                value: {
+                    applicationId: 'ops-global-sentinel',
+                    workspaceId: '_',
+                    groupId: 'room',
+                    principalId: 'alice',
+                    status: 'active'
+                }
             });
             await insertRuntimeState(sql, {
                 namespace: 'group-state:sessions',
-                key: 'app=ops-global-sentinel:ws=%5F:group=room:session=explicit-session',
+                key: 'app=ops-global-sentinel:ws=_:group=room:session=current-session',
                 value: {
+                    applicationId: 'ops-global-sentinel',
+                    workspaceId: '_',
+                    groupId: 'room',
                     principalId: 'alice',
+                    sessionId: 'current-session',
+                    disconnectedAtEpochMs: null,
                     expiresAtEpochMs: 1_700_000_060_000
                 }
             });
@@ -755,7 +739,7 @@ Deno.test(
             const state = await reader.readState({ adminSession: createAdminSession() });
 
             assert.equal(state.groups.totalActiveMembers, 1);
-            assert.equal(state.groups.onlineMembers, 0);
+            assert.equal(state.groups.onlineMembers, 1);
         });
     }
 );

@@ -1,16 +1,18 @@
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import {
-    createGroupStateService,
     groupStateMaintenanceRequestId,
-    mutationDescriptor,
     toExpiryCommand,
-    toSessionCleanupCommand,
+    toSessionCleanupCommand
+} from '@shared-server/rallar-system/group-state/group-presence-mutation-command.ts';
+import {
     type GroupMutationDescriptor,
     type GroupStateService,
     type GroupStateServiceDependencies,
     type GroupStateWritten
-} from '@shared-server/rallar-system/services/group-state-service.ts';
+} from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import type { GroupPresenceSession } from '@shared/api/group-types.ts';
 import { persistAuthSession, type AuthSession, type StoredAuthSession } from '../auth/auth-test-fixtures.ts';
@@ -48,7 +50,6 @@ export interface AuthSessionInput {
 type TestGroupStateServiceDependencies =
     & Omit<GroupStateServiceDependencies, 'authSessionRepository'>
     & Readonly<{
-        syncPublisher?: unknown;
         sleep?: (delayMs: number) => Promise<void>;
     }>;
 
@@ -76,7 +77,6 @@ export function createTestGroupStateRuntime(
     const randomId = dependencies.randomId ?? (() => crypto.randomUUID());
     const durable = createGroupStateService({
         runtimeRepository: dependencies.runtimeRepository,
-        formationDamping: 'damped',
         createGroupStateEventStore: dependencies.createGroupStateEventStore,
         now: dependencies.now,
         randomId: dependencies.randomId,
@@ -165,7 +165,7 @@ function createTestGroupStateMaintenanceService(
                     sessionId,
                     disconnectedAtEpochMs
                 )
-            ).flatMap((written) => (written.result.right ? [written.result.right.snapshot] : [])),
+            ).flatMap((written) => (written.result ? [written.result.snapshot] : [])),
         disconnectPresenceSessionsBySessionIdWritten: async (sessionId, disconnectedAtEpochMs) => {
             const sessions = (await repositoryFor(runtimeRepository).listAllPresenceSessions()).filter(
                 (session) => session.sessionId === sessionId && session.disconnectedAtEpochMs === null
@@ -177,7 +177,7 @@ function createTestGroupStateMaintenanceService(
                     'session-cleanup',
                     disconnectedAtEpochMs
                 );
-                results.push(await mutationExecutor.toCompatibleResult('disconnectPresence', computed));
+                results.push(await mutationExecutor.toMutationResult('disconnectPresence', computed));
             }
             return results;
         },
@@ -195,7 +195,7 @@ function createTestGroupStateMaintenanceService(
                 if (computed.outcome !== 'write') {
                     continue;
                 }
-                results.push(await mutationExecutor.toCompatibleResult('disconnectPresence', computed));
+                results.push(await mutationExecutor.toMutationResult('disconnectPresence', computed));
             }
             return results;
         }

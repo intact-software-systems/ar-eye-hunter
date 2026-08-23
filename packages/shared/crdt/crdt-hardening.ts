@@ -397,7 +397,6 @@ export interface RallarCrdtEncryptionMetadata {
 export type RallarCrdtDestructiveCompactionSafetyCode =
     | 'safe'
     | 'no-snapshot'
-    | 'legacy-snapshot'
     | 'missing-crdt-state'
     | 'append-sequence-gap'
     | 'snapshot-includes-unknown-update'
@@ -691,12 +690,6 @@ export function evaluateRallarCrdtDestructiveCompactionSafety<
         return destructiveCompactionBlocked(
             'no-snapshot',
             'Destructive CRDT compaction requires a compact snapshot boundary.'
-        );
-    }
-    if (snapshot.metadata.unsafeLegacyCollectionCompaction) {
-        return destructiveCompactionBlocked(
-            'legacy-snapshot',
-            'Legacy CRDT snapshots are not safe destructive compaction boundaries.'
         );
     }
     if (!snapshot.metadata.crdtState) {

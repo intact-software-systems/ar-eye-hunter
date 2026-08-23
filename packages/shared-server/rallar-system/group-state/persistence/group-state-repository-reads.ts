@@ -1,4 +1,3 @@
-import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type {
     Group,
     GroupMember,
@@ -114,13 +113,6 @@ export class GroupStateRepositoryReads extends GroupStateSnapshotRepository {
 
     async findGroup(ref: GroupRef): Promise<Group | undefined> {
         return (await this.findGroupEntry(ref))?.value;
-    }
-
-    async readStateRevision(ref: GroupRef): Promise<number | undefined> {
-        const causalRevision = await this.readCausalRevision(ref);
-        return causalRevision
-            ? toGroupSnapshotStateRevision(causalRevision.groupRevision, causalRevision.presenceRevision)
-            : undefined;
     }
 
     async readCausalRevision(

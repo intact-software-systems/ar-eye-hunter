@@ -1,4 +1,4 @@
-import type { AppInboxServiceOptions } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import {
     DEFAULT_RESOURCE_INBOX_RETRY_POLICY,
     resourceInboxRetryHorizonMs
@@ -21,9 +21,9 @@ const pollOptions = {
     waitRetryIntervalMsecs: 1,
     waitMaxRetryIntervalMsecs: 5,
     waitJitterRatio: 0
-} as const satisfies AppInboxServiceOptions;
+} as const satisfies AppInboxOptions;
 
 export const STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS = {
     client: { ...pollOptions },
     group: { ...pollOptions }
-} as const satisfies Readonly<Record<'client' | 'group', AppInboxServiceOptions>>;
+} as const satisfies Readonly<Record<'client' | 'group', AppInboxOptions>>;

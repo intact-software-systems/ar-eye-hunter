@@ -1,9 +1,7 @@
-import {
-    canReadGroupSnapshot,
-    canSendRoomMessage,
-    canUpdateGroupSnapshot,
-    GroupPolicyDeniedError
-} from '@shared-server/rallar-system/group-policy.ts';
+import { canUpdateGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-governance-policy.ts';
+import { canSendGroupMessage } from '@shared-server/rallar-system/group-state/policy/group-message-policy.ts';
+import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
+import { canReadGroupSnapshot } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 
@@ -58,7 +56,7 @@ export function authorizeRelicCommand(input: RelicRestAuthInput): void {
         return;
     }
 
-    const result = canSendRoomMessage({
+    const result = canSendGroupMessage({
         snapshot: requireRelicGroupSnapshot(input),
         actor: actorFromSession(input.session),
         senderSessionId: input.session.sessionId

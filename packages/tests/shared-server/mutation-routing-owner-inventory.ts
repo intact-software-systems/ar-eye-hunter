@@ -20,12 +20,14 @@ export interface MutationRouteInventoryRow {
 export const MUTATION_ROUTE_OWNER_PATHS = {
     C: 'packages/shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts',
     X: 'packages/shared-server/rallar-system/client-state/inbox/client-state-inbox-handler.ts',
-    G: 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts',
+    G: 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts',
+    O: 'packages/shared-server/rallar-system/topology/inbox/topology-inbox-service.ts',
+    S: 'packages/shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts',
     I: 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts',
     H: 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-handler.ts',
     P: 'packages/shared-server/rallar-system/group-state/presence/group-presence-service.ts',
     T: 'packages/shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts',
-    R: 'packages/shared-server/rallar-system/rtc-topology/inbox/rtc-rtt-app-inbox-handler.ts',
+    R: 'packages/shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-app-inbox-handler.ts',
     A: 'packages/shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts',
     B: 'packages/shared-server/rallar-system/auth/inbox/auth-inbox-handler.ts',
     D: 'packages/shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts',
@@ -45,8 +47,8 @@ export const MUTATION_ROUTE_OWNER_DISPATCH_PATHS = {
     'ClientStateInboxHandler.processExpiredSessionCommands': 'handler.processExpiredSessionCommands',
     'AppCrdtInboxService.processCommand': 'processCommand',
     'GroupStateInboxHandler.processGroupStateMutation': 'groupStateInboxHandler.processGroupStateMutation',
-    'RtcRttAppInboxHandler.processMutation': 'rtcRttAppInboxHandler.processMutation',
-    'TopologyAppInboxHandler.processMutation': 'topologyAppInboxHandler.processMutation',
+    'RtcRttAppInboxHandler.processMutation': 'handler.processMutation',
+    'TopologyAppInboxHandler.processMutation': 'handler.processMutation',
     processGroupSessionCleanup: 'processGroupSessionCleanup'
 } as const;
 
@@ -696,11 +698,11 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         source: 't',
         registrationMarker: '/config/requests/:requestId',
         enqueueSource: 't',
-        enqueueMarker: 'processAuthenticatedHttpTopologyEntryUntilCompletionResult',
+        enqueueMarker: 'processAuthenticatedHttpEntryUntilCompletionResult',
         ownerSource: 'T',
         owner: 'TopologyAppInboxHandler.processMutation',
-        typeOwnerSource: 'G',
-        dispatchSource: 'G'
+        typeOwnerSource: 'O',
+        dispatchSource: 'O'
     },
     {
         transport: 'HTTP',
@@ -709,11 +711,11 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         source: 't',
         registrationMarker: '/config/requests/:requestId',
         enqueueSource: 't',
-        enqueueMarker: 'processAuthenticatedHttpTopologyEntryUntilCompletionResult',
+        enqueueMarker: 'processAuthenticatedHttpEntryUntilCompletionResult',
         ownerSource: 'T',
         owner: 'TopologyAppInboxHandler.processMutation',
-        typeOwnerSource: 'G',
-        dispatchSource: 'G'
+        typeOwnerSource: 'O',
+        dispatchSource: 'O'
     },
     {
         transport: 'HTTP',
@@ -722,11 +724,11 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         source: 't',
         registrationMarker: '/override/requests/:requestId',
         enqueueSource: 't',
-        enqueueMarker: 'processAuthenticatedHttpTopologyEntryUntilCompletionResult',
+        enqueueMarker: 'processAuthenticatedHttpEntryUntilCompletionResult',
         ownerSource: 'T',
         owner: 'TopologyAppInboxHandler.processMutation',
-        typeOwnerSource: 'G',
-        dispatchSource: 'G'
+        typeOwnerSource: 'O',
+        dispatchSource: 'O'
     },
     {
         transport: 'HTTP',
@@ -735,11 +737,11 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         source: 't',
         registrationMarker: '/override/requests/:requestId',
         enqueueSource: 't',
-        enqueueMarker: 'processAuthenticatedHttpTopologyEntryUntilCompletionResult',
+        enqueueMarker: 'processAuthenticatedHttpEntryUntilCompletionResult',
         ownerSource: 'T',
         owner: 'TopologyAppInboxHandler.processMutation',
-        typeOwnerSource: 'G',
-        dispatchSource: 'G'
+        typeOwnerSource: 'O',
+        dispatchSource: 'O'
     },
     {
         transport: 'HTTP',
@@ -748,11 +750,11 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         source: 't',
         registrationMarker: '/reconfigure/requests/:requestId',
         enqueueSource: 't',
-        enqueueMarker: 'processAuthenticatedHttpTopologyEntryUntilCompletionResult',
+        enqueueMarker: 'processAuthenticatedHttpEntryUntilCompletionResult',
         ownerSource: 'T',
         owner: 'TopologyAppInboxHandler.processMutation',
-        typeOwnerSource: 'G',
-        dispatchSource: 'G'
+        typeOwnerSource: 'O',
+        dispatchSource: 'O'
     },
     {
         transport: 'HTTP',
@@ -761,11 +763,11 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         source: 'ad',
         registrationMarker: '/api/admin/operations/topology/recompute/requests/:requestId',
         enqueueSource: 'ag',
-        enqueueMarker: 'processAuthenticatedHttpTopologyEntryUntilCompletionResult',
+        enqueueMarker: 'processAuthenticatedHttpEntryUntilCompletionResult',
         ownerSource: 'T',
         owner: 'TopologyAppInboxHandler.processMutation',
-        typeOwnerSource: 'G',
-        dispatchSource: 'G'
+        typeOwnerSource: 'O',
+        dispatchSource: 'O'
     },
     {
         transport: 'WS_INBOX',
@@ -777,8 +779,8 @@ export const MUTATION_ROUTE_INVENTORY_ROWS: readonly MutationRouteInventoryRow[]
         enqueueMarker: 'enqueueRtcRttMutation',
         ownerSource: 'R',
         owner: 'RtcRttAppInboxHandler.processMutation',
-        typeOwnerSource: 'G',
-        dispatchSource: 'G'
+        typeOwnerSource: 'S',
+        dispatchSource: 'S'
     },
     {
         transport: 'WS_INBOX',

@@ -8,8 +8,8 @@ import {
     decodeGroupStateGroupStorageKey,
     decodeGroupStateMemberStorageKey,
     decodeGroupStatePresenceSessionStorageKey
-} from '@shared-server/rallar-system/group-state-storage-keys.ts';
-import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { createTestGroup } from '../../../../packages/tests/create-test-group.ts';
 import { createApiV1SqlClient } from '../../src/db/db.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';

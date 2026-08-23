@@ -1,9 +1,9 @@
-import type { AuthUserRepository } from '@shared-server/rallar-system/repositories/AuthUserRepository.ts';
 import {
     authenticateAuthUser,
-    prepareAuthUserRegistration,
     type LoginClientData
-} from '@shared-server/rallar-system/services/auth-login-service.ts';
+} from '@shared-server/rallar-system/auth/login/authenticate-auth-user.ts';
+import { prepareAuthUserRegistration } from '@shared-server/rallar-system/auth/login/prepare-auth-user-registration.ts';
+import { type AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import type { LoginRequest, RegisterRequest } from '@shared/api/api-config.ts';
 import authorisedClientsJson from '../../resources/authorised-clients.json' with { type: 'json' };
 

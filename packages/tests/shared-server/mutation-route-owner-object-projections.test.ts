@@ -6,7 +6,7 @@ import { readGroupOwnerAnchors } from './mutation-route-owner-anchors.ts';
 import { MUTATION_ROUTE_INVENTORY, validateMutationRouteInventory } from './mutation-routing-inventory.ts';
 
 const FIXTURES = 'packages/tests/shared-server/fixtures/mutation-boundary-capability-receivers';
-const GROUP_OWNER = 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts';
+const GROUP_OWNER = 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 const { collection: LIVE_GROUP_COLLECTION } = readGroupOwnerAnchors();
 
 describe('Mutation route owner object projections contracts', () => {

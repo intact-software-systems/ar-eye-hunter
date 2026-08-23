@@ -110,7 +110,6 @@ export type GroupTopologyConfigMutationOperation =
     | 'deleteOverride';
 
 export type GroupTopologyConfigAcceptedCausalRevision = Readonly<{
-    stateRevision: number;
     causalRevision: GroupStateCausalRevision;
     snapshotVersion: number;
     metadataVersion: number;
@@ -135,8 +134,6 @@ export type GroupTopologyConfigMutationReceipt = Readonly<{
     acceptedConfig: EffectiveGroupTopologyConfig | null;
     acceptedCausalRevision: GroupTopologyConfigAcceptedCausalRevision | null;
     eventId: null;
-    /** Compatibility mirror for existing API consumers; outboxIds is canonical. */
-    outboxId: string | null;
     outboxIds: readonly string[];
 }>;
 

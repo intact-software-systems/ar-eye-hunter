@@ -1,6 +1,6 @@
-import { createWsServerTargetResolver } from '@shared-server/rallar-system/middleware/RallarMiddleware.ts';
-import { ClientStateRepository } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import { createClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/services/client-state-snapshot-read-through-cache.ts';
+import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { createClientStateSnapshotReadThroughCache } from '@shared-server/rallar-system/client-state/snapshot/client-state-snapshot-read-through-cache.ts';
+import { createWsServerTargetResolver } from '@shared-server/rallar-system/middleware/rallar-middleware.ts';
 import { newALRoute, newALUnicastMessage } from '@shared/al-contracts/al-contract.ts';
 import { type AuditStamp, type ClientInstance, type ClientPrincipal, type ClientSession, type ClientSnapshot } from '@shared/api/client-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';

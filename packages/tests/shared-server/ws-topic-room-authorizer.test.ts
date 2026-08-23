@@ -1,8 +1,8 @@
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { createCachedGroupStateService } from '@shared-server/rallar-system/services/cached-group-state-service.ts';
-import type { GroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
-import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/services/group-state-snapshot-read-through-cache.ts';
-import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/services/ws-topic-room-authorizer.ts';
+import { type GroupStateService } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { createCachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
+import { createGroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
+import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 import { newALBroadcastMessage, newALEventRoute, newALMulticastMessage } from '@shared/al-contracts/al-contract.ts';
 import type { AuditStamp, Group, GroupMember, GroupPresenceSummary, GroupSnapshot } from '@shared/api/group-types.ts';
 import { findGroupStateSnapshotByRef, setGroupStateSnapshot } from '@shared/repository/group-state-snapshots-repository.ts';
@@ -215,7 +215,6 @@ describe('createGroupRoomWsAuthorizer', () => {
         await putDurableSnapshot(groupRepository, staleGroup);
         expect(await readThroughCache.findOrLoadByRef(staleGroup.group)).toEqual({
             ...staleGroup,
-            stateRevision: 2,
             causalRevision: { groupRevision: 1, presenceRevision: 1 }
         });
         expect(
@@ -278,7 +277,6 @@ describe('createGroupRoomWsAuthorizer', () => {
         await putDurableSnapshot(groupRepository, group);
         await expect(readThroughCache.findOrLoadByRef(group.group)).resolves.toEqual({
             ...group,
-            stateRevision: 6,
             causalRevision: { groupRevision: 3, presenceRevision: 3 }
         });
 
@@ -528,7 +526,6 @@ describe('createGroupRoomWsAuthorizer', () => {
         await putDurableSnapshot(groupRepository, staleGroup);
         await expect(readThroughCache.findOrLoadByRef(staleGroup.group)).resolves.toEqual({
             ...staleGroup,
-            stateRevision: 2,
             causalRevision: { groupRevision: 1, presenceRevision: 1 }
         });
         await putDurableSnapshot(groupRepository, currentGroup);
@@ -725,7 +722,6 @@ function createGroupSnapshot(
     const created = createAuditStamp(1);
     const updated = createAuditStamp(snapshotVersion);
     return {
-        stateRevision: snapshotVersion,
         causalRevision: {
             groupRevision: snapshotVersion,
             presenceRevision: snapshotVersion

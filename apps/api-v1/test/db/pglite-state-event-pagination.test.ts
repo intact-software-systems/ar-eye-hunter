@@ -9,9 +9,10 @@ import {
 } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
 import { ResourceInboxInvariantCorruptionError, ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared-server/rallar-system/services/group-state-mutations.ts';
-import { createGroupStateService, mutationDescriptor } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { GROUP_PRESENCE_SUMMARY_TOPIC as APP_OUTBOX_GROUP_PRESENCE_SUMMARY_TOPIC } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 
 import { toPersistedAuthSessionFixture, withPGliteSql } from './pglite-auth-test-harness.ts';
 import {
@@ -313,7 +314,6 @@ Deno.test(
             const persistedAuthority = await toPersistedAuthSessionFixture(authority);
             const service = createGroupStateService({
                 runtimeRepository: runtime,
-                formationDamping: 'damped',
                 createGroupStateEventStore: createGroupStateEventRepository,
                 authSessionRepository: {
                     findBySessionId: (sessionId) =>
@@ -405,7 +405,6 @@ Deno.test(
             const persistedAuthority = await toPersistedAuthSessionFixture(authority);
             const service = createGroupStateService({
                 runtimeRepository: runtime,
-                formationDamping: 'damped',
                 createGroupStateEventStore: createGroupStateEventRepository,
                 authSessionRepository: {
                     findBySessionId: (sessionId) =>

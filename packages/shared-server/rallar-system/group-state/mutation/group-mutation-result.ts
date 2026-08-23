@@ -1,4 +1,3 @@
-import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type {
     AuditStamp,
     Group,
@@ -205,10 +204,6 @@ export function receiptFor(
         outcome: input.outcome,
         attemptCount: facts.attemptCount,
         acceptedStorageRevision: input.acceptedStorageRevision,
-        stateRevision: toGroupSnapshotStateRevision(
-            input.causalRevision.groupRevision,
-            input.causalRevision.presenceRevision
-        ),
         snapshotVersion: input.snapshotVersion,
         causalRevision: input.causalRevision,
         eventId: input.eventId,

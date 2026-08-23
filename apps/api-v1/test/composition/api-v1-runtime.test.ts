@@ -2,12 +2,13 @@ import assert from 'node:assert/strict';
 
 import type { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { ClientRestSnapshotReadSelector } from '@shared-server/rallar-system/client-state/snapshot/client-rest-snapshot-read-selector.ts';
-import type { RallarGroupFormationMetricsRecorder } from '@shared-server/rallar-system/formation-metrics.ts';
 import type { GroupRestSnapshotReadSelector } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
-import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/RallarMiddleware.ts';
+import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware.ts';
+import type { RallarGroupFormationMetricsRecorder } from '@shared-server/rallar-system/observability/formation-metrics.ts';
 
 import type { ApiV1BackgroundTaskLifecycle } from '../../src/composition/api-v1-background-task-lifecycle.ts';
 import { requireApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
+import type { ApiV1TopologyServices } from '../../src/composition/create-api-v1-topology-services.ts';
 
 Deno.test('requireApiV1Runtime preserves every complete API capability identity', () => {
     const runtime = createRuntimeCandidate();
@@ -39,6 +40,7 @@ Deno.test('requireApiV1Runtime preserves every complete API capability identity'
     );
     assert.equal(complete.groupFormationMetrics, additions.groupFormationMetrics);
     assert.equal(complete.backgroundTasks, additions.backgroundTasks);
+    assert.equal(complete.topologyServices, additions.topologyServices);
 });
 
 Deno.test('requireApiV1Runtime rejects every incomplete shared runtime capability', () => {
@@ -105,6 +107,7 @@ interface RuntimeAdditions {
     readonly groupRestSnapshotReadSelector: GroupRestSnapshotReadSelector;
     readonly groupFormationMetrics: RallarGroupFormationMetricsRecorder;
     readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
+    readonly topologyServices: ApiV1TopologyServices;
 }
 
 function createRuntimeCandidate(
@@ -130,6 +133,7 @@ function createRuntimeAdditions(): RuntimeAdditions {
         clientRestSnapshotReadSelector: {} as ClientRestSnapshotReadSelector,
         groupRestSnapshotReadSelector: {} as GroupRestSnapshotReadSelector,
         groupFormationMetrics: {} as RallarGroupFormationMetricsRecorder,
-        backgroundTasks: {} as ApiV1BackgroundTaskLifecycle
+        backgroundTasks: {} as ApiV1BackgroundTaskLifecycle,
+        topologyServices: {} as ApiV1TopologyServices
     };
 }

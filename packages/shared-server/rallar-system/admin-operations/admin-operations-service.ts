@@ -24,8 +24,13 @@ import {
 import type { RallarGroupFormationMetrics } from '@shared/rtc/group-formation-metrics.ts';
 
 import { type CrdtAdminCompactResult, type CrdtAdminEraseResult } from '../crdt/mutation/crdt-mutation-contracts.ts';
-import type { JsonWireValue } from '../services/mutation-command-identity.ts';
-import { nowMs, recordRallarTiming, type RallarTimingEventInput, type RallarTimingSink } from '../services/timing.ts';
+import {
+    nowMs,
+    recordRallarTiming,
+    type RallarTimingEventInput,
+    type RallarTimingSink
+} from '../observability/timing.ts';
+import type { JsonWireValue } from '../protocol/json-wire-identity.ts';
 
 import type { TopologyReconfigureInboxResult } from '../topology/inbox/topology-app-inbox-handler.ts';
 import type { AdminOperationsMutationGateway } from './admin-operations-mutation-gateway.ts';
@@ -307,22 +312,28 @@ export class AdminOperationsService {
 
         try {
             const result = await action();
-            recordRallarTiming(
-                this.options.timing,
-                {
+            recordRallarTiming({
+                sink: this.options.timing,
+                event: {
                     ...timingInput,
                     details: {
                         ...timingInput.details,
                         ...readResultTimingDetails(result)
                     }
                 },
-                'ok',
-                nowMs() - startedAt
-            );
+                status: 'ok',
+                durationMs: nowMs() - startedAt
+            });
             return result;
         }
         catch (error) {
-            recordRallarTiming(this.options.timing, timingInput, 'error', nowMs() - startedAt, error);
+            recordRallarTiming({
+                sink: this.options.timing,
+                event: timingInput,
+                status: 'error',
+                durationMs: nowMs() - startedAt,
+                error
+            });
             throw error;
         }
     }

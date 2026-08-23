@@ -1,6 +1,6 @@
+import { clientStateWorkspaceStorageKey } from '@shared-server/rallar-system/client-state/persistence/client-state-storage-keys.ts';
 import type { ClientPrincipalRef, ClientSessionRef } from '@shared/api/client-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import { clientStateWorkspaceStorageKey } from '../../rallar-system/client-state-storage-keys.ts';
 import { isClientJsonObject } from '../../rallar-system/client-state/client-state-semantic-equality.ts';
 import type { ClientValidationRecord } from '../../rallar-system/client-state/client-state-validation-primitives.ts';
 import {

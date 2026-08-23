@@ -1,6 +1,6 @@
-import { AuthSessionRepository } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { createGroupStateService } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import type {
     RuntimeStateEntry,
     RuntimeStateOptimisticTransactionalRepositoryLike
@@ -50,7 +50,6 @@ async function main(): Promise<void> {
     const groupRepository = new GroupStateRepository(repository);
     const service = createGroupStateService({
         runtimeRepository: repository,
-        formationDamping: 'damped',
         now: () => 1_700_000_000_000,
         serviceId: 'group-list-fanout-bench',
         authSessionRepository: new AuthSessionRepository(repository)

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { AppOutboxType } from '@shared-server/rallar-system/services/AppOutboxService.ts';
+import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import {
     COALESCED_APP_OUTBOX_WORK_FIELD,
     type CoalescedAppOutboxWorkData,
     type CoalescedAppOutboxWorkEnvelope
-} from '@shared-server/rallar-system/services/CoalescedAppOutboxWorkService.ts';
-import type { RtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
+} from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work-service.ts';
+import type { RtcTopologyGroupRevisionWork } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import {
     computeCoalescedRtcTopologyGroupRevisionWork,
     mergeRtcTopologyGroupRevisionWork,
@@ -20,7 +20,6 @@ import {
     type PersistedRtcTopologyWork
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-work-codec.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
-import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import { isIdempotentHandlerFinalizedRelease } from '@shared/queuebox/QueueBoxTypes.ts';
@@ -108,7 +107,10 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             generation: 2,
             dueAtEpochMs: BASE_EPOCH_MS + 200 + DEBOUNCE_MS
         });
-        expect(envelope.data.sourceGroupStateRevision).toBe(toGroupSnapshotStateRevision(4, 5));
+        expect(envelope.data.sourceGroupStateCausalRevision).toEqual({
+            groupRevision: 4,
+            presenceRevision: 5
+        });
         expect(second.entry.status).toBe(EntityStatus.RETRY);
         expect(second.entry.dequeueAudit.attempts).toBe(first.entry.dequeueAudit.attempts);
     });
@@ -207,7 +209,10 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
 
         const merged = mergeRtcTopologyGroupRevisionWork(newer, older);
 
-        expect(merged.sourceGroupStateRevision).toBe(toGroupSnapshotStateRevision(4, 6));
+        expect(merged.sourceGroupStateCausalRevision).toEqual({
+            groupRevision: 4,
+            presenceRevision: 6
+        });
         expect(merged.groupSnapshot).toBe(newer.groupSnapshot);
         expect(merged.requestedAtEpochMs).toBe(BASE_EPOCH_MS + 300);
         expect(merged[COALESCED_APP_OUTBOX_WORK_FIELD].dueAtEpochMs).toBe(
@@ -247,7 +252,10 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             dueAtEpochMs: BASE_EPOCH_MS + 60_000 + DEBOUNCE_MS,
             reasons: ['group-revision']
         });
-        expect(envelope.data.sourceGroupStateRevision).toBe(toGroupSnapshotStateRevision(5, 5));
+        expect(envelope.data.sourceGroupStateCausalRevision).toEqual({
+            groupRevision: 5,
+            presenceRevision: 5
+        });
         expect(revived.entry.dequeueAudit.attempts).toBe(0);
     });
 
@@ -273,11 +281,15 @@ describe('computeCoalescedRtcTopologyGroupRevisionWork', () => {
             previousEntry: reserved
         });
 
-        const stateRevision = toGroupSnapshotStateRevision(4, 5);
         const successorEnvelope = readPersistedGroupRevisionEnvelope(blocked.successorEntry);
-        expect(successorEnvelope.resourceId).toBe(`${OVERLAY_ID}:group-revision:r${stateRevision}`);
+        expect(successorEnvelope.resourceId).toBe(
+            `${OVERLAY_ID}:group-revision:group=4;presence=5`
+        );
         expect(successorEnvelope.data[COALESCED_APP_OUTBOX_WORK_FIELD].generation).toBe(1);
-        expect(successorEnvelope.data.sourceGroupStateRevision).toBe(stateRevision);
+        expect(successorEnvelope.data.sourceGroupStateCausalRevision).toEqual({
+            groupRevision: 4,
+            presenceRevision: 5
+        });
         const mainEnvelope = readPersistedGroupRevisionEnvelope(blocked.entry);
         expect(mainEnvelope.data[COALESCED_APP_OUTBOX_WORK_FIELD].generation).toBe(2);
     });
@@ -342,7 +354,7 @@ function createCoalescedData(
         kind: 'group-revision',
         overlayId: OVERLAY_ID,
         groupSnapshot,
-        sourceGroupStateRevision: groupSnapshot.stateRevision,
+        sourceGroupStateCausalRevision: groupSnapshot.causalRevision,
         requestedAtEpochMs,
         requestOptions: toCanonicalGroupTopologyConfigPatch({}),
         publish: true,
@@ -358,7 +370,6 @@ function createCoalescedData(
 function createGroupSnapshot(groupRevision: number, presenceRevision: number): GroupSnapshot {
     const audit = createAuditStamp();
     return {
-        stateRevision: toGroupSnapshotStateRevision(groupRevision, presenceRevision),
         causalRevision: { groupRevision, presenceRevision },
         group: createTestGroup({
             ...GROUP_REF,

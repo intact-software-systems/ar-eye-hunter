@@ -1,32 +1,32 @@
-import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
-import {
-    toAuthenticatedClientMutationContextId
-} from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
-import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import {
     AppInboxType,
-    type AppInboxEnqueueInput,
+    type AppInboxEnqueueInput
+} from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
+import type { ClientStateService } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import { ClientMutationRejectedError } from '@shared-server/rallar-system/client-state/client-state-validation-primitives.ts';
+import {
     type ClientInstanceUpsertAppInboxPayload,
     type ClientPrincipalUpsertAppInboxPayload,
     type ClientSessionConnectAppInboxPayload,
     type ClientSessionDisconnectAppInboxPayload,
     type ClientSessionHeartbeatAppInboxPayload
-} from '@shared-server/rallar-system/services/AppClientInboxService.ts';
+} from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
 import {
-    ClientMutationRejectedError,
-    validateClientMutationRequest
-} from '@shared-server/rallar-system/services/client-state-mutations.ts';
+    toAuthenticatedClientMutationContextId
+} from '@shared-server/rallar-system/client-state/inbox/authenticated-client-mutation-ingress.ts';
+import { validateClientMutationRequest } from '@shared-server/rallar-system/client-state/mutation/command-validation/validate-client-mutation-request.ts';
 import {
     filterStateEventsForList,
     readStateEventListQuery,
     type StateEventListQuery
-} from '@shared-server/rallar-system/state-event-listing.ts';
+} from '@shared-server/rallar-system/state-events/state-event-listing.ts';
 import {
     type StateSyncCacheHydrationInput,
     type StateSyncCacheHydrationResult
-} from '@shared-server/rallar-system/state-sync-cache-hydration.ts';
+} from '@shared-server/rallar-system/state-sync/state-sync-cache-hydration.ts';
 import type { ClientEvent, ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
 import type {
     ApiMutationFailureJsonObject,
@@ -540,12 +540,7 @@ async function hydrateClientMutationSnapshot(
 function requireClientStateWrittenSnapshot(
     written: ClientStateWritten
 ): ClientSnapshot {
-    const mutation = written.result.right;
-    if (!mutation || !mutation.snapshot) {
-        throw new Error(written.result.left ?? 'Client mutation failed');
-    }
-
-    return mutation.snapshot;
+    return written.result.snapshot;
 }
 
 async function readRequestWithRequestId(c: {

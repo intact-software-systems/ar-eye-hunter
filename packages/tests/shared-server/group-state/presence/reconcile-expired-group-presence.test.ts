@@ -1,21 +1,14 @@
 import { enqueuePresenceExpiryReconciliation } from '@shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts';
-import { enqueuePresenceExpiryReconciliation as enqueueCompatibilityPresenceExpiryReconciliation } from '@shared-server/rallar-system/services/presence-expiry-reconciliation-service.ts';
 import { describe, expect, it, vi } from 'vitest';
 
 describe('enqueuePresenceExpiryReconciliation', () => {
-    it('keeps expiry reconciliation behind the stable one-hop public path', () => {
-        expect(enqueueCompatibilityPresenceExpiryReconciliation).toBe(
-            enqueuePresenceExpiryReconciliation
-        );
-    });
-
     it('awaits durable client and group expiry enqueue through their app inboxes', async () => {
         const enqueueExpiredPresenceSessions = vi.fn(async () => 0);
         const runtime = {
             appClientInboxService: {
                 enqueueExpiredSessions: vi.fn(async () => undefined)
             },
-            appGroupInboxService: {
+            groupStateInboxService: {
                 enqueueExpiredPresenceSessions
             }
         };
@@ -32,7 +25,7 @@ describe('enqueuePresenceExpiryReconciliation', () => {
             appClientInboxService: {
                 enqueueExpiredSessions: vi.fn(async () => undefined)
             },
-            appGroupInboxService: {
+            groupStateInboxService: {
                 enqueueExpiredPresenceSessions: vi.fn(async () => 0),
                 processPurgeExpiredGroupsNoWaiting
             }
@@ -49,7 +42,7 @@ describe('enqueuePresenceExpiryReconciliation', () => {
             appClientInboxService: {
                 enqueueExpiredSessions: vi.fn(async () => undefined)
             },
-            appGroupInboxService: {
+            groupStateInboxService: {
                 enqueueExpiredPresenceSessions: vi.fn(async () => {
                     throw failure;
                 })

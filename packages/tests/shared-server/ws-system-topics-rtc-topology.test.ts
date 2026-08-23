@@ -1,13 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
-import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
-import {
-    GroupTopologyManagementService,
-    type GroupTopologyGroupSnapshotReader
-} from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
-import { initRallarSystemWsTopics } from '@shared-server/rallar-system/ws-system-topics.ts';
+import type { GroupTopologyGroupSnapshotReader } from '@shared-server/rallar-system/topology/group-topology-management-contracts.ts';
+import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
+import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
+import { createGroupTopologyOwners, type GroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+import { initRallarSystemWsTopics } from '@shared-server/rallar-system/websocket/ws-system-topics.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
@@ -117,10 +115,7 @@ describe('Rallar system websocket topics RTC topology', () => {
         });
         initRallarSystemWsTopics(service, {
             rtcTopologyService: topologyService,
-            rtcTopologyManagement: createTopologyManagement(topologyService),
-            rtcTopologyRuntimeState: {
-                repository: runtimeRepository
-            },
+            ...topologyOptions(createTopologyOwners(topologyService)),
             rtcTopologyAppOutbox: {
                 outboxQueueReader,
                 ...createTopologyExecutionDependencies(runtimeRepository),
@@ -170,7 +165,9 @@ describe('Rallar system websocket topics RTC topology', () => {
         };
         expect(activeMessage.route).toEqual(activeKey);
         expect(activeEnvelope).toMatchObject({
-            resourceId: expect.stringContaining(`:group-revision:${group.stateRevision}`),
+            resourceId: expect.stringContaining(
+                `:group-revision:group=${group.causalRevision.groupRevision};presence=${group.causalRevision.presenceRevision}`
+            ),
             contextId: expect.stringContaining('group=room-1'),
             senderId: expect.any(String),
             data: {
@@ -223,7 +220,7 @@ describe('Rallar system websocket topics RTC topology', () => {
             'server-1'
         );
         initRallarSystemWsTopics(service, {
-            rtcTopologyManagement: createTopologyManagement(),
+            ...topologyOptions(createTopologyOwners()),
             rtcTopologyAppOutbox: {
                 outboxQueueReader,
                 ...createTopologyExecutionDependencies(runtimeRepository)
@@ -272,7 +269,7 @@ describe('Rallar system websocket topics RTC topology', () => {
             'server-1'
         );
         initRallarSystemWsTopics(service, {
-            rtcTopologyManagement: createTopologyManagement(),
+            ...topologyOptions(createTopologyOwners()),
             rtcTopologyAppOutbox: {
                 outboxQueueReader,
                 ...createTopologyExecutionDependencies(runtimeRepository)
@@ -329,7 +326,7 @@ describe('Rallar system websocket topics RTC topology', () => {
         ]);
 
         expect(first).toEqual(second);
-        expect(first.effectiveSnapshotRevision).toBe(group.stateRevision);
+        expect(first.effectiveCausalRevision).toEqual(group.causalRevision);
         const [key] = await appOutboxQueue.getAllKeys();
         expect(key?.resourceId).toEqual(expect.any(String));
         expect(await appOutboxQueue.getAllKeys()).toHaveLength(1);
@@ -403,14 +400,21 @@ function createTopologyExecutionDependencies(runtimeRepository: FakeRuntimeState
     };
 }
 
-function createTopologyManagement(
+function createTopologyOwners(
     topologyService = new RallarRtcTopologyService(),
     findGroupSnapshotByRef: GroupTopologyGroupSnapshotReader = () => undefined
-): GroupTopologyManagementService {
-    return new GroupTopologyManagementService({
+): GroupTopologyOwners {
+    return createGroupTopologyOwners({
         findGroupSnapshotByRef,
         topologyService
     });
+}
+
+function topologyOptions(owners: GroupTopologyOwners) {
+    return {
+        topologyQuery: owners.query,
+        topologyPlanning: owners.planning
+    };
 }
 
 function createUnusedDatabase(): PSqlSql {
@@ -500,7 +504,6 @@ function createGroupSnapshot(groupId: string, memberSessionIds: readonly string[
     const workspaceId = 'workspace-1';
 
     return {
-        stateRevision: 1,
         causalRevision: {
             groupRevision: 1,
             presenceRevision: 0
@@ -562,7 +565,6 @@ function createInactiveGroupSnapshot(
 
     return {
         ...snapshot,
-        stateRevision: snapshot.stateRevision + 1,
         causalRevision: {
             ...snapshot.causalRevision,
             groupRevision: snapshot.causalRevision.groupRevision + 1

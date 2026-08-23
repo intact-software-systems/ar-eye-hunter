@@ -4,7 +4,7 @@ import {
     filterStateEventsForList,
     readStateEventListQuery,
     type StateEventListQuery
-} from '@shared-server/rallar-system/state-event-listing.ts';
+} from '@shared-server/rallar-system/state-events/state-event-listing.ts';
 import type { GroupEvent, GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 
 import { readGroupSnapshotPointQuery } from '../routes/state-snapshot-read/state-snapshot-read-query.ts';

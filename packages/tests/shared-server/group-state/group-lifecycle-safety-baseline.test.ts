@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { canConnectGroupPresenceSession, canGovernGroupMember, canJoinGroup } from '@shared-server/rallar-system/group-policy.ts';
 import type {
     GroupMutationCommand,
     GroupMutationFacts,
     GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
-import { computeGroupMutation } from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import { canGovernGroupMember } from '@shared-server/rallar-system/group-state/policy/group-governance-policy.ts';
+import { canConnectGroupPresenceSession, canJoinGroup } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import type { GroupLifecycleState } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { AuditStamp, Group, GroupMember, GroupSnapshot } from '@shared/api/group-types.ts';
 import { createTestGroup } from '../../create-test-group.ts';
@@ -116,7 +117,6 @@ function groupIn(lifecycleState: GroupLifecycleState): Group {
 
 function snapshotIn(lifecycleState: GroupLifecycleState): GroupSnapshot {
     return {
-        stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 0 },
         group: groupIn(lifecycleState),
         members: [member('alice', 'owner'), member('bob', 'member')],
@@ -223,7 +223,6 @@ function mutationFacts(principalId: string): GroupMutationFacts {
         resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: 'none',
-        formationDamping: 'legacy',
         authenticatedAuthority: {
             principalId,
             sessionId: `${principalId}-session`

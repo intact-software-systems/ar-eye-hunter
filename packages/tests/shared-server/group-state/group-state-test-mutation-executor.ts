@@ -1,21 +1,23 @@
-import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
-import { GroupLifecyclePolicyRepository } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import type {
-    GroupMutationComputed,
-    GroupMutationComputedWrite,
-    GroupMutationFacts,
-    GroupMutationReceipt
-} from '@shared-server/rallar-system/services/group-state-mutations.ts';
+import { type toExpiryCommand, type toSessionCleanupCommand } from '@shared-server/rallar-system/group-state/group-presence-mutation-command.ts';
 import {
     type GroupMutationDescriptor,
     type GroupStateMutationCommand,
     type GroupStateService,
-    type GroupStateServiceDependencies,
-    type toExpiryCommand,
-    type toSessionCleanupCommand
-} from '@shared-server/rallar-system/services/group-state-service.ts';
-import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+    type GroupStateServiceDependencies
+} from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import {
+    GroupMutationRejectedError,
+    type GroupMutationComputed,
+    type GroupMutationComputedWrite,
+    type GroupMutationFacts,
+    type GroupMutationReceipt
+} from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
+import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import { validateGroupMutation } from '@shared-server/rallar-system/group-state/mutation/state-validation/validate-group-mutation.ts';
+import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
+import { GroupLifecyclePolicyRepository } from '@shared-server/rallar-system/group-state/persistence/group-lifecycle-policy-repository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { hashMutationCommand, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import {
     requireConditionalWrite,
     RuntimeStateRetryExhaustedError,
@@ -28,7 +30,6 @@ import {
 } from '@shared-server/runtime-state/RuntimeStateGuardedBatch.ts';
 import type { RuntimeStateOptimisticTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import type { GroupEvent } from '@shared/api/group-types.ts';
-import { Either } from '@shared/resilience/Either.ts';
 import type { AuthSession } from '../auth/auth-test-fixtures.ts';
 
 type GroupStateTestMutationExecutorDependencies = Readonly<{
@@ -69,7 +70,7 @@ export class GroupStateTestMutationExecutor {
                 if (computed.outcome === 'write') {
                     await this.writeComputed(computed);
                 }
-                return await this.toCompatibleResult(prepared.command.operation, computed, receiptOnly);
+                return await this.toMutationResult(prepared.command.operation, computed, receiptOnly);
             }
             catch (error) {
                 await this.handleWriteConflict(error, attempt);
@@ -99,12 +100,10 @@ export class GroupStateTestMutationExecutor {
                 resolvedJoinCode: null,
                 joinCodeVerifier: null,
                 internalAuthority: authority,
-                formationDamping: 'legacy',
                 authenticatedAuthority: null
             };
-            const mutation = await import('@shared-server/rallar-system/services/group-state-mutations.ts');
-            computed = mutation.computeGroupMutation({ command, read, facts });
-            mutation.validateGroupMutation({ command, read, facts, computed });
+            computed = computeGroupMutation({ command, read, facts });
+            validateGroupMutation({ command, read, facts, computed });
             if (computed.outcome === 'idempotency-conflict') {
                 throw new TypeError('Validated idempotency conflict is unreachable');
             }
@@ -122,7 +121,7 @@ export class GroupStateTestMutationExecutor {
         throw new TypeError(`Missing internal group mutation: ${String(computed)}`);
     }
 
-    async toCompatibleResult(
+    async toMutationResult(
         operation: GroupStateMutationCommand['command']['operation'],
         computed: Exclude<GroupMutationComputed, { outcome: 'idempotency-conflict'; }>,
         receiptOnly = false
@@ -137,25 +136,24 @@ export class GroupStateTestMutationExecutor {
             throw new TypeError(`Group snapshot not found: ${receipt.aggregateRef.groupId}`);
         }
         const event = await this.receiptEvent(repository, receipt);
-        if (operation === 'rotateGroupJoinCode') {
-            return receipt.outcome === 'rejected'
-                ? { status: 'error', result: Either.ofLeft(receipt.rejection ?? 'Rejected') }
-                : {
-                    status: 'ok',
-                    result: Either.ofRight({
-                        joinCode: receipt.joinCode,
-                        expiresAtEpochMs: receipt.joinCodeExpiresAtEpochMs,
-                        snapshot,
-                        event
-                    })
-                };
+        if (receipt.outcome === 'rejected') {
+            throw new GroupMutationRejectedError(receipt.rejection ?? 'Group mutation rejected');
         }
-        return receipt.outcome === 'rejected'
-            ? { status: 'error', result: Either.ofLeft(receipt.rejection ?? 'Rejected') }
-            : {
-                status: operation === 'createGroup' ? 'created' : 'ok',
-                result: Either.ofRight({ snapshot, event })
+        if (operation === 'rotateGroupJoinCode') {
+            return {
+                status: 'ok',
+                result: {
+                    joinCode: receipt.joinCode,
+                    expiresAtEpochMs: receipt.joinCodeExpiresAtEpochMs,
+                    snapshot,
+                    event
+                }
             };
+        }
+        return {
+            status: operation === 'createGroup' ? 'created' : 'ok',
+            result: { snapshot, event }
+        };
     }
 
     private async writeComputed(computed: GroupMutationComputedWrite): Promise<GroupMutationReceipt> {

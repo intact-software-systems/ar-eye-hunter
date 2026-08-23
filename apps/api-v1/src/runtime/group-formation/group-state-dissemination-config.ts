@@ -1,6 +1,6 @@
 import type {
     GroupStateDisseminationMode
-} from '@shared-server/rallar-system/group-state/presence/group-presence-summary-work.ts';
+} from '@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts';
 import type { EnvReader } from '../../db/database-config.ts';
 
 export const GROUP_STATE_DISSEMINATION_MODES = [

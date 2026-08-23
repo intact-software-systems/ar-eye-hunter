@@ -1,4 +1,4 @@
-import { InMemoryClientStateEventStore, InMemoryGroupStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
+import { InMemoryClientStateEventStore, InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { type AppInboxTestDatabase, type AppInboxTestDatabaseOptions, type AppInboxTestResourceRepositories } from './app-inbox-test-database-contracts.ts';

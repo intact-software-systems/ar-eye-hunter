@@ -5,7 +5,7 @@ import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWe
 
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
-import { emptyGroupFormationMetrics } from '@shared-server/rallar-system/formation-metrics.ts';
+import { emptyGroupFormationMetrics } from '@shared-server/rallar-system/observability/formation-metrics.ts';
 
 import { createApiV1AdminServices, readApiV1WebSocketStatus, type CreateApiV1AdminServicesInput } from '../../src/composition/create-api-v1-admin-services.ts';
 
@@ -115,7 +115,7 @@ function createInput(
         crdtAdminRepository: new InMemoryRallarCrdtLogRepository({
             now: () => NOW_EPOCH_MS
         }),
-        topologyManagement: {
+        topologyQuery: {
             readTopologyView: rejectUnusedOperation
         },
         clientStateService: {
@@ -142,8 +142,8 @@ function createInput(
         crdtAdminMutations: {
             writeCrdtAdminMutation: () => Promise.reject(new Error('mutation not used'))
         },
-        appGroupInboxService: {
-            processAuthenticatedHttpTopologyEntryUntilCompletionResult: rejectUnusedOperation
+        topologyInboxService: {
+            processAuthenticatedHttpEntryUntilCompletionResult: rejectUnusedOperation
         }
     };
 }

@@ -1,11 +1,10 @@
 import { authenticationRequired } from '@shared-server/http/request-auth-service.ts';
-import type { GroupCreateAppInboxPayload, GroupUpdateAppInboxPayload } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import type { GroupCreateAppInboxPayload, GroupUpdateAppInboxPayload } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import { decodeApiMutationFailure, type ApiMutationFailureJsonObject } from '@shared/api/mutation/api-mutation-failure.ts';
-import { Either } from '@shared/resilience/Either.ts';
 import assert from 'node:assert/strict';
 
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type { AuthenticatedGroupMutationEnqueue } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
-import { AppInboxType } from '@shared-server/rallar-system/services/AppInboxService.ts';
 
 import { readGroupStateRouteRequest } from '../../src/group-state/read-group-state-route-request.ts';
 import { toGroupStateCommand } from '../../src/group-state/to-group-state-command.ts';
@@ -15,9 +14,9 @@ import {
     createGroupStateRouteAuthSession,
     createGroupStateRouteSnapshot,
     createGroupStateRouteTestRuntime,
-    createPredecessorGroupStateRouteAuthSession,
-    createPredecessorGroupStateRouteSnapshot,
-    createPredecessorGroupStateRouteTestRuntime,
+    createLiveGroupStateRouteAuthSession,
+    createOwnerGroupStateRouteSnapshot,
+    createRejectingGroupStateRouteTestRuntime,
     postGroupStateMutation,
     putGroupStateMutation,
     TEST_GROUP_SCOPE,
@@ -255,21 +254,13 @@ Deno.test('group AppInbox keys isolate operation, caller, and complete GroupRef'
         variants.length
     );
 });
-Deno.test('group mutation response retains snapshot identity and durable error text', () => {
+Deno.test('group mutation response retains snapshot identity', () => {
     const snapshot = createGroupStateRouteSnapshot('room-1');
     const response = toGroupStateResponse({
         kind: 'mutation',
         written: toGroupStateWritten(snapshot)
     });
     assert.strictEqual(response.snapshot, snapshot);
-    assert.throws(
-        () =>
-            toGroupStateResponse({
-                kind: 'mutation',
-                written: { status: 'error', result: Either.ofLeft('Mutation result rejected') }
-            }),
-        { message: 'Mutation result rejected' }
-    );
 });
 Deno.test('group aggregate routes retain their AppInbox envelopes', async () => {
     const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
@@ -307,7 +298,7 @@ Deno.test('group aggregate routes retain their AppInbox envelopes', async () => 
     assert.deepEqual(enqueued, [EXPECTED_CREATE_COMMAND, ...EXPECTED_AGGREGATE_COMMANDS]);
 });
 Deno.test(
-    'group aggregate routes reject legacy identities and expose only the strict path',
+    'group aggregate routes reject noncanonical identities and expose only the strict path',
     async () => {
         const enqueued: AuthenticatedGroupMutationEnqueue[] = [];
         const snapshot = createGroupStateRouteSnapshot('room-1');
@@ -405,7 +396,7 @@ Deno.test(
         assert.equal(response.status, 401);
         assert.deepEqual(decodeApiMutationFailure(await response.json()), {
             type: 'api-mutation-failure',
-            version: 'canonical.v1',
+            version: 'canonical.v2',
             code: 'authentication-required',
             status: 401,
             message: 'Unauthorized: route authentication failed',
@@ -439,7 +430,7 @@ Deno.test(
         assert.equal(response.status, 409);
         assert.deepEqual(await response.json(), {
             type: 'api-mutation-failure',
-            version: 'canonical.v1',
+            version: 'canonical.v2',
             code: 'group-command-rejected',
             status: 409,
             message: 'group command rejected',
@@ -454,13 +445,13 @@ Deno.test(
         'enqueue',
     async () => {
         const processCalls: AuthenticatedGroupMutationEnqueue[] = [];
-        const snapshot = createPredecessorGroupStateRouteSnapshot('room-1', ['alice']);
+        const snapshot = createOwnerGroupStateRouteSnapshot('room-1', ['alice']);
         const ownerSnapshot = {
             ...snapshot,
             members: snapshot.members.map((member) => ({ ...member, role: 'owner' as const }))
         };
-        const { app } = createPredecessorGroupStateRouteTestRuntime({
-            session: createPredecessorGroupStateRouteAuthSession('alice'),
+        const { app } = createRejectingGroupStateRouteTestRuntime({
+            session: createLiveGroupStateRouteAuthSession('alice'),
             groupService: {
                 readSnapshot: () => Promise.resolve(ownerSnapshot)
             },

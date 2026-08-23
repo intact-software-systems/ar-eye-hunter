@@ -14,11 +14,12 @@ import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { AppInboxService, AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/app-inbox-handler-registry.ts';
+import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
 type SqlValue = Parameters<PSqlSql>[0][number];
 
@@ -112,7 +113,7 @@ describe('Postgres transaction write boundary', () => {
                 throw new Error('external repository factory must not run');
             }
         });
-        const service = new StrictTransactionAppInboxService(
+        const handlerRegistry = new AppInboxHandlerRegistry(
             {
                 inboxQueueReader: new InboxQueueReader(new InMemoryQueueBox()),
                 resourceInboxRepository: new ResourceInboxRepository(database.sql),
@@ -142,7 +143,7 @@ describe('Postgres transaction write boundary', () => {
             entry: incomingEntry
         };
 
-        const result = await service.commit(context, async (transaction) => {
+        const result = await handlerRegistry.writeMutation(context, async (transaction) => {
             await new PSqlRuntimeStateRepository(transaction).insertIfAbsent(
                 'app-inbox-transaction',
                 'aggregate-1',
@@ -160,15 +161,6 @@ describe('Postgres transaction write boundary', () => {
         );
     });
 });
-
-class StrictTransactionAppInboxService extends AppInboxService {
-    async commit<R>(
-        context: AppInboxMessageContext,
-        write: (transaction: PSqlTransactionSql) => Promise<R>
-    ): Promise<R> {
-        return await this.writeMutation(context, write);
-    }
-}
 
 async function runMutation(database: TransactionalDatabase): Promise<void> {
     await runInTransaction(database.sql, async (transaction) => {

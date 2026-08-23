@@ -1,7 +1,7 @@
 import type { AdminMetricsResetCategory } from '@shared/api/admin-operations-types.ts';
 import { ADMIN_METRICS_RESET_CATEGORIES } from '@shared/api/admin-operations-types.ts';
 import { type RallarCrdtDocumentRef } from '@shared/crdt/mod.ts';
-import type { RallarTimingDetails } from '../services/timing.ts';
+import type { RallarTimingDetails } from '../observability/timing.ts';
 
 interface AdminOperationRequestRecord {
     readonly requestId?: string;

@@ -1,15 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { createClientStateService as createClientMutationService } from '@shared-server/rallar-system/client-state/client-state-service.ts';
+import { toClientMutationSystemAuthority } from '@shared-server/rallar-system/client-state/mutation/client-mutation-authority.ts';
+import { toClientMutationCommand, toExpiryCommandInput } from '@shared-server/rallar-system/client-state/mutation/client-mutation-command.ts';
 import { computeClientMutation } from '@shared-server/rallar-system/client-state/mutation/compute/compute-client-mutation.ts';
 import { validateClientMutation } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-import { toClientSessionExpiryCandidate } from '@shared-server/rallar-system/repositories/session-expiry.ts';
-import {
-    createClientStateService as createClientMutationService,
-    toClientMutationCommand,
-    toClientMutationSystemAuthority,
-    toExpiryCommandInput
-} from '@shared-server/rallar-system/services/client-state-service.ts';
+import { toClientSessionExpiryCandidate } from '@shared-server/rallar-system/presence/session-expiry.ts';
 
 import { emptyRead, principalCommand } from './client-mutation-compute-test-fixtures.ts';
 import {
@@ -66,8 +63,7 @@ describe('client mutation stable-read concurrency', () => {
                 serviceId: 'client-service',
                 eventId: 'stable-client-read-event',
                 attemptCount: 1,
-                expireAtEpochMs: session.expiresAtEpochMs + 60_000,
-                formationDamping: 'damped'
+                expireAtEpochMs: session.expiresAtEpochMs + 60_000
             },
             toClientMutationSystemAuthority('client-service')
         );
@@ -75,7 +71,6 @@ describe('client mutation stable-read concurrency', () => {
         runtime.armPrincipalChangeAfterRead();
         const read = await createClientMutationService({
             runtimeRepository: runtime,
-            formationDamping: 'damped',
             serviceId: 'client-service'
         }).read(command);
 

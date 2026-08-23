@@ -1,13 +1,13 @@
-import { requireExactKeys, requireExactOptionalKeys, requireRecord } from '../../services/exact-object-codec.ts';
+import { requireExactKeys, requireExactOptionalKeys, requireRecord } from '../../protocol/exact-object-decoding.ts';
 
 export function decodeExactOperationBatchShape(value: unknown): void {
     const batch = requireRecord(value, 'CRDT operation batch');
-    requireExactOptionalKeys(
-        batch,
-        ['kind', 'operations'],
-        ['operationGroupId', 'undo', 'redo', 'encryption'],
-        'CRDT operation batch'
-    );
+    requireExactOptionalKeys({
+        value: batch,
+        required: ['kind', 'operations'],
+        optional: ['operationGroupId', 'undo', 'redo', 'encryption'],
+        label: 'CRDT operation batch'
+    });
     if (!Array.isArray(batch.operations)) {
         return;
     }
@@ -27,12 +27,12 @@ export function decodeExactOperationBatchShape(value: unknown): void {
 
 export function decodeExactCausalFrontierShape(value: unknown): void {
     const frontier = requireRecord(value, 'CRDT causal frontier');
-    requireExactOptionalKeys(
-        frontier,
-        ['frontierUpdateIds'],
-        ['replicaClocks'],
-        'CRDT causal frontier'
-    );
+    requireExactOptionalKeys({
+        value: frontier,
+        required: ['frontierUpdateIds'],
+        optional: ['replicaClocks'],
+        label: 'CRDT causal frontier'
+    });
     if ('replicaClocks' in frontier) {
         decodeDynamicNumberRecord(frontier.replicaClocks, 'replica clocks');
     }
@@ -58,9 +58,9 @@ function decodeExactUndoRedoShape(value: unknown, label: string): void {
 
 export function decodeExactEncryptedEnvelopeShape(value: unknown): void {
     const envelope = requireRecord(value, 'CRDT encrypted envelope');
-    requireExactOptionalKeys(
-        envelope,
-        [
+    requireExactOptionalKeys({
+        value: envelope,
+        required: [
             'kind',
             'format',
             'algorithm',
@@ -72,9 +72,9 @@ export function decodeExactEncryptedEnvelopeShape(value: unknown): void {
             'plaintextType',
             'encryptedAtEpochMs'
         ],
-        ['visibleMetadataFields'],
-        'CRDT encrypted envelope'
-    );
+        optional: ['visibleMetadataFields'],
+        label: 'CRDT encrypted envelope'
+    });
 }
 
 function decodeDynamicNumberRecord(value: unknown, label: string): void {

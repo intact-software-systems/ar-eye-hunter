@@ -5,11 +5,11 @@ import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/postgres/runtime-state/PSqlRuntimeStateRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/repositories/RtcTopologyExecutionRepository.ts';
-import { RallarRtcTopologyService } from '@shared-server/rallar-system/services/rallar-rtc-topology-service.ts';
-import { createRtcTopologyOutboxPublisher, createRtcTopologyWorkHandler } from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
-import { GroupTopologyManagementService } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import { createRtcTopologyOutboxPublisher, createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
+import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
+import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { EntityStatus, type Key } from '@shared/queuebox/ResourceEntry.ts';
@@ -83,7 +83,7 @@ function registerTopologyAppOutboxHandler(
         registration.trace
     );
     const runtimeRepository = new PSqlRuntimeStateRepository(registration.sql);
-    const topologyManagement = new GroupTopologyManagementService({
+    const topologyManagement = createGroupTopologyOwners({
         findGroupSnapshotByRef: () => input.groupSnapshot,
         groupStateRepository: new GroupStateRepository(runtimeRepository),
         topologyService: new RallarRtcTopologyService({ now: () => input.atEpochMs }),
@@ -95,7 +95,7 @@ function registerTopologyAppOutboxHandler(
         createRtcTopologyWorkHandler({
             runtime,
             database: transactionGate.sql,
-            topologyPlanning: topologyManagement.planningService,
+            topologyPlanning: topologyManagement.planning,
             executionRepository: new RtcTopologyExecutionRepository(
                 runtimeRepository,
                 undefined,

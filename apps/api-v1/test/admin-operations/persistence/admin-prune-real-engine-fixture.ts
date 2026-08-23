@@ -4,7 +4,7 @@ import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource
 import {
     includeInboxQueueReaderEngineTasks,
     includeOutboxQueueReaderEngineTasks
-} from '@shared-server/rallar-system/middleware/RallarMiddleware.ts';
+} from '@shared-server/rallar-system/middleware/rallar-middleware.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';

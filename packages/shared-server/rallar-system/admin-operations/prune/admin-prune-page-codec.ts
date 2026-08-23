@@ -1,9 +1,9 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { AdminPruneExpiredCategory } from '@shared/api/admin-operations-types.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { toAppQueueCreatedBy, toAppQueueKey } from '../../services/app-inbox-queue-key.ts';
-import { decodeJsonWireValue, type JsonWireValue } from '../../services/mutation-command-identity.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import {
     decodeAdminPruneAppData,
     readExactRecord,

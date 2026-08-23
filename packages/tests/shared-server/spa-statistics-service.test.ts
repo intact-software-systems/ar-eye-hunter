@@ -1,5 +1,6 @@
-import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
-import { SpaStatisticsService } from '@shared-server/rallar-system/spa-statistics/SpaStatisticsService.ts';
+import { createSpaStatisticsUseCases } from '@shared-server/rallar-system/admin-support/statistics/create-spa-statistics-use-cases.ts';
+import type { SpaStatisticsUseCases } from '@shared-server/rallar-system/admin-support/statistics/spa-statistics-contracts.ts';
+import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ClientSession, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupEvent, GroupMember, GroupPresenceSession, GroupRole, GroupSnapshot } from '@shared/api/group-types.ts';
@@ -13,7 +14,7 @@ const TEST_SCOPE: StateScope = {
     workspaceId: 'workspace-1'
 };
 
-describe('SpaStatisticsService', () => {
+describe('SPA statistics use cases', () => {
     it('summarizes only full-readable workspace groups and redacts other session ids', async () => {
         const service = createService({
             clients: {
@@ -206,7 +207,7 @@ describe('SpaStatisticsService', () => {
             listEvents: () => Promise.resolve([]),
             listRecentEvents: () => Promise.resolve([])
         };
-        const service = new SpaStatisticsService({
+        const service = createSpaStatisticsUseCases({
             now: () => NOW_EPOCH_MS,
             clientStateService: {
                 readSnapshot: () => Promise.resolve(undefined),
@@ -304,7 +305,7 @@ describe('SpaStatisticsService', () => {
         ];
         let unboundedScanCount = 0;
         let boundedScanCount = 0;
-        const service = new SpaStatisticsService({
+        const service = createSpaStatisticsUseCases({
             now: () => NOW_EPOCH_MS,
             clientStateService: {
                 readSnapshot: () => Promise.resolve(createClientSnapshot('alice', ['alice-session'])),
@@ -380,7 +381,7 @@ describe('SpaStatisticsService', () => {
 
     it('uses the newest events when the recent-events service method is unavailable', async () => {
         const events = Array.from({ length: 5 }, (_, index) => createGroupEvent('room-1', index));
-        const service = new SpaStatisticsService({
+        const service = createSpaStatisticsUseCases({
             now: () => NOW_EPOCH_MS,
             recentEventLimit: 2,
             clientStateService: {
@@ -421,13 +422,13 @@ type TestServiceInput = Readonly<{
     openConnectionIds?: readonly string[];
 }>;
 
-function createService(input: TestServiceInput): SpaStatisticsService {
+function createService(input: TestServiceInput): SpaStatisticsUseCases {
     const clients = input.clients ?? {};
     const groups = input.groups ?? [];
     const groupEventCounts = input.groupEventCounts ?? {};
     const openConnectionIds = input.openConnectionIds ?? [];
 
-    return new SpaStatisticsService({
+    return createSpaStatisticsUseCases({
         now: () => NOW_EPOCH_MS,
         clientStateService: {
             readSnapshot: (ref) => Promise.resolve(clients[ref.principalId]),
@@ -583,7 +584,6 @@ function createGroupSnapshot(
     );
 
     return {
-        stateRevision: 1,
         causalRevision: { groupRevision: 1, presenceRevision: 1 },
         group: createTestGroup({
             ...TEST_SCOPE,

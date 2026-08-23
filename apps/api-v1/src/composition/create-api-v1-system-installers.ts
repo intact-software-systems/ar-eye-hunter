@@ -8,11 +8,11 @@ import {
 import {
     initWsLifecycle,
     scheduleWsLifecycleRetry
-} from '@shared-server/rallar-system/services/ws-lifecycle-service.ts';
+} from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
 import {
     initRallarSystemWsTopics,
     type InitRallarSystemWsTopicsOptions
-} from '@shared-server/rallar-system/ws-system-topics.ts';
+} from '@shared-server/rallar-system/websocket/ws-system-topics.ts';
 import type { RallarCrdtAdminReadRepository, RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 
@@ -25,7 +25,8 @@ import type { ApiV1TopologyServices } from './create-api-v1-topology-services.ts
 export interface ApiV1SystemInstallerTopology {
     readonly rtcTopologyService: object;
     readonly rtcTopologyOptions: ApiV1TopologyServices['rtcTopologyOptions'];
-    readonly topologyManagement: object;
+    readonly topologyQuery: object;
+    readonly topologyPlanning: object;
     readonly topologyConfigRepository: object;
     readonly groupStateRepository: Pick<ApiV1TopologyServices['groupStateRepository'], 'readLifecyclePolicy'>;
     readonly topologySnapshotRepository: object;
@@ -49,10 +50,11 @@ export interface CreateApiV1SystemInstallersInput<
 export interface ApiV1SystemInstallerRuntime {
     readonly wsQBoxServerService: ApiV1Runtime['wsQBoxServerService'];
     readonly appClientInboxService: Pick<ApiV1Runtime['appClientInboxService'], 'enqueueAuthorisedWsClientDisconnect'>;
-    readonly appGroupInboxService: Pick<
-        ApiV1Runtime['appGroupInboxService'],
-        'enqueueFormationCriterionCommand' | 'enqueueGroupSessionCleanup' | 'enqueueRtcRtt'
+    readonly groupStateInboxService: Pick<
+        ApiV1Runtime['groupStateInboxService'],
+        'enqueueFormationCriterionCommand' | 'enqueueGroupSessionCleanup'
     >;
+    readonly rtcRttInboxService: Pick<ApiV1Runtime['rtcRttInboxService'], 'enqueue'>;
     readonly appCrdtInboxService?: object;
     readonly backgroundTasks: Pick<ApiV1Runtime['backgroundTasks'], 'register'>;
     readonly groupStateService: Pick<ApiV1Runtime['groupStateService'], 'observeSnapshot' | 'readSnapshotAtLeast'>;
@@ -146,7 +148,7 @@ export function constructApiV1SystemInstallers<
                             wsRoutes.toAuthorisedWsClientDisconnectInput(close)
                         ),
                     enqueueGroupSessionCleanup: (close) =>
-                        runtime.appGroupInboxService.enqueueGroupSessionCleanup(
+                        runtime.groupStateInboxService.enqueueGroupSessionCleanup(
                             wsRoutes.toGroupPresenceSessionCleanupInput(close)
                         ),
                     hasCloseFacts: wsRoutes.hasAuthorisedWsCloseFacts,
@@ -167,10 +169,10 @@ export function constructApiV1SystemInstallers<
 
 function submitFormationCriterionCommand(
     runtime: ApiV1SystemInstallerRuntime,
-    command: Parameters<ApiV1Runtime['appGroupInboxService']['enqueueFormationCriterionCommand']>[0],
+    command: Parameters<ApiV1Runtime['groupStateInboxService']['enqueueFormationCriterionCommand']>[0],
     atEpochMs: number
 ): Promise<void> {
-    return runtime.appGroupInboxService.enqueueFormationCriterionCommand(command, atEpochMs);
+    return runtime.groupStateInboxService.enqueueFormationCriterionCommand(command, atEpochMs);
 }
 
 function createSystemTopicOptions<
@@ -185,7 +187,8 @@ function createSystemTopicOptions<
         initDynamicTopics: false,
         rtcTopologyService: topology.rtcTopologyService,
         rtcTopologyOptions: topology.rtcTopologyOptions,
-        rtcTopologyManagement: topology.topologyManagement,
+        topologyQuery: topology.topologyQuery,
+        topologyPlanning: topology.topologyPlanning,
         rttRefinementGate: topology.rttRefinementGate,
         rttRefinementService: topology.rttRefinementService,
         observeGroupSnapshot: async (snapshot) => {
@@ -194,7 +197,7 @@ function createSystemTopicOptions<
         observeClientSnapshot: async (snapshot) => {
             await runtime.clientStateService.observeSnapshot(snapshot);
         },
-        rtcTopologyRepositories: {
+        rtcRttRuntimeState: {
             topologyConfig: topology.topologyConfigRepository,
             groupState: topology.groupStateRepository,
             topologySnapshots: topology.topologySnapshotRepository,
@@ -216,7 +219,7 @@ function createSystemTopicOptions<
                 submitCommand: (command, atEpochMs) => submitFormationCriterionCommand(runtime, command, atEpochMs)
             }
         },
-        enqueueRtcRttMutation: (enqueue) => runtime.appGroupInboxService.enqueueRtcRtt(enqueue)
+        enqueueRtcRttMutation: (enqueue) => runtime.rtcRttInboxService.enqueue(enqueue)
     };
 }
 
@@ -227,19 +230,21 @@ export interface ApiV1SystemTopicOptions<
     Omit<
         InitRallarSystemWsTopicsOptions,
         | 'rtcTopologyAppOutbox'
-        | 'rtcTopologyManagement'
+        | 'topologyQuery'
+        | 'topologyPlanning'
         | 'rtcTopologyOptions'
-        | 'rtcTopologyRepositories'
+        | 'rtcRttRuntimeState'
         | 'rtcTopologyService'
         | 'rttRefinementGate'
         | 'rttRefinementService'
     > {
     readonly rtcTopologyService: Topology['rtcTopologyService'];
     readonly rtcTopologyOptions: Topology['rtcTopologyOptions'];
-    readonly rtcTopologyManagement: Topology['topologyManagement'];
+    readonly topologyQuery: Topology['topologyQuery'];
+    readonly topologyPlanning: Topology['topologyPlanning'];
     readonly rttRefinementGate: Topology['rttRefinementGate'];
     readonly rttRefinementService: Topology['rttRefinementService'];
-    readonly rtcTopologyRepositories: ApiV1SystemTopologyRepositories<Topology>;
+    readonly rtcRttRuntimeState: ApiV1SystemTopologyRepositories<Topology>;
     readonly rtcTopologyAppOutbox: ApiV1RtcTopologyAppOutboxOptions<Runtime>;
 }
 

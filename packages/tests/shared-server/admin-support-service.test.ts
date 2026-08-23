@@ -1,5 +1,10 @@
-import { AdminSupportService, type AdminSupportQueueEntryRead } from '@shared-server/rallar-system/admin-support/AdminSupportService.ts';
-import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
+import type {
+    AdminSupportQueueEntryRead,
+    AdminSupportUseCaseDependencies,
+    AdminSupportUseCases
+} from '@shared-server/rallar-system/admin-support/admin-support-contracts.ts';
+import { createAdminSupportUseCases } from '@shared-server/rallar-system/admin-support/create-admin-support-use-cases.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import type { AdminSupportExplainRequestRequest } from '@shared/api/admin-support-types.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
@@ -20,7 +25,7 @@ const QUEUE_KEY: Key = {
     contextId: 'room-1'
 };
 
-describe('AdminSupportService', () => {
+describe('admin support use cases', () => {
     it('explains queue items with redacted payload metadata from inbox and result rows', async () => {
         const reader = new FakeSupportReader({
             queueEntry: {
@@ -336,7 +341,7 @@ describe('AdminSupportService', () => {
                     return recentEvents;
                 }
             },
-            topologyManagement: {
+            topologyQuery: {
                 readTopologyView: async (ref: unknown) => {
                     calls.push(['readTopologyView', ref]);
                     return topologyView;
@@ -696,9 +701,9 @@ class FakeSupportReader {
 }
 
 function createService(
-    overrides: Partial<ConstructorParameters<typeof AdminSupportService>[0]> = {}
-): AdminSupportService {
-    return new AdminSupportService({
+    overrides: Partial<AdminSupportUseCaseDependencies> = {}
+): AdminSupportUseCases {
+    return createAdminSupportUseCases({
         now: () => NOW_EPOCH_MS,
         serverId: 'test-server',
         reader: new FakeSupportReader(),
@@ -783,7 +788,6 @@ function createGroupSnapshot(groupRef: GroupRef): GroupSnapshot {
     const created = createAuditStamp(NOW_EPOCH_MS - 30_000);
     const updated = createAuditStamp(NOW_EPOCH_MS - 2_000);
     return {
-        stateRevision: 7,
         causalRevision: { groupRevision: 7, presenceRevision: 3 },
         group: createTestGroup({
             ...groupRef,

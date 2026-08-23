@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
@@ -15,7 +15,7 @@ describe('GroupStateRepository persistence ownership', () => {
         );
     });
 
-    it('keeps the approved persistence owners behind one public compatibility hop', () => {
+    it('keeps each persistence responsibility in the group-state owner directory', () => {
         const root = 'packages/shared-server/rallar-system/group-state/persistence';
         for (
             const [file, symbol] of [
@@ -28,19 +28,6 @@ describe('GroupStateRepository persistence ownership', () => {
             ]
         ) {
             expect(readFileSync(`${root}/${file}`, 'utf8')).toContain(`class ${symbol}`);
-        }
-        const oldRoot = 'packages/shared-server/rallar-system/repositories';
-        const compatibility = readFileSync(`${oldRoot}/GroupStateRepository.ts`, 'utf8');
-        expect(compatibility).not.toContain('export *');
-        expect(compatibility).toContain('../group-state/persistence/group-state-repository.ts');
-        for (
-            const oldFile of [
-                'group-state-authority-batch-read.ts',
-                'group-state-mutation-exact-read.ts',
-                'group-state-snapshot-assembly.ts'
-            ]
-        ) {
-            expect(existsSync(`${oldRoot}/${oldFile}`), oldFile).toBe(false);
         }
     });
 });

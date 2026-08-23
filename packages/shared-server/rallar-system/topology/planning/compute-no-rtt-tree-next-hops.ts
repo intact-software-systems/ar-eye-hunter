@@ -1,4 +1,4 @@
-import { compareRtcTopologyIdentifiers } from '../../rtc-topology-identifiers.ts';
+import { compareRtcTopologyIdentifiers } from '../persistence/rtc-topology-identifiers.ts';
 import { computeCanonicalTopologyPairWeight } from './canonical-topology-planning-input.ts';
 import {
     updateNoRttTreeAttachmentSelection,

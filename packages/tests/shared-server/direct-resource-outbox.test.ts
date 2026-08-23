@@ -2,20 +2,19 @@ import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql, PSqlTransactionSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
 import { runInTransaction } from '@shared-server/postgres/run-in-transaction.ts';
-import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/services/CoalescedAppOutboxWorkService.ts';
+import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work-service.ts';
+import {
+    computeClientStateSyncEntries,
+    computeGroupStateSyncEntries,
+    type ComputedClientStateSync,
+    type ComputedGroupStateSync
+} from '@shared-server/rallar-system/state-sync/state-sync-entry-computation.ts';
+import { writeClientStateSync, writeGroupStateSync } from '@shared-server/rallar-system/state-sync/state-sync-transaction-writer.ts';
 import {
     computeRtcTopologyEntry,
     writeRtcTopologyOutbox,
     type ComputedRtcTopologyOutbox
-} from '@shared-server/rallar-system/services/RtcTopologyOutboxWork.ts';
-import {
-    computeClientStateSyncEntries,
-    computeGroupStateSyncEntries,
-    writeClientStateSync,
-    writeGroupStateSync,
-    type ComputedClientStateSync,
-    type ComputedGroupStateSync
-} from '@shared-server/rallar-system/state-sync-publisher.ts';
+} from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import type { ClientEvent, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import { toCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
@@ -41,14 +40,11 @@ describe('direct resource outbox writes', () => {
         } as unknown as ClientEvent;
 
         const computed = createComputedClientEventStateSync(incomplete);
-        expect(() => computeClientStateSyncEntries(computed, 'server-1', 'world')).toThrow();
+        expect(() => computeClientStateSyncEntries(computed, 'server-1')).toThrow();
         const database = createResourceInboxDatabase();
         await expect(
             runInTransaction(database.sql, async (transaction) => {
-                await writeClientStateSync(transaction, computed, {
-                    senderId: 'server-1',
-                    principalAudienceScope: 'world'
-                });
+                await writeClientStateSync(transaction, computed, 'server-1');
             })
         ).rejects.toThrow();
         expect(database.rows.size).toBe(0);
@@ -63,14 +59,11 @@ describe('direct resource outbox writes', () => {
         const incomplete = { ...snapshot, principal };
 
         const computed = createComputedClientSnapshotStateSync(incomplete);
-        expect(() => computeClientStateSyncEntries(computed, 'server-1', 'world')).toThrow();
+        expect(() => computeClientStateSyncEntries(computed, 'server-1')).toThrow();
         const database = createResourceInboxDatabase();
         await expect(
             runInTransaction(database.sql, async (transaction) => {
-                await writeClientStateSync(transaction, computed, {
-                    senderId: 'server-1',
-                    principalAudienceScope: 'world'
-                });
+                await writeClientStateSync(transaction, computed, 'server-1');
             })
         ).rejects.toThrow();
         expect(database.rows.size).toBe(0);
@@ -117,7 +110,7 @@ describe('direct resource outbox writes', () => {
             effects: [{ ...computed.effects[0], effectKind: 'forged-state' }]
         } as unknown as ComputedClientStateSync;
 
-        expect(() => computeClientStateSyncEntries(forged, 'server-1', 'world')).toThrow();
+        expect(() => computeClientStateSyncEntries(forged, 'server-1')).toThrow();
     });
 
     it('replays all canonical state-sync payload families identically', () => {
@@ -126,11 +119,11 @@ describe('direct resource outbox writes', () => {
         const groupEvent = createComputedGroupEventStateSync();
         const groupSnapshot = createComputedGroupStateSync(createGroupSnapshot());
 
-        expect(computeClientStateSyncEntries(clientEvent, 'server-1', 'world')).toEqual(
-            computeClientStateSyncEntries(clientEvent, 'server-1', 'world')
+        expect(computeClientStateSyncEntries(clientEvent, 'server-1')).toEqual(
+            computeClientStateSyncEntries(clientEvent, 'server-1')
         );
-        expect(computeClientStateSyncEntries(clientSnapshot, 'server-1', 'world')).toEqual(
-            computeClientStateSyncEntries(clientSnapshot, 'server-1', 'world')
+        expect(computeClientStateSyncEntries(clientSnapshot, 'server-1')).toEqual(
+            computeClientStateSyncEntries(clientSnapshot, 'server-1')
         );
         expect(computeGroupStateSyncEntries(groupEvent, 'server-1')).toEqual(
             computeGroupStateSyncEntries(groupEvent, 'server-1')
@@ -172,10 +165,7 @@ describe('direct resource outbox writes', () => {
 
         await expect(
             runInTransaction(database.sql, async (transaction) => {
-                await writeClientStateSync(transaction, forged, {
-                    senderId: 'server-1',
-                    principalAudienceScope: 'world'
-                });
+                await writeClientStateSync(transaction, forged, 'server-1');
             })
         ).rejects.toThrow('Computed state sync facts are invalid');
         expect(database.rows.size).toBe(0);
@@ -204,24 +194,17 @@ describe('direct resource outbox writes', () => {
 
         const clientEntries = await runInTransaction(
             database.sql,
-            async (transaction) =>
-                await writeClientStateSync(transaction, client, {
-                    senderId: 'server-1',
-                    principalAudienceScope: 'world'
-                })
+            async (transaction) => await writeClientStateSync(transaction, client, 'server-1')
         );
         const groupEntries = await runInTransaction(
             database.sql,
             async (transaction) => await writeGroupStateSync(transaction, group, 'server-1')
         );
 
-        expect(clientEntries).toEqual(computeClientStateSyncEntries(client, 'server-1', 'world'));
+        expect(clientEntries).toEqual(computeClientStateSyncEntries(client, 'server-1'));
         expect(groupEntries).toEqual(computeGroupStateSyncEntries(group, 'server-1'));
         await runInTransaction(database.sql, async (transaction) => {
-            await writeClientStateSync(transaction, client, {
-                senderId: 'server-1',
-                principalAudienceScope: 'world'
-            });
+            await writeClientStateSync(transaction, client, 'server-1');
             await writeGroupStateSync(transaction, group, 'server-1');
         });
         expect(database.nestedBeginCalls).toBe(0);
@@ -254,7 +237,7 @@ describe('direct resource outbox writes', () => {
             ]
         };
 
-        const [entry] = computeClientStateSyncEntries(computed, 'server-1', 'world');
+        const [entry] = computeClientStateSyncEntries(computed, 'server-1');
 
         expect(entry.typeId).toBe(EnqueuedType.WS_OUTBOX);
         const message = JSON.parse(entry.resource);
@@ -264,16 +247,21 @@ describe('direct resource outbox writes', () => {
                 ts: CREATED_AT_EPOCH_MS
             },
             route: entry.key,
-            targets: { mode: 'broadcast', scope: 'world' },
+            targets: {
+                mode: 'broadcast',
+                scope: 'principal',
+                principalRef: {
+                    applicationId: event.applicationId,
+                    workspaceId: event.workspaceId,
+                    principalId: event.principalId
+                }
+            },
             ordering: { epoch: 0, seq: event.snapshotVersion },
             payload: { typeId: 'client-state.event' }
         });
         const database = createResourceInboxDatabase();
         await runInTransaction(database.sql, async (transaction) => {
-            await writeClientStateSync(transaction, computed, {
-                senderId: 'server-1',
-                principalAudienceScope: 'world'
-            });
+            await writeClientStateSync(transaction, computed, 'server-1');
         });
         expect(database.rows.get(toRowKey(entry))?.ri_resource).toBe(entry.resource);
         expect(database.nestedBeginCalls).toBe(0);
@@ -383,7 +371,7 @@ describe('direct resource outbox writes', () => {
             senderId: expect.any(String),
             data: {
                 kind: 'group-revision',
-                sourceGroupStateRevision: groupSnapshot.stateRevision,
+                sourceGroupStateCausalRevision: groupSnapshot.causalRevision,
                 groupSnapshot,
                 requestedAtEpochMs: CREATED_AT_EPOCH_MS
             }
@@ -804,7 +792,6 @@ function createResilience(): ResilienceDto {
 function createGroupSnapshot(): GroupSnapshot {
     const audit = createAuditStamp();
     return {
-        stateRevision: 7,
         causalRevision: { groupRevision: 4, presenceRevision: 3 },
         group: createTestGroup({
             applicationId: 'app-1',

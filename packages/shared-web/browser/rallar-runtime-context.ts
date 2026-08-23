@@ -12,7 +12,6 @@ import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readGroupId } from '@shared/api/group-client-views.ts';
 import type { ApplicationId, GroupRef, GroupSnapshot, WorkspaceId } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
-import type { RtcGroupFormationMode } from '@shared/rtc/group-formation-mode.ts';
 import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
 
 export type RallarBrowserConnectStatus = 'idle' | 'connecting' | 'connected';
@@ -34,7 +33,6 @@ export type RallarBrowserRuntimeDefaults = Readonly<{
         dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
         maxPeerConnections?: number;
         rttReportingDegreeLimit?: number;
-        groupFormationMode?: RtcGroupFormationMode;
         bootstrapDegree?: number;
     }>;
     messages?: Readonly<{
@@ -215,9 +213,6 @@ export function createRallarBrowserFacadeRuntimeContext(
             const rttReportingDegreeLimit = options.rttReportingDegreeLimit !== undefined
                 ? options.rttReportingDegreeLimit
                 : state.defaults?.rtc?.rttReportingDegreeLimit;
-            const groupFormationMode = options.groupFormationMode !== undefined
-                ? options.groupFormationMode
-                : state.defaults?.rtc?.groupFormationMode;
             const bootstrapDegree = options.bootstrapDegree !== undefined
                 ? options.bootstrapDegree
                 : state.defaults?.rtc?.bootstrapDegree;
@@ -229,7 +224,6 @@ export function createRallarBrowserFacadeRuntimeContext(
                 dataChannelLanes === undefined &&
                 maxPeerConnections === undefined &&
                 rttReportingDegreeLimit === undefined &&
-                groupFormationMode === undefined &&
                 bootstrapDegree === undefined
             ) {
                 return options;
@@ -245,7 +239,6 @@ export function createRallarBrowserFacadeRuntimeContext(
                 ...(rttReportingDegreeLimit !== undefined
                     ? { rttReportingDegreeLimit }
                     : {}),
-                ...(groupFormationMode !== undefined ? { groupFormationMode } : {}),
                 ...(bootstrapDegree !== undefined ? { bootstrapDegree } : {})
             };
         },

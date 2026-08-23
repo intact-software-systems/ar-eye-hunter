@@ -309,7 +309,7 @@ describe('API-v1 state-write recipe evidence', () => {
             result_status: 'COMPLETED',
             result_resource: JSON.stringify({
                 status: 'ok',
-                result: { right: { snapshot: {}, event: null } }
+                result: { snapshot: {}, event: null }
             }),
             ri_resource: JSON.stringify({
                 payload: {

@@ -42,7 +42,7 @@ export function decideGroupSnapshotCausalRevision(
         return 'duplicate';
     }
 
-    throw new StateSnapshotRevisionConflictError('Group', incoming.stateRevision);
+    throw new StateSnapshotRevisionConflictError('Group', incoming.group.snapshotVersion);
 }
 
 /**

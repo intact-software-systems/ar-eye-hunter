@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { computeGroupPresenceSummaryEntry, type GroupPresenceSummaryWorkData } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
+import { computeGroupPresenceSummaryEntry, type GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 export type HandlerFinalizedSummaryScenario = Readonly<{

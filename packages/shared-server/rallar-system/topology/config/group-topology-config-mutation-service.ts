@@ -1,7 +1,6 @@
 import type { GroupStateRepository } from '../../group-state/persistence/group-state-repository.ts';
 import { resolveOverrideExpiresAtEpochMs } from './group-topology-config.ts';
 import type { GroupTopologyServerOptions } from './group-topology-config.ts';
-import type { GroupTopologyConfigGenerationReadiness } from './maintenance/group-topology-config-generation-readiness.ts';
 import { computeTopologyConfigMutation } from './mutation/compute-topology-config-mutation.ts';
 import type * as mutationContracts from './mutation/group-topology-config-mutation-contracts.ts';
 import { readTopologyConfigMutation } from './mutation/read-topology-config-mutation.ts';
@@ -13,7 +12,6 @@ import { validateTopologyConfigMutation } from './mutation/validate-topology-con
 import type { GroupTopologyConfigRepository } from './persistence/group-topology-config-repository.ts';
 
 export interface GroupTopologyConfigMutationServiceDependencies {
-    readonly readiness: Pick<GroupTopologyConfigGenerationReadiness, 'ensure'>;
     readonly configRepository: GroupTopologyConfigRepository;
     readonly groupStateRepository: GroupStateRepository;
     readonly serverDefaults?: GroupTopologyServerOptions;
@@ -62,7 +60,6 @@ export class GroupTopologyConfigMutationService {
     async read(
         command: mutationContracts.GroupTopologyConfigMutationCommand
     ): Promise<GroupTopologyConfigMutationAttemptRead> {
-        await this.dependencies.readiness.ensure(command.aggregateRef);
         return {
             state: await readTopologyConfigMutation(
                 this.dependencies.configRepository,

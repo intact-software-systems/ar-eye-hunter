@@ -251,7 +251,6 @@ function shuffleDeterministically<T>(values: readonly T[]): readonly T[] {
 function createGroupSnapshot(input: CreateGroupSnapshotInput): GroupSnapshot {
     const { memberSessionIds, version } = input;
     return {
-        stateRevision: version,
         causalRevision: {
             groupRevision: version,
             presenceRevision: version

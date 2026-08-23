@@ -8,7 +8,7 @@ import type {
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RuntimeStateEntryValue } from '../../../../runtime-state/RuntimeStateJsonStore.ts';
 import type * as persistence from '../../../group-state/persistence/group-state-persistence-contracts.ts';
-import type { ComputedRtcTopologyOutbox } from '../../../services/rtc-topology-outbox-entry.ts';
+import type { ComputedRtcTopologyOutbox } from '../../mutation/rtc-topology-outbox-entry.ts';
 import type { GroupTopologyServerOptions } from '../group-topology-config.ts';
 
 export type {

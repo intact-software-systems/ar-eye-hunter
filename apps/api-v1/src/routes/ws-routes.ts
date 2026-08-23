@@ -1,19 +1,15 @@
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { type RegisterAuthorisedWsClientInput } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
+import { type ClientAuthorisedWsSessionConnectAppInboxPayload } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-contracts.ts';
 import type {
     AppClientInboxService
 } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
-import type {
-    GroupPresenceSessionCleanupAppInboxPayload
-} from '@shared-server/rallar-system/services/app-group-ws-session-lifecycle.ts';
-import type {
-    ClientAuthorisedWsSessionConnectAppInboxPayload
-} from '@shared-server/rallar-system/services/AppClientInboxService.ts';
 import {
     toAuthorisedWsClientConnectEnqueue,
     type ToAuthorisedWsClientDisconnectEnqueueInput
-} from '@shared-server/rallar-system/services/authorised-ws-client-app-inbox.ts';
-import type { RegisterAuthorisedWsClientInput } from '@shared-server/rallar-system/services/client-state-service.ts';
-import type { RallarWsLifecycleCloseInput } from '@shared-server/rallar-system/services/ws-lifecycle-service.ts';
+} from '@shared-server/rallar-system/client-state/inbox/authorised-ws-client-app-inbox.ts';
+import { type GroupPresenceSessionCleanupAppInboxPayload } from '@shared-server/rallar-system/group-state/presence/group-presence-session-cleanup-app-inbox-payload.ts';
+import type { RallarWsLifecycleCloseInput } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
 import { ConnectionContext, type JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { Hono, type Context } from 'jsr:@hono/hono@4.11.9';
 import {

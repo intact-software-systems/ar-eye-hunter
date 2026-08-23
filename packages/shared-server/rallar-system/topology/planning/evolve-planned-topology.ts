@@ -11,7 +11,7 @@ import { insertToMesh } from '@shared-graph/mesh/insert-mesh-algs.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot, RallarRtcTopologyKind } from '@shared/api/overlay-topology.ts';
 
-import { compareRtcTopologyIdentifiers } from '../../rtc-topology-identifiers.ts';
+import { compareRtcTopologyIdentifiers } from '../persistence/rtc-topology-identifiers.ts';
 import { computeCanonicalTopologyPairWeight } from './canonical-topology-planning-input.ts';
 
 export interface EvolvePlannedTopologyInput {

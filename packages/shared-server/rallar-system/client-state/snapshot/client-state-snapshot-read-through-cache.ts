@@ -1,6 +1,5 @@
 import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
 import { readClientStateRevision, readClientVersion } from '@shared/api/group-client-views.ts';
-import { DEFAULT_STATE_WORKSPACE_ID } from '@shared/api/state-types.ts';
 import { ObservableLoanedRepository } from '@shared/cache/ObservableLoanedRepository.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import {
@@ -11,7 +10,7 @@ import {
     toClientStateSnapshotRepositoryKey as toSharedClientStateSnapshotRepositoryKey
 } from '@shared/repository/client-state-snapshots-repository.ts';
 import type { StateSnapshotObservation } from '@shared/repository/state-snapshot-revision.ts';
-import { isClientSnapshotPresenceFresh, type RallarSnapshotPresenceClock } from '../../snapshot-presence.ts';
+import { isClientSnapshotPresenceFresh, type RallarSnapshotPresenceClock } from '../../presence/snapshot-presence.ts';
 import type { ClientStateRepository } from '../persistence/client-state-repository.ts';
 
 const DEFAULT_TTL_MS = 60_000;
@@ -32,8 +31,7 @@ export class ClientStateSnapshotNotFoundError extends Error {
     readonly ref: ClientPrincipalRef;
 
     constructor(ref: ClientPrincipalRef) {
-        const workspaceId = ref.workspaceId ?? '';
-        super(`Client snapshot not found for ${ref.applicationId}/${workspaceId}/${ref.principalId}`);
+        super(`Client snapshot not found for ${ref.applicationId}/${ref.workspaceId}/${ref.principalId}`);
         this.ref = ref;
         this.name = 'ClientStateSnapshotNotFoundError';
     }
@@ -194,7 +192,7 @@ function toClientPrincipalRef(key: string): ClientPrincipalRef {
 
     return {
         applicationId,
-        workspaceId: workspaceId ?? DEFAULT_STATE_WORKSPACE_ID,
+        workspaceId,
         principalId
     };
 }

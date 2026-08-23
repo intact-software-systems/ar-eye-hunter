@@ -12,16 +12,16 @@ import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { createResourceEntry } from './pglite-queue-crdt-test-runtime.ts';
 import { createGroupStateEvent } from './pglite-state-mutation-test-runtime.ts';
 
-Deno.test('PSql group event reads fail closed on a legacy wrong-scope payload', async () => {
+Deno.test('PSql group event reads fail closed on a predecessor wrong-scope payload', async () => {
     await withPGliteSql(async (sql) => {
         const repository = new PSqlGroupStateEventRepository(sql);
         const expectedRef = {
-            applicationId: 'legacy-group-event-app',
+            applicationId: 'predecessor-group-event-app',
             workspaceId: 'main',
-            groupId: 'legacy-group-event-group'
+            groupId: 'predecessor-group-event-group'
         };
         const corruptEvent = createGroupStateEvent({
-            eventId: 'legacy-event',
+            eventId: 'predecessor-event',
             occurredAtEpochMs: 1_000,
             snapshotVersion: 1,
             eventType: 'group-updated',
@@ -56,20 +56,20 @@ Deno.test('PSql group event reads fail closed on a legacy wrong-scope payload', 
 });
 
 Deno.test(
-    'PSql group event reads normalize the f135 legacy contract at the storage boundary',
+    'PSql group event reads reject a predecessor incomplete contract',
     async () => {
         await withPGliteSql(async (sql) => {
             const repository = new PSqlGroupStateEventRepository(sql);
             const ref = {
-                applicationId: 'legacy-group-event-normalization-app',
+                applicationId: 'predecessor-group-event-app',
                 workspaceId: 'main',
-                groupId: 'legacy-group-event-normalization-group'
+                groupId: 'predecessor-group-event-group'
             };
             const eventType: GroupEvent['eventType'] = 'group-updated';
-            const legacyEvent = {
+            const predecessorEvent = {
                 applicationId: ref.applicationId,
                 groupId: ref.groupId,
-                eventId: 'legacy-normalized-event',
+                eventId: 'predecessor-incomplete-event',
                 eventType,
                 snapshotVersion: 7,
                 occurredAtEpochMs: 1_000,
@@ -81,34 +81,30 @@ Deno.test(
         snapshot_version, occurred_at_epoch_ms, event_json
       ) values (
         ${ref.applicationId}, ${groupEventWorkspaceKey(ref.workspaceId)},
-        ${ref.groupId}, ${legacyEvent.eventId}, ${legacyEvent.eventType},
-        ${legacyEvent.snapshotVersion}, ${legacyEvent.occurredAtEpochMs},
-        ${JSON.stringify(legacyEvent)}
+        ${ref.groupId}, ${predecessorEvent.eventId}, ${predecessorEvent.eventType},
+        ${predecessorEvent.snapshotVersion}, ${predecessorEvent.occurredAtEpochMs},
+        ${JSON.stringify(predecessorEvent)}
       )
     `;
 
-            const expected: GroupEvent = {
-                ...legacyEvent,
-                workspaceId: ref.workspaceId,
-                causalRevision: { groupRevision: 7, presenceRevision: 0 },
-                actor: { kind: 'principal', principalId: 'alice' },
-                reason: null,
-                traceId: null,
-                requestId: null,
-                payload: {}
-            };
-            assert.deepEqual(await repository.listGroupEvents(ref), [expected]);
-            assert.deepEqual(await repository.listRecentGroupEvents(ref), [expected]);
-            assert.deepEqual(
-                (await repository.listGroupEventPage(ref, { limit: 1 })).events,
-                [expected]
-            );
+            for (
+                const read of [
+                    () => repository.listGroupEvents(ref),
+                    () => repository.listRecentGroupEvents(ref),
+                    () => repository.listGroupEventPage(ref, { limit: 1 })
+                ]
+            ) {
+                await assert.rejects(read, (error) =>
+                    error instanceof Error &&
+                    'code' in error &&
+                    error.code === 'group-state-event-repository-invariant-corruption');
+            }
         });
     }
 );
 
 Deno.test(
-    'PSql group event reads reject explicit null legacy identities and payloads',
+    'PSql group event reads reject explicit null predecessor identities and payloads',
     async () => {
         await withPGliteSql(async (sql) => {
             const repository = new PSqlGroupStateEventRepository(sql);
@@ -119,15 +115,15 @@ Deno.test(
                 ] as const
             ) {
                 const ref = {
-                    applicationId: 'legacy-group-event-null-app',
+                    applicationId: 'predecessor-group-event-null-app',
                     workspaceId: 'main',
-                    groupId: `legacy-group-event-null-${suffix}`
+                    groupId: `predecessor-group-event-null-${suffix}`
                 };
                 const event = {
                     applicationId: ref.applicationId,
                     workspaceId: ref.workspaceId,
                     groupId: ref.groupId,
-                    eventId: `legacy-null-${suffix}`,
+                    eventId: `predecessor-null-${suffix}`,
                     eventType: 'group-updated',
                     snapshotVersion: 1,
                     occurredAtEpochMs: 1_000,

@@ -134,7 +134,7 @@ describe('Rallar companion coverage boundaries', () => {
         expect(auth?.testFiles).toEqual(
             expect.arrayContaining([
                 'packages/tests/shared-web/rallar-auth-facade.test.ts',
-                'packages/tests/shared-web/rallar-auth-session-compat.test.ts',
+                'packages/tests/shared-web/rallar-auth-session-contract.test.ts',
                 'packages/tests/shared-web/rallar-startup-lifecycle.test.ts'
             ])
         );

@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { groupStateGroupStorageKey, groupStatePresenceAdmissionStorageKey } from '@shared-server/rallar-system/group-state-storage-keys.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import {
+    groupStateGroupStorageKey,
+    groupStatePresenceAdmissionStorageKey
+} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import { createTestGroupStateService } from '../group-state-test-runtime.ts';
 import { ApplyingGuardedBatchRepository, OrderedGroupEventStore } from './group-mutation-test-runtime.ts';
 
@@ -192,7 +195,6 @@ function createService({
     let generatedId = 0;
     return createTestGroupStateService({
         runtimeRepository: runtime,
-        formationDamping: 'damped',
         createGroupStateEventStore: () => eventStore,
         now: () => nowEpochMs,
         randomId: () => `${instanceId}-id-${++generatedId}`,

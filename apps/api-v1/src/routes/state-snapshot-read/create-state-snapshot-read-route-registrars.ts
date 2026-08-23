@@ -1,5 +1,7 @@
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
+import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import type {
@@ -8,9 +10,7 @@ import type {
 import type {
     GroupStateInboxDurableResult
 } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-result.ts';
-import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
-import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { hydrateStateSyncSnapshotCaches } from '@shared-server/rallar-system/state-sync-cache-hydration.ts';
+import { hydrateStateSyncSnapshotCaches } from '@shared-server/rallar-system/state-sync/state-sync-cache-hydration.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
@@ -26,11 +26,9 @@ export interface ApiV1StateSnapshotRouteRuntime {
         ApiV1Runtime['appClientInboxService'],
         'processAuthenticatedEntryUntilCompletion'
     >;
-    readonly appGroupInboxService: Pick<
-        ApiV1Runtime['appGroupInboxService'],
-        | 'processAuthenticatedGroupEntryUntilCompletionResult'
-        | 'processAuthenticatedTopologyEntryUntilCompletionResult'
-        | 'processAuthenticatedHttpTopologyEntryUntilCompletionResult'
+    readonly groupStateInboxService: Pick<
+        ApiV1Runtime['groupStateInboxService'],
+        'processAuthenticatedGroupEntryUntilCompletionResult'
     >;
     readonly clientStateService: Pick<
         ApiV1Runtime['clientStateService'],
@@ -94,7 +92,7 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
                     authority: GroupStateRouteAuthSession,
                     enqueue: AuthenticatedGroupMutationEnqueue
                 ): Promise<GroupStateInboxDurableResult> => {
-                    const result = await runtime.appGroupInboxService
+                    const result = await runtime.groupStateInboxService
                         .processAuthenticatedGroupEntryUntilCompletionResult(
                             enqueue,
                             authority

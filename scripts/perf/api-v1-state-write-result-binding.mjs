@@ -8,10 +8,9 @@ export function isValidPersistedResult(entry, command, binding) {
     const result = entry.durableResult;
     if (command.kind === 'profile-instance') {
         return entry.commandType.startsWith('CLIENT_') && hasExactKeys(result, ['status', 'result']) &&
-            hasExactKeys(result.result, ['right']) && result.status === 'ok' &&
-            isObject(result.result?.right) && isObject(result.result.right.snapshot) &&
-            hasExactKeys(result.result.right, ['snapshot', 'event']) &&
-            matchesStateResult(result.result.right, binding, 'principal');
+            result.status === 'ok' && hasExactKeys(result.result, ['snapshot', 'event']) &&
+            isObject(result.result.snapshot) &&
+            matchesStateResult(result.result, binding, 'principal');
     }
     if (command.kind.startsWith('presence-')) {
         return entry.commandType.startsWith('GROUP_PRESENCE_') &&
@@ -29,11 +28,9 @@ export function isValidPersistedResult(entry, command, binding) {
             matchesTopologyResult(entry.commandType, result, binding);
     }
     return entry.commandType.startsWith('GROUP_') &&
-        hasExactKeys(result, ['status', 'result']) && hasExactKeys(result.result, ['right']) &&
-        ['ok', 'created'].includes(result.status) && isObject(result.result?.right) &&
-        hasExactKeys(result.result.right, ['snapshot', 'event']) &&
-        isObject(result.result.right.snapshot) &&
-        matchesStateResult(result.result.right, binding, 'group');
+        hasExactKeys(result, ['status', 'result']) && ['ok', 'created'].includes(result.status) &&
+        hasExactKeys(result.result, ['snapshot', 'event']) && isObject(result.result.snapshot) &&
+        matchesStateResult(result.result, binding, 'group');
 }
 
 export function validateReceiptResultBindings(receipt, command, path, index, errors) {
@@ -59,10 +56,10 @@ export function validateReceiptResultBindings(receipt, command, path, index, err
                 'commandHash',
                 'outcome',
                 'attemptCount',
-                'outboxId',
                 'outboxIds',
                 'aggregateRef',
                 'stateRevision',
+                'causalRevision',
                 'snapshotVersion',
                 'acceptedVersion',
                 'operation',
@@ -79,11 +76,11 @@ export function validateReceiptResultBindings(receipt, command, path, index, err
             !/^sha256:[0-9a-f]{64}$/.test(binding.commandHash) ||
             typeof binding.outcome !== 'string' || binding.outcome.length === 0 ||
             !Number.isSafeInteger(binding.attemptCount) || binding.attemptCount < 1 ||
-            !(binding.outboxId === null || typeof binding.outboxId === 'string') ||
             !isDenseStringArray(binding.outboxIds) ||
             new Set(binding.outboxIds).size !== binding.outboxIds.length ||
             !isAggregateRef(binding.aggregateRef, command?.kind === 'profile-instance') ||
             !nullableNonNegativeInteger(binding.stateRevision) ||
+            !validAuthorityRevisionBinding(binding, command?.kind) ||
             !nullableNonNegativeInteger(binding.snapshotVersion) ||
             !nullableNonNegativeInteger(binding.acceptedVersion) ||
             !validTopologyBinding(binding, command?.kind === 'topology-source') ||
@@ -106,8 +103,7 @@ function validTopologyBinding(binding, topology) {
             'acceptedUpdatedAtEpochMs',
             'acceptedExpiresAtEpochMs',
             'acceptedConfig',
-            'acceptedCausalRevision',
-            'outboxId'
+            'acceptedCausalRevision'
         ].every((field) => binding[field] === null);
     }
     const put = binding.operation === 'putConfig' || binding.operation === 'putOverride';
@@ -123,8 +119,7 @@ function validTopologyBinding(binding, topology) {
         nullableNonNegativeInteger(binding.acceptedExpiresAtEpochMs) &&
         (binding.acceptedConfig === null || validTopologyConfig(binding.acceptedConfig)) &&
         (binding.acceptedCausalRevision === null ||
-            validAcceptedCausalRevision(binding.acceptedCausalRevision)) &&
-        (binding.outboxId === null || binding.outboxIds.includes(binding.outboxId));
+            validAcceptedCausalRevision(binding.acceptedCausalRevision));
     if (!validBase) {
         return false;
     }
@@ -138,9 +133,9 @@ function validTopologyBinding(binding, topology) {
     ].join(':');
     const effectMatches = binding.outcome === 'applied'
         ? binding.acceptedVersion > 0 && binding.acceptedStorageRevision !== null &&
-            validCausal && binding.outboxId === expectedOutboxId &&
-            binding.outboxIds.length === 1 && binding.outboxIds[0] === binding.outboxId
-        : causal === null && binding.outboxId === null && binding.outboxIds.length === 0 &&
+            validCausal && binding.outboxIds.length === 1 &&
+            binding.outboxIds[0] === expectedOutboxId
+        : causal === null && binding.outboxIds.length === 0 &&
             (binding.acceptedVersion !== 0 || binding.acceptedStorageRevision === null);
     if (!effectMatches) {
         return false;
@@ -153,7 +148,6 @@ function validTopologyBinding(binding, topology) {
         binding.acceptedCreatedAtEpochMs !== null && binding.acceptedUpdatedAtEpochMs !== null &&
         binding.acceptedCreatedAtEpochMs <= binding.acceptedUpdatedAtEpochMs &&
         validTopologyConfig(binding.acceptedConfig) && validAcceptedCausalRevision(causal) &&
-        causal.stateRevision === binding.stateRevision &&
         causal.snapshotVersion === binding.snapshotVersion &&
         (override
             ? binding.acceptedExpiresAtEpochMs > binding.acceptedUpdatedAtEpochMs
@@ -176,12 +170,18 @@ function isValidReceiptIdentity(command, binding) {
         : /^group-app-inbox:[0-9a-f]{64}$/.test(binding.receiptId);
 }
 
-function matchesStateResult(right, binding, aggregateField) {
-    const snapshot = right.snapshot;
-    const event = right.event;
+function matchesStateResult(stateResult, binding, aggregateField) {
+    const snapshot = stateResult.snapshot;
+    const event = stateResult.event;
+    if (!isObject(snapshot)) {
+        return false;
+    }
+    const revisionMatches = aggregateField === 'principal'
+        ? snapshot.stateRevision === binding.stateRevision
+        : sameJson(snapshot.causalRevision, binding.causalRevision);
     if (
-        !isObject(snapshot) || !sameAggregateRef(snapshot[aggregateField], binding.aggregateRef) ||
-        snapshot.stateRevision !== binding.stateRevision ||
+        !sameAggregateRef(snapshot[aggregateField], binding.aggregateRef) ||
+        !revisionMatches ||
         snapshot[aggregateField].snapshotVersion !== binding.snapshotVersion
     ) {
         return false;
@@ -200,7 +200,7 @@ function matchesEmbeddedReceipt(receipt, binding) {
         receipt.outcome === binding.outcome && receipt.attemptCount === binding.attemptCount &&
         sameStringArray(receipt.outboxIds, binding.outboxIds) &&
         sameAggregateRef(receipt.aggregateRef, binding.aggregateRef) &&
-        receipt.stateRevision === binding.stateRevision &&
+        sameJson(receipt.causalRevision, binding.causalRevision) &&
         receipt.snapshotVersion === binding.snapshotVersion && receipt.eventId === binding.eventId;
 }
 
@@ -240,7 +240,6 @@ const TOPOLOGY_RECEIPT_KEYS = [
     'acceptedConfig',
     'acceptedCausalRevision',
     'eventId',
-    'outboxId',
     'outboxIds'
 ];
 
@@ -248,7 +247,7 @@ function matchesTopologyReceipt(receipt, binding) {
     return receipt.commandId === binding.receiptId && receipt.requestId === binding.requestId &&
         receipt.commandHash === binding.commandHash &&
         receipt.outcome === binding.outcome && receipt.attemptCount === binding.attemptCount &&
-        receipt.outboxId === binding.outboxId && sameStringArray(receipt.outboxIds, binding.outboxIds) &&
+        sameStringArray(receipt.outboxIds, binding.outboxIds) &&
         sameAggregateRef(receipt.groupRef, binding.aggregateRef) &&
         receipt.operation === binding.operation && receipt.target === binding.target &&
         receipt.acceptedVersion === binding.acceptedVersion &&
@@ -259,8 +258,6 @@ function matchesTopologyReceipt(receipt, binding) {
         sameJson(receipt.acceptedConfig, binding.acceptedConfig) &&
         sameJson(receipt.acceptedCausalRevision, binding.acceptedCausalRevision) &&
         receipt.eventId === binding.eventId &&
-        (binding.stateRevision === null ||
-            receipt.acceptedCausalRevision?.stateRevision === binding.stateRevision) &&
         (binding.snapshotVersion === null ||
             receipt.acceptedCausalRevision?.snapshotVersion === binding.snapshotVersion);
 }
@@ -303,7 +300,6 @@ function validTopologyConfig(value) {
 function validAcceptedCausalRevision(value) {
     if (
         !hasExactKeys(value, [
-            'stateRevision',
             'causalRevision',
             'snapshotVersion',
             'metadataVersion',
@@ -317,7 +313,6 @@ function validAcceptedCausalRevision(value) {
         return false;
     }
     return [
-        value.stateRevision,
         value.snapshotVersion,
         value.metadataVersion,
         value.rosterVersion,
@@ -325,6 +320,24 @@ function validAcceptedCausalRevision(value) {
         value.causalRevision.groupRevision,
         value.causalRevision.presenceRevision
     ].every((entry) => Number.isSafeInteger(entry) && entry >= 0);
+}
+
+function validAuthorityRevisionBinding(binding, commandKind) {
+    if (commandKind === 'profile-instance') {
+        return Number.isSafeInteger(binding.stateRevision) && binding.stateRevision >= 0 &&
+            binding.causalRevision === null;
+    }
+    if (commandKind === 'topology-source') {
+        return binding.stateRevision === null && binding.causalRevision === null;
+    }
+    return binding.stateRevision === null && validGroupCausalRevision(binding.causalRevision);
+}
+
+function validGroupCausalRevision(value) {
+    return isObject(value) && hasExactKeys(value, ['groupRevision', 'presenceRevision']) &&
+        [value.groupRevision, value.presenceRevision].every(
+            (entry) => Number.isSafeInteger(entry) && entry >= 0
+        );
 }
 
 function sameJson(left, right) {

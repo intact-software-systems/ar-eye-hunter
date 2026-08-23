@@ -3,7 +3,7 @@ import {
     recordRallarTiming,
     type RallarTimingEvent,
     type RallarTimingSink
-} from '@shared-server/rallar-system/services/timing.ts';
+} from '@shared-server/rallar-system/observability/timing.ts';
 
 export interface StateWriteSqlMetrics {
     statements: number;
@@ -43,32 +43,32 @@ export function createInstrumentedStateWriteSql({
             (result) => {
                 const durationMs = performance.now() - startedAt;
                 observeSql({ metrics, category, result, durationMs });
-                recordRallarTiming(
-                    timing,
-                    {
+                recordRallarTiming({
+                    sink: timing,
+                    event: {
                         component: 'state-write-benchmark-sql',
                         operation: category,
                         details: { statement: firstSqlKeyword(queryText) }
                     },
-                    'ok',
+                    status: 'ok',
                     durationMs
-                );
+                });
                 return result;
             },
             (error) => {
                 const durationMs = performance.now() - startedAt;
                 observeSql({ metrics, category, result: undefined, durationMs });
-                recordRallarTiming(
-                    timing,
-                    {
+                recordRallarTiming({
+                    sink: timing,
+                    event: {
                         component: 'state-write-benchmark-sql',
                         operation: category,
                         details: { statement: firstSqlKeyword(queryText) }
                     },
-                    'error',
+                    status: 'error',
                     durationMs,
                     error
-                );
+                });
                 throw error;
             }
         );
@@ -83,15 +83,15 @@ export function createInstrumentedStateWriteSql({
         finally {
             const durationMs = performance.now() - startedAt;
             metrics.transactionDurationMs += durationMs;
-            recordRallarTiming(
-                timing,
-                {
+            recordRallarTiming({
+                sink: timing,
+                event: {
                     component: 'state-write-benchmark-phase',
                     operation: 'transaction'
                 },
-                'ok',
+                status: 'ok',
                 durationMs
-            );
+            });
         }
     };
     const savepoint = (sql as PSqlSql & { savepoint?: PSqlSavepointMethod; }).savepoint;

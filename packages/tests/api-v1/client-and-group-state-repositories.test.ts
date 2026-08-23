@@ -1,12 +1,15 @@
 import {
+    ClientStateRepository,
+    ClientStateRepositoryInvariantCorruptionError
+} from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
+import {
     groupStateGroupStorageKey,
     groupStateMemberStorageKey,
     groupStatePresenceSessionStorageKey
-} from '@shared-server/rallar-system/group-state-storage-keys.ts';
-import { ClientStateRepository, ClientStateRepositoryInvariantCorruptionError } from '@shared-server/rallar-system/repositories/ClientStateRepository.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { InMemoryClientStateEventStore, InMemoryGroupStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
-import { readStateEventListQuery } from '@shared-server/rallar-system/state-event-listing.ts';
+} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { readStateEventListQuery } from '@shared-server/rallar-system/state-events/state-event-listing.ts';
+import { InMemoryClientStateEventStore, InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import type { RuntimeStateEntry, RuntimeStateTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import type { AuditStamp as ClientAuditStamp, ClientEvent, ClientInstance, ClientPrincipal, ClientSession } from '@shared/api/client-types.ts';
 import type { AuditStamp as GroupAuditStamp, Group, GroupEvent, GroupMember, GroupPresenceSession, GroupPresenceSummary } from '@shared/api/group-types.ts';
@@ -38,7 +41,7 @@ describe('ClientStateRepository', () => {
             events: new InMemoryClientStateEventStore()
         });
         const canonical = createClientPrincipal();
-        const legacy = {
+        const noncanonical = {
             applicationId: canonical.applicationId,
             principalId: canonical.principalId,
             username: canonical.username,
@@ -54,7 +57,7 @@ describe('ClientStateRepository', () => {
         await repository.upsert(
             'client-state:principals',
             'app=app-1:ws=workspace-1:principal=principal-1',
-            JSON.stringify(legacy),
+            JSON.stringify(noncanonical),
             NEVER_EXPIRE_AT_TIMESTAMP
         );
 
@@ -528,40 +531,42 @@ async function insertClientSession(
 }
 
 describe('GroupStateRepository', () => {
-    it('normalizes f135 legacy group rows and preserves their raw authority fence', async () => {
+    it('rejects group rows that omit current identity and audit fields', async () => {
         const repository = new FakeRuntimeStateRepository();
         const groupRepository = new GroupStateRepository(repository);
         const ref = {
             applicationId: 'app-1',
             workspaceId: 'workspace-1',
-            groupId: 'legacy-group'
+            groupId: 'noncanonical-group'
         };
-        const legacyAudit = { atEpochMs: 1, byServiceId: 'seed' };
-        const legacyGroup = {
-            ...createTestGroup({
-                applicationId: ref.applicationId,
-                groupId: ref.groupId,
-                displayName: 'Legacy group',
-                activeMemberCount: 1,
-                ownerPrincipalId: 'owner',
-                snapshotVersion: 1,
-                metadataVersion: 1,
-                rosterVersion: 1,
-                presenceVersion: 0
-            }),
-            created: legacyAudit,
-            updated: legacyAudit
+        const noncanonicalAudit = { atEpochMs: 1, byServiceId: 'seed' };
+        const { workspaceId: _workspaceId, ...groupWithoutWorkspace } = createTestGroup({
+            applicationId: ref.applicationId,
+            workspaceId: ref.workspaceId,
+            groupId: ref.groupId,
+            displayName: 'Noncanonical group',
+            activeMemberCount: 1,
+            ownerPrincipalId: 'owner',
+            snapshotVersion: 1,
+            metadataVersion: 1,
+            rosterVersion: 1,
+            presenceVersion: 0
+        });
+        const noncanonicalGroup = {
+            ...groupWithoutWorkspace,
+            created: noncanonicalAudit,
+            updated: noncanonicalAudit
         };
-        const legacyMember = {
+        const noncanonicalMember = {
             applicationId: ref.applicationId,
             groupId: ref.groupId,
             principalId: 'owner',
             role: 'owner',
             status: 'active',
-            joined: legacyAudit,
-            updated: legacyAudit
+            joined: noncanonicalAudit,
+            updated: noncanonicalAudit
         };
-        const legacySession = {
+        const noncanonicalSession = {
             applicationId: ref.applicationId,
             groupId: ref.groupId,
             principalId: 'owner',
@@ -575,13 +580,13 @@ describe('GroupStateRepository', () => {
         await repository.upsert(
             'group-state:groups',
             groupStateGroupStorageKey(ref),
-            JSON.stringify(legacyGroup),
+            JSON.stringify(noncanonicalGroup),
             NEVER_EXPIRE_AT_TIMESTAMP
         );
         await repository.upsert(
             'group-state:members',
             groupStateMemberStorageKey({ ...ref, principalId: 'owner' }),
-            JSON.stringify(legacyMember),
+            JSON.stringify(noncanonicalMember),
             NEVER_EXPIRE_AT_TIMESTAMP
         );
         await repository.upsert(
@@ -590,35 +595,17 @@ describe('GroupStateRepository', () => {
                 ...ref,
                 sessionId: 'session-1'
             }),
-            JSON.stringify(legacySession),
+            JSON.stringify(noncanonicalSession),
             NEVER_EXPIRE_AT_TIMESTAMP
         );
 
-        await expect(groupRepository.findGroup(ref)).resolves.toMatchObject({
-            ...ref,
-            slug: null,
-            archived: null,
-            deleted: null,
-            created: createGroupAuditStamp(1)
-        });
+        await expect(groupRepository.findGroup(ref)).rejects.toThrow();
         await expect(groupRepository.findMember({ ...ref, principalId: 'owner' }))
-            .resolves.toMatchObject({ ...ref, status: 'active' });
+            .rejects.toThrow();
         await expect(groupRepository.findPresenceSession({
             ...ref,
             sessionId: 'session-1'
-        })).resolves.toMatchObject({
-            ...ref,
-            status: 'active',
-            disconnectedAtEpochMs: null,
-            disconnectReason: null
-        });
-
-        const guarded = await groupRepository.readSnapshotWithAuthorityGuard(ref);
-        if (!guarded) {
-            throw new Error('Expected legacy authoritative snapshot');
-        }
-        await expect(groupRepository.advanceAuthorityFence(guarded.authorityGuard))
-            .resolves.toEqual({ status: 'applied', revision: 1 });
+        })).rejects.toThrow();
     });
 
     it('rejects explicit null and wrong-slot persisted group identities', async () => {
@@ -705,7 +692,6 @@ describe('GroupStateRepository', () => {
         });
 
         expect(snapshot).toEqual({
-            stateRevision: 9,
             causalRevision: {
                 groupRevision: 6,
                 presenceRevision: 3
@@ -728,7 +714,7 @@ describe('GroupStateRepository', () => {
         expect(eventStore.listEventsCalls).toBe(1);
     });
 
-    it('exposes the canonical group revision without changing snapshotVersion', async () => {
+    it('exposes the canonical causal group revision without changing snapshotVersion', async () => {
         const repository = new FakeRuntimeStateRepository();
         const groupRepository = new GroupStateRepository(repository, {
             events: new InMemoryGroupStateEventStore()
@@ -745,10 +731,10 @@ describe('GroupStateRepository', () => {
         const listed = await groupRepository.listSnapshots(group);
         const page = await groupRepository.listSnapshotsPage(group, { limit: 10 });
 
-        expect(direct?.stateRevision).toBe(6);
+        expect(direct?.causalRevision.groupRevision).toBe(6);
         expect(direct?.group.snapshotVersion).toBe(group.snapshotVersion);
-        expect(listed[0]?.stateRevision).toBe(6);
-        expect(page.snapshots[0]?.stateRevision).toBe(6);
+        expect(listed[0]?.causalRevision.groupRevision).toBe(6);
+        expect(page.snapshots[0]?.causalRevision.groupRevision).toBe(6);
     });
 
     it('assigns distinct causal revisions to concurrent group writes with one domain version', async () => {
@@ -766,7 +752,7 @@ describe('GroupStateRepository', () => {
         ]);
 
         const snapshot = await groupRepository.readSnapshot(group);
-        expect(snapshot?.stateRevision).toBe(6);
+        expect(snapshot?.causalRevision.groupRevision).toBe(6);
         expect(snapshot?.group.snapshotVersion).toBe(group.snapshotVersion);
     });
 
@@ -797,7 +783,7 @@ describe('GroupStateRepository', () => {
         const snapshot = await groupRepository.readSnapshot(group);
 
         expect(snapshot).toMatchObject({
-            stateRevision: 6,
+            causalRevision: { groupRevision: 6 },
             group: { displayName: 'Current group' },
             members: expect.arrayContaining([
                 expect.objectContaining({ principalId: 'principal-b', status: 'banned' })

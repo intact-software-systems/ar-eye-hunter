@@ -1,5 +1,5 @@
-import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
-import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
+import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import assert from 'node:assert/strict';
 
 import { toGroupMutationErrorResponse } from '../../src/group-state/group-state-route-errors.ts';
@@ -164,7 +164,7 @@ Deno.test('topology mutation failures render cyclic issues canonically', async (
     assert.equal(response.status, 422);
     assert.deepEqual(await response.json(), {
         type: 'api-mutation-failure',
-        version: 'canonical.v1',
+        version: 'canonical.v2',
         code: 'group-topology-validation-failed',
         status: 422,
         message: 'Topology validation failed',

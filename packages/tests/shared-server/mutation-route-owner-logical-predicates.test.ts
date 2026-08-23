@@ -5,7 +5,7 @@ import { findMutationBoundaryViolationsFromRoots } from './mutation-boundary-ana
 import { MUTATION_ROUTE_INVENTORY, validateMutationRouteInventory } from './mutation-routing-inventory.ts';
 
 const FIXTURES = 'packages/tests/shared-server/fixtures/mutation-boundary-capability-receivers';
-const GROUP_OWNER = 'packages/shared-server/rallar-system/services/AppGroupInboxService.ts';
+const GROUP_OWNER = 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 const PRODUCTION_FILTER = '(candidate) => candidate !== AppInboxType.GROUP_PRESENCE_SESSION_CLEANUP';
 
 describe('Mutation route owner logical predicates contracts', () => {

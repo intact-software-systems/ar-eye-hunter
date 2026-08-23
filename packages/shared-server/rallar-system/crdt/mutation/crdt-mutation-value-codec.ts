@@ -20,7 +20,7 @@ import {
     requirePositiveInteger,
     requireRecord,
     requireString
-} from '../../services/exact-object-codec.ts';
+} from '../../protocol/exact-object-decoding.ts';
 import { decodeExactEncryptedEnvelopeShape } from './crdt-operation-exact-codec.ts';
 import {
     decodeExactCrdtStateSnapshot,
@@ -86,9 +86,9 @@ function requireCrdtAuditEventMetadata(
 
 export function decodeExactSnapshotEnvelope(value: unknown): RallarCrdtSnapshotEnvelope {
     const snapshot = requireRecord(value, 'CRDT snapshot envelope');
-    requireExactOptionalKeys(
-        snapshot,
-        [
+    requireExactOptionalKeys({
+        value: snapshot,
+        required: [
             'protocolVersion',
             'document',
             'snapshotId',
@@ -99,9 +99,9 @@ export function decodeExactSnapshotEnvelope(value: unknown): RallarCrdtSnapshotE
             'value',
             'metadata'
         ],
-        ['updateClock', 'hash'],
-        'CRDT snapshot envelope'
-    );
+        optional: ['updateClock', 'hash'],
+        label: 'CRDT snapshot envelope'
+    });
     decodeExactDocumentRef(snapshot.document, 'CRDT snapshot document');
     if ('updateClock' in snapshot) {
         decodeExactSnapshotClock(snapshot.updateClock);
@@ -126,20 +126,19 @@ export function decodeExactSnapshotEnvelope(value: unknown): RallarCrdtSnapshotE
         throw new TypeError('CRDT snapshot included update IDs are invalid');
     }
     const metadata = requireRecord(snapshot.metadata, 'CRDT snapshot metadata');
-    requireExactOptionalKeys(
-        metadata,
-        ['updateCount'],
-        [
+    requireExactOptionalKeys({
+        value: metadata,
+        required: ['updateCount'],
+        optional: [
             'createdByReplicaId',
             'tombstoneCount',
             'conflictCount',
             'reason',
             'crdtState',
-            'sequenceState',
-            'unsafeLegacyCollectionCompaction'
+            'sequenceState'
         ],
-        'CRDT snapshot metadata'
-    );
+        label: 'CRDT snapshot metadata'
+    });
     for (const field of ['updateCount', 'tombstoneCount', 'conflictCount']) {
         if (field in metadata) {
             requireEpoch(metadata[field], `snapshot metadata ${field}`);
@@ -156,12 +155,6 @@ export function decodeExactSnapshotEnvelope(value: unknown): RallarCrdtSnapshotE
     }
     if ('sequenceState' in metadata) {
         decodeExactSequenceState(metadata.sequenceState);
-    }
-    if (
-        'unsafeLegacyCollectionCompaction' in metadata &&
-        typeof metadata.unsafeLegacyCollectionCompaction !== 'boolean'
-    ) {
-        throw new TypeError('CRDT snapshot legacy compaction flag is invalid');
     }
     if ('hash' in snapshot) {
         requireString(snapshot.hash, 'snapshot hash');
@@ -200,12 +193,12 @@ export function decodeExactDocumentRef(
 
 export function decodeExactRetentionPolicy(value: unknown): RallarCrdtRetentionPolicy {
     const policy = requireRecord(value, 'CRDT retention policy');
-    requireExactOptionalKeys(
-        policy,
-        ['mode'],
-        ['ttlMs', 'sensitivePayloads', 'reason'],
-        'CRDT retention policy'
-    );
+    requireExactOptionalKeys({
+        value: policy,
+        required: ['mode'],
+        optional: ['ttlMs', 'sensitivePayloads', 'reason'],
+        label: 'CRDT retention policy'
+    });
     const mode = requireOneOf(
         policy.mode,
         ['retain', 'redact-after', 'delete-after'] as const,
@@ -235,7 +228,12 @@ export function decodeExactQuotaPolicy(value: unknown): RallarCrdtQuotaPolicy {
         'maxPendingUpdatesPerReplica',
         'maxUpdatesPerMinutePerActor'
     ];
-    requireExactOptionalKeys(policy, [], keys, 'CRDT quota policy');
+    requireExactOptionalKeys({
+        value: policy,
+        required: [],
+        optional: keys,
+        label: 'CRDT quota policy'
+    });
     if (Object.keys(policy).length === 0) {
         throw new TypeError('CRDT quota policy must set a limit');
     }

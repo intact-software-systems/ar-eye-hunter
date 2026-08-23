@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-policy.ts';
 import type {
     GroupMutationCommand,
     GroupMutationFacts,
     GroupMutationRead
 } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { computeGroupMutation } from '@shared-server/rallar-system/group-state/mutation/orchestration/compute-group-mutation.ts';
+import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
 import { resolveGroupLifecyclePolicyPreset } from '@shared/api/group-lifecycle/group-lifecycle-policy-presets.ts';
 import type { AuditStamp, Group } from '@shared/api/group-types.ts';
 import { createTestGroup } from '../../../create-test-group.ts';
@@ -325,7 +325,6 @@ function transitionFacts(principalId = 'alice'): GroupMutationFacts {
         resolvedJoinCode: null,
         joinCodeVerifier: null,
         internalAuthority: 'none',
-        formationDamping: 'legacy',
         authenticatedAuthority: {
             principalId,
             sessionId: `${principalId}-session`

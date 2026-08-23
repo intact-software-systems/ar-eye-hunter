@@ -163,7 +163,10 @@ for (const stage of FAILURE_STAGES) {
                 expireAtEpochMs: now + 60_000
             });
             await waitForPGliteQueueRow(sql, 'APP_INBOX', 'NEW');
-            await service.inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
+            await service.inboxQueueReader.dequeueInbox(
+                InboxQueueReader.INBOX_DEQUEUE_TYPES,
+                toResilienceDto()
+            );
 
             const [domain] = await sql<CrdtMutationRollbackCountsRow[]>`
         select
@@ -293,8 +296,9 @@ interface ProductionServiceInput {
 function productionService(input: ProductionServiceInput) {
     const { queueSql, database, now, allow = false, isAllowed = () => true } = input;
     const resourceInbox = new ResourceInboxRepository(queueSql);
-    return createApiCrdtInboxService({
-        inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(resourceInbox)),
+    const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
+    const service = createApiCrdtInboxService({
+        inboxQueueReader,
         resourceInboxRepository: resourceInbox,
         resourceInboxResultsRepository: new ResourceInboxResultsRepository(queueSql),
         database,
@@ -321,6 +325,7 @@ function productionService(input: ProductionServiceInput) {
             ? [{ documentType: 'checklist', rollout: 'production' }]
             : [{ documentType: '*', rollout: 'disabled' }]
     });
+    return Object.assign(service, { inboxQueueReader });
 }
 
 async function appendCommand(now: number, commandId: string, updateId: string) {
@@ -401,7 +406,10 @@ async function enqueueAndDrain(input: EnqueueAndDrainInput): Promise<void> {
         capturedAtEpochMs,
         expireAtEpochMs: capturedAtEpochMs + 60_000
     });
-    await service.inbox.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, toResilienceDto());
+    await service.inboxQueueReader.dequeueInbox(
+        InboxQueueReader.INBOX_DEQUEUE_TYPES,
+        toResilienceDto()
+    );
 }
 
 function withOneCrdtConflict(database: PSqlSql, onConflict: () => void): PSqlSql {

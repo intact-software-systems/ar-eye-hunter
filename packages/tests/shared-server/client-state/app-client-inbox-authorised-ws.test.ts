@@ -1,13 +1,15 @@
 import { Temporal } from '@js-temporal/polyfill';
 import { expect, it, vi } from 'vitest';
 
-import { AuthSessionRepository, type IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 
 import type { AuthorisedWsClientMutationResult } from '@shared-server/rallar-system/client-state/inbox/client-state-inbox-result-codec.ts';
@@ -28,7 +30,6 @@ it('rejects authorised websocket disconnect after durable auth revocation', asyn
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
-    const publisher = createPublisher();
     const authSession = issuedSession('alice', 'alice-ws-session');
     const runtimeRepository = new FakeRuntimeStateRepository();
     const authSessions = new AuthSessionRepository(runtimeRepository);
@@ -51,8 +52,6 @@ it('rejects authorised websocket disconnect after durable auth revocation', asyn
         }
     } as const;
     const connected = await processAppInboxMethod(reader, () => service.processAuthorisedWsClientConnect(connectInput));
-    vi.mocked(publisher.publishClientSnapshot).mockClear();
-    vi.mocked(publisher.publishClientEvent).mockClear();
     await authSessions.deleteSession(authSession);
     const disconnected = await processAppInboxMethod(reader, () =>
         service.processAuthorisedWsClientDisconnect({
@@ -60,7 +59,11 @@ it('rejects authorised websocket disconnect after durable auth revocation', asyn
             disconnectedAtEpochMs: Date.now(),
             reason: 'socket-closed'
         }));
-    expect(disconnected.left).toMatch(/authority|auth session/i);
+    expect(disconnected.left).toMatchObject({
+        type: 'app-inbox-failure',
+        code: 'client-mutation-rejected',
+        status: 400
+    });
 
     expect(requireRightSnapshot(connected).activeSessions).toHaveLength(1);
     expect(requireRightSnapshot(connected).instances[0]).toMatchObject({
@@ -68,15 +71,12 @@ it('rejects authorised websocket disconnect after durable auth revocation', asyn
         userAgent: 'Browser'
     });
     expect(requireRightSnapshot(connected).activeSessions).toHaveLength(1);
-    expect(publisher.publishClientSnapshot).not.toHaveBeenCalled();
-    expect(publisher.publishClientEvent).not.toHaveBeenCalled();
 });
 
 it('processes authorised websocket connects in the requested state scope', async () => {
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
-    const publisher = createPublisher();
     const authSession = issuedSession('admin', 'admin-ws-session');
     const runtimeRepository = new FakeRuntimeStateRepository();
     await new AuthSessionRepository(runtimeRepository).putSession(authSession);
@@ -127,7 +127,6 @@ it('processes authorised websocket connects independently per state scope', asyn
     const queue = new TestResourceInbox();
     const reader = new InboxQueueReader(queue);
     const results = new TestResourceInboxResults();
-    const publisher = createPublisher();
     const authSession = issuedSession('admin', 'admin-ws-session');
     const runtimeRepository = new FakeRuntimeStateRepository();
     await new AuthSessionRepository(runtimeRepository).putSession(authSession);
@@ -178,7 +177,6 @@ it(
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
-        const publisher = createPublisher();
         const authSession = issuedSession('admin', 'admin-ws-session');
         const runtimeRepository = new FakeRuntimeStateRepository();
         await new AuthSessionRepository(runtimeRepository).putSession(authSession);
@@ -239,7 +237,6 @@ function createAuthorisedWsService(input: CreateAuthorisedWsServiceInput): AppCl
             database: input.database,
             clientStateService: createClientStateService({
                 runtimeRepository: input.runtimeRepository,
-                formationDamping: 'damped',
                 createClientStateEventStore: () => input.database.clientEventStore,
                 serviceId: SERVICE_ID
             })
@@ -251,16 +248,16 @@ function createAuthorisedWsService(input: CreateAuthorisedWsServiceInput): AppCl
 }
 
 function requireRightSnapshot(
-    result: Either<string, AuthorisedWsClientMutationResult>
+    result: Either<AppInboxFailure, AuthorisedWsClientMutationResult>
 ): ClientSnapshot {
     return requireRightWritten(result).snapshot;
 }
 
 function requireRightWritten(
-    result: Either<string, AuthorisedWsClientMutationResult>
+    result: Either<AppInboxFailure, AuthorisedWsClientMutationResult>
 ): ClientMutationWritten {
     if (!result.right) {
-        throw new Error(result.left ?? 'Expected client app-inbox right result');
+        throw new Error(result.left?.message ?? 'Expected client app-inbox right result');
     }
     if (result.right.status === 'inactive') {
         throw new Error(`Expected client mutation result, received ${result.right.status}`);
@@ -269,12 +266,7 @@ function requireRightWritten(
 }
 
 function requireClientMutationWritten(written: ClientStateWritten): ClientMutationWritten {
-    return written.result.fold(
-        (error) => {
-            throw new Error(error);
-        },
-        (value) => value
-    );
+    return written.result;
 }
 
 function issuedSession(clientId: string, sessionId: string): IssuedAuthSession {
@@ -297,13 +289,6 @@ async function processAppInboxMethod<R>(
     await new Promise((resolve) => setTimeout(resolve, 0));
     await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
     return await resultPromise;
-}
-
-function createPublisher() {
-    return {
-        publishClientSnapshot: vi.fn(async () => undefined),
-        publishClientEvent: vi.fn(async () => undefined)
-    };
 }
 
 function createResilience(): ResilienceDto {

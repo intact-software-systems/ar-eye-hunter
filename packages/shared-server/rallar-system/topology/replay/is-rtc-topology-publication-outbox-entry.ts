@@ -2,8 +2,8 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, EnqueuedType } from '@shared/api/api-config.ts';
 import { isKeysEqual, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-import { validatePersistedALMessage } from '../../services/al-message-persistence-validation.ts';
-import { toAppQueueCreatedBy, toAppQueueKey } from '../../services/app-inbox-queue-key.ts';
+import { validatePersistedALMessage } from '@shared/al-contracts/al-message-persistence-validation.ts';
+import { toAppQueueCreatedBy, toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 
 export function isRtcTopologyPublicationOutboxEntry(entry: ResourceEntry): boolean {
     try {

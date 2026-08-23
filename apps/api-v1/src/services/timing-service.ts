@@ -1,5 +1,8 @@
-import type { AppInboxServiceOptions } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import { createConsoleRallarTimingSink, type RallarTimingSink } from '@shared-server/rallar-system/services/timing.ts';
+import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import {
+    createConsoleRallarTimingSink,
+    type RallarTimingSink
+} from '@shared-server/rallar-system/observability/timing.ts';
 export {
     createApiStateSnapshotReadSelectors
 } from './create-api-state-snapshot-read-selectors.ts';
@@ -14,7 +17,7 @@ export function getApiTimingSink(): RallarTimingSink {
     return timingSink;
 }
 
-export function getApiAppInboxServiceOptions(): AppInboxServiceOptions {
+export function getApiAppInboxOptions(): AppInboxOptions {
     return {
         phaseTiming: readBooleanEnv('RALLAR_APP_INBOX_PHASE_TIMING', false),
         waitMaxElapsedMsecs: readNumberEnv('RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS', 30_000),

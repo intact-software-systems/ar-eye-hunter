@@ -200,7 +200,7 @@ function apiMutationError(
         status,
         JSON.stringify({
             type: 'api-mutation-failure',
-            version: 'canonical.v1',
+            version: 'canonical.v2',
             code,
             status,
             message,

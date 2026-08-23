@@ -57,7 +57,7 @@ function canReplaceClientSessionGeneration(
     command: ConnectCommand,
     existing: ClientSession
 ): boolean {
-    // A REST compatibility connect without an ordered generation-start fact may
+    // An HTTP connect without an ordered generation-start fact may
     // create an absent session, but it cannot replace a distinct generation.
     if (command.input.connectedAtEpochMs === null) {
         return false;

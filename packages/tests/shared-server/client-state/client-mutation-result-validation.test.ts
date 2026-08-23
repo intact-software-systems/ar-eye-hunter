@@ -9,10 +9,6 @@ import {
     ClientMutationIdempotencyConflictError,
     validateClientMutation
 } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
-import {
-    ClientMutationIdempotencyConflictError as LegacyConflictError,
-    validateClientMutation as legacyValidateClientMutation
-} from '@shared-server/rallar-system/services/client-state-mutations.ts';
 
 import { emptyRead, entryValue, principalCommand, readAfterWrite, requireWrite } from './client-mutation-compute-test-fixtures.ts';
 
@@ -67,7 +63,5 @@ describe('client mutation result validation', () => {
         expect(() => validateClientMutation({ command: conflicting, read, computed })).toThrow(
             ClientMutationIdempotencyConflictError
         );
-        expect(LegacyConflictError).toBe(ClientMutationIdempotencyConflictError);
-        expect(legacyValidateClientMutation).toBe(validateClientMutation);
     });
 });

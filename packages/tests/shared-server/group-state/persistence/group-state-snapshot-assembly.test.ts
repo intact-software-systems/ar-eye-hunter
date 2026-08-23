@@ -1,3 +1,4 @@
+import { type GroupMutationRead } from '@shared-server/rallar-system/group-state/mutation/group-mutation-contracts.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
     groupStateGroupStorageKey,
@@ -6,7 +7,6 @@ import {
     groupStatePresenceSessionStorageKey,
     groupStatePresenceSummaryStorageKey
 } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
-import { type GroupMutationRead } from '@shared-server/rallar-system/services/group-state-mutations.ts';
 import type { AuditStamp, Group, GroupMember } from '@shared/api/group-types.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';

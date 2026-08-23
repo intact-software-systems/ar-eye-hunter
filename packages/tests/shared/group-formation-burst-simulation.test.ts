@@ -1,13 +1,7 @@
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import { toOverlayInfoForSession } from '@shared/api/overlay-topology.ts';
 import { createAndSetBootstrapOverlays } from '@shared/repository/overlay-bootstrap.ts';
-import {
-    createAndSetStarOverlays,
-    findOverlayById,
-    readOverlayAdoptionDiagnostics,
-    resetOverlayAdoptionDiagnostics,
-    setOverlayById
-} from '@shared/repository/overlays-repository.ts';
+import { findOverlayById, readOverlayAdoptionDiagnostics, resetOverlayAdoptionDiagnostics, setOverlayById } from '@shared/repository/overlays-repository.ts';
 import { describe, expect, it } from 'vitest';
 import { createRingTopologySnapshot, createSimulatedClient, createSimulationGroupSnapshot } from './group-formation-simulation-clients.ts';
 
@@ -56,7 +50,6 @@ describe('group formation burst simulation', () => {
             for (const client of clients) {
                 createAndSetBootstrapOverlays([group], {
                     localSessionId: client.sessionId,
-                    mode: 'bounded-bootstrap',
                     bootstrapDegree: BOOTSTRAP_DEGREE
                 }, client.repositoryManager);
                 await client.manager.acceptGroupUpdate(group);
@@ -85,15 +78,9 @@ describe('group formation burst simulation', () => {
                 await client.manager.notifyOverlayTopologyChanged();
             }
 
-            // Belt and braces: a later legacy full-membership restamp attempt
-            // must not displace the adopted server overlay on any client.
-            for (const client of clients) {
-                createAndSetStarOverlays([group], client.repositoryManager);
-            }
-
             const adoption = readOverlayAdoptionDiagnostics();
             expect(adoption.serverSupersededBootstrapCount).toBe(memberCount);
-            expect(adoption.bootstrapDroppedOverServerCount).toBe(memberCount);
+            expect(adoption.bootstrapDroppedOverServerCount).toBe(0);
             expect(adoption.incomparableConflictCount).toBe(0);
 
             for (const client of clients) {
@@ -108,25 +95,4 @@ describe('group formation burst simulation', () => {
             }
         }
     );
-
-    it('legacy-star mode reproduces the unbounded full-mesh dial storm (N=50)', async () => {
-        const sessionIds = Array.from(
-            { length: 50 },
-            (_, index) => `session-${index}`
-        );
-        const group = createSimulationGroupSnapshot('legacy-group', 3, sessionIds);
-        const client = createSimulatedClient(sessionIds[0], sessionIds, {
-            groupFormationMode: 'legacy-star',
-            maxPeerConnections: MAX_PEER_CONNECTIONS
-        });
-
-        createAndSetBootstrapOverlays([group], {
-            localSessionId: client.sessionId,
-            mode: 'legacy-star',
-            bootstrapDegree: BOOTSTRAP_DEGREE
-        }, client.repositoryManager);
-        await client.manager.acceptGroupUpdate(group);
-
-        expect(client.dialedPeerIds().size).toBe(49);
-    });
 });

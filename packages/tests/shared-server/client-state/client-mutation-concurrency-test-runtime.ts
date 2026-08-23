@@ -1,8 +1,5 @@
-import { vi } from 'vitest';
-
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
-import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
-import type { StateSyncPublisher } from '@shared-server/rallar-system/state-sync-publisher.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import type {
     RuntimeStateConditionalWriteResult,
     RuntimeStateEntry,
@@ -11,7 +8,7 @@ import type {
 
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 import { CLIENT_MUTATION_TEST_SCOPE as SCOPE, clientMutationPrincipalRef as principalRef } from './client-mutation-validation-test-fixtures.ts';
-import { createLegacyClientStateTestDriver as createClientStateService, getClientStateTestOutbox } from './client-state-test-runtime.ts';
+import { createClientStateTestDriver as createClientStateService, getClientStateTestOutbox } from './client-state-test-runtime.ts';
 
 export const CLIENT_MUTATION_BASE_EPOCH_MS = Date.now();
 
@@ -168,12 +165,10 @@ export class StatementRecordingRepository extends AggregateBarrierRepository {
 export function createService(
     runtimeRepository: AggregateBarrierRepository,
     nowEpochMs: number,
-    syncPublisher: StateSyncPublisher = createPublisher(),
     timing?: (event: RallarTimingEvent) => void
 ) {
     return createClientStateService({
         runtimeRepository,
-        syncPublisher,
         now: () => nowEpochMs,
         randomId: (() => {
             let next = 0;
@@ -215,15 +210,6 @@ export async function outboxFor(
     commandIds: readonly string[]
 ) {
     return getClientStateTestOutbox(runtime).filter((entry) => commandIds.some((commandId) => entry.resource.includes(commandId)));
-}
-
-export function createPublisher(): StateSyncPublisher {
-    return {
-        publishClientSnapshot: vi.fn(() => Promise.resolve()),
-        publishClientEvent: vi.fn(() => Promise.resolve()),
-        publishGroupSnapshot: vi.fn(() => Promise.resolve()),
-        publishGroupEvent: vi.fn(() => Promise.resolve())
-    };
 }
 
 export function deepFreeze<T>(value: T): T {

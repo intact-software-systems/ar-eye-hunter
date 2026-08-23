@@ -1,6 +1,6 @@
 import { toScopedOverlayId } from './api-type-utils.ts';
 import type { ClientEvent, ClientSnapshot } from './client-types.ts';
-import { toClientSnapshotLastSeenAtEpochMs, toGroupSnapshotStateRevision } from './group-client-views.ts';
+import { toClientSnapshotLastSeenAtEpochMs } from './group-client-views.ts';
 import type { GroupEvent, GroupRef, GroupSnapshot } from './group-types.ts';
 import type { RallarOverlayTopologySnapshot } from './overlay-topology.ts';
 import type { StateEventPage } from './state-event-types.ts';
@@ -377,7 +377,6 @@ export function validateAuthoritativeGroupSnapshot(
     exact(
         snapshot,
         [
-            'stateRevision',
             'causalRevision',
             'group',
             'members',
@@ -388,14 +387,7 @@ export function validateAuthoritativeGroupSnapshot(
         'GroupSnapshot'
     );
     const causal = causalRevision(snapshot.causalRevision, 'GroupSnapshot.causalRevision');
-    positiveInteger(snapshot.stateRevision, 'GroupSnapshot.stateRevision');
     positiveInteger(causal.groupRevision, 'GroupSnapshot.causalRevision.groupRevision');
-    if (
-        snapshot.stateRevision !==
-            toGroupSnapshotStateRevision(causal.groupRevision, causal.presenceRevision)
-    ) {
-        fail('GroupSnapshot.stateRevision differs from causalRevision');
-    }
     const group = record(snapshot.group, 'GroupSnapshot.group');
     exact(group, GROUP_KEYS, 'GroupSnapshot.group');
     const ref = groupRef(group, 'GroupSnapshot.group', scope);

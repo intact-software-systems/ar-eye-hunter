@@ -1,4 +1,4 @@
-import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
+import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import {
     validateRuntimeStateGuardedBatch,
     validateRuntimeStateGuardedBatchResult,

@@ -16,9 +16,9 @@ import type {
 } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
+import type { GroupPolicyCapacityConfig } from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import type { RuntimeStateEntryValue } from '../../../runtime-state/RuntimeStateJsonStore.ts';
 import type { RuntimeStateEntry } from '../../../runtime-state/RuntimeStateRepository.ts';
-import type { GroupPolicyCapacityConfig } from '../../group-policy.ts';
 import type { GroupLifecyclePolicyRead } from '../persistence/group-lifecycle-policy-repository.ts';
 import type { InitialGroupPresenceSummaryCandidate } from '../presence/group-initial-presence-summary.ts';
 
@@ -254,7 +254,6 @@ export type GroupMutationReceipt = Readonly<{
     outcome: 'applied' | 'no-op' | 'rejected';
     attemptCount: number;
     acceptedStorageRevision: number | null;
-    stateRevision: number;
     snapshotVersion: number;
     causalRevision: GroupStateCausalRevision;
     eventId: string | null;
@@ -312,7 +311,6 @@ export type GroupMutationFacts = Readonly<{
     resolvedJoinCode: string | null;
     joinCodeVerifier: string | null;
     internalAuthority: 'none' | 'expiry' | 'session-cleanup' | 'formation-criterion';
-    formationDamping: 'damped' | 'legacy';
     /**
      * Operational capacity defaults captured at preparation time; absent when
      * the runtime configured no defaults, which preserves stored-cap-only

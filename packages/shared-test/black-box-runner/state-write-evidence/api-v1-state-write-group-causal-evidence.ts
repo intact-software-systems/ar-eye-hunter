@@ -2,7 +2,6 @@ import {
     validateAuthoritativeGroupEvent,
     validateAuthoritativeGroupSnapshot
 } from '@shared/api/authoritative-state-validation.ts';
-import { toGroupSnapshotStateRevision } from '@shared/api/group-client-views.ts';
 import type { GroupEventType } from '@shared/api/group-types.ts';
 
 type GroupPublicResultEventPolicy = Readonly<{
@@ -83,10 +82,10 @@ export function publicResultIdentityMatches(
     commandType?: string
 ): boolean {
     const result = record(resultValue);
-    const right = record(record(result?.result)?.right);
-    const snapshot = record(right?.snapshot);
+    const written = record(result?.result);
+    const snapshot = record(written?.snapshot);
     const aggregate = record(snapshot?.[kind === 'client' ? 'principal' : 'group']);
-    const event = right?.event === null ? null : record(right?.event);
+    const event = written?.event === null ? null : record(written?.event);
     if (
         kind === 'group' &&
         !authoritativeGroupResultContractsAreValid(snapshot, event, receipt.aggregateRef)
@@ -168,9 +167,7 @@ function groupPublicResultRevisionMatches(
         return false;
     }
     if (
-        !Number.isSafeInteger(receipt.stateRevision) ||
         !Number.isSafeInteger(receipt.snapshotVersion) ||
-        !Number.isSafeInteger(snapshot.stateRevision) ||
         receipt.snapshotVersion !== accepted.groupRevision
     ) {
         return false;
@@ -182,13 +179,7 @@ function groupPublicResultRevisionMatches(
         ? observed.groupRevision >= accepted.groupRevision &&
             observed.presenceRevision >= accepted.presenceRevision
         : false;
-    return (
-        receipt.stateRevision ===
-            toGroupSnapshotStateRevision(accepted.groupRevision, accepted.presenceRevision) &&
-        snapshot.stateRevision ===
-            toGroupSnapshotStateRevision(observed.groupRevision, observed.presenceRevision) &&
-        causalOrderMatches
-    );
+    return causalOrderMatches;
 }
 
 function causalRevision(value: unknown): GroupCausalRevision | undefined {
@@ -200,8 +191,7 @@ function causalRevision(value: unknown): GroupCausalRevision | undefined {
             Number.isSafeInteger(candidate.groupRevision) &&
             groupRevision >= 0 &&
             Number.isSafeInteger(candidate.presenceRevision) &&
-            presenceRevision >= 0 &&
-            groupRevision <= Number.MAX_SAFE_INTEGER - presenceRevision
+            presenceRevision >= 0
         ? { groupRevision, presenceRevision }
         : undefined;
 }

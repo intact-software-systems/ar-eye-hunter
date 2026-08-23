@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import {
     groupStateIdempotencyStorageKey,
     groupStatePresenceAdmissionStorageKey,
     groupStatePresenceSessionStorageKey
-} from '@shared-server/rallar-system/group-state-storage-keys.ts';
-import { GroupStateRepository } from '@shared-server/rallar-system/repositories/GroupStateRepository.ts';
-import { toSessionPurgeAfterEpochMs } from '@shared-server/rallar-system/repositories/session-expiry.ts';
+} from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
+import { toSessionPurgeAfterEpochMs } from '@shared-server/rallar-system/presence/session-expiry.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { createTestGroupStateRuntime, createTestGroupStateService } from '../group-state-test-runtime.ts';
@@ -26,7 +26,6 @@ describe('GroupStateService guarded presence batch', () => {
         let generatedId = 0;
         const service = createTestGroupStateService({
             runtimeRepository: runtime,
-            formationDamping: 'damped',
             createGroupStateEventStore: () => eventStore,
             now: () => nowEpochMs,
             randomId: () => `presence-batch-id-${++generatedId}`,
@@ -166,7 +165,6 @@ describe('GroupStateService guarded presence batch', () => {
         let generatedId = 0;
         const groupRuntime = createTestGroupStateRuntime({
             runtimeRepository: runtime,
-            formationDamping: 'damped',
             createGroupStateEventStore: () => eventStore,
             now: () => nowEpochMs,
             randomId: () => `expiry-batch-id-${++generatedId}`,

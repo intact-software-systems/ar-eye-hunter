@@ -22,8 +22,7 @@ import {
 import {
     GroupTopologyConfigRepositoryInvariantCorruptionError,
     toGroupTopologyConfigRepositoryCorruption,
-    type GroupTopologyConfigGenerationSourceEntry,
-    type GroupTopologyConfigLegacyKeyMigrationSource
+    type GroupTopologyConfigGenerationSourceEntry
 } from './group-topology-config-repository-contracts.ts';
 import {
     assertGroupTopologyGenerationStorageSlot,
@@ -31,9 +30,7 @@ import {
     assertGroupTopologyMutationStorageSlot,
     assertGroupTopologyRef,
     decodeGroupTopologyStorageKey,
-    groupTopologyConfigStorageKey,
-    isSameGroupTopologyRef,
-    legacyGroupTopologySourceStorageKey
+    isSameGroupTopologyRef
 } from './group-topology-config-storage-keys.ts';
 
 export function decodeGroupTopologyMutationEntry(
@@ -192,36 +189,6 @@ export function toValidatedLiveGroupTopologySourceEntry(
     const entry = { ...stored.entry, value: JSON.stringify(stored.value) };
     const validated = decodeCanonicalGroupTopologyGenerationSourceEntry(entry, target, trustedRef);
     return { entry: stored.entry, value: validated.value };
-}
-
-export function decodeGroupTopologyLegacyKeyMigrationEntry(
-    entry: RuntimeStateEntry,
-    target: GroupTopologyConfigGenerationTarget
-): GroupTopologyConfigLegacyKeyMigrationSource | undefined {
-    const value = decodeGroupTopologySourceValue(entry, target);
-    const canonicalKey = groupTopologyConfigStorageKey(value.groupRef);
-    if (entry.key === canonicalKey) {
-        const decoded = decodeGroupTopologyStorageKey(entry.key);
-        assertGroupTopologyRef({
-            actual: value.groupRef,
-            expected: decoded,
-            storageKey: entry.key,
-            slot: 'generation-source value'
-        });
-        return undefined;
-    }
-    if (entry.key !== legacyGroupTopologySourceStorageKey(value.groupRef)) {
-        throw toGroupTopologyConfigRepositoryCorruption(
-            entry.key,
-            'Stored topology config legacy key differs from its value'
-        );
-    }
-    return {
-        entry,
-        canonicalKey,
-        source: { groupRef: value.groupRef, target, version: value.version },
-        value
-    };
 }
 
 export async function readGroupTopologyJsonValue<T>(

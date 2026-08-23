@@ -10,14 +10,11 @@ import type {
 import type { GroupTopologyConfigGenerationTarget } from '../mutation/group-topology-config-mutation-contracts.ts';
 import {
     decodeCanonicalGroupTopologyGenerationSourceEntry,
-    decodeGroupTopologyLegacyKeyMigrationEntry,
     readGroupTopologyJsonValue
 } from './group-topology-config-persistence-codec.ts';
 import type {
     GroupTopologyConfigGenerationSource,
-    GroupTopologyConfigGenerationSourceEntry,
-    GroupTopologyConfigLegacyKeyMigrationPage,
-    GroupTopologyConfigLegacyKeyMigrationSource
+    GroupTopologyConfigGenerationSourceEntry
 } from './group-topology-config-repository-contracts.ts';
 import { groupTopologyConfigSourceNamespace } from './group-topology-config-runtime-namespaces.ts';
 import {
@@ -26,9 +23,7 @@ import {
     groupTopologyGenerationStorageKey,
     groupTopologyInvariantGenerationStorageKey,
     groupTopologyMutationStorageKey,
-    groupTopologyOverrideStorageKey,
-    isSameGroupTopologyRef,
-    legacyGroupTopologySourceStorageKey
+    groupTopologyOverrideStorageKey
 } from './group-topology-config-storage-keys.ts';
 
 export class GroupTopologyConfigSourceRepository extends RuntimeStateJsonStore {
@@ -81,49 +76,6 @@ export class GroupTopologyConfigSourceRepository extends RuntimeStateJsonStore {
             options
         );
         return entries.map((entry) => decodeCanonicalGroupTopologyGenerationSourceEntry(entry, target));
-    }
-
-    async findLegacyKeyMigrationSource(
-        ref: GroupRef,
-        target: GroupTopologyConfigGenerationTarget
-    ): Promise<GroupTopologyConfigLegacyKeyMigrationSource | undefined> {
-        const canonicalKey = this.sourceKey(ref, target);
-        const legacyKey = legacyGroupTopologySourceStorageKey(ref);
-        if (canonicalKey === legacyKey) {
-            return undefined;
-        }
-        const entry = await this.runtimeRepository.findEntry(
-            groupTopologyConfigSourceNamespace(target),
-            legacyKey
-        );
-        if (!entry) {
-            return undefined;
-        }
-        const migration = decodeGroupTopologyLegacyKeyMigrationEntry(entry, target);
-        if (!migration) {
-            return undefined;
-        }
-        return isSameGroupTopologyRef(migration.source.groupRef, ref) ? migration : undefined;
-    }
-
-    async listLegacyKeyMigrationSourcesPage(
-        target: GroupTopologyConfigGenerationTarget,
-        options: RuntimeStateEntryPageOptions
-    ): Promise<GroupTopologyConfigLegacyKeyMigrationPage> {
-        const entries = await this.listEntriesPage(
-            groupTopologyConfigSourceNamespace(target),
-            '',
-            options
-        );
-        return {
-            sources: entries
-                .map((entry) => decodeGroupTopologyLegacyKeyMigrationEntry(entry, target))
-                .filter(
-                    (entry): entry is GroupTopologyConfigLegacyKeyMigrationSource => entry !== undefined
-                ),
-            ...(entries.length === 0 ? {} : { afterKey: entries[entries.length - 1]!.key }),
-            hasMore: entries.length >= Math.max(1, Math.floor(options.limit))
-        };
     }
 
     configKey(ref: GroupRef): string {

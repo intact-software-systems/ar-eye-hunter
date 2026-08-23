@@ -47,7 +47,7 @@ async function insertCorruptAdminClientRows(
     sql: PGliteSql,
     applicationId: string
 ): Promise<void> {
-    const canonicalPrefix = `app=${applicationId}:ws=%5F:principal=`;
+    const canonicalPrefix = `app=${applicationId}:ws=_:principal=`;
     const rows = [
         {
             namespace: 'client-state:principals',
@@ -60,11 +60,11 @@ async function insertCorruptAdminClientRows(
         },
         {
             namespace: 'client-state:principals',
-            key: `app=${applicationId}:ws=_:principal=legacy-alias`,
+            key: `app=${applicationId}:ws=%5F:principal=encoded-workspace-alias`,
             value: {
                 applicationId,
                 workspaceId: '_',
-                principalId: 'legacy-alias'
+                principalId: 'encoded-workspace-alias'
             }
         },
         {
@@ -96,12 +96,12 @@ async function insertCorruptAdminClientRows(
         },
         {
             namespace: 'client-state:sessions',
-            key: `app=${applicationId}:ws=_:principal=legacy-alias:` +
-                'instance=browser:session=legacy-session',
+            key: `app=${applicationId}:ws=%5F:principal=encoded-workspace-alias:` +
+                'instance=browser:session=encoded-workspace-session',
             value: createActiveClientSessionValue({
                 applicationId,
-                principalId: 'legacy-alias',
-                sessionId: 'legacy-session'
+                principalId: 'encoded-workspace-alias',
+                sessionId: 'encoded-workspace-session'
             })
         },
         {

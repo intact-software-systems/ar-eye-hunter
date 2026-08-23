@@ -1,4 +1,4 @@
-import type { RtcTopologyPublication } from '@shared-server/rallar-system/rtc-topology-publication-contract.ts';
+import type { RtcTopologyPublication } from '@shared-server/rallar-system/topology/publication/rtc-topology-publication.ts';
 import { RtcTopologyDeliveryCorruptionError } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-validation.ts';
 import { RtcTopologyReplayEntryHandlerService } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-entry-handler.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';

@@ -17,7 +17,7 @@ import {
     toAdminPruneAggregateEntry,
     toAdminPruneCompletedResult
 } from '@shared-server/rallar-system/admin-operations/prune/admin-prune-progress.ts';
-import { classifyAppInboxError } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { classifyAppInboxError } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import {
     DEFAULT_RESOURCE_INBOX_RETRY_HORIZON_MS,

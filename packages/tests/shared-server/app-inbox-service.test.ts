@@ -1,20 +1,23 @@
 import { Temporal } from '@js-temporal/polyfill';
+import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { ClientStateEventCollisionError, GroupStateEventCollisionError } from '@shared-server/postgres/rallar-system/PSqlStateEventRepository.ts';
 import { toResultsDomain } from '@shared-server/postgres/resource-inbox/repository-utils.ts';
+import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/app-inbox-handler-registry.ts';
 import {
-    AppInboxService,
+    AppInboxQueueClient,
     AppInboxType,
     type AppInboxEnqueueInput,
-    type GroupMemberUpsertAppInboxPayload
-} from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+    type AppInboxMessageContext
+} from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import type { GroupMemberUpsertAppInboxPayload } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 
-import { SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/services/AppInboxService.ts';
+import { SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 
-import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/services/client-state-service.ts';
+import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-system/client-state/mutation/result-validation/validate-client-mutation.ts';
 
-import type { AppInboxFailure } from '@shared-server/rallar-system/services/app-inbox-failure.ts';
-import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
-import type { RallarTimingEvent } from '@shared-server/rallar-system/services/timing.ts';
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
+import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
+import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -40,11 +43,11 @@ describe('AppInboxType', () => {
     });
 });
 
-describe('AppInboxService', () => {
-    it('uses the configured legacy topic when an enqueue omits topicId', async () => {
+describe('AppInboxQueueClient', () => {
+    it('uses the configured domain topic when an enqueue omits topicId', async () => {
         const queue = new TestResourceInbox();
         const results = new TestResourceInboxResults();
-        const service = new AppInboxService(
+        const service = new TestAppInboxRuntime(
             {
                 inboxQueueReader: new InboxQueueReader(queue),
                 resourceInboxRepository: queue,
@@ -59,15 +62,15 @@ describe('AppInboxService', () => {
 
         const entry = await service.enqueue({
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-            resourceId: 'legacy-default-topic',
+            resourceId: 'domain-default-topic',
             contextId: 'client-1',
-            data: { requestId: 'legacy-default-topic' }
+            data: { requestId: 'domain-default-topic' }
         });
 
         expect(entry.key.topicId).toBe(SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC);
     });
 
-    it('wakes only the strict reservation winner and never creates a legacy duplicate', async () => {
+    it('wakes only the strict reservation winner and never creates a second queue identity', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
@@ -138,7 +141,7 @@ describe('AppInboxService', () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
-        const service = new AppInboxService(
+        const service = new TestAppInboxRuntime(
             {
                 inboxQueueReader: reader,
                 resourceInboxRepository: queue,
@@ -194,7 +197,7 @@ describe('AppInboxService', () => {
         const businessNowEpochMs = vi.fn(() => 9_000);
         const timingNowEpochMs = vi.fn(() => 2_000);
         const timing: RallarTimingEvent[] = [];
-        const service = new AppInboxService(
+        const service = new TestAppInboxRuntime(
             {
                 inboxQueueReader: reader,
                 resourceInboxRepository: queue,
@@ -257,7 +260,7 @@ describe('AppInboxService', () => {
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
         const handler = vi.fn((data: GroupMemberUpsertAppInboxPayload) => Promise.resolve({ accepted: data }));
-        const service = new AppInboxService(
+        const service = new TestAppInboxRuntime(
             {
                 inboxQueueReader: reader,
                 resourceInboxRepository: queue,
@@ -378,7 +381,7 @@ describe('AppInboxService', () => {
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
         const handler = vi.fn((data: ProtoPayload) => Promise.resolve({ accepted: data }));
-        const service = new AppInboxService(
+        const service = new TestAppInboxRuntime(
             {
                 inboxQueueReader: reader,
                 resourceInboxRepository: queue,
@@ -462,7 +465,7 @@ describe('AppInboxService', () => {
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
         const handler = vi.fn(() => Promise.resolve({ accepted: true }));
-        const service = new AppInboxService(
+        const service = new TestAppInboxRuntime(
             {
                 inboxQueueReader: reader,
                 resourceInboxRepository: queue,
@@ -509,7 +512,7 @@ describe('AppInboxService', () => {
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
         const handler = vi.fn((data: JsonWireObject) => Promise.resolve({ accepted: data }));
-        const service = new AppInboxService(
+        const service = new TestAppInboxRuntime(
             {
                 inboxQueueReader: reader,
                 resourceInboxRepository: queue,
@@ -583,7 +586,7 @@ describe('AppInboxService', () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
-        const service = new AppInboxService(
+        const service = new TestAppInboxRuntime(
             {
                 inboxQueueReader: reader,
                 resourceInboxRepository: queue,
@@ -621,7 +624,7 @@ describe('AppInboxService', () => {
         await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
         const result = await pending;
 
-        expect(JSON.parse(result.left ?? '{}')).toMatchObject({
+        expect(result.left).toMatchObject({
             code: 'client-mutation-idempotency-conflict',
             status: 409
         });
@@ -655,7 +658,7 @@ describe('AppInboxService', () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
-        const service = new AppInboxService(
+        const service = new TestAppInboxRuntime(
             {
                 inboxQueueReader: reader,
                 resourceInboxRepository: queue,
@@ -685,7 +688,7 @@ describe('AppInboxService', () => {
         await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
         const result = await pending;
 
-        expect(JSON.parse(result.left ?? '{}')).toMatchObject({ code, status: 409 });
+        expect(result.left).toMatchObject({ code, status: 409 });
         expect(handler).toHaveBeenCalledOnce();
         expect((await readOnlyEntry(queue))?.status).toBe(EntityStatus.FAILED);
         expect((await readOnlyEntry(queue))?.dequeueAudit.attempts).toBe(1);
@@ -728,7 +731,48 @@ interface MaterializedTestReservation {
     readonly result: Promise<Either<AppInboxFailure, JsonWireValue>>;
 }
 
-class MaterializedTestAppInboxService extends AppInboxService {
+interface TestAppInboxDependencies extends AppInboxQueueClient.Dependencies {
+    readonly database: PSqlSql;
+}
+
+class TestAppInboxRuntime extends AppInboxQueueClient {
+    private readonly handlers: AppInboxHandlerRegistry;
+
+    constructor(
+        dependencies: TestAppInboxDependencies,
+        config: AppInboxQueueClient.Config
+    ) {
+        super(
+            {
+                inboxQueueReader: dependencies.inboxQueueReader,
+                resourceInboxRepository: dependencies.resourceInboxRepository,
+                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository
+            },
+            config
+        );
+        this.handlers = new AppInboxHandlerRegistry(
+            {
+                inboxQueueReader: dependencies.inboxQueueReader,
+                resourceInboxResultsRepository: dependencies.resourceInboxResultsRepository,
+                database: dependencies.database
+            },
+            {
+                serviceId: config.serviceId,
+                timing: config.timing,
+                options: config.options
+            }
+        );
+    }
+
+    onStateMessage<V>(
+        type: AppInboxType,
+        handler: (data: V, context: AppInboxMessageContext) => Promise<unknown>
+    ): void {
+        this.handlers.onStateMessage(type, handler);
+    }
+}
+
+class MaterializedTestAppInboxService extends TestAppInboxRuntime {
     async beginMaterializedReservation(
         input: BeginMaterializedReservationInput
     ): Promise<MaterializedTestReservation> {

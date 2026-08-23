@@ -1,5 +1,6 @@
-import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/repositories/StateEventStore.ts';
-import { mutationDescriptor, type GroupStateMutationCommand } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
+import { type GroupStateMutationCommand } from '@shared-server/rallar-system/group-state/group-state-service-contracts.ts';
+import { InMemoryGroupStateEventStore } from '@shared-server/rallar-system/state-events/state-event-store.ts';
 import type { CreateGroupRequest } from '@shared/api/state-types.ts';
 import { describe, expect, it } from 'vitest';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
@@ -26,7 +27,6 @@ describe('group mutation result adaptation', () => {
         };
         const runtime = createTestGroupStateRuntime({
             runtimeRepository,
-            formationDamping: 'damped',
             createGroupStateEventStore,
             now: () => 1_000,
             randomId: () => 'result-adapter-id',
@@ -51,13 +51,13 @@ describe('group mutation result adaptation', () => {
         });
 
         observeResultAdapter = true;
-        const written = await executor.toCompatibleResult('createGroup', computed);
+        const written = await executor.toMutationResult('createGroup', computed);
         expect.soft(resultStoreCreations).toBe(1);
-        expect.soft(written.result.right?.snapshot.group.groupId).toBe('result-adapter-room');
-        expect.soft(written.result.right?.event?.eventId).toBe(computed.receipt.eventId);
+        expect.soft(written.result?.snapshot.group.groupId).toBe('result-adapter-room');
+        expect.soft(written.result?.event?.eventId).toBe(computed.receipt.eventId);
 
         resultStoreCreations = 0;
-        const receipt = await executor.toCompatibleResult('createGroup', computed, true);
+        const receipt = await executor.toMutationResult('createGroup', computed, true);
         expect.soft(resultStoreCreations).toBe(1);
         expect(receipt).toBe(computed.receipt);
     });

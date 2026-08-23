@@ -1,8 +1,6 @@
 import type { PeerId } from '../api/api-config.ts';
-import type { RtcGroupFormationMode } from '../rtc/group-formation-mode.ts';
 
 export type OutboundDialPlanInput = Readonly<{
-    mode: RtcGroupFormationMode;
     maxPeerConnections: number;
     knownPeerIds: ReadonlySet<PeerId>;
     desiredPeerIds: ReadonlySet<PeerId>;
@@ -25,16 +23,11 @@ export type OutboundDialPlan = Readonly<{
  * retained-eviction pass, which trims the overflow in the same reconcile —
  * counting them here would let a full retained set starve required dials
  * that the eviction pass would never unblock. Deferred peers are retried by
- * later reconciles as slots free up. 'legacy-star' keeps the unbounded
- * pre-Phase-1 dialing.
+ * later reconciles as slots free up.
  */
 export function computeOutboundDialPlan(
     input: OutboundDialPlanInput
 ): OutboundDialPlan {
-    if (input.mode === 'legacy-star') {
-        return { peersToConnect: input.connectablePeerIds, deferredPeerIds: [] };
-    }
-
     const alreadyKnown = input.connectablePeerIds
         .filter((peerId) => input.knownPeerIds.has(peerId));
     const newCandidates = input.connectablePeerIds

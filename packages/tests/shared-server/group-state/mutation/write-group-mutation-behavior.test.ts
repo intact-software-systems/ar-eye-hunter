@@ -1,6 +1,6 @@
-import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state-storage-keys.ts';
+import { mutationDescriptor } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 import { materializeGroupStateGuardedBatch } from '@shared-server/rallar-system/group-state/mutation/write/write-group-mutation.ts';
-import { mutationDescriptor } from '@shared-server/rallar-system/services/group-state-service.ts';
+import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
 import { describe, expect, it } from 'vitest';
 import { createTestAuthSession, createTestGroupStateRuntime } from '../group-state-test-runtime.ts';
@@ -18,7 +18,6 @@ describe('GroupStateService guarded batch write boundary', () => {
         const authority = createTestAuthSession('alice');
         const group = createTestGroupStateRuntime({
             runtimeRepository: runtime,
-            formationDamping: 'damped',
             createGroupStateEventStore: () => eventStore,
             now: () => 1_000,
             serviceId: 'write-boundary-service'

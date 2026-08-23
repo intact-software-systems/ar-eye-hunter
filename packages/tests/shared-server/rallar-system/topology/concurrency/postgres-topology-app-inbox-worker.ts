@@ -9,15 +9,15 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
-import type { IssuedAuthSession } from '@shared-server/rallar-system/repositories/AuthSessionRepository.ts';
+import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 
-import { AppInboxType, type AppInboxFailure } from '@shared-server/rallar-system/services/AppInboxService.ts';
-import type { GroupTopologyConfigMutationExecution } from '@shared-server/rallar-system/topology/group-topology-management-service.ts';
+import { AppInboxType, type AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import type { GroupTopologyConfigMutationExecution } from '@shared-server/rallar-system/topology/config/mutation/to-topology-config-mutation-result.ts';
 
-import { requireExactKeys, requireExactOptionalKeys, requireOneOf, requireString } from '@shared-server/rallar-system/services/exact-object-codec.ts';
-import type { JsonWireValue } from '@shared-server/rallar-system/services/mutation-command-identity.ts';
+import { requireExactKeys, requireExactOptionalKeys, requireOneOf, requireString } from '@shared-server/rallar-system/protocol/exact-object-decoding.ts';
+import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
-import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/services/AppGroupInboxService.ts';
+import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 
 import {
     createPostgresAppInboxWorkerRuntime,
@@ -155,7 +155,7 @@ async function writeTopologyAppInboxCommand(
     });
     runtime.armBarrier();
     const result = await runtime.runUntilCompletion(() =>
-        runtime.group.processAuthenticatedTopologyEntryUntilCompletionResult(
+        runtime.topology.processAuthenticatedEntryUntilCompletionResult(
             {
                 type: input.command === 'put-config'
                     ? AppInboxType.TOPOLOGY_CONFIG_PUT
@@ -243,12 +243,12 @@ function decodeWorkerInput(value: JsonWireValue): WorkerInput {
         'Topology concurrency worker input'
     );
     const request = requireWorkerRecord(input.request, 'Topology concurrency worker request');
-    requireExactOptionalKeys(
-        request,
-        ['requestId', 'updatedByPrincipalId', 'config'],
-        ['expiresAtEpochMs'],
-        'Topology concurrency worker request'
-    );
+    requireExactOptionalKeys({
+        value: request,
+        required: ['requestId', 'updatedByPrincipalId', 'config'],
+        optional: ['expiresAtEpochMs'],
+        label: 'Topology concurrency worker request'
+    });
     requireString(input.traceFilePath, 'Topology concurrency worker traceFilePath');
     requireString(request.requestId, 'Topology concurrency worker requestId');
     requireString(request.updatedByPrincipalId, 'Topology concurrency worker updatedByPrincipalId');

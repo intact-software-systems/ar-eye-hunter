@@ -1,6 +1,6 @@
-import { validateRtcRttMeasurement } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-persistence-validation.ts';
-import { RtcRttRepository } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-repository.ts';
-import { RTC_RTT_LATEST_NAMESPACE } from '@shared-server/rallar-system/rtc-topology/persistence/rtc-rtt-runtime-namespaces.ts';
+import { validateRtcRttMeasurement } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-validation.ts';
+import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
+import { RTC_RTT_LATEST_NAMESPACE } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-runtime-namespaces.ts';
 import type { RttMeasurementInfo } from '@shared/api/api-config.ts';
 
 import { SyntheticRtcRttRuntimeStateRepository } from './synthetic-rtc-rtt-runtime-state-repository.ts';
