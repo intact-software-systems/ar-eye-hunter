@@ -1,0 +1,44 @@
+{
+  "profile": {
+    "productionHardening": false
+  },
+  "http": {
+    "corsOrigins": [
+      "https://ar-eye-hunter.pages.dev",
+      "https://blackbox.rallar.intactss.com",
+      "https://relic-hunters-v1.intact-software-systems.workers.dev"
+    ]
+  },
+  "publicApi": {
+    "apiBaseUrl": "https://rallar-server-in-memory.intact-software-systems.deno.net",
+    "wsBaseUrl": "wss://rallar-server-in-memory.intact-software-systems.deno.net"
+  },
+  "database": {
+    "mode": "pglite-memory",
+    "schemaInitialization": "auto",
+    "pubSub": "local"
+  },
+  "authentication": {
+    "registrationMode": "public",
+    "staticClientsMode": "demo",
+    "adminClientIds": [
+      "admin",
+      "bob"
+    ]
+  },
+  "stateApi": {
+    "strictReadAuthorization": true
+  },
+  "ice": {
+    "mode": "local"
+  },
+  "blackBox": {
+    "operatorToken": {
+      "mode": "enabled",
+      "allowedClientIds": [
+        "admin",
+        "bob"
+      ]
+    }
+  }
+}

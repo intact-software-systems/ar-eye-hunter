@@ -33,7 +33,7 @@ import {
 import { configureRttRepository } from '@shared/repository/rtt-repository.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { toResilienceDto } from '../../src/middleware-resilience.ts';
+import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 import { readPGliteDatabaseEpochMs, waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 import { PGliteTestSocket } from './pglite-test-socket.ts';

@@ -17,7 +17,7 @@
   "tasks": {
     "dev": "deno run --watch --allow-net --allow-env --allow-read src/main.ts",
     "start": "deno run --allow-net --allow-env --allow-read src/main.ts",
-    "start:memory": "RALLAR_SQL_BACKEND=pglite-memory RALLAR_PGLITE_DATA_DIR=memory:// RALLAR_PGLITE_SCHEMA_INIT=auto RALLAR_DB_PUBSUB=local RALLAR_ICE_MODE=local RALLAR_LOGIN_USER_RATE_LIMIT=100 deno run --allow-net --allow-env --allow-read src/main.ts",
+    "start:memory": "RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory deno run --allow-net --allow-env --allow-read src/main.ts",
     "check": "deno check src/main.ts",
     "lint": "deno lint",
     "test": "deno test --allow-env --allow-read --allow-write \"--allow-run=$(deno eval 'console.log(Deno.execPath())')\"",

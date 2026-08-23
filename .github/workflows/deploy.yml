@@ -159,6 +159,9 @@ jobs:
       DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
 
     steps:
+      - name: Checkout repository configuration verifier
+        uses: actions/checkout@v7
+
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
@@ -174,6 +177,17 @@ jobs:
           deno deploy apps get --org intact-software-systems --app rallar-server --json --non-interactive
           deno deploy apps get --org intact-software-systems --app rallar-bb-server --json --non-interactive
           deno deploy apps get --org intact-software-systems --app relic-hunters --json --non-interactive
+
+      - name: Verify API production configuration evidence
+        run: |
+          deno deploy env list --org intact-software-systems --app rallar-server --json --non-interactive > "$RUNNER_TEMP/rallar-server-environment.json"
+          node scripts/deploy/verify-deno-deploy-api-configuration.mjs \
+            --target api-v1 \
+            --file "$RUNNER_TEMP/rallar-server-environment.json"
+          deno deploy env list --org intact-software-systems --app relic-hunters --json --non-interactive > "$RUNNER_TEMP/relic-hunters-environment.json"
+          node scripts/deploy/verify-deno-deploy-api-configuration.mjs \
+            --target relic \
+            --file "$RUNNER_TEMP/relic-hunters-environment.json"
 
   # ----------------------------
   # Web SPA build for Cloudflare Pages

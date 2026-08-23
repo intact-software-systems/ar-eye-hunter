@@ -1,7 +1,0 @@
-{
-  "apiBaseUrl": "https://api.rallar.intactss.com",
-  "wsBaseUrl": "wss://api.rallar.intactss.com",
-  "endpoints": {
-    "createWs": "/api/ws/:id"
-  }
-}

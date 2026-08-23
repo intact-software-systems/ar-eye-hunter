@@ -195,28 +195,37 @@ Deno.test('schema bootstrap only runs for PGlite backends', async () => {
     };
 
     assert.equal(
-        await bootstrapApiV1InMemorySchemaIfNeeded(client, { sqlBackend: 'postgres' }),
+        await bootstrapApiV1InMemorySchemaIfNeeded(client, {
+            mode: 'postgres',
+            schemaInitialization: 'disabled'
+        }),
         false
     );
     assert.equal(calls.length, 0);
 
     assert.equal(
-        await bootstrapApiV1InMemorySchemaIfNeeded(client, { sqlBackend: 'pglite-memory' }),
+        await bootstrapApiV1InMemorySchemaIfNeeded(client, {
+            mode: 'pglite-memory',
+            schemaInitialization: 'auto'
+        }),
         true
     );
     assert.equal(calls.length, 2);
     assert.match(calls[1], /ALTER TABLE resource_inbox/);
 
     assert.equal(
-        await bootstrapApiV1InMemorySchemaIfNeeded(client, { sqlBackend: 'pglite-file' }),
+        await bootstrapApiV1InMemorySchemaIfNeeded(client, {
+            mode: 'pglite-file',
+            schemaInitialization: 'auto'
+        }),
         true
     );
     assert.equal(calls.length, 4);
 
     assert.equal(
         await bootstrapApiV1InMemorySchemaIfNeeded(client, {
-            sqlBackend: 'pglite-memory',
-            pgliteSchemaInit: 'disabled'
+            mode: 'pglite-memory',
+            schemaInitialization: 'disabled'
         }),
         false
     );
@@ -291,11 +300,17 @@ Deno.test('PGlite bootstrap upgrades legacy queue tables for scoped keys', async
 
         await db.exec(legacySchemaSql);
         assert.equal(
-            await bootstrapApiV1InMemorySchemaIfNeeded(db, { sqlBackend: 'pglite-file' }),
+            await bootstrapApiV1InMemorySchemaIfNeeded(db, {
+                mode: 'pglite-file',
+                schemaInitialization: 'auto'
+            }),
             true
         );
         assert.equal(
-            await bootstrapApiV1InMemorySchemaIfNeeded(db, { sqlBackend: 'pglite-file' }),
+            await bootstrapApiV1InMemorySchemaIfNeeded(db, {
+                mode: 'pglite-file',
+                schemaInitialization: 'auto'
+            }),
             true
         );
 

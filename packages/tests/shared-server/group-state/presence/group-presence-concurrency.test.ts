@@ -1,16 +1,12 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { groupStateGroupStorageKey } from '@shared-server/rallar-system/group-state/persistence/group-state-storage-keys.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
+import { describe, expect, it } from 'vitest';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
-import {
-    convergeSummaryForTest,
-    createService,
-    createTestGroupPresenceSummaryTopologyIntent,
-    requireSnapshot,
-    seedOpenGroup
-} from './group-presence-test-runtime.ts';
+import { convergeSummaryForTest, createService, requireSnapshot, seedOpenGroup } from './group-presence-test-runtime.ts';
 
 const BASE_EPOCH_MS = Date.now();
 
@@ -58,7 +54,11 @@ describe('group presence concurrency', () => {
     it('keeps independent service writes convergent without service-local sleep', async () => {
         const runtime = new GroupBarrierRepository();
         await seedOpenGroup(runtime, 'cross-service-lane-room');
-        const sleep = vi.fn((_delayMs: number) => Promise.resolve());
+        const sleepDelays: number[] = [];
+        const sleep = (delayMs: number) => {
+            sleepDelays.push(delayMs);
+            return Promise.resolve();
+        };
         const first = createService(runtime, 2_000, sleep);
         const second = createService(runtime, 2_001, sleep);
         runtime.armGroupReadBarrier(2);
@@ -76,7 +76,7 @@ describe('group presence concurrency', () => {
             })
         ]);
 
-        expect(sleep).not.toHaveBeenCalled();
+        expect(sleepDelays).toEqual([]);
         expect((await requireSnapshot(runtime, 'cross-service-lane-room')).group.snapshotVersion).toBe(
             3
         );
@@ -328,8 +328,8 @@ describe('group presence concurrency', () => {
             expect(admission?.value.admittedSessions).toEqual([]);
 
             const work = new GroupPresenceSummaryWork({
-                topologyIntent: createTestGroupPresenceSummaryTopologyIntent(),
-                disseminationMode: 'dual-emit',
+                outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
+                recomputeDebounceMs: 0,
                 runtimeRepository: runtime,
                 now: () => BASE_EPOCH_MS + 3_000,
                 serviceId: 'summary-worker'

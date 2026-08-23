@@ -3,50 +3,33 @@ import { readRateLimiter, readRequestClientKey } from '@shared-server/http/rate-
 import { CircuitBreaker, CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { RateLimiter, RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
 import type { Context, Next } from 'jsr:@hono/hono@4.11.9';
+import type { ApiV1StateApiConfiguration } from '../configuration/api-v1-configuration.ts';
 import {
     toApiMutationRateLimitResponse,
     toApiMutationUnavailableResponse
 } from '../routes/api-mutation-route-failure.ts';
-import {
-    isClientStateMutationRoute,
-    isRemovedClientStateMutationRoute
-} from '../routes/is-client-state-mutation-route.ts';
-
-const STATE_API_RATE_LIMIT = new RateLimiterPolicy(60_000, 300);
-const STATE_EVENT_LIST_RATE_LIMIT = new RateLimiterPolicy(60_000, 60);
-const STATE_API_CIRCUIT_DURATION = Temporal.Duration.from({ seconds: 10 });
-const STATE_API_CIRCUIT_BREAKER = CircuitBreaker.create(
-    new CircuitBreakerPolicy(
-        10,
-        STATE_API_CIRCUIT_DURATION,
-        STATE_API_CIRCUIT_DURATION,
-        STATE_API_CIRCUIT_DURATION
-    )
-);
+import { isClientStateMutationRoute } from '../routes/is-client-state-mutation-route.ts';
 
 export type StateApiResilienceMiddlewareOptions = Readonly<{
+    configuration: ApiV1StateApiConfiguration;
     namespace?: string;
-    stateRateLimitPolicy?: RateLimiterPolicy;
-    eventListRateLimitPolicy?: RateLimiterPolicy;
-    circuitBreaker?: CircuitBreaker;
 }>;
 
 export function createStateApiResilienceMiddleware(
-    options: StateApiResilienceMiddlewareOptions = {}
+    options: StateApiResilienceMiddlewareOptions
 ): (c: Context, next: Next) => Promise<Response> {
     const namespace = options.namespace ?? 'state-api';
-    const stateRateLimitPolicy = options.stateRateLimitPolicy ??
-        STATE_API_RATE_LIMIT;
-    const eventListRateLimitPolicy = options.eventListRateLimitPolicy ??
-        STATE_EVENT_LIST_RATE_LIMIT;
-    const circuitBreaker = options.circuitBreaker ??
-        STATE_API_CIRCUIT_BREAKER;
+    const stateRateLimitPolicy = new RateLimiterPolicy(
+        options.configuration.rateLimits.windowMs,
+        options.configuration.rateLimits.request
+    );
+    const eventListRateLimitPolicy = new RateLimiterPolicy(
+        options.configuration.rateLimits.windowMs,
+        options.configuration.rateLimits.eventList
+    );
+    const circuitBreaker = createStateApiCircuitBreaker(options.configuration);
 
     return async (c, next) => {
-        if (isRemovedClientStateMutationRoute(c.req.method, c.req.path)) {
-            await next();
-            return c.res;
-        }
         const isClientMutation = isClientStateMutationRoute(c.req.method, c.req.path);
         const limiter = readRateLimiter(
             toRateLimiterNamespace(namespace, c.req.path),
@@ -86,6 +69,19 @@ export function createStateApiResilienceMiddleware(
                 : c.json({ error: 'Too many state API requests' }, 429)
         );
     };
+}
+
+function createStateApiCircuitBreaker(
+    configuration: ApiV1StateApiConfiguration
+): CircuitBreaker {
+    return CircuitBreaker.create(
+        new CircuitBreakerPolicy(
+            configuration.circuitBreaker.failureThreshold,
+            Temporal.Duration.from({ milliseconds: configuration.circuitBreaker.openDurationMs }),
+            Temporal.Duration.from({ milliseconds: configuration.circuitBreaker.resetDurationMs }),
+            Temporal.Duration.from({ milliseconds: configuration.circuitBreaker.samplingDurationMs })
+        )
+    );
 }
 
 function toRateLimiterNamespace(namespace: string, path: string): string {

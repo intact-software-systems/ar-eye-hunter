@@ -169,7 +169,7 @@ function createInput(): CreateApiV1SystemInstallersInput<ApiV1SystemInstallerTop
             exportBackupBundle: rejectUnusedCrdtRead,
             verifyIntegrity: rejectUnusedCrdtRead
         },
-        crdtPolicies: undefined,
+        crdtPolicies: [{ documentType: '*', rollout: 'disabled' }],
         globalGraphRecomputeLimit: undefined
     };
 }

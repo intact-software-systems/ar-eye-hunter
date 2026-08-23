@@ -1,12 +1,8 @@
-import { verifyRallarBlackBoxOperatorToken } from '@shared-server/http/black-box-operator-token.ts';
-import { assertBlackBoxControlProductionEnv } from '@shared-server/http/production-env-hardening.ts';
+import { assertBlackBoxControlProductionEnv } from '@shared-server/http/black-box-control-production-env.ts';
 import {
     parseControlClientMessage,
     validateRallarBlackBoxTestCommand,
-    type ControlClientEnvelope,
-    type ControlCommandEnvelope,
-    type ControlEventEnvelope,
-    type ControlResultEnvelope
+    type ControlCommandEnvelope
 } from '@shared-test/rallar-bb-test/control-protocol.ts';
 import {
     validateDistributedRunManifestContract,
@@ -17,26 +13,21 @@ import {
     RALLAR_BLACK_BOX_DISTRIBUTED_RUN_MANIFEST_SCHEMA,
     validateJsonSchema
 } from '@shared-test/rallar-bb-test/schema.ts';
-import type { RallarBlackBoxTestCommand, RallarBlackBoxTestCommandKind } from '@shared-test/rallar-bb-test/types.ts';
+import type { RallarBlackBoxTestCommand } from '@shared-test/rallar-bb-test/types.ts';
+import { createControlArtifactRecorder } from './control-artifact-recorder.ts';
 import {
-    controlEventArtifactJsonl,
-    controlResultArtifactJsonl,
-    controlResultEventArtifactJsonl,
     controlRunArtifactContentType,
     controlRunArtifactFileNameFromValue,
-    controlRunEventsJsonl,
     controlRunFailureBundle,
-    controlRunResultsJsonl,
     createControlRunArtifactBundle
 } from './control-artifacts.ts';
 import { fleetReportFilterFromUrl } from './control-fleet.ts';
-import type {
-    ControlQueuedCommandSnapshot,
-    ControlRunSnapshotBounds,
-    ControlServerSnapshot,
-    EnqueueControlCommandInput
-} from './control-service.ts';
+import { createControlHttpSecurity } from './control-http-security.ts';
+import { PayloadTooLargeError } from './control-request-body.ts';
+import { readBlackBoxControlServerConfiguration } from './control-server-configuration.ts';
+import type { ControlRunSnapshotBounds, EnqueueControlCommandInput } from './control-service.ts';
 import { createRallarBlackBoxControlService } from './control-service.ts';
+import { createControlSnapshotPersistence } from './control-snapshot-persistence.ts';
 import { applyControlCorsHeaders, corsOriginsFromAllowedOrigins, createControlResponseHeaders } from './cors.ts';
 import { handleRetentionCleanup } from './retention-cleanup.ts';
 import { createRetentionPlanTokenAdapter } from './retention-plan-token.ts';
@@ -44,7 +35,6 @@ import { handleSwaggerRoute, swaggerFallbackResponse } from './routes/swagger-ro
 
 const DEFAULT_PORT = 5180;
 const OPEN_STATE = 1;
-const SNAPSHOT_PERSIST_DEBOUNCE_MS = 100;
 const ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS: ControlRunSnapshotBounds = {
     commands: 200,
     results: 200,
@@ -54,31 +44,9 @@ const ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS: ControlRunSnapshotBounds = {
     heartbeats: 100
 };
 
-type SecurityOptions = Readonly<{
-    allowedOrigins: readonly string[];
-    requireTls: boolean;
-    requireRunToken: boolean;
-    requireReadToken: boolean;
-    adminToken?: string;
-    operatorTokenSecret?: string;
-    runTokenTtlMs: number;
-    maxRequestBytes: number;
-    allowedCommandKinds?: readonly RallarBlackBoxTestCommandKind[];
-    commandRateLimitMax: number;
-    commandRateLimitWindowMs: number;
-    httpAllowedHosts: readonly string[];
-    httpAllowedOrigins: readonly string[];
-    wsAllowedHosts: readonly string[];
-    wsAllowedOrigins: readonly string[];
-    storageDir?: string;
-    retentionMaxRuns: number;
-    snapshotPersistenceBounds: ControlRunSnapshotBounds;
-    runtimeRetentionBounds: ControlRunSnapshotBounds;
-}>;
-
 assertBlackBoxControlProductionEnv(Deno.env);
 
-const security = resolveSecurityOptions();
+const security = readBlackBoxControlServerConfiguration(Deno.env);
 const controlService = createRallarBlackBoxControlService({
     allowedCommandKinds: security.allowedCommandKinds,
     commandRateLimitMax: security.commandRateLimitMax,
@@ -86,7 +54,8 @@ const controlService = createRallarBlackBoxControlService({
     runTokenTtlMs: security.runTokenTtlMs,
     runtimeRetentionBounds: security.runtimeRetentionBounds
 });
-const artifactRecorder = createArtifactRecorder(security.storageDir, {
+const artifactRecorder = createControlArtifactRecorder({
+    storageDir: security.storageDir,
     commandSnapshot: (runId, commandId) => controlService.snapshotCommand(runId, commandId)
 });
 const agentSockets = new Map<string, WebSocket>();
@@ -94,15 +63,27 @@ const socketAgents = new WeakMap<WebSocket, { runId: string; agentId: string; }>
 const retentionPlanTokens = createRetentionPlanTokenAdapter({
     key: crypto.getRandomValues(new Uint8Array(32))
 });
-let snapshotPersistSequence = 0;
-let snapshotPersistScheduled = false;
-let snapshotPersisting = false;
-let snapshotPersistDirty = false;
-
 const port = Number(Deno.env.get('PORT') ?? DEFAULT_PORT);
 const corsOrigins = corsOriginsFromAllowedOrigins(security.allowedOrigins);
+const httpSecurity = createControlHttpSecurity({
+    configuration: security,
+    controlService,
+    jsonResponse
+});
+const snapshotPersistence = createControlSnapshotPersistence({
+    storageDir: security.storageDir,
+    retentionMaxRuns: security.retentionMaxRuns,
+    snapshotBounds: security.snapshotPersistenceBounds,
+    controlService,
+    deleteRuns: (runIds) => {
+        for (const runId of runIds) {
+            closeRunSockets(runId);
+            artifactRecorder.deleteRun(runId);
+        }
+    }
+});
 
-await restorePersistedSnapshot();
+await snapshotPersistence.restore();
 
 Deno.serve({ port }, async (request) => {
     return applyControlCorsHeaders(request, await handleRequest(request), corsOrigins);
@@ -114,7 +95,7 @@ console.log(`Agent WebSocket endpoint: ws://localhost:${port}/control`);
 async function handleRequest(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const isRead = request.method === 'GET' || request.method === 'HEAD';
-    const policyRejection = rejectByRequestPolicy(request, url);
+    const policyRejection = httpSecurity.rejectByRequestPolicy(request, url);
     if (policyRejection) {
         return policyRejection;
     }
@@ -142,8 +123,8 @@ async function handleRequest(request: Request): Promise<Response> {
 
     if (
         isRead &&
-        isProtectedControlReadPath(url.pathname) &&
-        !(await authorizeReadRequest(request, url))
+        httpSecurity.isProtectedControlReadPath(url.pathname) &&
+        !(await httpSecurity.authorizeReadRequest(request, url))
     ) {
         return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
     }
@@ -159,11 +140,11 @@ async function handleRequest(request: Request): Promise<Response> {
     }
 
     if (request.method === 'POST' && url.pathname === '/fleet/reports/rebuild') {
-        if (!(await authorizeAdminRequest(request, url))) {
+        if (!(await httpSecurity.authorizeAdminRequest(request, url))) {
             return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
         }
         const response = controlService.rebuildFleetReports();
-        persistControlSnapshot();
+        snapshotPersistence.persist();
         return jsonResponse(response);
     }
 
@@ -182,14 +163,14 @@ async function handleRequest(request: Request): Promise<Response> {
     }
 
     if (request.method === 'POST' && url.pathname === '/distributed-runs') {
-        if (!(await authorizeAdminRequest(request, url))) {
+        if (!(await httpSecurity.authorizeAdminRequest(request, url))) {
             return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
         }
         return await createDistributedRun(request);
     }
 
     if (request.method === 'POST' && url.pathname === '/distributed-runs/resolve-targets') {
-        if (!(await authorizeAdminRequest(request, url))) {
+        if (!(await httpSecurity.authorizeAdminRequest(request, url))) {
             return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
         }
         return await resolveDistributedTargets(request);
@@ -208,7 +189,7 @@ async function handleRequest(request: Request): Promise<Response> {
         /^\/distributed-runs\/([^/]+)\/(stage|start|cancel)$/
     );
     if (request.method === 'POST' && distributedRunActionMatch) {
-        if (!(await authorizeAdminRequest(request, url))) {
+        if (!(await httpSecurity.authorizeAdminRequest(request, url))) {
             return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
         }
         return await mutateDistributedRun(
@@ -240,7 +221,7 @@ async function handleRequest(request: Request): Promise<Response> {
         const cleanup = await handleRetentionCleanup({
             url,
             maxRuns: security.retentionMaxRuns,
-            authorize: () => authorizeAdminRequest(request, url),
+            authorize: () => httpSecurity.authorizeAdminRequest(request, url),
             service: {
                 createRetentionPlan: (maxRuns) => controlService.createRetentionPlan(maxRuns),
                 applyRetentionPlan: (plan) => controlService.applyRetentionPlan(plan),
@@ -248,7 +229,7 @@ async function handleRequest(request: Request): Promise<Response> {
                 legacyRetainedRuns: () => controlService.snapshot().runs.length
             },
             tokens: retentionPlanTokens,
-            persist: persistControlSnapshot
+            persist: () => snapshotPersistence.persist()
         });
         return jsonResponse(cleanup.body, cleanup.status);
     }
@@ -262,7 +243,7 @@ async function handleRequest(request: Request): Promise<Response> {
 
     if (request.method === 'DELETE' && runMatch) {
         const runId = decodeURIComponent(runMatch[1]);
-        if (!(await authorizeAdminRequest(request, url))) {
+        if (!(await httpSecurity.authorizeAdminRequest(request, url))) {
             return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
         }
         closeRunSockets(runId);
@@ -270,7 +251,7 @@ async function handleRequest(request: Request): Promise<Response> {
         if (deleted) {
             artifactRecorder.deleteRun(runId);
         }
-        persistControlSnapshot();
+        snapshotPersistence.persist();
         return deleted
             ? jsonResponse({ deleted: true, runId })
             : jsonResponse({ error: 'Run not found.' }, 404);
@@ -279,14 +260,14 @@ async function handleRequest(request: Request): Promise<Response> {
     const runResetMatch = url.pathname.match(/^\/runs\/([^/]+)\/reset$/);
     if (request.method === 'POST' && runResetMatch) {
         const runId = decodeURIComponent(runResetMatch[1]);
-        if (!(await authorizeAdminRequest(request, url))) {
+        if (!(await httpSecurity.authorizeAdminRequest(request, url))) {
             return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
         }
         const run = controlService.resetRun(runId);
         if (run) {
             artifactRecorder.deleteRun(runId);
         }
-        persistControlSnapshot();
+        snapshotPersistence.persist();
         return run
             ? jsonResponse({ reset: true, run })
             : jsonResponse({ error: 'Run not found.' }, 404);
@@ -295,7 +276,7 @@ async function handleRequest(request: Request): Promise<Response> {
     const runCommandsMatch = url.pathname.match(/^\/runs\/([^/]+)\/commands$/);
     if (request.method === 'POST' && runCommandsMatch) {
         const runId = decodeURIComponent(runCommandsMatch[1]);
-        if (!(await authorizeAdminRequest(request, url))) {
+        if (!(await httpSecurity.authorizeAdminRequest(request, url))) {
             return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
         }
         return await enqueueBulkCommand(request, runId);
@@ -324,10 +305,11 @@ async function handleRequest(request: Request): Promise<Response> {
             return jsonResponse({ error: 'Run not found.' }, 404);
         }
         if (fileName === 'events.jsonl' || fileName === 'results.jsonl') {
-            return await artifactJsonlResponse(
+            return await artifactRecorder.response(
                 runId,
                 fileName === 'events.jsonl' ? 'events' : 'results',
-                run
+                run,
+                corsOrigins
             );
         }
         const bundle = createControlRunArtifactBundle(run);
@@ -339,7 +321,7 @@ async function handleRequest(request: Request): Promise<Response> {
         const runId = decodeURIComponent(runEventsJsonlMatch[1]);
         const run = controlService.snapshotRun(runId, ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS);
         return run
-            ? await artifactJsonlResponse(runId, 'events', run)
+            ? await artifactRecorder.response(runId, 'events', run, corsOrigins)
             : jsonResponse({ error: 'Run not found.' }, 404);
     }
 
@@ -348,7 +330,7 @@ async function handleRequest(request: Request): Promise<Response> {
         const runId = decodeURIComponent(runResultsJsonlMatch[1]);
         const run = controlService.snapshotRun(runId, ARTIFACT_BUNDLE_SNAPSHOT_BOUNDS);
         return run
-            ? await artifactJsonlResponse(runId, 'results', run)
+            ? await artifactRecorder.response(runId, 'results', run, corsOrigins)
             : jsonResponse({ error: 'Run not found.' }, 404);
     }
 
@@ -365,7 +347,7 @@ async function handleRequest(request: Request): Promise<Response> {
     if (request.method === 'POST' && agentCommandMatch) {
         const runId = decodeURIComponent(agentCommandMatch[1]);
         const agentId = decodeURIComponent(agentCommandMatch[2]);
-        if (!authorizeRunRequest(request, url, runId, agentId)) {
+        if (!httpSecurity.authorizeRunRequest(request, url, runId, agentId)) {
             return jsonResponse({ error: 'Run token is required or invalid.' }, 401);
         }
         return await enqueueCommand(request, runId, agentId);
@@ -375,7 +357,7 @@ async function handleRequest(request: Request): Promise<Response> {
     if (request.method === 'POST' && agentReportMatch) {
         const runId = decodeURIComponent(agentReportMatch[1]);
         const agentId = decodeURIComponent(agentReportMatch[2]);
-        if (!authorizeRunRequest(request, url, runId, agentId)) {
+        if (!httpSecurity.authorizeRunRequest(request, url, runId, agentId)) {
             return jsonResponse({ error: 'Run token is required or invalid.' }, 401);
         }
         return await uploadReport(request, runId, agentId);
@@ -385,7 +367,7 @@ async function handleRequest(request: Request): Promise<Response> {
     if (request.method === 'POST' && agentTokenMatch) {
         const runId = decodeURIComponent(agentTokenMatch[1]);
         const agentId = decodeURIComponent(agentTokenMatch[2]);
-        if (!(await authorizeAdminRequest(request, url))) {
+        if (!(await httpSecurity.authorizeAdminRequest(request, url))) {
             return jsonResponse({ error: 'Admin token is required or invalid.' }, 401);
         }
         return await issueRunToken(request, runId, agentId);
@@ -402,7 +384,7 @@ function handleControlSocket(request: Request): Response {
     }
 
     const url = new URL(request.url);
-    const socketToken = tokenFromRequest(request, url);
+    const socketToken = httpSecurity.tokenFromRequest(request, url);
     const { socket, response } = Deno.upgradeWebSocket(request);
 
     socket.onmessage = (event) => {
@@ -419,7 +401,7 @@ function handleControlSocket(request: Request): Response {
         if (agentSockets.get(key) === socket) {
             agentSockets.delete(key);
             controlService.markAgentDisconnected(agent.runId, agent.agentId);
-            persistControlSnapshot();
+            snapshotPersistence.persist();
         }
     };
 
@@ -452,7 +434,7 @@ async function handleControlSocketMessage(
 
     if (
         parsed.envelope.kind === 'register' &&
-        !authorizeRunToken(
+        !httpSecurity.authorizeRunToken(
             parsed.envelope.runId,
             parsed.envelope.agentId,
             parsed.envelope.token ?? socketToken
@@ -473,20 +455,20 @@ async function handleControlSocketMessage(
         registerSocket(socket, received.runId, received.agentId);
     }
     sendDispatchableCommandsForRun(received.runId);
-    persistControlSnapshot();
+    snapshotPersistence.persist();
 }
 
 async function controlSocketMessageData(data: unknown): Promise<unknown> {
     if (typeof data === 'string') {
-        assertPayloadByteLength(new TextEncoder().encode(data).byteLength);
+        httpSecurity.assertPayloadByteLength(new TextEncoder().encode(data).byteLength);
         return data;
     }
     if (data instanceof ArrayBuffer) {
-        assertPayloadByteLength(data.byteLength);
+        httpSecurity.assertPayloadByteLength(data.byteLength);
         return new TextDecoder().decode(data);
     }
     if (data instanceof Blob) {
-        assertPayloadByteLength(data.size);
+        httpSecurity.assertPayloadByteLength(data.size);
         return await data.text();
     }
     return data;
@@ -503,7 +485,7 @@ async function createDistributedRun(request: Request): Promise<Response> {
 
     try {
         const distributedRun = controlService.createDistributedRun(manifest);
-        persistControlSnapshot();
+        snapshotPersistence.persist();
         return jsonResponse(distributedRun, 201);
     }
     catch (error) {
@@ -536,7 +518,7 @@ async function mutateDistributedRun(
     let reason: string | undefined;
     if (action === 'cancel') {
         try {
-            const body = await readJsonBody(request, true);
+            const body = await httpSecurity.readJsonBody(request, true);
             if (isRecord(body) && typeof body.reason === 'string' && body.reason.trim().length > 0) {
                 reason = body.reason.trim();
             }
@@ -555,7 +537,7 @@ async function mutateDistributedRun(
         distributedRun.targetAgentIds.forEach((agentId) =>
             sendDispatchableCommands(distributedRun.controlRunId, agentId)
         );
-        persistControlSnapshot();
+        snapshotPersistence.persist();
         return jsonResponse(distributedRun, 202);
     }
     catch (error) {
@@ -566,7 +548,7 @@ async function mutateDistributedRun(
 async function readDistributedRunManifest(
     request: Request
 ): Promise<RallarBlackBoxDistributedRunManifest> {
-    const body = await readJsonBody(request);
+    const body = await httpSecurity.readJsonBody(request);
     const manifest = isRecord(body) && 'manifest' in body ? body.manifest : body;
 
     const schemaValidation = validateJsonSchema(
@@ -610,7 +592,7 @@ async function enqueueCommand(
 ): Promise<Response> {
     let body: Omit<EnqueueControlCommandInput, 'runId' | 'agentId'>;
     try {
-        body = await readJsonBody(request) as Omit<EnqueueControlCommandInput, 'runId' | 'agentId'>;
+        body = await httpSecurity.readJsonBody(request) as Omit<EnqueueControlCommandInput, 'runId' | 'agentId'>;
     }
     catch (error) {
         return jsonErrorResponse(error);
@@ -625,7 +607,7 @@ async function enqueueCommand(
         return jsonResponse({ error: validation.error }, 400);
     }
 
-    const destinationError = validateBrowserCommandDestination(body.command);
+    const destinationError = httpSecurity.validateBrowserCommandDestination(body.command);
     if (destinationError) {
         return jsonResponse({ error: destinationError }, 403);
     }
@@ -646,7 +628,7 @@ async function enqueueCommand(
         }, error instanceof Error && error.message.includes('rate limit') ? 429 : 400);
     }
     sendDispatchableCommands(runId, agentId);
-    persistControlSnapshot();
+    snapshotPersistence.persist();
     return jsonResponse({
         accepted: true,
         command: envelope
@@ -659,7 +641,7 @@ async function enqueueBulkCommand(
 ): Promise<Response> {
     let body: unknown;
     try {
-        body = await readJsonBody(request);
+        body = await httpSecurity.readJsonBody(request);
     }
     catch (error) {
         return jsonErrorResponse(error);
@@ -691,7 +673,7 @@ async function enqueueBulkCommand(
     }
 
     const commandTemplate = record.command as RallarBlackBoxTestCommand;
-    const destinationError = validateBrowserCommandDestination(commandTemplate);
+    const destinationError = httpSecurity.validateBrowserCommandDestination(commandTemplate);
     if (destinationError) {
         return jsonResponse({ error: destinationError }, 403);
     }
@@ -738,7 +720,7 @@ async function enqueueBulkCommand(
     }
 
     agentIds.forEach((agentId) => sendDispatchableCommands(runId, agentId));
-    persistControlSnapshot();
+    snapshotPersistence.persist();
     return jsonResponse({
         accepted: true,
         commands
@@ -752,7 +734,7 @@ async function uploadReport(
 ): Promise<Response> {
     let body: unknown;
     try {
-        body = await readJsonBody(request);
+        body = await httpSecurity.readJsonBody(request);
     }
     catch (error) {
         return jsonErrorResponse(error);
@@ -779,7 +761,7 @@ async function uploadReport(
     if (received.accepted) {
         artifactRecorder.record(parsed.envelope);
     }
-    persistControlSnapshot();
+    snapshotPersistence.persist();
     return jsonResponse({
         accepted: true
     }, 202);
@@ -792,7 +774,7 @@ async function issueRunToken(
 ): Promise<Response> {
     let body: unknown = {};
     try {
-        body = await readJsonBody(request, true);
+        body = await httpSecurity.readJsonBody(request, true);
     }
     catch (error) {
         return jsonErrorResponse(error);
@@ -810,294 +792,8 @@ async function issueRunToken(
         ttlMs: effectiveTtlMs
     });
 
-    persistControlSnapshot();
+    snapshotPersistence.persist();
     return jsonResponse(token, 201);
-}
-
-function resolveSecurityOptions(): SecurityOptions {
-    const allowedCommandKinds = envList('RALLAR_BLACK_BOX_ALLOWED_COMMANDS');
-    return {
-        allowedOrigins: envList('RALLAR_BLACK_BOX_ALLOWED_ORIGINS'),
-        requireTls: envBoolean('RALLAR_BLACK_BOX_REQUIRE_TLS'),
-        requireRunToken: envBoolean('RALLAR_BLACK_BOX_REQUIRE_RUN_TOKEN'),
-        requireReadToken: envBoolean('RALLAR_BLACK_BOX_REQUIRE_READ_TOKEN'),
-        adminToken: envString('RALLAR_BLACK_BOX_ADMIN_TOKEN'),
-        operatorTokenSecret: envString('RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET'),
-        runTokenTtlMs: envNumber('RALLAR_BLACK_BOX_RUN_TOKEN_TTL_MS', 15 * 60_000),
-        maxRequestBytes: envNumber('RALLAR_BLACK_BOX_MAX_REQUEST_BYTES', 2_000_000),
-        allowedCommandKinds: allowedCommandKinds.length > 0
-            ? allowedCommandKinds as RallarBlackBoxTestCommandKind[]
-            : undefined,
-        commandRateLimitMax: envNumber('RALLAR_BLACK_BOX_COMMAND_RATE_LIMIT_MAX', 120),
-        commandRateLimitWindowMs: envNumber('RALLAR_BLACK_BOX_COMMAND_RATE_LIMIT_WINDOW_MS', 60_000),
-        httpAllowedHosts: envList('RALLAR_BLACK_BOX_HTTP_ALLOWED_HOSTS'),
-        httpAllowedOrigins: envList('RALLAR_BLACK_BOX_HTTP_ALLOWED_ORIGINS'),
-        wsAllowedHosts: envList('RALLAR_BLACK_BOX_WS_ALLOWED_HOSTS'),
-        wsAllowedOrigins: envList('RALLAR_BLACK_BOX_WS_ALLOWED_ORIGINS'),
-        storageDir: envString('RALLAR_BLACK_BOX_STORAGE_DIR'),
-        retentionMaxRuns: envNumber('RALLAR_BLACK_BOX_RETENTION_MAX_RUNS', 0),
-        snapshotPersistenceBounds: {
-            commands: envSnapshotLimit('RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_COMMANDS', 500),
-            results: envSnapshotLimit('RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_RESULTS', 500),
-            events: envSnapshotLimit('RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_EVENTS', 1_000),
-            stats: envSnapshotLimit('RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_STATS', 200),
-            reports: envSnapshotLimit('RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_REPORTS', 100),
-            heartbeats: envSnapshotLimit('RALLAR_BLACK_BOX_SNAPSHOT_PERSIST_HEARTBEATS', 100)
-        },
-        runtimeRetentionBounds: {
-            commands: envSnapshotLimit('RALLAR_BLACK_BOX_RUNTIME_RETAIN_COMMANDS', 1_000),
-            results: envSnapshotLimit('RALLAR_BLACK_BOX_RUNTIME_RETAIN_RESULTS', 1_000),
-            events: envSnapshotLimit('RALLAR_BLACK_BOX_RUNTIME_RETAIN_EVENTS', 2_000),
-            stats: envSnapshotLimit('RALLAR_BLACK_BOX_RUNTIME_RETAIN_STATS', 500),
-            reports: envSnapshotLimit('RALLAR_BLACK_BOX_RUNTIME_RETAIN_REPORTS', 20),
-            heartbeats: envSnapshotLimit('RALLAR_BLACK_BOX_RUNTIME_RETAIN_HEARTBEATS', 500)
-        }
-    };
-}
-
-function envString(key: string): string | undefined {
-    const value = Deno.env.get(key)?.trim();
-    return value && value.length > 0 ? value : undefined;
-}
-
-function envList(key: string): string[] {
-    return (Deno.env.get(key) ?? '')
-        .split(',')
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0);
-}
-
-function envNumber(key: string, fallback: number): number {
-    const parsed = Number.parseInt(Deno.env.get(key) ?? '', 10);
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
-}
-
-function envBoolean(key: string): boolean {
-    const normalized = (Deno.env.get(key) ?? '').trim().toLowerCase();
-    return normalized === '1' ||
-        normalized === 'true' ||
-        normalized === 'yes' ||
-        normalized === 'on';
-}
-
-function envSnapshotLimit(key: string, fallback: number): number | undefined {
-    const normalized = (Deno.env.get(key) ?? '').trim().toLowerCase();
-    if (!normalized) {
-        return fallback;
-    }
-    if (normalized === 'all' || normalized === 'unbounded' || normalized === 'none') {
-        return undefined;
-    }
-
-    const parsed = Number.parseInt(normalized, 10);
-    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
-}
-
-function rejectByRequestPolicy(request: Request, url: URL): Response | undefined {
-    if (
-        security.requireTls &&
-        url.protocol !== 'https:' &&
-        request.headers.get('x-forwarded-proto') !== 'https'
-    ) {
-        return jsonResponse({ error: 'TLS is required.' }, 400);
-    }
-
-    const origin = request.headers.get('origin');
-    if (
-        origin &&
-        security.allowedOrigins.length > 0 &&
-        !security.allowedOrigins.includes(origin)
-    ) {
-        return jsonResponse({ error: 'Origin is not allowed.' }, 403);
-    }
-
-    return undefined;
-}
-
-function isProtectedControlReadPath(pathname: string): boolean {
-    return pathname === '/runs' ||
-        pathname.startsWith('/runs/') ||
-        pathname === '/distributed-runs' ||
-        pathname.startsWith('/distributed-runs/') ||
-        pathname === '/fleet/reports' ||
-        pathname.startsWith('/fleet/reports/');
-}
-
-async function authorizeReadRequest(request: Request, url: URL): Promise<boolean> {
-    if (!security.requireReadToken) {
-        return true;
-    }
-
-    if (!hasAdminAuthorizationBackend()) {
-        return false;
-    }
-
-    return await authorizeAdminRequest(request, url);
-}
-
-function hasAdminAuthorizationBackend(): boolean {
-    return Boolean(security.adminToken || security.operatorTokenSecret);
-}
-
-async function authorizeAdminRequest(request: Request, url: URL): Promise<boolean> {
-    if (!security.adminToken && !security.operatorTokenSecret) {
-        return true;
-    }
-
-    const token = tokenFromRequest(request, url);
-    if (security.adminToken && token === security.adminToken) {
-        return true;
-    }
-
-    if (!security.operatorTokenSecret) {
-        return false;
-    }
-
-    const verified = await verifyRallarBlackBoxOperatorToken({
-        token,
-        secret: security.operatorTokenSecret
-    });
-    return verified.ok;
-}
-
-function authorizeRunRequest(
-    request: Request,
-    url: URL,
-    runId: string,
-    agentId: string
-): boolean {
-    return authorizeRunToken(runId, agentId, tokenFromRequest(request, url));
-}
-
-function authorizeRunToken(runId: string, agentId: string, token: string | undefined): boolean {
-    const tokenRequired = security.requireRunToken ||
-        controlService.hasActiveRunToken(runId, agentId);
-    if (!tokenRequired) {
-        return true;
-    }
-
-    return controlService.validateRunToken(runId, agentId, token);
-}
-
-function tokenFromRequest(request: Request, url: URL): string | undefined {
-    const authorization = request.headers.get('authorization');
-    if (authorization?.toLowerCase().startsWith('bearer ')) {
-        return authorization.slice('bearer '.length).trim();
-    }
-
-    return request.headers.get('x-rallar-run-token')?.trim() ||
-        url.searchParams.get('token')?.trim() ||
-        undefined;
-}
-
-async function readJsonBody(request: Request, allowEmpty = false): Promise<unknown> {
-    const text = await readTextBody(request);
-    if (text.length === 0 && allowEmpty) {
-        return {};
-    }
-
-    return JSON.parse(text);
-}
-
-async function readTextBody(request: Request): Promise<string> {
-    const declaredLength = request.headers.get('content-length');
-    if (declaredLength) {
-        const parsed = Number.parseInt(declaredLength, 10);
-        if (Number.isFinite(parsed)) {
-            assertPayloadByteLength(parsed);
-        }
-    }
-
-    const reader = request.body?.getReader();
-    if (!reader) {
-        return '';
-    }
-
-    const decoder = new TextDecoder();
-    let byteLength = 0;
-    let text = '';
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-            break;
-        }
-        byteLength += value.byteLength;
-        assertPayloadByteLength(byteLength);
-        text += decoder.decode(value, { stream: true });
-    }
-    text += decoder.decode();
-    return text;
-}
-
-function assertPayloadByteLength(byteLength: number): void {
-    if (byteLength > security.maxRequestBytes) {
-        throw new PayloadTooLargeError(
-            `Request payload is too large: ${byteLength} bytes exceeds ${security.maxRequestBytes} bytes.`
-        );
-    }
-}
-
-function validateBrowserCommandDestination(command: RallarBlackBoxTestCommand): string | undefined {
-    if (command.kind === 'http.request') {
-        return validateDestination(
-            command.request.url ?? command.request.path,
-            security.httpAllowedOrigins,
-            security.httpAllowedHosts,
-            'HTTP'
-        );
-    }
-
-    if (command.kind === 'ws.open') {
-        return validateDestination(
-            command.url,
-            security.wsAllowedOrigins,
-            security.wsAllowedHosts,
-            'WebSocket'
-        );
-    }
-
-    return undefined;
-}
-
-function validateDestination(
-    value: string | undefined,
-    allowedOrigins: readonly string[],
-    allowedHosts: readonly string[],
-    label: string
-): string | undefined {
-    if (!value || (allowedOrigins.length === 0 && allowedHosts.length === 0)) {
-        return undefined;
-    }
-
-    let parsed: URL;
-    try {
-        parsed = new URL(value);
-    }
-    catch (_error) {
-        return undefined;
-    }
-
-    if (allowedOrigins.includes(parsed.origin)) {
-        return undefined;
-    }
-
-    if (allowedHosts.some((allowedHost) => hostMatches(parsed.host, parsed.hostname, allowedHost))) {
-        return undefined;
-    }
-
-    return `${label} destination is not allowed: ${parsed.origin}`;
-}
-
-function hostMatches(host: string, hostname: string, allowedHost: string): boolean {
-    if (allowedHost === host || allowedHost === hostname) {
-        return true;
-    }
-    if (!allowedHost.startsWith('*.')) {
-        return false;
-    }
-
-    const suffix = allowedHost.slice(1);
-    return hostname.endsWith(suffix) && hostname.length > suffix.length;
 }
 
 function registerSocket(socket: WebSocket, runId: string, agentId: string): void {
@@ -1185,234 +881,6 @@ function limitParam(url: URL, key: string): number | undefined {
     const parsed = Number.parseInt(value, 10);
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
-
-type ArtifactJsonlKind = 'events' | 'results';
-
-type ArtifactRecorder = Readonly<{
-    record(envelope: ControlClientEnvelope): void;
-    flush(): Promise<void>;
-    jsonlPath(runId: string, kind: ArtifactJsonlKind): string | undefined;
-    deleteRun(runId: string): void;
-}>;
-
-type ArtifactRecorderOptions = Readonly<{
-    commandSnapshot?: (
-        runId: string,
-        commandId: string
-    ) => ControlQueuedCommandSnapshot | undefined;
-}>;
-
-function createArtifactRecorder(
-    storageDir: string | undefined,
-    options: ArtifactRecorderOptions = {}
-): ArtifactRecorder {
-    let writeQueue: Promise<void> = Promise.resolve();
-    return {
-        record(envelope) {
-            const commandId = commandIdFromArtifactEnvelope(envelope);
-            const command = commandId ? options.commandSnapshot?.(envelope.runId, commandId) : undefined;
-            const writes = artifactJsonlWrites(envelope, command);
-            if (!storageDir || writes.length === 0) {
-                return;
-            }
-            const runDir = artifactRunDir(storageDir, envelope.runId);
-            writeQueue = writeQueue
-                .then(async () => {
-                    await Deno.mkdir(runDir, { recursive: true });
-                    for (const write of writes) {
-                        await Deno.writeTextFile(`${runDir}/${write.fileName}`, write.text, {
-                            append: true,
-                            create: true
-                        });
-                    }
-                })
-                .catch((error) => {
-                    console.warn(
-                        `Could not append control artifact JSONL for ${envelope.runId}: ${errorMessage(error)}`
-                    );
-                });
-        },
-        flush() {
-            return writeQueue;
-        },
-        jsonlPath(runId, kind) {
-            return storageDir ? `${artifactRunDir(storageDir, runId)}/${kind}.jsonl` : undefined;
-        },
-        deleteRun(runId) {
-            if (!storageDir) {
-                return;
-            }
-            writeQueue = writeQueue
-                .then(() => Deno.remove(artifactRunDir(storageDir, runId), { recursive: true }))
-                .catch(() => undefined);
-        }
-    };
-}
-
-function artifactJsonlWrites(
-    envelope: ControlClientEnvelope,
-    command?: ControlQueuedCommandSnapshot
-): readonly { fileName: 'events.jsonl' | 'results.jsonl'; text: string; }[] {
-    if (envelope.kind === 'result') {
-        return [
-            { fileName: 'results.jsonl', text: controlResultArtifactJsonl(envelope, command) },
-            { fileName: 'events.jsonl', text: controlResultEventArtifactJsonl(envelope, command) }
-        ];
-    }
-    if (
-        envelope.kind === 'event' || envelope.kind === 'diagnostic' || envelope.kind === 'stats' ||
-        envelope.kind === 'report'
-    ) {
-        return [{ fileName: 'events.jsonl', text: controlEventArtifactJsonl(envelope, command) }];
-    }
-    return [];
-}
-
-function commandIdFromArtifactEnvelope(envelope: ControlClientEnvelope): string | undefined {
-    return 'commandId' in envelope && typeof envelope.commandId === 'string'
-        ? envelope.commandId
-        : undefined;
-}
-
-function artifactRunDir(storageDir: string, runId: string): string {
-    return `${storageDir.replace(/\/+$/, '')}/runs/${safePathSegment(runId)}`;
-}
-
-function safePathSegment(value: string): string {
-    return encodeURIComponent(value).replace(/%/g, '_');
-}
-
-async function artifactJsonlResponse(
-    runId: string,
-    kind: ArtifactJsonlKind,
-    fallbackRun: NonNullable<ReturnType<typeof controlService.snapshotRun>>
-): Promise<Response> {
-    const storedPath = artifactRecorder.jsonlPath(runId, kind);
-    if (storedPath) {
-        try {
-            await artifactRecorder.flush();
-            const file = await Deno.open(storedPath, { read: true });
-            return new Response(file.readable, {
-                status: 200,
-                headers: responseHeaders('application/x-ndjson; charset=utf-8')
-            });
-        }
-        catch (error) {
-            if (!(error instanceof Deno.errors.NotFound)) {
-                console.warn(`Could not read control artifact ${storedPath}: ${errorMessage(error)}`);
-            }
-        }
-    }
-
-    const text = kind === 'events'
-        ? controlRunEventsJsonl(fallbackRun)
-        : controlRunResultsJsonl(fallbackRun);
-    return textResponse(text, 200, 'application/x-ndjson; charset=utf-8');
-}
-
-function persistedSnapshotPath(): string | undefined {
-    if (!security.storageDir) {
-        return undefined;
-    }
-
-    return `${security.storageDir.replace(/\/+$/, '')}/control-snapshot.json`;
-}
-
-async function restorePersistedSnapshot(): Promise<void> {
-    const path = persistedSnapshotPath();
-    if (!path) {
-        return;
-    }
-
-    try {
-        const text = await Deno.readTextFile(path);
-        const parsed = JSON.parse(text) as { snapshot?: ControlServerSnapshot; };
-        if (parsed.snapshot?.runs) {
-            controlService.restoreSnapshot(parsed.snapshot);
-            console.log(`Restored Rallar black-box control snapshot from ${path}`);
-        }
-    }
-    catch (error) {
-        if (error instanceof Deno.errors.NotFound) {
-            return;
-        }
-        console.warn(`Could not restore control snapshot from ${path}: ${errorMessage(error)}`);
-    }
-}
-
-function persistControlSnapshot(): void {
-    const deletedRunIds = controlService.pruneRuns(security.retentionMaxRuns);
-    if (deletedRunIds.length > 0) {
-        closeDeletedRunSockets(deletedRunIds);
-    }
-
-    if (!persistedSnapshotPath()) {
-        return;
-    }
-    snapshotPersistDirty = true;
-    if (snapshotPersistScheduled || snapshotPersisting) {
-        return;
-    }
-    snapshotPersistScheduled = true;
-    setTimeout(() => {
-        void flushPersistedSnapshot();
-    }, SNAPSHOT_PERSIST_DEBOUNCE_MS);
-}
-
-async function flushPersistedSnapshot(): Promise<void> {
-    snapshotPersistScheduled = false;
-    if (!snapshotPersistDirty || snapshotPersisting) {
-        return;
-    }
-    snapshotPersistDirty = false;
-    snapshotPersisting = true;
-    try {
-        await writePersistedSnapshot();
-    }
-    finally {
-        snapshotPersisting = false;
-        if (snapshotPersistDirty) {
-            persistControlSnapshot();
-        }
-    }
-}
-
-async function writePersistedSnapshot(): Promise<void> {
-    const path = persistedSnapshotPath();
-    if (!path) {
-        return;
-    }
-    const tempPath = `${path}.tmp-${Deno.pid}-${Date.now()}-${snapshotPersistSequence += 1}`;
-
-    const snapshot = controlService.snapshotForPersistence(security.snapshotPersistenceBounds);
-    const payload = JSON.stringify(
-        {
-            schemaVersion: 1,
-            savedAtEpochMs: Date.now(),
-            snapshot
-        },
-        null,
-        2
-    );
-    try {
-        await Deno.mkdir(security.storageDir!, { recursive: true });
-        await Deno.writeTextFile(tempPath, payload);
-        await Deno.rename(tempPath, path);
-    }
-    catch (error) {
-        Deno.remove(tempPath).catch(() => undefined);
-        console.warn(`Could not persist control snapshot to ${path}: ${errorMessage(error)}`);
-    }
-}
-
-function closeDeletedRunSockets(runIds: readonly string[]): void {
-    for (const runId of runIds) {
-        closeRunSockets(runId);
-        artifactRecorder.deleteRun(runId);
-    }
-}
-
-class PayloadTooLargeError extends Error {}
 
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);

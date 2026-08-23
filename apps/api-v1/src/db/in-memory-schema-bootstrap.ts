@@ -1,8 +1,9 @@
-import {
-    readApiV1DatabaseBackendConfig,
-    resolvePGliteSchemaInitMode,
-    type ApiV1DatabaseBackendConfig
-} from './database-config.ts';
+import type { ApiV1DatabaseConfiguration } from '../configuration/api-v1-configuration.ts';
+
+export interface ApiV1SchemaBootstrapConfiguration {
+    readonly mode: ApiV1DatabaseConfiguration['mode'];
+    readonly schemaInitialization: ApiV1DatabaseConfiguration['schemaInitialization'];
+}
 
 export type InMemorySqlSchemaClient = Readonly<{
     exec(sql: string): Promise<unknown>;
@@ -40,13 +41,12 @@ export async function applyApiV1PGliteSchemaUpgrade(
 
 export async function bootstrapApiV1InMemorySchemaIfNeeded(
     client: InMemorySqlSchemaClient,
-    config: ApiV1DatabaseBackendConfig = readApiV1DatabaseBackendConfig()
+    configuration: ApiV1SchemaBootstrapConfiguration
 ): Promise<boolean> {
-    if (config.sqlBackend !== 'pglite-memory' && config.sqlBackend !== 'pglite-file') {
+    if (configuration.mode === 'postgres') {
         return false;
     }
-
-    if (resolvePGliteSchemaInitMode(config) === 'disabled') {
+    if (configuration.schemaInitialization === 'disabled') {
         return false;
     }
 

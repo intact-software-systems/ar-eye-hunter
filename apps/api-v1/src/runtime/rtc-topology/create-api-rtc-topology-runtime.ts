@@ -32,8 +32,11 @@ import type {
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import type { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
+import type {
+    ApiV1TopologyDeliveryConfiguration,
+    ApiV1TopologyReplayConfiguration
+} from '../../configuration/api-v1-configuration.ts';
 import { startApiRtcTopologyDelivery } from './rtc-topology-delivery-startup.ts';
-import type { RtcTopologyReplayMode } from './rtc-topology-replay-config.ts';
 import { startApiRtcTopologyReplay } from './rtc-topology-replay-startup.ts';
 
 export interface CreateApiRtcTopologyRuntimeInput {
@@ -44,7 +47,8 @@ export interface CreateApiRtcTopologyRuntimeInput {
     readonly publisherStreamId: string;
     readonly nowEpochMs: () => number;
     readonly onCompactionFailure: (error: Error) => void;
-    readonly replayMode: RtcTopologyReplayMode;
+    readonly replay: ApiV1TopologyReplayConfiguration;
+    readonly delivery: ApiV1TopologyDeliveryConfiguration;
     readonly readHydrationIdentity: (
         connection: ConnectionContext
     ) => RtcTopologyHydrationIdentity | undefined;
@@ -77,12 +81,12 @@ export function createApiRtcTopologyRuntime(
 ): ApiRtcTopologyRuntime {
     const publicationRepository = new RtcTopologyPublicationRepository(
         input.runtimeStateRepository,
-        DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
+        input.delivery.publicationRetentionMs,
         input.nowEpochMs
     );
     const executionRepository = new RtcTopologyExecutionRepository(
         input.runtimeStateRepository,
-        DEFAULT_RTC_TOPOLOGY_PUBLICATION_RETENTION_MS,
+        input.delivery.publicationRetentionMs,
         input.nowEpochMs
     );
     const deliveryRepository = new PSqlRtcTopologyDeliveryRepository(input.database);
@@ -95,9 +99,10 @@ export function createApiRtcTopologyRuntime(
         groups: input.groupsRepository,
         readIdentity: input.readHydrationIdentity,
         nowEpochMs: input.nowEpochMs,
+        batchWindowMs: input.delivery.reconnectBatchWindowMs,
         diagnostics: replayDiagnostics.record
     });
-    if (input.replayMode === 'enabled') {
+    if (input.replay.mode === 'enabled') {
         reconnectHydrator.start();
     }
     const delivery = startApiRtcTopologyDelivery({
@@ -109,10 +114,12 @@ export function createApiRtcTopologyRuntime(
             retireExpiredConsumerCursors: (retirement) => replayRepository.retireExpiredConsumerCursors(retirement),
             retireEmptyStreams: (retirement) => replayRepository.retireEmptyStreams(retirement)
         },
+        configuration: input.delivery,
         onCompactionFailure: input.onCompactionFailure
     });
     const replay = startApiRtcTopologyReplay({
-        mode: input.replayMode,
+        mode: input.replay.mode,
+        configuration: input.delivery,
         consumerStreamId: input.publisherStreamId,
         repository: replayRepository,
         diagnostics: replayDiagnostics.record,

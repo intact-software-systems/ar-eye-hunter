@@ -74,8 +74,22 @@ GitHub Actions workflow the only deployment owner. See Deno's documentation for
 [`[skip deploy]`](https://docs.deno.com/deploy/changelog/).
 
 Before any database migration, the workflow verifies the token and access to
-all three applications. Each deployment uploads the repository root with this
-command shape:
+all three applications. It then reads redacted Deno Deploy environment metadata
+for `rallar-server` and `relic-hunters`. Both production contexts must contain:
+
+- visible `RALLAR_API_CONFIGURATION_PROFILE=prod`;
+- visible non-demo `AUTH_ADMIN_CLIENT_IDS` and
+  `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`;
+- visible non-empty `METERED_APP_NAME`;
+- platform-secret `DATABASE_URL`, `RALLAR_AUTH_CREDENTIAL_SECRET`,
+  `METERED_API_KEY`, and `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET`.
+
+The Relic production context must also contain visible
+`RELIC_REST_AUTH_MODE=group-policy`. The verifier reports names and policy
+failures only; it never prints or uploads the environment listing. Configure
+these values in Deno Deploy before enabling Actions deployment.
+
+Each deployment uploads the repository root with this command shape:
 
 ```sh
 deno deploy . --config deno.json \

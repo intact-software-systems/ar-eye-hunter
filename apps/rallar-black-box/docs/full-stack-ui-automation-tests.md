@@ -221,13 +221,11 @@ SPA origins.
 
 When `RALLAR_BLACK_BOX_API_MODE=memory` is set, the full-stack config starts
 API-v1 without env files or `DATABASE_URL`. It sets `RALLAR_API_BASE_URL` and
-`RALLAR_WS_BASE_URL` from `VITE_RALLAR_API_BASE_URL`, plus
-`RALLAR_SQL_BACKEND=pglite-memory`, `RALLAR_PGLITE_DATA_DIR=memory://`,
-`RALLAR_PGLITE_SCHEMA_INIT=auto`, and `RALLAR_DB_PUBSUB=local`, so the API uses
-ephemeral SQL plus in-process queue pub/sub and `/api/config` advertises the
-same HTTP/WS port as the SPA. It also sets `RALLAR_ICE_MODE=local` and
-`RALLAR_LOGIN_USER_RATE_LIMIT=100` so repeated local browser smoke runs do not
-require Metered credentials or hit the default per-user login limiter.
+`RALLAR_WS_BASE_URL` from `VITE_RALLAR_API_BASE_URL`, selects
+`RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory`, and supplies bounded fixture
+credentials. The profile owns ephemeral SQL, schema initialization, local
+pub/sub, and local ICE. The harness raises `RALLAR_LOGIN_USER_RATE_LIMIT` to
+`100` so repeated browser smoke runs do not hit the profile's normal limiter.
 `VITE_RALLAR_API_BASE_URL` still selects the API base URL and the config derives
 the API `PORT` from it.
 

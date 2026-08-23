@@ -1,4 +1,4 @@
-export type ApiV1BlackBoxBackend = 'postgres' | 'pglite-memory';
+export type ApiV1BlackBoxBackend = 'postgres' | 'pglite-memory' | 'pglite-file';
 
 export interface ApiV1BlackBoxOptions {
     readonly backend: ApiV1BlackBoxBackend;
@@ -38,8 +38,8 @@ interface ApiV1ClusterOptionValues {
 export function parseApiV1BlackBoxArgs(args: readonly string[]): ApiV1BlackBoxOptions {
     const values = readApiV1BlackBoxArgValues(args);
     const backend = String(values.get('--backend') ?? 'postgres') as ApiV1BlackBoxBackend;
-    if (backend !== 'postgres' && backend !== 'pglite-memory') {
-        throw new Error('--backend must be postgres or pglite-memory.');
+    if (backend !== 'postgres' && backend !== 'pglite-memory' && backend !== 'pglite-file') {
+        throw new Error('--backend must be postgres, pglite-memory, or pglite-file.');
     }
 
     const port = toApiPort(values.get('--port') ?? '18080', '--port');

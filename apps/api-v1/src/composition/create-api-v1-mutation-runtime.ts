@@ -32,11 +32,10 @@ import { ClientStateSnapshotReadThroughCache } from '@shared-server/rallar-syste
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import type {
-    GroupStateDisseminationMode
-} from '@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts';
+    GroupPolicyCapacityConfig
+} from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import {
-    GroupPresenceSummaryWork,
-    type GroupPresenceSummaryTopologyIntent
+    GroupPresenceSummaryWork
 } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import {
     createCachedGroupStateService
@@ -50,12 +49,10 @@ import {
 import { recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 import type { DequeueResourceEntryOptions, ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
 import { createApiCrdtDocumentAuthorizer } from '../crdt/create-api-crdt-document-authorizer.ts';
-import { createApiCrdtInboxFactory, resolveApiCrdtPolicies } from '../crdt/create-api-crdt-inbox-factory.ts';
-import type { ApiGroupCapacityConfig } from '../runtime/group-formation/group-capacity-config.ts';
+import { createApiCrdtInboxFactory } from '../crdt/create-api-crdt-inbox-factory.ts';
 import {
     createApiMutationInboxFactories,
     type ApiMutationInboxFactories
@@ -74,13 +71,10 @@ export interface CreateApiV1MutationRuntimeInput {
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
     readonly appInboxOptions: AppInboxOptions;
-    readonly groupCapacity: ApiGroupCapacityConfig;
-    readonly groupStateDissemination: GroupStateDisseminationMode;
-    readonly createGroupFormationTopologyIntent: (
-        outboxQueueReader: OutboxQueueReader
-    ) => GroupPresenceSummaryTopologyIntent;
+    readonly groupCapacity: GroupPolicyCapacityConfig;
+    readonly groupFormationRecomputeDebounceMs: number;
     readonly adminClientIds: readonly string[];
-    readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[] | undefined;
+    readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[];
     readonly resilience: ApiV1MutationRuntimeResilience;
 }
 
@@ -139,8 +133,7 @@ interface ApiV1MutationResources {
 
 interface CreateGroupStateInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
     readonly groupStateService: ReturnType<typeof createCachedGroupStateService>;
-    readonly groupStateDissemination: GroupStateDisseminationMode;
-    readonly topologyIntent: GroupPresenceSummaryTopologyIntent;
+    readonly groupFormationRecomputeDebounceMs: number;
 }
 
 interface CreateAppAuthInboxServiceFactoryInput extends ApiV1StateMutationDependencies {
@@ -153,9 +146,6 @@ export function createApiV1MutationRuntime(
     const resources = createApiV1MutationResources(input.database);
     const stateDependencies = createApiV1StateMutationDependencies(input, resources);
     const mutationFactories = createApiV1MutationInboxFactories(input, resources);
-    const topologyIntent = input.createGroupFormationTopologyIntent(
-        new OutboxQueueReader(resources.queueBox)
-    );
     const groupStateService = createCachedGroupStateService({
         durable: createGroupStateService({
             runtimeRepository: resources.runtimeStateRepository,
@@ -188,8 +178,7 @@ export function createApiV1MutationRuntime(
         createGroupStateInboxService: createGroupStateInboxServiceFactory({
             ...stateDependencies,
             groupStateService,
-            groupStateDissemination: input.groupStateDissemination,
-            topologyIntent
+            groupFormationRecomputeDebounceMs: input.groupFormationRecomputeDebounceMs
         }),
         createAppClientInboxService: createAppClientInboxServiceFactory(stateDependencies),
         createAppAuthInboxService: createAppAuthInboxServiceFactory({
@@ -266,7 +255,7 @@ function createApiV1MutationInboxFactories(
         timing: input.timing,
         options: input.appInboxOptions,
         currentAuthority,
-        policies: resolveApiCrdtPolicies(input.crdtPolicies)
+        policies: input.crdtPolicies
     });
     return createApiMutationInboxFactories({
         createAppCrdtInboxService,
@@ -289,8 +278,8 @@ function createGroupStateInboxServiceFactory(
     return ({ inboxQueueReader, outboxQueueReader, wakeQueueEngine }) => {
         const presenceSummary = new GroupPresenceSummaryWork({
             runtimeRepository: input.runtimeStateRepository,
-            topologyIntent: input.topologyIntent,
-            disseminationMode: input.groupStateDissemination,
+            outboxQueueReader,
+            recomputeDebounceMs: input.groupFormationRecomputeDebounceMs,
             database: input.database,
             serviceId: input.serviceId,
             wakeQueue: wakeQueueEngine,

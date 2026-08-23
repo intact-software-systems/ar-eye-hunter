@@ -27,7 +27,7 @@ Deno.test(
         unregister();
         await assert.rejects(() => lifecycle.stop(), /second failed/);
 
-        assert.deepEqual(calls, ['expiry-stop', 'first', 'second', 'third']);
+        assert.deepEqual(calls, ['expiry-stop', 'third', 'second', 'first']);
     }
 );
 
@@ -48,6 +48,33 @@ Deno.test('background lifecycle starts fresh generations and repeats one stop sa
     await lifecycle.stop();
 
     assert.deepEqual(calls, ['begin', 'begin', 'expiry-stop', 'task-stop']);
+});
+
+Deno.test('background lifecycle closes registrations sequentially in reverse ownership order', async () => {
+    const calls: string[] = [];
+    const lifecycle = createApiV1BackgroundTaskLifecycle({
+        runtimeStateExpiry: createFakeRuntimeStateExpiryLifecycle(calls)
+    });
+    lifecycle.register(async () => {
+        calls.push('database-start');
+        await Promise.resolve();
+        calls.push('database-finish');
+    });
+    lifecycle.register(async () => {
+        calls.push('worker-start');
+        await Promise.resolve();
+        calls.push('worker-finish');
+    });
+
+    await lifecycle.stop();
+
+    assert.deepEqual(calls, [
+        'expiry-stop',
+        'worker-start',
+        'worker-finish',
+        'database-start',
+        'database-finish'
+    ]);
 });
 
 function createFakeRuntimeStateExpiryLifecycle(

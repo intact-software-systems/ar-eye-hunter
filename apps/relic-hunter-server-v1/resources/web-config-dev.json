@@ -1,7 +1,0 @@
-{
-  "apiBaseUrl": "http://localhost:8090",
-  "wsBaseUrl": "ws://localhost:8090",
-  "endpoints": {
-    "createWs": "/api/ws/:id"
-  }
-}

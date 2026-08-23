@@ -640,7 +640,6 @@ Focused concurrency coverage lives in:
 - `packages/tests/shared-server/rtc-topology-delivery-log.test.ts`
 - `packages/tests/shared-server/rtc-topology-replay-service.test.ts`
 - `packages/tests/shared-server/rtc-topology-reconnect-hydrator.test.ts`
-- `packages/tests/shared-server/rtc-topology-cluster-transport.test.ts`
 - `packages/tests/shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository-read-write.test.ts`
 - `packages/tests/shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository-convergence.test.ts`
 - `packages/tests/shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-persistence-corruption.test.ts`
@@ -650,7 +649,6 @@ Focused concurrency coverage lives in:
 - `packages/tests/shared-server/queuebox-pubsub-bridge.test.ts`
 - `packages/tests/shared-server/rallar-middleware.test.ts`
 - `packages/tests/shared/ws-outbox-owner-miss-retry.test.ts`
-- `packages/tests/api-v1/rtc-topology-cluster-transport.test.ts`
 - `packages/tests/shared-web/data-caches.test.ts`
 - `apps/api-v1/test/services/ws-topic-room-authorizer.test.ts`
 - `packages/shared-test/black-box-runner/tests/api-v1/api-v1-rtc-topology-convergence.json`

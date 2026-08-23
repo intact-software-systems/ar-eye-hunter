@@ -1,9 +1,11 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { describe, expect, it } from 'vitest';
 import { GroupBarrierRepository } from '../group-state-concurrency-test-runtime.ts';
 import { groupRef, SCOPE } from '../mutation/group-mutation-test-runtime.ts';
-import { convergeSummaryForTest, corruptFirstEntry, createService, createTestGroupPresenceSummaryTopologyIntent } from './group-presence-test-runtime.ts';
+import { convergeSummaryForTest, corruptFirstEntry, createService } from './group-presence-test-runtime.ts';
 
 const BASE_EPOCH_MS = Date.now();
 
@@ -55,8 +57,8 @@ describe('group presence summary validation', () => {
         });
 
         const summaryWork = new GroupPresenceSummaryWork({
-            topologyIntent: createTestGroupPresenceSummaryTopologyIntent(),
-            disseminationMode: 'dual-emit',
+            outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
+            recomputeDebounceMs: 0,
             runtimeRepository: runtime,
             now: () => BASE_EPOCH_MS + 3_000,
             serviceId: 'summary-worker'
@@ -131,8 +133,8 @@ describe('group presence summary validation', () => {
         runtime.resetGuards();
 
         const summaryWork = new GroupPresenceSummaryWork({
-            topologyIntent: createTestGroupPresenceSummaryTopologyIntent(),
-            disseminationMode: 'dual-emit',
+            outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
+            recomputeDebounceMs: 0,
             runtimeRepository: runtime,
             now: () => BASE_EPOCH_MS + 3_000,
             serviceId: 'summary-worker'

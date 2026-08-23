@@ -103,6 +103,7 @@ export interface GraphTopologyRouteDependencies {
     ) => Promise<IssuedAuthSession>;
     readonly adminClientIds: readonly string[];
     readonly readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
+    readonly strictReadAuthorization: boolean;
     readonly now: () => number;
 }
 
@@ -372,7 +373,7 @@ async function assertCanReadGroupSnapshot(
     deps: GraphTopologyRouteDependencies,
     snapshot: GroupSnapshot
 ): Promise<void> {
-    if (!isStrictReadAuthEnabled()) {
+    if (!deps.strictReadAuthorization) {
         return;
     }
     const authSession = await deps.requireApiAuthSession(req);
@@ -389,7 +390,7 @@ async function assertCanReadScopedGlobalGraph(
     req: { header(name: string): string | undefined; },
     deps: GraphTopologyRouteDependencies
 ): Promise<void> {
-    if (!isStrictReadAuthEnabled()) {
+    if (!deps.strictReadAuthorization) {
         return;
     }
     await deps.requireApiAuthSession(req);
@@ -582,13 +583,4 @@ function toGroupRef(c: {
         ...toScope(c),
         groupId: c.req.param('groupId')
     };
-}
-
-function isStrictReadAuthEnabled(): boolean {
-    const value = Deno.env.get('RALLAR_STATE_STRICT_READ_AUTH');
-    if (value === undefined || value.trim() === '') {
-        return false;
-    }
-
-    return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
 }

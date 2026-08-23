@@ -18,8 +18,7 @@ import {
     postGroupStateMutationWithHeaders,
     putGroupStateMutation,
     TEST_GROUP_SCOPE,
-    toGroupStateWritten,
-    withStrictGroupStateRouteReadAuth
+    toGroupStateWritten
 } from './group-state-route-test-runtime.ts';
 
 const API_BASE = '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1';
@@ -227,7 +226,7 @@ Deno.test(
 
 Deno.test(
     'group governance routes enqueue safe workflows with authenticated actors',
-    () => withStrictGroupStateRouteReadAuth(false, verifyGroupGovernanceRoutes)
+    verifyGroupGovernanceRoutes
 );
 
 async function verifyGroupGovernanceRoutes(): Promise<void> {

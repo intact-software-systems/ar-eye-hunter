@@ -13,14 +13,6 @@ import type {
     RtcTopologyReplayStreamRetirementInput,
     RtcTopologyReplayStreamRetirementResult
 } from './rtc-topology-replay-contracts.ts';
-import {
-    RTC_TOPOLOGY_REPLAY_COMPACTION_INTERVAL_MS,
-    RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE,
-    RTC_TOPOLOGY_REPLAY_HEARTBEAT_INTERVAL_MS,
-    RTC_TOPOLOGY_REPLAY_LEASE_DURATION_MS,
-    RTC_TOPOLOGY_REPLAY_RETENTION_MS
-} from './rtc-topology-replay-policy.ts';
-
 export interface RtcTopologyDeliveryStreamMaintenancePort {
     registerStream(
         input: RtcTopologyDeliveryStreamRegistrationInput
@@ -43,6 +35,14 @@ export interface RtcTopologyDeliveryStreamScheduler {
     repeat(task: () => Promise<void>, intervalMs: number): () => void;
 }
 
+export interface RtcTopologyDeliveryStreamPolicy {
+    readonly heartbeatIntervalMs: number;
+    readonly leaseDurationMs: number;
+    readonly compactionIntervalMs: number;
+    readonly compactionPageSize: number;
+    readonly consumerRetentionMs: number;
+}
+
 export class RtcTopologyDeliveryLeaseLostError extends Error {
     readonly code = 'rtc-topology-delivery-lease-lost';
 
@@ -55,6 +55,7 @@ export class RtcTopologyDeliveryLeaseLostError extends Error {
 interface RtcTopologyDeliveryStreamServiceOptions {
     readonly streamId: string;
     readonly repository: RtcTopologyDeliveryStreamMaintenancePort;
+    readonly policy: RtcTopologyDeliveryStreamPolicy;
     readonly scheduler?: RtcTopologyDeliveryStreamScheduler;
     readonly onHealthFailure: (error: Error) => void;
     readonly onCompactionFailure?: (error: Error) => void;
@@ -63,6 +64,7 @@ interface RtcTopologyDeliveryStreamServiceOptions {
 export class RtcTopologyDeliveryStreamService {
     readonly #streamId: string;
     readonly #repository: RtcTopologyDeliveryStreamMaintenancePort;
+    readonly #policy: RtcTopologyDeliveryStreamPolicy;
     readonly #scheduler: RtcTopologyDeliveryStreamScheduler;
     readonly #onHealthFailure: (error: Error) => void;
     readonly #onCompactionFailure: (error: Error) => void;
@@ -76,6 +78,7 @@ export class RtcTopologyDeliveryStreamService {
         validateRtcTopologyDeliveryStreamId(options.streamId);
         this.#streamId = options.streamId;
         this.#repository = options.repository;
+        this.#policy = options.policy;
         this.#scheduler = options.scheduler ?? intervalScheduler;
         this.#onHealthFailure = options.onHealthFailure;
         this.#onCompactionFailure = options.onCompactionFailure ?? (() => undefined);
@@ -101,7 +104,7 @@ export class RtcTopologyDeliveryStreamService {
     async #registerAndSchedule(): Promise<void> {
         const registration = await this.#repository.registerStream({
             streamId: this.#streamId,
-            leaseDurationMs: RTC_TOPOLOGY_REPLAY_LEASE_DURATION_MS
+            leaseDurationMs: this.#policy.leaseDurationMs
         });
         if (registration.status === 'conflict') {
             throw new RtcTopologyDeliveryLeaseLostError(
@@ -115,11 +118,11 @@ export class RtcTopologyDeliveryStreamService {
         this.#stops.push(
             this.#scheduler.repeat(
                 async () => await this.#runHeartbeat(),
-                RTC_TOPOLOGY_REPLAY_HEARTBEAT_INTERVAL_MS
+                this.#policy.heartbeatIntervalMs
             ),
             this.#scheduler.repeat(
                 async () => await this.#runCompaction(),
-                RTC_TOPOLOGY_REPLAY_COMPACTION_INTERVAL_MS
+                this.#policy.compactionIntervalMs
             )
         );
     }
@@ -132,7 +135,7 @@ export class RtcTopologyDeliveryStreamService {
         try {
             const renewal = await this.#repository.renewStreamLease({
                 streamId: this.#streamId,
-                leaseDurationMs: RTC_TOPOLOGY_REPLAY_LEASE_DURATION_MS
+                leaseDurationMs: this.#policy.leaseDurationMs
             });
             if (renewal.status === 'lease-lost') {
                 const error = new RtcTopologyDeliveryLeaseLostError(
@@ -161,14 +164,14 @@ export class RtcTopologyDeliveryStreamService {
         this.#compactionRunning = true;
         try {
             await this.#repository.compactExpiredEntries({
-                pageSize: RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE
+                pageSize: this.#policy.compactionPageSize
             });
             await this.#repository.retireExpiredConsumerCursors({
-                retentionMs: RTC_TOPOLOGY_REPLAY_RETENTION_MS,
-                pageSize: RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE
+                retentionMs: this.#policy.consumerRetentionMs,
+                pageSize: this.#policy.compactionPageSize
             });
             await this.#repository.retireEmptyStreams({
-                pageSize: RTC_TOPOLOGY_REPLAY_COMPACTION_PAGE_SIZE
+                pageSize: this.#policy.compactionPageSize
             });
         }
         catch (error) {

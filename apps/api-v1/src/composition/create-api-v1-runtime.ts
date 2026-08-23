@@ -30,11 +30,15 @@ import { setRtcTopologyOutboxWriteSink } from '@shared-server/rallar-system/topo
 import type { RallarCrdtDocumentTypePolicy } from '@shared/crdt/mod.ts';
 
 import type {
-    GroupStateDisseminationMode
-} from '@shared-server/rallar-system/group-state/presence/group-presence-summary-effects.ts';
+    GroupPolicyCapacityConfig
+} from '@shared-server/rallar-system/group-state/policy/group-membership-admission-policy.ts';
 import { findCurrentClientSnapshot } from '../crdt/create-api-crdt-document-authorizer.ts';
-import type { ApiV1DatabasePubSubConfig } from '../db/database-pubsub-config.ts';
-import type { ApiGroupCapacityConfig } from '../runtime/group-formation/group-capacity-config.ts';
+import type {
+    ApiV1DatabaseConfiguration,
+    ApiV1TopologyDeliveryConfiguration,
+    ApiV1TopologyReplayConfiguration
+} from '../configuration/api-v1-configuration.ts';
+import type { ApiV1DatabaseNotificationPort } from '../db/api-v1-database-lifecycle.ts';
 import { readAuthorisedWsConnectionIdentity } from '../runtime/rtc-topology/authorised-ws-connection-registry.ts';
 import {
     createApiRtcTopologyQueuePubSubBridge
@@ -44,7 +48,6 @@ import {
     type ApiRtcTopologyRuntime,
     type CreateApiRtcTopologyRuntimeInput
 } from '../runtime/rtc-topology/create-api-rtc-topology-runtime.ts';
-import type { RtcTopologyReplayMode } from '../runtime/rtc-topology/rtc-topology-replay-config.ts';
 import {
     createApiStateSnapshotReadSelectors,
     type ApiStateSnapshotReadSelectors
@@ -77,15 +80,16 @@ export interface CreateApiV1RuntimeInput {
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
     readonly appInboxOptions: AppInboxOptions;
-    readonly groupCapacity: ApiGroupCapacityConfig;
-    readonly groupStateDissemination: GroupStateDisseminationMode;
-    readonly createGroupFormationTopologyIntent: CreateApiV1MutationRuntimeInput['createGroupFormationTopologyIntent'];
-    readonly databasePubSub: ApiV1DatabasePubSubConfig;
-    readonly rtcTopologyReplayMode: RtcTopologyReplayMode;
+    readonly groupCapacity: GroupPolicyCapacityConfig;
+    readonly groupFormationRecomputeDebounceMs: number;
+    readonly databasePubSubMode: ApiV1DatabaseConfiguration['pubSub'];
+    readonly databaseNotification: ApiV1DatabaseNotificationPort | null;
+    readonly topologyReplay: ApiV1TopologyReplayConfiguration;
+    readonly topologyDelivery: ApiV1TopologyDeliveryConfiguration;
     readonly adminClientIds: readonly string[];
     readonly rtcTopologyOptions: CreateApiV1TopologyServicesInput['rtcTopologyOptions'];
     readonly rttRefinementGateConfig: CreateApiV1TopologyServicesInput['rttRefinementGateConfig'];
-    readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[] | undefined;
+    readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[];
     readonly resilience: CreateApiV1MutationRuntimeInput['resilience'];
     readonly backgroundTasks: ApiV1BackgroundTaskLifecycle;
 }
@@ -104,7 +108,8 @@ interface CreateSharedMiddlewareInput {
     readonly wsRuntimeName: string;
     readonly queuePubSubChannel: string;
     readonly queuePubSubPublisherId: string;
-    readonly databasePubSub: ApiV1DatabasePubSubConfig;
+    readonly databasePubSubMode: ApiV1DatabaseConfiguration['pubSub'];
+    readonly databaseNotification: ApiV1DatabaseNotificationPort | null;
     readonly timing: RallarTimingSink;
 }
 
@@ -148,7 +153,8 @@ export function constructApiV1Runtime(
         onCompactionFailure: (error) => {
             console.error('RTC topology delivery compaction failed:', error);
         },
-        replayMode: input.rtcTopologyReplayMode,
+        replay: input.topologyReplay,
+        delivery: input.topologyDelivery,
         readHydrationIdentity: readAuthorisedWsConnectionIdentity
     });
     const topology = operations.createTopologyServices({
@@ -180,7 +186,8 @@ export function constructApiV1Runtime(
         wsRuntimeName: input.wsRuntimeName,
         queuePubSubChannel: input.queuePubSubChannel,
         queuePubSubPublisherId: input.queuePubSubPublisherId,
-        databasePubSub: input.databasePubSub,
+        databasePubSubMode: input.databasePubSubMode,
+        databaseNotification: input.databaseNotification,
         timing: input.timing
     });
     rtcTopology.topologyReplay.attach({
@@ -210,8 +217,7 @@ function toMutationRuntimeInput(
         timing: input.timing,
         appInboxOptions: input.appInboxOptions,
         groupCapacity: input.groupCapacity,
-        groupStateDissemination: input.groupStateDissemination,
-        createGroupFormationTopologyIntent: input.createGroupFormationTopologyIntent,
+        groupFormationRecomputeDebounceMs: input.groupFormationRecomputeDebounceMs,
         adminClientIds: input.adminClientIds,
         crdtPolicies: input.crdtPolicies,
         resilience: input.resilience
@@ -312,7 +318,8 @@ function createSharedMiddleware(
         rtcTopologyDelivery: rtcTopology.topologyDelivery,
         rtcTopologyReplay: rtcTopology.topologyReplay,
         queuePubSubBridge: createApiRtcTopologyQueuePubSubBridge({
-            config: input.databasePubSub,
+            mode: input.databasePubSubMode,
+            notification: input.databaseNotification,
             channel: input.queuePubSubChannel,
             publisherId: input.queuePubSubPublisherId,
             timing: input.timing,

@@ -80,6 +80,7 @@ export type ClientStateRouteDependencies = Readonly<{
     ) => Promise<StateSyncCacheHydrationResult>;
     processClientAppInbox: ProcessClientAppInbox;
     readClientSnapshot: ClientStatePointRead;
+    strictReadAuthorization: boolean;
 }>;
 
 export function registerClientStateRoutes(
@@ -117,6 +118,7 @@ export function registerClientStateRoutes(
     registerClientStatePointReadRoute(app, {
         read: deps.readClientSnapshot,
         requireAuthSession: deps.requireApiAuthSession,
+        strictReadAuthorization: deps.strictReadAuthorization,
         hydrate: (snapshots) => hydrateClientSnapshots(deps, snapshots),
         toErrorResponse: (response, error) =>
             toClientStateRouteErrorResponse(
@@ -479,16 +481,7 @@ async function readStrictReadAuthSession(
     },
     deps: ClientStateRouteDependencies
 ): Promise<IssuedAuthSession | undefined> {
-    return isStrictReadAuthEnabled() ? await deps.requireApiAuthSession(req) : undefined;
-}
-
-function isStrictReadAuthEnabled(): boolean {
-    const value = Deno.env.get('RALLAR_STATE_STRICT_READ_AUTH');
-    if (value === undefined || value.trim() === '') {
-        return false;
-    }
-
-    return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+    return deps.strictReadAuthorization ? await deps.requireApiAuthSession(req) : undefined;
 }
 
 function hydrateClientSnapshots(

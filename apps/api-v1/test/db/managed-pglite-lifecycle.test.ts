@@ -18,9 +18,9 @@ Deno.test('managed PGlite private root is removed after the production failure w
     let root = '';
     await assert.rejects(
         () =>
-            withManagedPGliteRunStorage(async (storage) => {
+            withManagedPGliteRunStorage((storage) => {
                 root = storage.dataDir.replace(/\/data$/u, '');
-                throw new Error('simulated managed recipe failure');
+                return Promise.reject(new Error('simulated managed recipe failure'));
             }),
         /managed recipe failure/u
     );

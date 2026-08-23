@@ -9,19 +9,17 @@ import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/
 
 import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 
 import { decodeExactSnapshotEnvelope } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-value-codec.ts';
 
 import { decodeCrdtMutationResult } from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 
-import { createApiCrdtInboxFactory, readConfiguredCrdtPolicies } from '../../../src/crdt/create-api-crdt-inbox-factory.ts';
 import { createApiCrdtInboxService } from '../../../src/crdt/create-api-crdt-inbox-service.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
-import { toResilienceDto } from '../../../src/middleware-resilience.ts';
+import { toResilienceDto } from '../../api-v1-test-queue-resilience.ts';
 import { waitForPGliteQueueRow, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
-import { appendCommand, queueNow, update, withCompetingWrite } from '../crdt-api-test-fixtures.ts';
+import { queueNow, update, withCompetingWrite } from '../crdt-api-test-fixtures.ts';
 
 interface MigratedSnapshotContractRow {
     readonly document_key: string;
@@ -57,114 +55,6 @@ const LEGACY_SNAPSHOT_FIXTURES: readonly LegacySnapshotFixture[] = [
     { document: legacyDocument('null'), reason: null },
     { document: legacyDocument('blank'), reason: '   ' }
 ];
-
-Deno.test(
-    'configured production factory resolves absent CRDT policy to disabled and denies writes',
-    async () => {
-        const previous = Deno.env.get('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON');
-        Deno.env.delete('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON');
-        try {
-            assert.deepEqual(readConfiguredCrdtPolicies(), [{
-                documentType: '*',
-                rollout: 'disabled'
-            }]);
-            await withPGliteSql(async (sql) => {
-                const now = await queueNow(sql);
-                const resourceInbox = new ResourceInboxRepository(sql);
-                const queue = new PSqlQueueBox(resourceInbox);
-                const factory = createApiCrdtInboxFactory({
-                    resourceInboxRepository: resourceInbox,
-                    resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
-                    database: sql,
-                    serviceId: 'server-1',
-                    timing: undefined,
-                    options: { nowEpochMs: () => now },
-                    currentAuthority: {
-                        readSession: (sessionId: string) =>
-                            Promise.resolve({
-                                clientId: 'client-1',
-                                username: 'principal-1',
-                                sessionId,
-                                expiresAtEpochMs: now + 60_000
-                            }),
-                        authorizeDocument: () =>
-                            Promise.resolve({
-                                allowed: true,
-                                code: 'allowed'
-                            }),
-                        adminClientIds: ['admin']
-                    },
-                    policies: readConfiguredCrdtPolicies()
-                });
-                const service = factory({
-                    inboxQueueReader: new InboxQueueReader(queue),
-                    outboxQueueReader: new OutboxQueueReader(queue),
-                    appInboxResilience: toResilienceDto(),
-                    wakeQueueEngine: () => undefined
-                });
-                const read = await service.mutationService.read(
-                    await appendCommand({
-                        now,
-                        commandId: 'default-deny',
-                        updateId: 'default-deny-update'
-                    })
-                );
-
-                assert.equal(read.featureDecision.allowed, false);
-            });
-        }
-        finally {
-            if (previous === undefined) {
-                Deno.env.delete('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON');
-            }
-            else {
-                Deno.env.set('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON', previous);
-            }
-        }
-    }
-);
-
-Deno.test('configured CRDT policy parser accepts only the authoritative rollout vocabulary', () => {
-    const previous = Deno.env.get('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON');
-    try {
-        for (
-            const rollout of [
-                'disabled',
-                'experimental-local',
-                'experimental-live',
-                'durable-beta',
-                'production'
-            ]
-        ) {
-            Deno.env.set(
-                'RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON',
-                JSON.stringify([{
-                    documentType: 'checklist',
-                    rollout
-                }])
-            );
-            assert.equal(readConfiguredCrdtPolicies()?.[0]?.rollout, rollout);
-        }
-        for (const rollout of ['experimental', 'beta', 'durable_beta']) {
-            Deno.env.set(
-                'RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON',
-                JSON.stringify([{
-                    documentType: 'checklist',
-                    rollout
-                }])
-            );
-            assert.throws(() => readConfiguredCrdtPolicies(), /policy|rollout|invalid/i);
-        }
-    }
-    finally {
-        if (previous === undefined) {
-            Deno.env.delete('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON');
-        }
-        else {
-            Deno.env.set('RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON', previous);
-        }
-    }
-});
 
 Deno.test(
     'compatible migration binds omitted legacy snapshot reasons in row and envelope',

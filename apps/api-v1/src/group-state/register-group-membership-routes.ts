@@ -1,6 +1,7 @@
 import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import { toPendingMemberGroupSnapshot } from '@shared/api/group-client-views.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
     BanGroupMemberRequest,
     RemoveGroupMemberRequest,
@@ -9,7 +10,6 @@ import type {
     UnbanGroupMemberRequest,
     UpsertGroupMemberRequest
 } from '@shared/api/state-types.ts';
-import { requireGroupAdmissionQuota } from '../services/group-admission-rate-limit.ts';
 import { type GroupStateRouteAuthorization } from './group-state-route-authorization.ts';
 import { toGroupStateRouteScope, type GroupStateRouteDependencies } from './group-state-route-contracts.ts';
 import { toGroupMutationErrorResponse } from './group-state-route-errors.ts';
@@ -223,7 +223,7 @@ function registerUpsertSelfGroupMemberRoute(
                 const authSession = await dependencies.requireApiAuthSession(context.req);
                 const scope = toGroupStateRouteScope(context);
                 const { groupId, principalId } = context.req.param();
-                requireGroupAdmissionQuota('join-admission', { ...scope, groupId }, authSession.clientId);
+                requireJoinAdmissionQuota(dependencies, { ...scope, groupId }, authSession.clientId);
                 authorization.assertSelfPrincipal(authSession.clientId, principalId);
                 const request = await readGroupStateRouteRequest<UpsertGroupMemberRequest>(context);
                 const command = toGroupStateCommand({
@@ -239,12 +239,23 @@ function registerUpsertSelfGroupMemberRoute(
                     kind: 'mutation',
                     written: await dependencies.processGroupAppInbox(authSession, command)
                 });
-                const body = toPendingMemberGroupSnapshot(written.snapshot, authSession.clientId);
-                return context.json(body);
+                return context.json(toPendingMemberGroupSnapshot(written.snapshot, authSession.clientId));
             }
             catch (error) {
                 return toGroupMutationErrorResponse(context, error);
             }
         }
     );
+}
+
+function requireJoinAdmissionQuota(
+    dependencies: GroupStateRouteDependencies,
+    groupRef: GroupRef,
+    principalId: string
+): void {
+    dependencies.groupAdmissionQuota.require({
+        family: 'join-admission',
+        groupRef,
+        principalId
+    });
 }

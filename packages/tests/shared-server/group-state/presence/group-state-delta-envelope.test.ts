@@ -1,8 +1,5 @@
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
-import {
-    GroupPresenceSummaryWork,
-    type GroupPresenceSummaryTopologyIntent
-} from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
+import { GroupPresenceSummaryWork } from '@shared-server/rallar-system/group-state/presence/group-presence-summary-worker.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { validateGroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
@@ -169,20 +166,12 @@ async function connectSession(
 
 function createSummaryWorkService(runtime: GroupBarrierRepository): GroupPresenceSummaryWork {
     return new GroupPresenceSummaryWork({
-        topologyIntent: dampedTopologyIntent(),
-        disseminationMode: 'dual-emit',
+        outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
+        recomputeDebounceMs: 0,
         runtimeRepository: runtime,
         now: () => BASE_EPOCH_MS + 1_000,
         serviceId: 'summary-worker'
     });
-}
-
-function dampedTopologyIntent(): GroupPresenceSummaryTopologyIntent {
-    return {
-        damping: 'damped',
-        outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
-        recomputeDebounceMs: 0
-    };
 }
 
 async function computeSummaryWork(input: {

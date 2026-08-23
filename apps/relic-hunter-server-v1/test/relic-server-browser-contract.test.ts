@@ -1,4 +1,5 @@
 import {
+    createRelicGame,
     isRelicSnapshot,
     RELIC_PROTOCOL_VERSION,
     RELIC_TOPICS,
@@ -7,14 +8,16 @@ import {
     type RelicGameState,
     type RelicServerEvent
 } from '@relic-hunters/mod.ts';
-import { expect } from 'jsr:@std/expect@1';
-import { describe, it } from 'jsr:@std/testing@1/bdd';
+import { expect } from '@std/expect';
+import { describe, it } from '@std/testing/bdd';
 import { installRelicHunterGame } from '../src/relic-game-service.ts';
 
 describe('Relic Hunter server browser contract', () => {
     it('publishes snapshots in the shape consumed by browser WebSocket subscribers', async () => {
         const fake = createFakeRallar();
-        const service = await installRelicHunterGame(fake.rallar);
+        const service = await installRelicHunterGame(fake.rallar, {
+            createInitialState: (gameId) => Promise.resolve(createRelicGame(gameId, gameId, 1))
+        });
 
         await service.applyCommand(joinCommand(), 'alice-session');
 
@@ -60,32 +63,35 @@ function createFakeRallar(): Readonly<{
 
     const rallar = {
         data: {
-            open: async () => ({
-                get: async (key: string) => store.get(key),
-                set: async (key: string, value: RelicGameState) => {
-                    store.set(key, value);
-                },
-                setIfAbsent: async (key: string, create: () => RelicGameState) => {
-                    const existing = store.get(key);
-                    if (existing) {
-                        return existing;
+            open: () =>
+                Promise.resolve({
+                    get: (key: string) => Promise.resolve(store.get(key)),
+                    set: (key: string, value: RelicGameState) => {
+                        store.set(key, value);
+                        return Promise.resolve();
+                    },
+                    setIfAbsent: (key: string, create: () => RelicGameState) => {
+                        const existing = store.get(key);
+                        if (existing) {
+                            return Promise.resolve(existing);
+                        }
+                        const value = create();
+                        store.set(key, value);
+                        return Promise.resolve(value);
                     }
-                    const value = create();
-                    store.set(key, value);
-                    return value;
-                }
-            })
+                })
         },
         ws: {
             defineTopic: () => {},
             on: () => {},
-            publish: async (
+            publish: (
                 message: {
                     route: { topicId: string; contextId: string; };
                     payload: { typeId: string; resource: string; };
                 }
             ) => {
                 published.push({ message });
+                return Promise.resolve();
             }
         }
     } as unknown as Parameters<typeof installRelicHunterGame>[0];

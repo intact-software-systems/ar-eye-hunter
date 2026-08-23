@@ -1,9 +1,13 @@
-import { readFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { chmod, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = path.resolve(__dirname, '../../..');
 const controlServerConfigPath = path.join(repoRoot, 'apps/rallar-black-box-control-server/deno.json');
+const execFileAsync = promisify(execFile);
 
 describe('Hetzner SPA public env wiring', () => {
     it('provides a shared helper that maps public Rallar env to Vite SPA env', async () => {
@@ -63,6 +67,90 @@ describe('Hetzner SPA public env wiring', () => {
         expect(rolloutScript).toContain(
             'update_env_value "/etc/rallar/api-v1.env" "RALLAR_AUTH_CREDENTIAL_SECRET"'
         );
+    });
+
+    it('writes and preserves only the canonical API-v1 controller profile and allowlist', async () => {
+        const deployScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/02-deploy-controller.sh'),
+            'utf8'
+        );
+        const rolloutScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh'),
+            'utf8'
+        );
+        const statusScript = await readFile(
+            path.join(repoRoot, 'scripts/hetzner/controller/07-status-controller.sh'),
+            'utf8'
+        );
+
+        expect(deployScript).toContain('RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory');
+        expect(deployScript).toContain('chmod 0600 /etc/rallar/api-v1.env');
+        expect(rolloutScript).toContain('normalize_api_environment_allowlist');
+        expect(rolloutScript).toContain(
+            'printf \'RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory\\n\''
+        );
+        expect(rolloutScript).toContain('install -m 0600 -o root -g root');
+        expect(statusScript).toContain('RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory');
+
+        for (
+            const removedSettingName of [
+                'ENVIRONMENT',
+                'API_BASE_URL',
+                'RALLAR_SQL_BACKEND',
+                'RALLAR_PGLITE_DATA_DIR',
+                'RALLAR_PGLITE_SCHEMA_INIT',
+                'RALLAR_DB_PUBSUB',
+                'RALLAR_ICE_MODE',
+                'AUTH_REGISTRATION_MODE',
+                'AUTH_STATIC_CLIENTS_MODE'
+            ]
+        ) {
+            expect(deployScript).not.toMatch(
+                new RegExp(`^${removedSettingName}=`, 'mu')
+            );
+        }
+    });
+
+    it('normalizes an existing API env file without logging secrets and keeps mode 0600', async () => {
+        const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'rallar-api-env-'));
+        const apiEnvironmentFile = path.join(temporaryDirectory, 'api-v1.env');
+        const authSecret = 'auth-secret-that-must-not-be-logged';
+        await writeFile(
+            apiEnvironmentFile,
+            [
+                'ENVIRONMENT=production',
+                'RALLAR_SQL_BACKEND=pglite-memory',
+                'UNKNOWN_SETTING=removed',
+                `RALLAR_AUTH_CREDENTIAL_SECRET=${authSecret}`,
+                'RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE=32',
+                ''
+            ].join('\n')
+        );
+        await chmod(apiEnvironmentFile, 0o644);
+
+        const result = await execFileAsync(
+            'bash',
+            [path.join(repoRoot, 'scripts/hetzner/controller/08-rollout-controller.sh')],
+            {
+                cwd: repoRoot,
+                env: {
+                    ...process.env,
+                    RALLAR_ROLLOUT_SCRIPT_SELF_TEST: 'normalize-api-environment',
+                    RALLAR_API_ENV_FILE: apiEnvironmentFile
+                }
+            }
+        );
+        const normalized = await readFile(apiEnvironmentFile, 'utf8');
+
+        expect(normalized).toBe([
+            `RALLAR_AUTH_CREDENTIAL_SECRET=${authSecret}`,
+            'RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE=32',
+            'RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory',
+            ''
+        ].join('\n'));
+        expect((await stat(apiEnvironmentFile)).mode & 0o777).toBe(0o600);
+        expect(result.stdout).not.toContain(authSecret);
+        expect(result.stderr).not.toContain(authSecret);
     });
 
     it('serves nested SPA entry points before falling back to the operator index', async () => {

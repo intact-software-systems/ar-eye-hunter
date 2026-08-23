@@ -2,48 +2,56 @@ import 'jsr:@std/dotenv@0.225.6/load';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import { cors } from 'jsr:@hono/hono@4.11.9/cors';
 
-import { assertApiV1ProductionEnv } from '@shared-server/http/production-env-hardening.ts';
 import { createDefaultRallarServer } from './composition/create-default-rallar-server.ts';
-import { logDatabaseBackendConfig, logPGliteSchemaInitConfig } from './db/database-config.ts';
-import { logDatabasePubSubConfig } from './db/database-pubsub-config.ts';
+import {
+    readApiV1Configuration,
+    toApiV1ConfigurationStartupSummary
+} from './configuration/read-api-v1-configuration.ts';
+import { createApiV1DatabaseLifecycle } from './db/api-v1-database-lifecycle.ts';
 import {
     STATE_SNAPSHOT_READ_EXPOSED_HEADERS
 } from './routes/state-snapshot-read/state-snapshot-read-exposed-headers.ts';
 import { startApiProcess } from './runtime/api-process-startup.ts';
-import { logGroupStateDisseminationConfig } from './runtime/group-formation/group-state-dissemination-config.ts';
 import {
     stopApiOnRtcTopologyDeliveryHealthFailure
 } from './runtime/rtc-topology/rtc-topology-delivery-health-shutdown.ts';
-import {
-    logRtcTopologyReplayConfig,
-    readApiRtcTopologyReplayConfig,
-    shouldStartApiQueueWorkers
-} from './runtime/rtc-topology/rtc-topology-replay-config.ts';
 import { createHttpTimingMiddleware } from './services/http-timing-middleware.ts';
-import { requireApiAuthSession } from './services/request-auth-service.ts';
-import { createStateApiAuthenticationMiddleware } from './services/state-api-authentication-middleware.ts';
 import { createStateApiResilienceMiddleware } from './services/state-api-resilience-middleware.ts';
+import { createApiTimingSink } from './services/timing-service.ts';
 
-const app: Hono = new Hono();
-assertApiV1ProductionEnv(Deno.env);
-const corsOrigins = readCorsOrigins();
-
-logDatabaseBackendConfig();
-logPGliteSchemaInitConfig();
-logDatabasePubSubConfig();
-const rtcTopologyReplayConfig = readApiRtcTopologyReplayConfig();
-logRtcTopologyReplayConfig(console.log, rtcTopologyReplayConfig);
-logGroupStateDisseminationConfig(console.log);
-const rallar = createDefaultRallarServer();
+const configuration = await readApiV1Configuration({
+    environment: Deno.env,
+    readTextFile: Deno.readTextFile,
+    defaultsUrl: new URL('../resources/configuration/defaults-config.json', import.meta.url),
+    profileUrls: {
+        dev: new URL('../resources/configuration/dev-config.json', import.meta.url),
+        prod: new URL('../resources/configuration/prod-config.json', import.meta.url),
+        'prod-in-memory': new URL('../resources/configuration/prod-in-memory-config.json', import.meta.url)
+    },
+    staticClientsUrl: new URL('../resources/authorised-clients.json', import.meta.url)
+});
+console.log(JSON.stringify({
+    event: 'api-v1.configuration',
+    ...toApiV1ConfigurationStartupSummary(configuration)
+}));
+const databaseLifecycle = await createApiV1DatabaseLifecycle({
+    database: configuration.database,
+    pgliteEvidence: configuration.blackBox.pgliteEvidence
+});
+const rallar = await createDefaultRallarServer({
+    configuration,
+    databaseLifecycle
+});
 addEventListener('unload', () => {
     void rallar.runtime.backgroundTasks.stop().catch((error) => {
         console.error('Failed to stop middleware background tasks:', error);
     });
 });
 
+const app: Hono = new Hono();
 const apiCors = cors(
     {
-        origin: (origin) => resolveCorsOrigin(origin, corsOrigins),
+        origin: (origin) => resolveCorsOrigin(origin, configuration.http.corsOrigins),
         allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
         allowHeaders: ['Content-Type', 'Authorization', 'x-client-id'],
         exposeHeaders: [
@@ -53,7 +61,7 @@ const apiCors = cors(
             'Retry-After',
             ...STATE_SNAPSHOT_READ_EXPOSED_HEADERS
         ],
-        maxAge: 600, // Cache the preflight for 10 minutes
+        maxAge: configuration.http.preflightMaxAgeSeconds,
         credentials: true
     }
 );
@@ -67,16 +75,19 @@ app.use('/api/*', async (c, next) => {
     return await apiCors(c, next);
 });
 
-app.use('/api/*', createHttpTimingMiddleware());
+app.use(
+    '/api/*',
+    createHttpTimingMiddleware({
+        timing: createApiTimingSink(configuration.observability)
+    })
+);
 
 app.use(
     '/api/state/*',
-    createStateApiAuthenticationMiddleware((request) =>
-        requireApiAuthSession(request, rallar.runtime.authSessionRepository)
-    )
+    createStateApiResilienceMiddleware({
+        configuration: configuration.stateApi
+    })
 );
-
-app.use('/api/state/*', createStateApiResilienceMiddleware());
 
 rallar.system
     .useDefaultMiddlewareTopics()
@@ -84,18 +95,55 @@ rallar.system
 rallar.ws.mount(app);
 rallar.rest.mount(app);
 
-const port = readServerPort();
-const apiProcess = startApiProcess({
+const port = configuration.http.port;
+const apiProcess = await startApiProcess({
     runtimeReadiness: rallar.runtime.readiness,
     listen: () => Deno.serve({ port }, app.fetch),
     startQueueWorkers: () => {
-        if (shouldStartApiQueueWorkers(rtcTopologyReplayConfig)) {
+        if (configuration.topology.replay.queueWorkers === 'enabled') {
             rallar.start();
+        }
+    },
+    stopAfterStartupFailure: async (boundHttpServer) => {
+        const failures: Error[] = [];
+        try {
+            rallar.runtime.qboxEngine.stop();
+        }
+        catch (error) {
+            failures.push(
+                error instanceof Error
+                    ? error
+                    : new Error('Queue worker cleanup threw a non-Error value.', { cause: error })
+            );
+        }
+        if (boundHttpServer !== undefined) {
+            try {
+                await boundHttpServer.shutdown();
+            }
+            catch (error) {
+                failures.push(
+                    error instanceof Error
+                        ? error
+                        : new Error('HTTP server cleanup threw a non-Error value.', { cause: error })
+                );
+            }
+        }
+        try {
+            await rallar.runtime.backgroundTasks.stop();
+        }
+        catch (error) {
+            failures.push(
+                error instanceof Error
+                    ? error
+                    : new Error('Background task cleanup threw a non-Error value.', { cause: error })
+            );
+        }
+        if (failures.length > 0) {
+            throw new AggregateError(failures, 'API-v1 startup cleanup failed');
         }
     }
 });
 const httpServer = apiProcess.httpServer;
-await apiProcess.readiness;
 if (rallar.runtime.healthFailure) {
     void stopApiOnRtcTopologyDeliveryHealthFailure({
         healthFailure: rallar.runtime.healthFailure,
@@ -121,30 +169,6 @@ if (rallar.runtime.healthFailure) {
     });
 }
 console.log(`Server started on port ${port}. http://localhost:${port}/api/docs`);
-
-function readCorsOrigins(): readonly string[] {
-    const raw = Deno.env.get('CORS_ORIGINS') ??
-        'http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176';
-
-    return raw
-        .split(',')
-        .map((origin) => origin.trim())
-        .filter((origin) => origin.length > 0);
-}
-
-function readServerPort(): number {
-    const raw = Deno.env.get('PORT')?.trim();
-    if (!raw) {
-        return 8080;
-    }
-
-    const port = Number(raw);
-    if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-        throw new Error(`PORT must be an integer from 1 to 65535. Received: ${raw}`);
-    }
-
-    return port;
-}
 
 function resolveCorsOrigin(
     origin: string,

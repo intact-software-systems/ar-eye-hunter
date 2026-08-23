@@ -21,6 +21,7 @@ import type {
     ProcessGroupAppInbox
 } from '../../src/group-state/group-state-route-contracts.ts';
 import { registerGroupStateRoutes } from '../../src/group-state/register-group-state-routes.ts';
+import { createGroupAdmissionQuota, type GroupAdmissionQuota } from '../../src/services/group-admission-rate-limit.ts';
 
 export const TEST_GROUP_SCOPE: StateScope = {
     applicationId: 'app-1',
@@ -36,10 +37,12 @@ export interface GroupStateRouteTestRuntimeInput {
     readonly processGroupAppInbox?: GroupStateRouteDependencies[
         'processGroupAppInbox'
     ];
+    readonly groupAdmissionQuota?: GroupAdmissionQuota;
     readonly hydrateStateSyncSnapshotCaches?: GroupStateRouteDependencies[
         'hydrateStateSyncSnapshotCaches'
     ];
     readonly readGroupSnapshot?: GroupStateRouteDependencies['readGroupSnapshot'];
+    readonly strictReadAuthorization?: boolean;
     readonly installStateAuthentication?: boolean;
 }
 
@@ -88,6 +91,14 @@ export function createGroupStateRouteTestDependencies(
         groupStateService: createGroupStateRouteService(input.groupService),
         requireApiAuthSession,
         processGroupAppInbox: input.processGroupAppInbox ?? defaultProcessGroupAppInbox,
+        groupAdmissionQuota: input.groupAdmissionQuota ?? createGroupAdmissionQuota({
+            windowMs: 60_000,
+            joinPrincipal: 60,
+            joinGroup: 600,
+            presencePrincipal: 120,
+            presenceGroup: 1_200
+        }),
+        strictReadAuthorization: input.strictReadAuthorization ?? false,
         hydrateStateSyncSnapshotCaches: input.hydrateStateSyncSnapshotCaches ??
             (() => Promise.resolve({ clientSnapshotCount: 0, groupSnapshotCount: 0 })),
         readGroupSnapshot: input.readGroupSnapshot ?? (async (ref) => {

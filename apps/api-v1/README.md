@@ -49,12 +49,13 @@ contracts use mandatory fields by default.
 
 ## Production Hardening
 
-Set `RALLAR_PRODUCTION_HARDENING=1` or `ENVIRONMENT=prod` to make startup fail closed when
-production-only guardrails are missing. The hardened profile requires Postgres, exact HTTPS CORS
-origins, strict state read authorization, admin-only registration,
-`AUTH_STATIC_CLIENTS_MODE=disabled`, a stable `RALLAR_AUTH_CREDENTIAL_SECRET` of at least 32
-characters, Metered TURN, and explicit black-box operator-token settings when control tokens are
-brokered.
+Set `RALLAR_API_CONFIGURATION_PROFILE=prod` to select the hardened production snapshot. It requires
+PostgreSQL and PostgreSQL pub/sub, exact HTTPS/WSS public URLs and CORS origins, strict state read
+authorization, admin-only registration, disabled static clients, non-demo administrator identities,
+a stable `RALLAR_AUTH_CREDENTIAL_SECRET` of at least 32 characters, Metered TURN, and an explicit
+black-box operator-token issuer. API-v1 reads the selected profile, allowlisted overrides, and
+environment-only secrets once, validates the complete object, freezes it, and injects its owned
+sections into runtime consumers. There is no environment-name alias or separate hardening reader.
 
 See [Production Env Hardening Checklist](../../docs/production-env-hardening-checklist.md) and
 [Environment Variables](../../docs/environment-variables.md).
@@ -78,31 +79,6 @@ headers. CORS exposes those Rallar headers. Client response metadata carries one
 group metadata carries the group and presence revisions, while the compatibility scalar revision
 remains body-only. See [the API reference](../../docs/rallar-api-reference.md) for exact paths,
 headers, status codes, and OpenAPI shapes.
-
-## RTC persisted-state cutover
-
-The RTC persisted-state migration is an offline cutover. It intentionally has no legacy dual-read
-runtime fallback.
-
-1. Stop every API process and old writer that can mutate RTC topology/runtime state, then take and
-   verify a database backup.
-2. Inspect the fixed migration order without opening a database connection:
-   `deno task rtc:migrate-persisted-state --old-writers-stopped --dry-run`.
-3. With writers still stopped, run `deno task rtc:migrate-persisted-state --old-writers-stopped`.
-   The explicit acknowledgement is required before the operator opens a connection. The command
-   first invalidates every legacy scalar topology dependency family and writes a deterministic
-   durable recompute request in the same conditional transaction. It then migrates snapshot keys,
-   then publication/claim keys, stopping on the first error.
-4. Restart only the current API version and verify startup cleanup and RTC topology traffic before
-   restoring normal service. Startup drains the durable recompute requests into idempotent topology
-   work. The owned single-flight worker retries transient failures and polls while the process is
-   live; a failed enqueue leaves its request durable for both autonomous retry and restart recovery.
-   A successful enqueue is acknowledged with compare-and-set deletion, making exact deterministic
-   replays safe.
-
-Rollback: if migration or verification fails, keep writers stopped, preserve the failed database for
-investigation, restore the pre-cutover backup, and restart the previous API version. Do not roll
-back by enabling mixed old/new writers or a runtime legacy-read path.
 
 ## Rallar Game
 

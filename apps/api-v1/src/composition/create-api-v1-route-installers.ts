@@ -2,15 +2,20 @@ import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import { readGroupGraphDiagnostic, readScopedGlobalGraphDiagnostic } from '@shared-graph/graph-diagnostics-service.ts';
 import type { RallarServerRouteInstaller } from '@shared-server/rallar-facade/RallarServerApplication.ts';
-import type { LoginClientData } from '@shared-server/rallar-system/auth/login/authenticate-auth-user.ts';
 import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import type { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
+import type { ApiConfig } from '@shared/api/api-config.ts';
 import type { RallarCrdtAdminReadRepository } from '@shared/crdt/mod.ts';
 
 import {
     registerAdminOperationsRoutes,
     type AdminOperationsRouteService
 } from '../admin-operations/register-admin-operations-routes.ts';
+import type {
+    ApiV1GroupAdmissionConfiguration,
+    ApiV1IceConfiguration,
+    ApiV1OperatorTokenConfiguration
+} from '../configuration/api-v1-configuration.ts';
 import { createApiCrdtDocumentAccessAuthorizer } from '../crdt/create-api-crdt-document-authorizer.ts';
 import type { CrdtAdminMutations } from '../crdt/create-crdt-admin-mutations.ts';
 import * as crdtAdminRoutes from '../crdt/register-crdt-admin-routes.ts';
@@ -84,9 +89,12 @@ export interface CreateApiV1RouteInstallersInput<
     readonly crdtLogRepository: RallarCrdtAdminReadRepository;
     readonly crdtMutations: CrdtAdminMutations;
     readonly authUserRepository: AuthUserRepository;
-    readonly staticClients: readonly LoginClientData[];
-    readonly authRegistrationMode: 'public' | 'admin';
-    readonly readEnv: (name: string) => string | undefined;
+    readonly authentication: configRoutes.ConfigRouteDependencies['authentication'];
+    readonly operatorToken: ApiV1OperatorTokenConfiguration;
+    readonly publicConfiguration: ApiConfig;
+    readonly ice: ApiV1IceConfiguration;
+    readonly groupAdmission: ApiV1GroupAdmissionConfiguration;
+    readonly strictReadAuthorization: boolean;
     readonly nowEpochMs: () => number;
     readonly createTokenId: () => string;
     readonly createWsAuthRequestFacts: () => ApiV1WsAuthRequestFacts;
@@ -158,6 +166,9 @@ function createApiV1RouteConstruction<
         operations.requireApiAuthSession(request, runtime.authSessionRepository);
     const snapshots = createStateSnapshotReadRouteRegistrars(runtime, {
         requireApiAuthSession: operations.requireApiAuthSession
+    }, {
+        groupAdmission: input.groupAdmission,
+        strictReadAuthorization: input.strictReadAuthorization
     });
     const authorizeCrdtDocumentAccess = createApiCrdtDocumentAccessAuthorizer({
         readGroupSnapshot: (ref) => runtime.groupsRepository.readSnapshot(ref),
@@ -204,16 +215,20 @@ function createApiV1StateRouteInstallers<
         (app) =>
             configRoutes.registerConfigRoutes(app, {
                 requireApiAuthSession: requireSession,
-                readEnv: input.readEnv,
                 now: input.nowEpochMs,
                 createTokenId: input.createTokenId,
                 appAuthInbox: input.runtime.appAuthInboxService,
                 authUserRepository: input.authUserRepository,
-                staticClients: input.staticClients,
-                registrationMode: input.authRegistrationMode,
-                adminClientIds: new Set(input.topology.adminClientIds)
+                authentication: input.authentication,
+                operatorToken: input.operatorToken,
+                publicConfiguration: input.publicConfiguration
             }),
-        (app) => iceRoutes.registerIceRoutes(app, { requireApiAuthSession: requireSession }),
+        (app) =>
+            iceRoutes.registerIceRoutes(app, {
+                requireApiAuthSession: requireSession,
+                configuration: input.ice,
+                nowEpochMs: input.nowEpochMs
+            }),
         snapshots.client,
         snapshots.group,
         (app) =>
@@ -236,6 +251,7 @@ function createApiV1StateRouteInstallers<
                 requireApiAuthSession: requireSession,
                 adminClientIds: input.topology.adminClientIds,
                 readLifecyclePolicy: (ref) => input.topology.groupStateRepository.readLifecyclePolicy(ref),
+                strictReadAuthorization: input.strictReadAuthorization,
                 now: input.nowEpochMs
             })
     ];

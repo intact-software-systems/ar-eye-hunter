@@ -4,7 +4,7 @@ This document inventories environment variables used by the apps in this
 repository, plus the repository-level test and infrastructure variables that
 drive those apps.
 
-Last reviewed: 2026-06-28.
+Last reviewed: 2026-08-23.
 
 ## Conventions
 
@@ -12,13 +12,14 @@ Last reviewed: 2026-06-28.
 - Vite browser apps read variables through `import.meta.env`. Those values are
   embedded into the browser bundle and are public. Do not put production secrets
   in `VITE_*`, `API_*`, or any prefix exposed by a Vite app.
-- Boolean readers generally treat `1`, `true`, `yes`, or `on` as enabled. Some
-  code paths only check `1` and `true`; those cases are called out below.
+- API-v1 operational booleans accept only `1`, `true`, `0`, or `false`. Other
+  processes own their own exact decoders.
 - Comma-separated variables are trimmed and empty entries are ignored.
 - Values from local `.env` files are intentionally not recorded here. Only
   variable names and behavior are documented.
-- Production guardrails are enabled with `RALLAR_PRODUCTION_HARDENING=1` or
-  `ENVIRONMENT=prod` / `ENVIRONMENT=production`. See
+- API-v1 and Relic select production behavior with
+  `RALLAR_API_CONFIGURATION_PROFILE=prod`. The black-box control process uses
+  its separate explicit `RALLAR_PRODUCTION_HARDENING=1` switch. See
   [Production Env Hardening Checklist](./production-env-hardening-checklist.md).
 
 ## Environment Files Found
@@ -41,24 +42,88 @@ when the app starts. Root scripts additionally pass
 `--env-file=apps/api-v1/.env.local --env-file=apps/api-v1/.env --env-file=.env`
 for some Rallar Black Box runs.
 
+API-v1 reads its environment once at startup, applies it to one committed
+profile, validates the complete result, and passes a deeply frozen snapshot to
+the runtime. Configuration is restart-only. The precedence is:
+
+```text
+defaults-config.json
+  -> selected profile JSON
+  -> explicit environment overrides
+  -> environment-only secrets
+  -> exact decoding and invariant validation
+  -> immutable runtime snapshot
+```
+
+`RALLAR_API_CONFIGURATION_PROFILE` accepts only the case-sensitive values
+`dev`, `prod`, and `prod-in-memory`. Absence selects `dev`; `prod` always
+enables hardening. `RALLAR_PRODUCTION_HARDENING=1` may strengthen another
+profile but cannot weaken `prod`.
+
+The exact non-secret override allowlist is:
+
+- HTTP/public API: `PORT`, `CORS_ORIGINS`, `RALLAR_API_BASE_URL`,
+  `RALLAR_WS_BASE_URL`.
+- Database: `RALLAR_SQL_BACKEND`, `RALLAR_PGLITE_DATA_DIR`,
+  `RALLAR_PGLITE_SCHEMA_INIT`, `RALLAR_DB_PUBSUB`,
+  `RALLAR_BLACK_BOX_PGLITE_SNAPSHOT_DIR`.
+- Authentication/state: `AUTH_REGISTRATION_MODE`, `AUTH_ADMIN_CLIENT_IDS`,
+  `AUTH_STATIC_CLIENTS_MODE`, `RALLAR_LOGIN_IP_RATE_LIMIT`,
+  `RALLAR_LOGIN_USER_RATE_LIMIT`, `RALLAR_STATE_STRICT_READ_AUTH`.
+- Group: `RALLAR_GROUP_DEFAULT_MAX_MEMBERS`,
+  `RALLAR_GROUP_JOIN_ADMISSION_PRINCIPAL_RATE_LIMIT`,
+  `RALLAR_GROUP_JOIN_ADMISSION_GROUP_RATE_LIMIT`,
+  `RALLAR_GROUP_PRESENCE_CONNECT_PRINCIPAL_RATE_LIMIT`,
+  `RALLAR_GROUP_PRESENCE_CONNECT_GROUP_RATE_LIMIT`.
+- Topology: `RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT`,
+  `RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT`,
+  `RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE`, `RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE`,
+  `RALLAR_RTC_TOPOLOGY_MESH_PARAM_K`,
+  `RALLAR_RTC_TOPOLOGY_MESH_EXIT_WIDTH`,
+  `RALLAR_RTC_TOPOLOGY_TREE_EXIT_WIDTH`,
+  `RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS`,
+  `RALLAR_RTC_TOPOLOGY_RECOMPUTE_DEBOUNCE_MS`,
+  `RALLAR_RTC_TOPOLOGY_GLOBAL_GRAPH_RECOMPUTE_WINDOW_MS`,
+  `RALLAR_RTC_TOPOLOGY_GLOBAL_GRAPH_RECOMPUTES_PER_WINDOW`,
+  `RALLAR_RTC_TOPOLOGY_RTT_REFINEMENT_MIN_INTERVAL_MS`,
+  `RALLAR_RTC_TOPOLOGY_RTT_VIVALDI_DELTA_MS`,
+  `RALLAR_RTC_TOPOLOGY_REPLAY`, `RALLAR_API_QUEUE_WORKERS`.
+- AppInbox/observability: `RALLAR_APP_INBOX_PHASE_TIMING`,
+  `RALLAR_APP_INBOX_WAIT_MAX_ELAPSED_MS`,
+  `RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS`,
+  `RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS`,
+  `RALLAR_APP_INBOX_WAIT_JITTER_RATIO`, `RALLAR_TIMING_LOGS`.
+- ICE/CRDT/black-box: `RALLAR_ICE_MODE`, `METERED_APP_NAME`,
+  `METERED_REGION`, `RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON`,
+  `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`,
+  `RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS`.
+
+Only `DATABASE_URL`, `RALLAR_AUTH_CREDENTIAL_SECRET`, `METERED_API_KEY`, and
+`RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET` are secret inputs. They must remain in
+the process secret store and never in committed profile JSON. Startup summaries
+and errors report names and safe resolved modes, never secret values.
+
+`ENVIRONMENT`, the unprefixed server `API_BASE_URL`, formation damping
+variables, dissemination mode variables, and old web-config resources are not
+accepted. There are no aliases or transitional readers.
+
 ### Server
 
-| Variable                        | Required | Default                                                                                               | Usage                                                                                                                                                                                                                                                                                     |
-| ------------------------------- | -------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                          | No       | `8080`                                                                                                | HTTP listen port. Must be an integer from `1` to `65535`.                                                                                                                                                                                                                                 |
-| `CORS_ORIGINS`                  | No       | `http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176`             | Allowed browser origins for `/api/*`. Use `*` to reflect any request origin.                                                                                                                                                                                                              |
-| `ENVIRONMENT`                   | No       | `dev`                                                                                                 | Selects `resources/web-config-dev.json` or `resources/web-config-prod.json` for `/api/config`. Supported values are `dev` and `prod`.                                                                                                                                                     |
-| `RALLAR_PRODUCTION_HARDENING`   | No       | Disabled                                                                                              | `1`, `true`, `yes`, or `on` enables production startup validation. `ENVIRONMENT=prod` or `production` also enables it.                                                                                                                                                                    |
-| `RALLAR_API_BASE_URL`           | No       | From selected web config                                                                              | Runtime override for `/api/config.apiBaseUrl`. Takes precedence over `API_BASE_URL`. Trailing slash is removed.                                                                                                                                                                           |
-| `API_BASE_URL`                  | No       | From selected web config                                                                              | Secondary runtime override for `/api/config.apiBaseUrl`.                                                                                                                                                                                                                                  |
-| `RALLAR_WS_BASE_URL`            | No       | Derived from `RALLAR_API_BASE_URL` or `API_BASE_URL` when present, otherwise from selected web config | Runtime override for `/api/config.wsBaseUrl`. Trailing slash is removed.                                                                                                                                                                                                                  |
-| `RALLAR_STATE_STRICT_READ_AUTH` | No       | Disabled                                                                                              | `/api/state/*` is already authenticated. `1`, `true`, `yes`, or `on` additionally applies strict full-state read authorization to client/group list, snapshot, and event reads. SPA statistics routes enforce their own route-local auth and group-policy checks regardless of this flag. |
+| Variable                           | Required | Default          | Usage                                                                                                                                                                        |
+| ---------------------------------- | -------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RALLAR_API_CONFIGURATION_PROFILE` | No       | `dev`            | Selects one exact committed profile.                                                                                                                                         |
+| `RALLAR_PRODUCTION_HARDENING`      | No       | Profile-owned    | `1` or `true` strengthens a non-prod profile; `0` or `false` cannot weaken `prod`.                                                                                           |
+| `PORT`                             | No       | Profile/defaults | HTTP listen port from `1` through `65535`.                                                                                                                                   |
+| `CORS_ORIGINS`                     | No       | Profile/defaults | Exact comma-separated browser origins. Hardened production requires exact HTTPS origins.                                                                                     |
+| `RALLAR_API_BASE_URL`              | No       | Profile/defaults | Canonical public HTTP API URL.                                                                                                                                               |
+| `RALLAR_WS_BASE_URL`               | No       | Profile/defaults | Canonical public WebSocket URL.                                                                                                                                              |
+| `RALLAR_STATE_STRICT_READ_AUTH`    | No       | Profile/defaults | Applies full-state read authorization to client/group list, snapshot, and event reads. SPA statistics retain independent route-local authentication and group-policy checks. |
 
 ### Database
 
 | Variable                    | Required                                           | Default                                       | Usage                                                                                                                                                                                  |
 | --------------------------- | -------------------------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RALLAR_SQL_BACKEND`        | No                                                 | `postgres`                                    | Selects SQL backend. Supported values: `postgres`, `pglite-memory`, `pglite-file`.                                                                                                     |
+| `RALLAR_SQL_BACKEND`        | No                                                 | Profile-owned                                 | Selects SQL backend. Supported values: `postgres`, `pglite-memory`, `pglite-file`.                                                                                                     |
 | `DATABASE_URL`              | Required only when `RALLAR_SQL_BACKEND=postgres`   | None                                          | Postgres connection URL used by runtime repositories and Prisma. Ignored by PGlite modes. If the URL contains `schema=...`, API-v1 converts it to `search_path=...` for `postgres.js`. |
 | `RALLAR_PGLITE_DATA_DIR`    | Required only for `RALLAR_SQL_BACKEND=pglite-file` | `memory://` for `pglite-memory`               | PGlite storage location. `pglite-file` requires a filesystem path and rejects `memory://`.                                                                                             |
 | `RALLAR_PGLITE_SCHEMA_INIT` | No                                                 | `disabled` for `postgres`; `auto` for PGlite  | PGlite schema bootstrap mode. Supported values: `auto`, `disabled`. `auto` is invalid with `postgres`.                                                                                 |
@@ -79,8 +144,6 @@ for some Rallar Black Box runs.
 
 | Variable                                                 | Required | Default                       | Usage                                                                                                                                                                                                                                                                                                                                                          |
 | -------------------------------------------------------- | -------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RALLAR_GROUP_FORMATION_DAMPING`                         | No       | `damped`                      | Server damping for group formation. `damped` coalesces group-revision topology recomputes, gates rebuilds/publications on changed inputs, separates heartbeat lease renewals from presence revisions, and scopes principal state-sync audiences. `legacy` retains the pre-damping engine wholesale for rollback.                                               |
-| `RALLAR_GROUP_STATE_DISSEMINATION`                       | No       | `delta-primary`               | Per-change group-state WS emission. `delta-primary` emits only the delta envelope row, with its persisted audience, and drops both per-change snapshot rows. `dual-emit` emits the same envelope row but also keeps both snapshot rows, which is the rollback setting and the divergence oracle. Independent of `RALLAR_GROUP_FORMATION_DAMPING`.              |
 | `RALLAR_GROUP_DEFAULT_MAX_MEMBERS`                       | No       | `256`                         | Default group member cap applied when a group stores `maxMembers: null`. Positive integer; `0` disables the default so null-cap groups stay uncapped. A stored `maxMembers` always wins over the default. Over-cap admission answers the existing `group-full` 403.                                                                                            |
 | `RALLAR_GROUP_JOIN_ADMISSION_PRINCIPAL_RATE_LIMIT`       | No       | `60`                          | Join-admission requests (join, invite-accept, upsert-self member) per principal per group per 60 seconds. Positive integer. Over-limit answers `429` with `Retry-After: 60`.                                                                                                                                                                                   |
 | `RALLAR_GROUP_JOIN_ADMISSION_GROUP_RATE_LIMIT`           | No       | `600`                         | Join-admission requests (join, invite-accept, upsert-self member) per group per 60 seconds across all principals. Positive integer. Over-limit answers `429` with `Retry-After: 60`.                                                                                                                                                                           |
@@ -114,7 +177,7 @@ for some Rallar Black Box runs.
 
 | Variable                                | Required                                                                   | Default                         | Usage                                                                                                                      |
 | --------------------------------------- | -------------------------------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `RALLAR_ICE_MODE`                       | No                                                                         | `metered`                       | ICE provider. Supported values: `metered`, `local`. `local` returns an empty ICE server list and avoids Metered API calls. |
+| `RALLAR_ICE_MODE`                       | No                                                                         | Profile-owned                   | ICE provider. Supported values: `metered`, `local`. `local` returns an empty ICE server list and avoids Metered API calls. |
 | `RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT` | No                                                                         | RTC topology `degreeLimit`, `5` | Positive integer cap for accepted RTC RTT reporting edges per endpoint. Invalid values fall back to the topology degree.   |
 | `METERED_APP_NAME`                      | Required when `RALLAR_ICE_MODE=metered` and `/api/webrtc/ice` is requested | None                            | Metered TURN app name. Used in `https://<app>.metered.live/...`.                                                           |
 | `METERED_API_KEY`                       | Required when `RALLAR_ICE_MODE=metered` and `/api/webrtc/ice` is requested | None                            | Metered TURN API key. Server-only secret.                                                                                  |
@@ -133,11 +196,11 @@ for some Rallar Black Box runs.
 
 ### Scripts
 
-| Script                                                  | Variables set by script                                                                                                                                                                         |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cd apps/api-v1 && deno task start:memory`              | `RALLAR_SQL_BACKEND=pglite-memory`, `RALLAR_PGLITE_DATA_DIR=memory://`, `RALLAR_PGLITE_SCHEMA_INIT=auto`, `RALLAR_DB_PUBSUB=local`, `RALLAR_ICE_MODE=local`, `RALLAR_LOGIN_USER_RATE_LIMIT=100` |
-| `npm run dev:rallar:api` and `npm run start:rallar:api` | `CORS_ORIGINS=http://localhost:5176,http://127.0.0.1:5176`, plus app and root env files. The older `dev:rallar-black-box:api-v1` and `start:rallar-black-box:api-v1` aliases still work.        |
-| `npm run start:rallar:api:memory`                       | Same CORS origin plus API-v1 memory-mode variables. The older `start:rallar-black-box:api-v1:memory` alias still works.                                                                         |
+| Script                                                  | Variables set by script                                                         |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `cd apps/api-v1 && deno task start:memory`              | `RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory`.                              |
+| `npm run dev:rallar:api` and `npm run start:rallar:api` | Local CORS origins plus app and root env files; selector absence chooses `dev`. |
+| `npm run start:rallar:api:memory`                       | `prod-in-memory` plus the Rallar Black Box local CORS origins.                  |
 
 ## apps/ar-eye-hunter-v1
 
@@ -202,7 +265,7 @@ repositories are used.
 | ------------------------------------- | -------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PORT`                                | No       | `8090`                                                              | HTTP listen port. Parsed with `Number(...)`; no range validation is applied here.                                                                                                      |
 | `CORS_ORIGINS`                        | No       | `http://localhost:5173,http://localhost:5174,http://localhost:5175` | Allowed browser origins for `/api/*`. Use `*` to reflect any request origin.                                                                                                           |
-| `ENVIRONMENT`                         | No       | `dev`                                                               | Selects `resources/web-config-dev.json` or `resources/web-config-prod.json` for the Relic server config. Supported values are `dev` and `prod`.                                        |
+| `RALLAR_API_CONFIGURATION_PROFILE`    | No       | `dev`                                                               | Selects the same immutable API-v1 profile used by the embedded server. Production must use `prod`.                                                                                     |
 | `RELIC_REST_AUTH_MODE`                | No       | `authenticated`                                                     | `authenticated` requires login only. `group-policy` requires full group read permission for snapshots, room send permission for commands, and active owner/admin permission for reset. |
 | `RELIC_AI_EXPEDITION_MODE`            | No       | `off`                                                               | Optional server-side expedition setup generation. Supported values: `off`, `mock`, and `ollama`.                                                                                       |
 | `RELIC_AI_EXPEDITION_TIMEOUT_MS`      | No       | `15000`                                                             | Timeout for server-side expedition blueprint generation before procedural fallback. Must be a positive integer.                                                                        |
@@ -227,8 +290,7 @@ variables are relevant too:
   `RALLAR_APP_INBOX_WAIT_RETRY_INTERVAL_MS`,
   `RALLAR_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MS`,
   `RALLAR_APP_INBOX_WAIT_JITTER_RATIO`.
-- API config overrides: `RALLAR_API_BASE_URL`, `API_BASE_URL`,
-  `RALLAR_WS_BASE_URL`.
+- API config overrides: `RALLAR_API_BASE_URL`, `RALLAR_WS_BASE_URL`.
 - Black-box operator brokerage when used: `RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET`,
   `RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS`,
   `RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS`.
@@ -374,15 +436,11 @@ remote worker environment.
 | `VITE_RALLAR_API_BASE_URL`    | No       | `http://localhost:8080` | Full-stack API base URL. The Playwright config derives API-v1 `PORT`, `RALLAR_API_BASE_URL`, and `RALLAR_WS_BASE_URL` from this value. |
 | `VITE_RALLAR_SPA_BASE_URL`    | No       | `http://localhost:5176` | Full-stack SPA base URL. The Playwright config derives the Vite port and API CORS origins from this value.                             |
 
-When `RALLAR_BLACK_BOX_API_MODE=memory`, the Playwright config starts API-v1
-with:
-
-- `RALLAR_SQL_BACKEND=pglite-memory`
-- `RALLAR_PGLITE_DATA_DIR=memory://`
-- `RALLAR_PGLITE_SCHEMA_INIT=auto`
-- `RALLAR_DB_PUBSUB=local`
-- `RALLAR_ICE_MODE=local`
-- `RALLAR_LOGIN_USER_RATE_LIMIT=100`
+Both modes select `RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory` and use
+bounded full-stack fixture credentials. Memory mode takes its database and ICE
+behavior directly from that profile. PostgreSQL mode applies only the
+run-specific `postgres`, disabled schema bootstrap, and PostgreSQL pub/sub
+overrides.
 
 ### Rallar Black Box Playwright Test Inputs
 

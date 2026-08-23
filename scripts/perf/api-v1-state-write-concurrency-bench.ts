@@ -5,6 +5,7 @@ import type {
     HeartbeatGroupPresenceSessionRequest,
     StateScope
 } from '@shared/api/state-types.ts';
+import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { dirname, normalize } from 'node:path';
 import process from 'node:process';
@@ -32,7 +33,6 @@ import {
 } from './api-v1-state-write-durable-evidence.ts';
 import { PRODUCTION_STATE_WRITE_MUTATION_CONTRACT } from './compare-api-v1-state-write-results.mjs';
 import { mapWithConcurrency } from './map-with-concurrency.ts';
-import { STATE_WRITE_BENCHMARK_APP_INBOX_OPTIONS } from './state-write-wait-options.ts';
 import {
     toStateWriteBenchmarkGroupContextId,
     toStateWriteBenchmarkSessionId
@@ -48,8 +48,7 @@ import {
 
 import { parseGroupTopologyRegressionReasons } from './pool-group-topology-state-write-position-balanced-results.mjs';
 
-import { toPSqlSql } from '../../apps/api-v1/src/db/to-p-sql-sql.ts';
-import { computeProductionOutboxEvidence } from './api-v1-state-write-outbox-evidence.ts';
+import { toApiV1PostgresClient } from '../../apps/api-v1/src/db/api-v1-database-lifecycle.ts';
 import {
     createInstrumentedStateWriteSql,
     stateWriteProductionPhaseDuration,
@@ -804,13 +803,12 @@ function toGroupPresenceEnqueue(
     }
 }
 
-interface BenchmarkMutationOutcome {
-    fold<T>(left: (value: string) => T, right: () => T): T;
-}
-
-async function runAppInboxMutation(
+async function runAppInboxMutation<
+    Failure extends string | Readonly<{ message: string; }>,
+    Result
+>(
     runtime: StateWriteServiceRuntime,
-    start: () => Promise<BenchmarkMutationOutcome>
+    start: () => Promise<Either<Failure, Result>>
 ): Promise<void> {
     let settled = false;
     const pending = start().finally(() => (settled = true));
@@ -821,7 +819,7 @@ async function runAppInboxMutation(
     const result = await pending;
     result.fold(
         (error) => {
-            throw new Error(error);
+            throw new Error(typeof error === 'string' ? error : error.message);
         },
         () => undefined
     );
@@ -832,7 +830,7 @@ async function seedCompleteState(
     scope: StateScope,
     workload: (typeof WORKLOADS)[number]
 ): Promise<void> {
-    const pgSql = toPSqlSql(sql);
+    const pgSql = toApiV1PostgresClient(sql);
     const runtimeRepository = new PSqlRuntimeStateRepository(pgSql);
     const authSessionRepository = new AuthSessionRepository(runtimeRepository);
     const runtime = createStateWriteServiceRuntime({

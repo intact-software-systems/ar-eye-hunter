@@ -1,9 +1,7 @@
 import { readRateLimiter } from '@shared-server/http/rate-limit-service.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { RateLimiterPolicy } from '@shared/resilience/Resilience.ts';
-
-export const GROUP_ADMISSION_RATE_LIMIT_WINDOW_MS = 60_000;
-export const GROUP_ADMISSION_RETRY_AFTER_SECONDS = 60;
+import type { ApiV1GroupAdmissionConfiguration } from '../configuration/api-v1-configuration.ts';
 
 export type GroupAdmissionRateLimitFamily = 'join-admission' | 'presence-connect';
 
@@ -15,6 +13,16 @@ export interface GroupAdmissionRateLimitFamilyPolicies {
 export interface GroupAdmissionRateLimitConfig {
     readonly joinAdmission: GroupAdmissionRateLimitFamilyPolicies;
     readonly presenceConnect: GroupAdmissionRateLimitFamilyPolicies;
+}
+
+export interface GroupAdmissionQuota {
+    require(input: GroupAdmissionQuotaInput): void;
+}
+
+export interface GroupAdmissionQuotaInput {
+    readonly family: GroupAdmissionRateLimitFamily;
+    readonly groupRef: GroupRef;
+    readonly principalId: string;
 }
 
 export interface GroupAdmissionRateLimitDecisionInput {
@@ -30,12 +38,13 @@ export class GroupAdmissionRateLimitedError extends Error {
     override readonly name = 'GroupAdmissionRateLimitedError';
     readonly status = 429;
     readonly code = 'group-admission-rate-limited';
-    readonly retryAfterSeconds = GROUP_ADMISSION_RETRY_AFTER_SECONDS;
+    readonly retryAfterSeconds: number;
     readonly family: GroupAdmissionRateLimitFamily;
 
-    constructor(family: GroupAdmissionRateLimitFamily) {
+    constructor(family: GroupAdmissionRateLimitFamily, retryAfterSeconds: number) {
         super(`Too many group ${family} requests`);
         this.family = family;
+        this.retryAfterSeconds = retryAfterSeconds;
     }
 }
 
@@ -45,55 +54,37 @@ export function isGroupAdmissionRateLimitedError(
     return error instanceof GroupAdmissionRateLimitedError;
 }
 
-export function readGroupAdmissionRateLimitConfig(
-    readEnv: (name: string) => string | undefined = readDenoEnv
-): GroupAdmissionRateLimitConfig {
+export function createGroupAdmissionQuota(
+    configuration: ApiV1GroupAdmissionConfiguration
+): GroupAdmissionQuota {
+    const config = toGroupAdmissionRateLimitConfig(configuration);
+    const retryAfterSeconds = Math.ceil(configuration.windowMs / 1_000);
     return {
-        joinAdmission: {
-            principal: toWindowPolicy(
-                readPositiveIntegerFromEnv(readEnv, 'RALLAR_GROUP_JOIN_ADMISSION_PRINCIPAL_RATE_LIMIT', 60)
-            ),
-            group: toWindowPolicy(
-                readPositiveIntegerFromEnv(readEnv, 'RALLAR_GROUP_JOIN_ADMISSION_GROUP_RATE_LIMIT', 600)
-            )
-        },
-        presenceConnect: {
-            principal: toWindowPolicy(
-                readPositiveIntegerFromEnv(
-                    readEnv,
-                    'RALLAR_GROUP_PRESENCE_CONNECT_PRINCIPAL_RATE_LIMIT',
-                    120
-                )
-            ),
-            group: toWindowPolicy(
-                readPositiveIntegerFromEnv(readEnv, 'RALLAR_GROUP_PRESENCE_CONNECT_GROUP_RATE_LIMIT', 1200)
-            )
+        require: (input) => {
+            const decision = readGroupAdmissionRateLimitDecision({
+                ...input,
+                config
+            });
+            if (decision === 'over-limit') {
+                throw new GroupAdmissionRateLimitedError(input.family, retryAfterSeconds);
+            }
         }
     };
 }
 
-const GROUP_ADMISSION_RATE_LIMIT_CONFIG = readGroupAdmissionRateLimitConfig();
-
-/**
- * Route guard composing with (not replacing) the blanket `/api/state/*`
- * resilience middleware: it sheds a pathological storm on one group before the
- * mutation reaches the AppInbox. Throws the 429-bearing typed error so route
- * error mapping can answer with the contractual `Retry-After` header.
- */
-export function requireGroupAdmissionQuota(
-    family: GroupAdmissionRateLimitFamily,
-    groupRef: GroupRef,
-    principalId: string
-): void {
-    const decision = readGroupAdmissionRateLimitDecision({
-        family,
-        groupRef,
-        principalId,
-        config: GROUP_ADMISSION_RATE_LIMIT_CONFIG
-    });
-    if (decision === 'over-limit') {
-        throw new GroupAdmissionRateLimitedError(family);
-    }
+export function toGroupAdmissionRateLimitConfig(
+    configuration: ApiV1GroupAdmissionConfiguration
+): GroupAdmissionRateLimitConfig {
+    return {
+        joinAdmission: {
+            principal: toWindowPolicy(configuration.windowMs, configuration.joinPrincipal),
+            group: toWindowPolicy(configuration.windowMs, configuration.joinGroup)
+        },
+        presenceConnect: {
+            principal: toWindowPolicy(configuration.windowMs, configuration.presencePrincipal),
+            group: toWindowPolicy(configuration.windowMs, configuration.presenceGroup)
+        }
+    };
 }
 
 export function readGroupAdmissionRateLimitDecision(
@@ -121,37 +112,10 @@ export function readGroupAdmissionRateLimitDecision(
     return 'allowed';
 }
 
-function toWindowPolicy(maxNumberToAllow: number): RateLimiterPolicy {
-    return new RateLimiterPolicy(GROUP_ADMISSION_RATE_LIMIT_WINDOW_MS, maxNumberToAllow);
+function toWindowPolicy(windowMs: number, maxNumberToAllow: number): RateLimiterPolicy {
+    return new RateLimiterPolicy(windowMs, maxNumberToAllow);
 }
 
 function toGroupKey(groupRef: GroupRef): string {
     return `${groupRef.applicationId}:${groupRef.workspaceId}:${groupRef.groupId}`;
-}
-
-function readDenoEnv(name: string): string | undefined {
-    try {
-        return Deno.env.get(name);
-    }
-    catch {
-        return undefined;
-    }
-}
-
-function readPositiveIntegerFromEnv(
-    readEnv: (name: string) => string | undefined,
-    name: string,
-    fallback: number
-): number {
-    const raw = readEnv(name)?.trim();
-    if (!raw) {
-        return fallback;
-    }
-
-    const value = Number(raw);
-    if (!Number.isInteger(value) || value < 1) {
-        throw new Error(`${name} must be a positive integer`);
-    }
-
-    return value;
 }

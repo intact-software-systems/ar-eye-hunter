@@ -419,7 +419,6 @@ async function verifyGroupInviteRoutes(): Promise<void> {
     assert.equal(acceptResponse.status, 200);
     assertGroupInviteEnvelopes(enqueued);
 }
-
 function assertGroupInviteEnvelopes(enqueued: AuthenticatedGroupMutationEnqueue[]): void {
     assert.deepEqual(enqueued, [
         {

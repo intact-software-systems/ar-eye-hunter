@@ -1,7 +1,5 @@
 import type { PGlite } from '@electric-sql/pglite';
 
-export const PGLITE_BLACK_BOX_SNAPSHOT_DIR_ENV = 'RALLAR_BLACK_BOX_PGLITE_SNAPSHOT_DIR';
-
 const REQUESTS_DIRECTORY = 'requests';
 const RESPONSES_DIRECTORY = 'responses';
 const SNAPSHOTS_DIRECTORY = 'snapshots';
@@ -47,9 +45,9 @@ type PublishSnapshotInput = Readonly<{
 export async function startPGliteBlackBoxSnapshotPublisher(
     raw: Pick<PGlite, 'dumpDataDir'>,
     options: Readonly<{
-        env?: Readonly<{ get(name: string): string | undefined; }>;
+        directory: string;
         pollIntervalMs?: number;
-    }> = {}
+    }>
 ): Promise<PGliteBlackBoxSnapshotPublisher | undefined> {
     const publisher = await createPGliteBlackBoxSnapshotPublisher(raw, options);
     if (!publisher) {
@@ -81,21 +79,15 @@ export async function startPGliteBlackBoxSnapshotPublisher(
 export async function createPGliteBlackBoxSnapshotPublisher(
     raw: Pick<PGlite, 'dumpDataDir'>,
     options: Readonly<{
-        env?: Readonly<{ get(name: string): string | undefined; }>;
+        directory: string;
         publicationHooks?: SnapshotPublicationHooks;
-    }> = {}
+    }>
 ): Promise<
     Readonly<{
         publishPendingSnapshots(): Promise<void>;
     }> | undefined
 > {
-    const snapshotDir = options.env?.get(PGLITE_BLACK_BOX_SNAPSHOT_DIR_ENV) ??
-        Deno.env.get(PGLITE_BLACK_BOX_SNAPSHOT_DIR_ENV);
-    if (!snapshotDir?.trim()) {
-        return undefined;
-    }
-
-    const control = new SnapshotControlDirectory(snapshotDir);
+    const control = new SnapshotControlDirectory(options.directory);
     await control.prepare();
     let publishing: Promise<void> | undefined;
     return {

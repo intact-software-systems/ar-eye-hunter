@@ -9,6 +9,7 @@ import { authenticationRequired } from '../../src/services/request-auth-service.
 import * as clientStateRoutes from '../../src/routes/client-state-routes.ts';
 import * as configRoutes from '../../src/routes/config-route.ts';
 import { createAuthSession, createClientRouteDeps, createClientSnapshot, toClientStateWritten } from '../client-state/client-state-route-test-runtime.ts';
+import { createConfigRouteTestDependencies } from './config-route-test-runtime.ts';
 
 const REQUEST_ID = 'Request_ID-012345678';
 const AUTH_SESSION = {
@@ -169,7 +170,10 @@ Deno.test(
     'login, register, and websocket-ticket issue expose only strict request paths',
     async () => {
         const app = createConfigRouteApp({
-            staticClients: [{ clientId: 'alice', username: 'alice', password: 'password' }],
+            authentication: {
+                ...createConfigRouteTestDependencies().authentication,
+                staticClients: [{ clientId: 'alice', username: 'alice', password: 'password' }]
+            },
             authUserRepository: {
                 findByNormalizedUsernameEntry: () => Promise.resolve(undefined)
             } as never,
@@ -435,27 +439,26 @@ function createConfigRouteApp(
     dependencies: Partial<configRoutes.ConfigRouteDependencies> = {}
 ): Hono {
     const app = new Hono();
-    configRoutes.registerConfigRoutes(app, {
-        requireApiAuthSession: () => Promise.resolve(AUTH_SESSION),
-        readEnv: () => undefined,
-        now: () => 2_000,
-        createTokenId: () => 'server-generated-id-must-not-be-request-identity',
-        appAuthInbox: ({
-            logoutSession: () => Promise.resolve(Either.ofRight({ loggedOut: true })),
-            replayLogoutSessionWithCredentialProof: () => Promise.resolve(null),
-            registerUser: (input: { request: { username?: string; }; }) => {
-                if (!input.request.username) {
-                    throw new TypeError('Username is required');
+    configRoutes.registerConfigRoutes(
+        app,
+        createConfigRouteTestDependencies({
+            requireApiAuthSession: () => Promise.resolve(AUTH_SESSION),
+            now: () => 2_000,
+            createTokenId: () => 'server-generated-id-must-not-be-request-identity',
+            appAuthInbox: ({
+                logoutSession: () => Promise.resolve(Either.ofRight({ loggedOut: true })),
+                replayLogoutSessionWithCredentialProof: () => Promise.resolve(null),
+                registerUser: (input: { request: { username?: string; }; }) => {
+                    if (!input.request.username) {
+                        throw new TypeError('Username is required');
+                    }
+                    throw new Error('Unexpected registration call');
                 }
-                throw new Error('Unexpected registration call');
-            }
-        }) as never,
-        authUserRepository: {} as never,
-        staticClients: [],
-        registrationMode: 'public',
-        adminClientIds: new Set(),
-        ...dependencies
-    });
+            }) as never,
+            authUserRepository: {} as never,
+            ...dependencies
+        })
+    );
     return app;
 }
 

@@ -1,8 +1,8 @@
 import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/p-sql-admin-operations-pruner.ts';
 import assert from 'node:assert/strict';
 
-import { createApiV1SqlClient } from '../../src/db/db.ts';
 import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
+import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
 
 Deno.test('PSqlAdminOperationsPruner counts only expired supported rows', async () => {
     await withPGliteSql(async (sql) => {
@@ -56,11 +56,11 @@ async function seedSupportedPruneRows(sql: PGliteSql): Promise<void> {
 }
 
 async function withPGliteSql(action: (sql: PGliteSql) => Promise<void>): Promise<void> {
-    const sql = createApiV1SqlClient({ sqlBackend: 'pglite-memory' }) as PGliteSql;
+    const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
     try {
-        await action(sql);
+        await action(lifecycle.database);
     }
     finally {
-        await sql.close();
+        await lifecycle.close();
     }
 }

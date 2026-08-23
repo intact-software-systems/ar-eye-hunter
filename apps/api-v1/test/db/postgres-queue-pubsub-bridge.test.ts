@@ -1,19 +1,19 @@
 import type { QueueBoxPubSubMessage } from '@shared-server/rallar-system/queue-pubsub/queue-box-pub-sub-bridge.ts';
 import assert from 'node:assert/strict';
-import { queuePubSubDeliveryForConfig } from '../../src/db/api-v1-queue-pubsub-bridge.ts';
-import { createPostgresQueuePubSubBridge } from '../../src/db/postgres-queue-pubsub-bridge.ts';
+import { queuePubSubDeliveryForMode } from '../../src/db/api-v1-queue-pubsub-bridge.ts';
+import { createPostgresQueuePubSubBridge } from '../../src/db/create-postgres-queue-pub-sub-bridge.ts';
 
 Deno.test('api-v1 queue pub/sub config uses key delivery only for postgres', () => {
-    assert.equal(queuePubSubDeliveryForConfig({ mode: 'postgres' }), 'key');
-    assert.equal(queuePubSubDeliveryForConfig({ mode: 'local' }), 'entry');
-    assert.equal(queuePubSubDeliveryForConfig({ mode: 'disabled' }), 'entry');
+    assert.equal(queuePubSubDeliveryForMode('postgres'), 'key');
+    assert.equal(queuePubSubDeliveryForMode('local'), 'entry');
+    assert.equal(queuePubSubDeliveryForMode('disabled'), 'entry');
 });
 
 Deno.test('postgres queue pub/sub bridge publishes key-only envelopes', async () => {
     const notifications: Array<
         Readonly<{
             channel: string;
-            message: QueueBoxPubSubMessage;
+            message: object;
         }>
     > = [];
     const bridge = createPostgresQueuePubSubBridge('publisher-local', {
@@ -21,7 +21,7 @@ Deno.test('postgres queue pub/sub bridge publishes key-only envelopes', async ()
             notifications.push({ channel, message });
             return Promise.resolve();
         },
-        startListening: async () => {
+        listen: async () => {
         }
     });
 
@@ -53,22 +53,23 @@ Deno.test('postgres queue pub/sub bridge ignores malformed and wrong-channel pay
     const received: QueueBoxPubSubMessage[] = [];
     const bridge = createPostgresQueuePubSubBridge('publisher-local', {
         notify: () => Promise.resolve(),
-        startListening: async (_channel, options) => {
-            await options.onMessage({ channel: 'ws-channel' } as QueueBoxPubSubMessage);
-            await options.onMessage(
-                createMessage({
+        listen: async (_channel, onMessage) => {
+            await onMessage('{"channel":"ws-channel"}');
+            await onMessage(
+                JSON.stringify(createMessage({
                     channel: 'other-channel',
                     publisherId: 'publisher-remote'
-                })
+                }))
             );
-            await options.onMessage(
-                createMessage({
+            await onMessage(
+                JSON.stringify(createMessage({
                     channel: 'ws-channel',
                     publisherId: 'publisher-remote',
                     delivery: 'key',
                     payload: undefined
-                })
+                }))
             );
+            await onMessage(JSON.stringify(createMessage({ publisherId: 'publisher-local' })));
         }
     });
 

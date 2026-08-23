@@ -3,10 +3,12 @@ import {
     type RtcTopologyDeliveryStreamMaintenancePort,
     type RtcTopologyDeliveryStreamScheduler
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-stream-service.ts';
+import type { ApiV1TopologyDeliveryConfiguration } from '../../configuration/api-v1-configuration.ts';
 
 interface ApiRtcTopologyDeliveryStartupOptions {
     readonly streamId: string;
     readonly repository: RtcTopologyDeliveryStreamMaintenancePort;
+    readonly configuration: ApiV1TopologyDeliveryConfiguration;
     readonly scheduler?: RtcTopologyDeliveryStreamScheduler;
     readonly onCompactionFailure?: (error: Error) => void;
 }
@@ -29,6 +31,13 @@ export function startApiRtcTopologyDelivery(
     const service = new RtcTopologyDeliveryStreamService({
         streamId: options.streamId,
         repository: options.repository,
+        policy: {
+            heartbeatIntervalMs: options.configuration.heartbeatIntervalMs,
+            leaseDurationMs: options.configuration.leaseDurationMs,
+            compactionIntervalMs: options.configuration.compactionIntervalMs,
+            compactionPageSize: options.configuration.compactionPageSize,
+            consumerRetentionMs: options.configuration.consumerRetentionMs
+        },
         scheduler: options.scheduler,
         onHealthFailure: rejectHealthFailure,
         onCompactionFailure: options.onCompactionFailure

@@ -15,6 +15,7 @@ RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS="${RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS:-}"
 RALLAR_DISTRIBUTED_ARTIFACT_DIR="${RALLAR_DISTRIBUTED_ARTIFACT_DIR:-/tmp/rallar-distributed-runs}"
 RALLAR_ROLLOUT_CONTROL_STATE_DIR="${RALLAR_ROLLOUT_CONTROL_STATE_DIR:-/var/lib/rallar-black-box-control}"
 RALLAR_ROLLOUT_TMP_DIR="${RALLAR_ROLLOUT_TMP_DIR:-/tmp}"
+RALLAR_API_ENV_FILE="${RALLAR_API_ENV_FILE:-/etc/rallar/api-v1.env}"
 
 rallar_user_home() {
 	local user="${1:-rallar}"
@@ -184,6 +185,34 @@ repair_known_rollout_generated_checkout_changes() {
 	git -C "${checkout_dir}" checkout -- "${repaired_files[@]}"
 }
 
+sanitize_api_environment_file() {
+	local env_file="$1"
+	local tmp_file key line
+	local allowed_names="|PORT|CORS_ORIGINS|RALLAR_API_BASE_URL|RALLAR_WS_BASE_URL|"
+	allowed_names+="RALLAR_LOGIN_USER_RATE_LIMIT|RALLAR_TIMING_LOGS|"
+	allowed_names+="RALLAR_AUTH_CREDENTIAL_SECRET|RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET|"
+	allowed_names+="RALLAR_BLACK_BOX_OPERATOR_TOKEN_TTL_MS|RALLAR_BLACK_BOX_OPERATOR_CLIENT_IDS|"
+	allowed_names+="RALLAR_RTC_TOPOLOGY_DEGREE_LIMIT|RALLAR_RTC_TOPOLOGY_TREE_MIN_SIZE|"
+	allowed_names+="RALLAR_RTC_TOPOLOGY_MESH_MIN_SIZE|RALLAR_RTC_TOPOLOGY_MESH_PARAM_K|"
+	allowed_names+="RALLAR_RTC_TOPOLOGY_RTT_REBUILD_DEBOUNCE_MS|"
+
+	if [[ ! -f "${env_file}" ]]; then
+		echo "Missing ${env_file}. Run 02-deploy-controller.sh first." >&2
+		return 1
+	fi
+
+	tmp_file="$(mktemp)"
+	while IFS= read -r line; do
+		key="${line%%=*}"
+		if [[ -n "${key}" && "${allowed_names}" == *"|${key}|"* ]]; then
+			printf '%s\n' "${line}" >>"${tmp_file}"
+		fi
+	done <"${env_file}"
+	printf 'RALLAR_API_CONFIGURATION_PROFILE=prod-in-memory\n' >>"${tmp_file}"
+	install -m 0600 "${tmp_file}" "${env_file}"
+	rm -f "${tmp_file}"
+}
+
 run_rollout_self_test() {
 	case "${RALLAR_ROLLOUT_SCRIPT_SELF_TEST:-}" in
 	checkout-ref)
@@ -202,6 +231,10 @@ run_rollout_self_test() {
 	cleanup-disk-pressure)
 		cleanup_rollout_disk_pressure
 		echo "cleanedRolloutDiskPressure=true"
+		;;
+	normalize-api-environment)
+		sanitize_api_environment_file "${RALLAR_API_ENV_FILE}"
+		echo "normalizedApiEnvironment=true"
 		;;
 	*)
 		echo "Unknown RALLAR_ROLLOUT_SCRIPT_SELF_TEST: ${RALLAR_ROLLOUT_SCRIPT_SELF_TEST}" >&2
@@ -323,6 +356,11 @@ update_env_value() {
   ' "${env_file}" >"${tmp_file}"
 	install -m 0600 -o root -g root "${tmp_file}" "${env_file}"
 	rm -f "${tmp_file}"
+}
+
+normalize_api_environment_allowlist() {
+	sanitize_api_environment_file "${RALLAR_API_ENV_FILE}"
+	chown root:root "${RALLAR_API_ENV_FILE}"
 }
 
 read_env_value() {
@@ -506,6 +544,9 @@ print_rollout_disk_summary "after publishing SPA cleanup"
 
 echo "==> Writing SPA public env audit"
 write_rallar_black_box_spa_env_file
+
+echo "==> Normalizing API environment allowlist"
+normalize_api_environment_allowlist
 
 echo "==> Updating API CORS origins"
 update_api_cors_origins

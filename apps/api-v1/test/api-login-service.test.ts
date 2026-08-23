@@ -1,7 +1,9 @@
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import type { RuntimeStateEntry, RuntimeStateTransactionalRepositoryLike } from '@shared-server/runtime-state/RuntimeStateRepository.ts';
 import assert from 'node:assert/strict';
-import { login, readAuthorisedClients, register } from '../src/services/api-login-service.ts';
+import { login, register } from '../src/services/api-login-service.ts';
+
+const STATIC_CLIENTS = [{ username: 'admin', password: 'admin', clientId: 'admin' }];
 
 Deno.test('register prepares a mandatory user command without writing before AppInbox', async () => {
     const runtimeRepository = new FakeRuntimeStateRepository();
@@ -11,7 +13,7 @@ Deno.test('register prepares a mandatory user command without writing before App
             password: 'secret',
             displayName: 'New User'
         },
-        staticClients: readAuthorisedClients(Deno.env),
+        staticClients: STATIC_CLIENTS,
         capturedAtEpochMs: 1_234,
         clientId: 'client-1'
     });
@@ -30,7 +32,7 @@ Deno.test('register prepares a mandatory user command without writing before App
             password: 'secret'
         },
         userRepository,
-        staticClients: readAuthorisedClients(Deno.env)
+        staticClients: STATIC_CLIENTS
     });
 
     assert.ok(session);
@@ -44,7 +46,7 @@ Deno.test('register prepares a mandatory user command without writing before App
                 password: 'wrong'
             },
             userRepository,
-            staticClients: readAuthorisedClients(Deno.env)
+            staticClients: STATIC_CLIENTS
         }),
         undefined
     );
@@ -58,7 +60,7 @@ Deno.test('register rejects usernames reserved by static dev clients', async () 
                     username: 'admin',
                     password: 'secret'
                 },
-                staticClients: readAuthorisedClients(Deno.env),
+                staticClients: STATIC_CLIENTS,
                 capturedAtEpochMs: 1_234,
                 clientId: 'client-1'
             }),
@@ -66,73 +68,46 @@ Deno.test('register rejects usernames reserved by static dev clients', async () 
     );
 });
 
-Deno.test('AUTH_STATIC_CLIENTS_MODE=disabled removes demo clients and frees reserved names', async () => {
-    await withEnv('AUTH_STATIC_CLIENTS_MODE', 'disabled', async () => {
-        const runtimeRepository = new FakeRuntimeStateRepository();
-        const registered = await register({
+Deno.test('an explicitly empty static-client policy frees demo client names', async () => {
+    const runtimeRepository = new FakeRuntimeStateRepository();
+    const registered = await register({
+        request: {
+            username: 'admin',
+            password: 'secret',
+            displayName: 'Runtime Admin'
+        },
+        staticClients: [],
+        capturedAtEpochMs: 1_234,
+        clientId: 'client-1'
+    });
+
+    assert.equal(registered.username, 'admin');
+
+    const userRepository = new AuthUserRepository(runtimeRepository);
+    await userRepository.putUser(registered);
+    assert.equal(
+        await login({
             request: {
                 username: 'admin',
-                password: 'secret',
-                displayName: 'Runtime Admin'
-            },
-            staticClients: readAuthorisedClients(Deno.env),
-            capturedAtEpochMs: 1_234,
-            clientId: 'client-1'
-        });
-
-        assert.equal(registered.username, 'admin');
-
-        const userRepository = new AuthUserRepository(runtimeRepository);
-        await userRepository.putUser(registered);
-        assert.equal(
-            await login({
-                request: {
-                    username: 'admin',
-                    password: 'admin'
-                },
-                userRepository,
-                staticClients: readAuthorisedClients(Deno.env)
-            }),
-            undefined
-        );
-
-        const session = await login({
-            request: {
-                username: 'admin',
-                password: 'secret'
+                password: 'admin'
             },
             userRepository,
-            staticClients: readAuthorisedClients(Deno.env)
-        });
-        assert.ok(session);
-        assert.equal(session.clientId, registered.clientId);
-    });
-});
+            staticClients: []
+        }),
+        undefined
+    );
 
-async function withEnv<T>(
-    key: string,
-    value: string | undefined,
-    fn: () => Promise<T>
-): Promise<T> {
-    const previous = Deno.env.get(key);
-    try {
-        if (value === undefined) {
-            Deno.env.delete(key);
-        }
-        else {
-            Deno.env.set(key, value);
-        }
-        return await fn();
-    }
-    finally {
-        if (previous === undefined) {
-            Deno.env.delete(key);
-        }
-        else {
-            Deno.env.set(key, previous);
-        }
-    }
-}
+    const session = await login({
+        request: {
+            username: 'admin',
+            password: 'secret'
+        },
+        userRepository,
+        staticClients: []
+    });
+    assert.ok(session);
+    assert.equal(session.clientId, registered.clientId);
+});
 
 class FakeRuntimeStateRepository implements RuntimeStateTransactionalRepositoryLike {
     readonly data = new Map<string, RuntimeStateEntry>();

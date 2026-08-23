@@ -1,9 +1,7 @@
 {
   "description": "Files under the packages/tests TypeScript project that still fail to compile. This list may only shrink: CI fails when a file gains errors or is absent from it. Regenerate with `npm run typecheck:tests -- --update` after fixing files.",
   "project": "packages/tests/tsconfig.json",
-  "totalErrors": 1,
-  "fileCount": 1,
-  "files": {
-    "apps/api-v1/src/db/pglite-black-box-evidence-snapshot.ts": 1
-  }
+  "totalErrors": 0,
+  "fileCount": 0,
+  "files": {}
 }

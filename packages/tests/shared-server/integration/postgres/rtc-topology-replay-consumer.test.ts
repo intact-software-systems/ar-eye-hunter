@@ -4,7 +4,12 @@ import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import { PSqlRtcTopologyDeliveryRepository } from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-delivery-repository.ts';
 import { PSqlRtcTopologyReplayRepository } from '@shared-server/postgres/rtc-topology/p-sql-rtc-topology-replay-repository.ts';
 import type { RtcTopologyDeliveryLogEntry } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-contracts.ts';
-import { RTC_TOPOLOGY_REPLAY_ANTI_ENTROPY_INTERVAL_MS } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-policy.ts';
+import {
+    RTC_TOPOLOGY_REPLAY_ANTI_ENTROPY_INTERVAL_MS,
+    RTC_TOPOLOGY_REPLAY_MAX_ENTRIES_PER_TURN,
+    RTC_TOPOLOGY_REPLAY_MAX_PAGES_PER_TURN,
+    RTC_TOPOLOGY_REPLAY_PAGE_SIZE
+} from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-policy.ts';
 import { RtcTopologyReplayService, type RtcTopologyReplayServiceScheduler } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-service.ts';
 
 import { createPostgresSql, type PostgresSql } from '../../rallar-system/topology/concurrency/postgres-topology-concurrency-fixtures.ts';
@@ -43,6 +48,12 @@ describe('Postgres RTC topology replay consumer', () => {
                         }
                     },
                     hydrateGap: async () => undefined,
+                    policy: {
+                        antiEntropyIntervalMs: RTC_TOPOLOGY_REPLAY_ANTI_ENTROPY_INTERVAL_MS,
+                        pageSize: RTC_TOPOLOGY_REPLAY_PAGE_SIZE,
+                        maxPagesPerTurn: RTC_TOPOLOGY_REPLAY_MAX_PAGES_PER_TURN,
+                        maxEntriesPerTurn: RTC_TOPOLOGY_REPLAY_MAX_ENTRIES_PER_TURN
+                    },
                     scheduler,
                     onHealthFailure: (error) => {
                         throw error;

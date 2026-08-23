@@ -1,13 +1,13 @@
 import { PSqlRuntimeStateRepository, type RuntimeStateReadBatchSelector } from '@shared-server/mod.ts';
 import type { PSqlSql } from '@shared-server/postgres/PostgresSqlClient.ts';
 import assert from 'node:assert/strict';
-import { createApiV1SqlClient } from '../../src/db/db.ts';
-import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
+import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
 
 const FUTURE_MS = Date.parse('9999-12-31T23:59:59.999Z');
 
 Deno.test('PGlite returns dense packed runtime-state key and prefix selections', async () => {
-    const sql = createApiV1SqlClient({ sqlBackend: 'pglite-memory' }) as PGliteSql;
+    const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
+    const sql = lifecycle.database;
     const namespace = `read-batch-${crypto.randomUUID()}`;
     const seed = new PSqlRuntimeStateRepository(sql);
 
@@ -38,7 +38,7 @@ Deno.test('PGlite returns dense packed runtime-state key and prefix selections',
         assert.deepEqual(driverRowCounts, [1]);
     }
     finally {
-        await sql.close();
+        await lifecycle.close();
     }
 });
 

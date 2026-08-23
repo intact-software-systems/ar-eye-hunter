@@ -36,6 +36,7 @@ Deno.test('HTTP wait timeout leaves its durable AppInbox row eligible', async ()
     let directMutationFallbacks = 0;
     const app = new Hono();
     clientStateRoutes.registerClientStateRoutes(app, {
+        strictReadAuthorization: false,
         requireApiAuthSession: () =>
             Promise.resolve({
                 clientId: 'alice',

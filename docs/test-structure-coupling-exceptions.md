@@ -49,7 +49,7 @@ also invalid, so this document cannot accumulate orphan approvals.
 
 ## Reviewed boundary groups
 
-The current 128 entries were reviewed by independently meaningful behavior,
+The current 119 entries were reviewed by independently meaningful behavior,
 not by vocabulary. The metadata below splits these groups further by exact
 executable assertion so a broad domain label cannot conceal unrelated evidence.
 
@@ -58,7 +58,6 @@ executable assertion so a broad domain label cannot conceal unrelated evidence.
 | Source-analysis interface                        |       1 | One parser owner supplies normalized, path-aware analysis to repository tests.                                   |
 | Hetzner workflow and Deno runtime                |       9 | Executed operations are compared with their emitted artifacts, manifests, and deployed config.                   |
 | Browser control protocol                         |       7 | Two approved assertions protect server import direction and shared-test monitor ownership.                       |
-| Auth compatibility                               |       3 | Wrapper mutations and the canonical-test inventory protect distinct compatibility edges.                         |
 | Repository style and release interfaces          |       2 | Automation consumes stable rule and release-gate mappings.                                                       |
 | AppInbox transport routing                       |      14 | Concrete route and command-binding mutations must fail before they bypass the canonical transaction owner.       |
 | Mutation-analysis implementation interface       |       3 | The audit must follow new files, re-exports, and type declarations fail-closed.                                  |
@@ -72,7 +71,6 @@ executable assertion so a broad domain label cannot conceal unrelated evidence.
 | State-write recipe evidence                      |       6 | Parsed command/evidence pairs prove digests, revisions, effects, and execution identity.                         |
 | Shared-web package boundaries                    |       9 | Consumer imports, browser bundles, and entrypoint inventories enforce package direction.                         |
 | Shared RTC benchmark navigation                  |       9 | Package navigation, accepted-evidence exclusion, and Deno-check participation are published package interfaces.  |
-| Group topology canonical import direction        |       6 | Active composition and package exports bypass compatibility-only predecessor paths.                              |
 
 The full current candidate tree validates this registry even when the command
 reports a selected file set or a Git range. Filtered modes change the report,
@@ -122,22 +120,6 @@ moved or changed test.
       "summary": "Managed Postgres commands expose three API nodes and select complete recipe plans without hidden side effects. Executable assertion: “starts three API servers for every managed Postgres cluster command”.",
       "semanticCoverage": "packages/tests/shared-test/api-v1-runner-options-and-plans.test.ts#starts three API servers for every managed Postgres cluster command",
       "coverageRelation": "The runner-plan suite executes managed Postgres planning and asserts all three server processes; this manifest read supplies the actual package command selected by that plan."
-    },
-    {
-      "id": "auth-server-canonical-test-inventory",
-      "domain": "Canonical auth test import boundary",
-      "owner": "Rallar repository maintainers",
-      "summary": "Canonical auth tests import canonical owners rather than compatibility wrappers. Executable assertion: “keeps every canonical auth test free of compatibility wrappers”.",
-      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-governance.test.ts#keeps every canonical auth test free of compatibility wrappers",
-      "coverageRelation": "The assertion enumerates every canonical auth test and checks its imports against the wrapper ledger. Running the auth behavior suite cannot prove that a newly added test did not start depending on a deprecated compatibility path."
-    },
-    {
-      "id": "auth-server-wrapper-mutation-boundary",
-      "domain": "Auth compatibility wrapper directness",
-      "owner": "Rallar repository maintainers",
-      "summary": "Retained auth wrappers preserve export kind, canonical target, and directness. Executable assertion: “rejects export kind, target, and second-hop changes”.",
-      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-governance.test.ts#rejects export kind, target, and second-hop changes",
-      "coverageRelation": "The mutation assertion rewrites each approved wrapper shape and must reject a type/runtime export swap, a different canonical target, and a second compatibility hop. Runtime identity alone cannot detect type-only drift or an extra indirection that currently resolves to the same value."
     },
     {
       "id": "black-box-schema-public-interface--keeps-schema-compatibility-guide-json-examples-validating",
@@ -426,14 +408,6 @@ moved or changed test.
       "summary": "Group mutation dependencies are constructed once and route commands to the canonical transaction owner. Executable assertion: “rejects wrong root-to-family arguments”.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-group-construction.test.ts#rejects wrong root-to-family arguments",
       "coverageRelation": "The named construction test executes one ownership mutation against the group registrar and requires the analyzer to reject the exact missing, duplicated, reordered, or rebound dependency path."
-    },
-    {
-      "id": "group-topology-canonical-import-direction",
-      "domain": "Group topology canonical import direction",
-      "owner": "Rallar server maintainers",
-      "summary": "Active composition and package exports use canonical topology owners without routing through compatibility-only predecessor paths. Executable assertion: “routes active composition and replay imports directly to canonical topology owners”.",
-      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners",
-      "coverageRelation": "Adjacent runtime identity assertions prove public exports resolve to canonical classes and command functions; this bounded source check covers the separate composition/import-direction promise that runtime identity cannot distinguish from a wrapper hop."
     },
     {
       "id": "hetzner-control-deno-runtime",
@@ -1132,39 +1106,6 @@ moved or changed test.
       "semanticCoverage": "packages/tests/rallar-black-box/control-protocol-boundary.test.ts#does not import control protocol from the SPA app into the control server"
     },
     {
-      "id": "test-structure-coupling-8ff5239f12a4d283",
-      "path": "packages/tests/repo/auth-server-compatibility-governance.test.ts",
-      "kind": "exact-file-tree",
-      "contract": "auth-server-canonical-test-inventory",
-      "disposition": "durable-boundary",
-      "boundary": "compatibility",
-      "owner": "Rallar repository maintainers",
-      "rationale": "Enumerates the canonical auth test directory so new test files enter the compatibility-import audit instead of escaping a hand-maintained filename list.",
-      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-governance.test.ts#keeps every canonical auth test free of compatibility wrappers"
-    },
-    {
-      "id": "test-structure-coupling-11023797361a6e4d",
-      "path": "packages/tests/repo/auth-server-compatibility-governance.test.ts",
-      "kind": "production-source-read",
-      "contract": "auth-server-wrapper-mutation-boundary",
-      "disposition": "durable-boundary",
-      "boundary": "compatibility",
-      "owner": "Rallar repository maintainers",
-      "rationale": "Loads the wrapper again to introduce a second compatibility hop, exercising directness rather than merely checking the final runtime identity.",
-      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-governance.test.ts#rejects export kind, target, and second-hop changes"
-    },
-    {
-      "id": "test-structure-coupling-cd626ecdafc8b673",
-      "path": "packages/tests/repo/auth-server-compatibility-governance.test.ts",
-      "kind": "production-source-read",
-      "contract": "auth-server-wrapper-mutation-boundary",
-      "disposition": "durable-boundary",
-      "boundary": "compatibility",
-      "owner": "Rallar repository maintainers",
-      "rationale": "Loads the approved wrapper and changes its direct export kind or canonical target; that mutant proves the ledger rejects compatibility drift at the first hop.",
-      "semanticCoverage": "packages/tests/repo/auth-server-compatibility-governance.test.ts#rejects export kind, target, and second-hop changes"
-    },
-    {
       "id": "test-structure-coupling-aae795e94c45930d",
       "path": "packages/tests/repo/package-dependency-direction.test.ts",
       "kind": "production-source-read",
@@ -1823,72 +1764,6 @@ moved or changed test.
       "owner": "Rallar server maintainers",
       "rationale": "Reads the live group registration predicate that the test replaces with false before executing the analyzer and requiring all group owner connections to disappear.",
       "semanticCoverage": "packages/tests/shared-server/mutation-route-owner-registration-predicates.test.ts#rejects a group registration filter that is always false"
-    },
-    {
-      "id": "test-structure-coupling-e8cf6117abcb67a0",
-      "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
-      "kind": "production-source-read",
-      "contract": "group-topology-canonical-import-direction",
-      "disposition": "durable-boundary",
-      "boundary": "compatibility",
-      "owner": "Rallar server maintainers",
-      "rationale": "Reads the package entry whose adjacent runtime assertions require public topology exports to resolve to the canonical owners.",
-      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
-    },
-    {
-      "id": "test-structure-coupling-effe33bb51116623",
-      "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
-      "kind": "production-source-read",
-      "contract": "group-topology-canonical-import-direction",
-      "disposition": "durable-boundary",
-      "boundary": "compatibility",
-      "owner": "Rallar server maintainers",
-      "rationale": "Reads the API composition root to distinguish a direct canonical dependency from a compatibility wrapper with the same runtime export identity.",
-      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
-    },
-    {
-      "id": "test-structure-coupling-4b2a565041549359",
-      "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
-      "kind": "symbol-assertion",
-      "contract": "group-topology-canonical-import-direction",
-      "disposition": "durable-boundary",
-      "boundary": "compatibility",
-      "owner": "Rallar server maintainers",
-      "rationale": "Requires the active API composition root to import the canonical topology management owner directly rather than traverse a predecessor wrapper.",
-      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
-    },
-    {
-      "id": "test-structure-coupling-238527aef8387d5a",
-      "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
-      "kind": "symbol-assertion",
-      "contract": "group-topology-canonical-import-direction",
-      "disposition": "durable-boundary",
-      "boundary": "compatibility",
-      "owner": "Rallar server maintainers",
-      "rationale": "Requires the replay owner to import the canonical topology broadcast materializer directly instead of a compatibility facade.",
-      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
-    },
-    {
-      "id": "test-structure-coupling-4f6abeeb058f12ba",
-      "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
-      "kind": "symbol-assertion",
-      "contract": "group-topology-canonical-import-direction",
-      "disposition": "durable-boundary",
-      "boundary": "compatibility",
-      "owner": "Rallar server maintainers",
-      "rationale": "Pins the package management export to its canonical implementation path, paired with the adjacent runtime constructor-identity assertion.",
-      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
-    },
-    {
-      "id": "test-structure-coupling-93c13e28dd2701c2",
-      "path": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts",
-      "kind": "symbol-assertion",
-      "contract": "group-topology-canonical-import-direction",
-      "disposition": "durable-boundary",
-      "boundary": "compatibility",
-      "owner": "Rallar server maintainers",
-      "rationale": "Pins the package repository export to its canonical implementation path, paired with the adjacent runtime constructor-identity assertion.",
-      "semanticCoverage": "packages/tests/shared-server/rallar-system/topology/inbox/topology-app-inbox-ownership.test.ts#routes active composition and replay imports directly to canonical topology owners"
     },
     {
       "id": "test-structure-coupling-2d06815d8f4515a0",

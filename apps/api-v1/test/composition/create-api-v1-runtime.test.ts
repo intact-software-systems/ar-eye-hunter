@@ -9,7 +9,7 @@ import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
 import type { ApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
 import { constructApiV1Runtime, type ApiV1RuntimeConstructionOperations, type CreateApiV1RuntimeInput } from '../../src/composition/create-api-v1-runtime.ts';
 import type { ApiV1TopologyServices } from '../../src/composition/create-api-v1-topology-services.ts';
-import { toResilienceDto } from '../../src/middleware-resilience.ts';
+import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 
 Deno.test('runtime construction preserves the owned startup sequence', () => {
     const events: string[] = [];
@@ -86,20 +86,33 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
         timing: () => {},
         appInboxOptions: { nowEpochMs: () => 1_000 },
         groupCapacity: { defaultMaxMembers: 10 },
-        groupStateDissemination: 'delta-primary',
-        createGroupFormationTopologyIntent: (outboxQueueReader) => ({
-            outboxQueueReader,
-            recomputeDebounceMs: 0
-        }),
-        databasePubSub: { mode: 'disabled' },
-        rtcTopologyReplayMode: 'disabled',
+        groupFormationRecomputeDebounceMs: 250,
+        databasePubSubMode: 'disabled',
+        databaseNotification: null,
+        topologyReplay: {
+            mode: 'disabled',
+            queueWorkers: 'disabled'
+        },
+        topologyDelivery: {
+            publicationRetentionMs: 86_400_000,
+            heartbeatIntervalMs: 10_000,
+            leaseDurationMs: 30_000,
+            antiEntropyIntervalMs: 1_000,
+            pageSize: 100,
+            maxPagesPerTurn: 10,
+            maxEntriesPerTurn: 1_000,
+            compactionIntervalMs: 60_000,
+            compactionPageSize: 1_000,
+            reconnectBatchWindowMs: 25,
+            consumerRetentionMs: 86_400_000
+        },
         adminClientIds: ['admin'],
         rtcTopologyOptions: {},
         rttRefinementGateConfig: {
             minIntervalMs: 0,
             vivaldiDeltaThresholdMs: 0
         },
-        crdtPolicies: undefined,
+        crdtPolicies: [{ documentType: '*', rollout: 'disabled' }],
         resilience: {
             inbox: toResilienceDto(),
             outbox: toResilienceDto(),
@@ -122,7 +135,6 @@ function createInput(events: string[]): CreateApiV1RuntimeInput {
         }
     };
 }
-
 const RTC_STOP = () => Promise.resolve();
 
 function createOperations(

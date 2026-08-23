@@ -15,12 +15,13 @@ afterEach(() => {
 });
 
 describe('managed API-v1 PostgreSQL run database', () => {
-    it('isolates the exact medium-scale profile from retained base-database queue work', () => {
+    it('isolates every managed PostgreSQL run from retained base-database queue work', () => {
         expect(
             requiresManagedPostgresRunDatabase({
                 backend: 'postgres',
-                clusterOnly: true,
-                clusterProfile: 'api-v1-black-box-medium-scale',
+                profile: 'api-v1-black-box',
+                clusterOnly: false,
+                clusterProfile: 'api-v1-black-box-cluster',
                 recipesOnly: false
             })
         ).toBe(true);
@@ -29,7 +30,16 @@ describe('managed API-v1 PostgreSQL run database', () => {
             requiresManagedPostgresRunDatabase({
                 backend: 'postgres',
                 clusterOnly: false,
-                clusterProfile: 'api-v1-black-box-medium-scale',
+                clusterProfile: 'api-v1-black-box-cluster',
+                recipesOnly: true
+            })
+        ).toBe(false);
+
+        expect(
+            requiresManagedPostgresRunDatabase({
+                backend: 'pglite-memory',
+                clusterOnly: false,
+                clusterProfile: 'api-v1-black-box-cluster',
                 recipesOnly: false
             })
         ).toBe(false);
@@ -42,6 +52,17 @@ describe('managed API-v1 PostgreSQL run database', () => {
                 profile: 'api-v1-black-box-topology-replay',
                 clusterOnly: false,
                 clusterProfile: 'api-v1-black-box-cluster',
+                recipesOnly: false
+            })
+        ).toBe(true);
+    });
+
+    it('isolates the formation load profile from foreign queue workers', () => {
+        expect(
+            requiresManagedPostgresRunDatabase({
+                backend: 'postgres',
+                clusterOnly: true,
+                clusterProfile: 'api-v1-black-box-formation-large',
                 recipesOnly: false
             })
         ).toBe(true);
@@ -66,8 +87,16 @@ describe('managed API-v1 PostgreSQL run database', () => {
     });
 
     it('drops the isolated database after the managed callback rejects', async () => {
-        const unsafe = vi.fn((_query: string) => Promise.resolve([]));
-        const end = vi.fn((_options: { timeout: number; }) => Promise.resolve());
+        const queries: string[] = [];
+        const endOptions: Array<Readonly<{ timeout: number; }>> = [];
+        const unsafe = (query: string) => {
+            queries.push(query);
+            return Promise.resolve([]);
+        };
+        const end = (options: Readonly<{ timeout: number; }>) => {
+            endOptions.push(options);
+            return Promise.resolve();
+        };
         vi.mocked(postgres).mockReturnValue({ unsafe, end } as never);
 
         await expect(
@@ -80,9 +109,9 @@ describe('managed API-v1 PostgreSQL run database', () => {
             )
         ).rejects.toThrow('managed callback rejected');
 
-        expect(unsafe).toHaveBeenCalledTimes(2);
-        expect(unsafe.mock.calls[0]?.[0]).toMatch(/^create database "rallar_bb_/);
-        expect(unsafe.mock.calls[1]?.[0]).toMatch(/^drop database "rallar_bb_.*" with \(force\)$/);
-        expect(end).toHaveBeenCalledWith({ timeout: 5 });
+        expect(queries).toHaveLength(2);
+        expect(queries[0]).toMatch(/^create database "rallar_bb_/);
+        expect(queries[1]).toMatch(/^drop database "rallar_bb_.*" with \(force\)$/);
+        expect(endOptions).toEqual([{ timeout: 5 }]);
     });
 });

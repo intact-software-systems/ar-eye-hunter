@@ -28,11 +28,8 @@ map covers the api-v1 side a boundary change (flags, admission, response contrac
    is the family-scoped join-admission limiter guard (join, invite-accept, upsert-self member,
    presence connect) composing with the blanket middleware; over-limit answers `429` with
    `Retry-After: 60`.
-8. [readApiGroupFormationDampingConfig](../runtime/group-formation/group-formation-damping-config.ts#readApiGroupFormationDampingConfig)
-   is the flag-parsing convention (typed union intent, startup log) that new group-formation flags
-   follow;
-   [readApiGroupCapacityConfig](../runtime/group-formation/group-capacity-config.ts#readApiGroupCapacityConfig)
-   supplies the default member cap threaded into the group-state service.
+8. [ApiV1Configuration](../configuration/api-v1-configuration.ts) owns the single damped formation
+   path and the operational default member cap passed through composition.
 9. [toGroupStateErrorResponse](./group-state-route-errors.ts#toGroupStateErrorResponse) maps typed
    policy denials (including `group-full`), admission rate limits, and inbox failures to HTTP
    responses.

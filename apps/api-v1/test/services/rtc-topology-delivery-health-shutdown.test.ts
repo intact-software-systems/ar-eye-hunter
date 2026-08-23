@@ -16,8 +16,9 @@ Deno.test('RTC topology delivery health failure stops claimers, sockets, tasks, 
         stopBackgroundTasks: () => {
             events.push('background-tasks');
         },
-        shutdownHttp: async () => {
+        shutdownHttp: () => {
             events.push('http');
+            return Promise.resolve();
         },
         onShutdownStepFailure: () => events.push('unexpected-step-failure')
     });
@@ -48,8 +49,9 @@ Deno.test('RTC topology delivery shutdown still closes HTTP after an earlier ste
         stopBackgroundTasks: () => {
             events.push('background-tasks');
         },
-        shutdownHttp: async () => {
+        shutdownHttp: () => {
             events.push('http');
+            return Promise.resolve();
         },
         onShutdownStepFailure: (step) => events.push(`failed:${step}`)
     });

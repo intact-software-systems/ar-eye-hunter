@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import type { RtcTopologyDeliveryLogEntry } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-contracts.ts';
 import { RtcTopologyDeliveryLeaseLostError } from '@shared-server/rallar-system/topology/replay/rtc-topology-delivery-stream-service.ts';
@@ -14,6 +14,12 @@ import type {
     RtcTopologyReplayDiagnosticsSink
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-diagnostics.ts';
 import {
+    RTC_TOPOLOGY_REPLAY_ANTI_ENTROPY_INTERVAL_MS,
+    RTC_TOPOLOGY_REPLAY_MAX_ENTRIES_PER_TURN,
+    RTC_TOPOLOGY_REPLAY_MAX_PAGES_PER_TURN,
+    RTC_TOPOLOGY_REPLAY_PAGE_SIZE
+} from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-policy.ts';
+import {
     RtcTopologyReplayService,
     type RtcTopologyReplayEntryHandler,
     type RtcTopologyReplayPort,
@@ -23,6 +29,12 @@ import {
 const CONSUMER = '00000000-0000-4000-8000-000000000001';
 const PUBLISHER_A = '00000000-0000-4000-8000-000000000002';
 const PUBLISHER_B = '00000000-0000-4000-8000-000000000003';
+const REPLAY_POLICY = {
+    antiEntropyIntervalMs: RTC_TOPOLOGY_REPLAY_ANTI_ENTROPY_INTERVAL_MS,
+    pageSize: RTC_TOPOLOGY_REPLAY_PAGE_SIZE,
+    maxPagesPerTurn: RTC_TOPOLOGY_REPLAY_MAX_PAGES_PER_TURN,
+    maxEntriesPerTurn: RTC_TOPOLOGY_REPLAY_MAX_ENTRIES_PER_TURN
+} as const;
 
 describe('RtcTopologyReplayService', () => {
     it('keeps duplicate notification and local-commit wakes single-flight', async () => {
@@ -48,23 +60,18 @@ describe('RtcTopologyReplayService', () => {
     it('holds early wakeups behind atomic startup cursor initialization', async () => {
         const repository = new FakeReplayRepository({ [PUBLISHER_A]: [] });
         const initialization = deferred<void>();
-        const originalInitialize = repository.initializeConsumer.bind(repository);
-        vi.spyOn(repository, 'initializeConsumer').mockImplementation(async () => {
-            await initialization.promise;
-            return await originalInitialize();
-        });
-        const discover = vi.spyOn(repository, 'discoverPublishers');
+        repository.initializationBarrier = initialization.promise;
         const service = replayService(repository);
 
         const readiness = service.start();
         service.wake('notification');
         await Promise.resolve();
-        expect(discover).not.toHaveBeenCalled();
+        expect(repository.discoverPublisherCallCount).toBe(0);
 
         initialization.resolve();
         await readiness;
         await service.whenIdle();
-        expect(discover).toHaveBeenCalled();
+        expect(repository.discoverPublisherCallCount).toBeGreaterThan(0);
         await service.stop();
     });
 
@@ -180,32 +187,39 @@ describe('RtcTopologyReplayService', () => {
 
     it('hydrates every captured local connection before advancing a retention gap to HEAD', async () => {
         const repository = new FakeReplayRepository({ [PUBLISHER_A]: [] });
-        const hydrateGap = vi.fn(async () => undefined);
-        const service = replayService(repository, { hydrateGap });
+        const hydratedSignals: AbortSignal[] = [];
+        const service = replayService(repository, {
+            hydrateGap: async (signal) => {
+                hydratedSignals.push(signal);
+            }
+        });
         await service.start();
         repository.setGap(PUBLISHER_A, { cursorSequence: 0, retainedFromSequence: 4, headSequence: 5 });
 
         service.wake('poll');
         await service.whenIdle();
 
-        expect(hydrateGap).toHaveBeenCalledTimes(1);
+        expect(hydratedSignals).toHaveLength(1);
         expect(repository.cursor(PUBLISHER_A)).toBe(5);
         await service.stop();
     });
 
     it('leaves a retention-gap cursor unchanged when current-state hydration fails', async () => {
         const repository = new FakeReplayRepository({ [PUBLISHER_A]: [] });
-        const hydrateGap = vi.fn(async () => {
-            throw new Error('captured connection hydration failed');
+        const hydratedSignals: AbortSignal[] = [];
+        const service = replayService(repository, {
+            hydrateGap: async (signal) => {
+                hydratedSignals.push(signal);
+                throw new Error('captured connection hydration failed');
+            }
         });
-        const service = replayService(repository, { hydrateGap });
         await service.start();
         repository.setGap(PUBLISHER_A, { cursorSequence: 0, retainedFromSequence: 4, headSequence: 5 });
 
         service.wake('poll');
         await service.whenIdle();
 
-        expect(hydrateGap).toHaveBeenCalledTimes(1);
+        expect(hydratedSignals).toHaveLength(1);
         expect(repository.cursor(PUBLISHER_A)).toBe(0);
         await service.stop();
     });
@@ -213,15 +227,18 @@ describe('RtcTopologyReplayService', () => {
     it('stops polling and reports typed lease loss', async () => {
         const repository = new FakeReplayRepository({ [PUBLISHER_A]: [] });
         const scheduler = fakeScheduler();
-        const onHealthFailure = vi.fn();
-        const service = replayService(repository, { scheduler, onHealthFailure });
+        const healthFailures: Error[] = [];
+        const service = replayService(repository, {
+            scheduler,
+            onHealthFailure: (error) => healthFailures.push(error)
+        });
         await service.start();
         repository.captureFailure = new RtcTopologyDeliveryLeaseLostError('consumer lease lost');
 
         service.wake('poll');
         await service.whenIdle();
 
-        expect(onHealthFailure).toHaveBeenCalledWith(repository.captureFailure);
+        expect(healthFailures).toEqual([repository.captureFailure]);
         expect(scheduler.cancelled()).toBe(true);
     });
 
@@ -309,6 +326,7 @@ function replayService(
         repository,
         entryHandler: options.handler ?? { handle: async () => ({ status: 'delivered' }) },
         hydrateGap: options.hydrateGap ?? (async () => undefined),
+        policy: REPLAY_POLICY,
         scheduler: options.scheduler,
         onHealthFailure: options.onHealthFailure ?? (() => undefined),
         diagnostics: options.diagnostics
@@ -319,6 +337,8 @@ class FakeReplayRepository implements RtcTopologyReplayPort {
     readonly pagePublishers: string[] = [];
     captureFailure: Error | undefined;
     cursorCasConflictsRemaining = 0;
+    initializationBarrier = Promise.resolve();
+    discoverPublisherCallCount = 0;
     readonly #entries = new Map<string, readonly RtcTopologyDeliveryLogEntry[]>();
     readonly #cursors = new Map<string, number>();
     readonly #gaps = new Map<string, Readonly<{ cursorSequence: number; retainedFromSequence: number; headSequence: number; }>>();
@@ -334,11 +354,13 @@ class FakeReplayRepository implements RtcTopologyReplayPort {
         }
     }
 
-    initializeConsumer(): Promise<readonly RtcTopologyReplayCursorSnapshot[]> {
-        return Promise.resolve(this.snapshots());
+    async initializeConsumer(): Promise<readonly RtcTopologyReplayCursorSnapshot[]> {
+        await this.initializationBarrier;
+        return this.snapshots();
     }
 
     discoverPublishers(): Promise<readonly RtcTopologyReplayCursorSnapshot[]> {
+        this.discoverPublisherCallCount += 1;
         return Promise.resolve(this.snapshots());
     }
 

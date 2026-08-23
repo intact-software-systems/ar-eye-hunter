@@ -43,7 +43,7 @@ export interface CreateApiV1SystemInstallersInput<
     readonly nowEpochMs: () => number;
     readonly topology: Topology;
     readonly crdtLogRepository: RallarCrdtAdminReadRepository;
-    readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[] | undefined;
+    readonly crdtPolicies: readonly RallarCrdtDocumentTypePolicy[];
     readonly globalGraphRecomputeLimit: InitRallarSystemWsTopicsOptions['globalGraphRecomputeLimit'];
 }
 

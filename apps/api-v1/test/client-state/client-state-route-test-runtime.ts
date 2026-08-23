@@ -51,6 +51,7 @@ export function createClientRouteDeps(
         readClientSnapshot?: clientStateRoutes.ClientStateRouteDependencies[
             'readClientSnapshot'
         ];
+        strictReadAuthorization?: boolean;
     }>
 ):
     & Required<clientStateRoutes.ClientStateRouteDependencies>
@@ -88,6 +89,7 @@ export function createClientRouteDeps(
                 ? { status: 'found', source: 'durable', snapshot }
                 : { status: 'not-found', source: 'durable' };
         }),
+        strictReadAuthorization: input.strictReadAuthorization ?? false,
         authCallCount: () => authCalls
     };
 }
@@ -97,24 +99,6 @@ export function toClientStateWritten(snapshot: ClientSnapshot): ClientStateWritt
         status: 'ok',
         result: { snapshot, event: null }
     };
-}
-export async function withStrictReadAuth(
-    enabled: boolean,
-    action: () => Promise<void>
-): Promise<void> {
-    const previous = Deno.env.get('RALLAR_STATE_STRICT_READ_AUTH');
-    Deno.env.set('RALLAR_STATE_STRICT_READ_AUTH', enabled ? 'true' : 'false');
-    try {
-        await action();
-    }
-    finally {
-        if (previous === undefined) {
-            Deno.env.delete('RALLAR_STATE_STRICT_READ_AUTH');
-        }
-        else {
-            Deno.env.set('RALLAR_STATE_STRICT_READ_AUTH', previous);
-        }
-    }
 }
 
 export function createAuthSession(

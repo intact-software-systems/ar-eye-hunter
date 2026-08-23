@@ -7,8 +7,8 @@ import {
     type RelicExpeditionSetupMetadata,
     type RelicGameState
 } from '@relic-hunters/mod.ts';
-import { expect } from 'jsr:@std/expect@1';
-import { describe, it } from 'jsr:@std/testing@1/bdd';
+import { expect } from '@std/expect';
+import { describe, it } from '@std/testing/bdd';
 import { installRelicHunterGame } from '../src/relic-game-service.ts';
 
 type TopicDefinition = Readonly<{
@@ -27,10 +27,14 @@ type PublishedMessage = Readonly<{
     fanout: string;
 }>;
 
+const TEST_GAME_SERVICE_OPTIONS = {
+    createInitialState: (gameId: string) => Promise.resolve(createRelicGame(gameId, gameId, 1))
+};
+
 describe('Relic Hunter server game service', () => {
     it('registers a room-scoped command topic that rejects commands for other rooms', async () => {
         const fake = createFakeRallar();
-        await installRelicHunterGame(fake.rallar);
+        await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
 
         expect(fake.topicDefinition).toMatchObject({
             topicId: RELIC_TOPICS.command,
@@ -49,7 +53,7 @@ describe('Relic Hunter server game service', () => {
 
     it('persists command results and publishes live snapshots', async () => {
         const fake = createFakeRallar();
-        const service = await installRelicHunterGame(fake.rallar);
+        const service = await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
 
         const snapshot = await service.applyCommand(joinCommand('room-1'), 'alice-session');
 
@@ -88,7 +92,7 @@ describe('Relic Hunter server game service', () => {
 
     it('keeps game state isolated per room', async () => {
         const fake = createFakeRallar();
-        const service = await installRelicHunterGame(fake.rallar);
+        const service = await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
 
         await service.applyCommand(joinCommand('room-1'), 'alice-session');
         await service.applyCommand({
@@ -113,7 +117,7 @@ describe('Relic Hunter server game service', () => {
 
     it('resets persisted room state and publishes the empty lobby snapshot', async () => {
         const fake = createFakeRallar();
-        const service = await installRelicHunterGame(fake.rallar);
+        const service = await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
 
         await service.applyCommand(joinCommand('room-1'), 'alice-session');
         const reset = await service.reset('room-1');
@@ -136,7 +140,7 @@ describe('Relic Hunter server game service', () => {
 
     it('handles WebSocket commands through the registered command handler', async () => {
         const fake = createFakeRallar();
-        await installRelicHunterGame(fake.rallar);
+        await installRelicHunterGame(fake.rallar, TEST_GAME_SERVICE_OPTIONS);
 
         await fake.commandHandler?.(
             { payload: joinCommand('room-1') },
@@ -151,9 +155,9 @@ describe('Relic Hunter server game service', () => {
         const fake = createFakeRallar();
         const calls: string[] = [];
         const service = await installRelicHunterGame(fake.rallar, {
-            createInitialState: async (gameId, reason) => {
+            createInitialState: (gameId, reason) => {
                 calls.push(`${reason}:${gameId}`);
-                return {
+                return Promise.resolve({
                     ...createRelicGame(gameId, gameId, 100 + calls.length),
                     setup: {
                         schemaVersion: 1,
@@ -161,7 +165,7 @@ describe('Relic Hunter server game service', () => {
                         seed: `${reason}-${calls.length}`,
                         blueprintId: `${reason}-blueprint`
                     }
-                };
+                });
             }
         });
 
@@ -213,27 +217,28 @@ function createFakeRallar(): Readonly<{
 
     const rallar = {
         data: {
-            open: async (name: string, options: unknown) => {
+            open: (name: string, options: unknown) => {
                 expect(name).toBe('relic-hunter-games');
                 expect(options).toEqual({
                     namespace: 'relic-hunter-v1',
                     schemaVersion: 1
                 });
-                return {
-                    get: async (key: string) => store.get(key),
-                    set: async (key: string, value: RelicGameState) => {
+                return Promise.resolve({
+                    get: (key: string) => Promise.resolve(store.get(key)),
+                    set: (key: string, value: RelicGameState) => {
                         store.set(key, value);
+                        return Promise.resolve();
                     },
-                    setIfAbsent: async (key: string, create: () => RelicGameState) => {
+                    setIfAbsent: (key: string, create: () => RelicGameState) => {
                         const existing = store.get(key);
                         if (existing) {
-                            return existing;
+                            return Promise.resolve(existing);
                         }
                         const value = create();
                         store.set(key, value);
-                        return value;
+                        return Promise.resolve(value);
                     }
-                };
+                });
             }
         },
         ws: {
@@ -249,8 +254,9 @@ function createFakeRallar(): Readonly<{
             ) => {
                 commandHandler = handler;
             },
-            publish: async (message: PublishedMessage['message'], fanout: string) => {
+            publish: (message: PublishedMessage['message'], fanout: string) => {
                 published.push({ message, fanout });
+                return Promise.resolve();
             }
         }
     } as unknown as Parameters<typeof installRelicHunterGame>[0];

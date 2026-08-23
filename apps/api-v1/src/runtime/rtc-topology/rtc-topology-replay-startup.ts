@@ -8,10 +8,14 @@ import {
     type RtcTopologyReplayPort
 } from '@shared-server/rallar-system/topology/replay/rtc-topology-replay-service.ts';
 
-import type { RtcTopologyReplayMode } from './rtc-topology-replay-config.ts';
+import type {
+    ApiV1TopologyDeliveryConfiguration,
+    ApiV1TopologyReplayConfiguration
+} from '../../configuration/api-v1-configuration.ts';
 
 interface ApiRtcTopologyReplayStartupOptions {
-    readonly mode: RtcTopologyReplayMode;
+    readonly mode: ApiV1TopologyReplayConfiguration['mode'];
+    readonly configuration: ApiV1TopologyDeliveryConfiguration;
     readonly consumerStreamId: string;
     readonly repository: RtcTopologyReplayPort;
     readonly diagnostics?: RtcTopologyReplayDiagnosticsSink;
@@ -72,6 +76,12 @@ export function startApiRtcTopologyReplay(
                 repository: options.repository,
                 entryHandler: attachment.entryHandler,
                 hydrateGap: attachment.hydrateGap,
+                policy: {
+                    antiEntropyIntervalMs: options.configuration.antiEntropyIntervalMs,
+                    pageSize: options.configuration.pageSize,
+                    maxPagesPerTurn: options.configuration.maxPagesPerTurn,
+                    maxEntriesPerTurn: options.configuration.maxEntriesPerTurn
+                },
                 diagnostics: options.diagnostics,
                 onHealthFailure: rejectHealthFailure
             });

@@ -14,11 +14,11 @@ import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
-import { createApiV1SqlClient } from '../../src/db/db.ts';
-import type { PGliteSql } from '../../src/db/pglite-sql-adapter.ts';
+import { createApiV1TestPGliteDatabaseLifecycle } from './api-v1-test-pglite-database.ts';
 
 Deno.test('PGlite persists distinct topology publications with one logical route', async () => {
-    const sql = createApiV1SqlClient({ sqlBackend: 'pglite-memory' }) as PGliteSql;
+    const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
+    const sql = lifecycle.database;
     try {
         const publications = [publication('work-1'), publication('work-2')];
         const entries = await sql.begin(async (transaction) => {
@@ -51,12 +51,13 @@ Deno.test('PGlite persists distinct topology publications with one logical route
         assert.deepEqual(messages[1].targets.recipientPeerIds, ['session-1']);
     }
     finally {
-        await sql.close();
+        await lifecycle.close();
     }
 });
 
 Deno.test('PGlite atomically publishes stale topology work without regressing latest topology', async () => {
-    const sql = createApiV1SqlClient({ sqlBackend: 'pglite-memory' }) as PGliteSql;
+    const lifecycle = await createApiV1TestPGliteDatabaseLifecycle();
+    const sql = lifecycle.database;
     try {
         const stalePublication = publication('work-stale');
         const staleSnapshot = JSON.parse(
@@ -151,7 +152,7 @@ Deno.test('PGlite atomically publishes stale topology work without regressing la
         assert.equal(Number(wsRows[0]?.count), 1);
     }
     finally {
-        await sql.close();
+        await lifecycle.close();
     }
 });
 

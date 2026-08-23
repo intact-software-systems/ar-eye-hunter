@@ -24,7 +24,7 @@ import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import { createApiCrdtInboxService } from '../../../src/crdt/create-api-crdt-inbox-service.ts';
 import type { PGliteSql } from '../../../src/db/pglite-sql-adapter.ts';
-import { toResilienceDto } from '../../../src/middleware-resilience.ts';
+import { toResilienceDto } from '../../api-v1-test-queue-resilience.ts';
 import { readPGliteDatabaseEpochMs, waitForPGliteQueueRow, withPGliteSql } from '../../db/pglite-auth-test-harness.ts';
 
 const REASON = 'api-v1-admin-compaction';

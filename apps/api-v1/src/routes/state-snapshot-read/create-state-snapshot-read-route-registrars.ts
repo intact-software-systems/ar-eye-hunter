@@ -15,8 +15,10 @@ import type { GroupRef } from '@shared/api/group-types.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 
 import type { ApiV1Runtime } from '../../composition/api-v1-runtime.ts';
+import type { ApiV1GroupAdmissionConfiguration } from '../../configuration/api-v1-configuration.ts';
 import type { GroupStateRouteAuthSession } from '../../group-state/group-state-route-contracts.ts';
 import * as groupStateRoutes from '../../group-state/register-group-state-routes.ts';
+import { createGroupAdmissionQuota } from '../../services/group-admission-rate-limit.ts';
 import { toApiMutationRouteFailure } from '../api-mutation-route-failure.ts';
 import * as clientStateRoutes from '../client-state-routes.ts';
 
@@ -64,14 +66,22 @@ export interface ApiV1StateSnapshotRouteOperations<Runtime extends ApiV1StateSna
     ) => Promise<IssuedAuthSession>;
 }
 
+export interface ApiV1StateSnapshotRoutePolicy {
+    readonly groupAdmission: ApiV1GroupAdmissionConfiguration;
+    readonly strictReadAuthorization: boolean;
+}
+
 export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1StateSnapshotRouteRuntime>(
     runtime: Runtime,
-    operations: ApiV1StateSnapshotRouteOperations<Runtime>
+    operations: ApiV1StateSnapshotRouteOperations<Runtime>,
+    policy: ApiV1StateSnapshotRoutePolicy
 ) {
+    const groupAdmissionQuota = createGroupAdmissionQuota(policy.groupAdmission);
     return {
         client: (app: Hono) =>
             clientStateRoutes.registerClientStateRoutes(app, {
                 clientStateService: runtime.clientStateService,
+                strictReadAuthorization: policy.strictReadAuthorization,
                 requireApiAuthSession: (request) =>
                     operations.requireApiAuthSession(request, runtime.authSessionRepository),
                 hydrateStateSyncSnapshotCaches,
@@ -86,8 +96,10 @@ export function createStateSnapshotReadRouteRegistrars<Runtime extends ApiV1Stat
         group: (app: Hono) =>
             groupStateRoutes.registerGroupStateRoutes(app, {
                 groupStateService: runtime.groupStateService,
+                strictReadAuthorization: policy.strictReadAuthorization,
                 requireApiAuthSession: (request) =>
                     operations.requireApiAuthSession(request, runtime.authSessionRepository),
+                groupAdmissionQuota,
                 processGroupAppInbox: async (
                     authority: GroupStateRouteAuthSession,
                     enqueue: AuthenticatedGroupMutationEnqueue

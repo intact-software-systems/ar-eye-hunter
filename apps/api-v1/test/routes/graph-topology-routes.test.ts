@@ -119,72 +119,68 @@ Deno.test('scoped graph routes pass scope and group refs to diagnostics', async 
 });
 
 Deno.test('strict read auth allows active members and rejects non-members', async () => {
-    await withStrictReadAuth(true, async () => {
-        const app = createRouteApp({
-            group: createGroupSnapshot('room-1', ['owner']),
-            session: createIssuedSession('intruder', 'intruder-session')
-        });
-
-        const denied = await app.request(
-            '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology',
-            { headers: { authorization: 'Bearer token' } }
-        );
-
-        assert.equal(denied.status, 403);
-        assert.equal((await denied.json()).code, 'group-policy-denied');
+    const intruderApp = createRouteApp({
+        group: createGroupSnapshot('room-1', ['owner']),
+        session: createIssuedSession('intruder', 'intruder-session'),
+        strictReadAuthorization: true
     });
 
-    await withStrictReadAuth(true, async () => {
-        const app = createRouteApp({
-            group: createGroupSnapshot('room-1', ['owner']),
-            session: createIssuedSession('owner', 'owner-session')
-        });
+    const denied = await intruderApp.request(
+        '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology',
+        { headers: { authorization: 'Bearer token' } }
+    );
 
-        const allowed = await app.request(
-            '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology',
-            { headers: { authorization: 'Bearer token' } }
-        );
+    assert.equal(denied.status, 403);
+    assert.equal((await denied.json()).code, 'group-policy-denied');
 
-        assert.equal(allowed.status, 200);
+    const ownerApp = createRouteApp({
+        group: createGroupSnapshot('room-1', ['owner']),
+        session: createIssuedSession('owner', 'owner-session'),
+        strictReadAuthorization: true
     });
+
+    const allowed = await ownerApp.request(
+        '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology',
+        { headers: { authorization: 'Bearer token' } }
+    );
+
+    assert.equal(allowed.status, 200);
 });
 
 Deno.test('strict graph and topology policy uses one durable current snapshot', async () => {
-    await withStrictReadAuth(true, async () => {
-        let durableReads = 0;
-        const app = createRouteApp({
-            group: createGroupSnapshot('room-1', ['owner']),
-            session: createIssuedSession('owner', 'owner-session'),
-            onCurrentGroupRead: () => durableReads += 1
-        });
-
-        const response = await app.request(
-            '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/graphs/latest',
-            { headers: { authorization: 'Bearer token' } }
-        );
-
-        assert.equal(response.status, 200);
-        assert.equal(durableReads, 1);
+    let durableReads = 0;
+    const app = createRouteApp({
+        group: createGroupSnapshot('room-1', ['owner']),
+        session: createIssuedSession('owner', 'owner-session'),
+        strictReadAuthorization: true,
+        onCurrentGroupRead: () => durableReads += 1
     });
+
+    const response = await app.request(
+        '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/graphs/latest',
+        { headers: { authorization: 'Bearer token' } }
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal(durableReads, 1);
 });
 
 Deno.test('strict read auth rejects unauthenticated scoped global graph diagnostics', async () => {
-    await withStrictReadAuth(true, async () => {
-        let authCalls = 0;
-        const app = createRouteApp({
-            requireApiAuthSession: () => {
-                authCalls += 1;
-                throw new Error('Unauthorized: missing auth session');
-            }
-        });
-
-        const denied = await app.request(
-            '/api/state/apps/app-1/workspaces/workspace-1/graphs/global'
-        );
-
-        assert.equal(denied.status, 401);
-        assert.equal(authCalls, 1);
+    let authCalls = 0;
+    const app = createRouteApp({
+        strictReadAuthorization: true,
+        requireApiAuthSession: () => {
+            authCalls += 1;
+            throw new Error('Unauthorized: missing auth session');
+        }
     });
+
+    const denied = await app.request(
+        '/api/state/apps/app-1/workspaces/workspace-1/graphs/global'
+    );
+
+    assert.equal(denied.status, 401);
+    assert.equal(authCalls, 1);
 });
 
 Deno.test('topology writes require group manager or platform admin auth', async () => {
@@ -608,6 +604,7 @@ function createRouteApp(options: {
     readonly topologyPlanning?: Partial<graphTopologyRoutes.GraphTopologyRouteDependencies['topologyPlanning']>;
     readonly processTopologyAppInbox?: graphTopologyRoutes.ProcessTopologyAppInbox;
     readonly onCurrentGroupRead?: () => void;
+    readonly strictReadAuthorization?: boolean;
 }): Hono {
     const app = new Hono();
     graphTopologyRoutes.registerGraphTopologyRoutes(app, {
@@ -627,6 +624,7 @@ function createRouteApp(options: {
         requireApiAuthSession: options.requireApiAuthSession ??
             (() => Promise.resolve(options.session ?? createIssuedSession('owner', 'owner-session'))),
         adminClientIds: options.adminClientIds ?? [],
+        strictReadAuthorization: options.strictReadAuthorization ?? false,
         readLifecyclePolicy: () => Promise.resolve({ status: 'absent' as const }),
         graphDiagnostics: {
             readScopedGlobalGraphDiagnostic: options.graphDiagnostics?.readScopedGlobalGraphDiagnostic ??
@@ -824,28 +822,4 @@ function createPrincipalAuditStamp(atEpochMs: number, principalId: string) {
 function toTopologyMutationRequestPath(path: string, requestId: string): string {
     return '/api/state/apps/app-1/workspaces/workspace-1/groups/room-1/topology/' +
         `${path}/requests/${requestId}`;
-}
-
-async function withStrictReadAuth(
-    enabled: boolean,
-    fn: () => Promise<void>
-): Promise<void> {
-    const previous = Deno.env.get('RALLAR_STATE_STRICT_READ_AUTH');
-    try {
-        if (enabled) {
-            Deno.env.set('RALLAR_STATE_STRICT_READ_AUTH', 'true');
-        }
-        else {
-            Deno.env.delete('RALLAR_STATE_STRICT_READ_AUTH');
-        }
-        await fn();
-    }
-    finally {
-        if (previous === undefined) {
-            Deno.env.delete('RALLAR_STATE_STRICT_READ_AUTH');
-        }
-        else {
-            Deno.env.set('RALLAR_STATE_STRICT_READ_AUTH', previous);
-        }
-    }
 }

@@ -9,23 +9,22 @@ Deno.test('PGlite SQL waits for readiness without mutating the existing session'
     const calls: string[] = [];
     type FakeRaw = {
         waitReady: Promise<void>;
-        query(query: string): Promise<{ rows: unknown[]; }>;
+        query(query: string): Promise<{ rows: object[]; }>;
         transaction<T>(write: (transaction: FakeRaw) => Promise<T>): Promise<T>;
         close(): Promise<void>;
         exec(): Promise<void>;
         listen(): Promise<() => Promise<void>>;
     };
-    let raw: FakeRaw;
-    raw = {
+    const raw: FakeRaw = {
         waitReady: ready,
-        query: async (query: string) => {
+        query: (query: string) => {
             calls.push(query);
-            return { rows: [] };
+            return Promise.resolve({ rows: [] });
         },
         transaction: async <T>(write: (transaction: typeof raw) => Promise<T>): Promise<T> => await write(raw),
-        close: async () => undefined,
-        exec: async () => undefined,
-        listen: async () => async () => undefined
+        close: () => Promise.resolve(),
+        exec: () => Promise.resolve(),
+        listen: () => Promise.resolve(() => Promise.resolve())
     };
     const sql = createPGliteSqlClient(raw as never);
 

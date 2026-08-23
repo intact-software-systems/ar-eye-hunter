@@ -41,7 +41,8 @@ describe('Deploy workflow release gate', () => {
         expect(releaseGateWorkflow).toContain('postgres:');
         expect(releaseGateWorkflow).toContain('npm ci');
         expect(releaseGateWorkflow).toContain('npx playwright install --with-deps chromium');
-        expect(releaseGateWorkflow).toMatch(/RALLAR_AUTH_CREDENTIAL_SECRET:\s*["']?[^\n"']{32,}["']?/);
+        expect(releaseGateWorkflow).toContain('RALLAR_API_CONFIGURATION_PROFILE: prod-in-memory');
+        expect(releaseGateWorkflow).not.toContain('RALLAR_AUTH_CREDENTIAL_SECRET:');
         expect(releaseGateWorkflow).toContain('npm run test:ci');
         expect(releaseGateWorkflow).toContain('npm run build:ar-eye-hunter-v1');
         expect(releaseGateWorkflow).toContain('npm run build:relic-hunters-v1');
@@ -177,6 +178,13 @@ describe('Deploy workflow release gate', () => {
                 `deno deploy apps get --org intact-software-systems --app ${appName} --json --non-interactive`
             );
         }
+
+        expect(preflight).toContain('deno deploy env list');
+        expect(preflight).toContain('verify-deno-deploy-api-configuration.mjs');
+        expect(preflight).toContain('--target api-v1');
+        expect(preflight).toContain('--target relic');
+        expect(preflight).not.toContain('cat "$RUNNER_TEMP/rallar-server-environment.json"');
+        expect(preflight).not.toContain('cat "$RUNNER_TEMP/relic-hunters-environment.json"');
 
         for (const jobName of ['deploy-api', 'deploy-control-server', 'deploy-relic-api']) {
             const jobBlock = getJobBlock(workflow, jobName);

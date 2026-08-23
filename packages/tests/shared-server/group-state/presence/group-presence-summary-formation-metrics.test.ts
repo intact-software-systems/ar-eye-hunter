@@ -4,12 +4,13 @@ import { APP_OUTBOX_RTC_TOPOLOGY_TOPIC } from '@shared-server/rallar-system/topo
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import { computeGroupPresenceSummaryEntry, type GroupPresenceSummaryWorkData } from '@shared/queuebox/GroupPresenceSummaryEntryContract.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { describe, expect, it, vi } from 'vitest';
 import { createAppInboxTestDatabase } from '../../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 import { TestResourceInbox, TestResourceInboxResults } from '../inbox/group-state-inbox-resource-fixtures.ts';
-import { createTestGroupPresenceSummaryTopologyIntent } from './group-presence-test-runtime.ts';
 
 const BASE_EPOCH_MS = Date.now();
 
@@ -20,14 +21,16 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
         await queue.enqueue(entry);
         const database = createAppInboxTestDatabase(queue, new TestResourceInboxResults());
         const formationEvents: Array<Readonly<{ downstreamTopicIds: readonly string[]; }>> = [];
-        const wakeQueue = vi.fn();
+        let wakeCount = 0;
         const worker = new GroupPresenceSummaryWork({
-            topologyIntent: createTestGroupPresenceSummaryTopologyIntent(),
-            disseminationMode: 'dual-emit',
+            outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
+            recomputeDebounceMs: 0,
             runtimeRepository: new FakeRuntimeStateRepository(),
             database: database as never,
             serviceId: 'summary-handler',
-            wakeQueue,
+            wakeQueue: () => {
+                wakeCount += 1;
+            },
             now: () => BASE_EPOCH_MS + 5_000,
             formationMetrics: (event) => {
                 formationEvents.push(event);
@@ -36,10 +39,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
         vi.spyOn(worker, 'read').mockResolvedValue({} as never);
         vi.spyOn(worker, 'compute').mockReturnValue(
             createComputedWorkWithDownstreamTopics([
-                AppTopics.groupStateEvent,
-                AppTopics.groupStateSnapshot,
-                AppTopics.groupDirectorySnapshot,
-                APP_OUTBOX_RTC_TOPOLOGY_TOPIC
+                AppTopics.groupStateEvent
             ])
         );
         vi.spyOn(worker, 'validate').mockReturnValue(undefined);
@@ -51,27 +51,25 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
             {
                 downstreamTopicIds: [
                     AppTopics.groupStateEvent,
-                    AppTopics.groupStateSnapshot,
-                    AppTopics.groupDirectorySnapshot,
                     APP_OUTBOX_RTC_TOPOLOGY_TOPIC
                 ]
             }
         ]);
-        expect(wakeQueue).toHaveBeenCalledTimes(1);
+        expect(wakeCount).toBe(1);
     });
 
     it('records no summary expansion metric when the transaction fails', async () => {
         const { message, entry } = createCanonicalReservation();
         const database = createAppInboxTestDatabase(new TestResourceInbox(), new TestResourceInboxResults());
-        const formationMetrics = vi.fn();
+        const formationEvents: Array<Readonly<{ downstreamTopicIds: readonly string[]; }>> = [];
         const worker = new GroupPresenceSummaryWork({
-            topologyIntent: createTestGroupPresenceSummaryTopologyIntent(),
-            disseminationMode: 'dual-emit',
+            outboxQueueReader: new OutboxQueueReader(new InMemoryQueueBox()),
+            recomputeDebounceMs: 0,
             runtimeRepository: new FakeRuntimeStateRepository(),
             database: database as never,
             serviceId: 'summary-handler',
             now: () => BASE_EPOCH_MS + 5_000,
-            formationMetrics
+            formationMetrics: (event) => formationEvents.push(event)
         });
         vi.spyOn(worker, 'read').mockResolvedValue({} as never);
         vi.spyOn(worker, 'compute').mockReturnValue(createComputedWorkWithDownstreamTopics([AppTopics.groupStateEvent]));
@@ -79,7 +77,7 @@ describe('GroupPresenceSummaryWork formation metrics', () => {
         vi.spyOn(worker, 'write').mockResolvedValue(undefined);
 
         await expect(worker.processReservedEntry(message, entry)).rejects.toThrow('Presence-summary reservation changed before commit');
-        expect(formationMetrics).not.toHaveBeenCalled();
+        expect(formationEvents).toEqual([]);
     });
 });
 

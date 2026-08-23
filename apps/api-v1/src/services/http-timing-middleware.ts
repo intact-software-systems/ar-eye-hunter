@@ -1,15 +1,14 @@
 import { nowMs, recordRallarTiming, type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import type { Context, Next } from 'jsr:@hono/hono@4.11.9';
-import { getApiTimingSink } from './timing-service.ts';
 
 export type HttpTimingMiddlewareOptions = Readonly<{
-    timing?: RallarTimingSink;
+    timing: RallarTimingSink;
 }>;
 
 export function createHttpTimingMiddleware(
-    options: HttpTimingMiddlewareOptions = {}
+    options: HttpTimingMiddlewareOptions
 ): (c: Context, next: Next) => Promise<void> {
-    const timing = options.timing ?? getApiTimingSink();
+    const timing = options.timing;
 
     return async (c, next) => {
         const startedAt = nowMs();

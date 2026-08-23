@@ -26,7 +26,7 @@ import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { expectGroupPresenceSummaryAppToWsLifecycleEvidence } from '../../../../packages/tests/shared-server/postgres-worker-outbox-evidence.ts';
-import { toResilienceDto } from '../../src/middleware-resilience.ts';
+import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 import { readPGliteAppInboxFailure, waitForPGliteQueueRow } from './pglite-app-inbox-test-runtime.ts';
 import { withPGliteSql } from './pglite-auth-test-harness.ts';
 
@@ -246,11 +246,8 @@ Deno.test(
                 }
             );
             const summaryWork = new GroupPresenceSummaryWork({
-                topologyIntent: {
-                    outboxQueueReader: outboxReader,
-                    recomputeDebounceMs: 0
-                },
-                disseminationMode: 'dual-emit',
+                outboxQueueReader: outboxReader,
+                recomputeDebounceMs: 0,
                 runtimeRepository: runtime,
                 database: sql,
                 serviceId: 'pglite-group-service',
@@ -457,13 +454,10 @@ Deno.test(
             const repository = new GroupStateRepository(runtime);
             const summaryBefore = await repository.findPresenceSummaryEntry(ref);
             const work = new GroupPresenceSummaryWork({
-                topologyIntent: {
-                    outboxQueueReader: new OutboxQueueReader(
-                        new PSqlQueueBox(new ResourceInboxRepository(sql))
-                    ),
-                    recomputeDebounceMs: 0
-                },
-                disseminationMode: 'dual-emit',
+                outboxQueueReader: new OutboxQueueReader(
+                    new PSqlQueueBox(new ResourceInboxRepository(sql))
+                ),
+                recomputeDebounceMs: 0,
                 runtimeRepository: runtime,
                 database: sql,
                 serviceId: 'pglite-summary-fence',

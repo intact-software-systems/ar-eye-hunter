@@ -1,0 +1,162 @@
+{
+  "http": {
+    "port": 8080,
+    "corsOrigins": [
+      "http://localhost:5173",
+      "http://localhost:5174",
+      "http://localhost:5175",
+      "http://localhost:5176"
+    ],
+    "preflightMaxAgeSeconds": 600
+  },
+  "publicApi": {
+    "apiBaseUrl": "http://localhost:8080",
+    "wsBaseUrl": "ws://localhost:8080"
+  },
+  "database": {
+    "mode": "pglite-memory",
+    "dataDirectory": "memory://",
+    "schemaInitialization": "auto",
+    "pubSub": "local",
+    "applicationPool": {
+      "maxConnections": 5,
+      "idleTimeoutSeconds": 20
+    },
+    "listenerPool": {
+      "maxConnections": 1,
+      "idleTimeoutSeconds": 0
+    }
+  },
+  "authentication": {
+    "registrationMode": "public",
+    "staticClientsMode": "demo",
+    "adminClientIds": [
+      "admin"
+    ],
+    "sessionTtlMs": 2592000000,
+    "webSocketTicketTtlMs": 30000,
+    "agentSessionTicketTtlMs": 60000,
+    "rateLimits": {
+      "windowMs": 60000,
+      "loginIp": 30,
+      "loginUsername": 5,
+      "registrationIp": 20,
+      "registrationUsername": 5,
+      "webSocketTicket": 30
+    }
+  },
+  "stateApi": {
+    "strictReadAuthorization": false,
+    "rateLimits": {
+      "windowMs": 60000,
+      "request": 300,
+      "eventList": 60
+    },
+    "circuitBreaker": {
+      "failureThreshold": 10,
+      "openDurationMs": 10000,
+      "resetDurationMs": 10000,
+      "samplingDurationMs": 10000
+    }
+  },
+  "group": {
+    "defaultMaxMembers": 256,
+    "admission": {
+      "windowMs": 60000,
+      "joinPrincipal": 60,
+      "joinGroup": 600,
+      "presencePrincipal": 120,
+      "presenceGroup": 1200
+    }
+  },
+  "topology": {
+    "planning": {
+      "topologyKind": "auto",
+      "degreeLimit": 5,
+      "rttReportingDegreeLimit": 5,
+      "treeMinSize": 5,
+      "meshMinSize": 16,
+      "meshParamK": 2,
+      "meshExitWidth": 4,
+      "treeExitWidth": 0
+    },
+    "recompute": {
+      "rttRebuildDebounceMs": 250,
+      "formationDebounceMs": 500,
+      "globalWindowMs": 5000,
+      "globalMaxPerWindow": 2
+    },
+    "rttRefinement": {
+      "minIntervalMs": 30000,
+      "vivaldiDeltaThresholdMs": 5
+    },
+    "replay": {
+      "mode": "enabled",
+      "queueWorkers": "enabled"
+    },
+    "queueResilience": {
+      "failureThreshold": 10,
+      "openDurationMs": 10000,
+      "resetDurationMs": 10000,
+      "samplingDurationMs": 10000,
+      "initialRate": 1,
+      "maxRate": 10,
+      "increaseRate": 1,
+      "decreaseRate": 1,
+      "maxFairnessSelectionsPerWindow": 10
+    },
+    "delivery": {
+      "publicationRetentionMs": 86400000,
+      "heartbeatIntervalMs": 10000,
+      "leaseDurationMs": 30000,
+      "antiEntropyIntervalMs": 1000,
+      "pageSize": 100,
+      "maxPagesPerTurn": 10,
+      "maxEntriesPerTurn": 1000,
+      "compactionIntervalMs": 60000,
+      "compactionPageSize": 1000,
+      "reconnectBatchWindowMs": 25,
+      "consumerRetentionMs": 86400000
+    }
+  },
+  "appInbox": {
+    "phaseTiming": false,
+    "completionWait": {
+      "maxElapsedMs": 30000,
+      "retryIntervalMs": 250,
+      "maxRetryIntervalMs": 1000,
+      "jitterRatio": 0.1
+    }
+  },
+  "ice": {
+    "mode": "local",
+    "cacheTtlMs": 300000,
+    "rateLimit": {
+      "windowMs": 60000,
+      "requests": 20
+    }
+  },
+  "crdt": {
+    "documentTypePolicies": [
+      {
+        "documentType": "*",
+        "rollout": "disabled"
+      }
+    ]
+  },
+  "blackBox": {
+    "operatorToken": {
+      "mode": "disabled",
+      "allowedClientIds": [],
+      "ttlMs": 86400000
+    },
+    "pgliteEvidence": {
+      "mode": "disabled",
+      "pollIntervalMs": 25
+    }
+  },
+  "observability": {
+    "timingLogs": true,
+    "startupSummary": true
+  }
+}

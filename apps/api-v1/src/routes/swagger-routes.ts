@@ -1,8 +1,20 @@
 import { resolvePublicServerUrl, withPublicOpenApiServer } from '@shared-server/http/public-server-url.ts';
 import { Context, Hono } from 'jsr:@hono/hono@4.11.9';
-import { loadOpenApiYaml } from '../config-repo.ts';
+import { parse } from 'jsr:@std/yaml@1.0.12';
 
 export { resolvePublicServerUrl };
+
+async function loadOpenApiYaml(): Promise<object> {
+    const document = parse(
+        await Deno.readTextFile(
+            new URL('../../resources/api-v1-openapi.yaml', import.meta.url)
+        )
+    );
+    if (!document || typeof document !== 'object' || Array.isArray(document)) {
+        throw new TypeError('API-v1 OpenAPI resource must decode to an object.');
+    }
+    return document;
+}
 
 function swaggerHtml(c: Context): string {
     const serverUrl = resolvePublicServerUrl(c.req.raw);

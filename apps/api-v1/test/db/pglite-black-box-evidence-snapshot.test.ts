@@ -1,19 +1,6 @@
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
-import { createPGliteBlackBoxSnapshotPublisher, PGLITE_BLACK_BOX_SNAPSHOT_DIR_ENV } from '../../src/db/pglite-black-box-evidence-snapshot.ts';
-
-Deno.test('PGlite black-box snapshot publishing is disabled without its private control directory', async () => {
-    let dumpCalls = 0;
-    const publisher = await createPGliteBlackBoxSnapshotPublisher({
-        dumpDataDir: async () => {
-            dumpCalls += 1;
-            return new Blob();
-        }
-    } as never, { env: { get: () => undefined } });
-
-    assert.equal(publisher, undefined);
-    assert.equal(dumpCalls, 0);
-});
+import { createPGliteBlackBoxSnapshotPublisher } from '../../src/db/pglite-black-box-evidence-snapshot.ts';
 
 Deno.test('PGlite black-box snapshot publishing atomically publishes a fresh archive', async () => {
     const root = await Deno.makeTempDir({ prefix: 'pglite-evidence-snapshot-' });
@@ -24,7 +11,7 @@ Deno.test('PGlite black-box snapshot publishing atomically publishes a fresh arc
     const publisher = await createPGliteBlackBoxSnapshotPublisher({
         dumpDataDir: async () => await dump
     } as never, {
-        env: { get: (name) => name === PGLITE_BLACK_BOX_SNAPSHOT_DIR_ENV ? root : undefined }
+        directory: root
     });
     if (!publisher) {
         throw new Error('Expected private snapshot publisher.');
@@ -79,7 +66,7 @@ Deno.test('PGlite black-box snapshot publishing discards a dump when its request
     const publisher = await createPGliteBlackBoxSnapshotPublisher({
         dumpDataDir: async () => await dump
     } as never, {
-        env: { get: (name) => name === PGLITE_BLACK_BOX_SNAPSHOT_DIR_ENV ? root : undefined }
+        directory: root
     });
     if (!publisher) {
         throw new Error('Expected private snapshot publisher.');
@@ -107,12 +94,12 @@ Deno.test('PGlite black-box snapshot publishing honours a cancellation marker be
     const root = await Deno.makeTempDir({ prefix: 'pglite-evidence-snapshot-' });
     let dumpCalls = 0;
     const publisher = await createPGliteBlackBoxSnapshotPublisher({
-        dumpDataDir: async () => {
+        dumpDataDir: () => {
             dumpCalls += 1;
-            return new Blob(['snapshot-body']);
+            return Promise.resolve(new Blob(['snapshot-body']));
         }
     } as never, {
-        env: { get: (name) => name === PGLITE_BLACK_BOX_SNAPSHOT_DIR_ENV ? root : undefined }
+        directory: root
     });
     if (!publisher) {
         throw new Error('Expected private snapshot publisher.');
@@ -151,9 +138,9 @@ Deno.test('PGlite black-box snapshot publishing removes artifacts when cancellat
         requestedAtEpochMs: Date.now()
     };
     const publisher = await createPGliteBlackBoxSnapshotPublisher({
-        dumpDataDir: async () => new Blob(['snapshot-body'])
+        dumpDataDir: () => Promise.resolve(new Blob(['snapshot-body']))
     } as never, {
-        env: { get: (name) => name === PGLITE_BLACK_BOX_SNAPSHOT_DIR_ENV ? root : undefined },
+        directory: root,
         publicationHooks: {
             afterArchive: async () => {
                 await Deno.writeTextFile(join(root, 'cancellations', `${request.nonce}.json`), '{}');
@@ -190,9 +177,9 @@ Deno.test('PGlite black-box snapshot publishing removes artifacts when cancellat
         requestedAtEpochMs: Date.now()
     };
     const publisher = await createPGliteBlackBoxSnapshotPublisher({
-        dumpDataDir: async () => new Blob(['snapshot-body'])
+        dumpDataDir: () => Promise.resolve(new Blob(['snapshot-body']))
     } as never, {
-        env: { get: (name) => name === PGLITE_BLACK_BOX_SNAPSHOT_DIR_ENV ? root : undefined },
+        directory: root,
         publicationHooks: {
             afterResponse: async () => {
                 await Deno.writeTextFile(join(root, 'cancellations', `${request.nonce}.json`), '{}');
@@ -221,11 +208,9 @@ Deno.test('PGlite black-box snapshot publishing removes artifacts when cancellat
 Deno.test('PGlite black-box snapshot publishing records dump failures without publishing an archive', async () => {
     const root = await Deno.makeTempDir({ prefix: 'pglite-evidence-snapshot-' });
     const publisher = await createPGliteBlackBoxSnapshotPublisher({
-        dumpDataDir: async () => {
-            throw new Error('dump failed');
-        }
+        dumpDataDir: () => Promise.reject(new Error('dump failed'))
     } as never, {
-        env: { get: (name) => name === PGLITE_BLACK_BOX_SNAPSHOT_DIR_ENV ? root : undefined }
+        directory: root
     });
     if (!publisher) {
         throw new Error('Expected private snapshot publisher.');
@@ -264,7 +249,7 @@ Deno.test('PGlite black-box snapshot publishing does not publish a failure respo
             throw new Error('dump failed after cancellation');
         }
     } as never, {
-        env: { get: (name) => name === PGLITE_BLACK_BOX_SNAPSHOT_DIR_ENV ? root : undefined }
+        directory: root
     });
     if (!publisher) {
         throw new Error('Expected private snapshot publisher.');
@@ -292,7 +277,7 @@ for (
             hooks: {
                 beforeArchiveWrite: async () => await Promise.reject(new Error('archive write failed'))
             },
-            dumpDataDir: async () => new Blob(['snapshot-body']),
+            dumpDataDir: () => Promise.resolve(new Blob(['snapshot-body'])),
             leavesFailureResponse: true
         },
         {
@@ -300,40 +285,43 @@ for (
             hooks: {
                 beforeArchiveRename: async () => await Promise.reject(new Error('archive rename failed'))
             },
-            dumpDataDir: async () => new Blob(['snapshot-body']),
+            dumpDataDir: () => Promise.resolve(new Blob(['snapshot-body'])),
             leavesFailureResponse: true
         },
         {
             name: 'normal response write',
             hooks: {
-                beforeResponseWrite: async (response: { failure?: string; }) => {
+                beforeResponseWrite: (response: { failure?: string; }) => {
                     if (!response.failure) {
-                        throw new Error('normal response write failed');
+                        return Promise.reject(new Error('normal response write failed'));
                     }
+                    return Promise.resolve();
                 }
             },
-            dumpDataDir: async () => new Blob(['snapshot-body']),
+            dumpDataDir: () => Promise.resolve(new Blob(['snapshot-body'])),
             leavesFailureResponse: true
         },
         {
             name: 'normal response rename',
             hooks: {
-                beforeResponseRename: async (response: { failure?: string; }) => {
+                beforeResponseRename: (response: { failure?: string; }) => {
                     if (!response.failure) {
-                        throw new Error('normal response rename failed');
+                        return Promise.reject(new Error('normal response rename failed'));
                     }
+                    return Promise.resolve();
                 }
             },
-            dumpDataDir: async () => new Blob(['snapshot-body']),
+            dumpDataDir: () => Promise.resolve(new Blob(['snapshot-body'])),
             leavesFailureResponse: true
         },
         {
             name: 'failure response write',
             hooks: {
-                beforeResponseWrite: async (response: { failure?: string; }) => {
+                beforeResponseWrite: (response: { failure?: string; }) => {
                     if (response.failure) {
-                        throw new Error('failure response write failed');
+                        return Promise.reject(new Error('failure response write failed'));
                     }
+                    return Promise.resolve();
                 }
             },
             dumpDataDir: async () => await Promise.reject(new Error('dump failed')),
@@ -342,10 +330,11 @@ for (
         {
             name: 'failure response rename',
             hooks: {
-                beforeResponseRename: async (response: { failure?: string; }) => {
+                beforeResponseRename: (response: { failure?: string; }) => {
                     if (response.failure) {
-                        throw new Error('failure response rename failed');
+                        return Promise.reject(new Error('failure response rename failed'));
                     }
+                    return Promise.resolve();
                 }
             },
             dumpDataDir: async () => await Promise.reject(new Error('dump failed')),
@@ -363,7 +352,7 @@ for (
         const publisher = await createPGliteBlackBoxSnapshotPublisher(
             { dumpDataDir: failure.dumpDataDir } as never,
             {
-                env: { get: (name) => name === PGLITE_BLACK_BOX_SNAPSHOT_DIR_ENV ? root : undefined },
+                directory: root,
                 publicationHooks: failure.hooks
             }
         );

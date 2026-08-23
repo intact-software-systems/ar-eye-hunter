@@ -9,6 +9,7 @@ import {
     toApiV1ServerCommand,
     toClusterRecipeMatrixCommand,
     toManagedApiServerPlans,
+    toManagedPGliteRunEnvironment,
     toRecipeMatrixCommands
 } from '@shared-test/black-box-runner/api-v1-black-box-run.mts';
 
@@ -114,6 +115,7 @@ describe('API-v1 runner options and process plans', () => {
         ['same as the primary port', ['--port=18080', '--secondary-port=18080']],
         ['outside the port range', ['--secondary-port=65536']],
         ['with pglite-memory', ['--backend=pglite-memory', '--secondary-port=18081']],
+        ['with pglite-file', ['--backend=pglite-file', '--secondary-port=18081']],
         ['in recipes-only mode', ['--recipes-only', '--secondary-port=18081']]
     ])('rejects a secondary API port %s', (_label, args) => {
         expect(() => parseApiV1BlackBoxArgs(args)).toThrow(/secondary/i);
@@ -129,6 +131,10 @@ describe('API-v1 runner options and process plans', () => {
         [
             'with pglite-memory',
             ['--backend=pglite-memory', '--secondary-port=18081', '--tertiary-port=18082']
+        ],
+        [
+            'with pglite-file',
+            ['--backend=pglite-file', '--secondary-port=18081', '--tertiary-port=18082']
         ],
         ['in recipes-only mode', ['--recipes-only', '--secondary-port=18081', '--tertiary-port=18082']]
     ])('rejects an invalid managed three-server topology %s', (_label, args) => {
@@ -152,25 +158,24 @@ describe('API-v1 runner options and process plans', () => {
         });
     });
 
-    it('builds Postgres server environment with a local DATABASE_URL default', () => {
+    it('builds a canonical Postgres validation environment with local run overrides', () => {
         const options = parseApiV1BlackBoxArgs(['--backend=postgres', '--port=18080']);
         const env = toApiV1BlackBoxEnvironment(options, {});
+        const [plan] = toManagedApiServerPlans(options, env, '/tmp/api-v1-bb');
 
-        expect(env.PORT).toBe('18080');
-        expect(env.RALLAR_SQL_BACKEND).toBe('postgres');
-        expect(env.DATABASE_URL).toBe('postgres://app:app@localhost:5432/appdb');
-        expect(env.RALLAR_STATE_STRICT_READ_AUTH).toBe('1');
-        expect(env.RALLAR_LOGIN_IP_RATE_LIMIT).toBe('100');
-        expect(env.RALLAR_LOGIN_USER_RATE_LIMIT).toBe('100');
-        expect(env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET).toBe(
-            'local-api-v1-black-box-operator-secret'
-        );
-        expect(env.AUTH_STATIC_CLIENTS_MODE).toBe('demo');
-        expect(env.AUTH_REGISTRATION_MODE).toBe('public');
-        expect(env.AUTH_ADMIN_CLIENT_IDS).toBe('admin,bob');
-        expect(env.RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON).toBe(
-            '[{"documentType":"black-box-map","rollout":"production"}]'
-        );
+        expect(plan?.env).toMatchObject({
+            RALLAR_API_CONFIGURATION_PROFILE: 'prod-in-memory',
+            PORT: '18080',
+            RALLAR_SQL_BACKEND: 'postgres',
+            RALLAR_PGLITE_SCHEMA_INIT: 'disabled',
+            RALLAR_DB_PUBSUB: 'postgres',
+            DATABASE_URL: 'postgres://app:app@localhost:5432/appdb',
+            RALLAR_LOGIN_IP_RATE_LIMIT: '100',
+            RALLAR_LOGIN_USER_RATE_LIMIT: '100',
+            RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET: 'local-api-v1-black-box-operator-secret',
+            RALLAR_AUTH_CREDENTIAL_SECRET: 'local-api-v1-black-box-auth-credential-secret-v1',
+            RALLAR_CRDT_DOCUMENT_TYPE_POLICIES_JSON: '[{"documentType":"black-box-map","rollout":"production"}]'
+        });
     });
 
     it('creates a bounded execution token independently of caller-provided run IDs', () => {
@@ -271,6 +276,35 @@ describe('API-v1 runner options and process plans', () => {
         ]);
     });
 
+    it('keeps runner targets and unrelated caller variables out of API child processes', () => {
+        const options = parseApiV1BlackBoxArgs([
+            '--backend=postgres',
+            '--secondary-port=18081',
+            '--tertiary-port=18082'
+        ]);
+        const env = toApiV1BlackBoxEnvironment(options, {
+            RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET: 'operator-secret',
+            RALLAR_AUTH_CREDENTIAL_SECRET: 'credential-secret-at-least-32-characters',
+            RUNNER_ONLY_SENTINEL: 'must-not-reach-child'
+        });
+
+        for (const plan of toManagedApiServerPlans(options, env, '/tmp/api-v1-bb')) {
+            expect(plan.env.RALLAR_API_CONFIGURATION_PROFILE).toBe('prod-in-memory');
+            expect(plan.env.RALLAR_BLACK_BOX_OPERATOR_TOKEN_SECRET).toBe('operator-secret');
+            expect(plan.env.RALLAR_AUTH_CREDENTIAL_SECRET).toBe(
+                'credential-secret-at-least-32-characters'
+            );
+            expect(plan.env).not.toHaveProperty('RALLAR_API_BASE_URL_SECONDARY');
+            expect(plan.env).not.toHaveProperty('RALLAR_WS_BASE_URL_SECONDARY');
+            expect(plan.env).not.toHaveProperty('RALLAR_API_BASE_URL_TERTIARY');
+            expect(plan.env).not.toHaveProperty('RALLAR_WS_BASE_URL_TERTIARY');
+            expect(plan.env).not.toHaveProperty('RALLAR_BB_RUN_ID');
+            expect(plan.env).not.toHaveProperty('RALLAR_BB_EXECUTION_TOKEN');
+            expect(plan.env).not.toHaveProperty('RALLAR_STATE_WRITE_EVIDENCE_OUTPUT');
+            expect(plan.env).not.toHaveProperty('RUNNER_ONLY_SENTINEL');
+        }
+    });
+
     it('preserves explicit black-box operator token secret values', () => {
         const options = parseApiV1BlackBoxArgs(['--backend=postgres']);
         const env = toApiV1BlackBoxEnvironment(options, {
@@ -301,25 +335,52 @@ describe('API-v1 runner options and process plans', () => {
         expect(env.RALLAR_WS_BASE_URL).toBe('ws://127.0.0.1:19999');
     });
 
-    it('builds pglite-memory server environment without Postgres settings', () => {
+    it('builds a canonical pglite-memory validation environment without file settings', () => {
         const options = parseApiV1BlackBoxArgs([
             '--backend=pglite-memory',
             '--port=19090',
             '--run-id=local-123'
         ]);
         const env = toApiV1BlackBoxEnvironment(options, {});
+        const storageEnvironment = toManagedPGliteRunEnvironment(options, env, {
+            dataDir: '/tmp/api-v1-bb/data',
+            snapshotDir: '/tmp/api-v1-bb/snapshots'
+        });
+        const [plan] = toManagedApiServerPlans(options, storageEnvironment, '/tmp/api-v1-bb');
 
         expect(env.PORT).toBe('19090');
         expect(env.RALLAR_API_BASE_URL).toBe('http://127.0.0.1:19090');
         expect(env.RALLAR_WS_BASE_URL).toBe('ws://127.0.0.1:19090');
         expect(env.RALLAR_BB_RUN_ID).toBe('local-123');
-        expect(env.RALLAR_SQL_BACKEND).toBe('pglite-memory');
-        expect(env.RALLAR_PGLITE_DATA_DIR).toBe('memory://');
-        expect(env.RALLAR_PGLITE_SCHEMA_INIT).toBe('auto');
-        expect(env.RALLAR_DB_PUBSUB).toBe('local');
-        expect(env.RALLAR_STATE_STRICT_READ_AUTH).toBe('1');
-        expect(env.AUTH_STATIC_CLIENTS_MODE).toBe('demo');
-        expect(env.AUTH_REGISTRATION_MODE).toBe('public');
+        expect(plan?.env).toMatchObject({
+            RALLAR_API_CONFIGURATION_PROFILE: 'prod-in-memory',
+            RALLAR_BLACK_BOX_PGLITE_SNAPSHOT_DIR: '/tmp/api-v1-bb/snapshots'
+        });
+        expect(plan?.env).not.toHaveProperty('RALLAR_SQL_BACKEND');
+        expect(plan?.env).not.toHaveProperty('RALLAR_PGLITE_DATA_DIR');
+        expect(plan?.env).not.toHaveProperty('DATABASE_URL');
+    });
+
+    it('builds a canonical pglite-file validation environment with one run directory', () => {
+        const options = parseApiV1BlackBoxArgs(['--backend=pglite-file']);
+        const env = toManagedPGliteRunEnvironment(
+            options,
+            toApiV1BlackBoxEnvironment(options, {}),
+            {
+                dataDir: '/tmp/api-v1-bb/data',
+                snapshotDir: '/tmp/api-v1-bb/snapshots'
+            }
+        );
+        const [plan] = toManagedApiServerPlans(options, env, '/tmp/api-v1-bb');
+
+        expect(plan?.env).toMatchObject({
+            RALLAR_API_CONFIGURATION_PROFILE: 'prod-in-memory',
+            RALLAR_SQL_BACKEND: 'pglite-file',
+            RALLAR_PGLITE_DATA_DIR: '/tmp/api-v1-bb/data',
+            RALLAR_BLACK_BOX_PGLITE_SNAPSHOT_DIR: '/tmp/api-v1-bb/snapshots'
+        });
+        expect(plan?.env).not.toHaveProperty('RALLAR_PGLITE_SCHEMA_INIT');
+        expect(plan?.env).not.toHaveProperty('RALLAR_DB_PUBSUB');
     });
 
     it('builds the api-v1 Deno server command', () => {
