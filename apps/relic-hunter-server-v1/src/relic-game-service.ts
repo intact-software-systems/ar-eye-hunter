@@ -15,8 +15,6 @@ import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contr
 import type { Hono } from 'hono';
 import type { RelicInitialStateFactory, RelicInitialStateReason } from './relic-expedition-ai.ts';
 
-type RelicRallarServer = RallarServerApplication<ApiV1Runtime, Hono>;
-
 export interface RelicHunterGameServiceOptions {
     readonly createInitialState: RelicInitialStateFactory;
 }
@@ -29,7 +27,7 @@ export interface RelicHunterGameService {
 }
 
 export async function installRelicHunterGame(
-    rallar: RelicRallarServer,
+    rallar: RallarServerApplication<ApiV1Runtime, Hono>,
     options: RelicHunterGameServiceOptions
 ): Promise<RelicHunterGameService> {
     const games = await rallar.data.open<RelicGameState>(
@@ -42,12 +40,12 @@ export async function installRelicHunterGame(
 
     // Serialize writes per game to prevent read-modify-write races when two
     // players submit actions simultaneously.
-    const gameQueues = new Map<string, Promise<unknown>>();
+    const gameQueues = new Map<string, Promise<void>>();
     function enqueueForGame<T>(gameId: string, work: () => Promise<T>): Promise<T> {
-        const prev = (gameQueues.get(gameId) ?? Promise.resolve()).catch(() => {});
-        const next: Promise<T> = prev.then(work);
-        gameQueues.set(gameId, next.catch(() => {}));
-        return next;
+        const previousCompletion = gameQueues.get(gameId) ?? Promise.resolve();
+        const result = previousCompletion.then(work);
+        gameQueues.set(gameId, result.then(() => undefined, () => undefined));
+        return result;
     }
 
     async function createInitialState(
