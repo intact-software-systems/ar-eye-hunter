@@ -613,9 +613,13 @@ commit — while the peer sync envelopes (`sync-request`, `sync-response`, `catc
 relayed live, so the exemption lets CRDT sync traffic flow before activation; collaborative documents
 are lobby-phase workspace, not the competitive pre-match traffic the gate exists to hold back. Out of
 scope and unchanged: RTC data-channel traffic (`realtime.room` is peer-to-peer; the server only
-signals), presence (an HTTP mutation, never a WS topic), and the reserved state-sync, signaling,
-`overlay.topology`, and `rtt` system topics, whose feature installers register them before the
-user-topic router and which activation needs.
+signals), presence (an HTTP mutation, never a WS topic), durable state-sync and
+`overlay.topology` output, and the signaling and `rtt` ingress topics. API-v1 installs the durable
+topology AppOutbox owner, chat, signaling, RTC-RTT, CRDT, and then the user-topic router; state-sync
+and topology have no WebSocket ingress installers. Recognized state-sync input is rejected before
+user routing. Committed `WS_OUTBOX` state and fixed-recipient topology messages reach current
+sessions through QueueBox/pub-sub delivery or durable topology replay, outside the pre-activation
+user-topic gate.
 
 On the wire the denial is the generic NACK: the room authorizer maps every policy denial to reason
 `unauthorized`, and the `group-data-blocked-until-active` code never leaves the server — it appears

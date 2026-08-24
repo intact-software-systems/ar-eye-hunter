@@ -31,13 +31,16 @@ runs the complete read/compute/validate/write flow inside the AppInbox-owned
 transaction. The committed outbox is the boundary for later WebSocket effects.
 
 WebSocket connections enter through the API-v1 WS mount and the shared facade.
-API-v1 explicitly installs state-sync, topology publication and delivery,
-chat, signalling, RTC-RTT, CRDT, and then the router. The router owns its topic
-registry, ingress decoding and authorization, publication, and status under
-`websocket/router/`; client, group, fixed-topology, and CRDT-principal audience
-resolution lives under `websocket/targets/`. Mutating topics enqueue the same
-typed domain commands used by HTTP. Queue pub/sub wakes workers but is never
-mutation authority.
+API-v1 installs the durable topology AppOutbox owner, then chat, signalling,
+RTC-RTT, CRDT, and the router. There is no state-sync or topology WebSocket
+topic installer. `ClientStateInboxHandler` and `GroupStateInboxHandler` observe
+cache snapshots only from their typed post-commit results. Final `WS_OUTBOX`
+messages reach live sockets through QueueBox/pub-sub delivery and durable
+topology replay; client, group, fixed-topology, and CRDT-principal target
+resolution lives under `websocket/targets/`. The router owns its topic registry,
+ingress decoding and authorization, publication, and status under
+`websocket/router/`. Mutating topics enqueue the same typed domain commands used
+by HTTP. Queue pub/sub wakes workers but is never mutation authority.
 
 ## Construction And First Invocation
 
@@ -62,20 +65,20 @@ mutation authority.
 
 ## Owner Map
 
-| Domain                   | Entry and authority                                           | Durable/external side effect                                  | Focused tests                                         |
-| ------------------------ | ------------------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------- |
-| AppInbox                 | `app-inbox/`                                                  | resource-inbox reservation, typed result, retry/failure       | `packages/tests/shared-server/app-inbox-*.test.ts`    |
-| Client state             | `client-state/inbox/`, `client-state/mutation/`               | snapshot, event, outbox                                       | `packages/tests/shared-server/client-state/`          |
-| Group state and presence | `group-state/inbox/`, `group-state/mutation/`, `presence/`    | snapshot, event, topology intent                              | `packages/tests/shared-server/group-state/`           |
-| Auth                     | `auth/inbox/`, `auth/`                                        | current hashed session/ticket state                           | `packages/tests/shared-server/auth/`                  |
-| CRDT                     | `crdt/inbox/`, `crdt/`                                        | document log and outbox                                       | `packages/tests/shared-server/crdt/`                  |
-| Topology                 | `topology/mutation/`, `topology/replay/`, `topology/runtime/` | accepted publication and replay                               | `packages/tests/shared-server/topology-*`             |
-| RTC-RTT                  | `rtc-rtt/inbox/`, `rtc-rtt/mutation/`, `rtc-rtt/persistence/` | measurement, receipt, topology work                           | `packages/tests/shared-server/rallar-system/rtc-rtt/` |
-| State sync               | `state-sync/`                                                 | exact decoding, cache observation, post-commit WS publication | `packages/tests/shared-server/*state-sync*.test.ts`   |
-| WebSocket                | `websocket/router/`, `websocket/targets/`                     | ingress policy, routing, connection lifecycle, topic delivery | `packages/tests/shared-server/*ws*.test.ts`           |
-| Communication topics     | `communication/`                                              | chat broadcast and RTC signaling delivery                     | feature-owned communication topic tests               |
-| Queue pub/sub            | `queue-pubsub/`                                               | low-latency worker wake-up                                    | `packages/tests/shared-server/*pubsub*.test.ts`       |
-| Administration           | `admin-operations/`, `admin-support/`                         | typed admin AppInbox commands and read models                 | `packages/tests/shared-server/admin-*.test.ts`        |
+| Domain                   | Entry and authority                                           | Durable/external side effect                                                               | Focused tests                                         |
+| ------------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
+| AppInbox                 | `app-inbox/`                                                  | resource-inbox reservation, typed result, retry/failure                                    | `packages/tests/shared-server/app-inbox-*.test.ts`    |
+| Client state             | `client-state/inbox/`, `client-state/mutation/`               | snapshot, event, outbox                                                                    | `packages/tests/shared-server/client-state/`          |
+| Group state and presence | `group-state/inbox/`, `group-state/mutation/`, `presence/`    | snapshot, event, topology intent                                                           | `packages/tests/shared-server/group-state/`           |
+| Auth                     | `auth/inbox/`, `auth/`                                        | current hashed session/ticket state                                                        | `packages/tests/shared-server/auth/`                  |
+| CRDT                     | `crdt/inbox/`, `crdt/`                                        | document log and outbox                                                                    | `packages/tests/shared-server/crdt/`                  |
+| Topology                 | `topology/mutation/`, `topology/replay/`, `topology/runtime/` | accepted publication and replay                                                            | `packages/tests/shared-server/topology-*`             |
+| RTC-RTT                  | `rtc-rtt/inbox/`, `rtc-rtt/mutation/`, `rtc-rtt/persistence/` | measurement, receipt, topology work                                                        | `packages/tests/shared-server/rallar-system/rtc-rtt/` |
+| State sync               | `state-sync/`, client/group inbox handlers                    | exact ingress decoding, typed post-commit cache observation, `WS_OUTBOX` target resolution | `packages/tests/shared-server/*state-sync*.test.ts`   |
+| WebSocket                | `websocket/router/`, `websocket/targets/`                     | ingress policy, routing, connection lifecycle, topic delivery                              | `packages/tests/shared-server/*ws*.test.ts`           |
+| Communication topics     | `communication/`                                              | chat broadcast and RTC signaling delivery                                                  | feature-owned communication topic tests               |
+| Queue pub/sub            | `queue-pubsub/`                                               | low-latency worker wake-up                                                                 | `packages/tests/shared-server/*pubsub*.test.ts`       |
+| Administration           | `admin-operations/`, `admin-support/`                         | typed admin AppInbox commands and read models                                              | `packages/tests/shared-server/admin-*.test.ts`        |
 
 Current writers define the accepted stored shape. Unexpected predecessor rows
 fail at the owning typed validation/corruption boundary; runtime code does not

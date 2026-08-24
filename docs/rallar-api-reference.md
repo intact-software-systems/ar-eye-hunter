@@ -1111,9 +1111,19 @@ neither `start` nor `stop`.
 ### Feature Topic Installation
 
 There is no aggregate system-topic initializer. The application composition
-installs state sync, topology publication/delivery, chat, signalling, RTC-RTT,
+installs the durable topology AppOutbox owner, then chat, signalling, RTC-RTT,
 CRDT, and the router explicitly before worker start. API-v1 owns that sequence
-in `apps/api-v1/src/composition/create-api-v1-system-installers.ts`.
+in `apps/api-v1/src/composition/create-api-v1-system-installers.ts`; there is no
+state-sync or topology WebSocket topic installer.
+
+Client and group cache observation occurs only in the typed post-commit result
+paths owned by `ClientStateInboxHandler` and `GroupStateInboxHandler`. Their
+mutations commit final `WS_OUTBOX` rows with the authoritative state. QueueBox
+workers and queue pub/sub deliver those rows through the current WebSocket
+target resolver. Durable topology publication materializes fixed
+`recipientPeerIds`; live worker delivery and `RtcTopologyReplayEntryHandlerService`
+both resolve those recorded peers to current sessions before calling
+`WsQueueBoxServerService.sendToTargetsWithResult`.
 
 Accepted RTC RTT measurements are capped by the topology service
 `rttReportingDegreeLimit`, which falls back to the effective topology

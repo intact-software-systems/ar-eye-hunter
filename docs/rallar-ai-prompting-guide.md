@@ -229,7 +229,11 @@ Requirements:
 - Wire queuebox inbox/outbox.
 - Construct group-state, topology, RTC-RTT, and client inbox services before
   queue task registration; add configured auth, admin, and CRDT inbox services.
-- Let feature-owned state-sync and topic installers run before worker start.
+- Observe client and group caches only from their typed post-commit inbox results.
+- Install the topology AppOutbox owner, chat, signaling, RTC-RTT, CRDT, and the
+  router before worker start; do not invent state-sync or topology WS installers.
+- Deliver final WS_OUTBOX state and fixed-recipient topology messages through
+  QueueBox/pub-sub or durable replay target resolution.
 - Provide findGroupSnapshotByRef for scoped room routing.
 - Install default middleware topics and websocket lifecycle cleanup.
 - Start qboxEngine.
