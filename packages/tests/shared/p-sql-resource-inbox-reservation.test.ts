@@ -6,7 +6,7 @@ if (!('Temporal' in globalThis)) {
     Object.assign(globalThis, { Temporal });
 }
 
-type ResourceInboxRepositoryModule = typeof import('@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts');
+type PSqlResourceInboxRepositoryModule = typeof import('@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts');
 
 type ResourceInboxRow = {
     ri_row_id: bigint;
@@ -26,15 +26,15 @@ type ResourceInboxRow = {
     ri_attempts: bigint | null;
 };
 
-let repositoryModule: ResourceInboxRepositoryModule;
+let repositoryModule: PSqlResourceInboxRepositoryModule;
 
 beforeAll(async () => {
     repositoryModule = await import(
-        '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts'
+        '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts'
     );
 });
 
-describe('ResourceInboxRepository.startProcessingEntity', () => {
+describe('PostgreSQL resource inbox reservation', () => {
     it('returns Either left for expired rows and Either right for reserved rows', async () => {
         const active = createEntry('active-1', Temporal.Now.instant().add({ minutes: 5 }));
         const expired = createEntry(
@@ -42,15 +42,15 @@ describe('ResourceInboxRepository.startProcessingEntity', () => {
             Temporal.Now.instant().subtract({ seconds: 1 })
         );
         const harness = createSqlHarness([toRow(active, 1n), toRow(expired, 2n)]);
-        const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
+        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
 
-        const skipped = await repo.startProcessingEntity(expired);
+        const skipped = await repo.reservations.startProcessingEntity(expired);
         expect(skipped.left).toEqual({
             kind: 'expired-or-missing',
             key: expired.key
         });
 
-        const reserved = await repo.startProcessingEntity(active);
+        const reserved = await repo.reservations.startProcessingEntity(active);
         expect(reserved.right?.status).toBe(EntityStatus.RESERVED);
         expect(reserved.right?.dequeueAudit.attempts).toBe(1);
         expect(reserved.right?.dequeueAudit.startTs).toBeDefined();
@@ -68,9 +68,9 @@ describe('ResourceInboxRepository.startProcessingEntity', () => {
             }
         } satisfies ResourceEntry;
         const harness = createSqlHarness([toRow(exhausted, 1n)]);
-        const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
+        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
 
-        const skipped = await repo.startProcessingEntity(exhausted);
+        const skipped = await repo.reservations.startProcessingEntity(exhausted);
 
         expect(skipped.left).toEqual({
             kind: 'expired-or-missing',
@@ -90,9 +90,9 @@ describe('ResourceInboxRepository.startProcessingEntity', () => {
             }
         } satisfies ResourceEntry;
         const harness = createSqlHarness([toRow(exhausted, 1n)]);
-        const repo = new repositoryModule.ResourceInboxRepository(harness.sql);
+        const repo = repositoryModule.createPSqlResourceInboxRepository(harness.sql);
 
-        const skipped = await repo.startProcessingEntity(exhausted, 2);
+        const skipped = await repo.reservations.startProcessingEntity(exhausted, 2);
 
         expect(skipped.left).toEqual({
             kind: 'expired-or-missing',

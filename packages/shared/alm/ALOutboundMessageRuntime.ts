@@ -3,7 +3,7 @@ import { parseALControlMessage } from '../al-contracts/al-control.ts';
 import type { ALRepairAlgo, ALSupersedenceAlgo } from '../al-contracts/al-policy.ts';
 import { InMemoryALOrderingStore } from '../al-contracts/al-runtime.ts';
 import type { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
-import type { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
+import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
 import type { Key, ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { RetryableConflictError, RetryPolicies, tryWithPolicy } from '../resilience/TryWith.ts';
 import { QueueBoxUtilities } from '../services/QueueBoxUtilities.ts';

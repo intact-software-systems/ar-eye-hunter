@@ -9,7 +9,7 @@ import {
     type ResourceInboxFinalizationSelection,
     type ResourceInboxReleaseDisposition,
     type ResourceInboxWorkAdvertisementOptions
-} from './QueueBoxTypes.ts';
+} from './queue-box-types.ts';
 import * as Resource from './ResourceEntry.ts';
 import { EntityStatus, isKeysEqual, ResourceEntry } from './ResourceEntry.ts';
 import {

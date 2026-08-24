@@ -1,6 +1,6 @@
-import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import assert from 'node:assert/strict';
@@ -10,7 +10,7 @@ import { readPGliteDatabaseEpochMs, waitForPGliteQueueRow, withUtcPGliteSql } fr
 
 Deno.test('production admin prune rereads current admin authority before creating page work', async () => {
     await withUtcPGliteSql(async (sql) => {
-        const repository = new ResourceInboxRepository(sql);
+        const repository = createPSqlResourceInboxRepository(sql);
         const queue = new PSqlQueueBox(repository);
         const inbox = new InboxQueueReader(queue);
         const outbox = new OutboxQueueReader(queue);
@@ -75,7 +75,7 @@ Deno.test('production admin prune rereads current admin authority before creatin
 
 Deno.test('committed initial admin page work wakes the queue after its transaction commits', async () => {
     await withUtcPGliteSql(async (sql) => {
-        const repository = new ResourceInboxRepository(sql);
+        const repository = createPSqlResourceInboxRepository(sql);
         const queue = new PSqlQueueBox(repository);
         const inbox = new InboxQueueReader(queue);
         const outbox = new OutboxQueueReader(queue);

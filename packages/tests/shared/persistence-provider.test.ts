@@ -4,9 +4,9 @@ import { Temporal } from '@js-temporal/polyfill';
 import '../setup-browser-indexeddb.ts';
 
 import { NEVER_EXPIRE_AT_TIMESTAMP } from '@shared/persistence/PersistenceProvider.ts';
-import { IndexedDbQueueBox } from '@shared/queuebox/IndexedDbQueueBox.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import { QueueBoxResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
+import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { EntityStatus, Key, NEVER_EXPIRE_TS, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
 

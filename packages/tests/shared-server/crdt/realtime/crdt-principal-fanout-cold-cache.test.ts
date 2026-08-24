@@ -13,7 +13,7 @@ import {
     type RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/mod.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { describe, expect, it } from 'vitest';
 

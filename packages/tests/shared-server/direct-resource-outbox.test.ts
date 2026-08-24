@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { runInPSqlTransaction } from '@shared-server/postgres/run-in-p-sql-transaction.ts';
 import { CoalescedAppOutboxWorkService } from '@shared-server/rallar-system/app-outbox/coalesced-app-outbox-work-service.ts';
 import {
@@ -290,7 +290,7 @@ describe('direct resource outbox writes', () => {
 
         await expect(
             runInPSqlTransaction(database.sql, async (transaction) => {
-                await new ResourceInboxRepository(transaction).writeIfAbsentOrMatch({
+                await createPSqlResourceInboxRepository(transaction).entries.writeIfAbsentOrMatch({
                     ...entries[0]!,
                     resource: JSON.stringify({ corrupt: true })
                 });
@@ -573,7 +573,7 @@ describe('direct resource outbox writes', () => {
             })
         ).entry;
         await runInPSqlTransaction(database.sql, async (transaction) => {
-            await new ResourceInboxRepository(transaction).writeIfAbsentOrMatch(first);
+            await createPSqlResourceInboxRepository(transaction).entries.writeIfAbsentOrMatch(first);
         });
         const updated = await runInPSqlTransaction(
             database.sql,

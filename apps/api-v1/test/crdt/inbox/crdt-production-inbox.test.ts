@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { RALLAR_CRDT_OPERATION_VERSION, RALLAR_CRDT_PROTOCOL_VERSION, type RallarCrdtDocumentRef, type RallarCrdtUpdateEnvelope } from '@shared/crdt/mod.ts';
 
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 
 import { createCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 
@@ -73,12 +73,12 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const now = await pgliteQueueNow(sql);
-            const resourceInbox = new ResourceInboxRepository(sql);
+            const resourceInbox = createPSqlResourceInboxRepository(sql);
             const queue = new PSqlQueueBox(resourceInbox);
             const authorityReads: string[] = [];
             let wakes = 0;
             const factory = createApiCrdtInboxFactory({
-                resourceInboxRepository: resourceInbox,
+                resourceInboxRepository: resourceInbox.entries,
                 resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
                 database: sql,
                 serviceId: 'server-1',
@@ -295,11 +295,11 @@ interface ProductionServiceInput {
 
 function productionService(input: ProductionServiceInput) {
     const { queueSql, database, now, allow = false, isAllowed = () => true } = input;
-    const resourceInbox = new ResourceInboxRepository(queueSql);
+    const resourceInbox = createPSqlResourceInboxRepository(queueSql);
     const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
     const service = createApiCrdtInboxService({
         inboxQueueReader,
-        resourceInboxRepository: resourceInbox,
+        resourceInboxRepository: resourceInbox.entries,
         resourceInboxResultsRepository: new ResourceInboxResultsRepository(queueSql),
         database,
         serviceId: 'server-1',

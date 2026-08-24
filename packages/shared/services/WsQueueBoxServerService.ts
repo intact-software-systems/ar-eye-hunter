@@ -27,7 +27,7 @@ import {
 } from '../alm/ALOutboundMessageRuntime.ts';
 import { EnqueuedType } from '../api/api-config.ts';
 import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
-import type { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
+import type { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import {
     ConnectionContext,

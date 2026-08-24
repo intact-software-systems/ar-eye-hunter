@@ -290,7 +290,7 @@ async function runClientMutation(
     if (!mutation || mutation.event !== null) {
         throw new Error(`Applied client mutation receipt not found: ${requestId}`);
     }
-    const entry = await runtime.resourceInbox.findAnyByKey(
+    const entry = await runtime.resourceInbox.entries.findAnyByKey(
         toAppQueueKey({
             topicId: type,
             resourceId: requestId,

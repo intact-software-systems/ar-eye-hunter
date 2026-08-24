@@ -1,8 +1,8 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import type { PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import type {
     ResourceInboxResultsRepository
-} from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+} from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type {
     RallarAdminInboxServiceFactory,
@@ -27,7 +27,7 @@ export interface CurrentAdminMutationAuthority {
 
 export interface CreateApiMutationInboxFactoriesInput {
     readonly createAppCrdtInboxService: RallarCrdtInboxServiceFactory;
-    readonly resourceInboxRepository: ResourceInboxRepository;
+    readonly resourceInboxRepository: PSqlResourceInboxRepository;
     readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
     readonly database: PSqlSql;
     readonly serviceId: string;

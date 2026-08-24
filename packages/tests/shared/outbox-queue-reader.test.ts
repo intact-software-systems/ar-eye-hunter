@@ -1,9 +1,9 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
+import { newALRoute, newALUntargetedMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import type { OnMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
@@ -14,7 +14,10 @@ describe('OutboxQueueReader', () => {
     it('dispatches app outbox messages using the APP_OUTBOX queue type', async () => {
         const queue = new InMemoryQueueBox();
         const reader = new OutboxQueueReader(queue);
-        const onMessage = vi.fn<OnMessageCallback['onMessage']>(async () => undefined);
+        const dispatched: Parameters<OnMessageCallback['onMessage']>[0][] = [];
+        const onMessage: OnMessageCallback['onMessage'] = async (dispatchedMessage) => {
+            dispatched.push(dispatchedMessage);
+        };
         const message = createAppMessage('RTC_TOPOLOGY_RECOMPUTE', 'outbox');
 
         reader.onOutboxMessageDo('RTC_TOPOLOGY_RECOMPUTE', { onMessage });
@@ -25,65 +28,76 @@ describe('OutboxQueueReader', () => {
         );
 
         expect(enqueued.typeId).toBe(EnqueuedType.APP_OUTBOX);
-        expect(onMessage).toHaveBeenCalledOnce();
-        expect(onMessage.mock.calls[0][0]).toEqual(message);
-        expect(readEntries(queue)[0]?.status).toBe(EntityStatus.COMPLETED);
+        expect(dispatched).toEqual([message]);
+        expect((await queue.getItem(enqueued.key))?.status).toBe(EntityStatus.COMPLETED);
     });
 
     it('does not reserve APP_INBOX work', async () => {
         const queue = new InMemoryQueueBox();
         const inbox = new InboxQueueReader(queue);
         const outbox = new OutboxQueueReader(queue);
-        const onInbox = vi.fn(async () => undefined);
-        const onOutbox = vi.fn(async () => undefined);
+        const inboxMessages: ALMessage[] = [];
+        const outboxMessages: ALMessage[] = [];
+        const onInbox: OnMessageCallback['onMessage'] = async (message) => {
+            inboxMessages.push(message);
+        };
+        const onOutbox: OnMessageCallback['onMessage'] = async (message) => {
+            outboxMessages.push(message);
+        };
 
         inbox.onInboxMessageDo('group-state.create.v1', { onMessage: onInbox });
         outbox.onOutboxMessageDo('group-state.create.v1', { onMessage: onOutbox });
-        await inbox.enqueueIfAbsent(createAppMessage('group-state.create.v1', 'inbox'));
+        const message = createAppMessage('group-state.create.v1', 'inbox');
+        await inbox.enqueueIfAbsent(message);
         await outbox.dequeueOutbox(
             OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
             createResilience()
         );
 
-        expect(onOutbox).not.toHaveBeenCalled();
-        expect(onInbox).not.toHaveBeenCalled();
-        expect(readEntries(queue)[0]?.status).toBe(EntityStatus.NEW);
+        expect(outboxMessages).toEqual([]);
+        expect(inboxMessages).toEqual([]);
+        expect((await queue.getItem(message.route))?.status).toBe(EntityStatus.NEW);
 
         await inbox.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
             createResilience()
         );
 
-        expect(onInbox).toHaveBeenCalledOnce();
+        expect(inboxMessages).toHaveLength(1);
     });
 
     it('does not reserve APP_OUTBOX work from the inbox reader', async () => {
         const queue = new InMemoryQueueBox();
         const inbox = new InboxQueueReader(queue);
         const outbox = new OutboxQueueReader(queue);
-        const onInbox = vi.fn(async () => undefined);
-        const onOutbox = vi.fn(async () => undefined);
+        const inboxMessages: ALMessage[] = [];
+        const outboxMessages: ALMessage[] = [];
+        const onInbox: OnMessageCallback['onMessage'] = async (message) => {
+            inboxMessages.push(message);
+        };
+        const onOutbox: OnMessageCallback['onMessage'] = async (message) => {
+            outboxMessages.push(message);
+        };
 
         inbox.onInboxMessageDo('RTC_TOPOLOGY_RECOMPUTE', { onMessage: onInbox });
         outbox.onOutboxMessageDo('RTC_TOPOLOGY_RECOMPUTE', { onMessage: onOutbox });
-        await outbox.enqueueIfAbsent(
-            createAppMessage('RTC_TOPOLOGY_RECOMPUTE', 'outbox')
-        );
+        const message = createAppMessage('RTC_TOPOLOGY_RECOMPUTE', 'outbox');
+        await outbox.enqueueIfAbsent(message);
         await inbox.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
             createResilience()
         );
 
-        expect(onInbox).not.toHaveBeenCalled();
-        expect(onOutbox).not.toHaveBeenCalled();
-        expect(readEntries(queue)[0]?.status).toBe(EntityStatus.NEW);
+        expect(inboxMessages).toEqual([]);
+        expect(outboxMessages).toEqual([]);
+        expect((await queue.getItem(message.route))?.status).toBe(EntityStatus.NEW);
 
         await outbox.dequeueOutbox(
             OutboxQueueReader.OUTBOX_DEQUEUE_TYPES,
             createResilience()
         );
 
-        expect(onOutbox).toHaveBeenCalledOnce();
+        expect(outboxMessages).toHaveLength(1);
     });
 });
 
@@ -105,11 +119,4 @@ function createResilience(): ResilienceDto {
         1,
         1
     );
-}
-
-function readEntries(queue: InMemoryQueueBox): readonly ResourceEntry[] {
-    const data = (
-        queue as unknown as { data: Map<string, ResourceEntry>; }
-    ).data;
-    return [...data.values()];
 }

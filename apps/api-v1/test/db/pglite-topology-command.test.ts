@@ -1,8 +1,8 @@
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import assert from 'node:assert/strict';
 
-import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { ResourceInboxInvariantCorruptionError, ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { createPSqlResourceInboxRepository, ResourceInboxInvariantCorruptionError, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
@@ -291,7 +291,7 @@ Deno.test(
                 }
                 return authority;
             };
-            const resourceInbox = new ResourceInboxRepository(sql);
+            const resourceInbox = createPSqlResourceInboxRepository(sql);
             let retryReleaseCount = 0;
             class RetryObservedQueueBox extends PSqlQueueBox {
                 override async releaseEntries(
@@ -359,12 +359,12 @@ Deno.test('PGlite topology worker classifies exact WS outbox replay as idempoten
             sql,
             'pglite-topology-ws-replay'
         );
-        await new ResourceInboxRepository(sql).write(fixture.publicationEntry);
+        await createPSqlResourceInboxRepository(sql).entries.write(fixture.publicationEntry);
 
         await fixture.handler.onMessage(fixture.message, fixture.reserved);
         assert.equal(fixture.readReplayWakeCount(), 1);
 
-        const consumed = await fixture.resourceInbox.findAnyByKey(fixture.workEntry.key);
+        const consumed = await fixture.resourceInbox.entries.findAnyByKey(fixture.workEntry.key);
         assert.equal(consumed?.status, EntityStatus.COMPLETED);
         assert.deepEqual(
             await fixture.executionRepository.findPublicationForWork(
@@ -413,7 +413,7 @@ Deno.test(
         and ri_resource_id = ${fixture.workEntry.key.resourceId}
         and fk_ext_bank_id = ${fixture.workEntry.key.contextId}
     `;
-            const replayReservation = await fixture.resourceInbox.findAnyByKey(
+            const replayReservation = await fixture.resourceInbox.entries.findAnyByKey(
                 fixture.workEntry.key
             );
             assert.ok(replayReservation);
@@ -427,7 +427,7 @@ Deno.test(
                 { headSequence: 1, sequences: [1] }
             );
             assert.equal(
-                (await fixture.resourceInbox.findAnyByKey(fixture.workEntry.key))?.status,
+                (await fixture.resourceInbox.entries.findAnyByKey(fixture.workEntry.key))?.status,
                 EntityStatus.COMPLETED
             );
         });
@@ -461,7 +461,7 @@ Deno.test(
                 undefined
             );
             assert.equal(
-                await fixture.resourceInbox.findAnyByKey(fixture.publicationEntry.key),
+                await fixture.resourceInbox.entries.findAnyByKey(fixture.publicationEntry.key),
                 null
             );
             assert.deepEqual(
@@ -469,7 +469,7 @@ Deno.test(
                 { headSequence: 0, sequences: [] }
             );
             assert.equal(
-                (await fixture.resourceInbox.findAnyByKey(fixture.workEntry.key))?.status,
+                (await fixture.resourceInbox.entries.findAnyByKey(fixture.workEntry.key))?.status,
                 EntityStatus.RESERVED
             );
             assert.equal(fixture.readReplayWakeCount(), 0);
@@ -488,7 +488,7 @@ Deno.test(
             const divergentResource = JSON.stringify({
                 collision: 'preexisting-divergent-topology-publication'
             });
-            await fixture.resourceInbox.write({
+            await fixture.resourceInbox.entries.write({
                 ...fixture.publicationEntry,
                 resource: divergentResource
             });
@@ -509,11 +509,11 @@ Deno.test(
                 await fixture.executionRepository.findSnapshot(fixture.groupRef),
                 undefined
             );
-            const consumed = await fixture.resourceInbox.findAnyByKey(fixture.workEntry.key);
+            const consumed = await fixture.resourceInbox.entries.findAnyByKey(fixture.workEntry.key);
             assert.equal(consumed?.status, EntityStatus.RESERVED);
             assert.equal(consumed?.dequeueAudit.attempts, 1);
             assert.equal(
-                (await fixture.resourceInbox.findAnyByKey(fixture.publicationEntry.key))
+                (await fixture.resourceInbox.entries.findAnyByKey(fixture.publicationEntry.key))
                     ?.resource,
                 divergentResource
             );
@@ -559,10 +559,10 @@ Deno.test(
                 undefined
             );
             assert.equal(
-                await fixture.resourceInbox.findAnyByKey(fixture.publicationEntry.key),
+                await fixture.resourceInbox.entries.findAnyByKey(fixture.publicationEntry.key),
                 null
             );
-            const consumed = await fixture.resourceInbox.findAnyByKey(fixture.workEntry.key);
+            const consumed = await fixture.resourceInbox.entries.findAnyByKey(fixture.workEntry.key);
             assert.equal(consumed?.status, EntityStatus.RESERVED);
             assert.equal(consumed?.dequeueAudit.attempts, 1);
             assert.deepEqual(

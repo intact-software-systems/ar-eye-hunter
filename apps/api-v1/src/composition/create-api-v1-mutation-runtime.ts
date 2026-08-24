@@ -1,9 +1,9 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import {
     ResourceInboxResultsRepository
-} from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+} from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import {
     createAppInboxRetryExhaustionHandler,
     createAppInboxRetryExhaustionRecoveryHandler,
@@ -81,7 +81,7 @@ export interface ApiV1MutationRuntime {
     readonly serviceId: string;
     readonly appInboxOptions: AppInboxOptions;
     readonly queueBox: PSqlQueueBox;
-    readonly resourceInboxRepository: ResourceInboxRepository;
+    readonly resourceInboxRepository: PSqlResourceInboxRepository;
     readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
     readonly webSocketServer: JsonWebSocketServer;
     readonly runtimeStateRepository: PSqlRuntimeStateRepository;
@@ -107,7 +107,7 @@ interface ApiV1StateMutationDependencies {
     readonly nowEpochMs: () => number;
     readonly timing: RallarTimingSink;
     readonly appInboxOptions: AppInboxOptions;
-    readonly resourceInboxRepository: ResourceInboxRepository;
+    readonly resourceInboxRepository: PSqlResourceInboxRepository;
     readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
     readonly runtimeStateRepository: PSqlRuntimeStateRepository;
     readonly authSessionRepository: AuthSessionRepository;
@@ -119,7 +119,7 @@ interface ApiV1StateMutationDependencies {
 
 interface ApiV1MutationResources {
     readonly queueBox: PSqlQueueBox;
-    readonly resourceInboxRepository: ResourceInboxRepository;
+    readonly resourceInboxRepository: PSqlResourceInboxRepository;
     readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
     readonly runtimeStateRepository: PSqlRuntimeStateRepository;
     readonly authSessionRepository: AuthSessionRepository;
@@ -194,7 +194,7 @@ export function createApiV1MutationRuntime(
 function createApiV1MutationResources(
     database: PSqlSql
 ): ApiV1MutationResources {
-    const resourceInboxRepository = new ResourceInboxRepository(database);
+    const resourceInboxRepository = createPSqlResourceInboxRepository(database);
     const resourceInboxResultsRepository = new ResourceInboxResultsRepository(database);
     const runtimeStateRepository = new PSqlRuntimeStateRepository(database);
     const authSessionRepository = new AuthSessionRepository(runtimeStateRepository);
@@ -254,7 +254,7 @@ function createApiV1MutationInboxFactories(
         adminClientIds: input.adminClientIds
     };
     const createAppCrdtInboxService = createApiCrdtInboxFactory({
-        resourceInboxRepository: resources.resourceInboxRepository,
+        resourceInboxRepository: resources.resourceInboxRepository.entries,
         resourceInboxResultsRepository: resources.resourceInboxResultsRepository,
         database: input.database,
         serviceId: input.serviceId,
@@ -299,7 +299,7 @@ function createGroupStateInboxServiceFactory(
         return new GroupStateInboxService(
             {
                 inboxQueueReader: inboxQueueReader,
-                resourceInboxRepository: input.resourceInboxRepository,
+                resourceInboxRepository: input.resourceInboxRepository.entries,
                 resourceInboxResultsRepository: input.resourceInboxResultsRepository,
                 database: input.database,
                 groupStateService: input.groupStateService
@@ -332,7 +332,7 @@ function createAppClientInboxServiceFactory(
         return new AppClientInboxService(
             {
                 inboxQueueReader: inboxQueueReader,
-                resourceInboxRepository: input.resourceInboxRepository,
+                resourceInboxRepository: input.resourceInboxRepository.entries,
                 resourceInboxResultsRepository: input.resourceInboxResultsRepository,
                 database: input.database,
                 clientStateService: clientStateService
@@ -356,7 +356,7 @@ function createAppAuthInboxServiceFactory(
         new AppAuthInboxService(
             {
                 inboxQueueReader: inboxQueueReader,
-                resourceInboxRepository: input.resourceInboxRepository,
+                resourceInboxRepository: input.resourceInboxRepository.entries,
                 resourceInboxResultsRepository: input.resourceInboxResultsRepository,
                 database: input.database,
                 authMutationService: createAuthMutationService({

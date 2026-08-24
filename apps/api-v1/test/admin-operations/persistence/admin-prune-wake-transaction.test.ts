@@ -1,6 +1,6 @@
-import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import assert from 'node:assert/strict';
@@ -16,7 +16,7 @@ Deno.test('committed initial admin page work wakes the running queue engine into
 
 Deno.test('initial admin page work does not wake until its successful transaction commits', async () => {
     await withUtcPGliteSql(async (sql) => {
-        const repository = new ResourceInboxRepository(sql);
+        const repository = createPSqlResourceInboxRepository(sql);
         const queue = new PSqlQueueBox(repository);
         const inbox = new InboxQueueReader(queue);
         const outbox = new OutboxQueueReader(queue);
@@ -98,7 +98,7 @@ Deno.test('initial admin page work does not wake until its successful transactio
 
 Deno.test('dry-run initial admin work does not wake after its transaction commits', async () => {
     await withUtcPGliteSql(async (sql) => {
-        const repository = new ResourceInboxRepository(sql);
+        const repository = createPSqlResourceInboxRepository(sql);
         const queue = new PSqlQueueBox(repository);
         const inbox = new InboxQueueReader(queue);
         const now = await readPGliteDatabaseEpochMs(sql);
@@ -152,7 +152,7 @@ Deno.test('dry-run initial admin work does not wake after its transaction commit
 
 Deno.test('rolled-back initial admin page work does not wake the queue', async () => {
     await withUtcPGliteSql(async (sql) => {
-        const repository = new ResourceInboxRepository(sql);
+        const repository = createPSqlResourceInboxRepository(sql);
         const queue = new PSqlQueueBox(repository);
         const inbox = new InboxQueueReader(queue);
         const now = await readPGliteDatabaseEpochMs(sql);
@@ -223,7 +223,7 @@ Deno.test('rolled-back initial admin page work does not wake the queue', async (
 
 Deno.test('rejected initial admin outbox write does not wake or persist page work', async () => {
     await withUtcPGliteSql(async (sql) => {
-        const repository = new ResourceInboxRepository(sql);
+        const repository = createPSqlResourceInboxRepository(sql);
         const queue = new PSqlQueueBox(repository);
         const inbox = new InboxQueueReader(queue);
         const now = await readPGliteDatabaseEpochMs(sql);

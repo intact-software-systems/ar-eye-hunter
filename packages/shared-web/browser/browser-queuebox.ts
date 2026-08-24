@@ -1,6 +1,6 @@
-import { IndexedDbQueueBox } from '@shared/queuebox/IndexedDbQueueBox.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
-import { QueueBoxResourceEntryRepository } from '@shared/queuebox/QueueBoxTypes.ts';
+import { IndexedDbQueueBox } from '@shared/queuebox/indexed-db-queue-box.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import { QueueBoxResourceEntryRepository } from '@shared/queuebox/queue-box-types.ts';
 import { tryRunInIntervals } from '@shared/resilience/TryWith.ts';
 import { BROWSER_AL_RUNTIME_DB_NAME } from './browser-al-runtime-stores.ts';
 

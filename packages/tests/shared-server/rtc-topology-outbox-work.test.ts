@@ -68,7 +68,7 @@ describe('RTC topology APP_OUTBOX work', () => {
         expect(completionSource).not.toMatch(/waitForRuntimeStateWriteRetry/);
         expect(completionSource).not.toMatch(/\bfor\s*\([^)]*attempt/);
         expect(completionSource).toMatch(
-            /new ResourceInboxRepository\(\s*transaction\s*\)\.finishReserved\(/
+            /new PSqlResourceInboxFinalizationRepository\(\s*transaction\s*,?\s*\)\.finishReserved\(/
         );
         expect(completionSource).toMatch(/throw new RuntimeStateWriteConflictError\(\)/);
     });

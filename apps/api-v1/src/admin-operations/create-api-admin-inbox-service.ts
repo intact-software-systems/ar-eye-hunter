@@ -6,9 +6,9 @@ import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { PSqlAdminOperationsPruner } from '@shared-server/postgres/admin-operations/p-sql-admin-operations-pruner.ts';
 import { PSqlAdminPruneRepository } from '@shared-server/postgres/admin-operations/p-sql-admin-prune-repository.ts';
 
-import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import type { PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
-import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import type { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import {
     AppAdminInboxService,
     createAdminPruneIdempotencyIdentity
@@ -36,7 +36,7 @@ export interface CreateApiAdminInboxServiceInput {
     inboxQueueReader: InboxQueueReader;
     outboxQueueReader: OutboxQueueReader;
     wakeQueueEngine: () => void;
-    resourceInboxRepository: ResourceInboxRepository;
+    resourceInboxRepository: PSqlResourceInboxRepository;
     resourceInboxResultsRepository: ResourceInboxResultsRepository;
     database: PSqlSql;
     serviceId: string;
@@ -86,7 +86,7 @@ export function createApiAdminInboxService(
     return new AppAdminInboxService(
         {
             inboxQueueReader: input.inboxQueueReader,
-            resourceInboxRepository: input.resourceInboxRepository,
+            resourceInboxRepository: input.resourceInboxRepository.entries,
             resourceInboxResultsRepository: input.resourceInboxResultsRepository,
             database: input.database,
             pruner: new PSqlAdminOperationsPruner(input.database),

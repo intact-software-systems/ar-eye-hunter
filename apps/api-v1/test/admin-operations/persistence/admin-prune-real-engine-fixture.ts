@@ -1,6 +1,6 @@
-import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import {
     includeInboxQueueReaderEngineTasks,
     includeOutboxQueueReaderEngineTasks
@@ -38,7 +38,7 @@ export class RealEngineAdminPruneFixture {
 
     private constructor(sql: PGliteSql, now: number) {
         this.now = now;
-        const repository = new ResourceInboxRepository(sql);
+        const repository = createPSqlResourceInboxRepository(sql);
         const queue = new PSqlQueueBox(repository);
         const inbox = new InboxQueueReader(queue);
         const outbox = new OutboxQueueReader(queue);

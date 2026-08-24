@@ -17,8 +17,8 @@ import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
 import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
 import {
     replaceFinishedResourceEntryIfMatch
-} from '../../postgres/resource-inbox/resource-inbox-finished-replacement.ts';
-import { ResourceInboxRepository } from '../../postgres/resource-inbox/ResourceInboxRepository.ts';
+} from '../../queuebox/postgres/resource-inbox-finished-replacement.ts';
+import { PSqlResourceInboxEntryRepository } from '../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
 
 export {
     COALESCED_APP_OUTBOX_WORK_FIELD,
@@ -89,7 +89,7 @@ export class CoalescedAppOutboxWorkService {
         transaction: PSqlSql,
         computed: ComputedCoalescedAppOutboxWork
     ): Promise<CoalescedAppOutboxWorkWriteResult> {
-        const repository = new ResourceInboxRepository(transaction);
+        const repository = new PSqlResourceInboxEntryRepository(transaction);
         const expected = computed.expectedEntry;
         if (expected === null) {
             const action = await repository.writeIfAbsentOrMatch(computed.entry);
@@ -145,7 +145,7 @@ export class CoalescedAppOutboxWorkService {
     }
 
     private async writeSuccessor(
-        repository: ResourceInboxRepository,
+        repository: PSqlResourceInboxEntryRepository,
         computed: ComputedCoalescedAppOutboxWork,
         expected: ResourceEntry
     ): Promise<CoalescedAppOutboxWorkWriteResult> {

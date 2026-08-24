@@ -20,7 +20,7 @@ import {
 import { EnqueuedType } from '../api/api-config.ts';
 import { Command } from '../cache/Command.ts';
 import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
-import { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
+import { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy } from '../resilience/TryWith.ts';
 import { JsonWebSocketClient } from '../websocket/JsonWebSocketClient.ts';

@@ -149,15 +149,15 @@ Deno.test(
 );
 
 Deno.test(
-    'group event routes retain recent-list fallback and paged-service ownership',
+    'group event routes use bounded recent listing and paged listing owners',
     async () => {
         const event = createGroupStateRouteEvent('event-1');
-        let listEventsCalls = 0;
+        let listRecentEventsCalls = 0;
         let listPageCalls = 0;
         const runtime = createGroupStateRouteTestRuntime({
             groupService: {
-                listEvents: () => {
-                    listEventsCalls += 1;
+                listRecentEvents: () => {
+                    listRecentEventsCalls += 1;
                     return Promise.resolve([event]);
                 },
                 listEventPage: () => {
@@ -174,7 +174,7 @@ Deno.test(
         assert.deepEqual(await arrayResponse.json(), [event]);
         assert.equal(pageResponse.status, 200);
         assert.deepEqual(await pageResponse.json(), { events: [event], hasMore: false });
-        assert.equal(listEventsCalls, 1);
+        assert.equal(listRecentEventsCalls, 1);
         assert.equal(listPageCalls, 1);
     }
 );

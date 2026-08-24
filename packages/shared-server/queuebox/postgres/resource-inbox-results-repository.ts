@@ -4,7 +4,7 @@ import {
     toPgTimestamp,
     toResultsDomain,
     toSystemDate
-} from '@shared-server/postgres/resource-inbox/repository-utils.ts';
+} from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import type { Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 export class ResourceInboxResultsRepository {

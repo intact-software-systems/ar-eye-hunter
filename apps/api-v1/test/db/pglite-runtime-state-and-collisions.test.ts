@@ -1,9 +1,9 @@
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import assert from 'node:assert/strict';
 
-import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
@@ -75,7 +75,7 @@ Deno.test(
                 collisionError = error instanceof Error ? error : new Error(String(error));
             }
 
-            const outbox = new ResourceInboxRepository(sql);
+            const outbox = createPSqlResourceInboxRepository(sql);
             assert.deepEqual(
                 {
                     isTypedCollision: collisionError instanceof ClientStateEventCollisionError,
@@ -100,7 +100,7 @@ Deno.test(
                         fixture.requestId
                     ) ?? null,
                     outbox: await Promise.all(
-                        fixture.computed.outboxEntries.map((entry) => outbox.findByKey(entry.key))
+                        fixture.computed.outboxEntries.map((entry) => outbox.entries.findByKey(entry.key))
                     ),
                     events: await fixture.events.listClientEvents({
                         ...fixture.scope,
@@ -159,9 +159,9 @@ Deno.test(
                 storedEvents.find((event) => event.eventId === fixture.computed.event.eventId),
                 fixture.computed.event
             );
-            const outbox = new ResourceInboxRepository(sql);
+            const outbox = createPSqlResourceInboxRepository(sql);
             for (const entry of fixture.computed.outboxEntries) {
-                assert.equal((await outbox.findByKey(entry.key))?.typeId, 'WS_OUTBOX');
+                assert.equal((await outbox.entries.findByKey(entry.key))?.typeId, 'WS_OUTBOX');
             }
         });
     }
@@ -627,7 +627,7 @@ Deno.test(
         await withPGliteSql(async (sql) => {
             const nowEpochMs = Date.parse('2026-07-23T00:00:00.000Z');
             const runtime = new PSqlRuntimeStateRepository(sql);
-            const resourceInbox = new ResourceInboxRepository(sql);
+            const resourceInbox = createPSqlResourceInboxRepository(sql);
             let retryReleaseCount = 0;
             class RetryObservedQueueBox extends PSqlQueueBox {
                 override async releaseEntries(
@@ -703,7 +703,7 @@ Deno.test(
             const appGroup = new TopologyInboxService(
                 {
                     inboxQueueReader: inboxReader,
-                    resourceInboxRepository: resourceInbox,
+                    resourceInboxRepository: resourceInbox.entries,
                     resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
                     database: sql,
                     groupStateService: groupState,

@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 
-import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import {
     ResourceInboxResultsRepository
-} from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+} from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AppInboxQueueClient, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { EntityStatus, toResourceEntryWithUpdatedResource } from '@shared/queuebox/ResourceEntry.ts';
@@ -33,12 +33,12 @@ export async function readPGliteAppInboxFailure(
     resourceId: string,
     resource: JsonWireValue
 ) {
-    const inbox = new ResourceInboxRepository(sql);
+    const inbox = createPSqlResourceInboxRepository(sql);
     const results = new ResourceInboxResultsRepository(sql);
     const service = new AppInboxQueueClient(
         {
             inboxQueueReader: new InboxQueueReader(new PSqlQueueBox(inbox)),
-            resourceInboxRepository: inbox,
+            resourceInboxRepository: inbox.entries,
             resourceInboxResultsRepository: results
         },
         {
@@ -64,9 +64,9 @@ export async function readPGliteAppInboxFailure(
         resourceId,
         contextId: enqueue.contextId
     };
-    const entry = await inbox.findByKey(key);
+    const entry = await inbox.entries.findByKey(key);
     assert.ok(entry);
-    const reserved = await inbox.startProcessingEntity(entry);
+    const reserved = await inbox.reservations.startProcessingEntity(entry);
     assert.ok(reserved.right);
     await results.replace(
         toResourceEntryWithUpdatedResource(
@@ -76,7 +76,7 @@ export async function readPGliteAppInboxFailure(
         )
     );
     assert.ok(
-        await inbox.finishReserved(
+        await inbox.finalization.finishReserved(
             key,
             reserved.right.dequeueAudit.attempts,
             EntityStatus.FAILED,

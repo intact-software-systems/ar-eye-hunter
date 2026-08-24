@@ -31,7 +31,7 @@ import { readGroupMemberSessionIds, type AnyGroupPresence } from '../api/group-c
 import type { GroupRef } from '../api/group-types.ts';
 import { ReadableKeyedValues } from '../cache/RepositoryInterfaces.ts';
 import { ResilienceDto } from '../queuebox/DequeueResourceEntryController.ts';
-import { QueueBoxResourceEntryRepository } from '../queuebox/QueueBoxTypes.ts';
+import { QueueBoxResourceEntryRepository } from '../queuebox/queue-box-types.ts';
 import { ResourceEntry } from '../queuebox/ResourceEntry.ts';
 import { CircuitBreaker, toCircuitBreaker } from '../resilience/circuit-breaker.ts';
 import { RateLimiter, toRateLimiter } from '../resilience/Resilience.ts';

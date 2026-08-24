@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import type { RallarWsLifecycleHandlers } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';

@@ -14,13 +14,13 @@ import {
     ResourceInboxLostReservationError,
     ResourceInboxReleaseDisposition,
     ResourceInboxReservationInput,
-    ResourceInboxWorkAdvertisementInput,
+    ResourceInboxWorkAdvertisementOptions,
     toResourceInboxFairnessReservationOptions,
     toResourceInboxFinalizationReservationOptions,
     toResourceInboxReleaseDisposition,
     toResourceInboxReservationOptions,
     toResourceInboxWorkAdvertisementOptions
-} from './QueueBoxTypes.ts';
+} from './queue-box-types.ts';
 import {
     COMPLETED_STATUSES,
     EntityStatus,
@@ -757,15 +757,10 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
 
     async isAnyEntryToLock(
         typeIds: Set<string>,
-        workInput: ResourceInboxWorkAdvertisementInput,
-        legacyCheckFairness?: RateLimiter
+        workInput: ResourceInboxWorkAdvertisementOptions
     ): Promise<boolean> {
         const { checkTimeout, checkFinalization, maxAttempts, finalizationStaleAfterMs } =
-            toResourceInboxWorkAdvertisementOptions(
-                workInput,
-                legacyCheckFairness,
-                DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
-            );
+            toResourceInboxWorkAdvertisementOptions(workInput);
         const isTimedOutEntryToLock = await RateLimiter.tryToExecuteOrDefault(
             checkTimeout,
             async () =>
@@ -968,8 +963,7 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
                             'keyString'
                         ],
                         unique: false
-                    }],
-                    migrateOnUpgrade: (store) => this.migrateFairnessDueEpochMs(store)
+                    }]
                 }
             ).then((db) => {
                 db.onversionchange = () => {
@@ -981,29 +975,6 @@ export class IndexedDbQueueBox implements QueueBoxResourceEntryRepository {
         }
 
         return await this.dbPromise;
-    }
-
-    private migrateFairnessDueEpochMs(store: IDBObjectStore): void {
-        const request = store.openCursor();
-        request.onsuccess = () => {
-            const cursor = request.result;
-            if (!cursor) {
-                return;
-            }
-
-            const stored = cursor.value as StoredResourceEntry;
-            const nextTs = toOptionalInstant(stored.dequeueAudit.nextTs);
-            const fairnessDueEpochMs = nextTs
-                ? Number(nextTs.epochMilliseconds)
-                : undefined;
-            if (stored.fairnessDueEpochMs !== fairnessDueEpochMs) {
-                cursor.update({
-                    ...stored,
-                    fairnessDueEpochMs
-                });
-            }
-            cursor.continue();
-        };
     }
 
     private toStoredEntry(entry: ResourceEntry): StoredResourceEntry {

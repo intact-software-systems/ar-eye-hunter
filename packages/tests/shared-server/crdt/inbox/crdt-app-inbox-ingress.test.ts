@@ -3,14 +3,14 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { RALLAR_CRDT_OPERATION_VERSION, RALLAR_CRDT_PROTOCOL_VERSION, type RallarCrdtDocumentRef, type RallarCrdtUpdateEnvelope } from '@shared/crdt/mod.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { resourceInboxRetryExpiryAtEpochMs } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 
 import { AppCrdtInboxService, CRDT_APP_INBOX_TOPIC } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
 
@@ -129,7 +129,7 @@ function appCrdt(inbox: InboxQueueReader): AppCrdtInboxService {
     return new AppCrdtInboxService(
         {
             inboxQueueReader: inbox,
-            resourceInboxRepository: new ResourceInboxRepository(database),
+            resourceInboxRepository: createPSqlResourceInboxRepository(database).entries,
             resourceInboxResultsRepository: new ResourceInboxResultsRepository(database),
             database,
             mutationService: createCrdtMutationService({

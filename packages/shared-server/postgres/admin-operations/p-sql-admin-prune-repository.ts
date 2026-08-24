@@ -10,8 +10,9 @@ import {
     toAdminPruneAggregateKey
 } from '../../rallar-system/admin-operations/prune/admin-prune-progress.ts';
 import type { PSqlSql } from '../p-sql-sql.ts';
-import { ResourceInboxRepository } from '../resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from '../resource-inbox/ResourceInboxResultsRepository.ts';
+import { PSqlResourceInboxEntryRepository } from '../../queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import { PSqlResourceInboxFinalizationRepository } from '../../queuebox/postgres/p-sql-resource-inbox-finalization-repository.ts';
+import { ResourceInboxResultsRepository } from '../../queuebox/postgres/resource-inbox-results-repository.ts';
 
 type RuntimeRow = Readonly<{ store_namespace: string; store_key: string; }>;
 type ResourceRow = Readonly<{ ri_row_id: number | string; }>;
@@ -63,7 +64,7 @@ export class PSqlAdminPruneRepository implements AdminPrunePageRepository {
     }
 
     async writeOutbox(transaction: PSqlSql, entry: ResourceEntry): Promise<void> {
-        await new ResourceInboxRepository(transaction).write(entry);
+        await new PSqlResourceInboxEntryRepository(transaction).write(entry);
     }
 
     async writeProgress(
@@ -94,7 +95,7 @@ export class PSqlAdminPruneRepository implements AdminPrunePageRepository {
         entry: ResourceEntry,
         finishedAtEpochMs: number
     ): Promise<boolean> {
-        return await new ResourceInboxRepository(transaction).finishReserved(
+        return await new PSqlResourceInboxFinalizationRepository(transaction).finishReserved(
             entry.key,
             entry.dequeueAudit.attempts,
             EntityStatus.COMPLETED,

@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 
 import { RALLAR_CRDT_PROTOCOL_VERSION, toRallarCrdtDocumentKey, type RallarCrdtDocumentRef, type RallarCrdtSnapshotEnvelope } from '@shared/crdt/mod.ts';
 
-import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
 
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import { decodeExactSnapshotEnvelope } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-value-codec.ts';
@@ -193,12 +193,12 @@ function createRetryMutationScenario(sql: PGliteSql, now: number): RetryMutation
     const database = withCompetingWrite(sql, now, () => {
         membershipAllowed = false;
     });
-    const resourceInbox = new ResourceInboxRepository(sql);
+    const resourceInbox = createPSqlResourceInboxRepository(sql);
     const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
     return {
         service: createApiCrdtInboxService({
             inboxQueueReader,
-            resourceInboxRepository: resourceInbox,
+            resourceInboxRepository: resourceInbox.entries,
             resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
             database,
             serviceId: 'server-1',

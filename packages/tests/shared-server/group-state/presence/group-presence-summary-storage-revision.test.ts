@@ -1,5 +1,5 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { parseTemporalPlainDateTime, toPgTimestamp } from '@shared-server/postgres/resource-inbox/repository-utils.ts';
+import { parseTemporalPlainDateTime, toPgTimestamp } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
 import type {
     GroupMutationCommand,
     GroupMutationFacts,

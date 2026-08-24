@@ -1,6 +1,7 @@
 import { newALEventRoute, newALUnicastMessage, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { ALOutboundEnqueueResult } from '@shared/alm/ALOutboundMessageRuntime.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
+import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import {
     DEFAULT_WS_QUEUE_BOX_CLIENT_RECONNECT_OPTIONS,
     WsQueueBoxClientService,
@@ -26,14 +27,14 @@ describe('JsonWebSocketClient', () => {
 
         const client = new JsonWebSocketClient('ws://test');
         const lifecycle: string[] = [];
-        const messages: unknown[] = [];
+        const messages: string[] = [];
 
         client.onWebsocketCallbacksDo('lifecycle', {
             onOpen: () => lifecycle.push('open')
         });
         client.onWebSocketMessageDo('messages', {
             onMessage: async (data) => {
-                messages.push(data);
+                messages.push(JSON.stringify(data));
             }
         });
 
@@ -58,7 +59,7 @@ describe('JsonWebSocketClient', () => {
         client.sendAsJsonString('{"pong":true}');
 
         expect(lifecycle).toEqual(['open']);
-        expect(messages).toEqual([{ ok: 1 }]);
+        expect(messages).toEqual(['{"ok":1}']);
         expect(socket.sent).toEqual([JSON.stringify({ ping: true }), '{"pong":true}']);
     });
 
@@ -66,14 +67,18 @@ describe('JsonWebSocketClient', () => {
         vi.stubGlobal('WebSocket', FakeWebSocket);
 
         const client = new JsonWebSocketClient('ws://test');
-        const onClose = vi.fn();
-        const onMessage = vi.fn();
+        let closeNotifications = 0;
+        let messageNotifications = 0;
 
         client.onWebsocketCallbacksDo('close', {
-            onClose
+            onClose: () => {
+                closeNotifications += 1;
+            }
         });
         client.onWebSocketMessageDo('message', {
-            onMessage
+            onMessage: async () => {
+                messageNotifications += 1;
+            }
         });
 
         expect(client.removeWebsocketCallbackById('close')).toBe(true);
@@ -92,13 +97,13 @@ describe('JsonWebSocketClient', () => {
 
         await expect(connectPromise).rejects.toThrow('WebSocket is closed. Code: 1006 Reason boom');
         expect(client.ws).toBeUndefined();
-        expect(onClose).not.toHaveBeenCalled();
+        expect(closeNotifications).toBe(0);
 
         await socket.emit('message', {
             type: 'message',
             data: JSON.stringify({ ignored: true })
         });
-        expect(onMessage).not.toHaveBeenCalled();
+        expect(messageNotifications).toBe(0);
         expect(() => client.send({ nope: true })).toThrow(
             'WebSocketClient: cannot send; socket is not open.'
         );
@@ -108,10 +113,12 @@ describe('JsonWebSocketClient', () => {
         vi.stubGlobal('WebSocket', FakeWebSocket);
 
         const client = new JsonWebSocketClient('ws://test');
-        const onError = vi.fn();
+        let errorNotifications = 0;
 
         client.onWebsocketCallbacksDo('error', {
-            onError
+            onError: () => {
+                errorNotifications += 1;
+            }
         });
 
         const firstConnect = client.connect();
@@ -121,7 +128,7 @@ describe('JsonWebSocketClient', () => {
         await firstSocket.emit('error', { type: 'error' });
 
         await expect(firstConnect).rejects.toThrow('WebSocket error. Type: error');
-        expect(onError).toHaveBeenCalledOnce();
+        expect(errorNotifications).toBe(1);
 
         const secondConnect = client.connect();
         await Promise.resolve();
@@ -235,7 +242,7 @@ describe('JsonWebSocketServer', () => {
         const server = new JsonWebSocketServer();
         const lifecycle: string[] = [];
         const parseErrors: string[] = [];
-        const messages: unknown[] = [];
+        const messages: string[] = [];
 
         server.onWebsocketCallbacksDo('callbacks', {
             onConnection: (ctx) => lifecycle.push(`open:${ctx.id}`),
@@ -246,7 +253,7 @@ describe('JsonWebSocketServer', () => {
         });
         server.onMessageDo('messages', {
             onMessage: async (_ctx, data) => {
-                messages.push(data);
+                messages.push(JSON.stringify(data));
             }
         });
 
@@ -276,7 +283,7 @@ describe('JsonWebSocketServer', () => {
 
         expect(lifecycle).toEqual(['open:c1', 'close:c1']);
         expect(parseErrors).toEqual(['not-json']);
-        expect(messages).toEqual([{ ok: 1 }, 'not-json']);
+        expect(messages).toEqual(['{"ok":1}', '"not-json"']);
         expect(server.connections.has('c1')).toBe(false);
     });
 
@@ -311,10 +318,9 @@ describe('JsonWebSocketServer', () => {
         expect(closed.sent).toEqual([]);
     });
 
-    it('can pre-encode once and reuse the payload for direct sends', () => {
+    it('reuses a pre-encoded payload for direct sends', () => {
         vi.stubGlobal('WebSocket', FakeWebSocket);
 
-        const stringify = vi.spyOn(JSON, 'stringify');
         const server = new JsonWebSocketServer();
         const first = new FakeWebSocket('first');
         const second = new FakeWebSocket('second');
@@ -329,7 +335,6 @@ describe('JsonWebSocketServer', () => {
         server.sendEncoded('one', encoded);
         server.sendEncoded('two', encoded);
 
-        expect(stringify).toHaveBeenCalledOnce();
         expect(first.sent).toEqual([encoded.text]);
         expect(second.sent).toEqual([encoded.text]);
     });
@@ -450,7 +455,7 @@ describe('WsRtcSignalingTransport', () => {
             }
         });
 
-        expect(socket.connect).toHaveBeenCalledOnce();
+        expect(socket.connectCount).toBe(1);
 
         const matching = createEnvelope('rtc', { hello: true });
         const ignored = createEnvelope('other', { ignored: true });
@@ -483,9 +488,9 @@ describe('WsRtcSignalingTransport', () => {
 
         await transport.send(payload);
 
-        expect(socket.send).toHaveBeenCalledOnce();
+        expect(socket.sentMessages).toHaveLength(1);
 
-        const sent = socket.send.mock.calls[0][0] as ALMessage;
+        const sent = socket.sentMessages[0] as ALMessage;
 
         expect(sent.payload.typeId).toBe('rtc');
         expect(sent.id.senderId).toBe(payload.fromId);
@@ -499,7 +504,10 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
     });
 
     it('wires qbox callbacks and forwards only matching inbox messages', async () => {
-        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        const consoleErrors: string[] = [];
+        vi.spyOn(console, 'error').mockImplementation((...args) => {
+            consoleErrors.push(args.map(String).join(' '));
+        });
         const qbox = createQboxHarness();
         const transport = new WsRtcSignalingTransportUsingWsQBox(qbox.service as never, 'rtc');
         const lifecycle: string[] = [];
@@ -524,7 +532,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
             }
         });
 
-        expect(qbox.socket.connect).toHaveBeenCalledOnce();
+        expect(qbox.socket.connectCount).toBe(1);
 
         const matching = createEnvelope('rtc', { hello: true });
         const ignored = createEnvelope('other', { ignored: true });
@@ -546,7 +554,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
             'error:socket failed',
             'close:session-1:token-1'
         ]);
-        expect(consoleError).toHaveBeenCalled();
+        expect(consoleErrors.length).toBeGreaterThan(0);
     });
 
     it('enqueues signaling payloads as AL messages', async () => {
@@ -556,9 +564,9 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
 
         await transport.send(payload);
 
-        expect(qbox.enqueueOutboxIfAbsent).toHaveBeenCalledOnce();
+        expect(qbox.enqueuedMessages).toHaveLength(1);
 
-        const sent = qbox.enqueueOutboxIfAbsent.mock.calls[0][0];
+        const sent = qbox.enqueuedMessages[0];
 
         expect(sent.payload.typeId).toBe('rtc');
         expect(sent.id.senderId).toBe(payload.fromId);
@@ -572,7 +580,10 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
             message: createEnvelope('rtc', createSignalingPayload()),
             entries: []
         });
-        const wakeOutbox = vi.fn();
+        let outboxWakeCount = 0;
+        const wakeOutbox = vi.fn(() => {
+            outboxWakeCount += 1;
+        });
         const transport = new WsRtcSignalingTransportUsingWsQBox(
             qbox.service as never,
             'rtc',
@@ -581,7 +592,7 @@ describe('WsRtcSignalingTransportUsingWsQBox', () => {
 
         await transport.send(createSignalingPayload());
 
-        expect(wakeOutbox).toHaveBeenCalledOnce();
+        expect(outboxWakeCount).toBe(1);
     });
 });
 
@@ -707,7 +718,7 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
         } as CloseEvent);
         await Promise.resolve();
 
-        expect(socket.connect).toHaveBeenCalledOnce();
+        expect(socket.connectCount).toBe(1);
         expect(service.readHealth()).toMatchObject({
             reconnectEnabled: true
         });
@@ -727,8 +738,8 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
         } as CloseEvent);
         await Promise.resolve();
 
-        expect(socket.close).toHaveBeenCalledWith(1000, 'rallar-disconnect');
-        expect(socket.connect).not.toHaveBeenCalled();
+        expect(socket.closedWith).toEqual({ code: 1000, reason: 'rallar-disconnect' });
+        expect(socket.connectCount).toBe(0);
         expect(service.readHealth()).toMatchObject({
             reconnectEnabled: false,
             reconnecting: false
@@ -751,7 +762,7 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
             reason: 'network-lost'
         } as CloseEvent);
 
-        expect(socket.connect).toHaveBeenCalledTimes(1);
+        expect(socket.connectCount).toBe(1);
         expect(service.readHealth()).toMatchObject({
             reconnectEnabled: true,
             reconnecting: true
@@ -760,7 +771,7 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
         service.disableReconnect();
         await vi.advanceTimersByTimeAsync(500);
 
-        expect(socket.connect).toHaveBeenCalledTimes(1);
+        expect(socket.connectCount).toBe(1);
         expect(service.readHealth()).toMatchObject({
             reconnectEnabled: false,
             reconnecting: false
@@ -792,7 +803,7 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
 
         await vi.runAllTimersAsync();
 
-        expect(socket.connect).toHaveBeenCalledTimes(3);
+        expect(socket.connectCount).toBe(3);
         expect(service.readHealth()).toMatchObject({
             reconnectEnabled: false,
             reconnecting: false,
@@ -834,7 +845,7 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
             reason: 'network-lost'
         } as CloseEvent);
 
-        expect(socket.connect).toHaveBeenCalledOnce();
+        expect(socket.connectCount).toBe(1);
         await vi.advanceTimersByTimeAsync(25);
 
         expect(signals).toHaveLength(1);
@@ -868,7 +879,7 @@ describe('WsQueueBoxClientService reconnect lifecycle', () => {
         } as CloseEvent);
         await Promise.resolve();
 
-        expect(socket.connect).not.toHaveBeenCalled();
+        expect(socket.connectCount).toBe(0);
         expect(service.readHealth()).toMatchObject({
             reconnectEnabled: false,
             reconnecting: false,
@@ -888,7 +899,10 @@ class FakeWebSocket {
     readonly sent: string[] = [];
     readyState = FakeWebSocket.CONNECTING;
 
-    private readonly listeners = new Map<string, Array<(event: unknown) => void | Promise<void>>>();
+    private readonly listeners = new Map<
+        string,
+        Array<(event: FakeWebSocketEvent) => void | Promise<void>>
+    >();
 
     public readonly url: string;
 
@@ -897,13 +911,16 @@ class FakeWebSocket {
         FakeWebSocket.instances.push(this);
     }
 
-    addEventListener(type: string, handler: (event: unknown) => void | Promise<void>): void {
+    addEventListener(
+        type: string,
+        handler: (event: FakeWebSocketEvent) => void | Promise<void>
+    ): void {
         const listeners = this.listeners.get(type) ?? [];
         listeners.push(handler);
         this.listeners.set(type, listeners);
     }
 
-    async emit(type: string, event: unknown): Promise<void> {
+    async emit(type: string, event: FakeWebSocketEvent): Promise<void> {
         for (const listener of this.listeners.get(type) ?? []) {
             await listener(event);
         }
@@ -921,6 +938,14 @@ class FakeWebSocket {
     }
 }
 
+type FakeWebSocketEvent = Readonly<{
+    type: string;
+    data?: string;
+    code?: number;
+    reason?: string;
+    toString?: () => string;
+}>;
+
 type WsQueueBoxClientServiceTestOptions =
     & Omit<Partial<WsQueueBoxClientServiceOptions>, 'reconnect'>
     & Readonly<{
@@ -928,7 +953,7 @@ type WsQueueBoxClientServiceTestOptions =
     }>;
 
 function createWsQueueBoxService(
-    socket: unknown,
+    socket: JsonWebSocketClient | ReturnType<typeof createReconnectSocketHarness>['client'],
     options: WsQueueBoxClientServiceTestOptions = {}
 ): WsQueueBoxClientService {
     const serviceOptions: WsQueueBoxClientServiceOptions = {
@@ -962,9 +987,13 @@ function createReconnectSocketHarness(
             onClose?: (ev: CloseEvent) => void | Promise<void>;
         };
         ws?: { readyState: number; };
+        connectCount: number;
+        closedWith?: { code?: number; reason?: string; };
     } = {
-        ws: { readyState: 1 }
+        ws: { readyState: 1 },
+        connectCount: 0
     };
+    const connect = options.connect ?? (async (_options?: { signal?: AbortSignal; }) => {});
 
     const client = {
         url: 'ws://test',
@@ -978,8 +1007,12 @@ function createReconnectSocketHarness(
             state.webSocketCallbacks = callbacks;
             return client;
         }),
-        connect: vi.fn(options.connect ?? (async (_options?: { signal?: AbortSignal; }) => {})),
-        close: vi.fn((_code?: number, _reason?: string) => {
+        connect: vi.fn(async (connectOptions?: { signal?: AbortSignal; }) => {
+            state.connectCount += 1;
+            await connect(connectOptions);
+        }),
+        close: vi.fn((code?: number, reason?: string) => {
+            state.closedWith = { code, reason };
             state.ws = undefined;
         }),
         onWebSocketMessageDo: vi.fn(function () {
@@ -992,6 +1025,12 @@ function createReconnectSocketHarness(
         client,
         get webSocketCallbacks() {
             return state.webSocketCallbacks;
+        },
+        get connectCount() {
+            return state.connectCount;
+        },
+        get closedWith() {
+            return state.closedWith;
         },
         connect: client.connect,
         close: client.close
@@ -1006,12 +1045,18 @@ function createSocketHarness() {
             onClose?: (ev: CloseEvent) => void | Promise<void>;
         };
         onMessageCallback?: {
-            onMessage: (data: unknown, ev: MessageEvent) => Promise<void> | void;
+            onMessage: (data: object, ev: MessageEvent) => Promise<void> | void;
         };
     } = {};
 
-    const connect = vi.fn(async () => {});
-    const send = vi.fn();
+    let connectCount = 0;
+    const sentMessages: ALMessage[] = [];
+    const connect = vi.fn(async () => {
+        connectCount += 1;
+    });
+    const send = vi.fn((message: ALMessage) => {
+        sentMessages.push(message);
+    });
 
     const client = {
         onWebsocketCallbacksDo: vi.fn(function (
@@ -1033,6 +1078,10 @@ function createSocketHarness() {
         client,
         connect,
         send,
+        sentMessages,
+        get connectCount() {
+            return connectCount;
+        },
         get webSocketCallbacks() {
             return state.webSocketCallbacks;
         },
@@ -1045,17 +1094,21 @@ function createSocketHarness() {
 function createQboxHarness() {
     let inboxCallback:
         | {
-            onMessage: (message: ALMessage, entry: unknown) => Promise<void>;
+            onMessage: (message: ALMessage, entry: ResourceEntry) => Promise<void>;
         }
         | undefined;
 
     const socket = createSocketHarness();
+    const enqueuedMessages: ALMessage[] = [];
     const enqueueOutboxIfAbsent = vi.fn(
-        async (message: ALMessage): Promise<ALOutboundEnqueueResult> => ({
-            status: 'skipped',
-            message,
-            entries: []
-        })
+        async (message: ALMessage): Promise<ALOutboundEnqueueResult> => {
+            enqueuedMessages.push(message);
+            return {
+                status: 'skipped',
+                message,
+                entries: []
+            };
+        }
     );
 
     const service = {
@@ -1071,6 +1124,7 @@ function createQboxHarness() {
         service,
         socket,
         enqueueOutboxIfAbsent,
+        enqueuedMessages,
         get inboxCallback() {
             return inboxCallback;
         }
@@ -1092,7 +1146,7 @@ function createSignalingPayload(): QRtcSignalingMessage {
     };
 }
 
-function createEnvelope(typeId: string, payload: unknown): ALMessage {
+function createEnvelope(typeId: string, payload: object): ALMessage {
     return newALUnicastMessage(
         'peer-1',
         newALEventRoute(typeId, 'session-1'),

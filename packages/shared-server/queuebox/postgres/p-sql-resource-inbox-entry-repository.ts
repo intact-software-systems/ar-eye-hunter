@@ -1,27 +1,14 @@
-import { Temporal } from '@js-temporal/polyfill';
-import { EnqueuedType } from '@shared/api/api-config.ts';
-import {
-    toResourceInboxReleaseDisposition,
-    toResourceInboxReservationOptions,
-    type ResourceInboxReleaseDisposition,
-    type ResourceInboxReservationInput
-} from '@shared/queuebox/QueueBoxTypes.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
-import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
-import { Either } from '@shared/resilience/Either.ts';
-import type { PSqlSql } from '../p-sql-sql.ts';
-import { ResourceInboxRow, rowsToMap, toDomain, toPgTimestamp, toSystemDate } from './repository-utils.ts';
-import { requeueObservedResourceInboxDeliveryFailure } from './resource-inbox-delivery-failure.ts';
-import { writeMaterializedResourceInboxEntry } from './write-materialized-resource-inbox-entry.ts';
-export {
-    initResourceInboxExpiryEviction,
-    RESOURCE_INBOX_EXPIRY_EVICTION_INTERVAL_MS
-} from './ResourceInboxMaintenance.ts';
-
-export type StartProcessingEntitySkipped = Readonly<{
-    kind: 'expired-or-missing';
-    key: Key;
-}>;
+import type { PSqlSql } from '../../postgres/p-sql-sql.ts';
+import {
+    hasMatchingImmutableResourceInboxContent,
+    isValidResourceInboxLifecycle,
+    ResourceInboxRow,
+    rowsToMap,
+    toDomain,
+    toPgTimestamp,
+    toSystemDate
+} from './resource-inbox-row-codec.ts';
 
 export class ResourceInboxInvariantCorruptionError extends Error {
     readonly code = 'resource-inbox-invariant-corruption';
@@ -36,27 +23,13 @@ export class ResourceInboxInvariantCorruptionError extends Error {
     }
 }
 
-export class ResourceInboxRepository {
+export class PSqlResourceInboxEntryRepository {
     static readonly MAX_ROWS_TO_RETURN = 50;
 
     private readonly sql: PSqlSql;
 
     constructor(sql: PSqlSql) {
         this.sql = sql;
-    }
-
-    /**
-     * Run repository operations inside a transaction.
-     * Required for SELECT ... FOR UPDATE SKIP LOCKED to be meaningful.
-     */
-    async begin<T>(fn: (repo: ResourceInboxRepository) => Promise<T>): Promise<T> {
-        const newVar = await this.sql.begin<T>(
-            async (sql: PSqlSql) => {
-                return await fn(new ResourceInboxRepository(sql));
-            }
-        );
-
-        return newVar as T;
     }
 
     // ---------------------------------
@@ -360,16 +333,29 @@ export class ResourceInboxRepository {
         placeholder: ResourceEntry,
         materialize: () => Promise<ResourceEntry>
     ): Promise<ResourceEntry> {
-        return await writeMaterializedResourceInboxEntry(
-            this,
-            placeholder,
-            materialize,
-            (key) =>
-                new ResourceInboxInvariantCorruptionError(
-                    key,
+        return await this.sql.begin(async (transactionSql) => {
+            const transaction = new PSqlResourceInboxEntryRepository(transactionSql);
+            const reserved = await transaction.tryWriteIfAbsentOrReplaceExpired(placeholder);
+            if (!reserved) {
+                const existing = await transaction.findAnyByKey(placeholder.key);
+                if (existing) {
+                    return existing;
+                }
+                throw new Error('Materialized write lost its conflicting resource inbox row');
+            }
+
+            const materialized = await materialize();
+            if (!hasReservedIdentity(reserved, materialized)) {
+                throw new ResourceInboxInvariantCorruptionError(
+                    reserved.key,
                     'Materialized resource inbox identity differs from its reservation'
-                )
-        );
+                );
+            }
+            return await transaction.replace({
+                ...reserved,
+                resource: materialized.resource
+            });
+        });
     }
 
     async tryWriteIfAbsentOrReplaceExpired(
@@ -492,7 +478,7 @@ export class ResourceInboxRepository {
             where ri_topic_id = ${topicId}
               and expire_ts > ${now}
             order by ri_row_id
-            limit ${ResourceInboxRepository.MAX_ROWS_TO_RETURN}
+            limit ${PSqlResourceInboxEntryRepository.MAX_ROWS_TO_RETURN}
         `;
         return rowsToMap(rows);
     }
@@ -505,7 +491,7 @@ export class ResourceInboxRepository {
             where ri_type_id = ${typeId}
               and expire_ts > ${now}
             order by ri_row_id
-            limit ${ResourceInboxRepository.MAX_ROWS_TO_RETURN}
+            limit ${PSqlResourceInboxEntryRepository.MAX_ROWS_TO_RETURN}
         `;
         return rowsToMap(rows);
     }
@@ -513,178 +499,6 @@ export class ResourceInboxRepository {
     // ---------------------------------
     // SKIP LOCKED selectors (must be in tx)
     // ---------------------------------
-
-    async findEntriesSkipLocked(
-        typeIds: ReadonlySet<string>,
-        statusIds: ReadonlySet<EntityStatus>,
-        reservationInput: ResourceInboxReservationInput
-    ): Promise<Map<string, ResourceEntry>> {
-        if (typeIds.size === 0 || statusIds.size === 0) {
-            return new Map();
-        }
-
-        const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
-            reservationInput,
-            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
-        );
-
-        const rows = await this.sql<ResourceInboxRow[]>`
-            select *
-            from resource_inbox
-            where ri_type_id in ${this.sql([...typeIds])}
-              and ri_status in ${this.sql([...statusIds])}
-              and ri_status <> ${EntityStatus.FAILED}
-              and expire_ts > (now() at time zone 'UTC')
-              and ri_attempts < ${maxAttempts}
-              and (
-                  (ri_status = ${EntityStatus.RETRY} and next_ts <= (now() at time zone 'UTC'))
-                  or
-                  (ri_status <> ${EntityStatus.RETRY} and start_ts is null
-                      and (next_ts is null or next_ts <= (now() at time zone 'UTC')))
-              )
-            order by next_ts asc nulls first, ri_row_id asc
-                for update skip locked
-            limit ${maxToReserve}
-        `;
-
-        return rowsToMap(rows);
-    }
-
-    async findOverdueRetryEntriesSkipLocked(
-        typeIds: ReadonlySet<string>,
-        overdueBeforeEpochMs: number,
-        reservationInput: ResourceInboxReservationInput
-    ): Promise<Map<string, ResourceEntry>> {
-        const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
-            reservationInput,
-            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
-        );
-        if (typeIds.size === 0 || maxToReserve <= 0) {
-            return new Map();
-        }
-
-        const overdueBefore = new Date(overdueBeforeEpochMs);
-        const rows = await this.sql<ResourceInboxRow[]>`
-            select *
-            from resource_inbox
-            where ri_type_id in ${this.sql([...typeIds])}
-              and ri_status = ${EntityStatus.RETRY}
-              and expire_ts > (now() at time zone 'UTC')
-              and next_ts <= ${overdueBefore}
-              and ri_attempts < ${maxAttempts}
-            order by next_ts asc, ri_row_id asc
-                for update skip locked
-            limit ${maxToReserve}
-        `;
-
-        return rowsToMap(rows);
-    }
-
-    async findTimedOutReservedEntriesSkipLocked(
-        typeIds: ReadonlySet<string>,
-        timeSinceStartMs: number,
-        reservationInput: ResourceInboxReservationInput
-    ): Promise<Map<string, ResourceEntry>> {
-        if (!Number.isSafeInteger(timeSinceStartMs) || timeSinceStartMs < 0) {
-            throw new Error(
-                'Reserved-entry timeout must be a non-negative safe integer in milliseconds'
-            );
-        }
-        if (typeIds.size === 0) {
-            return new Map();
-        }
-
-        const { maxToReserve, maxAttempts } = toResourceInboxReservationOptions(
-            reservationInput,
-            DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
-        );
-        const rows = await this.sql<ResourceInboxRow[]>`
-            select *
-            from resource_inbox
-            where ri_type_id in ${this.sql([...typeIds])}
-              and ri_status = ${EntityStatus.RESERVED}
-              and expire_ts > (now() at time zone 'UTC')
-              and ri_attempts < ${maxAttempts}
-              and start_ts is not null
-              and start_ts < (now() - (${timeSinceStartMs} * interval '1 millisecond')) at time zone 'UTC'
-            order by ri_row_id
-                for update skip locked
-            limit ${maxToReserve}
-        `;
-
-        return rowsToMap(rows);
-    }
-
-    async findRetryExhaustionFinalizationsSkipLocked(
-        typeIds: ReadonlySet<string>,
-        staleAfterMs: number,
-        options: Readonly<{ processingAttempts: number; maxToReserve: number; }>
-    ): Promise<Map<string, ResourceEntry>> {
-        if (!Number.isSafeInteger(staleAfterMs) || staleAfterMs < 0) {
-            throw new Error('Finalization stale duration must be a non-negative safe integer');
-        }
-        if (!Number.isSafeInteger(options.processingAttempts) || options.processingAttempts < 1) {
-            throw new Error('Finalization processing attempts must be a positive safe integer');
-        }
-        if (!Number.isSafeInteger(options.maxToReserve) || options.maxToReserve < 0) {
-            throw new Error('Finalization reservation limit must be a non-negative safe integer');
-        }
-        if (!typeIds.has(EnqueuedType.APP_INBOX) || options.maxToReserve === 0) {
-            return new Map();
-        }
-        const rows = await this.sql<ResourceInboxRow[]>`
-            select *
-            from resource_inbox
-            where ri_type_id = ${EnqueuedType.APP_INBOX}
-              and ri_status = ${EntityStatus.RESERVED}
-              and expire_ts > (now() at time zone 'UTC')
-              and ri_attempts >= ${options.processingAttempts}
-              and ri_attempts < ${Number.MAX_SAFE_INTEGER}
-              and start_ts is not null
-              and start_ts <= (now() - (${staleAfterMs} * interval '1 millisecond')) at time zone 'UTC'
-            order by start_ts asc, ri_row_id asc
-                for update skip locked
-            limit ${options.maxToReserve}
-        `;
-        return rowsToMap(rows);
-    }
-
-    // ---------------------------------
-    // Existence checks
-    // ---------------------------------
-
-    async isEntriesToLock(
-        typeIds: ReadonlySet<string>,
-        statusIds: ReadonlySet<EntityStatus>,
-        maxAttempts: number = DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
-    ): Promise<boolean> {
-        if (typeIds.size === 0 || statusIds.size === 0) {
-            return false;
-        }
-
-        if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1) {
-            throw new Error('maxAttempts must be a positive safe integer');
-        }
-
-        const rows = await this.sql<{ one: number; }[]>`
-            select 1 as one
-            from resource_inbox
-            where ri_type_id in ${this.sql([...typeIds])}
-              and ri_status in ${this.sql([...statusIds])}
-              and ri_status <> ${EntityStatus.FAILED}
-              and expire_ts > (now() at time zone 'UTC')
-              and ri_attempts < ${maxAttempts}
-              and (
-                  (ri_status = ${EntityStatus.RETRY} and next_ts <= (now() at time zone 'UTC'))
-                  or
-                  (ri_status <> ${EntityStatus.RETRY} and start_ts is null
-                      and (next_ts is null or next_ts <= (now() at time zone 'UTC')))
-              )
-            limit 1
-        `;
-
-        return rows.length > 0;
-    }
 
     async isAnyWithStatuses(statuses: ReadonlySet<EntityStatus>): Promise<boolean> {
         if (statuses.size === 0) {
@@ -701,63 +515,6 @@ export class ResourceInboxRepository {
             limit 1
         `;
 
-        return rows.length > 0;
-    }
-
-    async isTimeoutOnReservedEntries(
-        typeIds: ReadonlySet<string>,
-        timeSinceStartTs: Temporal.Duration,
-        maxAttempts: number = DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
-    ): Promise<boolean> {
-        if (typeIds.size === 0) {
-            return false;
-        }
-
-        const timeoutMs = timeSinceStartTs.total({ unit: 'milliseconds' });
-        if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0) {
-            throw new Error(
-                'Reserved-entry timeout must be a non-negative safe integer in milliseconds'
-            );
-        }
-        if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1) {
-            throw new Error('maxAttempts must be a positive safe integer');
-        }
-
-        const rows = await this.sql<{ one: number; }[]>`
-                    select 1 as one
-                    from resource_inbox
-                    where ri_type_id in ${this.sql([...typeIds])}
-                      and ri_status in ${this.sql([EntityStatus.RESERVED])}
-                      and expire_ts > (now() at time zone 'UTC')
-                      and ri_attempts < ${maxAttempts}
-                      and start_ts is not null
-                      and start_ts < (now() - (${timeoutMs} * interval '1 millisecond')) at time zone 'UTC'
-                    limit 1
-                `;
-
-        return rows.length > 0;
-    }
-
-    async isRetryExhaustionFinalizationRequired(
-        typeIds: ReadonlySet<string>,
-        staleAfterMs: number,
-        processingAttempts: number
-    ): Promise<boolean> {
-        if (!typeIds.has(EnqueuedType.APP_INBOX)) {
-            return false;
-        }
-        const rows = await this.sql<{ one: number; }[]>`
-            select 1 as one
-            from resource_inbox
-            where ri_type_id = ${EnqueuedType.APP_INBOX}
-              and ri_status = ${EntityStatus.RESERVED}
-              and expire_ts > (now() at time zone 'UTC')
-              and ri_attempts >= ${processingAttempts}
-              and ri_attempts < ${Number.MAX_SAFE_INTEGER}
-              and start_ts is not null
-              and start_ts <= (now() - (${staleAfterMs} * interval '1 millisecond')) at time zone 'UTC'
-            limit 1
-        `;
         return rows.length > 0;
     }
 
@@ -785,180 +542,6 @@ export class ResourceInboxRepository {
     // ---------------------------------
     // State transitions
     // ---------------------------------
-
-    async startProcessingEntity(
-        entry: ResourceEntry,
-        maxAttempts: number = DEFAULT_RESOURCE_INBOX_RETRY_POLICY.maxAttempts
-    ): Promise<Either<StartProcessingEntitySkipped, ResourceEntry>> {
-        const attempts = (entry.dequeueAudit.attempts ?? 0) + 1;
-
-        const rows = await this.sql<ResourceInboxRow[]>`
-            update resource_inbox
-            set ri_status   = ${EntityStatus.RESERVED},
-                ri_attempts = ${attempts},
-                start_ts    = now() at time zone 'UTC',
-                end_ts      = ${null},
-                next_ts     = ${null}
-            where ri_topic_id = ${entry.key.topicId}
-              and ri_resource_id = ${entry.key.resourceId}
-              and fk_ext_bank_id = ${entry.key.contextId}
-              and expire_ts > (now() at time zone 'UTC')
-              and ri_attempts < ${maxAttempts}
-            returning *
-        `;
-
-        return rows.length === 0
-            ? Either.ofLeft<StartProcessingEntitySkipped, ResourceEntry>({
-                kind: 'expired-or-missing',
-                key: entry.key
-            })
-            : Either.ofRight<StartProcessingEntitySkipped, ResourceEntry>(toDomain(rows[0]));
-    }
-
-    async startFinalizationRecovery(
-        entry: ResourceEntry,
-        processingAttempts: number
-    ): Promise<Either<StartProcessingEntitySkipped, ResourceEntry>> {
-        if (entry.dequeueAudit.attempts >= Number.MAX_SAFE_INTEGER) {
-            throw new RangeError('Resource inbox finalization reservation generation overflow');
-        }
-        const rows = await this.sql<ResourceInboxRow[]>`
-            update resource_inbox
-            set ri_attempts = ri_attempts + 1,
-                start_ts = now() at time zone 'UTC',
-                end_ts = null,
-                next_ts = null
-            where ri_topic_id = ${entry.key.topicId}
-              and ri_resource_id = ${entry.key.resourceId}
-              and fk_ext_bank_id = ${entry.key.contextId}
-              and ri_type_id = ${EnqueuedType.APP_INBOX}
-              and ri_status = ${EntityStatus.RESERVED}
-              and expire_ts > (now() at time zone 'UTC')
-              and ri_attempts = ${entry.dequeueAudit.attempts}
-              and ri_attempts >= ${processingAttempts}
-              and ri_attempts < ${Number.MAX_SAFE_INTEGER}
-            returning *
-        `;
-        return rows.length === 0
-            ? Either.ofLeft({ kind: 'expired-or-missing', key: entry.key })
-            : Either.ofRight(toDomain(rows[0]));
-    }
-
-    async updateResourceEntry(
-        key: Key,
-        newStatus: EntityStatus,
-        timeUntilNextAttemptMs: number | null
-    ): Promise<number> {
-        if (
-            timeUntilNextAttemptMs !== null &&
-            (!Number.isSafeInteger(timeUntilNextAttemptMs) || timeUntilNextAttemptMs < 0)
-        ) {
-            throw new Error('Resource inbox release delay must be a non-negative integer or null');
-        }
-
-        const endTs = new Date();
-        const nextTs = timeUntilNextAttemptMs !== null
-            ? new Date(endTs.getTime() + timeUntilNextAttemptMs)
-            : null;
-
-        const rows = await this.sql<{ ri_row_id: bigint; }[]>`
-            update resource_inbox
-            set ri_status = ${newStatus},
-                end_ts    = ${endTs},
-                next_ts   = ${nextTs}
-            where ri_topic_id = ${key.topicId}
-              and ri_resource_id = ${key.resourceId}
-              and fk_ext_bank_id = ${key.contextId}
-            returning ri_row_id
-        `;
-
-        return rows.length;
-    }
-
-    async releaseReserved(
-        key: Key,
-        options: Readonly<{
-            expectedAttempts: number;
-            releasedAt: Temporal.Instant;
-            disposition: ResourceInboxReleaseDisposition;
-        }>
-    ): Promise<ResourceEntry | null> {
-        const disposition = toResourceInboxReleaseDisposition(options.disposition);
-
-        const persistedReleasedAt = Temporal.Instant.fromEpochMilliseconds(
-            Number(options.releasedAt.epochMilliseconds)
-        );
-        const endTs = new Date(Number(persistedReleasedAt.epochMilliseconds));
-        const nextTs = disposition.delayMs !== null
-            ? new Date(endTs.getTime() + disposition.delayMs)
-            : null;
-        const rows = await this.sql<ResourceInboxRow[]>`
-            update resource_inbox
-            set ri_status = ${disposition.status},
-                end_ts    = ${endTs},
-                next_ts   = ${nextTs}
-            where ri_topic_id = ${key.topicId}
-              and ri_resource_id = ${key.resourceId}
-              and fk_ext_bank_id = ${key.contextId}
-              and ri_status = ${EntityStatus.RESERVED}
-              and ri_attempts = ${options.expectedAttempts}
-              and expire_ts > (now() at time zone 'UTC')
-            returning *
-        `;
-
-        if (rows.length !== 1) {
-            return null;
-        }
-
-        const released = toDomain(rows[0]);
-        return {
-            ...released,
-            dequeueAudit: {
-                ...released.dequeueAudit,
-                endTs: persistedReleasedAt,
-                nextTs: disposition.delayMs !== null
-                    ? persistedReleasedAt.add({ milliseconds: disposition.delayMs })
-                    : undefined
-            }
-        };
-    }
-
-    async finishReserved(
-        key: Key,
-        expectedAttempts: number,
-        status: typeof EntityStatus.COMPLETED | typeof EntityStatus.FAILED,
-        completedAt: Date
-    ): Promise<boolean> {
-        if (
-            status !== EntityStatus.COMPLETED &&
-            status !== EntityStatus.FAILED
-        ) {
-            throw new Error(
-                'Resource inbox reservation finish status must be COMPLETED or FAILED'
-            );
-        }
-
-        const rows = await this.sql<{ ri_row_id: bigint; }[]>`
-            update resource_inbox
-            set ri_status = ${status}, end_ts = ${completedAt}, next_ts = null
-            where ri_topic_id = ${key.topicId}
-              and ri_resource_id = ${key.resourceId}
-              and fk_ext_bank_id = ${key.contextId}
-              and ri_status = 'RESERVED'
-              and ri_attempts = ${expectedAttempts}
-              and expire_ts > (now() at time zone 'UTC')
-            returning ri_row_id
-        `;
-
-        return rows.length === 1;
-    }
-
-    async requeueObservedDeliveryFailure(
-        observed: ResourceEntry,
-        disposition: ResourceInboxReleaseDisposition
-    ): Promise<ResourceEntry | null> {
-        return await requeueObservedResourceInboxDeliveryFailure(this.sql, observed, disposition);
-    }
 
     async upsert(entry: ResourceEntry): Promise<ResourceEntry> {
         const systemDate = toSystemDate(entry);
@@ -1026,130 +609,14 @@ export class ResourceInboxRepository {
         return rows.length === 1;
     }
 
-    async deleteExpired(): Promise<number> {
-        const rows = await this.sql<{ ri_row_id: bigint; }[]>`
-            delete
-            from resource_inbox
-            where expire_ts <= (now() at time zone 'UTC')
-            returning ri_row_id
-        `;
-
-        return rows.length;
-    }
 }
 
-const RESOURCE_INBOX_STATUSES = new Set<string>(Object.values(EntityStatus));
-
-function isValidResourceInboxLifecycle(row: ResourceInboxRow): boolean {
-    if (row.ri_attempts == null) {
-        return false;
-    }
-
-    const attempts = Number(row.ri_attempts);
-    if (
-        !RESOURCE_INBOX_STATUSES.has(row.ri_status) ||
-        !Number.isSafeInteger(attempts) ||
-        attempts < 0
-    ) {
-        return false;
-    }
-
-    let createdTs: Temporal.PlainDateTime;
-    let expiryTs: Temporal.PlainDateTime;
-    let startTs: Temporal.PlainDateTime | null;
-    let endTs: Temporal.PlainDateTime | null;
-    let nextTs: Temporal.PlainDateTime | null;
-    try {
-        createdTs = parsePostgresTimestamp6(row.created_ts);
-        expiryTs = parsePostgresTimestamp6(row.expire_ts);
-        startTs = row.start_ts ? parsePostgresTimestamp6(row.start_ts) : null;
-        endTs = row.end_ts ? parsePostgresTimestamp6(row.end_ts) : null;
-        nextTs = row.next_ts ? parsePostgresTimestamp6(row.next_ts) : null;
-    }
-    catch {
-        return false;
-    }
-
-    if (
-        Temporal.PlainDateTime.compare(createdTs, expiryTs) >= 0 ||
-        (startTs && Temporal.PlainDateTime.compare(startTs, createdTs) < 0) ||
-        (endTs && (!startTs || Temporal.PlainDateTime.compare(endTs, startTs) < 0)) ||
-        (nextTs && endTs && Temporal.PlainDateTime.compare(nextTs, endTs) < 0) ||
-        (nextTs && !endTs && Temporal.PlainDateTime.compare(nextTs, createdTs) < 0)
-    ) {
-        return false;
-    }
-
-    switch (row.ri_status as EntityStatus) {
-        case EntityStatus.NEW:
-            return attempts === 0 && !startTs && !endTs && !nextTs;
-        case EntityStatus.RETRY:
-            return attempts === 0
-                ? !startTs && !endTs && nextTs !== null
-                : startTs !== null && endTs !== null && nextTs !== null;
-        case EntityStatus.RESERVED:
-            return attempts > 0 && startTs !== null && !endTs && !nextTs;
-        case EntityStatus.FAILED:
-            return attempts > 0 && startTs !== null && endTs !== null;
-        case EntityStatus.COMPLETED:
-        case EntityStatus.ABORTED:
-        case EntityStatus.NON_RETRYABLE:
-        case EntityStatus.PARTITIONED:
-        case EntityStatus.MERGED:
-            return attempts > 0 && startTs !== null && endTs !== null && !nextTs;
-    }
-}
-
-function hasMatchingImmutableResourceInboxContent(
-    row: ResourceInboxRow,
-    entry: ResourceEntry
+function hasReservedIdentity(
+    reserved: ResourceEntry,
+    materialized: ResourceEntry
 ): boolean {
-    try {
-        return row.ri_topic_id === entry.key.topicId &&
-            row.ri_resource_id === entry.key.resourceId &&
-            row.fk_ext_bank_id === entry.key.contextId &&
-            row.ri_type_id === entry.typeId &&
-            row.ri_resource === entry.resource &&
-            row.created_by === entry.audit.createdBy &&
-            isSamePostgresTimestamp6(row.created_ts, entry.audit.createdTs) &&
-            isSamePostgresTimestamp6(row.expire_ts, entry.audit.expiryTs);
-    }
-    catch {
-        return false;
-    }
-}
-
-function isSamePostgresTimestamp6(
-    persisted: string,
-    candidate: Temporal.PlainDateTime | Temporal.Instant
-): boolean {
-    return Temporal.PlainDateTime.compare(
-        parsePostgresTimestamp6(persisted),
-        toPostgresTimestamp6(candidate)
-    ) === 0;
-}
-
-function parsePostgresTimestamp6(value: string): Temporal.PlainDateTime {
-    if (/[zZ]$/u.test(value) || /[+-]\d{2}(?::?\d{2})?$/u.test(value)) {
-        throw new RangeError('PostgreSQL timestamp without time zone contains a zone');
-    }
-
-    const timestamp = Temporal.PlainDateTime.from(value.replace(' ', 'T'));
-    if (timestamp.nanosecond !== 0) {
-        throw new RangeError('PostgreSQL timestamp(6) exceeds microsecond precision');
-    }
-    return timestamp;
-}
-
-function toPostgresTimestamp6(
-    value: Temporal.PlainDateTime | Temporal.Instant
-): Temporal.PlainDateTime {
-    const timestamp = value instanceof Temporal.Instant
-        ? value.toZonedDateTimeISO('UTC').toPlainDateTime()
-        : value;
-
-    return timestamp.round({
-        smallestUnit: 'microsecond',
-        roundingMode: 'halfEven'
-    });
+    return materialized.key.topicId === reserved.key.topicId &&
+        materialized.key.resourceId === reserved.key.resourceId &&
+        materialized.key.contextId === reserved.key.contextId &&
+        materialized.typeId === reserved.typeId;
 }

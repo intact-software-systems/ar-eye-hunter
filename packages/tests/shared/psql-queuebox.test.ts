@@ -1,6 +1,6 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { PSqlResultsQueueBox } from '@shared-server/postgres/queuebox/PSqlResultsQueueBox.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { PSqlResultsQueueBox } from '@shared-server/queuebox/postgres/p-sql-results-queue-box.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { EntityStatus, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
@@ -48,8 +48,8 @@ describe('PSqlQueueBox', () => {
         const returned = await queue.enqueue(replacement);
 
         expect(returned).toBe(previous);
-        expect(repo.findAnyByKey).toHaveBeenCalledWith(replacement.key);
-        expect(repo.replace).toHaveBeenCalledWith(replacement);
+        expect(repo.entries.findAnyByKey).toHaveBeenCalledWith(replacement.key);
+        expect(repo.entries.replace).toHaveBeenCalledWith(replacement);
     });
 
     it('enqueueIfAbsent delegates to the insert-if-absent repository operation', async () => {
@@ -66,7 +66,7 @@ describe('PSqlQueueBox', () => {
         const returned = await queue.enqueueIfAbsent(entry);
 
         expect(returned).toBe(existing);
-        expect(repo.writeIfAbsentOrReplaceExpired).toHaveBeenCalledWith(entry);
+        expect(repo.entries.writeIfAbsentOrReplaceExpired).toHaveBeenCalledWith(entry);
     });
 
     it('enqueueIf does not overwrite active entries when the predicate returns false', async () => {
@@ -75,8 +75,13 @@ describe('PSqlQueueBox', () => {
             resource: JSON.stringify({ resourceId: 'entry-1', version: 2 })
         });
         const enqueueIt = vi.fn(() => false);
+        let replacementWritten = false;
         const repo = createRepo({
-            findAnyByKey: vi.fn(async () => previous)
+            findAnyByKey: vi.fn(async () => previous),
+            replace: async (entry) => {
+                replacementWritten = true;
+                return entry;
+            }
         });
 
         const queue = new PSqlQueueBox(repo as never);
@@ -84,7 +89,7 @@ describe('PSqlQueueBox', () => {
 
         expect(returned).toBe(previous);
         expect(enqueueIt).toHaveBeenCalledWith(previous);
-        expect(repo.replace).not.toHaveBeenCalled();
+        expect(replacementWritten).toBe(false);
     });
 
     it('enqueueIf overwrites active entries when the predicate returns true', async () => {
@@ -102,7 +107,7 @@ describe('PSqlQueueBox', () => {
 
         expect(returned).toBe(previous);
         expect(enqueueIt).toHaveBeenCalledWith(previous);
-        expect(repo.replace).toHaveBeenCalledWith(replacement);
+        expect(repo.entries.replace).toHaveBeenCalledWith(replacement);
     });
 
     it('enqueueIf overwrites expired entries without calling the predicate', async () => {
@@ -110,7 +115,11 @@ describe('PSqlQueueBox', () => {
             expiryTs: Temporal.Now.instant().subtract({ seconds: 1 })
         });
         const replacement = createEntry('entry-1');
-        const enqueueIt = vi.fn(() => false);
+        let predicateVisited = false;
+        const enqueueIt = () => {
+            predicateVisited = true;
+            return false;
+        };
         const repo = createRepo({
             findAnyByKey: vi.fn(async () => expired)
         });
@@ -119,8 +128,8 @@ describe('PSqlQueueBox', () => {
         const returned = await queue.enqueueIf(replacement, enqueueIt);
 
         expect(returned).toBeUndefined();
-        expect(enqueueIt).not.toHaveBeenCalled();
-        expect(repo.replace).toHaveBeenCalledWith(replacement);
+        expect(predicateVisited).toBe(false);
+        expect(repo.entries.replace).toHaveBeenCalledWith(replacement);
     });
 
     it('skips entries that can no longer be reserved after selection', async () => {
@@ -478,7 +487,7 @@ describe('PSqlQueueBox', () => {
         await expect(queue.releaseEntries([first, second], disposition as never))
             .rejects.toMatchObject({ code: 'resource-inbox-invalid-release-disposition' });
 
-        expect(repo.begin).not.toHaveBeenCalled();
+        expect(repo.transaction).not.toHaveBeenCalled();
         expect(releaseReserved).not.toHaveBeenCalled();
     });
 
@@ -533,8 +542,13 @@ describe('PSqlResultsQueueBox', () => {
             resource: JSON.stringify({ resourceId: 'entry-1', version: 2 })
         });
         const enqueueIt = vi.fn(() => false);
+        let replacementWritten = false;
         const repo = createResultsRepo({
-            findAnyByKey: vi.fn(async () => previous)
+            findAnyByKey: vi.fn(async () => previous),
+            replace: async (entry) => {
+                replacementWritten = true;
+                return entry;
+            }
         });
 
         const queue = new PSqlResultsQueueBox(repo as never);
@@ -542,7 +556,7 @@ describe('PSqlResultsQueueBox', () => {
 
         expect(returned).toBe(previous);
         expect(enqueueIt).toHaveBeenCalledWith(previous);
-        expect(repo.replace).not.toHaveBeenCalled();
+        expect(replacementWritten).toBe(false);
     });
 
     it('enqueueIf overwrites active entries when the predicate returns true', async () => {
@@ -568,7 +582,11 @@ describe('PSqlResultsQueueBox', () => {
             expiryTs: Temporal.Now.instant().subtract({ seconds: 1 })
         });
         const replacement = createEntry('entry-1');
-        const enqueueIt = vi.fn(() => false);
+        let predicateVisited = false;
+        const enqueueIt = () => {
+            predicateVisited = true;
+            return false;
+        };
         const repo = createResultsRepo({
             findAnyByKey: vi.fn(async () => expired)
         });
@@ -577,7 +595,7 @@ describe('PSqlResultsQueueBox', () => {
         const returned = await queue.enqueueIf(replacement, enqueueIt);
 
         expect(returned).toBeUndefined();
-        expect(enqueueIt).not.toHaveBeenCalled();
+        expect(predicateVisited).toBe(false);
         expect(repo.replace).toHaveBeenCalledWith(replacement);
     });
 });
@@ -619,21 +637,23 @@ function createRepo(overrides: {
     >;
     startFinalizationRecovery?: (entry: ResourceEntry, processingAttempts: number) => Promise<Either<{ kind: 'expired-or-missing'; key: Key; }, ResourceEntry>>;
 }) {
-    const repo = {
+    const entries = {
+        findAnyByKey: overrides.findAnyByKey ?? vi.fn(async () => null),
+        replace: overrides.replace ?? vi.fn(async (entry: ResourceEntry) => entry),
+        writeIfAbsentOrReplaceExpired: overrides.writeIfAbsentOrReplaceExpired ?? vi.fn(async (entry: ResourceEntry) => entry),
+        upsert: vi.fn(async (entry: ResourceEntry) => entry),
+        deleteByKey: vi.fn(async () => true),
+        findByKey: vi.fn(async () => null),
+        findAllKeys: vi.fn(async () => [])
+    };
+    const reservations = {
         isEntriesToLock: overrides.isEntriesToLock ?? vi.fn(async () => false),
         isTimeoutOnReservedEntries: overrides.isTimeoutOnReservedEntries ?? vi.fn(async () => false),
-        isRetryExhaustionFinalizationRequired: overrides.isRetryExhaustionFinalizationRequired ?? vi.fn(async () => false),
-        begin: vi.fn(async (fn: (txRepo: unknown) => Promise<unknown>) => await fn(repo)),
         findEntriesSkipLocked: overrides.findEntriesSkipLocked ?? vi.fn(async () => new Map<Key, ResourceEntry>()),
         findTimedOutReservedEntriesSkipLocked: overrides.findTimedOutReservedEntriesSkipLocked ??
             vi.fn(async () => new Map<Key, ResourceEntry>()),
         findOverdueRetryEntriesSkipLocked: overrides.findOverdueRetryEntriesSkipLocked ??
             vi.fn(async () => new Map<Key, ResourceEntry>()),
-        findRetryExhaustionFinalizationsSkipLocked: overrides.findRetryExhaustionFinalizationsSkipLocked ??
-            vi.fn(async () => new Map<Key, ResourceEntry>()),
-        findAnyByKey: overrides.findAnyByKey ?? vi.fn(async () => null),
-        replace: overrides.replace ?? vi.fn(async (entry: ResourceEntry) => entry),
-        writeIfAbsentOrReplaceExpired: overrides.writeIfAbsentOrReplaceExpired ?? vi.fn(async (entry: ResourceEntry) => entry),
         updateResourceEntry: overrides.updateResourceEntry ?? vi.fn(async () => 1),
         releaseReserved: overrides.releaseReserved ?? vi.fn(async () => null),
         startProcessingEntity: overrides.startProcessingEntity ??
@@ -642,9 +662,23 @@ function createRepo(overrides: {
                     kind: 'expired-or-missing';
                     key: Key;
                 }, ResourceEntry>(entry)
-            ),
+            )
+    };
+    const finalization = {
+        isRetryExhaustionFinalizationRequired: overrides.isRetryExhaustionFinalizationRequired ?? vi.fn(async () => false),
+        findRetryExhaustionFinalizationsSkipLocked: overrides.findRetryExhaustionFinalizationsSkipLocked ??
+            vi.fn(async () => new Map<Key, ResourceEntry>()),
         startFinalizationRecovery: overrides.startFinalizationRecovery ??
             vi.fn(async (entry: ResourceEntry) => Either.ofRight<{ kind: 'expired-or-missing'; key: Key; }, ResourceEntry>(entry))
+    };
+    const repo = {
+        entries,
+        reservations,
+        finalization,
+        maintenance: {
+            deleteExpired: vi.fn(async () => 0)
+        },
+        transaction: vi.fn(async (fn: (txRepo: unknown) => Promise<unknown>) => await fn(repo))
     };
 
     return repo;

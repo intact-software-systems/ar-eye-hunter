@@ -9,14 +9,14 @@ import { describe, expect, it } from 'vitest';
 
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
 
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 
 import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/app-inbox-handler-registry.ts';
 import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
@@ -165,7 +165,7 @@ async function runMutation(database: TransactionalDatabase): Promise<void> {
     await runInPSqlTransaction(database.sql, async (transaction) => {
         const runtime = new PSqlRuntimeStateRepository(transaction);
         const events = new PSqlClientStateEventRepository(transaction);
-        const inbox = new ResourceInboxRepository(transaction);
+        const inbox = createPSqlResourceInboxRepository(transaction);
         const results = new ResourceInboxResultsRepository(transaction);
 
         await runtime.insertIfAbsent(
@@ -175,9 +175,9 @@ async function runMutation(database: TransactionalDatabase): Promise<void> {
             NEVER_EXPIRE_AT_TIMESTAMP
         );
         await events.appendClientEvent(clientEvent);
-        await inbox.writeIfAbsentOrMatch(outboxEntry);
+        await inbox.entries.writeIfAbsentOrMatch(outboxEntry);
         await results.replace(resultEntry);
-        const finished = await inbox.finishReserved(
+        const finished = await inbox.finalization.finishReserved(
             incomingEntry.key,
             1,
             EntityStatus.COMPLETED,

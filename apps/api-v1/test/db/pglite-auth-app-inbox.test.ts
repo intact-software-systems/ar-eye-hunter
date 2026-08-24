@@ -1,6 +1,6 @@
-import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
@@ -17,7 +17,7 @@ import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistenc
 Deno.test('PGlite AppAuth atomically commits auth state, results, completion, and ticket CAS', async () => {
     await withPGliteSql(async (sql) => {
         const runtime = new PSqlRuntimeStateRepository(sql);
-        const resourceInbox = new ResourceInboxRepository(sql);
+        const resourceInbox = createPSqlResourceInboxRepository(sql);
         const resourceResults = new ResourceInboxResultsRepository(sql);
         const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
         const secret = 'pglite-auth-secret-0123456789abcdef-extra';
@@ -26,7 +26,7 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
         const appAuth = new AppAuthInboxService(
             {
                 inboxQueueReader: inboxReader,
-                resourceInboxRepository: resourceInbox,
+                resourceInboxRepository: resourceInbox.entries,
                 resourceInboxResultsRepository: resourceResults,
                 database: sql,
                 authMutationService: createAuthMutationService({
@@ -176,7 +176,7 @@ Deno.test('PGlite AppAuth atomically commits auth state, results, completion, an
 Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async () => {
     await withPGliteSql(async (sql) => {
         const runtime = new PSqlRuntimeStateRepository(sql);
-        const resourceInbox = new ResourceInboxRepository(sql);
+        const resourceInbox = createPSqlResourceInboxRepository(sql);
         const resourceResults = new ResourceInboxResultsRepository(sql);
         const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
         const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
@@ -199,7 +199,7 @@ Deno.test('PGlite AppAuth rereads registered-user policy after enqueue', async (
         const appAuth = new AppAuthInboxService(
             {
                 inboxQueueReader: inboxReader,
-                resourceInboxRepository: resourceInbox,
+                resourceInboxRepository: resourceInbox.entries,
                 resourceInboxResultsRepository: resourceResults,
                 database: sql,
                 authMutationService: createAuthMutationService({
@@ -270,7 +270,7 @@ Deno.test(
     async () => {
         await withPGliteSql(async (sql) => {
             const runtime = new PSqlRuntimeStateRepository(sql);
-            const resourceInbox = new ResourceInboxRepository(sql);
+            const resourceInbox = createPSqlResourceInboxRepository(sql);
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
             const databaseNowEpochMs = await readPGliteDatabaseEpochMs(sql);
@@ -279,7 +279,7 @@ Deno.test(
             const appAuth = new AppAuthInboxService(
                 {
                     inboxQueueReader: inboxReader,
-                    resourceInboxRepository: resourceInbox,
+                    resourceInboxRepository: resourceInbox.entries,
                     resourceInboxResultsRepository: resourceResults,
                     database: sql,
                     authMutationService: createAuthMutationService({

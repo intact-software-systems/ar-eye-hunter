@@ -2,9 +2,9 @@ import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/stat
 import assert from 'node:assert/strict';
 
 import { configureSharedGraphRepositories } from '@shared-graph/repository/configure-shared-graph-repositories.ts';
-import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { createGroupStateService } from '@shared-server/rallar-system/group-state/group-state-service.ts';
@@ -85,7 +85,7 @@ Deno.test(
         await withPGliteSql(async (sql) => {
             const nowEpochMs = await readPGliteDatabaseEpochMs(sql);
             const runtime = new PSqlRuntimeStateRepository(sql);
-            const resourceInbox = new ResourceInboxRepository(sql);
+            const resourceInbox = createPSqlResourceInboxRepository(sql);
             const resourceResults = new ResourceInboxResultsRepository(sql);
             const inboxReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
             const authSessions = new AuthSessionRepository(runtime);
@@ -127,7 +127,7 @@ Deno.test(
             const appGroup = new TopologyInboxService(
                 {
                     inboxQueueReader: inboxReader,
-                    resourceInboxRepository: resourceInbox,
+                    resourceInboxRepository: resourceInbox.entries,
                     resourceInboxResultsRepository: resourceResults,
                     database: sql,
                     groupStateService: groupState,
@@ -469,7 +469,7 @@ Deno.test(
             const rtcRttInbox = new RtcRttInboxService(
                 {
                     inboxQueueReader: inboxReader,
-                    resourceInboxRepository: resourceInbox,
+                    resourceInboxRepository: resourceInbox.entries,
                     resourceInboxResultsRepository: resourceResults,
                     database: sql,
                     groupStateService: groupState,

@@ -1,6 +1,6 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import type { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
-import type { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import type { PSqlResourceInboxEntryRepository } from '@shared-server/queuebox/postgres/p-sql-resource-inbox-entry-repository.ts';
+import type { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { AppCrdtInboxService } from '@shared-server/rallar-system/crdt/inbox/app-crdt-inbox-service.ts';
 import type * as Crdt from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-contracts.ts';
@@ -37,7 +37,7 @@ export interface CurrentMutationAuthority {
 
 export interface CreateApiCrdtInboxServiceInput {
     readonly inboxQueueReader: InboxQueueReader;
-    readonly resourceInboxRepository: ResourceInboxRepository;
+    readonly resourceInboxRepository: PSqlResourceInboxEntryRepository;
     readonly resourceInboxResultsRepository: ResourceInboxResultsRepository;
     readonly database: PSqlSql;
     readonly serviceId: string;

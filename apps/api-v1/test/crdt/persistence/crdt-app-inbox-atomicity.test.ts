@@ -11,7 +11,7 @@ import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
 import { PSqlCrdtMutationRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-mutation-repository.ts';
 
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
 import {
     CrdtMutationConflictError,
@@ -114,7 +114,7 @@ async function verifyIdenticalOutboxCollisionRollback(): Promise<void> {
         );
         const computed = await computeValidatedWrite(service, input);
         const entries = readCollisionEntries(computed);
-        await new ResourceInboxRepository(sql).write(entries.collision);
+        await createPSqlResourceInboxRepository(sql).entries.write(entries.collision);
 
         const transactionFailure = await sql.begin(
             async (transaction) => await service.write(transaction, computed)

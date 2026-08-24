@@ -3,8 +3,8 @@ import { createTestGroupStateRepository } from '@shared-test/shared-server/creat
 import postgres from 'postgres';
 
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { PSqlGroupStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-group-state-event-repository.ts';
 import { createRtcTopologyOutboxPublisher, createRtcTopologyWorkHandler } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
@@ -36,7 +36,7 @@ interface RegisterTopologyAppOutboxHandlerInput {
     readonly input: WorkerInput;
     readonly sql: PSqlSql;
     readonly trace: WorkerTrace;
-    readonly resources: ResourceInboxRepository;
+    readonly resources: PSqlResourceInboxRepository;
     readonly outboxQueueReader: OutboxQueueReader;
 }
 
@@ -64,7 +64,7 @@ async function runWorker(
     sql: PSqlSql,
     trace: WorkerTrace
 ): Promise<Readonly<{ resourceId: string; status: string; attemptCount: number; }>> {
-    const resources = new ResourceInboxRepository(sql);
+    const resources = createPSqlResourceInboxRepository(sql);
     const outboxQueueReader = new OutboxQueueReader(new PSqlQueueBox(resources));
     registerTopologyAppOutboxHandler({ input, sql, trace, resources, outboxQueueReader });
     return await runTopologyAppOutboxUntilCompletion(input, resources, outboxQueueReader);
@@ -114,11 +114,11 @@ function registerTopologyAppOutboxHandler(
 
 async function runTopologyAppOutboxUntilCompletion(
     input: WorkerInput,
-    resources: ResourceInboxRepository,
+    resources: PSqlResourceInboxRepository,
     outboxQueueReader: OutboxQueueReader
 ): Promise<Readonly<{ resourceId: string; status: string; attemptCount: number; }>> {
     for (let iteration = 0; iteration < 40; iteration += 1) {
-        const target = await resources.findAnyByKey(input.targetKey);
+        const target = await resources.entries.findAnyByKey(input.targetKey);
         if (target?.status === EntityStatus.COMPLETED) {
             return {
                 resourceId: input.targetKey.resourceId,

@@ -12,16 +12,16 @@ import {
     type RallarCrdtUpdateEnvelope
 } from '@shared/crdt/mod.ts';
 import { ConnectionContext, JsonWebSocketServer } from '@shared/mod.ts';
-import { InMemoryQueueBox } from '@shared/queuebox/InMemoryQueueBox.ts';
+import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 
-import { PSqlQueueBox } from '@shared-server/postgres/queuebox/PSqlQueueBox.ts';
+import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
 
-import { ResourceInboxRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxRepository.ts';
+import { createPSqlResourceInboxRepository, type PSqlResourceInboxRepository } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
-import { ResourceInboxResultsRepository } from '@shared-server/postgres/resource-inbox/ResourceInboxResultsRepository.ts';
+import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
@@ -160,11 +160,11 @@ async function createFixture(
     const clients = new ClientStateRepository(runtime, new PSqlClientStateEventRepository(sql));
     await clients.insertPrincipal(principal());
     await clients.insertInstance(instance());
-    const resourceInbox = new ResourceInboxRepository(sql);
+    const resourceInbox = createPSqlResourceInboxRepository(sql);
     const inboxQueueReader = new InboxQueueReader(new PSqlQueueBox(resourceInbox));
     const service = createApiCrdtInboxService({
         inboxQueueReader,
-        resourceInboxRepository: resourceInbox,
+        resourceInboxRepository: resourceInbox.entries,
         resourceInboxResultsRepository: new ResourceInboxResultsRepository(sql),
         database: sql,
         serviceId: 'server-1',
