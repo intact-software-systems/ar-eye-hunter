@@ -4,15 +4,15 @@ import { compareGroupCausalRevision, readGroupCausalRevision } from '@shared/api
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import type { WsServerResolvedRecipient } from '@shared/services/WsQueueBoxServerService.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import type { RallarGroupSnapshotResolverOptions } from '../../middleware/rallar-middleware-options.ts';
 import { isGroupSnapshotSessionLive } from '../../presence/snapshot-presence.ts';
 import { decodeStateSyncMessage, type StateSyncDecodeResult } from '../../state-sync/state-sync-payload.ts';
+import type { WsServerTargetResolutionOptions } from './ws-server-target-resolution-options.ts';
 
 export interface ResolveWsGroupTargetInput {
     readonly groupId: string;
     readonly message: ALMessage;
     readonly webSocketServer: JsonWebSocketServer;
-    readonly options: RallarGroupSnapshotResolverOptions;
+    readonly options: WsServerTargetResolutionOptions;
 }
 
 export function resolveWsGroupTargetRecipients(

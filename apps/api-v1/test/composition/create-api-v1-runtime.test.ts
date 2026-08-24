@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import type { ClientRestSnapshotReadSelector } from '@shared-server/rallar-system/client-state/snapshot/client-rest-snapshot-read-selector.ts';
 import type { GroupRestSnapshotReadSelector } from '@shared-server/rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
-import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware.ts';
+import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
 import type { ApiRtcTopologyRuntime } from '../../src/runtime/rtc-topology/create-api-rtc-topology-runtime.ts';
 
 import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';

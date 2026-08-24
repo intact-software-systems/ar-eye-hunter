@@ -1,13 +1,13 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { WsServerResolvedRecipient } from '@shared/services/WsQueueBoxServerService.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import type { RallarGroupSnapshotResolverOptions } from '../../middleware/rallar-middleware-options.ts';
 import { resolveStateSyncRecipients } from '../../state-sync/state-sync-routing.ts';
+import type { WsServerTargetResolutionOptions } from './ws-server-target-resolution-options.ts';
 
 export interface ResolveWsClientTargetInput {
     readonly message: ALMessage;
     readonly webSocketServer: JsonWebSocketServer;
-    readonly options: RallarGroupSnapshotResolverOptions;
+    readonly options: WsServerTargetResolutionOptions;
 }
 
 export function resolveWsClientTargetRecipients(

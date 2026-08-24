@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/rallar-middleware.ts';
+import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
 
 import { createApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
 import { findCurrentClientSnapshot } from '../../src/crdt/create-api-crdt-document-authorizer.ts';

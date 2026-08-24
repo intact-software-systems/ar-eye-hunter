@@ -8,10 +8,8 @@ import { initResourceInboxExpiryEviction } from '@shared-server/queuebox/postgre
 import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import { GroupStateInboxService } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 import { initPresenceExpiryReconciliation } from '@shared-server/rallar-system/group-state/presence/reconcile-expired-group-presence.ts';
-import {
-    createRallarMiddleware,
-    type RallarMiddlewareRuntime
-} from '@shared-server/rallar-system/middleware/rallar-middleware.ts';
+import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/create-rallar-middleware.ts';
+import type { RallarMiddlewareRuntime } from '@shared-server/rallar-system/middleware/rallar-middleware-runtime.ts';
 import { type RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
 import {

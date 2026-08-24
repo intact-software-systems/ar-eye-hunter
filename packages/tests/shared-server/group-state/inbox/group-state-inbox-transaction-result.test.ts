@@ -113,7 +113,8 @@ describe('group-state AppInbox transaction result boundary', () => {
                 read: async (identity) => ({
                     identity,
                     key: 'closed-lifecycle',
-                    entry: null,
+                    revision: null,
+                    persistedExpireAtEpochMs: null,
                     state: null
                 }),
                 isObservedAtClosed: () => true,

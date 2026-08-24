@@ -1,15 +1,15 @@
 import { readALTargetGroupRef, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { WsServerResolvedRecipient, WsServerTargetResolver } from '@shared/services/WsQueueBoxServerService.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import type { RallarGroupSnapshotResolverOptions } from '../../middleware/rallar-middleware-options.ts';
 import { resolveWsClientTargetRecipients } from './resolve-ws-client-target.ts';
 import { resolveWsCrdtPrincipalTargetRecipients } from './resolve-ws-crdt-principal-target.ts';
 import { resolveWsFixedTopologyTargetRecipients } from './resolve-ws-fixed-topology-target-recipients.ts';
 import { resolveWsGroupTargetRecipients } from './resolve-ws-group-target.ts';
+import type { WsServerTargetResolutionOptions } from './ws-server-target-resolution-options.ts';
 
 export function createWsServerTargetResolver(
     webSocketServer: JsonWebSocketServer,
-    options: RallarGroupSnapshotResolverOptions = {}
+    options: WsServerTargetResolutionOptions = {}
 ): WsServerTargetResolver {
     const resolveGroupRecipients = (
         groupId: string,

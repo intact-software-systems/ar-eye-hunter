@@ -344,7 +344,7 @@ Deno.test('PGlite lost-close group guard has bounded physical expiry before clea
         const expectedExpiry = resourceInboxRetryExpiryAtEpochMs(wsStartedAtEpochMs - 50);
         assert.equal(lifecycle.state?.status, 'open');
         assert.equal(lifecycle.state?.expireAtEpochMs, expectedExpiry);
-        assert.equal(lifecycle.entry?.expireAtTimestamp, expectedExpiry);
+        assert.equal(lifecycle.persistedExpireAtEpochMs, expectedExpiry);
         assert.ok(expectedExpiry < FUTURE_MS);
 
         await harness.group.enqueueGroupSessionCleanup({
@@ -366,7 +366,7 @@ Deno.test('PGlite lost-close group guard has bounded physical expiry before clea
         const expectedCloseExpiry = resourceInboxRetryExpiryAtEpochMs(wsStartedAtEpochMs + 100);
         assert.equal(closed.state?.status, 'closed');
         assert.equal(closed.state?.expireAtEpochMs, expectedCloseExpiry);
-        assert.equal(closed.entry?.expireAtTimestamp, expectedCloseExpiry);
+        assert.equal(closed.persistedExpireAtEpochMs, expectedCloseExpiry);
     });
 });
 

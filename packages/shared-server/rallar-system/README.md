@@ -14,7 +14,7 @@ apps/api-v1/src/main.ts
   -> composition/create-default-rallar-server.ts
   -> composition/create-api-v1-runtime.ts
   -> composition/create-api-v1-mutation-runtime.ts
-  -> rallar-system/middleware/rallar-middleware.ts
+  -> rallar-system/middleware/create-rallar-middleware.ts
   -> rallar-facade/create-rallar-server-application.ts
 ```
 
@@ -44,8 +44,14 @@ mutation authority.
 1. API-v1 creates database adapters, repositories, caches, and the WebSocket
    server.
 2. It creates domain services and every AppInbox queue client and handler.
-3. Middleware assembles QueueBox and WebSocket infrastructure, registers all
-   handlers, and returns the final runtime.
+3. `create-rallar-middleware.ts` runs four visible phases in order:
+   `create-rallar-middleware-infrastructure.ts`,
+   `create-rallar-middleware-inbox-services.ts`,
+   `register-rallar-middleware-queue-tasks.ts`, and
+   `assemble-rallar-middleware-runtime.ts`. Infrastructure receives only a
+   wake capability, registration receives only an include-task capability,
+   and only final assembly can obtain the queue worker after all four required
+   task families are registered.
 4. API-v1 attaches durable topology replay and awaits runtime readiness.
 5. `main.ts` installs system topics and WebSocket lifecycle, mounts HTTP/WS,
    then starts QueueBox workers. No handler dependency is installed after the

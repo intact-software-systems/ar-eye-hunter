@@ -4,10 +4,7 @@ import {
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
-import {
-    includeInboxQueueReaderEngineTasks,
-    includeOutboxQueueReaderEngineTasks
-} from '@shared-server/rallar-system/middleware/rallar-middleware.ts';
+import { registerQueueReaderEngineTasks } from '@shared-server/rallar-system/middleware/register-rallar-middleware-queue-tasks.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
@@ -47,8 +44,18 @@ export class RealEngineAdminPruneFixture {
         const outbox = new OutboxQueueReader(queue);
         inbox.dequeueInbox = trackDequeue(this.activeDequeues, inbox.dequeueInbox.bind(inbox));
         outbox.dequeueOutbox = trackDequeue(this.activeDequeues, outbox.dequeueOutbox.bind(outbox));
-        includeInboxQueueReaderEngineTasks(this.engine, inbox, toResilienceDto());
-        includeOutboxQueueReaderEngineTasks(this.engine, outbox, toResilienceDto());
+        const resilience = toResilienceDto();
+        registerQueueReaderEngineTasks({
+            queueTasks: {
+                includeTask: (id, task) => {
+                    this.engine.includeTask(id, task);
+                }
+            },
+            inboxQueueReader: inbox,
+            outboxQueueReader: outbox,
+            appInboxResilience: resilience,
+            appOutboxResilience: resilience
+        });
         this.appAdmin = createApiAdminInboxService({
             inboxQueueReader: inbox,
             outboxQueueReader: outbox,

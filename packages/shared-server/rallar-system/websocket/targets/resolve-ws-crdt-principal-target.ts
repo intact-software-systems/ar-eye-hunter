@@ -2,18 +2,18 @@ import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { RALLAR_CRDT_UPDATE_TYPE_ID } from '@shared/crdt/mod.ts';
 import type { WsServerResolvedRecipient } from '@shared/services/WsQueueBoxServerService.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import type {
-    RallarCrdtPrincipalSnapshotRef,
-    RallarGroupSnapshotResolverOptions
-} from '../../middleware/rallar-middleware-options.ts';
 import { isClientSnapshotSessionLive } from '../../presence/snapshot-presence.ts';
 import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
+import type {
+    RallarCrdtPrincipalSnapshotRef,
+    WsServerTargetResolutionOptions
+} from './ws-server-target-resolution-options.ts';
 
 export interface ResolveWsCrdtPrincipalTargetInput {
     readonly principalId: string;
     readonly message: ALMessage;
     readonly webSocketServer: JsonWebSocketServer;
-    readonly options: RallarGroupSnapshotResolverOptions;
+    readonly options: WsServerTargetResolutionOptions;
 }
 
 export function resolveWsCrdtPrincipalTargetRecipients(

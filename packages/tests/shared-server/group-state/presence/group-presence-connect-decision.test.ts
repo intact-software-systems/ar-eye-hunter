@@ -5,9 +5,9 @@ import type { GroupMutationComputed, GroupMutationRead } from '@shared-server/ra
 import { processGroupPresenceConnect } from '@shared-server/rallar-system/group-state/presence/group-presence-service.ts';
 import type {
     WsSessionGenerationLifecycleComputed,
-    WsSessionGenerationLifecycleRead,
-    WsSessionGenerationLifecycleService
-} from '@shared-server/rallar-system/websocket/ws-session-generation-lifecycle.ts';
+    WsSessionGenerationLifecycleRead
+} from '@shared-server/rallar-system/websocket/ws-session-generation-computation.ts';
+import type { WsSessionGenerationLifecycleService } from '@shared-server/rallar-system/websocket/ws-session-generation-lifecycle.ts';
 
 describe('group presence connect decision', () => {
     it('returns inactive without reading or computing a group mutation', async () => {
@@ -178,7 +178,8 @@ function lifecycleReadFixture(): WsSessionGenerationLifecycleRead {
             sessionId: 'session-1'
         },
         key: 'lifecycle-key',
-        entry: null,
+        revision: null,
+        persistedExpireAtEpochMs: null,
         state: null
     };
 }
