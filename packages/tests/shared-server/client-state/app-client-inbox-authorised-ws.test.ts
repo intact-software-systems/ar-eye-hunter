@@ -278,8 +278,9 @@ async function processAppInboxMethod<Result>(
     reader: InboxQueueReader,
     run: () => Promise<Result>
 ): Promise<Result> {
+    const minimumEntries = (await queue.getAllKeys()).length + 1;
     const resultPromise = run();
-    await queue.waitForEntryCount();
+    await queue.waitForEntryCount(minimumEntries);
     await reader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
         createAppInboxTestResilience()
