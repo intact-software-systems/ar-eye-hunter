@@ -1,19 +1,19 @@
 # Group Activation — Implementation Plan (2026-08-22)
 
-Status: **planning — re-baselined against product decisions 35–41 (PR #321) and against `main`. All ten corrections are
-resolved: C1–C4 became product decisions 25, 28, 2 and the admission table; C5–C10 remain as
-additions with owning slices. Every question is settled and recorded as a numbered decision. **The census is stale again and slice 0
-must repeat it before slice 1 starts** — see below.**
+Status: **planning — product decisions 1–41 are settled, including the implementation-readiness
+corrections for frozen dialing identity, promotion ownership, reset identity, per-series attempts and
+status basis. The code census is stale and slice 0 must repeat it before slice 1 starts. No product
+question blocks that census; implementation remains gated on a green `main`.**
 Implements `2026-08-22-group-activation-product-plan.md` (decisions 1–41). That document owns the
 product surface; this one owns how it lands. It does not restate the product decisions — it records
 what the code says about them, what has to change, in what order, and which gate proves each step.
 
 Every claim below was verified against the tree by a ten-surface code census on 2026-08-22 and
-re-verified against `f26f65685` on 2026-08-23. **`main` has moved past that point again**, and two of
-the intervening commits land on surfaces this plan depends on: #323 made state-event ownership
-explicit, which is slice 12's event and transaction surface, and #324 refactored QueueBox persistence
-ownership, which is the durable-queue substrate slices 3, 11 and 12 all build on. Slice 0's census must
-be repeated over the mutation, event and transaction surfaces before slice 1 begins; treat every
+re-verified against `f26f65685` on 2026-08-23. **`main` has moved past that point again**, and three
+intervening ownership changes land on surfaces this plan depends on: #323 made state-event ownership
+explicit, #324 refactored QueueBox persistence, and #325 consolidated the shared-server AppInbox
+protocol used by every authoritative command in this plan. Slice 0 repeats the census over the
+mutation, event, queue, transaction and after-commit surfaces before slice 1 begins; treat every
 `file:line` below as indicative until it has been. **Citations name a symbol wherever a symbol will do,
 and a `file:line` only where the line itself is load-bearing.** That is a deliberate change: between
 the two passes, `main` moved five commits and two of them were large refactors, which invalidated 18
@@ -45,7 +45,7 @@ never return.
 **Second, inherited from the control-plane workstream:** membership, presence, admission and WS
 connectivity work in every stage, including `planned`. Its test constant `EVERY_LIFECYCLE_STATE`
 (`group-lifecycle-safety-baseline.test.ts:17`) is a hand-written four-element literal — it will
-silently keep covering four of six unless slice 1b makes it compiler-derived.
+silently keep covering four of seven unless slice 1b makes it compiler-derived.
 
 **Third, new in this pass:** no stage command is reachable over HTTP until the browser honours its
 dial and data consequences. This is what slice 8d exists to enforce.
@@ -89,57 +89,40 @@ a new mechanism instead of one of these should be challenged in review:
 | a non-lifecycle group field        | `appointDirector`, `rotateGroupJoinCode`                                                        |
 | per-group durable policy           | `GroupLifecyclePolicy` with its nested sub-policies, presets, issue codes and repository        |
 
-## Slice 0 — Rebase and re-baseline (prerequisite)
+## Slice 0 — Re-baseline (prerequisite, not a delivery PR)
 
-This branch was three commits behind when the plan was written and is now **five**:
+Start from the current mergeable `main`; `BEHIND` alone does not justify a merge or rebase. Record the
+actual starting head in the first delivery PR rather than pinning another soon-stale hash in this plan.
+The previous census predates three ownership changes that directly affect this workstream:
 
-| Commit      | What it did                                                       | Consequence for this plan                                                                   |
-| ----------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `211755a19` | semantic test design gate                                         | structural findings are blocking for the whole touched test file                            |
-| `197d5cad1` | admin mutation ownership explicit                                 | adds `never`-guarded exhaustive switches every stage command must enter                     |
-| `6078bc972` | test fix                                                          | —                                                                                           |
-| `c9fc2ce9b` | **#319 — rallar-system ownership traceable (889 files)**          | moved 4 cited paths, deleted 5, renamed 3 load-bearing symbols                              |
-| `f26f65685` | **#317 — API-v1 operational configuration ownership (255 files)** | restructured the configuration surface; `formationDebounceMs` is now `topology.recompute.n` |
+| Change                                 | Re-census consequence                                                                                                      |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| #323 — state-event ownership           | locate the current event append, transaction and after-commit owners before slices 4a and 12                               |
+| #324 — QueueBox persistence ownership  | re-map durable timer, coalesced work, retry and wake paths before slices 3, 10, 11 and 12                                  |
+| #325 — shared-server AppInbox protocol | re-map command decode, transaction writer, result, completion and trusted internal-authority registration for all commands |
 
-`211755a19` makes a high-signal structural finding blocking for the **whole touched test file**, not
-only its changed lines. This workstream edits `webrtc-group-manager.test.ts`, both mutation-route-owner
-test files, and `recipe-matrix.test.ts`. Escaping a block needs a registry entry with disposition
-`durable-boundary`, boundary `interaction`, and a linked contract carrying a five-key
-`interactionRequirement`.
+Re-run the ten-surface census by symbol, including the seven-stage registry; application and internal
+command inventories; group read/compute/validate/write transaction; accepted/planned topology slots
+and fingerprints; topology publication transaction; event/delta/outbox effects; browser cache, dial
+and inbound admission; status timers; routes/OpenAPI/recipes; and operator surfaces. Replace stale
+symbol names in this document immediately; leave ordinary line citations indicative.
 
-**Three renamed symbols matter more than any moved path**, because a moved file is found by basename
-search while a renamed symbol silently reads as still-present:
+Re-read the Semantic Test Design Gate before touching the high-coupling browser and route-owner tests.
+An interaction exception is justified only for an independently required ordering or cardinality
+contract, never to preserve private topology.
 
-| Was                                | Is                                                                     | Owning slice |
-| ---------------------------------- | ---------------------------------------------------------------------- | ------------ |
-| `canSendRoomMessage`               | `canSendGroupMessage`, in `group-state/policy/group-message-policy.ts` | 7            |
-| `AppGroupInboxService`             | `GroupStateInboxService`, in `group-state/inbox/`                      | 11           |
-| `AdminSupportService.explainGroup` | `GroupAdminSupport.explainGroup`, in `admin-support/`                  | 13           |
+**Lands:** no product behavior. It produces the current owner map, the first two PR descriptions, a
+fresh main-vs-main state-write control artifact, and an explicit classification of every failing
+baseline check. Do not begin slice 1 until `main` passes the baseline; do not repair an unrelated red
+baseline inside this workstream.
 
-Two items **evaporated** and their slices get cheaper: `PERSISTED_GROUP_KEYS` was deleted, so
-`group-state-persistence-codec.ts` is 49 lines rather than 328 and carries no `persistedOrDefault`
-legacy path at all — which removes slice 14's only behavioural item and one of slice 2's five key
-lists. And #319 deleted the git-history-pinned 100-column guard test slice 4b was budgeted against.
+**Gates:** `format:check`, `typecheck`, `typecheck:tests`, `test:unit`, `test:deno`,
+`test:repo-governance`, `npm run check:repo-structure`, the test-structure changed check, and the
+state-write control.
 
-**Lands:** the rebase; a re-read of the Semantic Test Design Gate; a fresh main-vs-main state-write
-control run captured **after** the rebase onto `f26f65685`, not before.
-
-**Also note:** `main` has been red more than once during this plan's life, and for different reasons
-each time — unformatted files after one merge, the tests-typecheck ratchet after another, and most
-recently a test runtime constructed without a newly required store. **Slice 0 does not start until
-`main` is green**, because every gate in this workstream compares against it and a red baseline makes
-each slice's verdict unreadable. The historical note that follows is kept only as a record of the
-failure modes to expect: `main` at one point failed `format:check` — `f26f65685` landed seven unformatted files.
-Until that is repaired on `main`, every branch gate in this workstream is red for a reason that has
-nothing to do with the branch. Do not "fix" it inside a slice: a repository-wide reformat is the one
-thing that earns the `skip-changed-gates` label, and mixing it into a feature slice forfeits that.
-
-**Gates:** `test:unit`, `test:deno`, `typecheck`, `typecheck:tests`, `test:repo-governance`,
-`node scripts/check-test-structure-coupling.mjs --changed origin/main HEAD`, the state-write control.
-
-**Risk:** skipping this is the largest schedule risk in the workstream. ~50 location-hashed registry
-entries sit on files this workstream must edit, they re-key on any line shift, and the checker reads
-the registry from the head revision — the registry fix must be committed before re-running it.
+**Risk:** skipping this is the largest schedule risk. #325 changed the exact protocol surface the new
+internal promotion command must enter, and stale command or transaction ownership would invalidate the
+route counts, atomicity plan and validation assignment before implementation begins.
 
 ## Corrections — resolved
 
@@ -166,37 +149,30 @@ only so the reasoning survives; the product plan is now the authority.
 
 ## Decisions taken at planning
 
-| #  | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| -- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| I1 | **The rename lands first, alone, and mechanically.** `establishing → connecting` is one PR keyed on the _field name_ (`lifecycleState` / `GroupLifecycleState` / the `"lifecycleState"` JSON key), never on the value. `'active'` has 1,330 occurrences across seven meanings; `establishing` (the stage) and `establishment` (the policy namespace) are different words. Product decision 14 forbids the shim that would stage it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| I2 | **Exhaustiveness becomes compiler-enforced before any new stage is reachable.** There is not one exhaustive `switch` and not one `Record<GroupLifecycleState, …>` in the repository; every consumer is a negative or equality comparison, so _adding_ three stages produces zero compiler errors and silently routes them down whichever branch the predicate picks. Slice 1b introduces one stage registry, derives the three untyped runtime validator arrays and `EVERY_LIFECYCLE_STATE` from it, and converts every stage predicate into a stage-keyed pure function returning exactly what the comparison returns today.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| I3 | **Causal fences land early, not late.** `expectedFormationEpoch` and `expectedLayout` (product decision 19) are retrofitted onto the existing criterion commands in slice 3, so every later internal family — triggers, status writes, the internal `connect` — is fenced from birth rather than twice.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| I4 | **The status axes do not ride the aggregate's first field edit.** A condition pinned at `inactive` on a live group for eight slices is a lie on the wire. The key-list edit is paid twice; new fields go last and wire order stays stable, so the second edit is cheap.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| I5 | **The unit of PR is the lettered sub-slice; the unit of shippable capability is the numbered slice.** Thirteen numbered slices plus finalisation deliver as **22 PRs** for slices 1–13, or **24** including slice 0 and slice 14. That figure has moved three times (22, then 26/28, then 27/29) and the drift was the tell that it was a placeholder: enumerating the document gives 28 for slices 1–13 before consolidation. Six sub-slices merge, because splitting them buys nothing — **1b+1c** (both dark, both `packages/shared`, both pure contract), **5a+5b+5c** (the same commands and the same registries, so splitting means the second PR re-touches every file the first did, and `pause`/`resume` enter none of the lifecycle registries at all), **6a+6b** (after I12, 6a is one flag and 6b is one policy field), **8a+8b** (8a alone is inert by construction, so splitting ships a deliberate no-op), and **10a+10b**. The benchmark this should land on is the control-plane workstream's **14 PRs** at a stated 1.5× less scope. What actually costs is gate cycles, not PR count: 17 of these carry medium-scale plus state-write, so each merge saves a full cycle. Each sub-slice records its delivery PR number here as it lands. |
-
-**Only the next two slices are concrete; everything after them is outcome-shaped.** The PR forecast has
-moved four times and went stale within a day of being written, which is evidence that a detailed
-count over a fourteen-slice horizon is not knowable and not useful. The two concrete ones are: **(1)**
-a green-`main` re-baseline plus pure contract closure (slice 0 and slice 1), and **(2)** one complete
-held-layout vertical — both topology stores, the promotion and reset authority, the browser dial gate
-and readiness, the route cutover, and the live-RTC proof. Note that "one vertical" is one shippable
-capability, not one PR: it was measured at roughly 115–135 files, against a largest-semantic-PR
-precedent of 50, so it lands as a stack that merges together. Slices beyond that keep their analysis
-and their hazards but lose their PR estimates until they are re-censused against the `main` of the
-day. |
-| I6 | **Every slice's gates are named in its own section, not in an appendix.** Three gates are not in branch CI and are therefore invisible unless named per slice: `test:rallar:full-stack:memory:live-rtc-3`, the local medium-scale run, and **Run Hetzner Supported Distributed Manifests** (push-to-main only, required before the plan may be marked complete). |
-| I7 | **A persisted field lands with its first reader.** The control-plane workstream recorded this as its own slice-1 lesson: _"Persisting a document nothing reads would put an AppInbox mutation-path change into a slice that otherwise carries no risk. It lands with its first reader."_ So slice 2's aggregate fields merge in the **same PR as slice 4a**, which is what first reads them. That pays medium-scale and state-write once instead of twice, and removes the only dark-plumbing hazard in the plan. |
-| I8 | **Route mounting is its own sub-slice, and it comes last.** The stage commands' plumbing, persistence and semantics land dark across slices 5 and 6; slice 8d mounts all five HTTP routes in one PR, after slice 7's halt and slice 8b's dial gate and inbound-admission deny exist. In parallel, `validateGroupLifecyclePolicy` returns a typed issue for the new policy fields until the vertical passes live-RTC-3 — one issue code, one file, the same shape the repository already ships for `strictConfirmation`. |
-| I10 | **Decision 41's three mechanical rules are slice 1b's acceptance criteria, not aspirations.** The transition table is keyed on `(stage, command) → stage`; every stage-keyed decision is a total function over the stage registry; every status function is total over the business plane. Each is checkable: no `Record<GroupLifecycleTransition, GroupLifecycleState>` survives, no bare `lifecycleState !==` comparison survives outside the registry, and the condition matrix has a row for archived, deleted and expired. Without these, adding the eighth stage costs what adding the seventh cost. |
-| I11 | **The transport halt lives at the WS relay, not in the shared message predicate** (was Q3). `canSendGroupMessage` stays the _policy_ predicate. `pause` is defined on the transport plane — it stops data crossing edges in the room — and a REST command to a game server is not that. Relic Hunters reads `transportState` from the snapshot and decides for itself, which is the stated division of responsibility. _Alternative rejected:_ folding the halt into the shared predicate, which would make every Relic Hunters REST command on a halted group return 403 and ships with game work attached (C10). |
-| I12 | **Neither reconfigure mutation merges or sequences — the stage transition already drives the replan** (was Q4). `compute-lifecycle-transition` sets `presenceSummaryWork: 'enqueue'` unconditionally, the presence-summary worker writes coalesced topology work, and all of it commits with the group row, so entering `reconfiguring` already enqueues a replan atomically. The only work is that a _commanded_ reconfigure must not be change-gated, or the fingerprint gate skips it when membership has not moved; `isChangeGatedGroupRevisionWork` already distinguishes kinds, so that is one flag. _Alternatives rejected:_ merging (widens two byte-exact write validators for a guarantee the existing path already gives) and sequencing (which is what already happens, with extra ceremony). |
-| I13 | **The in-flight bound reaches the browser as a nested member-policy object on the `Group`** (was Q2). The resolved member-tier values ride the snapshot/delta/hydration path the reconciler already reads, and `transports` gets a home without a second five-list edit. Costs a field validator now — the `FORMATION_OUTCOME_KEYS` pattern in `validate-persisted-group.ts` is the shape to copy. _Alternatives rejected:_ a bare number (cheaper now, but the next member-policy field pays the whole edit again) and a formation-view read (not pushed, so the browser needs a round trip before its first dial). |
-| I14 | **The status writer damps on a coalesced APP_OUTBOX row** (was Q6). The per-group coalesced row with its generation CAS is already the repository's cross-node coalescing primitive — it is what damps topology replanning today — so cluster-wide damping needs no new durable shape, and its `dueAtEpochMs` doubles as the read surface's "when will this settle". _Alternatives rejected:_ leader-only writing (couples a non-authoritative projection to manager election, so a re-election gap becomes a status gap) and accepting N× (bounds changes, not attempts). |
-| I15 | **The `removed` tombstone publication stays, and extends to `dormant`** (was Q7). It is the teardown signal: it is how a browser learns to drop its layout and evict peers, and `reset` depends on it or members sit holding a layout for a group that has been turned off. It is also reversible — publication can stop later once the browser is stage-aware, but a member that already missed the signal cannot be told retroactively. _Alternative rejected:_ dropping on stage alone, which couples slice 4b's correctness to slice 8b. |
+| #   | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| I1  | **The rename lands first, alone, and mechanically.** `establishing → connecting` is one PR keyed on the _field name_ (`lifecycleState` / `GroupLifecycleState` / the `"lifecycleState"` JSON key), never on the value. `'active'` has 1,330 occurrences across seven meanings; `establishing` (the stage) and `establishment` (the policy namespace) are different words. Product decision 14 forbids the shim that would stage it.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| I2  | **Exhaustiveness becomes compiler-enforced before any new stage is reachable.** There is not one exhaustive `switch` and not one `Record<GroupLifecycleState, …>` in the repository; every consumer is a negative or equality comparison, so _adding_ three stages produces zero compiler errors and silently routes them down whichever branch the predicate picks. Slice 1b introduces one stage registry, derives the three untyped runtime validator arrays and `EVERY_LIFECYCLE_STATE` from it, and converts every stage predicate into a stage-keyed pure function returning exactly what the comparison returns today.                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| I3  | **Causal fences land early, not late.** `expectedFormationEpoch` and `expectedLayout` (product decision 19) are retrofitted onto the existing criterion commands in slice 3, so every later internal family — `applyPlannedLayout`, triggers, status writes and internal `connect` — is fenced from birth rather than twice.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| I4  | **The status axes do not ride the aggregate's first field edit.** A condition pinned at `inactive` on a live group for eight slices is a lie on the wire. The key-list edit is paid twice; new fields go last and wire order stays stable, so the second edit is cheap.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| I5  | **Only the next two delivery PRs are concrete.** Slice 0 is an uncommitted prerequisite. PR 1 is the mechanical `establishing → connecting` rename (1a); PR 2 is dark contract closure (1b + 1c). Everything after those remains outcome-shaped analysis until PR 2 lands and the next owner map is recovered. A 115–135-file held-layout vertical is a milestone, not one implementation slice or review unit.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| I6  | **Every slice's gates are named in its own section, not in an appendix.** Three gates are not in branch CI and are therefore invisible unless named per slice: `test:rallar:full-stack:memory:live-rtc-3`, the local medium-scale run, and **Run Hetzner Supported Distributed Manifests** (push-to-main only, required before the plan may be marked complete).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| I7  | **A persisted field lands with its first reader.** The control-plane workstream recorded this as its own slice-1 lesson: _"Persisting a document nothing reads would put an AppInbox mutation-path change into a slice that otherwise carries no risk. It lands with its first reader."_ So slice 2's aggregate fields merge in the **same PR as slice 4a**, which is what first reads them. That pays medium-scale and state-write once instead of twice, and removes the only dark-plumbing hazard in the plan.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| I8  | **Route mounting is one atomic cutover and comes last.** Seven new public routes (`plan`, `connect`, `reconfigure`, `pause`, `resume`, `reset`, `start`) join the already-mounted `activate` route, producing eight application-facing commands; both legacy routes leave in the same PR. Until then new commands remain route-less and `validateGroupLifecyclePolicy` returns one typed issue for behavior-changing new fields, so inert policy cannot be stored as though it worked.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| I9  | **Citations name symbols, not lines.** Between the two census passes `main` moved five commits and invalidated 18 of 64 line citations while leaving nearly every symbol name intact. Exported symbols and test constants (`EVERY_LIFECYCLE_STATE`, `TRANSITION_TARGETS`, `COVERED_API_MUTATIONS`) are the durable anchors; `file:line` is reserved for the handful of lines whose exact position is the point.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| I10 | **Decision 41's three mechanical rules are slice 1b's acceptance criteria, not aspirations.** The transition table is keyed on `(stage, command) → stage`; every stage-keyed decision is a total function over the stage registry; every status function is total over the business plane. Each is checkable: no `Record<GroupLifecycleTransition, GroupLifecycleState>` survives, no bare `lifecycleState !==` comparison survives outside the registry, and the condition matrix has a row for archived, deleted and expired. Without these, adding the eighth stage costs what adding the seventh cost.                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| I11 | **The transport halt lives at the WS relay, not in the shared message predicate** (was Q3). `canSendGroupMessage` stays the _policy_ predicate. `pause` is defined on the transport plane — it stops data crossing edges in the room — and a REST command to a game server is not that. Relic Hunters reads `transportState` from the snapshot and decides for itself, which is the stated division of responsibility. _Alternative rejected:_ folding the halt into the shared predicate, which would make every Relic Hunters REST command on a halted group return 403 and ships with game work attached (C10).                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| I12 | **Neither reconfigure mutation merges or sequences — the stage transition already drives the replan** (was Q4). `compute-lifecycle-transition` sets `presenceSummaryWork: 'enqueue'` unconditionally, the presence-summary worker writes coalesced topology work, and all of it commits with the group row, so entering `reconfiguring` already enqueues a replan atomically. The only work is that a _commanded_ reconfigure must not be change-gated, or the fingerprint gate skips it when membership has not moved; `isChangeGatedGroupRevisionWork` already distinguishes kinds, so that is one flag. _Alternatives rejected:_ merging (widens two byte-exact write validators for a guarantee the existing path already gives) and sequencing (which is what already happens, with extra ceremony).                                                                                                                                                                                                                                                                 |
+| I13 | **The in-flight bound reaches the browser as a nested member-policy object on the `Group`** (was Q2). The resolved member-tier values ride the snapshot/delta/hydration path the reconciler already reads, and `transports` gets a home without a second five-list edit. Costs a field validator now — the `FORMATION_OUTCOME_KEYS` pattern in `validate-persisted-group.ts` is the shape to copy. _Alternatives rejected:_ a bare number (cheaper now, but the next member-policy field pays the whole edit again) and a formation-view read (not pushed, so the browser needs a round trip before its first dial).                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| I14 | **The status writer damps on a coalesced APP_OUTBOX row** (was Q6). The per-group coalesced row with its generation CAS is already the repository's cross-node coalescing primitive — it is what damps topology replanning today — so cluster-wide damping needs no new durable shape, and its `dueAtEpochMs` doubles as the read surface's "when will this settle". _Alternatives rejected:_ leader-only writing (couples a non-authoritative projection to manager election, so a re-election gap becomes a status gap) and accepting N× (bounds changes, not attempts).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| I15 | **The `removed` tombstone publication stays, and extends to `dormant`** (was Q7). It is the teardown signal: it is how a browser learns to drop its layout and evict peers, and `reset` depends on it or members sit holding a layout for a group that has been turned off. It is also reversible — publication can stop later once the browser is stage-aware, but a member that already missed the signal cannot be told retroactively. _Alternative rejected:_ dropping on stage alone, which couples slice 4b's correctness to slice 8b.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | I16 | **`mutationDescriptor` is refactored to a named input interface in slice 5a** (was Q9), before the new commands arrive rather than after. Six positional parameters already violate the three-parameter standard. _Correction to an earlier draft:_ the justification given there — that this workstream adds a seventh parameter — is wrong; the causal fence rides inside `request`, so the arity stays at six. The refactor still stands on the standard alone, but note where it leads: the function's only remaining job is defaulting `targetPrincipalId` and `sessionId` to `null`, both of which `GroupMutationDescriptor` declares required, so a named input makes it an identity over that type and the honest outcome may be deletion rather than renaming. 36 call sites across 9 files, 22 of them in one. _Alternatives rejected:_ registering an exception (permanent, on a function this workstream is actively growing) and splitting the function (a design change to something six registries depend on, in the slice that adds four commands to it). |
-| I17 | **Member progress keeps the arrays and gains the accepted layout identity** (was Q10); no fraction on the public API. The arrays are strictly more informative than a ratio, and the identity lets a UI anchor its bar and re-baseline when the layout changes — product decision 40's stated trap is that an unanchored fraction runs backwards during formation. It also makes "no layout" an absent identity rather than a misleading 1. _Alternative rejected:_ shipping a computed fraction, which bakes the no-layout, edgeless-layout and layout-changed cases into the public surface. |
-| I18 | **`reset` marks rows obsolete inside the lifecycle transaction; it deletes nothing** (was Q11). The accepted-layout row gets a `state: 'removed'` tombstone — the repository's existing idiom, already filtered by every reader — and the topology-input fingerprint row is left alone. _Corrected after audit:_ an earlier draft had `reset` write a reserved sentinel over the fingerprint. That is impossible — `putFingerprint` rejects anything failing `/^sha256:[0-9a-f]{64}$/` — and unnecessary, because the change gate only evaluates when the stored topology snapshot is `active`, and `reset` has just made it a tombstone. Two reasons this is not merely a preference: `RtcTopologySnapshotRepository` **throws a corruption error** if a snapshot row carries any expiry (`RTC topology snapshot must not expire`), so the store's expiry mechanism is not available here; and that mechanism is a _lazy hard delete on the next read_, not passive filtering, so it would destroy the trace rather than preserve it. Marking keeps both rows reachable for admin lifecycle tracing and keeps `reset` a write-only profile against the state-write gate. _Alternatives rejected:_ physical delete (rows going missing are hard to monitor, and it changes the gate profile) and follow-up outbox work (opens the window the fingerprint clear exists to close). |
-| I9 | **Citations name symbols, not lines.** Between the two census passes `main` moved five commits and invalidated 18 of 64 line citations while leaving nearly every symbol name intact. Exported symbols and test constants (`EVERY_LIFECYCLE_STATE`, `TRANSITION_TARGETS`, `COVERED_API_MUTATIONS`) are the durable anchors; `file:line` is reserved for the handful of lines whose exact position is the point. |
+| I17 | **Member progress keeps the arrays and gains the accepted layout identity** (was Q10); no fraction on the public API. The arrays are strictly more informative than a ratio, and the identity lets a UI anchor its bar and re-baseline when the layout changes — product decision 40's stated trap is that an unanchored fraction runs backwards during formation. It also makes "no layout" an absent identity rather than a misleading 1. _Alternative rejected:_ shipping a computed fraction, which bakes the no-layout, edgeless-layout and layout-changed cases into the public surface.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| I18 | **`reset` marks both topology slots obsolete inside the lifecycle transaction; it deletes nothing.** It clears `Group.acceptedLayoutIdentity`, tombstones accepted and planned with `state: 'removed'`, and retains both valid fingerprints. The planned tombstone disarms the change gate because it evaluates only an active planned snapshot. Expiry is unavailable (`RtcTopologySnapshotRepository` rejects it) and would lazily hard-delete trace evidence anyway. Physical delete and follow-up cleanup are rejected because they weaken traceability and atomicity.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+
+The held-layout capability remains the next milestone after PR 2, but slice 0 must select only its next
+two independently reviewable PRs. The later sections preserve owner analysis, hazards and acceptance
+gates; they are not advance commitments to file lists, PR counts or merge order.
 
 ## Slice 1 — Contract closure
 
@@ -233,6 +209,11 @@ table shape changes, not just its entries**, and product decision 41 fixes the r
 keyed on `(stage, command) → stage`, so the next stage is a table entry rather than a refactor.
 
 The library: the seven-stage transition table with C2's landing rule and the `connect` precondition;
+`resolveDialLayoutRoles(stage) → none | planned | accepted | accepted-and-planned`; the complete
+stage-keyed topology-work disposition (`dormant`/`forming`: publish removal, `planned`/`reconfiguring`:
+plan, `connecting`/`reconnecting`: freeze the current planned identity and rely on the transition's
+unconditional follow-up enqueue to replan latest authority, `active`: defer to replanning policy); and
+the invariant that every stage registry has exactly one row;
 `resolveLayoutRole(publication, accepted) → accepted | planned | superseded | incomparable` — **a thin
 wrapper, not a new comparator.** The partial order already exists three times over:
 `compareGroupCausalRevision` returns exactly `equal | dominates | dominated | incomparable` over
@@ -357,9 +338,11 @@ topology work handler, not after it. Any petition whose fence names a layout ide
 the post-commit hook, or it will fence against a layout that has not been written yet.
 
 **Also here, because they ride the same path:** the criterion's `fail-formation` gains `dormant` as a
-target when the attempt budget for the series is spent (product decisions 35, 37), and
-`formationAttemptCount` becomes per-series rather than per-lifetime — today it is incremented by
-`fail-formation` and reset nowhere, so only `reset` may zero it. **`api-v1-match-preset.json` pins the
+target when the attempt budget for the series is spent (product decisions 35, 37), and its increment
+remains the only way attempts grow. The two ways attempts return to zero have explicit owners:
+successful manual or criterion `activate` in 4a's atomic activation/promotion transaction, and `reset`
+in 5e. Add a matrix covering failure → successful activation → later reconfiguration so the budget is
+proved per series rather than merely renamed. **`api-v1-match-preset.json` pins the
 behaviour product decision 38 reverses** — a `closed` lobby re-opening to joins at exhaustion — so
 that recipe changes here, not at finalisation.
 
@@ -378,8 +361,9 @@ members onto the **planned** layout and measure coverage on a layout nobody dial
 
 **Q1 is answered by product decision 24**: the row that exists today is the **planned** layout — it is
 already what the criterion measures, and it is already overwritten on every replan. The **accepted**
-layout gets the second never-expiring row, written only by `activate`. That is why it must be a row
-and not a pointer into publications: a thousand-session group may serve one accepted layout for hours,
+layout gets the second never-expiring row, written only by the canonical promotion effect inside an
+`activateGroup` or internal `applyPlannedLayout` AppInbox transaction. That is why it must be a row and
+not a pointer into publications: a thousand-session group may serve one accepted layout for hours,
 well past the 24 h publication retention, and a hold has no upper bound at all.
 
 The identity trap, verified: **a version comparison is not a safe test.** The planner bumps the
@@ -389,12 +373,26 @@ coexist with different content. Product decision 29's tuple plus `state` is the 
 handle `incomparable`. Publication delivery is also **not monotonic**: the stale-publication computation
 returns `publish-superseded`, so a dominated candidate's publication can be broadcast after a newer one.
 
-- **4a — the accepted-layout store**, delivered with slice 2's aggregate fields (I7). A second durable
-  row written **only by the promotion mutation**, plus the layout-role classifier behind a read-only
-  accessor. Promotion is one fenced internal mutation invoked by `activate` (manual and criterion) and
-  by an `apply` landing directly; `connect` never writes this row. _Corrected 2026-08-24: an earlier
-  draft assigned "the accepted-layout write" to 5b's `connect`, which contradicts this line and would
-  displace a live accepted layout before the new one had proven itself._
+- **4a — the accepted-layout store and canonical promotion effect**, delivered with slice 2's aggregate
+  fields (I7). `computePlannedLayoutPromotion` is pure and has one result vocabulary: `apply`,
+  `already-applied`, `no-planned-layout`, `planned-layout-superseded`, or `stale-fence`. It reads the
+  group plus accepted/planned rows and fingerprints, validates `expectedFormationEpoch` and the full
+  planned identity, and computes the accepted row, accepted fingerprint and
+  `Group.acceptedLayoutIdentity` together. It never writes and never changes a stage by itself.
+
+  The existing `activateGroup` command owns the atomic stage path: one GroupState AppInbox transaction
+  applies `connecting | reconnecting → active`, zeroes `formationAttemptCount`, applies promotion, and
+  writes the group guard, accepted topology guard, event, delta/outbox effects, receipt and completion.
+  Any conflict retries the whole read/compute/validate/write operation; an injected failure at any
+  write rolls all of it back. The stage cannot commit without the accepted row and identity.
+
+  A new route-less `applyPlannedLayout` operation owns the no-transition path. It enters the current
+  AppInbox protocol registries as trusted topology-publication authority, reuses the same pure effect,
+  and writes the same accepted facts without advancing epoch or electorate. The transaction that accepts
+  an `apply` planned publication atomically enqueues this command with an idempotency key derived from
+  `(groupRef, formationEpoch, planned identity)`; process loss after publication therefore cannot strand
+  promotion. An identical accepted identity is replay-safe success; stale authority writes nothing.
+  `connect` never invokes promotion and never writes accepted state.
 
   **Reuse `RtcTopologySnapshotRepository`; do not write a second repository class.** It is already
   generic in everything except one module constant — the namespace is referenced directly inside
@@ -414,9 +412,14 @@ returns `publish-superseded`, so a dominated candidate's publication can be broa
   that exists today holds the _planned_ layout's fingerprint, written at publication accept time, so
   reusing it for `layoutStale` would report false while the browser is still serving the previous
   layout — the exact inverse of the field's meaning.
-- **4b — the stage-keyed planning gate** replacing `isGroupTopologyPlannableAt`: `forming` publishes
-  nothing, `planned` plans and publishes a **held** layout. Observable. Owns C6's five stage-blind
-  topology write paths. I15 settles the tombstone (was Q7): `forming` keeps publishing it and `dormant` gains it, because it is the signal a browser drops its layout on, and `reset` depends on it.
+- **4b — the total stage-keyed planning gate** replacing `isGroupTopologyPlannableAt` across all five
+  topology write paths. `dormant` and `forming` publish removal; `planned` and `reconfiguring` may plan
+  and publish a held candidate; `connecting` and `reconnecting` freeze the current planned identity and
+  write no replacement; `active` follows the replanning policy. Activation and failure already enqueue
+  follow-up topology work, so a source change observed during dialing is reconsidered from the latest
+  authoritative revision after the stage advances. This makes decision 32 true without another
+  persisted queue or dialing-identity field. I15 keeps the tombstone publication because it is the browser's
+  teardown signal and `reset` depends on it.
   Cheaper than budgeted in one way: #319 deleted the git-history-pinned 100-column guard test on the
   planning snapshot selector. **More expensive in another:** the predicate has one caller but the
   planning class has three entrypoints, and the two that bypass it are the memory-mode ones this plan
@@ -427,10 +430,16 @@ returns `publish-superseded`, so a dominated candidate's publication can be broa
   for the criterion; `GroupTopologyManagementView` carrying both, and its inert `pending` field finally
   populated from the coalesced row's `dueAtEpochMs` (product decision 11). Owns C7's departure rule.
 
+**Promotion mutation gate:** focused memory and live-Postgres tests cover manual and criterion apply,
+internal `apply` apply/replay, stale and incomparable identities, a real CAS conflict with a fresh read,
+idempotent identical promotion, corrupt slot/fingerprint rejection, and injected failure at accepted
+row, group row, event, outbox, receipt and completion proving total rollback. A restart test proves an
+`apply` publication cannot commit without durable promotion work and eventually converges.
+
 **Gates:** baseline, both profiles, **medium-scale**, `topology-replay`, state-write,
 `test:integration:postgres`.
 
-## Slice 5 — The stage command family: `plan`, `connect`, `reset`, `start` (dark)
+## Slice 5 — The command family: `plan`, `connect`, `pause`, `resume`, `reset`, `start` (dark)
 
 Per-command cost is the ~15-registry census: a new `AppInboxType`; a payload type and an
 `AUTHENTICATED_GROUP_INBOX_TYPES` entry; a `GroupMutationCommand` union member; a
@@ -449,8 +458,8 @@ stable-command translation return `undefined` and silently change the canonical 
 builder; `GROUP_MUTATION_OPERATIONS` is an untyped `Set` of bare strings.
 
 - **5a — `plan` and `connect` plumbing, dark**: registered on no route, emitted by no producer. Also
-  refactors `mutationDescriptor` to a named input interface across its ~22 call sites (I16), before
-  four new commands inherit a seven-argument call site.
+  re-censuses `mutationDescriptor` after #325 and either deletes its now-identity wrapper or replaces
+  its six positional parameters with one named input before any new command inherits it (I16).
 - **5b — `connect` semantics, dark**: binding the dialing stage to the expected planned identity — the
   expected-layout fence and the two typed denials `no-planned-layout` / `planned-layout-superseded` (product decision 32), and `plan`'s
   idempotence from `planned` (product decision 28). Needs 4b. The caller-supplied-expected-state shape
@@ -465,20 +474,19 @@ builder; `GROUP_MUTATION_OPERATIONS` is an untyped `Set` of bare strings.
   `GroupLifecycleTransitionOperation` or its six downstream registries, and they advance neither the
   formation epoch nor the electorate. That is product decision 25's whole payoff, and it makes this the
   cheapest of the three sub-slices rather than the most dangerous.
-- **5d — legacy retirement, prepared but not cut over**: `start-establishment`'s `AppInboxType`,
-  operation and
-  OpenAPI block and 22 recipe call sites across 10 files, once `plan` + `connect` cover it (product
-  decision 34). Each `POST …/lifecycle/establish/…` becomes two calls, so the recipe edit is a rewrite,
-  not a path substitution. The automatic retry leg is re-expressed as `plan` plus the connect trigger.
-  **The route and OpenAPI path themselves come out in 8d, not here**, so the tree stays deployable
-  throughout.
+- **5d — legacy cutover inventory, dark and deletion-free**: enumerate `start-establishment`'s route,
+  OpenAPI operation, AppInbox type/operation, registries and 22 recipe call sites across 10 files, and
+  prepare the exact `plan` + `connect` replacement mapping. Each old POST becomes two calls, so this is
+  a rewrite rather than a path substitution; the automatic retry leg becomes `plan` plus the connect
+  trigger. **No legacy runtime symbol or consumer is removed here.** The replacement and complete
+  deletion land atomically in 8d, after the new paths are reachable.
 - **5e — `reset` and `start`, dark** (product decisions 35–37). `start` is an ordinary transition,
   `dormant → forming`, denied when the attempt budget is spent. `reset` is the expensive one and is
   the only command in this workstream that retires durable rows — by **marking, never deleting**
-  (I18): it clears four `Group` fields (`formationAttemptCount` to 0, `establishmentStartedAtEpochMs`
-  and `lastFormationOutcome` to null, `transportState` to `halted`), writes a `state: 'removed'`
+  (I18): it clears five `Group` fields (`formationAttemptCount` to 0, `establishmentStartedAtEpochMs`,
+  `lastFormationOutcome` and `acceptedLayoutIdentity` to null, `transportState` to `halted`), writes a `state: 'removed'`
   tombstone over **both** topology rows — the accepted-layout row 4a introduces and the existing
-  planned row — atomically, and keeps the topology-input fingerprint for tracing. It needs 4a.
+  planned row — atomically, and keeps both topology-input fingerprints for tracing. It needs 4a.
 
   Marking is forced as well as preferred. `RtcTopologySnapshotRepository` throws a corruption error if
   a snapshot row carries any expiry at all, so the store's expiry mechanism is unavailable here — and
@@ -487,33 +495,27 @@ builder; `GROUP_MUTATION_OPERATIONS` is an untyped `Set` of bare strings.
   tracing and keeps `reset` a write-only profile against the state-write gate.
 
   **Two corrections to earlier drafts, and the second corrects the first.** Draft one had `reset` write
-  a reserved sentinel over the fingerprint row; that is impossible, because `putFingerprint` rejects
-  anything failing `/^sha256:[0-9a-f]{64}$/`. Draft two concluded the fingerprint therefore needed no
-  handling at all, on the grounds that tombstoning "the topology row" disarms the gate. That was right
-  about the mechanism and wrong about the row. The gate is
+  a reserved fingerprint sentinel; that is impossible because `putFingerprint` validates the hash.
+  Draft two tombstoned only accepted. The gate is
   `changeGated && read.snapshot?.value.state === 'active'`, and `read.snapshot` is the **planned** row —
   the one that exists today — not the accepted row 4a adds. Tombstoning only the accepted slot leaves
   the gate armed, so a reset group with unchanged membership still has its next plan skipped as
   `skipped-fingerprint`, silently, with no error anywhere. **Both rows must be tombstoned, in the same
-  transaction.** With both retired the gate cannot evaluate, and the fingerprint is kept deliberately.
-
-  The trap this closes:
-  (`skipped-fingerprint`), so a reset group whose membership has not changed would otherwise have its
-  next plan skipped as unchanged — no publication, no layout, no error anywhere. And `reset` must
-  advance the formation epoch like every other transition; resetting it would make the
+  transaction.** With both retired the gate cannot evaluate, and both fingerprints remain traceable.
+  `reset` must also advance the formation epoch like every other transition; reusing it would make the
   epoch-keyed formation-timer resource id and the epoch-keyed criterion request id from the group's
   previous life collide with its next one, turning transitions into silent inbox replays.
 
-Product decision 12 keeps one initiator policy, so the command predicate needs no per-command branch.
+Product decision 12 keeps one initiator policy for all eight application-facing commands, so the
+command predicate needs no per-command branch.
 Every new command inherits the slow sequential read path, and the read step and its validator apply
 that predicate independently — a one-sided edit throws at compute.
 
-**Gates:** baseline, both profiles, **medium-scale**, state-write, and the hard-coded counters, which
-are **net, not additive**: seven commands arrive across slices 5 and 6 (`plan`, `connect`, `pause`,
-`resume`, `reset`, `start`, stage-level `reconfigure`) while 5d and 6a remove two, for a net of five.
-Recompute each counter rather than adding five to it — the three registries count different things
-(routing entrypoints, distinct types, covered API mutations), and `pause`/`resume`/`reset`/`start`
-do not all appear in all three:
+**Gates:** baseline, both profiles, **medium-scale**, state-write, and every hard-coded inventory
+recomputed from semantics rather than arithmetic. Seven new public commands arrive across slices 5
+and 6 while two public legacy commands leave; `activate` remains mounted; 4a also adds one route-less
+internal `applyPlannedLayout` operation. Routing entrypoints, distinct AppInbox types, trusted internal
+types and covered API mutations therefore have different deltas and must not share one guessed count:
 `mutation-routing-inventory.ts:71` (`!== 56`) and `:74` (`!== 52`);
 `api-mutation-openapi-contract.test.ts:139` (`COVERED_API_MUTATIONS.length, 47`);
 `api-v1-recipe-idempotency-cutover.test.ts:268` (`toHaveLength(47)`); and the route-count strings
@@ -528,19 +530,19 @@ and never touches `lifecycleState`. Lifecycle transitions live elsewhere. The st
 must set the stage **atomically with** the outbox enqueue, or a crash between them leaves a group in
 `reconfiguring` with no topology work queued. **I12 settles this** (was Q4).
 
-Product decision 27 removes half the original difficulty: an `apply` landing performs no transition at
-all, so there is no "publish and apply in one step" to make atomic. I12 removes the other half: the
-stage transition already enqueues a replan in the same transaction, so neither mutation merges and
-neither sequences. What remains is one flag — a commanded reconfigure must not be change-gated, or the
-fingerprint gate skips it whenever membership has not moved.
+Product decision 27 separates two atomicity boundaries. A `hold` stage transition already enqueues its
+replan in the group transaction (I12). An `apply` landing has no stage transition, but accepting the
+planned publication must atomically persist the route-less `applyPlannedLayout` command defined in 4a;
+promotion then converges in its own retryable GroupState AppInbox transaction. A crash may expose a
+short planned-before-accepted interval, but never a committed publication with no durable promotion
+work. Commanded reconfigure also must not be change-gated, or unchanged membership skips it.
 
 Secondary: the computed-write validator asserts `outboxEntries.length === 1 + expectedTimerEntries.length`
 and `jsonEquals` each entry against a re-derivation, and the result validator requires every outbox id
 after the first to start with `ft-`. A merged mutation widens both.
 
-- **6a — merge-or-sequence, and the atomicity argument.** Owns Q4. Also retires `reopen-establishment`'s
-  type, operation and recipe call sites (product decision 34) — its route and OpenAPI path come out in
-  8d with the rest of the cutover.
+- **6a — merge-or-sequence, and the atomicity argument.** Owns Q4. It also inventories every
+  `reopen-establishment` type, operation, route, OpenAPI and recipe consumer for 8d; none leaves early.
 - **6b — the `landing` field** and its interaction with the replanning policy, still dark.
 
 **Gates:** baseline, both profiles, **medium-scale**, state-write, `topology-replay`.
@@ -608,9 +610,10 @@ Four verified facts shape it:
   reporting to the accepted slot and the planned layout's edges never accrue evidence — `observedRate`
   stays near zero and **the criterion never fires**. In `connecting` it is worse: there is no accepted
   layout at all, so peer selection degrades to the rendezvous top-up over active sessions, which
-  overlaps the planned edges only by coincidence. **RTT reporting is pinned to the planned slot; the
-  dial gate is pinned to the accepted one.** Every other reader is classified explicitly, one at a
-  time, with its reason — there is no blanket rule.
+  overlaps the planned edges only by coincidence. **RTT reporting follows planned; dialing follows the
+  total stage matrix from 1b — planned in `connecting`, accepted in live/held stages, both in
+  `reconnecting`.** Every other reader is classified explicitly, one at a time, with its reason; there
+  is no blanket slot rule.
 
   Also: the `setOverlayById` wrap is smaller than it looks. The setter already has a silent-drop branch
   (`emitOverlayAdoption(id, 'dominated-dropped')`, no throw) and already emits
@@ -622,10 +625,12 @@ Four verified facts shape it:
   a protocol identity carried on the wire in `ALMessage.forwarding.overlayId`. A role-suffixed key is
   therefore not available — the second slot must be a second repository token (the
   `configureSharedStateRepositories` two-token pattern is the one to copy), not a re-key.
-- **8b — the dial gate and bootstrap suppression**, including the inbound admission deny keyed on the
-  stage, and the `reconnecting` union — the accepted layout's edges plus the planned layout's, which is
-  the first time the browser dials two layouts at once. Without the inbound deny, a lagging peer's offer
-  still creates connections and `discovery-holds-dials` fails.
+- **8b — the dial gate and bootstrap suppression**, driven by 1b's one total matrix for outbound and
+  inbound creation: no layouts in `dormant`/`forming`/`planned`, planned only in `connecting`, accepted
+  only in `active`/`reconfiguring`, and accepted ∪ planned in `reconnecting`. The planned slot is frozen
+  during both dialing stages by 4b, so a later publication cannot silently replace what `connect`
+  named. Without the inbound half, a lagging peer's offer still creates connections and
+  `discovery-holds-dials` fails.
 
   **This is not a five-call-site restructure, and an earlier draft said it was.** All five outbound
   entry points already funnel through `WebRtcConnectionService.ensurePeerConnectionStarted`, and
@@ -643,13 +648,12 @@ Four verified facts shape it:
   `readyPeerIds.length / desiredPeerIds.length`, needs no server change and no wire change, and must
   report nothing rather than 1 while no layout exists (**Q10** settles its public shape), and C10's two games updated in the
   same PR: the exhaustive status mapping and the `sendJson` fallback together.
-- **8d — the route cutover** (I8): **all seven** new commands mounted on HTTP with their OpenAPI paths
-  — `plan`, `connect`, `activate`, `reconfigure`, `pause`, `resume`, `reset`, `start` — **and both
-  legacy routes removed, in the same PR**. _Corrected 2026-08-24: an earlier draft mounted five,
-  silently stranding `reset` and `start`, which the product surface requires; and it removed
-  `start-establishment` in 5d and `reopen-establishment` in 6a, both **before** their replacements were
-  mounted, which leaves an interval where no deployable tree can establish a group at all. Removal and
-  mounting are one cutover or the tree is unshippable in between._
+- **8d — the route cutover** (I8): seven new HTTP/OpenAPI paths — `plan`, `connect`, `reconfigure`,
+  `pause`, `resume`, `reset`, `start` — join the existing `activate` path, producing the product's eight
+  application-facing commands. The `start-establishment` and `reopen-establishment` routes and OpenAPI
+  paths, internal types, operations, registries and recipe consumers leave in this same PR, and the
+  temporary policy-validity issue is removed. Earlier slices only prepare the inventory, so no
+  deployable tree loses both the old path and its reachable replacement.
 
 **Blast radius:** repointing readiness from active sessions to the accepted layout changes
 `waitForRoomLane`'s `{exact: peerIds.length}` expectation for ar-eye-hunter-v1, relic-hunters-v1,
@@ -707,12 +711,18 @@ work on every accepted group revision, unconditionally — the write sits outsid
 heartbeat enqueues no presence-summary work at all, which is what makes product decision 11's "a
 heartbeat is not stale" true from a second direction.
 
-`layoutStale` needs the accepted layout's fingerprint, copied at `activate` time in 4a rather than
+`layoutStale` needs the accepted layout's fingerprint, copied by 4a's canonical promotion effect rather than
 reconstructed here — the formation view read already holds the planning authority, but its dependency
 contract has no execution repository. One non-obvious mover neither plan named: the fingerprint hashes
 the **effective** topology config, which resolves a TTL'd temporary override, so an expiring override
 flips `layoutStale` on wall-clock time alone with no group event to explain it. Say so on the read
 surface or exclude overrides from the fingerprint.
+
+This is also where `apply` gets its producer. When the topology publication transaction accepts a
+candidate whose effective landing is `apply`, it writes the normal planned snapshot/publication effects
+and the 4a `applyPlannedLayout` AppInbox command in the same transaction. The command names the exact
+epoch and planned identity, so a newer candidate fences the older promotion; retry, replay and process
+restart converge rather than duplicating accepted-layout events. `hold` writes no promotion command.
 
 Split 10a (`commanded` + `layoutStale` + `pending` on the formation view = the `commanded-replanning`
 scenario) from 10b (per-group windows, the maximum wait, and minimum layout age). **10b carries a
@@ -742,8 +752,8 @@ path, not the formation-timer shape. And an outbox entry whose typeId has no reg
 on every dequeue and burns to FAILED, while the formation-timer handler registration is _conditional_
 and its entries are written unconditionally.
 
-**The connect trigger needs a latch, and the plan did not say so.** `connect` names the exact planned
-layout identity it means to accept (product decision 32), but a stage receipt explicitly does not wait
+**The connect trigger needs a latch.** `connect` names the exact planned layout identity it means to
+dial (product decision 32), but a stage receipt explicitly does not wait
 for a layout — and the `immediate` trigger fires the moment `planned` is entered, when no publication
 may exist yet. A one-shot timer entry that fires, finds nothing and drops is the same failure shape as
 the deadline hole below. So the trigger records **"satisfied, awaiting publication"** durably, and the
@@ -820,7 +830,11 @@ measurement's monotonic version and timestamp and must return the watermark.
   added to the key lists (I4's second edit), `group-activation-status-changed` registered at its six
   sites (only the `Record<GroupEventType, true>` one is compiler-checked), and both axes reported on the
   formation view **derived at read** — written only by transitions that already CAS the row. No new
-  writer, no amplification. Also here: publish `maxFormationAttempts` beside `formationAttemptCount`
+  writer, no amplification. The basis field is exactly `coverageBasisLayoutIdentity`: accepted while
+  accepted traffic exists, otherwise the frozen planned identity during first `connecting`. The event,
+  status command fence, watermark scope, damping row, dwell/evidence-expiry keys and stale-drop check all
+  carry that same value; none substitutes `acceptedLayoutIdentity`. Also here: publish
+  `maxFormationAttempts` beside `formationAttemptCount`
   on the formation view and in OpenAPI (product decision 39) — today it appears only inside
   `CreateGroupRequest`, a request body, so the numerator is pushed everywhere and the denominator is
   readable nowhere, which makes `start`'s exhaustion denial undiagnosable.
@@ -847,7 +861,9 @@ measurement's monotonic version and timestamp and must return the watermark.
 status → topology work → petition → status from becoming a self-sustaining loop.
 
 **Gates:** baseline, both profiles, **medium-scale**, **state-write**, `formation-large`, plus the
-`status-lifecycle`, `status-convergence` and `status-on-connect` recipes.
+`status-lifecycle`, `status-convergence` and `status-on-connect` recipes. The convergence matrix must
+include two successive first-formation planned identities while accepted is null; this is the case that
+an accepted-only key aliases.
 
 ## Slice 13 — Operator and observability surfaces (C9)
 
@@ -872,10 +888,10 @@ before the live-RTC specs exist.
 `rallar-group-docs-compat.test.ts` for exact backticked phrases including every `GROUP_POLICY_REASON_CODE`;
 the `examples/**` READMEs and the `building-rallar-apps` / `rallar-realtime` skills, pinned by
 `rallar-skill-app-examples-integrity.test.ts`; the OpenAPI `GroupPolicyReasonCode` enum (already **6
-codes behind** the TypeScript const, with no test coupling them); and the twenty-two acceptance scenarios
+codes behind** the TypeScript const, with no test coupling them); and the twenty-five acceptance scenarios
 registered in `recipe-matrix.json` plus both hand-maintained sorted id lists in `recipe-matrix.test.ts`.
 It also verifies that `start-establishment` and `reopen-establishment` are gone everywhere, which
-slices 5d and 6a removed.
+8d removed in the atomic route cutover after 5d and 6a inventoried every consumer.
 
 **Nothing behavioural hides here.** The reader-default removal the first draft placed in this slice is
 already done: #319 cut `group-state-persistence-codec.ts` from 328 lines to 49 and removed
@@ -939,7 +955,7 @@ looks as it does.
 Per slice: focused unit matrices first, then the surface's own tests, then the recipes, then the gates
 named in that slice's section. Report every command as passed, failed or skipped.
 
-Whole-workstream acceptance is the product plan's twenty-two named scenarios, plus the three invariants
+Whole-workstream acceptance is the product plan's twenty-five named scenarios, plus the three invariants
 asserted at every slice boundary. The plan may be marked complete only after the final working tree
 passes `test:unit`, `test:ci` and `build`, plus the Branch Release Gate on the final feature-branch
 commit and Run Hetzner Supported Distributed Manifests on the resulting default-branch commit — and any
