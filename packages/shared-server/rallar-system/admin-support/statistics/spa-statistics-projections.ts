@@ -6,7 +6,7 @@ import type {
     SpaStatisticsSafeGroupSummary,
     SpaStatisticsWarning
 } from '@shared/api/spa-statistics-types.ts';
-import type { RallarServerWsStatus } from '../../../rallar-facade/ws-topic-router.ts';
+import type { RallarServerWsStatus } from '../../websocket/router/rallar-server-ws-status.ts';
 
 export interface SpaStatisticsActor {
     readonly principalId: string;

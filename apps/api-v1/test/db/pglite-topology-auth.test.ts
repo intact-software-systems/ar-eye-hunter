@@ -14,6 +14,7 @@ import { createGroupStateService } from '@shared-server/rallar-system/group-stat
 import { GroupStateRepository } from '@shared-server/rallar-system/group-state/persistence/group-state-repository.ts';
 import { RtcRttInboxService } from '@shared-server/rallar-system/rtc-rtt/inbox/rtc-rtt-inbox-service.ts';
 import { RtcRttRepository } from '@shared-server/rallar-system/rtc-rtt/persistence/rtc-rtt-repository.ts';
+import { installRtcRttSystemTopic } from '@shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
 import { type TopologyAppInboxCommand, type TopologyAppInboxRequestPayload } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
@@ -21,7 +22,6 @@ import type { TopologyAppInboxResult } from '@shared-server/rallar-system/topolo
 import { TopologyInboxService } from '@shared-server/rallar-system/topology/inbox/topology-inbox-service.ts';
 import { createGroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
-import { initRallarSystemWsTopics } from '@shared-server/rallar-system/websocket/ws-system-topics.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
@@ -506,9 +506,10 @@ Deno.test(
                 'pglite-ws-ingress'
             );
             const wsIngressCapturedAt: number[] = [];
-            const wsTopics = initRallarSystemWsTopics(wsService, {
-                rtcTopologyService: new RallarRtcTopologyService({ now: () => nowEpochMs }),
-                enqueueRtcRttMutation: async (input) => {
+            const wsTopics = installRtcRttSystemTopic(wsService, {
+                service: new RallarRtcTopologyService({ now: () => nowEpochMs }),
+                findGroupSnapshotByRef: () => rttGroup,
+                enqueueMutation: async (input) => {
                     wsIngressCapturedAt.push(input.capturedAtEpochMs);
                     return await rtcRttInbox.enqueue(input);
                 }

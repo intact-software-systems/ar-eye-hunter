@@ -1,5 +1,6 @@
+import { installRtcRttSystemTopic } from '@shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts';
+import { installStateSyncWsTopics } from '@shared-server/rallar-system/state-sync/install-state-sync-ws-topics.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
-import { initRallarSystemWsTopics } from '@shared-server/rallar-system/websocket/ws-system-topics.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupSnapshot } from '@shared/api/group-types.ts';
 import {
@@ -276,11 +277,13 @@ const service = new WsQueueBoxServerService(
     server,
     'perf-server'
 );
-initRallarSystemWsTopics(service, {
-    rtcTopologyService: topologyService
+const group = createGroupSnapshot('room-1', sessionIds);
+installStateSyncWsTopics(service);
+installRtcRttSystemTopic(service, {
+    service: topologyService,
+    findGroupSnapshotByRef: () => group
 });
 
-const group = createGroupSnapshot('room-1', sessionIds);
 clientStateSnapshotsRepository.setClientStateSnapshots(sessionIds.map(createClientSnapshot));
 const senderSocket = sockets.get(sessionIds[0])!;
 

@@ -232,8 +232,8 @@ function isRealtimeRoutingTopologyPath(changedPath) {
             'rtc',
             'topology',
             'state-sync-routing',
-            'ws-system-topics',
-            'ws-server-target-resolver'
+            'websocket/router',
+            'websocket/targets'
         ]) ||
         matchesFileWithin(changedPath, 'apps/api-v1/src', [
             'rtc-topology',

@@ -1,6 +1,6 @@
 import { createRallarServerFacade } from '@shared-server/rallar-facade/RallarServer.ts';
-import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { createGroupRoomWsAuthorizer } from '@shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts';
 import type { AuditStamp, GroupMember, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
@@ -14,11 +14,11 @@ import {
     type WsServerTargetResolver
 } from '@shared/mod.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { createTestGroup } from '../create-test-group.ts';
+import { createTestGroup } from '../../create-test-group.ts';
 
-describe('RallarServerWsFacade', () => {
+describe('RallarServerWsRouter', () => {
     it('fans out implicit app topics to their declared targets', async () => {
-        const { facade, socket } = createFacade();
+        const { router, socket } = createRouter();
         const message = newALBroadcastMessage(
             'peer-1',
             newALRoute('app.cursor', 'all', 'cursor-1'),
@@ -30,7 +30,7 @@ describe('RallarServerWsFacade', () => {
             }
         );
 
-        await facade.handle(message);
+        await router.route(message);
 
         expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual([
             'conn-2',
@@ -42,7 +42,7 @@ describe('RallarServerWsFacade', () => {
     });
 
     it('reserves rallar topics for system middleware and sends a NACK', async () => {
-        const { facade, socket } = createFacade();
+        const { router, socket } = createRouter();
         const message = newALBroadcastMessage(
             'peer-1',
             newALRoute('rallar.internal', 'all', 'secret-1'),
@@ -51,7 +51,7 @@ describe('RallarServerWsFacade', () => {
             { ok: false }
         );
 
-        await facade.handle(message);
+        await router.route(message);
 
         expect(socket.sent).toHaveLength(1);
         expect(socket.sent[0].connectionId).toBe('conn-1');
@@ -59,8 +59,8 @@ describe('RallarServerWsFacade', () => {
     });
 
     it('uses lightweight validators for registered topics', async () => {
-        const { facade, socket } = createFacade();
-        facade.defineTopic({
+        const { router, socket } = createRouter();
+        router.defineTopic({
             topicId: 'app.todo',
             typeId: 'todo.item.updated.v1',
             validate: (value) => typeof value === 'object' && value !== null && 'title' in value
@@ -73,7 +73,7 @@ describe('RallarServerWsFacade', () => {
             { done: true }
         );
 
-        await facade.handle(message);
+        await router.route(message);
 
         expect(socket.sent).toHaveLength(1);
         expect(socket.sent[0].connectionId).toBe('conn-1');
@@ -81,15 +81,15 @@ describe('RallarServerWsFacade', () => {
     });
 
     it('dispatches registered handlers and allows default fanout to be disabled', async () => {
-        const { facade, socket } = createFacade();
+        const { router, socket } = createRouter();
         const handledPayloads: JsonWireValue[] = [];
-        facade.defineTopic({
+        router.defineTopic({
             topicId: 'app.todo',
             typeId: 'todo.item.updated.v1',
             fanout: 'none',
             validate: () => true
         });
-        facade.on(
+        router.on(
             { topicId: 'app.todo', typeId: 'todo.item.updated.v1' },
             async (handledMessage) => {
                 handledPayloads.push(decodeJsonWireValue(handledMessage.payload));
@@ -100,13 +100,13 @@ describe('RallarServerWsFacade', () => {
             newALRoute('app.todo', 'all', 'todo-1'),
             'all',
             'todo.item.updated.v1',
-            { title: 'Ship facade', done: false }
+            { title: 'Ship router', done: false }
         );
 
-        await facade.handle(message);
+        await router.route(message);
 
         expect(handledPayloads).toEqual([{
-            title: 'Ship facade',
+            title: 'Ship router',
             done: false
         }]);
         expect(socket.sent).toHaveLength(0);
@@ -114,13 +114,13 @@ describe('RallarServerWsFacade', () => {
 
     it('can route registered topics through the QueueBox outbox', async () => {
         let outboxWakeRequested = false;
-        const { facade, service } = createFacade({
+        const { router, service } = createRouter({
             wakeOutbox: () => {
                 outboxWakeRequested = true;
             }
         });
         const enqueue = vi.spyOn(service, 'enqueueOutboxIfAbsent');
-        facade.defineTopic({
+        router.defineTopic({
             topicId: 'app.todo',
             typeId: 'todo.item.updated.v1',
             fanout: 'outbox'
@@ -137,22 +137,22 @@ describe('RallarServerWsFacade', () => {
             }
         );
 
-        await facade.handle(message);
+        await router.route(message);
 
         expect(enqueue).toHaveBeenCalledWith(message);
         expect(outboxWakeRequested).toBe(true);
     });
 
     it('can require explicit topic definitions while still rejecting custom prefixes', async () => {
-        const { facade } = createFacade({ allowImplicitUserTopics: false });
+        const { router } = createRouter({ allowImplicitUserTopics: false });
 
-        facade.defineTopic({
+        router.defineTopic({
             topicId: 'app.todo',
             typeId: 'todo.item.updated.v1'
         });
 
         expect(() =>
-            facade.defineTopic({
+            router.defineTopic({
                 topicId: 'custom.todo',
                 typeId: 'todo.item.updated.v1'
             })
@@ -161,7 +161,7 @@ describe('RallarServerWsFacade', () => {
 
     it('passes room broadcast target groupRef into room authorization context', async () => {
         const authorizeRoomMessage = vi.fn(() => true);
-        const { facade } = createFacade({
+        const { router } = createRouter({
             authorizeRoomMessage
         });
         const group = createGroupSnapshot('room-1', ['peer-1'], 4).group;
@@ -177,7 +177,7 @@ describe('RallarServerWsFacade', () => {
             }
         );
 
-        await facade.handle(message);
+        await router.route(message);
 
         expect(authorizeRoomMessage).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -195,7 +195,7 @@ describe('RallarServerWsFacade', () => {
     it('rejects room messages as not-yet-in-sync when local cache is older than minSnapshotVersion', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         try {
-            const { facade, socket } = createFacade({
+            const { router, socket } = createRouter({
                 authorizeRoomMessage: createGroupRoomWsAuthorizer({
                     findGroupSnapshotById: () => createGroupSnapshot('room-1', ['peer-1'], 3)
                 })
@@ -211,7 +211,7 @@ describe('RallarServerWsFacade', () => {
                 }
             );
 
-            await facade.handle(message);
+            await router.route(message);
 
             expect(socket.sent).toHaveLength(1);
             expect(socket.sent[0].connectionId).toBe('conn-1');
@@ -296,7 +296,7 @@ describe('RallarServer.ws.publish current behavior', () => {
             });
             expect(socket.sent).toHaveLength(0);
             expect(warn).toHaveBeenCalledWith(
-                'Dynamic WS topic had no recipients: app.cursor'
+                'Rallar server WS topic had no recipients: app.cursor'
             );
         }
         finally {
@@ -455,8 +455,8 @@ describe('RallarServer.ws.publish current behavior', () => {
     });
 });
 
-function createFacade(
-    options?: ConstructorParameters<typeof RallarServerWsFacade>[1]
+function createRouter(
+    options?: ConstructorParameters<typeof RallarServerWsRouter>[1]
 ) {
     const socket = createFakeWsServer();
     const service = new WsQueueBoxServerService(
@@ -468,10 +468,10 @@ function createFacade(
             targetResolver: createTargetResolver()
         }
     );
-    const facade = new RallarServerWsFacade(service, options);
+    const router = new RallarServerWsRouter(service, options);
 
     return {
-        facade,
+        router,
         service,
         socket
     };

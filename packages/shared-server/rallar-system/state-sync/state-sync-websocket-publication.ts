@@ -1,19 +1,13 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import { resolveStateSyncRecipients, type StateSyncRoutingOptions } from './state-sync-routing.ts';
+import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import { decodeStateSyncMessage, type StateSyncDecodeResult } from './state-sync-payload.ts';
+import { resolveDecodedStateSyncRecipients, type StateSyncRoutingOptions } from './state-sync-routing.ts';
 
-export function toStateSyncConnectionFilter(
-    webSocketServer: JsonWebSocketServer,
-    message: ALMessage,
-    options: StateSyncRoutingOptions = {}
-): ((context: ConnectionContext) => boolean) | undefined {
-    const recipients = resolveStateSyncRecipients(webSocketServer, message, options);
-    if (!recipients) {
-        return undefined;
-    }
-
-    const connectionIds = new Set(recipients.map((recipient) => recipient.connectionId));
-    return (context) => connectionIds.has(context.id);
+export interface SendDecodedStateSyncMessageInput {
+    readonly webSocketServer: JsonWebSocketServer;
+    readonly message: ALMessage;
+    readonly decoded: StateSyncDecodeResult;
+    readonly routing?: StateSyncRoutingOptions;
 }
 
 export function sendStateSyncMessage(
@@ -21,24 +15,36 @@ export function sendStateSyncMessage(
     message: ALMessage,
     options: StateSyncRoutingOptions = {}
 ): number {
-    const recipients = resolveStateSyncRecipients(webSocketServer, message, options);
-    if (!recipients) {
-        return webSocketServer.broadcast(message);
-    }
-    if (recipients.length === 0) {
+    return sendDecodedStateSyncMessage({
+        webSocketServer,
+        message,
+        decoded: decodeStateSyncMessage(message),
+        routing: options
+    });
+}
+
+export function sendDecodedStateSyncMessage(
+    input: SendDecodedStateSyncMessageInput
+): number {
+    const recipients = resolveDecodedStateSyncRecipients(
+        input.webSocketServer,
+        input.decoded,
+        input.routing
+    );
+    if (!recipients || recipients.length === 0) {
         return 0;
     }
 
-    const encoded = webSocketServer.encode(message);
-    let sent = 0;
+    const encoded = input.webSocketServer.encode(input.message);
+    let sentCount = 0;
     for (const recipient of recipients) {
         try {
-            webSocketServer.sendEncoded(recipient.connectionId, encoded);
-            sent += 1;
+            input.webSocketServer.sendEncoded(recipient.connectionId, encoded);
+            sentCount += 1;
         }
         catch (error) {
             console.error('State sync send failed:', error);
         }
     }
-    return sent;
+    return sentCount;
 }

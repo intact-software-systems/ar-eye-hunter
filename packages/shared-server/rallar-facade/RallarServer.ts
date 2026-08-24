@@ -10,46 +10,51 @@ import {
     type RallarServerAppDataStoreDefinition,
     type RallarServerAppDataStoreOptions
 } from '../app-data/RallarServerAppData.ts';
-import {
-    RallarServerWsFacade,
-    type RallarServerWsFacadeOptions,
-    type RallarServerWsFanout,
-    type RallarServerWsHandler,
-    type RallarServerWsProxyRule,
-    type RallarServerWsPublishResult,
-    type RallarServerWsSelector,
-    type RallarServerWsStatus,
-    type RallarServerWsTopicDefinition
-} from './ws-topic-router.ts';
+import type {
+    RallarServerWsFanout,
+    RallarServerWsHandler,
+    RallarServerWsPayload,
+    RallarServerWsProxyRule,
+    RallarServerWsPublishResult,
+    RallarServerWsRouterOptions,
+    RallarServerWsSelector,
+    RallarServerWsTopicDefinition
+} from '../rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
+import { RallarServerWsRouter } from '../rallar-system/websocket/router/rallar-server-ws-router.ts';
+import type { RallarServerWsStatus } from '../rallar-system/websocket/router/rallar-server-ws-status.ts';
 
-export type RallarServerRuntime = Readonly<{
-    wsQBoxServerService: WsQueueBoxServerService;
-    qboxEngine?: Readonly<{
-        start(): void;
-        wake?(): void;
-    }>;
-}>;
+export interface RallarServerQueueEngine {
+    start(): void;
+    wake?(): void;
+}
 
-export type RallarServerSystemInstallers<TRuntime extends RallarServerRuntime> = Readonly<{
-    installDefaultMiddlewareTopics?: (
+export interface RallarServerRuntime {
+    readonly wsQBoxServerService: WsQueueBoxServerService;
+    readonly qboxEngine?: RallarServerQueueEngine;
+}
+
+export interface RallarServerSystemInstallers<TRuntime extends RallarServerRuntime> {
+    readonly installDefaultMiddlewareTopics?: (
         runtime: TRuntime,
-        ws: RallarServerWsFacade
+        ws: RallarServerWsRouter
     ) => void;
-    installWebSocketLifecycle?: (
+    readonly installWebSocketLifecycle?: (
         runtime: TRuntime,
-        ws: RallarServerWsFacade
+        ws: RallarServerWsRouter
     ) => void;
-}>;
+}
 
-export type CreateRallarServerFacadeOptions<TRuntime extends RallarServerRuntime> = Readonly<{
-    runtime: TRuntime;
-    repositories?: RepositoryManager;
-    ws?: RallarServerWsFacadeOptions;
-    system?: RallarServerSystemInstallers<TRuntime>;
-    appData?: Readonly<{
-        repository?: AppDataRepositoryLike;
-    }>;
-}>;
+export interface RallarServerFacadeAppDataOptions {
+    readonly repository?: AppDataRepositoryLike;
+}
+
+export interface CreateRallarServerFacadeOptions<TRuntime extends RallarServerRuntime> {
+    readonly runtime: TRuntime;
+    readonly repositories?: RepositoryManager;
+    readonly ws?: RallarServerWsRouterOptions;
+    readonly system?: RallarServerSystemInstallers<TRuntime>;
+    readonly appData?: RallarServerFacadeAppDataOptions;
+}
 
 export class RallarServer<TRuntime extends RallarServerRuntime = RallarServerRuntime> {
     readonly ws: RallarServerWebSocketFacade;
@@ -61,12 +66,12 @@ export class RallarServer<TRuntime extends RallarServerRuntime = RallarServerRun
     constructor(
         runtime: TRuntime,
         repositories: RepositoryManager = defaultRepositoryManager,
-        wsOptions: RallarServerWsFacadeOptions = {},
+        wsOptions: RallarServerWsRouterOptions = {},
         systemInstallers: RallarServerSystemInstallers<TRuntime> = {},
         appDataRepository?: AppDataRepositoryLike
     ) {
         this.runtime = runtime;
-        const wsTopicsFacade = new RallarServerWsFacade(
+        const wsRouter = new RallarServerWsRouter(
             runtime.wsQBoxServerService,
             {
                 ...wsOptions,
@@ -74,10 +79,10 @@ export class RallarServer<TRuntime extends RallarServerRuntime = RallarServerRun
             }
         );
 
-        this.ws = new RallarServerWebSocketFacade(wsTopicsFacade);
+        this.ws = new RallarServerWebSocketFacade(wsRouter);
         this.system = new RallarServerSystemFacade(
             runtime,
-            wsTopicsFacade,
+            wsRouter,
             systemInstallers
         );
         this.data = new RallarServerDataFacade(repositories, appDataRepository);
@@ -105,12 +110,12 @@ export class RallarServerSystemFacade<TRuntime extends RallarServerRuntime = Ral
     private lifecycleInstalled = false;
 
     private readonly runtime: TRuntime;
-    private readonly ws: RallarServerWsFacade;
+    private readonly ws: RallarServerWsRouter;
     private readonly installers: RallarServerSystemInstallers<TRuntime>;
 
     constructor(
         runtime: TRuntime,
-        ws: RallarServerWsFacade,
+        ws: RallarServerWsRouter,
         installers: RallarServerSystemInstallers<TRuntime>
     ) {
         this.runtime = runtime;
@@ -141,9 +146,9 @@ export class RallarServerSystemFacade<TRuntime extends RallarServerRuntime = Ral
 }
 
 export class RallarServerWebSocketFacade {
-    private readonly topics: RallarServerWsFacade;
+    private readonly topics: RallarServerWsRouter;
 
-    constructor(topics: RallarServerWsFacade) {
+    constructor(topics: RallarServerWsRouter) {
         this.topics = topics;
     }
 
@@ -152,7 +157,9 @@ export class RallarServerWebSocketFacade {
         return this;
     }
 
-    defineTopic<T>(definition: RallarServerWsTopicDefinition<T>): this {
+    defineTopic<T extends RallarServerWsPayload>(
+        definition: RallarServerWsTopicDefinition<T>
+    ): this {
         this.topics.defineTopic(definition);
         return this;
     }
@@ -161,14 +168,14 @@ export class RallarServerWebSocketFacade {
         return this.topics.removeTopic(selector);
     }
 
-    on<T>(
+    on<T extends RallarServerWsPayload>(
         selector: RallarServerWsSelector,
         handler: RallarServerWsHandler<T>
     ): () => boolean {
         return this.topics.on(selector, handler);
     }
 
-    proxy<T>(rule: RallarServerWsProxyRule<T>): () => boolean {
+    proxy<T extends RallarServerWsPayload>(rule: RallarServerWsProxyRule<T>): () => boolean {
         return this.topics.proxy(rule);
     }
 

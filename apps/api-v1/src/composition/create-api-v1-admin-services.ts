@@ -1,7 +1,6 @@
 import { PSqlAdminOperationsStatsReader } from '@shared-server/postgres/admin-operations/PSqlAdminOperationsStatsReader.ts';
 import { PSqlAdminSupportReader } from '@shared-server/postgres/admin-support/PSqlAdminSupportReader.ts';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import type { RallarServerWsStatus } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import { AdminOperationsService } from '@shared-server/rallar-system/admin-operations/admin-operations-service.ts';
 import type {
     AdminSupportTopologyQuery,
@@ -20,6 +19,7 @@ import type { ClientStateService } from '@shared-server/rallar-system/client-sta
 import type { CachedGroupStateService } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import type { RallarGroupFormationMetricsRecorder } from '@shared-server/rallar-system/observability/formation-metrics.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
+import type { RallarServerWsStatus } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-status.ts';
 import type { RallarCrdtAdminReadRepository } from '@shared/crdt/mod.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 

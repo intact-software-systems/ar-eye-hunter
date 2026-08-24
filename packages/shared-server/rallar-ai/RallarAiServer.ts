@@ -20,10 +20,11 @@ import type {
     RallarServerWsHandler,
     RallarServerWsMessage,
     RallarServerWsMessageContext,
+    RallarServerWsPayload,
     RallarServerWsPublishResult,
     RallarServerWsSelector,
     RallarServerWsTopicDefinition
-} from '../rallar-facade/ws-topic-router.ts';
+} from '../rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 
 type RallarServerAiDataStore<V> = Readonly<{
     set(key: string, value: V): Promise<void>;
@@ -31,8 +32,8 @@ type RallarServerAiDataStore<V> = Readonly<{
 
 export type RallarServerAiRallar = Readonly<{
     ws: Readonly<{
-        defineTopic<T>(definition: RallarServerWsTopicDefinition<T>): unknown;
-        on<T>(
+        defineTopic<T extends RallarServerWsPayload>(definition: RallarServerWsTopicDefinition<T>): unknown;
+        on<T extends RallarServerWsPayload>(
             selector: RallarServerWsSelector,
             handler: RallarServerWsHandler<T>
         ): () => boolean;

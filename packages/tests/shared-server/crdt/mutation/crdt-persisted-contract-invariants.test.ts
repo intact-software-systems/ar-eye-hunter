@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import { computeCrdtMutation } from '@shared-server/rallar-system/crdt/mutation/compute-crdt-mutation.ts';
 import { createCrdtMutationCommand, decodeCrdtMutationCommand } from '@shared-server/rallar-system/crdt/mutation/crdt-mutation-command-codec.ts';
 import { toCrdtAuditOutbox } from '@shared-server/rallar-system/crdt/mutation/create-crdt-mutation-outbox.ts';
@@ -14,6 +13,7 @@ import {
     type UpdateRow
 } from '@shared-server/rallar-system/crdt/persistence/crdt-mutation-row-codec.ts';
 import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
+import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import {
     hashRallarCrdtJson,
     hashRallarCrdtUpdateEnvelope,
@@ -218,7 +218,7 @@ describe('CRDT persisted mutation contract invariants', () => {
     it('never configures update topics for live-only fanout without mutation ingress', () => {
         const socket = new JsonWebSocketServer();
         const service = new WsQueueBoxServerService(new InMemoryQueueBox(), new InMemoryQueueBox(), socket, 'server-1');
-        const bridge = installRallarCrdtWsTopics(new RallarServerWsFacade(service));
+        const bridge = installRallarCrdtWsTopics(new RallarServerWsRouter(service));
 
         expect(
             bridge.definitions

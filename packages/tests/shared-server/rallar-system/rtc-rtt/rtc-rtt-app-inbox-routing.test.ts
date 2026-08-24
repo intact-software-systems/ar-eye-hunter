@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { initRallarSystemWsTopics, type InitRallarSystemWsTopicsOptions } from '@shared-server/rallar-system/websocket/ws-system-topics.ts';
+import { installRtcRttSystemTopic, type InstallRtcRttSystemTopicOptions } from '@shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts';
 import {
     AppTopics,
     ConnectionContext,
@@ -13,10 +13,10 @@ import {
 } from '@shared/mod.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
+import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 
-interface DurableRtcRttOptions extends InitRallarSystemWsTopicsOptions {
-    readonly enqueueRtcRttMutation: (
+interface DurableRtcRttOptions extends Omit<InstallRtcRttSystemTopicOptions, 'findGroupSnapshotByRef'> {
+    readonly enqueueMutation: (
         input: Readonly<{
             rtt: RttMeasurement;
             alSenderId: string;
@@ -33,7 +33,7 @@ interface RttMeasurement {
     readonly version: number;
 }
 
-describe('Rallar system WS AppInbox routing', () => {
+describe('RTC RTT websocket AppInbox routing', () => {
     it('acknowledges persisted RTT ingress after durable enqueue without result effects', async () => {
         const server = new JsonWebSocketServer();
         const socket = new FakeSocket();
@@ -47,9 +47,12 @@ describe('Rallar system WS AppInbox routing', () => {
         const durableRow = { key: { resourceId: 'rtt-1' } } as ResourceEntry;
         const enqueueRtcRttMutation = vi.fn(() => Promise.resolve(durableRow));
         const options: DurableRtcRttOptions = {
-            enqueueRtcRttMutation
+            enqueueMutation: enqueueRtcRttMutation
         };
-        initRallarSystemWsTopics(service, options);
+        installRtcRttSystemTopic(service, {
+            ...options,
+            findGroupSnapshotByRef: () => undefined
+        });
         const rtt: RttMeasurement = {
             sessionIdFrom: 'session-a',
             sessionIdTo: 'session-b',

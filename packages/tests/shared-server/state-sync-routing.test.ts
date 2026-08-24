@@ -344,9 +344,9 @@ function createGroupSnapshot(
             updated: audit
         }),
         members: members.map(toGroupMember),
-        activeSessions: members.map(toGroupPresenceSession),
+        activeSessions: activeMembers.map(toGroupPresenceSession),
         memberCount: members.filter((member) => member.status === 'active').length,
-        onlineMemberCount: members.length
+        onlineMemberCount: activeMembers.length
     };
 }
 
@@ -356,7 +356,9 @@ function toGroupMember(
         status: GroupMemberStatus;
     }>
 ): GroupMember {
-    const role: GroupMember['role'] = 'member';
+    const role: GroupMember['role'] = input.principalId === 'alice'
+        ? 'owner'
+        : 'member';
     const common = {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',

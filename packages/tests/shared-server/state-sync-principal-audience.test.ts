@@ -105,7 +105,7 @@ describe('principal state-sync audience', () => {
         expect(recipients).toEqual([]);
     });
 
-    it('never falls through to every open connection, even for an unknown payload type', () => {
+    it('rejects an unknown payload type on a recognized state-sync route', () => {
         const message = toPrincipalStampedMessage('alice', ['alice-session-1']);
         const forged: ALMessage = {
             ...message,
@@ -122,8 +122,18 @@ describe('principal state-sync audience', () => {
             now: () => NOW_EPOCH_MS
         });
 
-        expect(recipients).toBeDefined();
-        expect(recipients!.map((recipient) => recipient.connectionId)).toEqual(['alice-session-1']);
+        expect(recipients).toEqual([]);
+    });
+
+    it('leaves non-state-sync messages to their owning router', () => {
+        const message = toPrincipalStampedMessage('alice', ['alice-session-1']);
+        const unrelated: ALMessage = {
+            ...message,
+            route: { ...message.route, topicId: 'app.cursor' },
+            payload: { ...message.payload, typeId: 'cursor.position.v1' }
+        };
+
+        expect(resolveStateSyncRecipients(createOpenConnections([]), unrelated)).toBeUndefined();
     });
 });
 

@@ -1,11 +1,13 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { installStateSyncWsTopics } from '@shared-server/rallar-system/state-sync/install-state-sync-ws-topics.ts';
 import type { GroupTopologyGroupSnapshotReader } from '@shared-server/rallar-system/topology/group-topology-management-contracts.ts';
 import { createRtcTopologyOutboxPublisher } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-work.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
+import { installTopologyWsTopics } from '@shared-server/rallar-system/topology/publication/install-topology-ws-topics.ts';
 import { createGroupTopologyOwners, type GroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { installTopologyAppOutbox, type InstallTopologyAppOutboxOptions } from '@shared-server/rallar-system/topology/runtime/install-topology-app-outbox.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
-import { initRallarSystemWsTopics } from '@shared-server/rallar-system/websocket/ws-system-topics.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
@@ -24,11 +26,11 @@ import * as clientStateSnapshotsRepository from '@shared/repository/client-state
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import { describe, expect, it, vi } from 'vitest';
-import { configureTestCacheRepositories } from '../cache-repository-config.ts';
-import { createTestGroup } from '../create-test-group.ts';
-import { FakeRuntimeStateRepository } from './fake-runtime-state-repository.ts';
+import { configureTestCacheRepositories } from '../../../cache-repository-config.ts';
+import { createTestGroup } from '../../../create-test-group.ts';
+import { FakeRuntimeStateRepository } from '../../fake-runtime-state-repository.ts';
 
-describe('Rallar system websocket topics RTC topology', () => {
+describe('RTC topology websocket publication', () => {
     it('does not run a process-local topology fallback for inbound group snapshots', async () => {
         configureTestCacheRepositories();
 
@@ -47,10 +49,7 @@ describe('Rallar system websocket topics RTC topology', () => {
             server,
             'server-1'
         );
-        const topologyService = new RallarRtcTopologyService();
-        initRallarSystemWsTopics(service, {
-            rtcTopologyService: topologyService
-        });
+        installTopologyTestTopics(service);
 
         const group = createGroupSnapshot('room-1', ['session-a', 'session-b']);
         clientStateSnapshotsRepository.setClientStateSnapshots([
@@ -75,11 +74,6 @@ describe('Rallar system websocket topics RTC topology', () => {
 
         expect(sentTypes).not.toContain(AppTopics.overlayTopology);
         expect(outsideSocket.sent).toEqual([]);
-        expect(topologyService.readMetrics()).toMatchObject({
-            topologyPublishAttemptCount: 0,
-            topologyPublishedCount: 0,
-            topologyPublishSkippedUnchangedCount: 0
-        });
     });
 
     it('queues immutable app-outbox work with canonical identity without scheduling from inbound snapshots', async () => {
@@ -111,8 +105,7 @@ describe('Rallar system websocket topics RTC topology', () => {
         const topologyOutbox = createRtcTopologyOutboxPublisher({
             outboxQueueReader
         });
-        initRallarSystemWsTopics(service, {
-            rtcTopologyService: topologyService,
+        installTopologyTestTopics(service, {
             ...topologyOptions(createTopologyOwners(topologyService)),
             rtcTopologyAppOutbox: {
                 outboxQueueReader,
@@ -217,7 +210,7 @@ describe('Rallar system websocket topics RTC topology', () => {
             server,
             'server-1'
         );
-        initRallarSystemWsTopics(service, {
+        installTopologyTestTopics(service, {
             ...topologyOptions(createTopologyOwners()),
             rtcTopologyAppOutbox: {
                 outboxQueueReader,
@@ -265,7 +258,7 @@ describe('Rallar system websocket topics RTC topology', () => {
             server,
             'server-1'
         );
-        initRallarSystemWsTopics(service, {
+        installTopologyTestTopics(service, {
             ...topologyOptions(createTopologyOwners()),
             rtcTopologyAppOutbox: {
                 outboxQueueReader,
@@ -411,6 +404,39 @@ function topologyOptions(owners: GroupTopologyOwners) {
         topologyQuery: owners.query,
         topologyPlanning: owners.planning
     };
+}
+
+interface InstallTopologyTestTopicsOptions {
+    readonly topologyQuery?: GroupTopologyOwners['query'];
+    readonly topologyPlanning?: GroupTopologyOwners['planning'];
+    readonly rtcTopologyAppOutbox?:
+        & Omit<InstallTopologyAppOutboxOptions, 'senderId' | 'findGroupSnapshotByRef' | 'topologyQuery' | 'topologyPlanning' | 'nowEpochMs'>
+        & Readonly<{
+            findGroupSnapshotByRef?: GroupTopologyGroupSnapshotReader;
+        }>;
+}
+
+function installTopologyTestTopics(
+    service: WsQueueBoxServerService,
+    options: InstallTopologyTestTopicsOptions = {}
+): void {
+    installStateSyncWsTopics(service);
+    installTopologyWsTopics(service);
+    if (!options.rtcTopologyAppOutbox) {
+        return;
+    }
+    if (!options.topologyQuery || !options.topologyPlanning) {
+        throw new TypeError('RTC topology AppOutbox requires query and planning owners');
+    }
+    installTopologyAppOutbox({
+        ...options.rtcTopologyAppOutbox,
+        senderId: service.name,
+        findGroupSnapshotByRef: options.rtcTopologyAppOutbox.findGroupSnapshotByRef ??
+            ((ref) => groupStateSnapshotsRepository.findGroupStateSnapshotByRef(ref)),
+        topologyQuery: options.topologyQuery,
+        topologyPlanning: options.topologyPlanning,
+        nowEpochMs: Date.now
+    });
 }
 
 function createUnusedDatabase(): PSqlSql {

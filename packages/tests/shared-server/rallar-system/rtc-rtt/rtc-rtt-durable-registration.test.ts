@@ -1,5 +1,5 @@
 import type { RtcRttRuntimeState } from '@shared-server/rallar-system/rtc-rtt/rtc-rtt-runtime-state.ts';
-import { initRallarSystemWsTopics, type InitRallarSystemWsTopicsOptions } from '@shared-server/rallar-system/websocket/ws-system-topics.ts';
+import { installRtcRttSystemTopic, type InstallRtcRttSystemTopicOptions } from '@shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics, ConnectionContext, InMemoryQueueBox, JsonWebSocketServer, newALBroadcastMessage, newALEventRoute } from '@shared/mod.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -14,10 +14,10 @@ const RTT = {
     version: 1
 } as const;
 
-describe('WS RTT durable registration', () => {
+describe('RTC RTT durable registration', () => {
     it('routes RTT through the registered AppInbox entry owner', async () => {
         const enqueue = vi.fn(() => Promise.resolve({} as ResourceEntry));
-        const socket = createHarness({ enqueueRtcRttMutation: enqueue });
+        const socket = createHarness({ enqueueMutation: enqueue });
 
         await socket.dispatchMessage(rttMessage());
 
@@ -27,24 +27,24 @@ describe('WS RTT durable registration', () => {
     it('requires the AppInbox entry owner before registering persisted RTT state', () => {
         expect(() =>
             createHarness({
-                rtcRttRuntimeState: {} as RtcRttRuntimeState
+                runtimeState: {} as RtcRttRuntimeState
             })
         ).toThrow(/requires durable AppInbox enqueue/i);
     });
 });
 
-function createHarness(options: InitRallarSystemWsTopicsOptions): FakeSocket {
+function createHarness(options: Omit<InstallRtcRttSystemTopicOptions, 'findGroupSnapshotByRef'>): FakeSocket {
     const server = new JsonWebSocketServer();
     const socket = new FakeSocket();
     server.addConnection(new ConnectionContext('session-a', socket as never));
-    initRallarSystemWsTopics(
+    installRtcRttSystemTopic(
         new WsQueueBoxServerService(
             new InMemoryQueueBox(new Map()),
             new InMemoryQueueBox(new Map()),
             server,
             'server-1'
         ),
-        options
+        { ...options, findGroupSnapshotByRef: () => undefined }
     );
     return socket;
 }

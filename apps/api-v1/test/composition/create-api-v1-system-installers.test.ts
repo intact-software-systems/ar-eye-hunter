@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
+import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import type { RallarWsLifecycleHandlers } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
@@ -25,26 +25,38 @@ Deno.test('system topic reinstall unregisters and stops the prior owner', () => 
         createInput(),
         createOperations(events)
     );
-    const ws = new RallarServerWsFacade(runtime.wsQBoxServerService);
+    const ws = new RallarServerWsRouter(runtime.wsQBoxServerService);
 
     installers.installDefaultMiddlewareTopics?.(runtime, ws);
     installers.installDefaultMiddlewareTopics?.(runtime, ws);
 
     assert.deepEqual(events, [
-        'system-topics',
-        'register-stop',
+        'state-sync',
+        'topology-app-outbox',
+        'topology-topics',
+        'chat',
+        'signaling',
+        'rtc-rtt',
         'crdt-ingress',
         'crdt-topics',
-        'unregister-stop',
-        'stop-system-topics',
-        'system-topics',
+        'router',
         'register-stop',
+        'unregister-stop',
+        'stop-rtc-rtt',
+        'state-sync',
+        'topology-app-outbox',
+        'topology-topics',
+        'chat',
+        'signaling',
+        'rtc-rtt',
         'crdt-ingress',
-        'crdt-topics'
+        'crdt-topics',
+        'router',
+        'register-stop'
     ]);
 });
 
-Deno.test('system topics fail after topic ownership when CRDT ingress is absent', () => {
+Deno.test('system topics fail before installation when CRDT ingress is absent', () => {
     const events: string[] = [];
     const runtime = createRuntime(events, false);
     const installers = constructApiV1SystemInstallers(
@@ -56,11 +68,11 @@ Deno.test('system topics fail after topic ownership when CRDT ingress is absent'
         () =>
             installers.installDefaultMiddlewareTopics?.(
                 runtime,
-                new RallarServerWsFacade(runtime.wsQBoxServerService)
+                new RallarServerWsRouter(runtime.wsQBoxServerService)
             ),
         /CRDT websocket topics require AppInbox mutation ingress/
     );
-    assert.deepEqual(events, ['system-topics', 'register-stop']);
+    assert.deepEqual(events, []);
 });
 
 Deno.test(
@@ -85,7 +97,7 @@ Deno.test(
         const installers = constructApiV1SystemInstallers(createInput(), operations);
         installers.installWebSocketLifecycle?.(
             runtime,
-            new RallarServerWsFacade(runtime.wsQBoxServerService)
+            new RallarServerWsRouter(runtime.wsQBoxServerService)
         );
 
         const close = {
@@ -232,12 +244,27 @@ function createOperations(
     events: string[]
 ): ApiV1SystemInstallerOperations<ApiV1SystemInstallerRuntime, ApiV1SystemInstallerTopology> {
     return {
-        initialiseSystemTopics: () => {
-            events.push('system-topics');
+        installStateSyncTopics: () => {
+            events.push('state-sync');
+        },
+        installTopologyAppOutbox: () => {
+            events.push('topology-app-outbox');
+            return {} as never;
+        },
+        installTopologyTopics: () => {
+            events.push('topology-topics');
+        },
+        installChatTopic: () => {
+            events.push('chat');
+        },
+        installRtcSignalingTopic: () => {
+            events.push('signaling');
+        },
+        installRtcRttTopic: () => {
+            events.push('rtc-rtt');
             return {
-                rtcTopologyWorkPublisher: null,
                 stop: () => {
-                    events.push('stop-system-topics');
+                    events.push('stop-rtc-rtt');
                 }
             };
         },
@@ -252,6 +279,9 @@ function createOperations(
                 definitions: [],
                 unsubscribeHandlers: () => {}
             };
+        },
+        installRouter: () => {
+            events.push('router');
         },
         initWebSocketLifecycle: () => ({
             getPendingCloseCount: () => 0,

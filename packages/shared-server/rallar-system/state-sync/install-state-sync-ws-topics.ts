@@ -7,7 +7,8 @@ import * as clientStateSnapshotsRepository from '@shared/repository/client-state
 import * as groupStateSnapshotsRepository from '@shared/repository/group-state-snapshots-repository.ts';
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
-import { sendStateSyncMessage } from './state-sync-websocket-publication.ts';
+import { decodeStateSyncMessage, type StateSyncPayload } from './state-sync-payload.ts';
+import { sendDecodedStateSyncMessage } from './state-sync-websocket-publication.ts';
 
 export interface InstallStateSyncWsTopicsOptions {
     readonly observeGroupSnapshot?: (snapshot: GroupSnapshot) => void | Promise<void>;
@@ -15,50 +16,62 @@ export interface InstallStateSyncWsTopicsOptions {
 }
 
 export function installStateSyncWsTopics(
-    service: WsQueueBoxServerService,
+    service: Pick<WsQueueBoxServerService, 'onInboxMessageDo' | 'onOutboxMessageDo'>,
     options: InstallStateSyncWsTopicsOptions = {}
-): void {
-    installStateSyncTopic(AppTopics.clientStateSnapshot, service, async (value) => {
-        const snapshot = value as ClientSnapshot;
-        if (options.observeClientSnapshot) {
-            await options.observeClientSnapshot(snapshot);
-            return;
-        }
-        clientStateSnapshotsRepository.setClientStateSnapshotByPrincipalId(
-            snapshot.principal.principalId,
-            snapshot
-        );
-    });
-    installStateSyncTopic(AppTopics.clientStateEvent, service);
-    const observeGroupSnapshot = async (value: unknown): Promise<void> => {
-        const snapshot = value as GroupSnapshot;
-        if (options.observeGroupSnapshot) {
-            await options.observeGroupSnapshot(snapshot);
-            return;
-        }
-        groupStateSnapshotsRepository.setGroupStateSnapshot(snapshot);
-    };
-    installStateSyncTopic(AppTopics.groupStateSnapshot, service, observeGroupSnapshot);
-    installStateSyncTopic(AppTopics.groupDirectorySnapshot, service, observeGroupSnapshot);
-    installStateSyncTopic(AppTopics.groupStateEvent, service);
-}
-
-function installStateSyncTopic(
-    topicId: string,
-    service: WsQueueBoxServerService,
-    observe?: (value: unknown) => void | Promise<void>
 ): void {
     const onMessage = async (
         message: ALMessage,
         _entry: ResourceEntry,
-        server: JsonWebSocketServer
+        webSocketServer: JsonWebSocketServer
     ): Promise<void> => {
-        if (message.route.topicId !== topicId) {
+        const decoded = decodeStateSyncMessage(message);
+        if (decoded.kind !== 'decoded') {
             return;
         }
-        await observe?.(JSON.parse(message.payload.resource));
-        sendStateSyncMessage(server, message);
+
+        await observeStateSyncPayload(decoded.payload, options);
+        sendDecodedStateSyncMessage({ webSocketServer, message, decoded });
     };
-    service.onInboxMessageDo(topicId, { onMessage });
-    service.onOutboxMessageDo(topicId, { onMessage });
+
+    for (const topicId of STATE_SYNC_TOPIC_IDS) {
+        service.onInboxMessageDo(topicId, { onMessage });
+        service.onOutboxMessageDo(topicId, { onMessage });
+    }
 }
+
+async function observeStateSyncPayload(
+    payload: StateSyncPayload,
+    options: InstallStateSyncWsTopicsOptions
+): Promise<void> {
+    switch (payload.kind) {
+        case 'client-snapshot':
+            if (options.observeClientSnapshot) {
+                await options.observeClientSnapshot(payload.snapshot);
+                return;
+            }
+            clientStateSnapshotsRepository.setClientStateSnapshotByPrincipalId(
+                payload.snapshot.principal.principalId,
+                payload.snapshot
+            );
+            return;
+        case 'group-snapshot':
+        case 'group-directory-snapshot':
+            if (options.observeGroupSnapshot) {
+                await options.observeGroupSnapshot(payload.snapshot);
+                return;
+            }
+            groupStateSnapshotsRepository.setGroupStateSnapshot(payload.snapshot);
+            return;
+        case 'client-event':
+        case 'group-event':
+            return;
+    }
+}
+
+const STATE_SYNC_TOPIC_IDS = [
+    AppTopics.clientStateSnapshot,
+    AppTopics.clientStateEvent,
+    AppTopics.groupStateSnapshot,
+    AppTopics.groupDirectorySnapshot,
+    AppTopics.groupStateEvent
+] as const;

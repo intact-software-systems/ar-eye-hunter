@@ -31,6 +31,7 @@ import type {
     RtcTopologyReplayMetrics,
     RtcTopologyReplayWakeSource
 } from '../topology/replay/rtc-topology-replay-diagnostics.ts';
+import { createWsServerTargetResolver } from '../websocket/targets/create-ws-server-target-resolver.ts';
 import { initialiseServerCacheRepositories } from './cache-repositories.ts';
 import type {
     RallarAdminInboxServiceFactory,
@@ -38,9 +39,7 @@ import type {
     RallarCrdtInboxServiceFactory,
     RallarGroupSnapshotResolverOptions
 } from './rallar-middleware-options.ts';
-import { createWsServerTargetResolver } from './ws-server-target-resolver.ts';
 export type { RallarGroupSnapshotResolverOptions } from './rallar-middleware-options.ts';
-export { createWsServerTargetResolver } from './ws-server-target-resolver.ts';
 export type RtcTopologyReplayRuntime = Readonly<{
     wake(source: RtcTopologyReplayWakeSource): void;
     readMetrics(): RtcTopologyReplayMetrics;

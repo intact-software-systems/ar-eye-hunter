@@ -6,7 +6,7 @@ import {
     createRallarServerApplication,
     type RallarServerApplication
 } from '@shared-server/rallar-facade/RallarServerApplication.ts';
-import type { RallarServerWsFacadeOptions } from '@shared-server/rallar-facade/ws-topic-router.ts';
+import type { RallarServerWsRouterOptions } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import type { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 
 import type { ApiV1Runtime } from './api-v1-runtime.ts';
@@ -16,7 +16,7 @@ export interface CreateRallarServerInput {
     readonly runtime: ApiV1Runtime;
     readonly repositories: RepositoryManager;
     readonly appDataRepository: AppDataRepositoryLike;
-    readonly ws: RallarServerWsFacadeOptions;
+    readonly ws: RallarServerWsRouterOptions;
     readonly systemInstallers: RallarServerSystemInstallers<ApiV1Runtime>;
     readonly routeInstallers: ApiV1RouteInstallers;
 }

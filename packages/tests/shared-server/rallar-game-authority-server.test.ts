@@ -2,9 +2,10 @@ import { installRallarGameAuthorityServer, type RallarGameAuthorityServerRallarF
 import type {
     RallarServerWsMessage,
     RallarServerWsMessageContext,
+    RallarServerWsPayload,
     RallarServerWsSelector,
     RallarServerWsTopicDefinition
-} from '@shared-server/rallar-facade/ws-topic-router.ts';
+} from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { createRallarGameAuthorityEnvelope, type RallarGameAuthorityEnvelope, type RallarGameAuthorityRef } from '@shared/rallar-game/mod.ts';
@@ -260,11 +261,11 @@ function envelope<T>(
 }
 
 function createFakeServerRallar() {
-    const definitions: RallarServerWsTopicDefinition<unknown>[] = [];
+    const definitions: RallarServerWsTopicDefinition<RallarServerWsPayload>[] = [];
     const handlers: HandlerSubscription[] = [];
     const published: Array<{ message: ALMessage; fanout?: string; }> = [];
     const ws = {
-        defineTopic: vi.fn((definition: RallarServerWsTopicDefinition<unknown>) => {
+        defineTopic: vi.fn((definition: RallarServerWsTopicDefinition<RallarServerWsPayload>) => {
             definitions.push(definition);
             return definition;
         }),
@@ -306,14 +307,14 @@ function createFakeServerRallar() {
             }
             return definition;
         },
-        context(senderId: string): RallarServerWsMessageContext<unknown> {
+        context(senderId: string): RallarServerWsMessageContext {
             return {
-                service: {} as RallarServerWsMessageContext<unknown>['service'],
+                service: {} as RallarServerWsMessageContext['service'],
                 definition: definitions[0],
                 roomId: 'room-1',
                 roomRef,
                 senderId,
-                proxy: {} as RallarServerWsMessageContext<unknown>['proxy']
+                proxy: {} as RallarServerWsMessageContext['proxy']
             };
         },
         async emit<T>(
@@ -342,8 +343,8 @@ function createFakeServerRallar() {
 type HandlerSubscription = Readonly<{
     selector: RallarServerWsSelector;
     handler: (
-        message: RallarServerWsMessage<unknown>,
-        context: RallarServerWsMessageContext<unknown>
+        message: RallarServerWsMessage<RallarServerWsPayload>,
+        context: RallarServerWsMessageContext
     ) => void | Promise<void>;
 }>;
 

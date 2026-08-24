@@ -19,7 +19,6 @@ export * from './queuebox/postgres/resource-inbox-results-repository.ts';
 export * from './rallar-ai/mod.ts';
 export * from './rallar-facade/RallarServer.ts';
 export * from './rallar-facade/RallarServerApplication.ts';
-export * from './rallar-facade/ws-topic-router.ts';
 export * from './rallar-system/admin-operations/admin-operations-service.ts';
 export * from './rallar-system/admin-support/admin-support-contracts.ts';
 export * from './rallar-system/admin-support/create-admin-support-use-cases.ts';
@@ -181,7 +180,9 @@ export * from './rallar-system/topology/publication/rtc-topology-publication-rep
 export * from './rallar-system/topology/publication/rtc-topology-publication.ts';
 export * from './rallar-system/topology/runtime/create-group-topology-owners.ts';
 export * from './rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+export * from './rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
+export * from './rallar-system/websocket/router/rallar-server-ws-router.ts';
+export * from './rallar-system/websocket/router/rallar-server-ws-status.ts';
 export * from './rallar-system/websocket/ws-lifecycle-service.ts';
-export * from './rallar-system/websocket/ws-system-topics.ts';
 export * from './rallar-system/websocket/ws-topic-room-authorizer.ts';
 export * from './runtime-state/optimistic-runtime-state-write.ts';

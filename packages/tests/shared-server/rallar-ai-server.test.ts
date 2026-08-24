@@ -1,5 +1,5 @@
 import { createRallarAiFakeSidecarProvider, createRallarAiOllamaProvider, createRallarServerAi } from '@shared-server/rallar-ai/mod.ts';
-import type { RallarServerWsPublishResult } from '@shared-server/rallar-facade/ws-topic-router.ts';
+import type { RallarServerWsPublishResult } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 import {
     createRallarAiJsonResult,

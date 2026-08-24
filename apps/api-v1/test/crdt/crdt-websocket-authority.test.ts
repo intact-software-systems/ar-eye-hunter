@@ -25,10 +25,10 @@ import {
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
-import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { ClientStateRepository } from '@shared-server/rallar-system/client-state/persistence/client-state-repository.ts';
 import { PSqlClientStateEventRepository } from '@shared-server/rallar-system/state-events/postgres/p-sql-client-state-event-repository.ts';
+import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 
 import { createCrdtWsMutationIngress } from '@shared-server/rallar-system/crdt/inbox/create-crdt-ws-mutation-ingress.ts';
@@ -198,8 +198,8 @@ async function createFixture(
         socketServer,
         'server-1'
     );
-    const facade = new RallarServerWsFacade(wsService).install();
-    installRallarCrdtWsTopics(facade, {
+    const router = new RallarServerWsRouter(wsService).install();
+    installRallarCrdtWsTopics(router, {
         mutationIngress: createCrdtWsMutationIngress(service),
         allowAppDocuments: true,
         policies: [{

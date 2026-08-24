@@ -2,9 +2,9 @@ import type { Hono } from 'jsr:@hono/hono@4.11.9';
 
 import { PSqlAppDataRepository } from '@shared-server/postgres/app-data/PSqlAppDataRepository.ts';
 import type { RallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
-import type { RallarServerWsFacadeOptions } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import { AuthUserRepository } from '@shared-server/rallar-system/auth/persistence/auth-user-repository.ts';
 import { PSqlCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/psql-crdt-log-repository.ts';
+import type { RallarServerWsRouterOptions } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 import type { ApiV1Configuration } from '../configuration/api-v1-configuration.ts';
@@ -27,7 +27,7 @@ import { createRallarServer } from './create-rallar-server.ts';
 export interface CreateDefaultRallarServerInput {
     readonly configuration: ApiV1Configuration;
     readonly databaseLifecycle: ApiV1DatabaseLifecycle;
-    readonly ws?: RallarServerWsFacadeOptions;
+    readonly ws?: RallarServerWsRouterOptions;
 }
 
 export async function createDefaultRallarServer(

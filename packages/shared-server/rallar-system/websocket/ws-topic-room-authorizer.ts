@@ -7,11 +7,11 @@ import { isSameGroupScope } from '@shared/api/api-type-utils.ts';
 import type { GroupPreActivationAppData } from '@shared/api/group-lifecycle/group-lifecycle-policy.ts';
 import type { GroupPolicyDenied } from '@shared/api/group-policy-types.ts';
 import { RALLAR_CRDT_APP_TOPIC_ID, RALLAR_CRDT_ROOM_TOPIC_ID } from '@shared/crdt/crdt-types.ts';
+import type { RallarSnapshotPresenceClock } from '../presence/snapshot-presence.ts';
 import type {
     RallarServerWsRoomAuthorizationDecision,
     RallarServerWsRoomAuthorizer
-} from '../../rallar-facade/ws-topic-router.ts';
-import type { RallarSnapshotPresenceClock } from '../presence/snapshot-presence.ts';
+} from './router/rallar-server-ws-router-contracts.ts';
 
 type MaybePromise<T> = T | Promise<T>;
 
