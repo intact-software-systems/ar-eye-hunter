@@ -1,19 +1,19 @@
 import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
+import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
-    CreateRallarDirectorFacadeOptions,
     RallarDirectorAppointOptions,
+    RallarDirectorFacade,
     RallarDirectorRelayConfig,
     RallarDirectorRelayEnvelope,
     RallarDirectorRelayHandle,
     RallarDirectorRelayMessage,
     RallarDirectorRelaySendResult,
-    RallarDirectorResignOptions,
     RallarDirectorStatus,
     RallarDirectorStatusListener,
     RallarDirectorStatusOptions
 } from '@shared-web/browser/rallar-director-facade.ts';
-import type { RallarMessageSendResult, RallarMessageSendStatus } from '@shared-web/browser/rallar-message-contracts.ts';
+import type { RallarMessageSendResult } from '@shared-web/browser/rallar-message-contracts.ts';
 import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type {
     RallarRealtimeFacade,
@@ -25,6 +25,7 @@ import type { RallarStatePort } from '@shared-web/browser/rallar-runtime/state-s
 import { createRallarSubscriptionScope, notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
+import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toStateScope } from '@shared/api/api-type-utils.ts';
 import {
@@ -78,7 +79,7 @@ export type CreateRallarDirectorControllerOptions = Readonly<{
 }>;
 
 export type RallarDirectorController = Readonly<{
-    operations: CreateRallarDirectorFacadeOptions;
+    operations: RallarDirectorFacade;
     onStateChanged(): void;
     stopRelays(): void;
 }>;
@@ -617,7 +618,7 @@ export function createRallarDirectorController(
         return relay;
     };
 
-    const operations: CreateRallarDirectorFacadeOptions = {
+    const operations: RallarDirectorFacade = {
         appoint: async (
             room?: string | GroupRef,
             appointOptions: RallarDirectorAppointOptions = {}
@@ -660,7 +661,7 @@ export function createRallarDirectorController(
             }),
         resign: async (
             room?: string | GroupRef,
-            resignOptions: RallarDirectorResignOptions = {}
+            resignOptions: RallarScopedOperationOptions = {}
         ): Promise<RallarDirectorStatus> => {
             const target = room ?? options.resolveDefaultRoom() ??
                 options.stateStore.resolveCurrentRoomRef();
@@ -743,7 +744,7 @@ function isDirectorRelayEnvelope(
 }
 
 function isSuccessfulMessageSendStatus(
-    status: RallarMessageSendStatus
+    status: ALOutboundEnqueueStatus
 ): boolean {
     return status === 'enqueued' || status === 'sent-immediate' ||
         status === 'duplicate' || status === 'superseded' || status === 'skipped';

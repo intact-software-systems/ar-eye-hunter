@@ -33,8 +33,6 @@ export type RallarDirectorAppointOptions =
         heartbeatTtlMs?: number;
     }>;
 
-export type RallarDirectorResignOptions = RallarScopedOperationOptions;
-
 export type RallarDirectorStatusOptions = Readonly<{
     now?: number;
 }>;
@@ -122,7 +120,7 @@ export type RallarDirectorFacade = Readonly<{
     ): Promise<RallarDirectorStatus>;
     resign(
         room?: string | GroupRef,
-        options?: RallarDirectorResignOptions
+        options?: RallarScopedOperationOptions
     ): Promise<RallarDirectorStatus>;
     status(
         room?: string | GroupRef,
@@ -133,29 +131,3 @@ export type RallarDirectorFacade = Readonly<{
         config: RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot>
     ): RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot>;
 }>;
-
-export type CreateRallarDirectorFacadeOptions = RallarDirectorFacade;
-
-export function createRallarDirectorFacade(
-    operations: CreateRallarDirectorFacadeOptions
-): RallarDirectorFacade {
-    return {
-        appoint: async (
-            room,
-            options = {}
-        ): Promise<RallarDirectorStatus> => await operations.appoint(room, options),
-        resign: async (
-            room,
-            options = {}
-        ): Promise<RallarDirectorStatus> => await operations.resign(room, options),
-        status: (
-            room,
-            options = {}
-        ): RallarDirectorStatus => operations.status(room, options),
-        onStatus: (listener): RallarUnsubscribe => operations.onStatus(listener),
-        createRelay: <TIntent, TOutput, TSnapshot = TOutput>(
-            config: RallarDirectorRelayConfig<TIntent, TOutput, TSnapshot>
-        ): RallarDirectorRelayHandle<TIntent, TOutput, TSnapshot> =>
-            operations.createRelay<TIntent, TOutput, TSnapshot>(config)
-    };
-}

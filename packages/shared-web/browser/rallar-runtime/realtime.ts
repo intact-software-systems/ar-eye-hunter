@@ -1,11 +1,10 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type {
-    CreateRallarRealtimeFacadeOptions,
     RallarRealtimeBinarySendInput,
+    RallarRealtimeFacade,
     RallarRealtimeHandler,
     RallarRealtimeHealthOptions,
     RallarRealtimeJsonLane,
-    RallarRealtimeJsonLaneDefaults,
     RallarRealtimeJsonLaneSendOptions,
     RallarRealtimeJsonSendInput,
     RallarRealtimeLaneHealth,
@@ -53,7 +52,7 @@ export type CreateRallarRealtimeControllerOptions = Readonly<{
 }>;
 
 export type RallarRealtimeController = Readonly<{
-    operations: CreateRallarRealtimeFacadeOptions;
+    operations: RallarRealtimeFacade;
     createTargetedChannel<T>(
         definition: RallarTargetedChannelDefinition
     ): RallarTargetedChannel<T>;
@@ -349,22 +348,20 @@ export function createRallarRealtimeController(
         );
     };
 
-    let operations: CreateRallarRealtimeFacadeOptions;
-
     const createJsonLane = <T>(
-        defaults: RallarRealtimeJsonLaneDefaults
+        defaults: RallarRealtimeSendOptions
     ): RallarRealtimeJsonLane<T> => {
         const laneId = options.resolveLaneId(defaults.laneId);
         return {
             send: async (
                 data,
                 sendOptions: RallarRealtimeJsonLaneSendOptions<T> = {}
-            ) => await operations.sendJson<T>({
+            ) => await sendJson<T>({
                 ...defaults,
                 ...sendOptions,
                 data
             }),
-            on: (handler) => operations.onJson<T>(laneId, handler)
+            on: (handler) => onJson<T>(laneId, handler)
         };
     };
 
@@ -512,7 +509,7 @@ export function createRallarRealtimeController(
                 data,
                 sendOptions: RallarRoomRealtimeJsonSendOptions<T> = {}
             ) => await sendRoomJson(defaults, data, sendOptions),
-            on: (handler) => operations.onJson<T>(laneId, handler),
+            on: (handler) => onJson<T>(laneId, handler),
             status: (roomOptions: RallarRoomRealtimeTransportOptions = {}) => {
                 const room = resolveRoomTarget(defaults, roomOptions);
                 if (!room) {
@@ -617,12 +614,12 @@ export function createRallarRealtimeController(
                     results
                 };
             },
-            on: (handler) => operations.onJson<T>(defaultLaneId, handler),
+            on: (handler) => onJson<T>(defaultLaneId, handler),
             peerIds: resolvePeerIds
         };
     };
 
-    operations = {
+    const operations: RallarRealtimeFacade = {
         sendJson,
         sendBinary,
         onJson,

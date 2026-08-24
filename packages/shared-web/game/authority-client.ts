@@ -1,11 +1,11 @@
 import type {
     RallarFacade,
     RallarMessage,
-    RallarMessageSendStatus,
     RallarRtcStatus,
     RallarSubscriptionScope,
     RallarUnsubscribe
 } from '@shared-web/browser/rallar.ts';
+import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import {
     createRallarGameAuthorityEnvelope,
@@ -579,7 +579,7 @@ function toCommandResult(
     };
 }
 
-function isSuccessfulMessageStatus(status: RallarMessageSendStatus): boolean {
+function isSuccessfulMessageStatus(status: ALOutboundEnqueueStatus): boolean {
     return status === 'enqueued' ||
         status === 'sent-immediate' ||
         status === 'skipped' ||

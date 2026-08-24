@@ -1,7 +1,6 @@
 import type {
     RallarDirectorRelayMessage,
     RallarDirectorStatus,
-    RallarMessageSendStatus,
     RallarRealtimeSendResult,
     RallarRoomRealtimeSendResult,
     RallarRtcRoomLaneWaitResult,
@@ -9,6 +8,7 @@ import type {
     RallarRtcStatus,
     RallarSubscriptionScope
 } from '@shared-web/browser/rallar.ts';
+import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { deriveRallarGameDiagnostics } from './diagnostics.ts';
 import {
@@ -1668,7 +1668,7 @@ function noDirectorResult(): RallarGameSendResult {
     };
 }
 
-function isSuccessfulMessageStatus(status: RallarMessageSendStatus): boolean {
+function isSuccessfulMessageStatus(status: ALOutboundEnqueueStatus): boolean {
     return status === 'enqueued' ||
         status === 'sent-immediate' ||
         status === 'skipped' ||

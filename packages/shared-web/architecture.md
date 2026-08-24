@@ -17,16 +17,17 @@ data, CRDT, middleware, transport engines, RallarAI, and game helpers.
   serialized DTO contracts from `@shared/api` and supporting authenticated
   `GET`, `PUT`, `POST`, and bodyless `DELETE` calls.
 - `browser/rallar-core.ts` is the narrow core entry point for browser config,
-  connection/startup, auth, rooms, people, message helpers, and WS/RTC message
-  facade factories. It exports the room-session/setup types but does not export
-  the full `rallar` singleton.
+  selectors, and the connection/startup, auth, room, people, and message
+  contracts. It exports the room-session/setup types but does not export the
+  full `rallar` singleton or a forwarding facade factory.
 - `browser/rallar-realtime.ts` builds on the core entry point with realtime
-  send/listen and RTC readiness/status facade factories. It does not export the
-  full `rallar` singleton.
+  send/listen and RTC readiness/status contracts. It does not export the full
+  `rallar` singleton or a forwarding facade factory.
 - `browser/rallar-data.ts` owns local browser data stores.
 - `browser/rallar-crdt.ts` owns browser CRDT documents and transports.
-- `browser/rallar-media-calls.ts` is the narrow calls and media source entry
-  point. It does not export the full `rallar` singleton.
+- `browser/rallar-media-calls.ts` is the type-only calls and media source entry
+  point. It does not export the full `rallar` singleton or a forwarding facade
+  factory.
 - `game/mod.ts` is the browser game helper barrel.
 - `mod.ts` is the broad shared-web package barrel.
 
@@ -35,15 +36,17 @@ Use the smallest browser entry point that matches the feature area.
 ## Browser Facade Runtime
 
 `browser/rallar.ts` owns the full browser facade and delegates construction to
-[`createBrowserRallarFacade`](./browser/rallar-runtime/composition.ts#L24).
-The implementation lives in capability controllers under
-`browser/rallar-runtime/`; public barrels and narrow entry points must not
-export these modules.
+[`createBrowserRallarFacade`](./browser/rallar-runtime/composition.ts#L43).
+Implementation lives in capability controllers under `browser/rallar-runtime/`
+and in feature-owned `browser/session/`, `browser/connection/`, and
+`browser/rooms/` modules; public barrels and narrow entry points do not export
+those private runtime owners.
 
-Public capability types are owned by their existing `rallar-*-facade.ts`
-modules. `rallar-shared-contracts.ts` contains only shared subscription and
-listener primitives, while `rallar-facade-contract.ts` composes the aggregate
-`RallarFacade` type.
+Public capability contracts stay beside their canonical browser capability:
+message, people, room, auth, connection, calls, director, realtime, media, and
+Data modules own their vocabulary. `rallar-shared-contracts.ts` contains only
+shared subscription and listener primitives, while
+`rallar-facade-contract.ts` composes the aggregate `RallarFacade` type.
 
 Runtime dependencies point inward from the composer to narrow controller
 ports. State, messages, WS inbox, WS, RTC, realtime, rooms/people/stats,
@@ -52,7 +55,11 @@ composer. Higher-level controllers receive lower-level facade or state ports;
 state notifies director through an after-emit observer, and state events plus
 ordinary WS messages share the ordered WS inbox multiplexer.
 
-Connection and auth are owned by the session controller. Its ordered lifecycle
+`createRallarSessionController` constructs the transport connection lifecycle,
+then the auth-session lifecycle, then the public connection/auth operations.
+The auth owner handles expiry, 401 termination, login/logout, browser-local
+cleanup, and notifications. The connection owner coalesces concurrent
+connect/disconnect work and owns lifecycle attach/detach. Its ordered lifecycle
 participants attach and detach in this fixed order: director cleanup, state
 cache, RTC message inbox, WS inbox, WS status, realtime peer lifecycle, RTC
 status, realtime lanes, and media. Detach is deliberately not reversed.
@@ -60,10 +67,11 @@ Connected notification remains state, then WS, then RTC; disconnected
 notification runs only after middleware shutdown and runtime clearing.
 
 The production-symbol construction, registration, invocation, and cleanup map
-is maintained in [browser/README.md](./browser/README.md). It records the
-currently late-bound state/event/session/startup consumers and the overlapping
-session/app-context shutdown ownership as pending corrections; neither has
-been changed by this documentation checkpoint.
+is maintained in [browser/README.md](./browser/README.md). Construction passes
+completed dependencies top-to-bottom with no late-bound state, event, session,
+or startup consumer. `BrowserTransportRuntime` is the single pending/active
+middleware and transport-shutdown owner; `app-context.ts` delegates to it and
+contains no teardown algorithm.
 
 ## Room Transport Product Helpers
 
@@ -147,13 +155,13 @@ Current browser simplification measurement and budgets:
 
 | Entry                           |  Minified |      Gzip |    Brotli |      Budget |
 | ------------------------------- | --------: | --------: | --------: | ----------: |
-| `browser/rallar.ts`             | 648.2 KiB | 165.5 KiB | 137.9 KiB | < 160.0 KiB |
-| `browser/rallar-core.ts`        |   3.2 KiB |   1.0 KiB |   0.9 KiB | < 100.0 KiB |
-| `browser/rallar-realtime.ts`    |   4.3 KiB |   1.2 KiB |   1.1 KiB | < 100.0 KiB |
-| `browser/rallar-data.ts`        |  28.9 KiB |   6.8 KiB |   6.1 KiB |  < 20.0 KiB |
-| `browser/rallar-crdt.ts`        |  73.7 KiB |  17.4 KiB |  15.7 KiB |  < 30.0 KiB |
-| `browser/rallar-media-calls.ts` |   0.5 KiB |   0.3 KiB |   0.2 KiB |  < 10.0 KiB |
-| `shared-web/mod.ts`             | 699.1 KiB | 177.5 KiB | 148.8 KiB |           - |
+| `browser/rallar.ts`             | 749.7 KiB | 192.8 KiB | 158.3 KiB | < 160.0 KiB |
+| `browser/rallar-core.ts`        |   0.5 KiB |   0.3 KiB |   0.3 KiB | < 100.0 KiB |
+| `browser/rallar-realtime.ts`    |   0.5 KiB |   0.3 KiB |   0.3 KiB | < 100.0 KiB |
+| `browser/rallar-data.ts`        |  31.1 KiB |   7.3 KiB |   6.6 KiB |  < 20.0 KiB |
+| `browser/rallar-crdt.ts`        |  74.1 KiB |  17.5 KiB |  15.7 KiB |  < 30.0 KiB |
+| `browser/rallar-media-calls.ts` |   0.0 KiB |   0.0 KiB |   0.0 KiB |  < 10.0 KiB |
+| `shared-web/mod.ts`             | 801.5 KiB | 205.1 KiB | 169.2 KiB |           - |
 
 ## Dependency Boundaries
 

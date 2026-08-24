@@ -5,13 +5,12 @@ import type {
     RallarWsLifecycleListener,
     RallarWsStatus,
     RallarWsStatusListener,
-    RallarWsStatusSubscriptionOptions,
     RallarWsWaitForOpenResult
 } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarWaitForOpenOptions, RallarWaitForOpenStatus } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { notifyListener } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import { normalizeWaitTimeoutMs } from '@shared-web/browser/rallar-runtime/wait.ts';
-import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type { RallarOnChangeOptions, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import type { WebSocketClientCallbacks } from '@shared/websocket/JsonWebSocketClient.ts';
 
@@ -19,23 +18,23 @@ const RALLAR_WS_STATUS_CALLBACK_ID = 'rallar:ws:status';
 
 type RallarWsStatusSubscription = Readonly<{
     listener: RallarWsStatusListener;
-    options: RallarWsStatusSubscriptionOptions;
+    options: RallarOnChangeOptions;
 }>;
 
 type RallarWsLifecycleSubscription = Readonly<{
     listener: RallarWsLifecycleListener;
-    options: RallarWsStatusSubscriptionOptions;
+    options: RallarOnChangeOptions;
 }>;
 
 export type RallarWsFacade = Readonly<{
     status(): RallarWsStatus;
     onStatus(
         listener: RallarWsStatusListener,
-        options?: RallarWsStatusSubscriptionOptions
+        options?: RallarOnChangeOptions
     ): RallarUnsubscribe;
     onLifecycle(
         listener: RallarWsLifecycleListener,
-        options?: RallarWsStatusSubscriptionOptions
+        options?: RallarOnChangeOptions
     ): RallarUnsubscribe;
     waitForOpen(options?: RallarWaitForOpenOptions): Promise<RallarWsWaitForOpenResult>;
 }>;
@@ -74,7 +73,7 @@ class BrowserRallarWsController implements RallarWsController {
         status: (): RallarWsStatus => this.toWsStatus(),
         onStatus: (
             listener: RallarWsStatusListener,
-            options: RallarWsStatusSubscriptionOptions = {}
+            options: RallarOnChangeOptions = {}
         ): RallarUnsubscribe => {
             const subscription: RallarWsStatusSubscription = { listener, options };
             this.wsStatusListeners.add(subscription);
@@ -89,7 +88,7 @@ class BrowserRallarWsController implements RallarWsController {
         },
         onLifecycle: (
             listener: RallarWsLifecycleListener,
-            options: RallarWsStatusSubscriptionOptions = {}
+            options: RallarOnChangeOptions = {}
         ): RallarUnsubscribe => {
             const subscription: RallarWsLifecycleSubscription = {
                 listener,

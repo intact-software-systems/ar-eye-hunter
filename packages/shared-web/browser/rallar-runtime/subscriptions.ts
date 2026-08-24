@@ -6,40 +6,43 @@ import type {
 } from '@shared-web/browser/rallar-shared-contracts.ts';
 
 export function createRallarSubscriptionScope(): RallarSubscriptionScope {
-    const unsubscribers = new Set<RallarUnsubscribe>();
-    let closed = false;
-    let scope!: RallarSubscriptionScope;
+    return new BrowserRallarSubscriptionScope();
+}
 
-    scope = {
-        add: (unsubscribe): RallarSubscriptionScope => {
-            if (!unsubscribe) {
-                return scope;
-            }
+class BrowserRallarSubscriptionScope implements RallarSubscriptionScope {
+    private readonly unsubscribers = new Set<RallarUnsubscribe>();
+    private closed = false;
 
-            if (closed) {
-                unsubscribe();
-                return scope;
-            }
+    add(unsubscribe?: RallarUnsubscribe): RallarSubscriptionScope {
+        if (!unsubscribe) {
+            return this;
+        }
 
-            unsubscribers.add(unsubscribe);
-            return scope;
-        },
-        unsubscribe: (): void => {
-            if (closed) {
-                return;
-            }
+        if (this.closed) {
+            unsubscribe();
+            return this;
+        }
 
-            closed = true;
-            const current = [...unsubscribers];
-            unsubscribers.clear();
-            for (const unsubscribe of current) {
-                unsubscribe();
-            }
-        },
-        size: (): number => unsubscribers.size
-    };
+        this.unsubscribers.add(unsubscribe);
+        return this;
+    }
 
-    return scope;
+    unsubscribe(): void {
+        if (this.closed) {
+            return;
+        }
+
+        this.closed = true;
+        const current = [...this.unsubscribers];
+        this.unsubscribers.clear();
+        for (const unsubscribe of current) {
+            unsubscribe();
+        }
+    }
+
+    size(): number {
+        return this.unsubscribers.size;
+    }
 }
 
 export async function notifyStateEventListener<TEvent>(

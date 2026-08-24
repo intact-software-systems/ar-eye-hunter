@@ -1,18 +1,8 @@
-export {
-    createRallarCallsFacade
-} from '@shared-web/browser/rallar-calls-facade.ts';
-
-export {
-    createRallarMediaFacade
-} from '@shared-web/browser/rallar-media-facade.ts';
-
 export type {
-    CreateRallarCallsFacadeOptions,
     RallarCallsFacade
 } from '@shared-web/browser/rallar-calls-facade.ts';
 
 export type {
-    CreateRallarMediaFacadeOptions,
     RallarMediaFacade
 } from '@shared-web/browser/rallar-media-facade.ts';
 
@@ -34,7 +24,6 @@ export type {
     RallarCallStartInput,
     RallarCallState,
     RallarCallStatus,
-    RallarCallWaitOptions,
     RallarCameraSourceStartOptions,
     RallarIncomingCallInvite,
     RallarMediaSourceAttachOptions,

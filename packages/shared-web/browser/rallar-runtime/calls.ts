@@ -1,6 +1,5 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type {
-    CreateRallarCallsFacadeOptions,
     RallarCallEndOptions,
     RallarCallHandle,
     RallarCallInviteInput,
@@ -8,6 +7,7 @@ import type {
     RallarCallInviteResult,
     RallarCallParticipantState,
     RallarCallParticipantStatus,
+    RallarCallsFacade,
     RallarCallSignalEvent,
     RallarCallSignalKind,
     RallarCallSignalListener,
@@ -16,7 +16,6 @@ import type {
     RallarCallStartInput,
     RallarCallState,
     RallarCallStatus,
-    RallarCallWaitOptions,
     RallarIncomingCallInvite
 } from '@shared-web/browser/rallar-calls-facade.ts';
 import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
@@ -29,7 +28,8 @@ import type {
 import type {
     RallarRtcFacade,
     RallarRtcLaneStatus,
-    RallarRtcPeerStatus
+    RallarRtcPeerStatus,
+    RallarWaitForOpenOptions
 } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarMediaPort } from '@shared-web/browser/rallar-runtime/media.ts';
 import type { RallarMessagesController } from '@shared-web/browser/rallar-runtime/messages.ts';
@@ -71,7 +71,7 @@ export type CreateRallarCallsControllerOptions = Readonly<{
 }>;
 
 export type RallarCallsController = Readonly<{
-    operations: CreateRallarCallsFacadeOptions;
+    operations: RallarCallsFacade;
 }>;
 
 export function createRallarCallsController(
@@ -168,8 +168,6 @@ export function createRallarCallsController(
             raw: message
         };
     };
-
-    let startCall!: (input: RallarCallStartInput) => Promise<RallarCallHandle>;
 
     const toIncomingInvite = (
         message: RallarMessage<RallarCallSignalPayload>
@@ -307,7 +305,9 @@ export function createRallarCallsController(
         };
     };
 
-    startCall = async (input: RallarCallStartInput): Promise<RallarCallHandle> => {
+    async function startCall(
+        input: RallarCallStartInput
+    ): Promise<RallarCallHandle> {
         await options.connect();
         const callId = input.callId ?? crypto.randomUUID();
         const startedAtEpochMs = Date.now();
@@ -344,7 +344,7 @@ export function createRallarCallsController(
                 media: mediaState
             });
         const wait = async (
-            waitOptions: RallarCallWaitOptions = {}
+            waitOptions: RallarWaitForOpenOptions = {}
         ): Promise<RallarCallStatus> => {
             if (endedAtEpochMs !== undefined) {
                 return status();
@@ -460,9 +460,9 @@ export function createRallarCallsController(
         }
         await wait({ timeoutMs: input.data?.openTimeoutMs });
         return handle;
-    };
+    }
 
-    const operations: CreateRallarCallsFacadeOptions = {
+    const operations: RallarCallsFacade = {
         start: startCall,
         invite: async (input: RallarCallInviteInput): Promise<RallarCallInviteResult> => {
             await options.connect();

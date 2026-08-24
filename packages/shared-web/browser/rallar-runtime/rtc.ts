@@ -1,13 +1,13 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type { RallarWsStatus } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type {
-    CreateRallarRtcFacadeOptions,
     RallarRoomTransportState,
     RallarRoomTransportStatus,
     RallarRtcCandidateDiagnostics,
     RallarRtcCandidatePairDiagnostics,
     RallarRtcDiagnostics,
     RallarRtcDiagnosticsOptions,
+    RallarRtcFacade,
     RallarRtcLaneStatus,
     RallarRtcLifecycleKind,
     RallarRtcLifecycleListener,
@@ -77,7 +77,7 @@ export type CreateRallarRtcControllerOptions = Readonly<{
 }>;
 
 export type RallarRtcController = Readonly<{
-    operations: CreateRallarRtcFacadeOptions;
+    operations: RallarRtcFacade;
     attach(ctx?: ApiMiddleware): void;
     connected(): void;
     detach(ctx?: ApiMiddleware): void;
@@ -100,7 +100,7 @@ class BrowserRallarRtcController implements RallarRtcController {
         this.options = options;
     }
 
-    readonly operations: CreateRallarRtcFacadeOptions = {
+    readonly operations: RallarRtcFacade = {
         status: (statusOptions) => this.toRtcStatus(statusOptions),
         roomStatus: (room, roomOptions) => this.toRoomTransportStatus(room, roomOptions),
         openRoom: async (room, roomOptions) => await this.openRtcRoom(room, roomOptions),

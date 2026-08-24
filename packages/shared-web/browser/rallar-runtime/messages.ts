@@ -2,10 +2,8 @@ import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type { RallarCrdtMessageTransport } from '@shared-web/browser/rallar-crdt-transport.ts';
 import type {
     RallarMessageHandler,
-    RallarMessageLane,
     RallarMessageSendBase,
     RallarMessageSendResult,
-    RallarMessageSendStatus,
     RallarMessageTransport,
     RallarRoomMessageChannelDefinition,
     RallarRtcSendInput,
@@ -34,7 +32,7 @@ import {
     toALGroupTargetKey,
     type ALMessage
 } from '@shared/al-contracts/al-contract.ts';
-import type { ALOutboundEnqueueResult } from '@shared/alm/ALOutboundMessageRuntime.ts';
+import type { ALOutboundEnqueueResult, ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRuntime.ts';
 import type { AuthSession } from '@shared/api/api-config.ts';
 import { toScopedOverlayId } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
@@ -51,8 +49,24 @@ import {
 
 type RallarMessageSubscription = Readonly<{
     selector: RallarMessageSelector;
-    listeners: Set<RallarMessageHandler<unknown>>;
+    listeners: Set<RallarMessageHandler>;
 }>;
+
+interface RallarRtcMessageLane {
+    send<T>(input: RallarRtcSendInput<T>): Promise<RallarMessageSendResult>;
+    onMessage<T = unknown>(
+        selector: RallarMessageSelectorInput,
+        handler: RallarMessageHandler<T>
+    ): RallarUnsubscribe;
+}
+
+interface RallarWsMessageLane {
+    send<T>(input: RallarWsSendInput<T>): Promise<RallarMessageSendResult>;
+    onMessage<T = unknown>(
+        selector: RallarMessageSelectorInput,
+        handler: RallarMessageHandler<T>
+    ): RallarUnsubscribe;
+}
 
 export type CreateRallarMessagesControllerOptions = Readonly<{
     wsInbox: RallarWsInbox;
@@ -73,8 +87,8 @@ export type CreateRallarMessagesControllerOptions = Readonly<{
 
 export type RallarMessagesController = Readonly<{
     operations: Readonly<{
-        rtc: RallarMessageLane<RallarRtcSendInput<unknown>, RallarMessageSelectorInput>;
-        ws: RallarMessageLane<RallarWsSendInput<unknown>, RallarMessageSelectorInput>;
+        rtc: RallarRtcMessageLane;
+        ws: RallarWsMessageLane;
         channel<T>(
             definition: RallarTypedMessageChannelDefinition
         ): RallarTypedMessageChannel<T>;
@@ -118,14 +132,14 @@ class BrowserRallarMessagesController implements RallarMessagesController {
     readonly operations: RallarMessagesController['operations'] = {
         rtc: {
             send: async <T>(input: RallarRtcSendInput<T>) => await this.sendRtcMessage(input),
-            onMessage: <T = unknown>(
+            onMessage: <T>(
                 selector: RallarMessageSelectorInput,
                 handler: RallarMessageHandler<T>
             ) => this.onRtcMessage(selector, handler)
         },
         ws: {
             send: async <T>(input: RallarWsSendInput<T>) => await this.sendWsMessage(input),
-            onMessage: <T = unknown>(
+            onMessage: <T>(
                 selector: RallarMessageSelectorInput,
                 handler: RallarMessageHandler<T>
             ) => this.onWsMessage(selector, handler)
@@ -470,14 +484,14 @@ class BrowserRallarMessagesController implements RallarMessagesController {
         return toRallarMessageSendResult('rtc', msg, enqueueResult);
     }
 
-    private onRtcMessage<T = unknown>(
+    private onRtcMessage<T>(
         selector: RallarMessageSelectorInput,
         handler: RallarMessageHandler<T>
     ): RallarUnsubscribe {
         return this.onTransportMessage(
             'rtc',
             selector,
-            handler as RallarMessageHandler<unknown>
+            handler as RallarMessageHandler
         );
     }
 
@@ -527,14 +541,14 @@ class BrowserRallarMessagesController implements RallarMessagesController {
         return toRallarMessageSendResult('ws', msg, enqueueResult);
     }
 
-    private onWsMessage<T = unknown>(
+    private onWsMessage<T>(
         selector: RallarMessageSelectorInput,
         handler: RallarMessageHandler<T>
     ): RallarUnsubscribe {
         return this.onTransportMessage(
             'ws',
             selector,
-            handler as RallarMessageHandler<unknown>
+            handler as RallarMessageHandler
         );
     }
 
@@ -786,7 +800,7 @@ class BrowserRallarMessagesController implements RallarMessagesController {
     private onTransportMessage(
         transport: RallarMessageTransport,
         selectorInput: RallarMessageSelectorInput,
-        handler: RallarMessageHandler<unknown>
+        handler: RallarMessageHandler
     ): RallarUnsubscribe {
         const selector = normalizeRallarMessageSelector(selectorInput);
         if (transport === 'rtc' && !selector.typeId) {
@@ -839,7 +853,7 @@ class BrowserRallarMessagesController implements RallarMessagesController {
         }
         const created: RallarMessageSubscription = {
             selector,
-            listeners: new Set<RallarMessageHandler<unknown>>()
+            listeners: new Set<RallarMessageHandler>()
         };
         registry.set(key, created);
         return created;
@@ -894,7 +908,7 @@ class BrowserRallarMessagesController implements RallarMessagesController {
         message: ALMessage
     ): Promise<void> {
         const registry = transport === 'rtc' ? this.rtcMessageListeners : this.wsMessageListeners;
-        const listeners = new Set<RallarMessageHandler<unknown>>();
+        const listeners = new Set<RallarMessageHandler>();
         for (const subscription of registry.values()) {
             if (!matchesRallarMessageSelector(subscription.selector, message)) {
                 continue;
@@ -988,7 +1002,7 @@ function toRallarMessageSendResult(
 }
 
 function isSuccessfulRallarMessageSendStatus(
-    status: RallarMessageSendStatus
+    status: ALOutboundEnqueueStatus
 ): boolean {
     return (
         status === 'enqueued' ||

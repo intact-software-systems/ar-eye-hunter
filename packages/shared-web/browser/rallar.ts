@@ -87,7 +87,6 @@ export type {
     RallarCallStartInput,
     RallarCallState,
     RallarCallStatus,
-    RallarCallWaitOptions,
     RallarCameraSourceStartOptions,
     RallarConnectStatus,
     RallarCreateRoomInput,
@@ -99,7 +98,6 @@ export type {
     RallarDirectorRelayMessage,
     RallarDirectorRelaySendResult,
     RallarDirectorRelaySendStatus,
-    RallarDirectorResignOptions,
     RallarDirectorRole,
     RallarDirectorState,
     RallarDirectorStatus,
@@ -125,7 +123,6 @@ export type {
     RallarMessageLane,
     RallarMessageSendBase,
     RallarMessageSendResult,
-    RallarMessageSendStatus,
     RallarMessageTransport,
     RallarMicrophoneSourceStartOptions,
     RallarOnChangeOptions,
@@ -136,7 +133,6 @@ export type {
     RallarRealtimeHandler,
     RallarRealtimeHealthOptions,
     RallarRealtimeJsonLane,
-    RallarRealtimeJsonLaneDefaults,
     RallarRealtimeJsonLaneSendOptions,
     RallarRealtimeJsonSendInput,
     RallarRealtimeLaneHealth,
@@ -233,7 +229,6 @@ export type {
     RallarWsSendInput,
     RallarWsStatus,
     RallarWsStatusListener,
-    RallarWsStatusSubscriptionOptions,
     RallarWsWaitForOpenResult
 } from '@shared-web/browser/rallar-facade-contract.ts';
 

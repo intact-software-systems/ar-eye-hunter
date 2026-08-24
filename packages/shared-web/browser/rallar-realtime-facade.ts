@@ -5,7 +5,7 @@ import type {
     RallarRtcRoomTransportOptions,
     RallarWaitForOpenStatus
 } from '@shared-web/browser/rallar-rtc-facade.ts';
-import type { RallarOnChangeOptions, RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
+import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type {
     RtcDataChannelHealth,
@@ -41,8 +41,6 @@ export type RallarRealtimeSendResult = Readonly<{
     result: RtcDataChannelSendResult;
 }>;
 
-export type RallarRealtimeJsonLaneDefaults = RallarRealtimeSendOptions;
-
 export type RallarRealtimeJsonLaneSendOptions<T> = Omit<RallarRealtimeJsonSendInput<T>, 'data'>;
 
 export type RallarRealtimeJsonLane<T> = Readonly<{
@@ -61,7 +59,7 @@ export type RallarRoomRealtimeSendStatus =
     | 'failed';
 
 export type RallarRoomRealtimeJsonDefaults =
-    & Omit<RallarRealtimeJsonLaneDefaults, 'peerIds'>
+    & Omit<RallarRealtimeSendOptions, 'peerIds'>
     & Readonly<{
         waitForReady?: boolean;
         waitTimeoutMs?: number;
@@ -206,8 +204,6 @@ export type RallarWsWaitForOpenResult = Readonly<{
     wsStatus: RallarWsStatus;
 }>;
 
-export type RallarWsStatusSubscriptionOptions = RallarOnChangeOptions;
-
 export type RallarWsStatusListener = (
     status: RallarWsStatus
 ) => void | Promise<void>;
@@ -251,7 +247,7 @@ export type RallarRealtimeFacade = Readonly<{
         handler: RallarRealtimeHandler<ArrayBuffer>
     ): RallarUnsubscribe;
     json<T>(
-        defaults?: RallarRealtimeJsonLaneDefaults
+        defaults?: RallarRealtimeSendOptions
     ): RallarRealtimeJsonLane<T>;
     room<T>(
         defaults?: RallarRoomRealtimeJsonDefaults
@@ -260,35 +256,3 @@ export type RallarRealtimeFacade = Readonly<{
         options?: RallarRealtimeHealthOptions
     ): readonly RallarRealtimeLaneHealth[];
 }>;
-
-export type CreateRallarRealtimeFacadeOptions = RallarRealtimeFacade;
-
-export function createRallarRealtimeFacade(
-    operations: CreateRallarRealtimeFacadeOptions
-): RallarRealtimeFacade {
-    return {
-        sendJson: async <T>(
-            input: RallarRealtimeJsonSendInput<T>
-        ): Promise<readonly RallarRealtimeSendResult[]> => await operations.sendJson(input),
-        sendBinary: async (
-            input: RallarRealtimeBinarySendInput
-        ): Promise<readonly RallarRealtimeSendResult[]> => await operations.sendBinary(input),
-        onJson: <T = unknown>(
-            laneId: string,
-            handler: RallarRealtimeHandler<T>
-        ): RallarUnsubscribe => operations.onJson<T>(laneId, handler),
-        onBinary: (
-            laneId: string,
-            handler: RallarRealtimeHandler<ArrayBuffer>
-        ): RallarUnsubscribe => operations.onBinary(laneId, handler),
-        json: <T>(
-            defaults: RallarRealtimeJsonLaneDefaults = {}
-        ): RallarRealtimeJsonLane<T> => operations.json<T>(defaults),
-        room: <T>(
-            defaults: RallarRoomRealtimeJsonDefaults = {}
-        ): RallarRoomRealtimeJsonChannel<T> => operations.room<T>(defaults),
-        health: (
-            options: RallarRealtimeHealthOptions = {}
-        ): readonly RallarRealtimeLaneHealth[] => operations.health(options)
-    };
-}

@@ -68,11 +68,9 @@ export type RallarWsSendInput<T> =
         exceptPeerIds?: readonly string[];
     }>;
 
-export type RallarMessageSendStatus = ALOutboundEnqueueStatus;
-
 export type RallarMessageSendResult = Readonly<{
     transport: RallarMessageTransport;
-    status: RallarMessageSendStatus;
+    status: ALOutboundEnqueueStatus;
     message: ALMessage;
     entry?: ResourceEntry;
     entries: readonly ResourceEntry[];

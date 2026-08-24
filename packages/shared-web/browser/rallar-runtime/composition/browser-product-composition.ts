@@ -1,5 +1,5 @@
-import { createRallarCallsFacade, type RallarCallsFacade } from '@shared-web/browser/rallar-calls-facade.ts';
-import { createRallarDirectorFacade, type RallarDirectorFacade } from '@shared-web/browser/rallar-director-facade.ts';
+import type { RallarCallsFacade } from '@shared-web/browser/rallar-calls-facade.ts';
+import type { RallarDirectorFacade } from '@shared-web/browser/rallar-director-facade.ts';
 import { createRallarCallsController } from '@shared-web/browser/rallar-runtime/calls.ts';
 import {
     createRallarDirectorController,
@@ -106,7 +106,7 @@ export function createBrowserCallsDirectorComposition(
         sendWsUnicast: async (peerId, payload, typeId, route) =>
             await input.messaging.messagesController.sendWsUnicast(peerId, payload, typeId, route)
     });
-    const calls = createRallarCallsFacade(callsController.operations);
+    const calls = callsController.operations;
     const directorController = createRallarDirectorController({
         stateStore: input.state.stateStore,
         rooms: input.products.rooms,
@@ -126,7 +126,7 @@ export function createBrowserCallsDirectorComposition(
         sendWsUnicast: async (peerId, payload, typeId, route) =>
             await input.messaging.messagesController.sendWsUnicast(peerId, payload, typeId, route)
     });
-    const director = createRallarDirectorFacade(directorController.operations);
+    const director = directorController.operations;
     input.state.stateStore.onAfterEmit(() => directorController.onStateChanged());
     return { calls, directorController, director };
 }

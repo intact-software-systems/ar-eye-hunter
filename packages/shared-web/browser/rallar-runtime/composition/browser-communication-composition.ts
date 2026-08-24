@@ -1,6 +1,6 @@
-import { createRallarMediaFacade, type RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
-import { createRallarRealtimeFacade, type RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
-import { createRallarRtcFacade, type RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
+import type { RallarMediaFacade } from '@shared-web/browser/rallar-media-facade.ts';
+import type { RallarRealtimeFacade } from '@shared-web/browser/rallar-realtime-facade.ts';
+import type { RallarRtcFacade } from '@shared-web/browser/rallar-rtc-facade.ts';
 import { createRallarMediaController, type RallarMediaPort } from '@shared-web/browser/rallar-runtime/media.ts';
 import {
     createRallarMessagesController,
@@ -93,7 +93,7 @@ export function createBrowserRealtimeComposition(
         resolveRtcWaitTimeoutMs: (timeoutMs) => timeoutMs ?? input.state.readDefaults()?.rtc?.waitTimeoutMs,
         resolveRtcConnectOnWait: (connect) => connect ?? input.state.readDefaults()?.rtc?.connectOnWait ?? false
     });
-    const rtc = createRallarRtcFacade(rtcController.operations);
+    const rtc = rtcController.operations;
     const realtimeController = createRallarRealtimeController({
         connect: async () => await input.session.connect(),
         readMiddleware: input.session.readMiddleware,
@@ -111,7 +111,7 @@ export function createBrowserRealtimeComposition(
                 DEFAULT_RALLAR_REALTIME_OPEN_TIMEOUT_MS,
         rtc
     });
-    const realtime = createRallarRealtimeFacade(realtimeController.operations);
+    const realtime = realtimeController.operations;
     const mediaController = createRallarMediaController({
         connect: async () => await input.session.connect(),
         readMiddleware: input.session.readMiddleware
@@ -123,6 +123,6 @@ export function createBrowserRealtimeComposition(
         realtimeController,
         realtime,
         mediaController,
-        media: createRallarMediaFacade(mediaController.operations)
+        media: mediaController.operations
     };
 }

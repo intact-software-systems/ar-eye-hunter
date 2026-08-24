@@ -83,21 +83,3 @@ export type RallarMediaFacade = Readonly<{
         handler: (remote: RallarRemoteStream) => void | Promise<void>
     ): RallarUnsubscribe;
 }>;
-
-export type CreateRallarMediaFacadeOptions = RallarMediaFacade;
-
-export function createRallarMediaFacade(
-    operations: CreateRallarMediaFacadeOptions
-): RallarMediaFacade {
-    return {
-        microphone: operations.microphone,
-        camera: operations.camera,
-        screen: operations.screen,
-        setLocalStream: async (stream): Promise<void> => await operations.setLocalStream(stream),
-        setAudioEnabled: async (enabled): Promise<void> => await operations.setAudioEnabled(enabled),
-        setVideoEnabled: async (enabled): Promise<void> => await operations.setVideoEnabled(enabled),
-        stopLocal: async (kind): Promise<void> => await operations.stopLocal(kind),
-        setPolicy: async (policy): Promise<void> => await operations.setPolicy(policy),
-        onRemoteStream: (handler): RallarUnsubscribe => operations.onRemoteStream(handler)
-    };
-}

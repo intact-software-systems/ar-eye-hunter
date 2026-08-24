@@ -50,7 +50,6 @@ export type {
     RallarMessageLane,
     RallarMessageSendBase,
     RallarMessageSendResult,
-    RallarMessageSendStatus,
     RallarMessageTransport,
     RallarOnChangeOptions,
     RallarPeopleEventOptions,

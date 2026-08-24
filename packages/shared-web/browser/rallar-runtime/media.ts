@@ -1,7 +1,7 @@
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type {
-    CreateRallarMediaFacadeOptions,
     RallarCameraSourceStartOptions,
+    RallarMediaFacade,
     RallarMediaSourceController,
     RallarMediaSourceHandle,
     RallarMediaSourceKind,
@@ -29,7 +29,7 @@ export type CreateRallarMediaControllerOptions = Readonly<{
 }>;
 
 export type RallarMediaPort = Readonly<{
-    operations: CreateRallarMediaFacadeOptions;
+    operations: RallarMediaFacade;
     readSourceStatus(kind: RallarMediaSourceKind): RallarMediaSourceStatus | undefined;
     readSourceStatuses(): readonly RallarMediaSourceStatus[];
     attachRemoteStreamCallback(): void;
@@ -304,7 +304,7 @@ export function createRallarMediaController(
         remoteStreamCallbackRegistered = false;
     };
 
-    const operations: CreateRallarMediaFacadeOptions = {
+    const operations: RallarMediaFacade = {
         microphone: createSourceController('microphone'),
         camera: createSourceController('camera'),
         screen: createSourceController('screen'),

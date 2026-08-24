@@ -17,13 +17,13 @@ import type {
     RallarWsLifecycleListener,
     RallarWsStatus,
     RallarWsStatusListener,
-    RallarWsStatusSubscriptionOptions,
     RallarWsWaitForOpenResult
 } from '@shared-web/browser/rallar-realtime-facade.ts';
 import type { RallarRtcFacade, RallarWaitForOpenOptions } from '@shared-web/browser/rallar-rtc-facade.ts';
 import type { RallarMessagesController } from '@shared-web/browser/rallar-runtime/messages.ts';
 import type { RallarPeopleController } from '@shared-web/browser/rallar-runtime/people.ts';
 import type { RallarStatsController } from '@shared-web/browser/rallar-runtime/stats.ts';
+import type { RallarOnChangeOptions } from '@shared-web/browser/rallar-shared-contracts.ts';
 import type { BrowserRallarRooms } from '@shared-web/browser/rooms/browser-rallar-rooms.ts';
 
 export type * from '@shared-web/browser/rallar-auth-facade.ts';
@@ -68,11 +68,11 @@ export type RallarFacade =
             status(): RallarWsStatus;
             onStatus(
                 listener: RallarWsStatusListener,
-                options?: RallarWsStatusSubscriptionOptions
+                options?: RallarOnChangeOptions
             ): import('@shared-web/browser/rallar-shared-contracts.ts').RallarUnsubscribe;
             onLifecycle(
                 listener: RallarWsLifecycleListener,
-                options?: RallarWsStatusSubscriptionOptions
+                options?: RallarOnChangeOptions
             ): import('@shared-web/browser/rallar-shared-contracts.ts').RallarUnsubscribe;
             waitForOpen(options?: RallarWaitForOpenOptions): Promise<RallarWsWaitForOpenResult>;
         }>;

@@ -459,6 +459,7 @@ function isStateScope(
         typeof input === 'object' &&
         input !== null &&
         !Array.isArray(input) &&
-        typeof (input as { applicationId?: unknown; }).applicationId === 'string'
+        'applicationId' in input &&
+        typeof input.applicationId === 'string'
     );
 }

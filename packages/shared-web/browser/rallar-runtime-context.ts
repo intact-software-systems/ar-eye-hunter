@@ -78,143 +78,180 @@ export type RallarAuthRuntimePort = Pick<
     | 'endedAuthSessionKeys'
 >;
 
-type RallarBrowserFacadeRuntimeState = {
-    connectState: RallarBrowserConnectStatus;
-    stateCacheUnsubscribe?: () => void;
-    currentRoomId?: string;
-    currentRoomRef?: GroupRef;
-    defaults?: RallarDefaults;
-    defaultScope?: StateScope;
-    authExpiryTimer?: ReturnType<typeof setTimeout>;
-    authEndPromise?: Promise<void>;
-    endedAuthSessionKeys: Set<string>;
-};
+class BrowserFacadeRuntimeState implements RallarBrowserFacadeRuntimeContext {
+    private connectState: RallarBrowserConnectStatus = 'idle';
+    private stateCacheUnsubscribe: (() => void) | undefined;
+    private currentRoom: Readonly<{ id: string; ref: GroupRef; }> | undefined;
+    private runtimeDefaults: RallarDefaults | undefined;
+    private defaultScope: StateScope | undefined;
+    private authExpiryTimer: ReturnType<typeof setTimeout> | undefined;
+    private authEndPromise: Promise<void> | undefined;
+    private readonly endedSessionKeys = new Set<string>();
+    private readonly transportRuntime: BrowserTransportRuntimePort;
+
+    public constructor(transportRuntime: BrowserTransportRuntimePort) {
+        this.transportRuntime = transportRuntime;
+    }
+
+    public readonly readConnectState = (): RallarBrowserConnectStatus => {
+        return this.connectState;
+    };
+
+    public readonly setConnectState = (connectState: RallarBrowserConnectStatus): void => {
+        this.connectState = connectState;
+    };
+
+    public readonly readMiddleware = (): ApiMiddleware | undefined => {
+        return this.transportRuntime.readMiddleware();
+    };
+
+    public readonly requireMiddleware = (): ApiMiddleware => {
+        return this.transportRuntime.requireMiddleware();
+    };
+
+    public readonly readStateCacheUnsubscribe = (): (() => void) | undefined => {
+        return this.stateCacheUnsubscribe;
+    };
+
+    public readonly setStateCacheUnsubscribe = (
+        unsubscribe: (() => void) | undefined
+    ): void => {
+        this.stateCacheUnsubscribe = unsubscribe;
+    };
+
+    public readonly currentRoomId = (): string | undefined => {
+        return this.currentRoom?.id;
+    };
+
+    public readonly currentRoomRef = (): GroupRef | undefined => {
+        return this.currentRoom?.ref;
+    };
+
+    public readonly setCurrentRoom = (snapshot: GroupSnapshot): void => {
+        this.currentRoom = { id: readGroupId(snapshot), ref: snapshot.group };
+    };
+
+    public readonly clearCurrentRoom = (): void => {
+        this.currentRoom = undefined;
+    };
+
+    public readonly clearCurrentRoomIfMatches = (
+        room: string | GroupRef,
+        clearCurrent: boolean
+    ): void => {
+        if (!clearCurrent || !this.currentRoom) {
+            return;
+        }
+        const matches = typeof room === 'string'
+            ? this.currentRoom.id === room
+            : isSameGroupRef(this.currentRoom.ref, room);
+        if (matches) {
+            this.currentRoom = undefined;
+        }
+    };
+
+    public readonly setDefaults = (defaults?: RallarDefaults): void => {
+        this.runtimeDefaults = defaults
+            ? cloneRallarRuntimeDefaults(defaults)
+            : undefined;
+        this.defaultScope = defaults
+            ? {
+                applicationId: defaults.applicationId,
+                workspaceId: defaults.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID
+            }
+            : undefined;
+    };
+
+    public readonly defaults = (): RallarDefaults | undefined => {
+        return this.runtimeDefaults
+            ? cloneRallarRuntimeDefaults(this.runtimeDefaults)
+            : undefined;
+    };
+
+    public readonly readDefaults = (): RallarDefaults | undefined => {
+        return this.runtimeDefaults;
+    };
+
+    public readonly readDefaultScope = (): StateScope | undefined => {
+        return this.defaultScope;
+    };
+
+    public readonly resolveOperationScope = (scope?: StateScope): StateScope | undefined => {
+        return scope ?? this.defaultScope;
+    };
+
+    public readonly resolveOperationOptions = <T extends RallarOperationOptions>(
+        options: T
+    ): T & RallarOperationOptions => {
+        const operationDefaults = this.runtimeDefaults?.operations;
+        const rtcDefaults = this.runtimeDefaults?.rtc;
+        const resolved = {
+            timeoutMs: options.timeoutMs ?? operationDefaults?.timeoutMs,
+            maxAttempts: options.maxAttempts ?? operationDefaults?.maxAttempts,
+            shouldRetry: options.shouldRetry ?? operationDefaults?.shouldRetry,
+            dataChannelLanes: options.dataChannelLanes ?? rtcDefaults?.dataChannelLanes,
+            maxPeerConnections: options.maxPeerConnections ?? rtcDefaults?.maxPeerConnections,
+            rttReportingDegreeLimit: options.rttReportingDegreeLimit ??
+                rtcDefaults?.rttReportingDegreeLimit,
+            bootstrapDegree: options.bootstrapDegree ?? rtcDefaults?.bootstrapDegree
+        };
+        if (Object.values(resolved).every((value) => value === undefined)) {
+            return options;
+        }
+        return {
+            ...options,
+            ...(resolved.timeoutMs !== undefined ? { timeoutMs: resolved.timeoutMs } : {}),
+            ...(resolved.maxAttempts !== undefined ? { maxAttempts: resolved.maxAttempts } : {}),
+            ...(resolved.shouldRetry !== undefined ? { shouldRetry: resolved.shouldRetry } : {}),
+            ...(resolved.dataChannelLanes !== undefined
+                ? { dataChannelLanes: resolved.dataChannelLanes }
+                : {}),
+            ...(resolved.maxPeerConnections !== undefined
+                ? { maxPeerConnections: resolved.maxPeerConnections }
+                : {}),
+            ...(resolved.rttReportingDegreeLimit !== undefined
+                ? { rttReportingDegreeLimit: resolved.rttReportingDegreeLimit }
+                : {}),
+            ...(resolved.bootstrapDegree !== undefined
+                ? { bootstrapDegree: resolved.bootstrapDegree }
+                : {})
+        };
+    };
+
+    public readonly readAuthExpiryTimer = (): ReturnType<typeof setTimeout> | undefined => {
+        return this.authExpiryTimer;
+    };
+
+    public readonly setAuthExpiryTimer = (
+        timer: ReturnType<typeof setTimeout> | undefined
+    ): void => {
+        this.authExpiryTimer = timer;
+    };
+
+    public readonly clearAuthExpiryTimer = (): void => {
+        if (this.authExpiryTimer !== undefined) {
+            clearTimeout(this.authExpiryTimer);
+            this.authExpiryTimer = undefined;
+        }
+    };
+
+    public readonly readAuthEndPromise = (): Promise<void> | undefined => {
+        return this.authEndPromise;
+    };
+
+    public readonly setAuthEndPromise = (promise: Promise<void> | undefined): void => {
+        this.authEndPromise = promise;
+    };
+
+    public readonly endedAuthSessionKeys = (): Set<string> => {
+        return this.endedSessionKeys;
+    };
+}
 
 export function createRallarBrowserFacadeRuntimeContext(
     options: RallarBrowserFacadeRuntimeContextOptions
 ): RallarBrowserFacadeRuntimeContext {
-    const transportRuntime = options.transportRuntime;
-    const state: RallarBrowserFacadeRuntimeState = {
-        connectState: 'idle',
-        endedAuthSessionKeys: new Set<string>()
-    };
-
-    return {
-        readConnectState: () => state.connectState,
-        setConnectState: (connectState): void => {
-            state.connectState = connectState;
-        },
-        readMiddleware: () => transportRuntime.readMiddleware(),
-        requireMiddleware: () => transportRuntime.requireMiddleware(),
-        readStateCacheUnsubscribe: () => state.stateCacheUnsubscribe,
-        setStateCacheUnsubscribe: (unsubscribe): void => {
-            state.stateCacheUnsubscribe = unsubscribe;
-        },
-        currentRoomId: () => state.currentRoomId,
-        currentRoomRef: () => state.currentRoomRef,
-        setCurrentRoom: (snapshot): void => {
-            state.currentRoomId = readGroupId(snapshot);
-            state.currentRoomRef = snapshot.group;
-        },
-        clearCurrentRoom: (): void => {
-            state.currentRoomId = undefined;
-            state.currentRoomRef = undefined;
-        },
-        clearCurrentRoomIfMatches: (room, clearCurrent): void => {
-            if (!clearCurrent) {
-                return;
-            }
-
-            if (
-                typeof room === 'string'
-                    ? state.currentRoomId === room
-                    : state.currentRoomRef
-                    ? isSameGroupRef(state.currentRoomRef, room)
-                    : state.currentRoomId === room.groupId
-            ) {
-                state.currentRoomId = undefined;
-                state.currentRoomRef = undefined;
-            }
-        },
-        setDefaults: (defaults): void => {
-            state.defaults = defaults ? cloneRallarRuntimeDefaults(defaults) : undefined;
-            state.defaultScope = defaults
-                ? {
-                    applicationId: defaults.applicationId,
-                    workspaceId: defaults.workspaceId ?? DEFAULT_STATE_WORKSPACE_ID
-                }
-                : undefined;
-        },
-        defaults: () => state.defaults ? cloneRallarRuntimeDefaults(state.defaults) : undefined,
-        readDefaults: () => state.defaults,
-        readDefaultScope: () => state.defaultScope,
-        resolveOperationScope: (scope) => scope ?? state.defaultScope,
-        resolveOperationOptions: <T extends RallarOperationOptions>(
-            options: T
-        ): T & RallarOperationOptions => {
-            const timeoutMs = options.timeoutMs !== undefined
-                ? options.timeoutMs
-                : state.defaults?.operations?.timeoutMs;
-            const maxAttempts = options.maxAttempts !== undefined
-                ? options.maxAttempts
-                : state.defaults?.operations?.maxAttempts;
-            const shouldRetry = options.shouldRetry ??
-                state.defaults?.operations?.shouldRetry;
-
-            const dataChannelLanes = options.dataChannelLanes !== undefined
-                ? options.dataChannelLanes
-                : state.defaults?.rtc?.dataChannelLanes;
-            const maxPeerConnections = options.maxPeerConnections !== undefined
-                ? options.maxPeerConnections
-                : state.defaults?.rtc?.maxPeerConnections;
-            const rttReportingDegreeLimit = options.rttReportingDegreeLimit !== undefined
-                ? options.rttReportingDegreeLimit
-                : state.defaults?.rtc?.rttReportingDegreeLimit;
-            const bootstrapDegree = options.bootstrapDegree !== undefined
-                ? options.bootstrapDegree
-                : state.defaults?.rtc?.bootstrapDegree;
-
-            if (
-                timeoutMs === undefined &&
-                maxAttempts === undefined &&
-                shouldRetry === undefined &&
-                dataChannelLanes === undefined &&
-                maxPeerConnections === undefined &&
-                rttReportingDegreeLimit === undefined &&
-                bootstrapDegree === undefined
-            ) {
-                return options;
-            }
-
-            return {
-                ...options,
-                ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-                ...(maxAttempts !== undefined ? { maxAttempts } : {}),
-                ...(shouldRetry !== undefined ? { shouldRetry } : {}),
-                ...(dataChannelLanes !== undefined ? { dataChannelLanes } : {}),
-                ...(maxPeerConnections !== undefined ? { maxPeerConnections } : {}),
-                ...(rttReportingDegreeLimit !== undefined
-                    ? { rttReportingDegreeLimit }
-                    : {}),
-                ...(bootstrapDegree !== undefined ? { bootstrapDegree } : {})
-            };
-        },
-        readAuthExpiryTimer: () => state.authExpiryTimer,
-        setAuthExpiryTimer: (timer): void => {
-            state.authExpiryTimer = timer;
-        },
-        clearAuthExpiryTimer: (): void => {
-            if (state.authExpiryTimer !== undefined) {
-                clearTimeout(state.authExpiryTimer);
-                state.authExpiryTimer = undefined;
-            }
-        },
-        readAuthEndPromise: () => state.authEndPromise,
-        setAuthEndPromise: (promise): void => {
-            state.authEndPromise = promise;
-        },
-        endedAuthSessionKeys: () => state.endedAuthSessionKeys
-    };
+    return new BrowserFacadeRuntimeState(options.transportRuntime);
 }
 
 export function cloneRallarRuntimeDefaults(

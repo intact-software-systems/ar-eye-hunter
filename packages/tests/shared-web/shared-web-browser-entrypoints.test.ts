@@ -35,8 +35,6 @@ const BROWSER_ENTRYPOINTS: readonly BrowserEntrypoint[] = [
         sourcePath: 'packages/shared-web/browser/rallar-realtime.ts',
         expectedRuntimeExports: [
             'configureApiClient',
-            'createRallarRealtimeFacade',
-            'createRallarRtcFacade',
             'matchesRallarMessageSelector',
             'normalizeRallarMessageSelector',
             'normalizeApiBaseUrl',
@@ -48,20 +46,21 @@ const BROWSER_ENTRYPOINTS: readonly BrowserEntrypoint[] = [
             'createRallarFacade',
             'createRallarMediaFacade',
             'createRallarCallsFacade',
+            'createRallarRealtimeFacade',
+            'createRallarRtcFacade',
             'rallar'
         ]
     },
     {
         moduleId: '@shared-web/browser/rallar-media-calls.ts',
         sourcePath: 'packages/shared-web/browser/rallar-media-calls.ts',
-        expectedRuntimeExports: [
-            'createRallarCallsFacade',
-            'createRallarMediaFacade'
-        ],
+        expectedRuntimeExports: [],
         forbiddenRuntimeExports: [
             'createRallarCrdtFacade',
             'createRallarDataFacade',
             'createRallarFacade',
+            'createRallarCallsFacade',
+            'createRallarMediaFacade',
             'createRallarRealtimeFacade',
             'createRallarRtcFacade',
             'rallar'
