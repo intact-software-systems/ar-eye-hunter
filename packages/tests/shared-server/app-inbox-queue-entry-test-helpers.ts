@@ -1,9 +1,11 @@
 import { Temporal } from '@js-temporal/polyfill';
+import { vi } from 'vitest';
 
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { EntityStatus, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { createResilience, readEntries, type TestResourceInbox } from './auth/auth-app-inbox-test-runtime.ts';
+
+import { createAuthInboxTestResilience, readEntries, type TestResourceInbox } from './auth/auth-app-inbox-test-runtime.ts';
 
 const DELAYED_UNTIL_EPOCH_MS = 1_800_001_000_000;
 
@@ -25,7 +27,10 @@ export function groupPresenceFacts(
 }
 
 export async function processNext(reader: InboxQueueReader): Promise<void> {
-    await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+    await reader.dequeueInbox(
+        InboxQueueReader.INBOX_DEQUEUE_TYPES,
+        createAuthInboxTestResilience()
+    );
 }
 
 export async function delayEntry(
@@ -68,14 +73,13 @@ export async function waitForQueuedType(
     queue: TestResourceInbox,
     type: AppInboxType
 ): Promise<ResourceEntry> {
-    for (let attempt = 0; attempt < 50; attempt += 1) {
+    return await vi.waitFor(async () => {
         const entry = (await readEntries(queue)).find((candidate) => readType(candidate) === type && candidate.status === EntityStatus.NEW);
         if (entry) {
             return entry;
         }
-        await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-    throw new Error(`Expected queued AppInbox type ${type}`);
+        throw new Error(`Expected queued AppInbox type ${type}`);
+    }, { timeout: 2_000 });
 }
 
 export async function queuedTypes(

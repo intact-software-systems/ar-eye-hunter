@@ -1,18 +1,16 @@
 import { Temporal } from '@js-temporal/polyfill';
+
+import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
+import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
+import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+import type { AuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
+import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 import { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { EntityStatus, isExpiredResourceEntry, toKeyAsString, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-
-import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
-
-import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
-import type { AuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
-
-import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
-import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
 
 import type { AppInboxTestDatabase, AppInboxTestDatabaseOptions } from '../app-inbox-test-database-contracts.ts';
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
@@ -39,24 +37,64 @@ interface CreateAuthInboxTestRuntimeInput {
     readonly nowEpochMs?: () => number;
 }
 
-interface RunAuthInboxCommandInput<Result, P extends Promise<Either<AppInboxFailure, Result>>> {
-    readonly pending: P;
-    readonly queue: InMemoryQueueBox;
+interface RunAuthInboxCommandInput<Result> {
+    readonly pending: Promise<Either<AppInboxFailure, Result>>;
+    readonly queue: TestResourceInbox;
     readonly reader: InboxQueueReader;
     readonly minimumEntries?: number;
 }
 
+const RESOURCE_INBOX_ENTRY_EVENT = 'resource-inbox-entry';
+const RESOURCE_INBOX_ENTRY_WAIT_TIMEOUT_MS = 2_000;
+
 export class TestResourceInbox extends InMemoryQueueBox {
     private readonly materializations = new Map<string, Promise<ResourceEntry>>();
+    private readonly entryEvents = new EventTarget();
     private nextMaterializationGate: Promise<void> | undefined;
 
     delayNextMaterializationUntil(gate: Promise<void>): void {
         this.nextMaterializationGate = gate;
     }
 
+    async waitForEntryCount(
+        minimumEntries: number,
+        timeoutMs = RESOURCE_INBOX_ENTRY_WAIT_TIMEOUT_MS
+    ): Promise<void> {
+        const waitAbort = new AbortController();
+        const timeout = rejectResourceInboxEntryWaitAfter(
+            waitAbort.signal,
+            timeoutMs,
+            minimumEntries
+        );
+        try {
+            while (true) {
+                const entryWritten = new Promise<void>((resolve) => {
+                    this.entryEvents.addEventListener(
+                        RESOURCE_INBOX_ENTRY_EVENT,
+                        () => resolve(),
+                        { once: true, signal: waitAbort.signal }
+                    );
+                });
+                if ((await this.getAllKeys()).length >= minimumEntries) {
+                    return;
+                }
+                await Promise.race([entryWritten, timeout]);
+            }
+        }
+        finally {
+            waitAbort.abort();
+        }
+    }
+
     async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
         const entry = await this.getItem(key);
         return entry !== undefined && statuses.includes(entry.status);
+    }
+
+    override async enqueueIfAbsent(entry: ResourceEntry): Promise<ResourceEntry> {
+        const enqueued = await super.enqueueIfAbsent(entry);
+        this.entryEvents.dispatchEvent(new Event(RESOURCE_INBOX_ENTRY_EVENT));
+        return enqueued;
     }
 
     async findAllByTopicAndResourceId(
@@ -175,11 +213,17 @@ export function createAuthInboxTestRuntime({
 
 export function createAuthInboxTestResilience(firstRetryDelayMs?: number): ResilienceDto {
     const duration = Temporal.Duration.from({ seconds: 10 });
-    const args = [new CircuitBreakerPolicy(10, duration, duration, duration), 1, 10, 1, 1] as const;
+    const resilienceArguments = [
+        new CircuitBreakerPolicy(10, duration, duration, duration),
+        1,
+        10,
+        1,
+        1
+    ] as const;
     if (firstRetryDelayMs === undefined) {
-        return ResilienceDto.toResilienceDto(...args);
+        return ResilienceDto.toResilienceDto(...resilienceArguments);
     }
-    return ResilienceDto.toResilienceDto(...args, 10, {
+    return ResilienceDto.toResilienceDto(...resilienceArguments, 10, {
         maxAttempts: 20,
         delaysAfterAttemptMs: [firstRetryDelayMs],
         maxDelayMs: firstRetryDelayMs,
@@ -194,24 +238,18 @@ export async function readEntries(queue: InMemoryQueueBox): Promise<ResourceEntr
 }
 
 export async function waitForAuthInboxEntry(
-    queue: InMemoryQueueBox,
+    queue: TestResourceInbox,
     minimumEntries = 1
 ): Promise<void> {
-    for (let attempt = 0; attempt < 50; attempt += 1) {
-        if ((await queue.getAllKeys()).length >= minimumEntries) {
-            return;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 1));
-    }
-    throw new Error('Auth AppInbox test entry was not enqueued');
+    await queue.waitForEntryCount(minimumEntries);
 }
 
-export async function runAuthInboxCommand<Result, P extends Promise<Either<AppInboxFailure, Result>>>({
+export async function runAuthInboxCommand<Result>({
     pending,
     queue,
     reader,
     minimumEntries = 1
-}: RunAuthInboxCommandInput<Result, P>): Promise<Awaited<P>> {
+}: RunAuthInboxCommandInput<Result>): Promise<Either<AppInboxFailure, Result>> {
     await waitForAuthInboxEntry(queue, minimumEntries);
     await reader.dequeueInbox(
         InboxQueueReader.INBOX_DEQUEUE_TYPES,
@@ -220,6 +258,21 @@ export async function runAuthInboxCommand<Result, P extends Promise<Either<AppIn
     return await pending;
 }
 
-export const createResilience = createAuthInboxTestResilience;
-export const waitForQueuedEntry = waitForAuthInboxEntry;
-export const runAuthCommand = runAuthInboxCommand;
+function rejectResourceInboxEntryWaitAfter(
+    abortSignal: AbortSignal,
+    timeoutMs: number,
+    minimumEntries: number
+): Promise<never> {
+    return new Promise((_, reject) => {
+        const timeout = setTimeout(
+            () =>
+                reject(
+                    new Error(
+                        `ResourceInbox test queue did not reach ${minimumEntries} entries`
+                    )
+                ),
+            timeoutMs
+        );
+        abortSignal.addEventListener('abort', () => clearTimeout(timeout), { once: true });
+    });
+}

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
@@ -11,10 +12,15 @@ import {
     createAuthInboxTestResilience,
     createAuthInboxTestRuntime,
     readEntries,
-    runAuthCommand,
+    runAuthInboxCommand,
     waitForAuthInboxEntry,
     type AuthInboxTestRuntime
 } from './auth-app-inbox-test-runtime.ts';
+
+interface AuthHttpIdempotencyRuntime {
+    readonly auth: AuthInboxTestRuntime;
+    readonly repository: AuthSessionRepository;
+}
 
 const SHARED_REQUEST_ID = 'SharedLogoutRequest_0123456789abcdefghijklmnopqrstuv';
 
@@ -23,7 +29,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
         const runtime = createRuntime();
         const session = await putSession(runtime, 'client:a', 'session:a');
 
-        await runAuthCommand({
+        await runAuthInboxCommand({
             pending: runtime.auth.service.logoutSession({
                 requestId: SHARED_REQUEST_ID,
                 session
@@ -257,7 +263,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
     it('replays a consumed agent ticket only with its original credential proof', async () => {
         const runtime = createRuntime();
         const authority = await putSession(runtime, 'operator-client', 'operator-session');
-        const issued = await runAuthCommand({
+        const issued = await runAuthInboxCommand({
             pending: runtime.auth.service.issueAgentSessionTickets({
                 requestId: 'AgentTicketIssueRequest_0123',
                 session: authority,
@@ -275,7 +281,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
             requestId: 'AgentTicketConsumeRequest_0123456789abcdefghijklmnop',
             ticket
         };
-        const consumed = await runAuthCommand({
+        const consumed = await runAuthInboxCommand({
             pending: runtime.auth.service.consumeAgentSessionTicket(consumeInput),
             queue: runtime.auth.queue,
             reader: runtime.auth.reader,
@@ -289,10 +295,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
     });
 });
 
-function createRuntime(): Readonly<{
-    auth: AuthInboxTestRuntime;
-    repository: AuthSessionRepository;
-}> {
+function createRuntime(): AuthHttpIdempotencyRuntime {
     const runtimeRepository = new FakeRuntimeStateRepository();
     return {
         auth: createAuthInboxTestRuntime({
@@ -305,10 +308,10 @@ function createRuntime(): Readonly<{
 }
 
 async function putSession(
-    runtime: ReturnType<typeof createRuntime>,
+    runtime: AuthHttpIdempotencyRuntime,
     clientId: string,
     sessionId: string
-) {
+): Promise<IssuedAuthSession> {
     const issuedAtEpochMs = Date.now();
     const session = {
         clientId,
@@ -324,10 +327,10 @@ async function putSession(
 
 async function logout(
     auth: AuthInboxTestRuntime,
-    session: Awaited<ReturnType<typeof putSession>>,
+    session: IssuedAuthSession,
     minimumEntries: number
 ): Promise<void> {
-    const result = await runAuthCommand({
+    const result = await runAuthInboxCommand({
         pending: auth.service.logoutSession({
             requestId: SHARED_REQUEST_ID,
             session

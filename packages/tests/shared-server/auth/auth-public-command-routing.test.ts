@@ -1,34 +1,24 @@
-import { describe, expect, it } from 'vitest';
-
-import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
+import { expect, it } from 'vitest';
 
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
-
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/hash-auth-secret.ts';
-
 import { AppAuthInboxService } from '@shared-server/rallar-system/auth/inbox/app-auth-inbox-service.ts';
-
 import type { IssueAuthWsTicketCommand } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
-
 import { captureAuthMutationFacts } from '@shared-server/rallar-system/auth/mutation/read/capture-auth-mutation-facts.ts';
-
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 import {
     createAuthInboxTestRuntime,
     readEntries,
-    runAuthCommand,
+    runAuthInboxCommand,
     TestResourceInbox,
     TestResourceInboxResults,
     type AuthInboxTestRuntime
 } from './auth-app-inbox-test-runtime.ts';
-it(
-    'routes registration, ticket issuance, agent batches, and logout through durable commands',
-    routesEveryPublicMutationThroughDurableCommands
-);
 
 interface RoutedSession {
     readonly clientId: string;
@@ -38,6 +28,39 @@ interface RoutedSession {
     readonly issuedAtEpochMs: number;
     readonly expiresAtEpochMs: number;
 }
+
+interface ConsumeExpiredTicketsInput {
+    readonly auth: AuthInboxTestRuntime;
+    readonly session: RoutedSession;
+    readonly wsTicket: string;
+    readonly agentTickets: readonly string[];
+}
+
+interface LogoutRoutedSessionInput {
+    readonly auth: AuthInboxTestRuntime;
+    readonly runtimeRepository: FakeRuntimeStateRepository;
+    readonly session: RoutedSession;
+}
+
+const DELAYED_AUTH_MATERIALIZATION_MS = 100;
+
+it(
+    'routes registration, ticket issuance, agent batches, and logout through durable commands',
+    routesEveryPublicMutationThroughDurableCommands
+);
+
+it('waits for delayed auth intent materialization before dequeuing', async () => {
+    const auth = createAuthInboxTestRuntime({
+        runtimeRepository: new FakeRuntimeStateRepository(),
+        serviceId: 'delayed-auth-test-service',
+        credentialSecret: 'delayed-auth-secret-0123456789abcdef'
+    });
+    auth.queue.delayNextMaterializationUntil(
+        new Promise((resolve) => setTimeout(resolve, DELAYED_AUTH_MATERIALIZATION_MS))
+    );
+
+    expect(await registerRoutedUser(auth)).toBeDefined();
+});
 
 async function routesEveryPublicMutationThroughDurableCommands(): Promise<void> {
     const runtimeRepository = new FakeRuntimeStateRepository();
@@ -52,11 +75,11 @@ async function routesEveryPublicMutationThroughDurableCommands(): Promise<void> 
     const now = clock.now;
     const clientId = await registerRoutedUser(auth);
     const session = await issueRoutedSession(auth, now, clientId);
-    const wsTicket = await issueRoutedWebSocketTicket(auth, now, session);
-    const agentTickets = await issueRoutedAgentTickets(auth, now, session);
+    const wsTicket = await issueRoutedWebSocketTicket(auth, session);
+    const agentTickets = await issueRoutedAgentTickets(auth, session);
     clock.now = now + 30_001;
-    await consumeExpiredRoutedTickets({ auth, now, session, wsTicket, agentTickets });
-    await logoutRoutedSession({ auth, runtimeRepository, now, session });
+    await consumeExpiredRoutedTickets({ auth, session, wsTicket, agentTickets });
+    await logoutRoutedSession({ auth, runtimeRepository, session });
     await expectNoPlaintextCredentials(auth, [
         session.accessToken,
         wsTicket,
@@ -66,7 +89,7 @@ async function routesEveryPublicMutationThroughDurableCommands(): Promise<void> 
 }
 
 async function registerRoutedUser(auth: AuthInboxTestRuntime): Promise<string> {
-    const registered = await runAuthCommand({
+    const registered = await runAuthInboxCommand({
         pending: auth.service.registerUser({
             requestId: 'register-request',
             request: {
@@ -87,7 +110,7 @@ async function issueRoutedSession(
     now: number,
     clientId: string
 ): Promise<RoutedSession> {
-    const login = await runAuthCommand({
+    const login = await runAuthInboxCommand({
         pending: auth.service.issueSession({
             requestId: 'session-request',
             clientId,
@@ -113,10 +136,9 @@ async function issueRoutedSession(
 
 async function issueRoutedWebSocketTicket(
     auth: AuthInboxTestRuntime,
-    now: number,
     session: RoutedSession
 ): Promise<string> {
-    const wsTicket = await runAuthCommand({
+    const wsTicket = await runAuthInboxCommand({
         pending: auth.service.issueWebSocketTicket({
             requestId: 'ws-issue-request',
             session,
@@ -150,10 +172,9 @@ async function issueRoutedWebSocketTicket(
 
 async function issueRoutedAgentTickets(
     auth: AuthInboxTestRuntime,
-    now: number,
     session: RoutedSession
 ): Promise<readonly string[]> {
-    const agentTickets = await runAuthCommand({
+    const agentTickets = await runAuthInboxCommand({
         pending: auth.service.issueAgentSessionTickets({
             requestId: 'agent-issue-request',
             session,
@@ -191,22 +212,13 @@ async function issueRoutedAgentTickets(
     return agentTickets.right!.tickets.map((ticket) => ticket.ticket);
 }
 
-interface ConsumeExpiredTicketsInput {
-    readonly auth: AuthInboxTestRuntime;
-    readonly now: number;
-    readonly session: RoutedSession;
-    readonly wsTicket: string;
-    readonly agentTickets: readonly string[];
-}
-
 async function consumeExpiredRoutedTickets({
     auth,
-    now,
     session,
     wsTicket,
     agentTickets
 }: ConsumeExpiredTicketsInput): Promise<void> {
-    const expiredWs = await runAuthCommand({
+    const expiredWs = await runAuthInboxCommand({
         pending: auth.service.consumeWebSocketTicket({
             requestId: 'ws-expired-consume',
             expectedSessionId: session.sessionId,
@@ -217,7 +229,7 @@ async function consumeExpiredRoutedTickets({
         minimumEntries: 5
     });
     expect(expiredWs.left?.status).toBe(410);
-    const expiredAgent = await runAuthCommand({
+    const expiredAgent = await runAuthInboxCommand({
         pending: auth.service.consumeAgentSessionTicket({
             requestId: 'agent-expired-consume',
             ticket: agentTickets[0]
@@ -229,20 +241,12 @@ async function consumeExpiredRoutedTickets({
     expect(expiredAgent.left?.status).toBe(410);
 }
 
-interface LogoutRoutedSessionInput {
-    readonly auth: AuthInboxTestRuntime;
-    readonly runtimeRepository: FakeRuntimeStateRepository;
-    readonly now: number;
-    readonly session: RoutedSession;
-}
-
 async function logoutRoutedSession({
     auth,
     runtimeRepository,
-    now,
     session
 }: LogoutRoutedSessionInput): Promise<void> {
-    const logout = await runAuthCommand({
+    const logout = await runAuthInboxCommand({
         pending: auth.service.logoutSession({
             requestId: 'logout-request',
             session
@@ -301,7 +305,7 @@ it('rechecks the parent session before issuing agent credentials', async () => {
     );
     const now = Date.now();
 
-    const issued = await runAuthCommand({
+    const issued = await runAuthInboxCommand({
         pending: service.issueAgentSessionTickets({
             requestId: 'agent-without-authority',
             session: {

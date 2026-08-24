@@ -6,16 +6,24 @@ import { hashAuthSecret } from '@shared-server/rallar-system/auth/credentials/ha
 import type { ConsumeAuthWsTicketCommand } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
 import { captureAuthMutationFacts } from '@shared-server/rallar-system/auth/mutation/read/capture-auth-mutation-facts.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
+import type { IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
 import { FakeRuntimeStateRepository } from '../fake-runtime-state-repository.ts';
 import {
     createAuthInboxTestResilience,
     createAuthInboxTestRuntime,
-    runAuthCommand,
-    waitForQueuedEntry,
+    runAuthInboxCommand,
+    waitForAuthInboxEntry,
     type AuthInboxTestRuntime
 } from './auth-app-inbox-test-runtime.ts';
+
+interface ConsumeRaceTicketTwiceInput {
+    readonly auth: AuthInboxTestRuntime;
+    readonly sessionId: string;
+    readonly ticket: string;
+}
+
 it('rejects a corrupted websocket ticket before deleting it', async () => {
     const runtime = new FakeRuntimeStateRepository();
     const sessions = new AuthSessionRepository(runtime);
@@ -84,10 +92,9 @@ async function selectsSingleConcurrentWinner(): Promise<void> {
     const now = Date.now();
     const clientId = await expectSingleRegistrationWinner(auth);
     const session = await issueRaceSession(auth, now, clientId);
-    const ticket = await issueRaceTicket(auth, now, session);
+    const ticket = await issueRaceTicket(auth, session);
     const consumeResults = await consumeRaceTicketTwice({
         auth,
-        now,
         sessionId: session.sessionId,
         ticket
     });
@@ -114,22 +121,26 @@ async function expectSingleRegistrationWinner(
             request
         })
     ];
-    await waitForQueuedEntry(auth.queue, 2);
+    await waitForAuthInboxEntry(auth.queue, 2);
     await dequeue(auth);
     await dequeue(auth);
     const registrationResults = await Promise.all(registrations);
     expect(registrationResults.filter((result) => result.right !== undefined)).toHaveLength(1);
     expect(registrationResults.filter((result) => result.left?.status === 409)).toHaveLength(1);
-    return registrationResults.find((result) => result.right)?.right!.clientId ?? '';
+    const winner = registrationResults.find((result) => result.right !== undefined)?.right;
+    if (winner === undefined) {
+        throw new Error('Expected one successful auth registration');
+    }
+    return winner.clientId;
 }
 
 async function issueRaceSession(
     auth: AuthInboxTestRuntime,
     now: number,
     clientId: string
-) {
+): Promise<IssuedAuthSession> {
     const issuedAtEpochMs = now + 1;
-    const login = await runAuthCommand({
+    const login = await runAuthInboxCommand({
         pending: auth.service.issueSession({
             requestId: 'ticket-race-session',
             clientId,
@@ -151,10 +162,9 @@ async function issueRaceSession(
 
 async function issueRaceTicket(
     auth: AuthInboxTestRuntime,
-    now: number,
-    session: Awaited<ReturnType<typeof issueRaceSession>>
+    session: IssuedAuthSession
 ): Promise<string> {
-    const issuedTicket = await runAuthCommand({
+    const issuedTicket = await runAuthInboxCommand({
         pending: auth.service.issueWebSocketTicket({
             requestId: 'ticket-race-issue',
             session,
@@ -167,16 +177,8 @@ async function issueRaceTicket(
     return issuedTicket.right!.ticket;
 }
 
-interface ConsumeRaceTicketTwiceInput {
-    readonly auth: AuthInboxTestRuntime;
-    readonly now: number;
-    readonly sessionId: string;
-    readonly ticket: string;
-}
-
 async function consumeRaceTicketTwice({
     auth,
-    now,
     sessionId,
     ticket
 }: ConsumeRaceTicketTwiceInput) {
@@ -192,7 +194,7 @@ async function consumeRaceTicketTwice({
             ticket
         })
     ];
-    await waitForQueuedEntry(auth.queue, 6);
+    await waitForAuthInboxEntry(auth.queue, 6);
     await dequeue(auth);
     await dequeue(auth);
     return await Promise.all(consumes);
