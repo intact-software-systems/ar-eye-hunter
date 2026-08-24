@@ -20,6 +20,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         filePath: 'packages/shared-web/browser/rallar.ts',
         expected: {
             values: [
+                'createDefaultRallarDataFacade',
                 'createRallarCrdtFacade',
                 'createRallarDataFacade',
                 'createRallarFacade',
@@ -31,6 +32,9 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'rallar'
             ],
             types: [
+                'CommandsOrchestrator',
+                'CommandsOrchestratorPolicies',
+                'CreateRallarDataFacadeInput',
                 'RallarAuthChangeListener',
                 'RallarAuthChangeReason',
                 'RallarAuthState',
@@ -88,8 +92,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarDirectorStatusListener',
                 'RallarDirectorStatusOptions',
                 'RallarFacade',
-                'RallarFlow',
-                'RallarFlowPolicies',
                 'RallarIncomingCallInvite',
                 'RallarJoinRoomInput',
                 'RallarJoinRoomOptions',
@@ -136,7 +138,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarRealtimeMessage',
                 'RallarRealtimeSendOptions',
                 'RallarRealtimeSendResult',
-                'RallarRefreshOptions',
                 'RallarRegisterOptions',
                 'RallarRemoteStream',
                 'RallarReplayEventsResult',
@@ -253,6 +254,8 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'readApiBaseUrl'
             ],
             types: [
+                'CommandsOrchestrator',
+                'CommandsOrchestratorPolicies',
                 'CreateRallarMessagesFacadeOptions',
                 'CreateRallarPeopleFacadeOptions',
                 'CreateRallarRoomsFacadeOptions',
@@ -267,8 +270,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarConnectionOperations',
                 'RallarCreateRoomInput',
                 'RallarDefaults',
-                'RallarFlow',
-                'RallarFlowPolicies',
                 'RallarJoinRoomOptions',
                 'RallarLeaveRoomOptions',
                 'RallarListPeopleEventsOptions',
@@ -292,7 +293,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarPeopleFacade',
                 'RallarPeopleState',
                 'RallarPerson',
-                'RallarRefreshOptions',
                 'RallarRegisterOptions',
                 'RallarReplayEventsResult',
                 'RallarReplayPeopleEventsOptions',
@@ -451,15 +451,16 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
         filePath: 'packages/shared-web/browser/rallar-data.ts',
         expected: {
             values: [
+                'createDefaultRallarDataFacade',
                 'createRallarDataFacade',
                 'defineRallarDataStore'
             ],
             types: [
+                'CreateRallarDataFacadeInput',
                 'RallarDataChangeEvent',
                 'RallarDataChangeListener',
                 'RallarDataDurability',
                 'RallarDataFacade',
-                'RallarDataFacadeOptions',
                 'RallarDataHydration',
                 'RallarDataMigration',
                 'RallarDataMigrationContext',

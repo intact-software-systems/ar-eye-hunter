@@ -148,7 +148,9 @@ vi.mock(
 );
 
 describe('Rallar RTC recovery', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
+        (await import('@shared-web/browser/connection/browser-transport-runtime.ts'))
+            .browserTransportRuntime.shutdown('test-reset');
         vi.clearAllMocks();
         vi.useRealTimers();
         mockClientRepositoryMissing();

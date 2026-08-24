@@ -175,7 +175,9 @@ vi.mock(
 );
 
 describe('Rallar auth session contract', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
+        (await import('@shared-web/browser/connection/browser-transport-runtime.ts'))
+            .browserTransportRuntime.shutdown('test-reset');
         vi.clearAllMocks();
         vi.useRealTimers();
         mocks.clientRepositoryMissing.mockReturnValue(undefined);

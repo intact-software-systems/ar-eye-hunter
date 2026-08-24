@@ -84,7 +84,9 @@ vi.mock(
 );
 
 describe('Rallar facade defaults compatibility', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
+        (await import('@shared-web/browser/connection/browser-transport-runtime.ts'))
+            .browserTransportRuntime.shutdown('test-reset');
         vi.clearAllMocks();
         mocks.clientRepositoryMissing.mockReturnValue(undefined);
         mocks.getAllClientStateSnapshots.mockReturnValue([]);

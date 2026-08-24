@@ -21,6 +21,7 @@ import {
     type RallarSessionIdentity
 } from '@shared-web/browser/session/session-identity.ts';
 import { readSession } from '@shared/api/auth.ts';
+import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 
 import type { BrowserMessagingComposition } from './browser-communication-composition.ts';
 import type { BrowserRoomPeopleStatsComposition } from './browser-product-composition.ts';
@@ -55,7 +56,10 @@ export function createBrowserSessionCoreComposition(
     input: CreateBrowserSessionCoreCompositionInput
 ): BrowserSessionCoreComposition {
     const identity = createRallarSessionIdentity({ readSession });
-    const data = createRallarDataFacade({ sessionIdentity: identity });
+    const data = createRallarDataFacade({
+        manager: defaultRepositoryManager,
+        resolveScopeKey: identity.resolveDataScopeKey
+    });
     const session = createRallarSessionController({
         connectionRuntime: input.foundation.connectionRuntime,
         transportRuntime: input.foundation.transportRuntime,

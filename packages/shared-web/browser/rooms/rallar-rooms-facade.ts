@@ -1,7 +1,4 @@
-import type {
-    RallarRefreshOptions,
-    RallarScopedOperationOptions
-} from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
     RallarOnChangeOptions,
     RallarReplayEventsResult,
@@ -40,7 +37,7 @@ import type {
 export type RallarRoomsFacade = Readonly<{
     state(): RallarRoomState;
     list(): readonly RallarRoomSummary[];
-    refresh(input?: StateScope | RallarRefreshOptions): Promise<RallarRoomState>;
+    refresh(input?: StateScope | RallarScopedOperationOptions): Promise<RallarRoomState>;
     listEvents(input: RallarListRoomEventsInput): Promise<readonly GroupEvent[]>;
     listEventPage(input: RallarListRoomEventsInput): Promise<StateEventPage<GroupEvent>>;
     replayEvents(

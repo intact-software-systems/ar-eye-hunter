@@ -1,4 +1,7 @@
 import { readApiBaseUrl } from '@shared-web/browser/api-client-config.ts';
+import { browserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import { addRtcInboxCallback } from '@shared-web/browser/rtc-message-router.ts';
+import { addWebSocketInboxCallback } from '@shared-web/browser/ws-message-router.ts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 type MiddlewareModule = typeof import('@shared-web/browser/middleware.ts');
@@ -7,6 +10,10 @@ type AuthModule = typeof import('@shared/api/auth.ts');
 type DataCachesModule = typeof import('@shared-web/browser/data-caches.ts');
 type ClientStateSnapshotsRepositoryModule = typeof import('@shared/repository/client-state-snapshots-repository.ts');
 type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/group-state-snapshots-repository.ts');
+
+type RouterPayload = Readonly<{
+    source: 'rtc' | 'ws';
+}>;
 
 const runtime = await vi.hoisted(async () => {
     const { createApiMiddlewareTestDouble } = await import(
@@ -76,12 +83,52 @@ vi.mock(
 
 describe('browser facade behavior', () => {
     beforeEach(() => {
+        browserTransportRuntime.shutdown('test-reset');
         vi.clearAllMocks();
         runtime.initialiseMiddleware.mockResolvedValue(runtime.middleware.middleware);
         runtime.readSession.mockReturnValue(runtime.middleware.session);
         runtime.refreshStateSnapshots.mockResolvedValue({ clients: [], groups: [] });
         runtime.hydrateStateCaches.mockResolvedValue(undefined);
         runtime.onStateCacheChange.mockReturnValue(() => undefined);
+    });
+
+    it('connects the facade and public root routers through one transport owner', async () => {
+        const wsHandler = vi.fn();
+        const rtcHandler = vi.fn();
+        const wsCallbacks = new Map<string, { onMessage(data: { payload: RouterPayload; }): Promise<void>; }>();
+        const rtcCallbacks = new Map<string, { onMessage(data: { payload: RouterPayload; }): Promise<void>; }>();
+        runtime.middleware.middleware.webSocketQueueBox.onInboxMessageDo = vi.fn(
+            (typeId, callback) => {
+                wsCallbacks.set(typeId, callback);
+                return runtime.middleware.middleware.webSocketQueueBox;
+            }
+        );
+        runtime.middleware.middleware.rtcRxStreamer.onInboxMessageDo = vi.fn(
+            (typeId, callback) => {
+                rtcCallbacks.set(typeId, callback);
+                return runtime.middleware.middleware.rtcRxStreamer;
+            }
+        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const facade = createRallarFacade();
+
+        await facade.connect();
+        addWebSocketInboxCallback('ws.root', wsHandler);
+        addRtcInboxCallback('rtc.root', rtcHandler);
+        await wsCallbacks.get('ws.root')?.onMessage({ payload: { source: 'ws' } });
+        await rtcCallbacks.get('rtc.root')?.onMessage({ payload: { source: 'rtc' } });
+
+        expect(wsHandler).toHaveBeenCalledWith({ source: 'ws' });
+        expect(rtcHandler).toHaveBeenCalledWith({ source: 'rtc' });
+        expect(browserTransportRuntime.readMiddleware()?.middleware).toBe(
+            runtime.middleware.middleware
+        );
+
+        await facade.disconnect();
+
+        expect(runtime.middleware.middleware.qboxEngine.stop).toHaveBeenCalledOnce();
+        expect(runtime.middleware.middleware.webSocketQueueBox.close).toHaveBeenCalledOnce();
+        expect(browserTransportRuntime.readMiddleware()).toBeUndefined();
     });
 
     it('configures defaults and honors explicitly disabled setup startup work', async () => {

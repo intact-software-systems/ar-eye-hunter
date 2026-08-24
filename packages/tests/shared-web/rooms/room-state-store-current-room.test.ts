@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { createRallarBrowserFacadeRuntimeContext } from '@shared-web/browser/rallar-runtime-context.ts';
 import { createRallarStateCacheReadPort } from '@shared-web/browser/rallar-runtime/state-store.ts';
 import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
@@ -123,7 +124,9 @@ describe('room state store current-room projection', () => {
     });
 
     it('uses the highest-revision principal snapshot before accepting the default scope', () => {
-        const runtime = createRallarBrowserFacadeRuntimeContext();
+        const runtime = createRallarBrowserFacadeRuntimeContext({
+            transportRuntime: new BrowserTransportRuntime()
+        });
         const current = createMemberRoomSnapshot();
         const lowerRevisionDefaultAlice = createClient('alice', 'Default Alice');
         const higherRevisionOtherScopeAlice = createClient('alice', 'Other Alice', {
@@ -176,7 +179,9 @@ describe('room state store current-room projection', () => {
     });
 
     it('preserves the selected current room when defaults move to another scope', () => {
-        const runtime = createRallarBrowserFacadeRuntimeContext();
+        const runtime = createRallarBrowserFacadeRuntimeContext({
+            transportRuntime: new BrowserTransportRuntime()
+        });
         const current = createRoomSnapshot('scope-a-room', 'Scope A Room');
         const visible = createRoomSnapshot(
             'scope-b-room',
@@ -208,7 +213,9 @@ describe('room state store current-room projection', () => {
     });
 
     it('selects the session room when the canonical current room ref is absent', () => {
-        const runtime = createRallarBrowserFacadeRuntimeContext();
+        const runtime = createRallarBrowserFacadeRuntimeContext({
+            transportRuntime: new BrowserTransportRuntime()
+        });
         const sessionRoom = createRoomSnapshot('session-room', 'Session Room');
         stateMocks.groups.push(sessionRoom);
         stateMocks.repositoriesConfigured = true;

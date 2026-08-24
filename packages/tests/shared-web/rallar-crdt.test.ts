@@ -11,7 +11,11 @@ import type {
     RallarCrdtTransportSendResult
 } from '@shared-web/browser/rallar-crdt-transport.ts';
 import { createRallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
-import { createRallarDataFacade } from '@shared-web/browser/rallar-data.ts';
+import {
+    createRallarDataFacade as createConfiguredRallarDataFacade,
+    type CreateRallarDataFacadeInput,
+    type RallarDataScope
+} from '@shared-web/browser/rallar-data.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import {
@@ -36,6 +40,17 @@ const roomRef = {
     workspaceId: 'main',
     groupId: 'room-1'
 };
+
+function createRallarDataFacade(
+    input:
+        & Omit<CreateRallarDataFacadeInput, 'resolveScopeKey'>
+        & Partial<Pick<CreateRallarDataFacadeInput, 'resolveScopeKey'>>
+) {
+    return createConfiguredRallarDataFacade({
+        ...input,
+        resolveScopeKey: input.resolveScopeKey ?? ((scope: RallarDataScope) => String(scope))
+    });
+}
 
 describe('Rallar CRDT browser facade', () => {
     const originalBroadcastChannel = globalThis.BroadcastChannel;

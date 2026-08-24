@@ -1,7 +1,7 @@
 import type { RallarAuthFacade } from '@shared-web/browser/rallar-auth-facade.ts';
 import type {
     RallarConnectionOperations,
-    RallarRefreshOptions,
+    RallarScopedOperationOptions,
     RallarSetupInput,
     RallarStartOptions,
     RallarStartResult
@@ -91,7 +91,7 @@ export function createRallarStartupController(
 function toRefreshOptions(
     options: RallarStartOptions,
     operationOptions: RallarOperationOptions
-): RallarRefreshOptions {
+): RallarScopedOperationOptions {
     return {
         ...(options.scope ? { scope: options.scope } : {}),
         ...(operationOptions.signal ? { signal: operationOptions.signal } : {}),

@@ -3,7 +3,7 @@ import type { StateGroupSnapshotRead } from '@shared-web/browser/api-integration
 import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
 import { ApiHttpError } from '@shared-web/browser/api/http-error.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import type { RallarRefreshOptions } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarMessagesFacade } from '@shared-web/browser/rallar-messages-facade.ts';
 import {
     toRallarCommandOptions,
@@ -89,7 +89,7 @@ export function createBrowserRallarRooms(
     const onCacheChange = (listener: () => void | Promise<void>): RallarUnsubscribe =>
         input.stateStore.onCacheChange(listener);
     const refresh = async (
-        refreshInput?: StateScope | RallarRefreshOptions
+        refreshInput?: StateScope | RallarScopedOperationOptions
     ): Promise<RallarRoomState> => await refreshRooms(input, refreshInput);
     const createSession = (roomRef: GroupRef): RallarRoomSession =>
         createRoomSession({
@@ -116,7 +116,7 @@ export function createBrowserRallarRooms(
 
 function createRoomReadOperations(
     input: CreateBrowserRallarRoomsInput,
-    refresh: (input?: StateScope | RallarRefreshOptions) => Promise<RallarRoomState>
+    refresh: (input?: StateScope | RallarScopedOperationOptions) => Promise<RallarRoomState>
 ): Pick<
     CreateRallarRoomsFacadeOptions,
     | 'state'
@@ -225,10 +225,10 @@ function createRoomUpdateOperations(
 
 async function refreshRooms(
     input: CreateBrowserRallarRoomsInput,
-    refreshInput?: StateScope | RallarRefreshOptions
+    refreshInput?: StateScope | RallarScopedOperationOptions
 ): Promise<RallarRoomState> {
     return await input.runAuthAwareOperation(async () => {
-        const options = toRallarRefreshOptions(refreshInput);
+        const options = toRallarScopedOperationOptions(refreshInput);
         const operationOptions = input.resolveOperationOptions(options);
         const context = await input.connect(operationOptions);
         const scope = input.resolveOperationScope(options.scope);
@@ -244,7 +244,7 @@ async function refreshRooms(
 async function refreshRoom(
     input: CreateBrowserRallarRoomsInput,
     roomRef: GroupRef,
-    refreshInput: RallarRefreshOptions = {}
+    refreshInput: RallarScopedOperationOptions = {}
 ): Promise<void> {
     await input.runAuthAwareOperation(async () => {
         const scope = toStateScope(roomRef);
@@ -305,14 +305,18 @@ function resolveRoomSessionRef(
     return roomRef;
 }
 
-function toRallarRefreshOptions(input?: StateScope | RallarRefreshOptions): RallarRefreshOptions {
+function toRallarScopedOperationOptions(
+    input?: StateScope | RallarScopedOperationOptions
+): RallarScopedOperationOptions {
     if (!input) {
         return {};
     }
     return isStateScope(input) ? { scope: input } : input;
 }
 
-function isStateScope(input: StateScope | RallarRefreshOptions): input is StateScope {
+function isStateScope(
+    input: StateScope | RallarScopedOperationOptions
+): input is StateScope {
     return (
         typeof input === 'object' &&
         input !== null &&

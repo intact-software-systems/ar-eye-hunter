@@ -2,7 +2,12 @@
 
 import '../setup-browser-indexeddb.ts';
 
-import { createRallarDataFacade, defineRallarDataStore } from '@shared-web/browser/rallar-data.ts';
+import {
+    createRallarDataFacade as createConfiguredRallarDataFacade,
+    defineRallarDataStore,
+    type CreateRallarDataFacadeInput,
+    type RallarDataScope
+} from '@shared-web/browser/rallar-data.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import { ObservableValueEventType } from '@shared/cache/RepositoryInterfaces.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
@@ -13,6 +18,17 @@ type Todo = Readonly<{
     title: string;
     done: boolean;
 }>;
+
+function createRallarDataFacade(
+    input:
+        & Omit<CreateRallarDataFacadeInput, 'resolveScopeKey'>
+        & Partial<Pick<CreateRallarDataFacadeInput, 'resolveScopeKey'>>
+) {
+    return createConfiguredRallarDataFacade({
+        ...input,
+        resolveScopeKey: input.resolveScopeKey ?? ((scope: RallarDataScope) => String(scope))
+    });
+}
 
 describe('Rallar data stores', () => {
     const originalBroadcastChannel = globalThis.BroadcastChannel;

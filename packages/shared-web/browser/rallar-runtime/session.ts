@@ -21,7 +21,6 @@ import type {
 import type {
     RallarConnectionOperations,
     RallarDefaults,
-    RallarFlowPolicies,
     RallarScopedOperationOptions
 } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
@@ -85,6 +84,8 @@ export function createRallarSessionController(
     const authStateListeners = new Set<RallarAuthChangeListener>();
     let connectionGeneration = 0;
     let connectionPromise: Promise<ApiMiddleware> | undefined;
+    let disconnectPromise: Promise<void> | undefined;
+    let lifecycleIsDisconnected = false;
 
     const resolveOperationOptions = <T extends RallarOperationOptions>(
         operationOptions: T
@@ -161,14 +162,32 @@ export function createRallarSessionController(
         }
     };
 
-    const disconnect = async (): Promise<void> => {
-        connectionGeneration += 1;
+    const disconnect = (): Promise<void> => {
+        if (disconnectPromise) {
+            return disconnectPromise;
+        }
+        if (
+            options.connectionRuntime.readConnectState() === 'idle' &&
+            !options.connectionRuntime.readMiddleware() &&
+            !options.transportRuntime.isInitializing() &&
+            lifecycleIsDisconnected
+        ) {
+            return Promise.resolve();
+        }
+
         const ctx = options.connectionRuntime.readMiddleware();
-        options.lifecycle.detach(ctx);
-        options.transportRuntime.shutdown();
-        options.stateRuntime.clearCurrentRoom();
-        options.connectionRuntime.setConnectState('idle');
-        options.lifecycle.disconnected();
+        disconnectPromise = Promise.resolve().then(() => {
+            connectionGeneration += 1;
+            options.lifecycle.detach(ctx);
+            options.transportRuntime.shutdown();
+            options.stateRuntime.clearCurrentRoom();
+            options.connectionRuntime.setConnectState('idle');
+            options.lifecycle.disconnected();
+            lifecycleIsDisconnected = true;
+        }).finally(() => {
+            disconnectPromise = undefined;
+        });
+        return disconnectPromise;
     };
 
     const handleAuthInvalidError = async (error: unknown): Promise<void> => {
@@ -241,6 +260,7 @@ export function createRallarSessionController(
         }
 
         const generation = connectionGeneration;
+        lifecycleIsDisconnected = false;
         options.connectionRuntime.setConnectState('connecting');
         const promise = options.transportRuntime.init(connectOptions)
             .then((ctx) => {
@@ -470,7 +490,8 @@ export function createRallarSessionController(
             if (
                 isChanging &&
                 (options.connectionRuntime.readMiddleware() ||
-                    options.transportRuntime.isReady())
+                    options.transportRuntime.isReady() ||
+                    options.transportRuntime.isInitializing())
             ) {
                 throw new Error('Rallar must be configured before connecting.');
             }
@@ -486,7 +507,7 @@ export function createRallarSessionController(
             options.connectionRuntime.readMiddleware() !== undefined,
         session: () => readSession(),
         subscriptions: () => createRallarSubscriptionScope(),
-        flow: <K, V>(policies: RallarFlowPolicies<V> = {}) => CommandsOrchestrator.withPolicies<K, V>(policies)
+        flow: <K, V>(policies = {}) => CommandsOrchestrator.withPolicies<K, V>(policies)
     };
 
     return {

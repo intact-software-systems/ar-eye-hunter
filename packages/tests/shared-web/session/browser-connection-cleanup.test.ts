@@ -138,4 +138,61 @@ describe('browser connection cleanup', () => {
             .toHaveBeenCalledOnce();
         expect(middleware.middleware.rtcRxStreamer.stopLocalMedia).toHaveBeenCalledOnce();
     });
+
+    it('fences configure during connection and coalesces concurrent session disconnects', async () => {
+        const middleware = createApiMiddlewareTestDouble();
+        const disconnected = vi.fn();
+        let resolveMiddleware: ((value: Middleware) => void) | undefined;
+        mocks.readSession.mockReturnValue(middleware.session);
+        mocks.initialiseMiddleware.mockReturnValue(
+            new Promise((resolve) => {
+                resolveMiddleware = resolve;
+            })
+        );
+        const transportRuntime = new BrowserTransportRuntime();
+        const runtime = createRallarBrowserFacadeRuntimeContext({ transportRuntime });
+        const lifecycle = createRallarLifecycleCoordinator();
+        lifecycle.register({
+            id: 'test-lifecycle',
+            order: 1,
+            disconnected
+        });
+        const sessionController = createRallarSessionController({
+            connectionRuntime: runtime,
+            transportRuntime,
+            authRuntime: runtime,
+            stateRuntime: runtime,
+            lifecycle,
+            emitState: () => undefined,
+            closeDataScopes: async () => undefined
+        });
+
+        const pendingConnect = sessionController.connectionOperations.connect();
+        await vi.waitFor(() => {
+            expect(transportRuntime.isInitializing()).toBe(true);
+        });
+
+        expect(() =>
+            sessionController.connectionOperations.configure({
+                apiBaseUrl: 'https://api.example.test'
+            })
+        ).toThrow('Rallar must be configured before connecting.');
+
+        const firstDisconnect = sessionController.connectionOperations.disconnect();
+        const secondDisconnect = sessionController.connectionOperations.disconnect();
+        expect(secondDisconnect).toBe(firstDisconnect);
+        resolveMiddleware?.(middleware.middleware);
+
+        await Promise.all([firstDisconnect, secondDisconnect]);
+        await expect(pendingConnect).rejects.toThrow(
+            'Rallar connection was cancelled because auth ended.'
+        );
+        await sessionController.connectionOperations.disconnect();
+
+        expect(disconnected).toHaveBeenCalledOnce();
+        expect(middleware.middleware.qboxEngine.stop).toHaveBeenCalledOnce();
+        expect(middleware.middleware.webSocketQueueBox.close).toHaveBeenCalledOnce();
+        expect(runtime.readConnectState()).toBe('idle');
+        expect(runtime.readMiddleware()).toBeUndefined();
+    });
 });

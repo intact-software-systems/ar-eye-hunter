@@ -1,4 +1,3 @@
-import type { RallarSessionIdentity } from '@shared-web/browser/session/session-identity.ts';
 import { defaultRepositoryManager } from '@shared/cache/defaultRepositoryManager.ts';
 import type { ValueEqualityChecker } from '@shared/cache/ObservableLatestValue.ts';
 import {
@@ -134,10 +133,9 @@ export type RallarDataFacade = Readonly<{
     estimateUsage(): Promise<RallarDataStorageEstimate>;
 }>;
 
-export type RallarDataFacadeOptions = Readonly<{
-    manager?: RepositoryManager;
-    resolveScopeKey?: (scope: RallarDataScope) => string;
-    sessionIdentity?: RallarSessionIdentity;
+export type CreateRallarDataFacadeInput = Readonly<{
+    manager: RepositoryManager;
+    resolveScopeKey(scope: RallarDataScope): string;
 }>;
 
 type ManagedRallarDataRepository<V> = {
@@ -213,12 +211,9 @@ const DEFAULT_CUSTOM_DATA_STORE_NAME = 'entries';
 const RALLAR_DATA_ENVELOPE_KIND = 'rallar.custom-data';
 
 export function createRallarDataFacade(
-    options: RallarDataFacadeOptions = {}
+    input: CreateRallarDataFacadeInput
 ): RallarDataFacade {
-    const manager = options.manager ?? defaultRepositoryManager;
-    const resolveScopeKey = options.sessionIdentity
-        ? options.sessionIdentity.resolveDataScopeKey
-        : options.resolveScopeKey ?? ((scope) => String(scope));
+    const { manager, resolveScopeKey } = input;
     const activeTokens = new Map<string, RepositoryToken<unknown>>();
 
     const open = async <V>(
@@ -334,6 +329,13 @@ export function createRallarDataFacade(
         },
         estimateUsage: estimateBrowserStorage
     };
+}
+
+export function createDefaultRallarDataFacade(): RallarDataFacade {
+    return createRallarDataFacade({
+        manager: defaultRepositoryManager,
+        resolveScopeKey: (scope) => String(scope)
+    });
 }
 
 export function defineRallarDataStore<V>(

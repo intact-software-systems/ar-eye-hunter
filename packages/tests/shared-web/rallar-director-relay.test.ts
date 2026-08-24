@@ -161,7 +161,9 @@ vi.mock(
 );
 
 describe('Rallar director relay', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
+        (await import('@shared-web/browser/connection/browser-transport-runtime.ts'))
+            .browserTransportRuntime.shutdown('test-reset');
         vi.clearAllMocks();
         vi.useRealTimers();
         mocks.clientRepositoryMissing.mockImplementation((principalId) => principalId === undefined ? [] : undefined);

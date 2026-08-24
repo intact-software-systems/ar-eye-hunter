@@ -1,51 +1,18 @@
-import {
-    BrowserTransportRuntime,
-    type ApiMiddleware,
-    type BrowserTransportRuntimePort
-} from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import type {
-    RallarOperationOptions,
-    RallarOperationRetryPredicate
-} from '@shared-web/browser/rallar-operation-options.ts';
+    ApiMiddleware,
+    BrowserTransportRuntimePort
+} from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import { isSameGroupRef } from '@shared/api/api-type-utils.ts';
 import { readGroupId } from '@shared/api/group-client-views.ts';
-import type { ApplicationId, GroupRef, GroupSnapshot, WorkspaceId } from '@shared/api/group-types.ts';
+import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import { DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
-import type { RtcDataChannelLaneConfig } from '@shared/services/WebRtcConnectionService.ts';
 
 export type RallarBrowserConnectStatus = 'idle' | 'connecting' | 'connected';
 
-export type RallarBrowserRuntimeDefaults = Readonly<{
-    applicationId: ApplicationId;
-    workspaceId?: WorkspaceId;
-    room?: Readonly<{
-        roomId?: string;
-        roomRef?: GroupRef;
-    }>;
-    realtime?: Readonly<{
-        laneId?: string;
-        openTimeoutMs?: number;
-    }>;
-    rtc?: Readonly<{
-        waitTimeoutMs?: number;
-        connectOnWait?: boolean;
-        dataChannelLanes?: readonly RtcDataChannelLaneConfig[];
-        maxPeerConnections?: number;
-        rttReportingDegreeLimit?: number;
-        bootstrapDegree?: number;
-    }>;
-    messages?: Readonly<{
-        maxPayloadBytes?: number;
-    }>;
-    operations?: Readonly<{
-        timeoutMs?: number;
-        maxAttempts?: number;
-        shouldRetry?: RallarOperationRetryPredicate;
-    }>;
-}>;
-
 export type RallarBrowserFacadeRuntimeContextOptions = Readonly<{
-    transportRuntime?: BrowserTransportRuntimePort;
+    transportRuntime: BrowserTransportRuntimePort;
 }>;
 
 export type RallarBrowserFacadeRuntimeContext = Readonly<{
@@ -60,9 +27,9 @@ export type RallarBrowserFacadeRuntimeContext = Readonly<{
     setCurrentRoom(snapshot: GroupSnapshot): void;
     clearCurrentRoom(): void;
     clearCurrentRoomIfMatches(room: string | GroupRef, clearCurrent: boolean): void;
-    setDefaults(defaults?: RallarBrowserRuntimeDefaults): void;
-    defaults(): RallarBrowserRuntimeDefaults | undefined;
-    readDefaults(): RallarBrowserRuntimeDefaults | undefined;
+    setDefaults(defaults?: RallarDefaults): void;
+    defaults(): RallarDefaults | undefined;
+    readDefaults(): RallarDefaults | undefined;
     readDefaultScope(): StateScope | undefined;
     resolveOperationScope(scope?: StateScope): StateScope | undefined;
     resolveOperationOptions<T extends RallarOperationOptions>(
@@ -116,7 +83,7 @@ type RallarBrowserFacadeRuntimeState = {
     stateCacheUnsubscribe?: () => void;
     currentRoomId?: string;
     currentRoomRef?: GroupRef;
-    defaults?: RallarBrowserRuntimeDefaults;
+    defaults?: RallarDefaults;
     defaultScope?: StateScope;
     authExpiryTimer?: ReturnType<typeof setTimeout>;
     authEndPromise?: Promise<void>;
@@ -124,9 +91,9 @@ type RallarBrowserFacadeRuntimeState = {
 };
 
 export function createRallarBrowserFacadeRuntimeContext(
-    options: RallarBrowserFacadeRuntimeContextOptions = {}
+    options: RallarBrowserFacadeRuntimeContextOptions
 ): RallarBrowserFacadeRuntimeContext {
-    const transportRuntime = options.transportRuntime ?? new BrowserTransportRuntime();
+    const transportRuntime = options.transportRuntime;
     const state: RallarBrowserFacadeRuntimeState = {
         connectState: 'idle',
         endedAuthSessionKeys: new Set<string>()
@@ -251,8 +218,8 @@ export function createRallarBrowserFacadeRuntimeContext(
 }
 
 export function cloneRallarRuntimeDefaults(
-    defaults: RallarBrowserRuntimeDefaults
-): RallarBrowserRuntimeDefaults {
+    defaults: RallarDefaults
+): RallarDefaults {
     return {
         applicationId: defaults.applicationId,
         ...(defaults.workspaceId !== undefined

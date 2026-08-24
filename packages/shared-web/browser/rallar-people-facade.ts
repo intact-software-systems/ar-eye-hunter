@@ -1,7 +1,4 @@
-import type {
-    RallarRefreshOptions,
-    RallarScopedOperationOptions
-} from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type { RallarStateEventListener } from '@shared-web/browser/rallar-messages-facade.ts';
 import type {
     RallarOnChangeOptions,
@@ -54,7 +51,7 @@ export type RallarPeopleEventListener = RallarStateEventListener<ClientEvent>;
 export type RallarPeopleFacade = Readonly<{
     state(): RallarPeopleState;
     list(): readonly RallarPerson[];
-    refresh(input?: StateScope | RallarRefreshOptions): Promise<RallarPeopleState>;
+    refresh(input?: StateScope | RallarScopedOperationOptions): Promise<RallarPeopleState>;
     listEvents(
         principalId: string,
         options?: RallarListPeopleEventsOptions

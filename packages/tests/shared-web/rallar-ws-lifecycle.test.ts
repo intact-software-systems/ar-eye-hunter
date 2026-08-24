@@ -167,7 +167,9 @@ vi.mock(
 );
 
 describe('Rallar WS lifecycle', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
+        (await import('@shared-web/browser/connection/browser-transport-runtime.ts'))
+            .browserTransportRuntime.shutdown('test-reset');
         vi.clearAllMocks();
         vi.useRealTimers();
         mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);

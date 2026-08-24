@@ -1,12 +1,12 @@
 import {
-    BrowserTransportRuntime,
+    browserTransportRuntime,
     type BrowserTransportRuntimePort
 } from '@shared-web/browser/connection/browser-transport-runtime.ts';
+import type { RallarDefaults } from '@shared-web/browser/rallar-connection-facade.ts';
 import {
     createRallarBrowserFacadeRuntimeContext,
     type RallarAuthRuntimePort,
     type RallarBrowserFacadeRuntimeContext,
-    type RallarBrowserRuntimeDefaults,
     type RallarConnectionRuntimePort,
     type RallarStateRuntimePort
 } from '@shared-web/browser/rallar-runtime-context.ts';
@@ -43,7 +43,7 @@ export interface BrowserRuntimeFoundation {
 export interface BrowserStateComposition {
     readonly stateStore: RallarStatePort;
     readonly roomStateStore: RallarRoomStateStorePort;
-    readonly readDefaults: () => RallarBrowserRuntimeDefaults | undefined;
+    readonly readDefaults: () => RallarDefaults | undefined;
     readonly resolveDefaultRoomRef: () => GroupRef | undefined;
     readonly resolveDefaultRoom: () => string | GroupRef | undefined;
     readonly resolveRoomPeerIds: (room: string | GroupRef) => readonly string[];
@@ -66,7 +66,7 @@ export interface CreateBrowserStateEventCompositionInput {
 }
 
 export function createBrowserRuntimeFoundation(): BrowserRuntimeFoundation {
-    const transportRuntime = new BrowserTransportRuntime();
+    const transportRuntime = browserTransportRuntime;
     const runtime = createRallarBrowserFacadeRuntimeContext({ transportRuntime });
     const connectionRuntime: RallarConnectionRuntimePort = {
         readConnectState: runtime.readConnectState,

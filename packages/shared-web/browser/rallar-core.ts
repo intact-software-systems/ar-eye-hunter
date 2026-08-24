@@ -67,14 +67,17 @@ export type {
 } from '@shared-web/browser/rallar-operation-options.ts';
 
 export type {
+    CommandsOrchestrator,
+    CommandsOrchestratorPolicies
+} from '@shared/cache/CommandsOrchestrator.ts';
+
+export type {
     RallarAuthChangeListener,
     RallarAuthChangeReason,
     RallarAuthState,
     RallarConnectStatus,
     RallarCreateRoomInput,
     RallarDefaults,
-    RallarFlow,
-    RallarFlowPolicies,
     RallarJoinRoomOptions,
     RallarLeaveRoomOptions,
     RallarListPeopleEventsOptions,
@@ -92,7 +95,6 @@ export type {
     RallarPeopleEventOptions,
     RallarPeopleState,
     RallarPerson,
-    RallarRefreshOptions,
     RallarRegisterOptions,
     RallarReplayEventsResult,
     RallarReplayPeopleEventsOptions,

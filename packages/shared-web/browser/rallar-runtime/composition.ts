@@ -2,7 +2,9 @@ import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts
 
 import {
     createBrowserMessagingComposition,
-    createBrowserRealtimeComposition
+    createBrowserRealtimeComposition,
+    type BrowserMessagingComposition,
+    type BrowserRealtimeComposition
 } from './composition/browser-communication-composition.ts';
 import { createBrowserFacadeAssembly } from './composition/browser-facade-assembly.ts';
 import {
@@ -11,17 +13,32 @@ import {
 } from './composition/browser-lifecycle-composition.ts';
 import {
     createBrowserCallsDirectorComposition,
-    createBrowserRoomPeopleStatsComposition
+    createBrowserRoomPeopleStatsComposition,
+    type BrowserCallsDirectorComposition,
+    type BrowserRoomPeopleStatsComposition
 } from './composition/browser-product-composition.ts';
 import {
     createBrowserRuntimeFoundation,
     createBrowserStateComposition,
-    createBrowserStateEventComposition
+    createBrowserStateEventComposition,
+    type BrowserRuntimeFoundation,
+    type BrowserStateComposition,
+    type BrowserStateEventComposition
 } from './composition/browser-runtime-composition.ts';
 import {
     createBrowserSessionCoreComposition,
-    createBrowserSessionProductComposition
+    createBrowserSessionProductComposition,
+    type BrowserSessionCoreComposition
 } from './composition/browser-session-composition.ts';
+
+type BrowserFacadeCompositions = Readonly<{
+    session: BrowserSessionCoreComposition;
+    stateEvents: BrowserStateEventComposition;
+    messaging: BrowserMessagingComposition;
+    realtime: BrowserRealtimeComposition;
+    products: BrowserRoomPeopleStatsComposition;
+    callsDirector: BrowserCallsDirectorComposition;
+}>;
 
 export function createBrowserRallarFacade(): RallarFacade {
     const foundation = createBrowserRuntimeFoundation();
@@ -29,6 +46,28 @@ export function createBrowserRallarFacade(): RallarFacade {
         runtime: foundation.runtime,
         stateRuntime: foundation.stateRuntime
     });
+    const compositions = createBrowserFacadeCompositions(foundation, state);
+    registerBrowserFacadeLifecycle(foundation, state, compositions);
+    const sessionProducts = createBrowserSessionProductComposition({
+        session: compositions.session,
+        state,
+        messaging: compositions.messaging,
+        products: compositions.products
+    });
+    return createBrowserFacadeAssembly({
+        session: compositions.session,
+        sessionProducts,
+        messaging: compositions.messaging,
+        realtime: compositions.realtime,
+        products: compositions.products,
+        callsDirector: compositions.callsDirector
+    });
+}
+
+function createBrowserFacadeCompositions(
+    foundation: BrowserRuntimeFoundation,
+    state: BrowserStateComposition
+): BrowserFacadeCompositions {
     const session = createBrowserSessionCoreComposition({ foundation, state });
     const stateEvents = createBrowserStateEventComposition({
         connectionRuntime: foundation.connectionRuntime,
@@ -58,32 +97,34 @@ export function createBrowserRallarFacade(): RallarFacade {
         products,
         session: session.session
     });
-    registerBrowserStateLifecycle({
-        lifecycle: foundation.lifecycle,
-        directorController: callsDirector.directorController,
-        stateStore: state.stateStore
-    });
-    registerBrowserTransportLifecycle({
-        lifecycle: foundation.lifecycle,
-        messagesController: messaging.messagesController,
-        wsInbox: stateEvents.wsInbox,
-        wsController: realtime.wsController,
-        realtimeController: realtime.realtimeController,
-        rtcController: realtime.rtcController,
-        mediaController: realtime.mediaController
-    });
-    const sessionProducts = createBrowserSessionProductComposition({
+
+    return {
         session,
-        state,
-        messaging,
-        products
-    });
-    return createBrowserFacadeAssembly({
-        session,
-        sessionProducts,
+        stateEvents,
         messaging,
         realtime,
         products,
         callsDirector
+    };
+}
+
+function registerBrowserFacadeLifecycle(
+    foundation: BrowserRuntimeFoundation,
+    state: BrowserStateComposition,
+    compositions: BrowserFacadeCompositions
+): void {
+    registerBrowserStateLifecycle({
+        lifecycle: foundation.lifecycle,
+        directorController: compositions.callsDirector.directorController,
+        stateStore: state.stateStore
+    });
+    registerBrowserTransportLifecycle({
+        lifecycle: foundation.lifecycle,
+        messagesController: compositions.messaging.messagesController,
+        wsInbox: compositions.stateEvents.wsInbox,
+        wsController: compositions.realtime.wsController,
+        realtimeController: compositions.realtime.realtimeController,
+        rtcController: compositions.realtime.rtcController,
+        mediaController: compositions.realtime.mediaController
     });
 }

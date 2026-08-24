@@ -1,6 +1,6 @@
 import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
-import type { RallarRefreshOptions } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
 import type { CreateRallarPeopleFacadeOptions, RallarPeopleState } from '@shared-web/browser/rallar-people-facade.ts';
 import type { RallarStateEventsPort } from '@shared-web/browser/rallar-runtime/state-events.ts';
@@ -34,10 +34,10 @@ export function createRallarPeopleController(
     options: CreateRallarPeopleControllerOptions
 ): RallarPeopleController {
     const refresh = async (
-        input?: StateScope | RallarRefreshOptions
+        input?: StateScope | RallarScopedOperationOptions
     ): Promise<RallarPeopleState> =>
         await options.runAuthAwareOperation(async () => {
-            const refreshOptions = toRallarRefreshOptions(input);
+            const refreshOptions = toRallarScopedOperationOptions(input);
             const operationOptions = options.resolveOperationOptions(
                 refreshOptions
             );
@@ -89,9 +89,9 @@ export function createRallarPeopleController(
     };
 }
 
-function toRallarRefreshOptions(
-    input?: StateScope | RallarRefreshOptions
-): RallarRefreshOptions {
+function toRallarScopedOperationOptions(
+    input?: StateScope | RallarScopedOperationOptions
+): RallarScopedOperationOptions {
     if (!input) {
         return {};
     }
@@ -99,7 +99,7 @@ function toRallarRefreshOptions(
 }
 
 function isStateScope(
-    input: StateScope | RallarRefreshOptions
+    input: StateScope | RallarScopedOperationOptions
 ): input is StateScope {
     return typeof input === 'object' && input !== null &&
         !Array.isArray(input) &&

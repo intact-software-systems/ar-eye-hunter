@@ -15,6 +15,7 @@ export interface BrowserTransportRuntimePort {
     readMiddleware(): ApiMiddleware | undefined;
     requireMiddleware(): ApiMiddleware;
     isReady(): boolean;
+    isInitializing(): boolean;
     init(options?: MiddlewareInitOptions): Promise<ApiMiddleware>;
     shutdown(reason?: string): void;
 }
@@ -23,7 +24,7 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
     private activeMiddleware: ApiMiddleware | undefined;
     private pendingMiddleware: Promise<ApiMiddleware> | undefined;
     private generation = 0;
-    private readonly shutDownMiddleware = new Set<Middleware>();
+    private readonly shutDownMiddleware = new WeakSet<Middleware>();
 
     public readMiddleware(): ApiMiddleware | undefined {
         return this.activeMiddleware;
@@ -40,6 +41,10 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
 
     public isReady(): boolean {
         return this.activeMiddleware !== undefined;
+    }
+
+    public isInitializing(): boolean {
+        return this.pendingMiddleware !== undefined;
     }
 
     public init(options: MiddlewareInitOptions = {}): Promise<ApiMiddleware> {
@@ -113,19 +118,26 @@ export class BrowserTransportRuntime implements BrowserTransportRuntimePort {
         }
 
         this.shutDownMiddleware.add(middleware);
-        runShutdownStep(() => middleware.heartbeat?.stop());
-        runShutdownStep(() => middleware.rtcRxStreamer.stopAllHeartbeats());
-        runShutdownStep(() => {
-            for (const peerId of middleware.webRtcConnectionService.knownPeerIds()) {
-                middleware.webRtcConnectionService.disconnectPeer(peerId);
-            }
-        });
-        runShutdownStep(() => middleware.rtcRxStreamer.stopLocalMedia('all'));
-        runShutdownStep(() => middleware.webRtcOverlayMulticastManager?.dispose?.());
-        runShutdownStep(() => middleware.qboxEngine.stop());
-        runShutdownStep(() => middleware.webSocketQueueBox.close(1000, reason));
+        try {
+            runShutdownStep(() => middleware.heartbeat?.stop());
+            runShutdownStep(() => middleware.rtcRxStreamer.stopAllHeartbeats());
+            runShutdownStep(() => {
+                for (const peerId of middleware.webRtcConnectionService.knownPeerIds()) {
+                    middleware.webRtcConnectionService.disconnectPeer(peerId);
+                }
+            });
+            runShutdownStep(() => middleware.rtcRxStreamer.stopLocalMedia('all'));
+            runShutdownStep(() => middleware.webRtcOverlayMulticastManager?.dispose?.());
+            runShutdownStep(() => middleware.qboxEngine.stop());
+            runShutdownStep(() => middleware.webSocketQueueBox.close(1000, reason));
+        }
+        finally {
+            this.shutDownMiddleware.delete(middleware);
+        }
     }
 }
+
+export const browserTransportRuntime = new BrowserTransportRuntime();
 
 function runShutdownStep(step: () => void): void {
     try {

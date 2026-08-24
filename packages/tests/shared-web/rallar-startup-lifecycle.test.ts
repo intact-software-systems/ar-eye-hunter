@@ -82,7 +82,9 @@ vi.mock(
 );
 
 describe('Rallar startup lifecycle behavior', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
+        (await import('@shared-web/browser/connection/browser-transport-runtime.ts'))
+            .browserTransportRuntime.shutdown('test-reset');
         vi.clearAllMocks();
         mocks.findClientStateSnapshotByPrincipalId.mockReturnValue(undefined);
         mocks.getAllClientStateSnapshots.mockReturnValue([]);

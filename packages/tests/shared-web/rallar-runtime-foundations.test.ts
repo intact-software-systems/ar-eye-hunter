@@ -1,3 +1,4 @@
+import { BrowserTransportRuntime } from '@shared-web/browser/connection/browser-transport-runtime.ts';
 import { createRallarBrowserFacadeRuntimeContext } from '@shared-web/browser/rallar-runtime-context.ts';
 import { createRallarLifecycleCoordinator, type RallarLifecycleParticipant } from '@shared-web/browser/rallar-runtime/lifecycle.ts';
 import { createRallarStateCacheReadPort, createRallarStateStore } from '@shared-web/browser/rallar-runtime/state-store.ts';
@@ -148,7 +149,9 @@ describe('Rallar browser runtime foundations', () => {
 
 function createFoundationStateStore() {
     configureTestCacheRepositories();
-    const runtime = createRallarBrowserFacadeRuntimeContext();
+    const runtime = createRallarBrowserFacadeRuntimeContext({
+        transportRuntime: new BrowserTransportRuntime()
+    });
     const roomStateStore = createRoomStateStore({
         runtime,
         readSession: () => undefined,

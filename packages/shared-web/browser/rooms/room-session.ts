@@ -1,4 +1,4 @@
-import type { RallarRefreshOptions } from '@shared-web/browser/rallar-connection-facade.ts';
+import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
     RallarMessagesFacade,
     RallarRoomMessageChannelDefinition
@@ -28,7 +28,7 @@ export interface CreateRoomSessionInput {
     ) => Promise<GroupSnapshot | undefined>;
     readonly refreshRoom: (
         roomRef: GroupRef,
-        input?: RallarRefreshOptions
+        input?: RallarScopedOperationOptions
     ) => Promise<unknown>;
 }
 
