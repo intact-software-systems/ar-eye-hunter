@@ -2,8 +2,9 @@ import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
 import type { AppDataRepository } from '@shared-server/app-data/app-data-repository.ts';
-import { installRallarGameAuthorityServer } from '@shared-server/game/mod.ts';
+import { installRallarGameAuthorityServer } from '@shared-server/game/install-rallar-game-authority-server.ts';
 import type { RallarServerApplicationSystemInstallers } from '@shared-server/rallar-server/rallar-server-application.ts';
+import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 
 import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';
@@ -50,11 +51,13 @@ Deno.test('required server assembly retains the room-scoped game authority surfa
         routeInstallers: createRouteInstallers(state)
     });
 
-    const authority = installRallarGameAuthorityServer<{ action: string; }, { tick: number; }, { kind: string; }>({
+    const authority = installRallarGameAuthorityServer<TestGameCommand, TestGameSnapshot, TestGameEvent>({
         rallar: server,
         protocol: 'test-game.authority.v1',
         topicId: 'room.test-game.authority',
         authority: { kind: 'server', id: 'api-v1-test-authority', epoch: 1 },
+        decodeCommand: decodeTestGameCommand,
+        nowEpochMs: () => 1_000,
         handleCommand: () => ({ status: 'accepted' }),
         readSnapshot: () => ({ tick: 0 })
     });
@@ -71,6 +74,8 @@ Deno.test('required server assembly retains the room-scoped game authority surfa
                 rallar: server,
                 protocol: 'test-game.authority.v1',
                 topicId: 'game.test-game.authority',
+                decodeCommand: decodeTestGameCommand,
+                nowEpochMs: () => 1_000,
                 handleCommand: () => ({ status: 'accepted' })
             }),
         /Rallar user WS topic must start with app\. or room\./
@@ -79,6 +84,30 @@ Deno.test('required server assembly retains the room-scoped game authority surfa
 
 interface TestState {
     readonly events: string[];
+}
+
+interface TestGameCommand {
+    readonly action: string;
+}
+
+interface TestGameSnapshot {
+    readonly tick: number;
+}
+
+interface TestGameEvent {
+    readonly kind: string;
+}
+
+function decodeTestGameCommand(value: JsonWireValue): TestGameCommand {
+    if (!isJsonWireObject(value) || typeof value.action !== 'string') {
+        throw new Error('Test game command action must be a string');
+    }
+
+    return { action: value.action };
+}
+
+function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function createState(): TestState {

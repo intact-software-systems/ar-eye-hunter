@@ -1,5 +1,11 @@
-import { createRallarServerValidatedMatchResult } from '@shared-server/game/mod.ts';
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import { createRallarServerValidatedMatchResult } from '@shared-server/game/match-result.ts';
+// dprint-ignore
+import {
+    describe,
+    expect,
+    expectTypeOf,
+    it
+} from 'vitest';
 
 describe('Rallar server match result helper', () => {
     it('creates server-validated result envelopes', () => {

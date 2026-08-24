@@ -93,7 +93,7 @@ Use room-scoped topic IDs such as `room.cash-chase.authority`. The dynamic WS ro
 supports user topics under `app.*` and `room.*`; `game.*` is not a supported namespace.
 
 ```ts
-import { installRallarGameAuthorityServer } from '@shared-server/game/mod.ts';
+import { installRallarGameAuthorityServer } from '@shared-server/game/install-rallar-game-authority-server.ts';
 import { createDefaultRallarServer } from './src/composition/create-default-rallar-server.ts';
 
 const rallar = createDefaultRallarServer();
@@ -102,6 +102,8 @@ installRallarGameAuthorityServer<CashChaseCommand, CashChaseSnapshot, CashChaseE
     rallar,
     protocol: 'cash-chase.authority.v1',
     topicId: 'room.cash-chase.authority',
+    decodeCommand: cashChaseService.decodeCommand,
+    nowEpochMs: Date.now,
     handleCommand: cashChaseService.handleCommand,
     readSnapshot: cashChaseService.readSnapshot
 });
