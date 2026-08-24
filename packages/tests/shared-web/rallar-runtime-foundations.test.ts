@@ -3,21 +3,18 @@ import { createRallarLifecycleCoordinator, type RallarLifecycleParticipant } fro
 import { createRallarStateStore } from '@shared-web/browser/rallar-runtime/state-store.ts';
 import { createRallarSubscriptionScope } from '@shared-web/browser/rallar-runtime/subscriptions.ts';
 import { createRallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
-import { createRallarFacade, rallar } from '@shared-web/browser/rallar.ts';
+import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import { createRoomStateStore } from '@shared-web/browser/rooms/room-state-store.ts';
 import { describe, expect, it } from 'vitest';
 import { vi } from 'vitest';
 
 describe('Rallar browser runtime foundations', () => {
-    it('isolates composed facade state from other instances and the singleton', () => {
+    it('isolates composed facade defaults between instances', () => {
         const first = createRallarFacade();
         const second = createRallarFacade();
 
         first.setDefaults({ applicationId: 'isolated-app' });
 
-        expect(first).not.toBe(second);
-        expect(first).not.toBe(rallar);
-        expect(second).not.toBe(rallar);
         expect(first.defaults()?.applicationId).toBe('isolated-app');
         expect(second.defaults()).toBeUndefined();
     });

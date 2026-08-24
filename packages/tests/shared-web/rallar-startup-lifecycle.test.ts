@@ -97,7 +97,7 @@ vi.mock(
     })
 );
 
-describe('Rallar startup lifecycle compatibility', () => {
+describe('Rallar startup lifecycle behavior', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.clientRepositoryMissing.mockImplementation(
@@ -268,7 +268,7 @@ function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
         )
     );
     mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation((sessionId) =>
-        snapshots.find((snapshot) => sessionId === snapshot.group.groupId)?.group
+        snapshots.find((snapshot) => snapshot.activeSessions.some((activeSession) => activeSession.sessionId === sessionId))?.group
     );
 }
 
