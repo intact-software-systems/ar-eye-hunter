@@ -71,8 +71,24 @@ export function decodeGroupStateAppInboxCommand(
     if (type !== AppInboxType.GROUP_CREATE) {
         requireString(command.groupId, `Group ${type} group id`);
     }
-    validateGroupMutationRequest(operation, command.request);
+    validatePersistedGroupMutationRequest(operation, command.request);
     return value;
+}
+
+function validatePersistedGroupMutationRequest(
+    operation: GroupMutationCommand['operation'],
+    value: JsonWireValue | undefined
+): void {
+    const request = requireJsonWireObject(value, `Group ${operation} request`);
+    validateGroupMutationRequest(operation, {
+        ...request,
+        actorPrincipalId: request.actorPrincipalId === undefined
+            ? 'app-inbox-authority-principal'
+            : request.actorPrincipalId,
+        actorSessionId: request.actorSessionId === undefined
+            ? 'app-inbox-authority-session'
+            : request.actorSessionId
+    });
 }
 
 function decodePreparedGroupMutationIdentity(value: JsonWireValue): JsonWireObject {

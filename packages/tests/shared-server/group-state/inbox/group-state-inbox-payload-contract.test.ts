@@ -44,6 +44,28 @@ describe('authenticated group mutation enqueue payload contract', () => {
             })
         ).toThrow('fields are invalid');
     });
+
+    it('accepts current package payloads whose actor identity is owned by authority', () => {
+        const command = {
+            scope: { applicationId: 'app', workspaceId: 'workspace' },
+            groupId: 'group',
+            principalId: 'member',
+            request: {
+                requestId: 'request-1',
+                status: 'active'
+            }
+        } as const;
+
+        expect(decodeGroupStateAppInboxCommand(AppInboxType.GROUP_MEMBER_UPSERT, command)).toEqual(
+            command
+        );
+        expect(() =>
+            decodeGroupStateAppInboxCommand(AppInboxType.GROUP_MEMBER_UPSERT, {
+                ...command,
+                request: { ...command.request, actorSessionId: '' }
+            })
+        ).toThrow('actorSessionId must be a non-empty string');
+    });
 });
 
 function assertAuthenticatedGroupMutationEnqueueTypes(): void {
