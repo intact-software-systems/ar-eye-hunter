@@ -1,3 +1,5 @@
+// Parsed as a source override at GROUP_OWNER_PATH by mutation-routing analyzer tests.
+export const GROUP_OWNER_FIXTURE_SOURCE = `
 import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import { processGroupSessionCleanup } from '../presence/group-presence-service.ts';
 import { GROUP_MUTATION_INBOX_TYPES } from './group-state-inbox-contracts.ts';
@@ -26,3 +28,4 @@ export class GroupStateInboxService {
         });
     }
 }
+`;

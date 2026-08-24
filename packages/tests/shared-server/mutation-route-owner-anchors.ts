@@ -1,11 +1,10 @@
-import { readFileSync } from 'node:fs';
+import { GROUP_OWNER_FIXTURE_SOURCE } from './fixtures/mutation-route-owner/group-state-inbox-owner-fixture.ts';
 
 // The analyzer's focused algorithm suites mutate this representative source fixture. Live production
 // connectivity has its own inventory test; keeping mutation scenarios synthetic prevents formatter or
 // ownership refactors from silently changing what an analyzer unit test is intended to exercise.
 
 export const GROUP_OWNER_PATH = 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
-const GROUP_OWNER_FIXTURE_PATH = 'packages/tests/shared-server/fixtures/mutation-route-owner/group-state-inbox-owner.txt';
 
 export interface GroupOwnerAnchors {
     readonly source: string;
@@ -19,7 +18,7 @@ export interface GroupOwnerAnchors {
 }
 
 export function readGroupOwnerAnchors(): GroupOwnerAnchors {
-    const source = readFileSync(GROUP_OWNER_FIXTURE_PATH, 'utf8');
+    const source = GROUP_OWNER_FIXTURE_SOURCE;
     return {
         source,
         collection: matchAnchor(
@@ -49,7 +48,7 @@ function matchAnchor(source: string, pattern: RegExp, description: string): stri
     const matched = pattern.exec(source);
     if (matched === null) {
         throw new Error(
-            `${GROUP_OWNER_FIXTURE_PATH} no longer contains the ${description} these suites splice against. ` +
+            `The group owner fixture no longer contains the ${description} these suites splice against. ` +
                 'Update the pattern in mutation-route-owner-anchors.ts rather than the callers.'
         );
     }
