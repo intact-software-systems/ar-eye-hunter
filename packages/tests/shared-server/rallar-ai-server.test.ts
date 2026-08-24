@@ -1,6 +1,6 @@
 import { createRallarAiFakeSidecarProvider, createRallarAiOllamaProvider, createRallarServerAi } from '@shared-server/rallar-ai/mod.ts';
-import type { RallarServerWsPublishResult } from '@shared-server/rallar-facade/ws-topic-router.ts';
-import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
+import type { RallarServerWsPublishResult } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
+import { newALBroadcastMessage, newALRoute, type ALMessage } from '@shared/al-contracts/al-contract.ts';
 import {
     createRallarAiJsonResult,
     createRallarAiMockProvider,
@@ -171,8 +171,8 @@ describe('Rallar server AI facade', () => {
             .rejects.toMatchObject({ code: 'unauthorized' });
         await expect(ai.persistJson({ result, actorId: 'peer-1' }))
             .rejects.toMatchObject({ code: 'unauthorized' });
-        expect(fake.rallar.ws.publish).not.toHaveBeenCalled();
-        expect(fake.rallar.data.open).not.toHaveBeenCalled();
+        expect(fake.publishedMessages).toEqual([]);
+        expect(fake.openedStoreNames).toEqual([]);
     });
 
     it('maps fake sidecar provider errors through the server facade', async () => {
@@ -325,7 +325,7 @@ describe('Rallar server AI facade', () => {
             },
             fanout: 'outbox'
         })).rejects.toThrow(/complete GroupRef/i);
-        expect(fake.rallar.ws.publish).not.toHaveBeenCalled();
+        expect(fake.publishedMessages).toEqual([]);
 
         if (false) {
             // @ts-expect-error Default room broadcasts require a complete GroupRef.
@@ -362,7 +362,7 @@ describe('Rallar server AI facade', () => {
             code: 'invalid-json'
         });
 
-        expect(fake.rallar.ws.publish).not.toHaveBeenCalled();
+        expect(fake.publishedMessages).toEqual([]);
     });
 
     it('keeps world broadcasts intentionally unscoped', async () => {
@@ -419,7 +419,7 @@ describe('Rallar server AI facade', () => {
                 proxy: {}
             }
         )).rejects.toThrow(/complete GroupRef/i);
-        expect(fake.rallar.ws.publish).not.toHaveBeenCalled();
+        expect(fake.publishedMessages).toEqual([]);
     });
 
     it.each([
@@ -463,7 +463,7 @@ describe('Rallar server AI facade', () => {
             }
         )).rejects.toMatchObject({ code: 'invalid-json' });
 
-        expect(fake.rallar.ws.publish).not.toHaveBeenCalled();
+        expect(fake.publishedMessages).toEqual([]);
     });
 
     it('installs WS request/result topic wiring', async () => {
@@ -507,8 +507,8 @@ describe('Rallar server AI facade', () => {
                 fanout: 'none'
             })
         );
-        expect(fake.rallar.ws.publish).toHaveBeenCalledTimes(1);
-        const published = fake.rallar.ws.publish.mock.calls[0][0];
+        expect(fake.publishedMessages).toHaveLength(1);
+        const published = fake.publishedMessages[0];
         expect(published.targets).toEqual({
             mode: 'broadcast',
             scope: 'room',
@@ -571,6 +571,8 @@ describe('Rallar server AI facade', () => {
 });
 
 function createFakeRallar() {
+    const openedStoreNames: string[] = [];
+    const publishedMessages: ALMessage[] = [];
     const store = {
         set: vi.fn(async () => undefined)
     };
@@ -591,18 +593,24 @@ function createFakeRallar() {
             handlers.push({ selector, handler });
             return () => true;
         }),
-        publish: vi.fn(async (message, fanout) => ({
-            fanout: fanout ?? 'live-only',
-            status: 'sent-live',
-            message,
-            sentCount: 1,
-            entries: []
-        } satisfies RallarServerWsPublishResult))
+        publish: vi.fn(async (message: ALMessage, fanout) => {
+            publishedMessages.push(message);
+            return {
+                fanout: fanout ?? 'live-only',
+                status: 'sent-live',
+                message,
+                sentCount: 1,
+                entries: []
+            } satisfies RallarServerWsPublishResult;
+        })
     };
     const rallar = {
         ws,
         data: {
-            open: vi.fn(async () => store)
+            open: vi.fn(async (storeName: string) => {
+                openedStoreNames.push(storeName);
+                return store;
+            })
         }
     };
 
@@ -610,6 +618,8 @@ function createFakeRallar() {
         rallar,
         store,
         topics,
-        handlers
+        handlers,
+        openedStoreNames,
+        publishedMessages
     };
 }

@@ -14,10 +14,10 @@ import type {
 } from '@shared/crdt/mod.ts';
 
 import type {
-    RallarServerWsFacade,
     RallarServerWsFanout,
     RallarServerWsTopicDefinition
-} from '../../../rallar-facade/ws-topic-router.ts';
+} from '../../websocket/router/rallar-server-ws-router-contracts.ts';
+import type { RallarServerWsRouter } from '../../websocket/router/rallar-server-ws-router.ts';
 
 export const RALLAR_CRDT_SERVER_DEFAULT_MAX_UPDATE_BYTES = 16 * 1024;
 export const RALLAR_CRDT_SERVER_DEFAULT_MAX_SYNC_BYTES = 64 * 1024;
@@ -126,7 +126,7 @@ export interface RallarCrdtServerTopicBridge {
     readonly unsubscribeHandlers: () => void;
 }
 
-export type RallarCrdtServerWsTopicInstaller = Pick<RallarServerWsFacade, 'defineTopic' | 'on'>;
+export type RallarCrdtServerWsTopicInstaller = Pick<RallarServerWsRouter, 'defineTopic' | 'on'>;
 
 export interface RallarCrdtServerLiveValidationContext {
     readonly topicId: string;

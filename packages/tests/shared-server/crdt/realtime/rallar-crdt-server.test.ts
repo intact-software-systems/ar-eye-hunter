@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
 import { InMemoryRallarCrdtLogRepository } from '@shared-server/rallar-system/crdt/persistence/in-memory-crdt-log-repository.ts';
 import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
+import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import {
     AL_CONTROL_NACK_TYPE_ID,
     InMemoryQueueBox,
@@ -54,12 +54,10 @@ describe('installRallarCrdtWsTopics', () => {
     it('accepts room CRDT updates only through durable mutation ingress', async () => {
         const accepted = vi.fn();
         const enqueueUpdate = vi.fn().mockResolvedValue(undefined);
-        const { facade, socket, outbox } = createFacade({
+        const { router, socket, outbox } = createRouter({
             authorizeRoomMessage: () => true
         });
-        const enqueueOutbox = vi.spyOn(outbox, 'enqueue');
-        const enqueueOutboxIfAbsent = vi.spyOn(outbox, 'enqueueIfAbsent');
-        installRallarCrdtWsTopics(facade, {
+        installRallarCrdtWsTopics(router, {
             allowedDocumentTypes: ['checklist'],
             onAcceptedEnvelope: accepted,
             mutationIngress: { enqueueUpdate }
@@ -76,7 +74,7 @@ describe('installRallarCrdtWsTopics', () => {
             }
         );
 
-        await facade.handle(message);
+        await router.route(message);
 
         expect(accepted).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -99,17 +97,16 @@ describe('installRallarCrdtWsTopics', () => {
             })
         );
         expect(socket.sent).toEqual([]);
-        expect(enqueueOutbox).not.toHaveBeenCalled();
-        expect(enqueueOutboxIfAbsent).not.toHaveBeenCalled();
+        expect(await outbox.getAllKeys()).toEqual([]);
     });
 
     it('rejects schema-invalid room updates before fanout', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         try {
-            const { facade, socket } = createFacade({
+            const { router, socket } = createRouter({
                 authorizeRoomMessage: () => true
             });
-            installRallarCrdtWsTopics(facade, {
+            installRallarCrdtWsTopics(router, {
                 allowedDocumentTypes: ['checklist']
             });
             const update = createUpdateEnvelope({
@@ -126,7 +123,7 @@ describe('installRallarCrdtWsTopics', () => {
                 }
             );
 
-            await facade.handle(message);
+            await router.route(message);
 
             expect(socket.sent).toHaveLength(1);
             expect(socket.sent[0].connectionId).toBe('conn-1');
@@ -140,10 +137,10 @@ describe('installRallarCrdtWsTopics', () => {
     it('rejects unauthorized room CRDT updates through the existing room authorizer', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         try {
-            const { facade, socket } = createFacade({
+            const { router, socket } = createRouter({
                 authorizeRoomMessage: () => false
             });
-            installRallarCrdtWsTopics(facade);
+            installRallarCrdtWsTopics(router);
             const update = createUpdateEnvelope();
             const message = newALBroadcastMessage(
                 'peer-1',
@@ -156,7 +153,7 @@ describe('installRallarCrdtWsTopics', () => {
                 }
             );
 
-            await facade.handle(message);
+            await router.route(message);
 
             expect(socket.sent).toHaveLength(1);
             expect(socket.sent[0].connectionId).toBe('conn-1');
@@ -170,10 +167,10 @@ describe('installRallarCrdtWsTopics', () => {
     it('rejects policy-disabled live room updates before fanout', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         try {
-            const { facade, socket } = createFacade({
+            const { router, socket } = createRouter({
                 authorizeRoomMessage: () => true
             });
-            installRallarCrdtWsTopics(facade, {
+            installRallarCrdtWsTopics(router, {
                 policies: [
                     {
                         documentType: 'checklist',
@@ -196,7 +193,7 @@ describe('installRallarCrdtWsTopics', () => {
                 }
             );
 
-            await facade.handle(message);
+            await router.route(message);
 
             expect(socket.sent).toHaveLength(1);
             expect(socket.sent[0].connectionId).toBe('conn-1');
@@ -210,8 +207,8 @@ describe('installRallarCrdtWsTopics', () => {
     it('rejects unsupported principal live fanout even when app CRDT ' + 'documents are enabled', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         try {
-            const { facade, socket } = createFacade();
-            installRallarCrdtWsTopics(facade, {
+            const { router, socket } = createRouter();
+            installRallarCrdtWsTopics(router, {
                 allowAppDocuments: true
             });
             const update = createUpdateEnvelope({
@@ -232,7 +229,7 @@ describe('installRallarCrdtWsTopics', () => {
                 update
             );
 
-            await facade.handle(message);
+            await router.route(message);
 
             expect(socket.sent).toHaveLength(1);
             expect(socket.sent[0].connectionId).toBe('conn-1');
@@ -246,10 +243,10 @@ describe('installRallarCrdtWsTopics', () => {
     it('rejects oversized CRDT updates', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         try {
-            const { facade, socket } = createFacade({
+            const { router, socket } = createRouter({
                 authorizeRoomMessage: () => true
             });
-            installRallarCrdtWsTopics(facade, {
+            installRallarCrdtWsTopics(router, {
                 maxUpdateBytes: 96
             });
             const update = createUpdateEnvelope();
@@ -264,7 +261,7 @@ describe('installRallarCrdtWsTopics', () => {
                 }
             );
 
-            await facade.handle(message);
+            await router.route(message);
 
             expect(socket.sent).toHaveLength(1);
             expect(socket.sent[0].connectionId).toBe('conn-1');
@@ -278,10 +275,10 @@ describe('installRallarCrdtWsTopics', () => {
     it('rejects Buffer-shaped raw binary payloads inside CRDT operations', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         try {
-            const { facade, socket } = createFacade({
+            const { router, socket } = createRouter({
                 authorizeRoomMessage: () => true
             });
-            installRallarCrdtWsTopics(facade);
+            installRallarCrdtWsTopics(router);
             const update = createUpdateEnvelope({
                 payload: {
                     kind: 'batch',
@@ -309,7 +306,7 @@ describe('installRallarCrdtWsTopics', () => {
                 }
             );
 
-            await facade.handle(message);
+            await router.route(message);
 
             expect(socket.sent).toHaveLength(1);
             expect(socket.sent[0].connectionId).toBe('conn-1');
@@ -321,7 +318,7 @@ describe('installRallarCrdtWsTopics', () => {
     });
 
     it('hands accepted updates to durable mutation ingress without direct append ' + 'or fanout', async () => {
-        const { facade, socket } = createFacade({
+        const { router, socket } = createRouter({
             authorizeRoomMessage: () => true
         });
         const logRepository = new InMemoryRallarCrdtLogRepository({
@@ -329,7 +326,7 @@ describe('installRallarCrdtWsTopics', () => {
             serverId: 'server-1'
         });
         const accepted: unknown[] = [];
-        installRallarCrdtWsTopics(facade, {
+        installRallarCrdtWsTopics(router, {
             logRepository,
             mutationIngress: {
                 enqueueUpdate: (entry) => {
@@ -350,7 +347,7 @@ describe('installRallarCrdtWsTopics', () => {
             }
         );
 
-        await facade.handle(message);
+        await router.route(message);
 
         expect(accepted).toHaveLength(1);
         expect(accepted[0]).toMatchObject({ kind: 'update', envelope: update });
@@ -359,7 +356,7 @@ describe('installRallarCrdtWsTopics', () => {
     });
 
     it('responds to durable WS catch-up requests from the append log', async () => {
-        const { facade, socket } = createFacade({
+        const { router, socket } = createRouter({
             authorizeRoomMessage: () => true
         });
         const logRepository = new InMemoryRallarCrdtLogRepository({
@@ -392,7 +389,7 @@ describe('installRallarCrdtWsTopics', () => {
                 authorizationScope: 'room'
             }
         });
-        installRallarCrdtWsTopics(facade, {
+        installRallarCrdtWsTopics(router, {
             logRepository
         });
         const request = {
@@ -416,7 +413,7 @@ describe('installRallarCrdtWsTopics', () => {
             }
         );
 
-        await facade.handle(message);
+        await router.route(message);
 
         const responseMessage = socket.sent.find((entry) => entry.data.payload.typeId === RALLAR_CRDT_CATCH_UP_RESPONSE_TYPE_ID);
         expect(responseMessage?.connectionId).toBe('conn-1');
@@ -427,13 +424,13 @@ describe('installRallarCrdtWsTopics', () => {
     });
 
     it('hands principal updates to durable mutation ingress without live fanout', async () => {
-        const { facade, socket } = createFacade();
+        const { router, socket } = createRouter();
         const logRepository = new InMemoryRallarCrdtLogRepository({
             now: () => 2_000,
             serverId: 'server-1'
         });
         const accepted: unknown[] = [];
-        installRallarCrdtWsTopics(facade, {
+        installRallarCrdtWsTopics(router, {
             allowPrincipalDocuments: true,
             logRepository,
             mutationIngress: {
@@ -454,7 +451,7 @@ describe('installRallarCrdtWsTopics', () => {
             update
         );
 
-        await facade.handle(message);
+        await router.route(message);
 
         expect(accepted).toHaveLength(1);
         expect(accepted[0]).toMatchObject({ kind: 'update', envelope: update });
@@ -463,7 +460,7 @@ describe('installRallarCrdtWsTopics', () => {
     });
 
     it('does not run lifecycle rejection or fanout before AppInbox processing', async () => {
-        const { facade, socket } = createFacade({
+        const { router, socket } = createRouter({
             authorizeRoomMessage: () => true
         });
         const logRepository = new InMemoryRallarCrdtLogRepository({
@@ -475,7 +472,7 @@ describe('installRallarCrdtWsTopics', () => {
             changedAtEpochMs: 1_500
         });
         const accepted: unknown[] = [];
-        installRallarCrdtWsTopics(facade, {
+        installRallarCrdtWsTopics(router, {
             logRepository,
             mutationIngress: {
                 enqueueUpdate: (entry) => {
@@ -496,24 +493,24 @@ describe('installRallarCrdtWsTopics', () => {
             }
         );
 
-        await facade.handle(message);
+        await router.route(message);
 
         expect(accepted).toHaveLength(1);
         expect(socket.sent).toHaveLength(0);
     });
 });
 
-function createFacade(options?: ConstructorParameters<typeof RallarServerWsFacade>[1]) {
+function createRouter(options?: ConstructorParameters<typeof RallarServerWsRouter>[1]) {
     const socket = new RecordingJsonWebSocketServer();
     const inbox = new InMemoryQueueBox(new Map());
     const outbox = new InMemoryQueueBox(new Map());
     const service = new WsQueueBoxServerService(inbox, outbox, socket, 'server-1', {
         targetResolver: createTargetResolver()
     });
-    const facade = new RallarServerWsFacade(service, options);
+    const router = new RallarServerWsRouter(service, options);
 
     return {
-        facade,
+        router,
         service,
         socket,
         inbox,

@@ -27,7 +27,7 @@ const executablePaths = [
     'topology-replay/replay-drain-operation-counts.ts',
     'diagnostics/rtc-room-graph-no-rtt-bench.ts',
     'diagnostics/rtc-rtt-group-scan-bench.ts',
-    'diagnostics/rtt-traffic/rtc-topology-rtt-traffic-metrics.ts'
+    'diagnostics/rtt-traffic/rtc-rtt-traffic-metrics.ts'
 ] as const;
 
 describe('shared RTC benchmark navigation contract', () => {
@@ -76,7 +76,7 @@ describe('shared RTC benchmark navigation contract', () => {
             const diagnostic of [
                 'diagnostics/rtc-room-graph-no-rtt-bench.ts',
                 'diagnostics/rtc-rtt-group-scan-bench.ts',
-                'diagnostics/rtt-traffic/rtc-topology-rtt-traffic-metrics.ts'
+                'diagnostics/rtt-traffic/rtc-rtt-traffic-metrics.ts'
             ]
         ) {
             expect(catalog).not.toContain(diagnostic);

@@ -185,20 +185,11 @@ exception:
 - Mechanism: `FOR UPDATE SKIP LOCKED`
 - Boundary: reservation, timeout recovery, and fairness claims only
 
-### Historical Lock Migration Context
-
-Lock descriptions retained in `rallar-server-repositories.md` for ticket
-consumption, username registration, AL admission, CRDT document-row
-coordination, and advisory-lock primitives are historical migration context,
-not current or approved exceptions.
-
 ## Documentation And Validation
 
 - [Rallar System navigation map](./rallar-system/README.md) records the live
   startup and call-entry chains, construction order, domain owners, side
   effects, focused tests, and public-export guidance.
-- `rallar-server-repositories.md` inventories current persistence and data flow.
-- `rallar-server-repositories-improvements.md` is the historical hardening log.
 - `../../docs/rallar-convergent-state-and-rtc-topology.md` describes the
   distributed state/topology model and acceptance gates.
 

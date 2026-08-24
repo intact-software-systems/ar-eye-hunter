@@ -1,11 +1,10 @@
 import { resolveStateSyncRecipients } from '@shared-server/rallar-system/state-sync/state-sync-routing.ts';
-import { sendStateSyncMessage } from '@shared-server/rallar-system/state-sync/state-sync-websocket-publication.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import type { AuditStamp, GroupEvent, GroupMember, GroupMemberStatus, GroupPresenceSession, GroupSnapshot } from '@shared/api/group-types.ts';
-import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
+import { ConnectionContext, JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 import { describe, expect, it } from 'vitest';
 import { createTestGroup } from '../create-test-group.ts';
 
@@ -101,46 +100,6 @@ describe('state-sync routing group visibility', () => {
         expect(connectionIds(recipients)).toEqual(['alice-session']);
     });
 
-    it('sends state-sync messages directly to resolved recipients', () => {
-        const server = createCountingWebSocketServer([
-            'alice-session',
-            'bob-session',
-            'carol-session'
-        ]);
-        const snapshot = createGroupSnapshot([
-            { principalId: 'alice', sessionId: 'alice-session', status: 'active' },
-            { principalId: 'bob', sessionId: 'bob-session', status: 'invited' },
-            { principalId: 'carol', sessionId: 'carol-session', status: 'banned' }
-        ]);
-        const clients = [
-            createClientSnapshot('alice', 'alice-session'),
-            createClientSnapshot('bob', 'bob-session'),
-            createClientSnapshot('carol', 'carol-session')
-        ];
-        const message = newALBroadcastMessage(
-            'server-1',
-            newALEventRoute(
-                AppTopics.groupStateSnapshot,
-                snapshot.group.groupId,
-                snapshot.group.groupId
-            ),
-            'room',
-            AppTopics.groupStateSnapshot,
-            snapshot,
-            { groupRef: snapshot.group }
-        );
-
-        const sent = sendStateSyncMessage(server, message, {
-            readClientSnapshots: () => clients,
-            now: () => NOW
-        });
-
-        expect(sent).toBe(1);
-        expect(server.encodeCalls).toBe(1);
-        expect(server.broadcastCalls).toBe(0);
-        expect(server.sentConnectionIds).toEqual(['alice-session']);
-    });
-
     it('fails closed when a persisted logical group audience differs from its payload', () => {
         const server = createWebSocketServer(['alice-session']);
         const snapshot = createGroupSnapshot([
@@ -208,58 +167,32 @@ function createGroupEventEnvelope(
 }
 
 function createWebSocketServer(sessionIds: readonly string[]): JsonWebSocketServer {
-    return {
-        connections: new Map(
-            sessionIds.map((sessionId) => [
-                sessionId,
-                { id: sessionId, isOpen: true }
-            ])
-        )
-    } as unknown as JsonWebSocketServer;
+    const server = new JsonWebSocketServer();
+    for (const sessionId of sessionIds) {
+        server.addConnection(new ConnectionContext(sessionId, new OpenSocket()));
+    }
+    return server;
 }
 
-type CountingWebSocketServer =
-    & JsonWebSocketServer
-    & Readonly<{
-        encodeCalls: number;
-        broadcastCalls: number;
-        sentConnectionIds: readonly string[];
-    }>;
+class OpenSocket extends EventTarget implements WebSocket {
+    readonly CONNECTING = WebSocket.CONNECTING;
+    readonly OPEN = WebSocket.OPEN;
+    readonly CLOSING = WebSocket.CLOSING;
+    readonly CLOSED = WebSocket.CLOSED;
+    readonly binaryType: BinaryType = 'blob';
+    readonly bufferedAmount = 0;
+    readonly extensions = '';
+    readonly protocol = '';
+    readonly readyState = WebSocket.OPEN;
+    readonly url = 'ws://state-sync-routing-test';
+    onclose = null;
+    onerror = null;
+    onmessage = null;
+    onopen = null;
 
-function createCountingWebSocketServer(
-    sessionIds: readonly string[]
-): CountingWebSocketServer {
-    const sentConnectionIds: string[] = [];
-    const counters = {
-        encodeCalls: 0,
-        broadcastCalls: 0
-    };
-    return {
-        connections: new Map(
-            sessionIds.map((sessionId) => [
-                sessionId,
-                { id: sessionId, isOpen: true }
-            ])
-        ),
-        get encodeCalls() {
-            return counters.encodeCalls;
-        },
-        get broadcastCalls() {
-            return counters.broadcastCalls;
-        },
-        sentConnectionIds,
-        encode: (message: unknown) => {
-            counters.encodeCalls += 1;
-            return { text: JSON.stringify(message) };
-        },
-        sendEncoded: (connectionId: string) => {
-            sentConnectionIds.push(connectionId);
-        },
-        broadcast: () => {
-            counters.broadcastCalls += 1;
-            return 0;
-        }
-    } as unknown as CountingWebSocketServer;
+    close(): void {}
+
+    send(): void {}
 }
 
 function createClientSnapshot(
@@ -344,9 +277,9 @@ function createGroupSnapshot(
             updated: audit
         }),
         members: members.map(toGroupMember),
-        activeSessions: members.map(toGroupPresenceSession),
+        activeSessions: activeMembers.map(toGroupPresenceSession),
         memberCount: members.filter((member) => member.status === 'active').length,
-        onlineMemberCount: members.length
+        onlineMemberCount: activeMembers.length
     };
 }
 
@@ -356,7 +289,9 @@ function toGroupMember(
         status: GroupMemberStatus;
     }>
 ): GroupMember {
-    const role: GroupMember['role'] = 'member';
+    const role: GroupMember['role'] = input.principalId === 'alice'
+        ? 'owner'
+        : 'member';
     const common = {
         applicationId: 'app-1',
         workspaceId: 'workspace-1',

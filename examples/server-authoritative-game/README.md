@@ -5,23 +5,23 @@ send commands through REST or a validated WS topic; the server mutates durable
 app data, then publishes a room snapshot to the players in that room.
 
 ```ts
-import type { RallarServerRuntime } from '@shared-server/rallar-facade/RallarServer.ts';
-import type { RallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
+import type { RallarServerApplication } from '@shared-server/rallar-facade/rallar-server-application.ts';
+import type { RallarServerRuntime } from '@shared-server/rallar-facade/rallar-server.ts';
 import { newALBroadcastMessage, newALRoute } from '@shared/al-contracts/al-contract.ts';
 
-type GameCommand = {
+interface GameCommand {
     gameId: string;
     seq: number;
     action: 'ready' | 'fire' | 'pickup';
-};
+}
 
-type GameState = {
+interface GameState {
     gameId: string;
     roomId: string;
     revision: number;
     readyPeerIds: readonly string[];
     events: readonly string[];
-};
+}
 
 type GameSnapshot = Pick<GameState, 'gameId' | 'revision' | 'readyPeerIds'>;
 

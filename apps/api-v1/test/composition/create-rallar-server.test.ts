@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import type { AppDataRepositoryLike } from '@shared-server/app-data/AppDataRepository.ts';
 import { installRallarGameAuthorityServer } from '@shared-server/game/mod.ts';
-import type { RallarServerSystemInstallers } from '@shared-server/rallar-facade/RallarServer.ts';
+import type { RallarServerSystemInstallers } from '@shared-server/rallar-facade/rallar-server.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 
 import type { ApiV1Runtime } from '../../src/composition/api-v1-runtime.ts';

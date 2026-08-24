@@ -17,9 +17,8 @@ export * from './queuebox/postgres/p-sql-queue-box.ts';
 export * from './queuebox/postgres/p-sql-results-queue-box.ts';
 export * from './queuebox/postgres/resource-inbox-results-repository.ts';
 export * from './rallar-ai/mod.ts';
-export * from './rallar-facade/RallarServer.ts';
-export * from './rallar-facade/RallarServerApplication.ts';
-export * from './rallar-facade/ws-topic-router.ts';
+export * from './rallar-facade/rallar-server-application.ts';
+export * from './rallar-facade/rallar-server.ts';
 export * from './rallar-system/admin-operations/admin-operations-service.ts';
 export * from './rallar-system/admin-support/admin-support-contracts.ts';
 export * from './rallar-system/admin-support/create-admin-support-use-cases.ts';
@@ -128,7 +127,12 @@ export * from './rallar-system/group-state/snapshot/cached-group-state-service.t
 export * from './rallar-system/group-state/snapshot/group-rest-snapshot-read-selector.ts';
 export * from './rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
 export * from './rallar-system/middleware/cache-repositories.ts';
-export * from './rallar-system/middleware/rallar-middleware.ts';
+export { createRallarMiddleware } from './rallar-system/middleware/create-rallar-middleware.ts';
+export type { CreateRallarMiddlewareOptions } from './rallar-system/middleware/rallar-middleware-construction.ts';
+export type {
+    RallarMiddlewareRuntime,
+    RtcTopologyReplayRuntime
+} from './rallar-system/middleware/rallar-middleware-runtime.ts';
 export * from './rallar-system/observability/timing.ts';
 export * from './rallar-system/presence/snapshot-presence.ts';
 export * from './rallar-system/protocol/json-wire-identity.ts';
@@ -153,7 +157,6 @@ export * from './rallar-system/rtc-rtt/persistence/rtc-rtt-storage-keys.ts';
 export * from './rallar-system/state-sync/state-sync-cache-hydration.ts';
 export * from './rallar-system/state-sync/state-sync-entry-computation.ts';
 export * from './rallar-system/state-sync/state-sync-transaction-writer.ts';
-export * from './rallar-system/state-sync/state-sync-websocket-publication.ts';
 export * from './rallar-system/topology/config/group-topology-config.ts';
 export { GroupTopologyConfigRepositoryInvariantCorruptionError } from './rallar-system/topology/config/persistence/group-topology-config-repository-contracts.ts';
 export type {
@@ -181,7 +184,9 @@ export * from './rallar-system/topology/publication/rtc-topology-publication-rep
 export * from './rallar-system/topology/publication/rtc-topology-publication.ts';
 export * from './rallar-system/topology/runtime/create-group-topology-owners.ts';
 export * from './rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
+export * from './rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
+export * from './rallar-system/websocket/router/rallar-server-ws-router.ts';
+export * from './rallar-system/websocket/router/rallar-server-ws-status.ts';
 export * from './rallar-system/websocket/ws-lifecycle-service.ts';
-export * from './rallar-system/websocket/ws-system-topics.ts';
 export * from './rallar-system/websocket/ws-topic-room-authorizer.ts';
 export * from './runtime-state/optimistic-runtime-state-write.ts';

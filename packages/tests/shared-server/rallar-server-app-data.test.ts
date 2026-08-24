@@ -8,16 +8,16 @@ import type {
     AppDataUpsertIfRevisionInput,
     AppDataUpsertInput
 } from '@shared-server/app-data/AppDataRepository.ts';
-import { RallarServerDataFacade } from '@shared-server/rallar-facade/RallarServer.ts';
-import { createRallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
+import { createRallarServerApplication } from '@shared-server/rallar-facade/rallar-server-application.ts';
+import { RallarServerDataFacade } from '@shared-server/rallar-facade/rallar-server.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import type { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-type Todo = Readonly<{
+interface Todo {
     title: string;
     done: boolean;
-}>;
+}
 
 describe('Rallar server app data stores', () => {
     afterEach(() => {

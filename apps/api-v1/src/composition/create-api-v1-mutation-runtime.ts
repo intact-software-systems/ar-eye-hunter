@@ -37,7 +37,7 @@ import {
     createCachedGroupStateService
 } from '@shared-server/rallar-system/group-state/snapshot/cached-group-state-service.ts';
 import { GroupStateSnapshotReadThroughCache } from '@shared-server/rallar-system/group-state/snapshot/group-state-snapshot-read-through-cache.ts';
-import type { CreateRallarMiddlewareOptions } from '@shared-server/rallar-system/middleware/rallar-middleware.ts';
+import type { CreateRallarMiddlewareOptions } from '@shared-server/rallar-system/middleware/rallar-middleware-construction.ts';
 import {
     createGroupFormationMetricsRecorder,
     type RallarGroupFormationMetricsRecorder

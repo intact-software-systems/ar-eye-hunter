@@ -12,7 +12,6 @@ import {
     type RtcRttRefinementGateConfig
 } from '@shared-server/rallar-system/rtc-rtt/topic/rtc-rtt-refinement-gate.ts';
 import { RtcRttRefinementService } from '@shared-server/rallar-system/rtc-rtt/topic/rtc-rtt-refinement-service.ts';
-import { sendStateSyncMessage } from '@shared-server/rallar-system/state-sync/state-sync-websocket-publication.ts';
 import type { GroupTopologyConfigMutationService } from '@shared-server/rallar-system/topology/config/group-topology-config-mutation-service.ts';
 import type { GroupTopologyConfigQueryService } from '@shared-server/rallar-system/topology/config/group-topology-config-query-service.ts';
 import { GroupTopologyConfigRepository } from '@shared-server/rallar-system/topology/config/persistence/group-topology-config-repository.ts';
@@ -31,7 +30,6 @@ import type { RuntimeStateRepositoryLike } from '@shared-server/runtime-state/ru
 import { toWebRtcGroupKey } from '@shared/api/api-type-utils.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
-import type { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
 import { createApiRtcTopologyAdminMetrics } from '../runtime/rtc-topology/create-api-rtc-topology-admin-metrics.ts';
 
@@ -45,7 +43,6 @@ export interface CreateApiV1TopologyServicesInput {
     readonly groupStateRepository: GroupStateRepository;
     readonly groupStateService: Pick<CachedGroupStateService, 'readSnapshotAtLeast'>;
     readonly groupFormationRttMutation: GroupFormationRttMutationSink;
-    readonly webSocketServer: JsonWebSocketServer;
     readonly topologyReplayMetrics: ApiV1TopologyReplayMetrics;
     readonly serviceId: string;
     readonly adminClientIds: readonly string[];
@@ -109,9 +106,6 @@ export function createApiV1TopologyServices(
         topologyService: rtcTopologyService,
         topologySnapshotRepository,
         rttRepository,
-        publisher: (message) => {
-            sendStateSyncMessage(input.webSocketServer, message);
-        },
         serverDefaults: {
             ...rtcTopologyOptions,
             topologyKind: rtcTopologyOptions.topologyKind ?? 'auto'

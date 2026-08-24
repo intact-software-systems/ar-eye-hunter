@@ -5,19 +5,19 @@ observe, transform, or suppress browser room traffic. Define explicit room
 topics for app protocols; leave built-in Rallar topics to the middleware.
 
 ```ts
-import type { RallarServerRuntime } from '@shared-server/rallar-facade/RallarServer.ts';
-import type { RallarServerApplication } from '@shared-server/rallar-facade/RallarServerApplication.ts';
+import type { RallarServerApplication } from '@shared-server/rallar-facade/rallar-server-application.ts';
+import type { RallarServerRuntime } from '@shared-server/rallar-facade/rallar-server.ts';
 
-type Ping = {
+interface Ping {
     roomId: string;
     nonce: string;
-};
+}
 
-type Pong = {
+interface Pong {
     roomId: string;
     nonce: string;
     serverAtEpochMs: number;
-};
+}
 
 export function installRoomDiagnosticsTopic(
     rallar: RallarServerApplication<RallarServerRuntime, unknown>

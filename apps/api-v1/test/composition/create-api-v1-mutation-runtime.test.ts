@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict';
 
 import type { PSqlParameter, PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
-import { createRallarMiddleware } from '@shared-server/rallar-system/middleware/rallar-middleware.ts';
 
 import { createApiV1MutationRuntime } from '../../src/composition/create-api-v1-mutation-runtime.ts';
-import { findCurrentClientSnapshot } from '../../src/crdt/create-api-crdt-document-authorizer.ts';
 import { toResilienceDto } from '../api-v1-test-queue-resilience.ts';
 
 Deno.test('mutation runtime keeps one database identity and performs no construction query', () => {
@@ -29,33 +27,6 @@ Deno.test('mutation runtime keeps one database identity and performs no construc
 
     assert.equal(mutation.runtimeStateRepository.sql, databaseProbe.database);
     assert.equal(mutation.queueBox.resourceInbox, mutation.resourceInboxRepository);
-    assert.equal(databaseProbe.queryCount(), 0);
-    assert.equal(databaseProbe.transactionCount(), 0);
-
-    const runtime = createRallarMiddleware({
-        inbox: mutation.queueBox,
-        outbox: mutation.queueBox,
-        appInboxDequeueOptions: mutation.appInboxDequeueOptions,
-        webSocketServer: mutation.webSocketServer,
-        findGroupSnapshotByRef: (ref) => mutation.groupSnapshotCache.findByRef(ref),
-        findClientSnapshotByRef: (ref) => findCurrentClientSnapshot(mutation.clientSnapshotCache, ref),
-        createGroupStateInboxService: mutation.createGroupStateInboxService,
-        createTopologyInboxService: () => ({}) as never,
-        createRtcRttInboxService: () => ({}) as never,
-        createAppClientInboxService: mutation.createAppClientInboxService,
-        createAppAuthInboxService: mutation.createAppAuthInboxService,
-        createAppAdminInboxService: mutation.createAppAdminInboxService,
-        createAppCrdtInboxService: mutation.createAppCrdtInboxService,
-        resilience: mutation.resilience,
-        clientsRepository: mutation.clientsRepository,
-        groupsRepository: mutation.groupsRepository
-    });
-
-    assert.equal(runtime.clientsRepository, mutation.clientsRepository);
-    assert.equal(runtime.groupsRepository, mutation.groupsRepository);
-    assert.ok(runtime.groupStateInboxService);
-    assert.ok(runtime.appClientInboxService);
-    assert.ok(runtime.appAuthInboxService);
     assert.equal(databaseProbe.queryCount(), 0);
     assert.equal(databaseProbe.transactionCount(), 0);
 });

@@ -25,8 +25,6 @@ const appInboxGuidanceVocabulary = [
 const currentAppInboxGuidancePaths = [
     canonicalServiceWritingPath,
     'packages/shared-server/architecture.md',
-    'packages/shared-server/rallar-server-repositories.md',
-    'packages/shared-server/rallar-server-repositories-improvements.md',
     'apps/api-v1/README.md',
     'docs/rallar-api-reference.md',
     'docs/rallar-convergent-state-and-rtc-topology.md',
@@ -42,7 +40,6 @@ const canonicalSnapshotOrderingGuidancePaths = [
 const postCommitAudienceGuidancePaths = [
     'apps/api-v1/README.md',
     'packages/shared-server/architecture.md',
-    'packages/shared-server/rallar-server-repositories.md',
     'docs/rallar-api-reference.md',
     'docs/rallar-convergent-state-and-rtc-topology.md'
 ] as const;
@@ -55,8 +52,6 @@ const repositoryReadGuidancePaths = [
 ] as const;
 const downstreamQueueGuidancePaths = [
     'packages/shared-server/architecture.md',
-    'packages/shared-server/rallar-server-repositories.md',
-    'packages/shared-server/rallar-server-repositories-improvements.md',
     'docs/rallar-convergent-state-and-rtc-topology.md'
 ] as const;
 const mediumScaleRequirements = [
@@ -72,6 +67,10 @@ const performanceGateRequirements = [
     'comparative result gate'
 ] as const;
 
+interface PackageJson {
+    readonly scripts?: Readonly<Record<string, string>>;
+}
+
 describe('authoritative mutation guidance integrity', () => {
     it('routes composition and validation from the specialist skills', () => {
         const agents = readRepo('AGENTS.md');
@@ -86,9 +85,7 @@ describe('authoritative mutation guidance integrity', () => {
         const realtime = readRepo('.agents/skills/rallar-realtime/SKILL.md');
         const testing = readRepo('.agents/skills/rallar-testing/SKILL.md');
         const testCommands = readRepo('.agents/skills/rallar-testing/references/test-commands.md');
-        const packageJson = readJson('package.json') as {
-            scripts?: Readonly<Record<string, string>>;
-        };
+        const packageJson = readPackageJson('package.json');
 
         expect(platform).toContain('building-rallar-apps');
         expect(games).toContain('building-rallar-apps');
@@ -380,8 +377,29 @@ function readAbsolute(filePath: string): string {
     return readFileSync(filePath, 'utf8');
 }
 
-function readJson(filePath: string): unknown {
-    return JSON.parse(readRepo(filePath));
+function readPackageJson(filePath: string): PackageJson {
+    return decodePackageJson(JSON.parse(readRepo(filePath)));
+}
+
+function decodePackageJson(value: unknown): PackageJson {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        throw new TypeError('Package JSON must be an object');
+    }
+    if (!('scripts' in value) || value.scripts === undefined) {
+        return {};
+    }
+    const scripts = value.scripts;
+    if (scripts === null || typeof scripts !== 'object' || Array.isArray(scripts)) {
+        throw new TypeError('Package JSON scripts must be an object');
+    }
+    const decodedScripts: Record<string, string> = {};
+    for (const [name, script] of Object.entries(scripts)) {
+        if (typeof script !== 'string') {
+            throw new TypeError('Package JSON scripts must contain only strings');
+        }
+        decodedScripts[name] = script;
+    }
+    return { scripts: decodedScripts };
 }
 
 function expectAll(haystack: string, needles: readonly string[]): void {

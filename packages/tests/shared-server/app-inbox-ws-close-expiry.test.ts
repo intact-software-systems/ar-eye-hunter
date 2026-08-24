@@ -66,7 +66,7 @@ it('bounds a lost-close group guard to the shared retry retention horizon', asyn
     const expectedExpiry = resourceInboxRetryExpiryAtEpochMs(connectedAtEpochMs);
     expect(lifecycle.state?.status).toBe('open');
     expect(lifecycle.state?.expireAtEpochMs).toBe(expectedExpiry);
-    expect(lifecycle.entry?.expireAtTimestamp).toBe(expectedExpiry);
+    expect(lifecycle.persistedExpireAtEpochMs).toBe(expectedExpiry);
     expect(expectedExpiry).toBeLessThan(253_402_300_799_999);
 
     await harness.group.enqueueGroupSessionCleanup({
@@ -83,7 +83,7 @@ it('bounds a lost-close group guard to the shared retry retention horizon', asyn
     const expectedCloseExpiry = resourceInboxRetryExpiryAtEpochMs(facts.disconnectedAtEpochMs);
     expect(closed.state?.status).toBe('closed');
     expect(closed.state?.expireAtEpochMs).toBe(expectedCloseExpiry);
-    expect(closed.entry?.expireAtTimestamp).toBe(expectedCloseExpiry);
+    expect(closed.persistedExpireAtEpochMs).toBe(expectedCloseExpiry);
 });
 
 async function createRoom(

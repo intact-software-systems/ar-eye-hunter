@@ -56,6 +56,7 @@ export type WsQueueBoxServerServiceOptions = Readonly<{
     outboundDiagnostics?: ALOutboundRuntimeDiagnosticsSink;
     outboundDeliveryOutcome?: (outcome: WsOutboxDeliveryOutcome) => void;
     deliveryDiagnostics?: WsDeliveryDiagnosticsSink;
+    admitInboundMessage?: (message: ALMessage) => boolean;
     /**
      * Whether inbound ALM forwarding relays room-scoped messages (default
      * true, the standalone service contract). A composition that installs a
@@ -92,7 +93,6 @@ export class WsQueueBoxServerService {
         OnWebSocketServerMessageCallback<ALMessage>
     >();
 
-    private readonly onOutboxWebSocketMessageCallbacks = new Map<string, OnWebSocketServerMessageCallback<ALMessage>>();
     private outboxClusterPublisher?: (
         message: ALMessage,
         entry: ResourceEntry
@@ -103,6 +103,7 @@ export class WsQueueBoxServerService {
     private readonly targetResolver: WsServerTargetResolver;
     private readonly outboundDeliveryOutcome?: (outcome: WsOutboxDeliveryOutcome) => void;
     private readonly deliveryDiagnostics?: WsDeliveryDiagnosticsSink;
+    private readonly admitInboundMessage: (message: ALMessage) => boolean;
     private readonly forwardsRoomScopedMessages: boolean;
     public readonly inbox: QueueBoxResourceEntryRepository;
     public readonly outbox: QueueBoxResourceEntryRepository;
@@ -124,6 +125,7 @@ export class WsQueueBoxServerService {
         this.targetResolver = options.targetResolver ?? {};
         this.outboundDeliveryOutcome = options.outboundDeliveryOutcome;
         this.deliveryDiagnostics = options.deliveryDiagnostics;
+        this.admitInboundMessage = options.admitInboundMessage ?? (() => true);
         this.forwardsRoomScopedMessages = options.forwardsRoomScopedMessages ?? true;
 
         this.outboundRuntime = new ALOutboundMessageRuntime<WsServerPreparedMessage>(
@@ -232,36 +234,6 @@ export class WsQueueBoxServerService {
         );
     }
 
-    onAllOutboxMessagesDo(
-        callback: OnWebSocketServerMessageCallback<ALMessage>,
-        forceUpdate: boolean = false
-    ): WsQueueBoxServerService {
-        if (
-            !forceUpdate &&
-            this.onOutboxWebSocketMessageCallbacks.has(WsQueueBoxServerService.ALL_IN)
-        ) {
-            throw new Error('Cannot set multiple Ws outbox callbacks for ALL_IN');
-        }
-
-        this.onOutboxWebSocketMessageCallbacks.set(
-            WsQueueBoxServerService.ALL_IN,
-            callback
-        );
-        return this;
-    }
-
-    onOutboxMessageDo(
-        id: string,
-        callback: OnWebSocketServerMessageCallback<ALMessage>
-    ): WsQueueBoxServerService {
-        this.onOutboxWebSocketMessageCallbacks.set(id, callback);
-        return this;
-    }
-
-    removeOutboxMessageCallback(id: string): boolean {
-        return this.onOutboxWebSocketMessageCallbacks.delete(id);
-    }
-
     onOutboxClusterPublishDo(
         publisher: (message: ALMessage, entry: ResourceEntry) => Promise<void>
     ): WsQueueBoxServerService {
@@ -361,6 +333,9 @@ export class WsQueueBoxServerService {
         const fromPeerId = this.targetResolver.resolvePeerIdForConnection?.(connectionId, message) ??
             connectionId;
         if (message.id.senderId !== fromPeerId) {
+            return;
+        }
+        if (!this.admitInboundMessage(message)) {
             return;
         }
         await this.inboundRuntime.handleIncomingMessage(message, fromPeerId);

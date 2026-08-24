@@ -588,7 +588,7 @@ repositories — resolves the group's effective topology configuration under the
 option (`readRttReportingDegreeLimit`), so a configured `RALLAR_RTC_RTT_REPORTING_DEGREE_LIMIT` still
 wins and otherwise the group's effective `degreeLimit` is the limit; the in-memory topic branch in
 `init-rtc-rtt-topic.ts` resolves it the same way through the `readGroupRttReportingDegreeLimit` hook
-in `ws-system-topics.ts`, for compositions without durable topology repositories. A report whose
+in `init-rtc-rtt-topic.ts`, for compositions without durable topology repositories. A report whose
 endpoints both hold live sessions in several groups is accepted under the largest of those groups'
 limits. The managed burst recipes rely on this by raising the group's topology `degreeLimit` (24 at
 N=20, 54 at N=50) before the burst. `docs/rallar-rtc-rtt-reporting.md` owns the wider reporting
@@ -602,7 +602,7 @@ predicate: `canSendGroupMessage` in `group-policy.ts` denies `group-data-blocked
 the resolved value is `blocked-until-active` and the group is not `active` — so `forming`,
 `establishing`, and `reconfiguring` all block, which is the meaning `reconfiguring` exists to carry.
 
-The room authorizer (`rallar-system/services/ws-topic-room-authorizer.ts`, composed in
+The room authorizer (`rallar-system/websocket/ws-topic-room-authorizer.ts`, composed in
 `apps/api-v1/src/services/ws-topic-room-authorizer.ts`) supplies the value lazily: it reads the
 policy only when the group is not `active`, so steady-state room traffic pays no policy read. An
 absent policy is `allowed` (main parity); a corrupt one is `blocked-until-active` (fail closed).
@@ -613,9 +613,13 @@ commit — while the peer sync envelopes (`sync-request`, `sync-response`, `catc
 relayed live, so the exemption lets CRDT sync traffic flow before activation; collaborative documents
 are lobby-phase workspace, not the competitive pre-match traffic the gate exists to hold back. Out of
 scope and unchanged: RTC data-channel traffic (`realtime.room` is peer-to-peer; the server only
-signals), presence (an HTTP mutation, never a WS topic), and the reserved state-sync, signaling,
-`overlay.topology`, and `rtt` system topics, which `ws-topic-router.ts` handles before the room
-authorizer runs and which activation needs.
+signals), presence (an HTTP mutation, never a WS topic), durable state-sync and
+`overlay.topology` output, and the signaling and `rtt` ingress topics. API-v1 installs the durable
+topology AppOutbox owner, chat, signaling, RTC-RTT, CRDT, and then the user-topic router; state-sync
+and topology have no WebSocket ingress installers. Recognized state-sync input is rejected before
+user routing. Committed `WS_OUTBOX` state and fixed-recipient topology messages reach current
+sessions through QueueBox/pub-sub delivery or durable topology replay, outside the pre-activation
+user-topic gate.
 
 On the wire the denial is the generic NACK: the room authorizer maps every policy denial to reason
 `unauthorized`, and the `group-data-blocked-until-active` code never leaves the server — it appears
@@ -838,9 +842,9 @@ writing this document:
   the FORMING planning gate.
 - `packages/shared-server/rallar-system/rtc-rtt/policy/rtc-rtt-measurement-policy.ts`,
   `apps/api-v1/src/composition/create-api-v1-topology-services.ts`,
-  `packages/shared-server/rallar-system/ws-system-topics.ts`: RTT acceptance and the per-group
-  reporting degree limit.
-- `packages/shared-server/rallar-system/services/ws-topic-room-authorizer.ts` and
+  `packages/shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts`: RTT
+  acceptance and the per-group reporting degree limit.
+- `packages/shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts` and
   `apps/api-v1/src/services/ws-topic-room-authorizer.ts`: the data gate and the CRDT exemption.
 - `apps/api-v1/src/group-state/register-group-state-mutation-routes.ts`,
   `register-group-admission-routes.ts`, `apps/api-v1/src/routes/group-formation-view-read.ts`, and

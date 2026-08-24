@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 
-import { RallarServerWsFacade } from '@shared-server/rallar-facade/ws-topic-router.ts';
+import { installRallarCrdtWsTopics } from '@shared-server/rallar-system/crdt/realtime/install-rallar-crdt-ws-topics.ts';
+import { RallarServerWsRouter } from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts';
 import type { RallarWsLifecycleHandlers } from '@shared-server/rallar-system/websocket/ws-lifecycle-service.ts';
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { toResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { DEFAULT_RESOURCE_INBOX_RETRY_POLICY } from '@shared/queuebox/ResourceInboxRetryPolicy.ts';
+import type { OnWebSocketServerMessageCallback } from '@shared/services/InboxOutboxContracts.ts';
 import { WsQueueBoxServerService } from '@shared/services/WsQueueBoxServerService.ts';
 import { JsonWebSocketServer } from '@shared/websocket/JsonWebSocketServer.ts';
 
@@ -18,33 +21,38 @@ import {
 import * as wsRoutes from '../../src/routes/ws-routes.ts';
 import { rememberAuthorisedWsConnection } from '../../src/runtime/rtc-topology/authorised-ws-connection-registry.ts';
 
-Deno.test('system topic reinstall unregisters and stops the prior owner', () => {
+Deno.test('system topic installation rejects a second start before mutating installed owners', () => {
     const events: string[] = [];
     const runtime = createRuntime(events);
     const installers = constructApiV1SystemInstallers(
         createInput(),
-        createOperations(events)
+        createOperations(events, true)
     );
-    const ws = new RallarServerWsFacade(runtime.wsQBoxServerService);
+    const ws = new RallarServerWsRouter(runtime.wsQBoxServerService);
 
     installers.installDefaultMiddlewareTopics?.(runtime, ws);
-    installers.installDefaultMiddlewareTopics?.(runtime, ws);
-
-    assert.deepEqual(events, [
-        'system-topics',
-        'register-stop',
+    const installedEvents = [
+        'topology-app-outbox',
+        'chat',
+        'signaling',
+        'rtc-rtt',
         'crdt-ingress',
         'crdt-topics',
-        'unregister-stop',
-        'stop-system-topics',
-        'system-topics',
-        'register-stop',
-        'crdt-ingress',
-        'crdt-topics'
-    ]);
+        'router',
+        'register-stop'
+    ];
+    assert.deepEqual(events, installedEvents);
+    assert.equal(runtime.wsQBoxServerService.anyInboxRegistrationCount, 1);
+
+    assert.throws(
+        () => installers.installDefaultMiddlewareTopics?.(runtime, ws),
+        /system topics already installed/i
+    );
+    assert.deepEqual(events, installedEvents);
+    assert.equal(runtime.wsQBoxServerService.anyInboxRegistrationCount, 1);
 });
 
-Deno.test('system topics fail after topic ownership when CRDT ingress is absent', () => {
+Deno.test('system topics fail before installation when CRDT ingress is absent', () => {
     const events: string[] = [];
     const runtime = createRuntime(events, false);
     const installers = constructApiV1SystemInstallers(
@@ -56,11 +64,11 @@ Deno.test('system topics fail after topic ownership when CRDT ingress is absent'
         () =>
             installers.installDefaultMiddlewareTopics?.(
                 runtime,
-                new RallarServerWsFacade(runtime.wsQBoxServerService)
+                new RallarServerWsRouter(runtime.wsQBoxServerService)
             ),
         /CRDT websocket topics require AppInbox mutation ingress/
     );
-    assert.deepEqual(events, ['system-topics', 'register-stop']);
+    assert.deepEqual(events, []);
 });
 
 Deno.test(
@@ -85,7 +93,7 @@ Deno.test(
         const installers = constructApiV1SystemInstallers(createInput(), operations);
         installers.installWebSocketLifecycle?.(
             runtime,
-            new RallarServerWsFacade(runtime.wsQBoxServerService)
+            new RallarServerWsRouter(runtime.wsQBoxServerService)
         );
 
         const close = {
@@ -139,6 +147,10 @@ class RuntimeCalls {
     groupCleanup?: unknown;
 }
 
+interface TestRuntime extends ApiV1SystemInstallerRuntime {
+    readonly wsQBoxServerService: CountingWsQueueBoxServerService;
+}
+
 function createInput(): CreateApiV1SystemInstallersInput<ApiV1SystemInstallerTopology> {
     return {
         database: Object.assign(() => Promise.resolve([]), {
@@ -182,9 +194,9 @@ function createRuntime(
     events: string[],
     includeCrdt = true,
     calls: RuntimeCalls = new RuntimeCalls()
-): ApiV1SystemInstallerRuntime {
+): TestRuntime {
     return {
-        wsQBoxServerService: new WsQueueBoxServerService(
+        wsQBoxServerService: new CountingWsQueueBoxServerService(
             new InMemoryQueueBox(new Map()),
             new InMemoryQueueBox(new Map()),
             new JsonWebSocketServer(),
@@ -216,10 +228,8 @@ function createRuntime(
             }
         },
         groupStateService: {
-            observeSnapshot: (snapshot) => Promise.resolve(snapshot),
             readSnapshotAtLeast: () => Promise.resolve(undefined)
         },
-        clientStateService: { observeSnapshot: (snapshot) => Promise.resolve(snapshot) },
         outboxQueueReader: {},
         qboxEngine: { wake: () => {} },
         rtcTopologyReplay: { wake: () => {} },
@@ -229,15 +239,25 @@ function createRuntime(
 }
 
 function createOperations(
-    events: string[]
+    events: string[],
+    useProductionCrdtAndRouter = false
 ): ApiV1SystemInstallerOperations<ApiV1SystemInstallerRuntime, ApiV1SystemInstallerTopology> {
     return {
-        initialiseSystemTopics: () => {
-            events.push('system-topics');
+        installTopologyAppOutbox: () => {
+            events.push('topology-app-outbox');
+            return {} as never;
+        },
+        installChatTopic: () => {
+            events.push('chat');
+        },
+        installRtcSignalingTopic: () => {
+            events.push('signaling');
+        },
+        installRtcRttTopic: () => {
+            events.push('rtc-rtt');
             return {
-                rtcTopologyWorkPublisher: null,
                 stop: () => {
-                    events.push('stop-system-topics');
+                    events.push('stop-rtc-rtt');
                 }
             };
         },
@@ -245,13 +265,21 @@ function createOperations(
             events.push('crdt-ingress');
             return { enqueueUpdate: () => Promise.resolve() };
         },
-        installCrdtTopics: () => {
+        installCrdtTopics: (ws, options) => {
             events.push('crdt-topics');
-            return {
-                topicIds: [],
-                definitions: [],
-                unsubscribeHandlers: () => {}
-            };
+            return useProductionCrdtAndRouter
+                ? installRallarCrdtWsTopics(ws, options)
+                : {
+                    topicIds: [],
+                    definitions: [],
+                    unsubscribeHandlers: () => {}
+                };
+        },
+        installRouter: (router) => {
+            events.push('router');
+            if (useProductionCrdtAndRouter) {
+                router.install();
+            }
         },
         initWebSocketLifecycle: () => ({
             getPendingCloseCount: () => 0,
@@ -260,4 +288,16 @@ function createOperations(
         }),
         scheduleWebSocketLifecycleRetry: () => () => {}
     };
+}
+
+class CountingWsQueueBoxServerService extends WsQueueBoxServerService {
+    anyInboxRegistrationCount = 0;
+
+    override onAnyInboxMessageDo(
+        id: string,
+        callback: OnWebSocketServerMessageCallback<ALMessage>
+    ): WsQueueBoxServerService {
+        this.anyInboxRegistrationCount += 1;
+        return super.onAnyInboxMessageDo(id, callback);
+    }
 }

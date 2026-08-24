@@ -52,7 +52,7 @@ Deno.test('PGlite close high-water converges after a stale write and extends rep
         assert.equal(lifecycle.computeClosed(older, retryRead).outcome, 'none');
         assert.equal(lifecycle.computeClosed(newer, retryRead).outcome, 'none');
         assert.equal(retryRead.state?.generationId, newer.generationId);
-        assert.equal(retryRead.entry?.expireAtTimestamp, newer.expireAtEpochMs);
+        assert.equal(retryRead.persistedExpireAtEpochMs, newer.expireAtEpochMs);
 
         const extended = lifecycle.computeClosed({
             ...newer,
@@ -65,6 +65,6 @@ Deno.test('PGlite close high-water converges after a stale write and extends rep
         );
         const extendedRead = await lifecycle.read(identity);
         assert.equal(extendedRead.state?.generationId, newer.generationId);
-        assert.equal(extendedRead.entry?.expireAtTimestamp, newer.expireAtEpochMs + 10_000);
+        assert.equal(extendedRead.persistedExpireAtEpochMs, newer.expireAtEpochMs + 10_000);
     });
 });

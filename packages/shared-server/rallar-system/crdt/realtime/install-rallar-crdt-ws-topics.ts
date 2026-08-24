@@ -21,8 +21,9 @@ import type {
     RallarServerWsHandler,
     RallarServerWsMessage,
     RallarServerWsMessageContext,
+    RallarServerWsPayload,
     RallarServerWsTopicDefinition
-} from '../../../rallar-facade/ws-topic-router.ts';
+} from '../../websocket/router/rallar-server-ws-router-contracts.ts';
 import {
     RALLAR_CRDT_SERVER_DEFAULT_MAX_SYNC_BYTES,
     RALLAR_CRDT_SERVER_DEFAULT_MAX_UPDATE_BYTES,
@@ -165,7 +166,7 @@ function createAcceptedEnvelopeHandler(
 
 interface RespondToDurableCatchUpRequestInput {
     readonly accepted: Extract<RallarCrdtServerAcceptedEnvelope, { kind: 'catch-up-request'; }>;
-    readonly context: RallarServerWsMessageContext<unknown>;
+    readonly context: RallarServerWsMessageContext;
     readonly options: RallarCrdtServerTopicBridgeOptions;
 }
 
@@ -213,8 +214,8 @@ async function respondToDurableCatchUpRequest(
 
 interface AuthorizeAcceptedEnvelopeInput {
     readonly kind: RallarCrdtServerEnvelopeKind;
-    readonly message: RallarServerWsMessage<unknown>;
-    readonly context: RallarServerWsMessageContext<unknown>;
+    readonly message: RallarServerWsMessage<RallarServerWsPayload>;
+    readonly context: RallarServerWsMessageContext;
     readonly options: RallarCrdtServerTopicBridgeOptions;
 }
 
@@ -250,8 +251,8 @@ async function authorizeAcceptedEnvelope(input: AuthorizeAcceptedEnvelopeInput):
 
 function toAcceptedEnvelope<K extends RallarCrdtServerEnvelopeKind>(
     kind: K,
-    message: RallarServerWsMessage<unknown>,
-    context: RallarServerWsMessageContext<unknown>
+    message: RallarServerWsMessage<RallarServerWsPayload>,
+    context: RallarServerWsMessageContext
 ): RallarCrdtAcceptedEnvelopeByKind<K> {
     // The topic router invokes this handler only after validating the payload for this type ID.
     return {
@@ -299,7 +300,7 @@ function toTopicId(scope: RallarCrdtServerTopicScope): string {
 }
 
 function readEnvelopeDocument(
-    value: unknown
+    value: RallarServerWsPayload
 ): RallarCrdtServerAcceptedEnvelope['envelope']['document'] | undefined {
     if (!value || typeof value !== 'object') {
         return undefined;
@@ -312,8 +313,8 @@ function readEnvelopeDocument(
 }
 
 function toTrustedMetadata(
-    message: RallarServerWsMessage<unknown>,
-    context: RallarServerWsMessageContext<unknown>
+    message: RallarServerWsMessage<RallarServerWsPayload>,
+    context: RallarServerWsMessageContext
 ): RallarCrdtServerTrustedMetadata {
     const envelope = message.payload && typeof message.payload === 'object' ? message.payload : undefined;
     const actorId = envelope ? Reflect.get(envelope, 'actorId') : undefined;

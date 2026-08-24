@@ -4,10 +4,8 @@ import {
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
-import {
-    includeInboxQueueReaderEngineTasks,
-    includeOutboxQueueReaderEngineTasks
-} from '@shared-server/rallar-system/middleware/rallar-middleware.ts';
+import { registerApplicationQueueReaderTasks } from '@shared-server/rallar-system/middleware/rallar-middleware-queue-registration.ts';
+import type { ResilienceDto } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InboxOutboxEngine } from '@shared/services/InboxOutboxEngine.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
@@ -47,8 +45,14 @@ export class RealEngineAdminPruneFixture {
         const outbox = new OutboxQueueReader(queue);
         inbox.dequeueInbox = trackDequeue(this.activeDequeues, inbox.dequeueInbox.bind(inbox));
         outbox.dequeueOutbox = trackDequeue(this.activeDequeues, outbox.dequeueOutbox.bind(outbox));
-        includeInboxQueueReaderEngineTasks(this.engine, inbox, toResilienceDto());
-        includeOutboxQueueReaderEngineTasks(this.engine, outbox, toResilienceDto());
+        const resilience = toResilienceDto();
+        registerApplicationQueueReaderTasks({
+            engine: this.engine,
+            inboxQueueReader: inbox,
+            outboxQueueReader: outbox,
+            appInboxResilience: resilience,
+            appOutboxResilience: resilience
+        });
         this.appAdmin = createApiAdminInboxService({
             inboxQueueReader: inbox,
             outboxQueueReader: outbox,
@@ -116,12 +120,12 @@ export class RealEngineAdminPruneFixture {
     }
 }
 
-function trackDequeue<Args extends unknown[]>(
+function trackDequeue(
     active: Set<Promise<void>>,
-    dequeue: (...args: Args) => Promise<void>
-): (...args: Args) => Promise<void> {
-    return (...args) => {
-        const pending = dequeue(...args);
+    dequeue: (typesToDequeue: Set<string>, resilience: ResilienceDto) => Promise<void>
+): (typesToDequeue: Set<string>, resilience: ResilienceDto) => Promise<void> {
+    return (typesToDequeue, resilience) => {
+        const pending = dequeue(typesToDequeue, resilience);
         active.add(pending);
         void pending.then(
             () => active.delete(pending),

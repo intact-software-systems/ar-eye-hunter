@@ -14,10 +14,11 @@ Read these files before changing behavior:
 
 - `packages/shared-web/browser/rallar.ts`
 - `packages/shared-web/browser/rallar-data.ts`
-- `packages/shared-server/rallar-system/middleware/RallarMiddleware.ts`
-- `packages/shared-server/rallar-facade/RallarServer.ts`
-- `packages/shared-server/rallar-facade/RallarServerApplication.ts`
-- `packages/shared-server/rallar-facade/ws-topic-router.ts`
+- `packages/shared-server/rallar-system/middleware/create-rallar-middleware.ts`
+- `packages/shared-server/rallar-system/middleware/rallar-middleware-construction.ts`
+- `packages/shared-server/rallar-facade/rallar-server.ts`
+- `packages/shared-server/rallar-facade/rallar-server-application.ts`
+- `packages/shared-server/rallar-system/websocket/router/rallar-server-ws-router.ts`
 
 ## When To Use Rallar
 
@@ -140,7 +141,10 @@ if (result.status === 'not-ready') {
 Use Rallar Data for local browser state that should survive reloads or coordinate across tabs.
 
 ```ts
-type Draft = { body: string; updatedAt: number; };
+interface Draft {
+    readonly body: string;
+    readonly updatedAt: number;
+}
 
 const drafts = await rallar.data.open<Draft>('drafts', {
     scope: 'principal',

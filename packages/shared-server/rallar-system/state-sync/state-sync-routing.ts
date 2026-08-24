@@ -1,6 +1,5 @@
 import { readGroupVisibility } from '@shared-server/rallar-system/group-state/policy/group-snapshot-visibility-policy.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import { readALPrincipalBroadcastTarget } from '@shared/al-contracts/read-al-principal-broadcast-target.ts';
 import type { ClientPrincipalRef, ClientSnapshot } from '@shared/api/client-types.ts';
 import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
 import * as clientStateSnapshotsRepository from '@shared/repository/client-state-snapshots-repository.ts';
@@ -13,58 +12,80 @@ import {
     type RallarSnapshotPresenceClock
 } from '../presence/snapshot-presence.ts';
 import {
-    parseStateSyncPayload,
-    readClientSnapshotStateSyncPayload,
+    decodeStateSyncMessage,
     sameScope,
-    type StateSyncScope
+    type StateSyncDecodeResult,
+    type StateSyncPayload
 } from './state-sync-payload.ts';
 
-export type StateSyncRoutingOptions = Readonly<{
-    findGroupSnapshotByRef?: (ref: GroupRef) => GroupSnapshot | undefined;
-    findGroupSnapshotById?: (groupId: string) => GroupSnapshot | undefined;
-    readClientSnapshots?: () => readonly ClientSnapshot[];
-    readGroupSnapshots?: () => readonly GroupSnapshot[];
-    now?: RallarSnapshotPresenceClock;
-}>;
+export interface StateSyncRoutingOptions {
+    readonly findGroupSnapshotByRef?: (ref: GroupRef) => GroupSnapshot | undefined;
+    readonly findGroupSnapshotById?: (groupId: string) => GroupSnapshot | undefined;
+    readonly readClientSnapshots?: () => readonly ClientSnapshot[];
+    readonly readGroupSnapshots?: () => readonly GroupSnapshot[];
+    readonly now?: RallarSnapshotPresenceClock;
+}
 
 export function resolveStateSyncRecipients(
     webSocketServer: JsonWebSocketServer,
     message: ALMessage,
     options: StateSyncRoutingOptions = {}
 ): readonly WsServerResolvedRecipient[] | undefined {
-    const principalTarget = readALPrincipalBroadcastTarget(message);
-    if (principalTarget) {
-        const payloadSnapshot = readClientSnapshotStateSyncPayload(message);
-        return resolvePrincipalRecipients(
-            webSocketServer,
-            {
-                principalRef: principalTarget,
-                payloadSnapshots: payloadSnapshot ? [payloadSnapshot] : []
-            },
-            options
-        );
-    }
-    const payload = parseStateSyncPayload(message);
-    if (!payload) {
+    return resolveDecodedStateSyncRecipients(
+        webSocketServer,
+        decodeStateSyncMessage(message),
+        options
+    );
+}
+
+export function resolveDecodedStateSyncRecipients(
+    webSocketServer: JsonWebSocketServer,
+    decoded: StateSyncDecodeResult,
+    options: StateSyncRoutingOptions = {}
+): readonly WsServerResolvedRecipient[] | undefined {
+    if (decoded.kind === 'unsupported') {
         return undefined;
     }
+    if (decoded.kind === 'invalid') {
+        return [];
+    }
 
+    return resolveStateSyncPayloadRecipients(webSocketServer, decoded.payload, options);
+}
+
+function resolveStateSyncPayloadRecipients(
+    webSocketServer: JsonWebSocketServer,
+    payload: StateSyncPayload,
+    options: StateSyncRoutingOptions
+): readonly WsServerResolvedRecipient[] {
     switch (payload.kind) {
-        case 'invalid':
-            return [];
-        case 'client':
-            return resolveScopeRecipients({
+        case 'client-snapshot':
+            return resolvePrincipalRecipients(
                 webSocketServer,
-                scope: payload.scope,
-                options,
-                extraSnapshots: payload.snapshot ? [payload.snapshot] : []
-            });
-        case 'group':
+                {
+                    principalRef: payload.snapshot.principal,
+                    payloadSnapshots: [payload.snapshot]
+                },
+                options
+            );
+        case 'client-event':
+            return resolvePrincipalRecipients(
+                webSocketServer,
+                {
+                    principalRef: payload.event,
+                    payloadSnapshots: []
+                },
+                options
+            );
+        case 'group-snapshot':
             return resolveGroupRecipients(webSocketServer, payload.snapshot, options);
-        case 'group-directory':
+        case 'group-directory-snapshot':
             return resolveGroupRecipients(webSocketServer, payload.snapshot, options);
         case 'group-event':
-            return toOpenConnectionRecipients(webSocketServer, payload.audienceSessionIds);
+            return toOpenConnectionRecipients(
+                webSocketServer,
+                payload.envelope.audienceSessionIds
+            );
     }
 }
 
@@ -112,28 +133,6 @@ function resolvePrincipalRecipients(
         )
         .flatMap((snapshot) => resolveGroupRecipients(webSocketServer, snapshot, options));
     return dedupRecipients([...ownRecipients, ...coGroupRecipients]);
-}
-
-interface ResolveScopeRecipientsInput {
-    readonly webSocketServer: JsonWebSocketServer;
-    readonly scope: StateSyncScope;
-    readonly options: StateSyncRoutingOptions;
-    readonly extraSnapshots?: readonly ClientSnapshot[];
-}
-
-function resolveScopeRecipients(input: ResolveScopeRecipientsInput): readonly WsServerResolvedRecipient[] {
-    const { webSocketServer, scope, options, extraSnapshots = [] } = input;
-    const snapshots = [
-        ...(options.readClientSnapshots?.() ??
-            clientStateSnapshotsRepository.getAllClientStateSnapshots()),
-        ...extraSnapshots
-    ];
-
-    return dedupRecipients(
-        snapshots
-            .filter((snapshot) => sameScope(snapshot.principal, scope))
-            .flatMap((snapshot) => toOpenClientSessionRecipients(webSocketServer, snapshot, options))
-    );
 }
 
 function resolveGroupRecipients(

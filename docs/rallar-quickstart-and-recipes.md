@@ -581,25 +581,19 @@ const runtime = createRallarMiddleware({
     findGroupSnapshotByRef: (ref) => groupSnapshotCache.findByRef(ref),
     inboundStores,
     outboundStores,
-    createAppGroupInboxService: ({ inboxQueueReader, wsQBoxServerService }) =>
-        new AppGroupInboxService(
-            inboxQueueReader,
-            resourceInboxRepository,
-            resourceInboxResultsRepository,
-            groupStateService,
-            createWsStateSyncPublisher(wsQBoxServerService, { serverId }),
-            serverId
-        ),
-    createAppClientInboxService: ({ inboxQueueReader, wsQBoxServerService }) =>
-        new AppClientInboxService(
-            inboxQueueReader,
-            resourceInboxRepository,
-            resourceInboxResultsRepository,
-            clientStateService,
-            createWsStateSyncPublisher(wsQBoxServerService, { serverId }),
-            serverId
-        ),
-    resilience: { inbox: resilienceInbox, outbox: resilienceOutbox },
+    createGroupStateInboxService,
+    createTopologyInboxService,
+    createRtcRttInboxService,
+    createAppClientInboxService,
+    createAppAuthInboxService,
+    createAppAdminInboxService,
+    createAppCrdtInboxService,
+    resilience: {
+        inbox: resilienceInbox,
+        outbox: resilienceOutbox,
+        appInbox: resilienceAppInbox,
+        appOutbox: resilienceAppOutbox
+    },
     clientsRepository,
     groupsRepository
 });

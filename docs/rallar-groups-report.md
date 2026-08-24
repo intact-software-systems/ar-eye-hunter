@@ -38,9 +38,9 @@ Primary shared/server files:
 - `packages/shared/api/group-types.ts`
 - `packages/shared/api/state-types.ts`
 - `packages/shared/api/group-client-views.ts`
-- `packages/shared-server/rallar-system/services/group-state-service.ts`
-- `packages/shared-server/rallar-system/services/ws-topic-room-authorizer.ts`
-- `packages/shared-server/rallar-system/state-sync-routing.ts`
+- `packages/shared-server/rallar-system/group-state/group-state-service.ts`
+- `packages/shared-server/rallar-system/websocket/ws-topic-room-authorizer.ts`
+- `packages/shared-server/rallar-system/state-sync/state-sync-routing.ts`
 - `apps/api-v1/src/routes/group-state-routes.ts`
 - `apps/api-v1/src/main.ts`
 

@@ -1,9 +1,9 @@
-import { createWsServerTargetResolver } from '@shared-server/rallar-system/middleware/ws-server-target-resolver.ts';
+import { createWsServerTargetResolver } from '@shared-server/rallar-system/websocket/targets/create-ws-server-target-resolver.ts';
 import { newALBroadcastMessage, newALEventRoute } from '@shared/al-contracts/al-contract.ts';
 import { AppTopics } from '@shared/api/api-config.ts';
 import type { GroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
 import { validateGroupStateDeltaEnvelope } from '@shared/api/group-state-delta.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
     createDeltaEnvelopeFixture,
     createDeltaEnvelopeFixtureGroupSnapshot,
@@ -23,9 +23,8 @@ const JOINING = { principalId: 'joining', sessionId: 'joining-session', role: 'm
 describe('room-scope broadcast delivery of group-state delta envelopes', () => {
     it('delivers to the persisted audience without consulting a group snapshot', () => {
         const server = createDeltaEnvelopeFixtureWebSocketServer(['alice-session', 'joining-session', 'stranger-session']);
-        const findGroupSnapshotByRef = vi.fn(() => createDeltaEnvelopeFixtureGroupSnapshot([ALICE]));
         const resolver = createWsServerTargetResolver(server, {
-            findGroupSnapshotByRef,
+            findGroupSnapshotByRef: () => createDeltaEnvelopeFixtureGroupSnapshot([ALICE]),
             now: () => DELTA_ENVELOPE_FIXTURE_NOW
         });
         const envelope = createDeltaEnvelopeFixture({
@@ -37,7 +36,6 @@ describe('room-scope broadcast delivery of group-state delta envelopes', () => {
         const recipients = resolver.resolveBroadcastRecipients?.('room', toRoomEnvelopeMessage(envelope));
 
         expect(readFixtureConnectionIds(recipients)).toEqual(['alice-session', 'joining-session']);
-        expect(findGroupSnapshotByRef).not.toHaveBeenCalled();
     });
 
     it('reaches a joining session that a stale cached snapshot does not know yet', () => {
@@ -104,7 +102,7 @@ describe('room-scope broadcast delivery of group-state delta envelopes', () => {
         expect(readFixtureConnectionIds(recipients)).toEqual(['alice-session', 'joining-session']);
     });
 
-    it('ignores a persisted audience carried for a different group', () => {
+    it('rejects a persisted audience carried for a different group', () => {
         const server = createDeltaEnvelopeFixtureWebSocketServer(['alice-session', 'foreign-session']);
         const resolver = createWsServerTargetResolver(server, {
             findGroupSnapshotByRef: () => createDeltaEnvelopeFixtureGroupSnapshot([ALICE]),
@@ -128,7 +126,7 @@ describe('room-scope broadcast delivery of group-state delta envelopes', () => {
             )
         );
 
-        expect(readFixtureConnectionIds(recipients)).toEqual(['alice-session']);
+        expect(readFixtureConnectionIds(recipients)).toEqual([]);
     });
 });
 

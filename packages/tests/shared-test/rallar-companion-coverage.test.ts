@@ -92,13 +92,13 @@ describe('Rallar companion coverage boundaries', () => {
         expect(RALLAR_FACADE_METHODS_NOT_RECIPE_COMMANDS).not.toContain('media.start');
     });
 
-    it('maps direct facade surfaces to companion package or app-level tests', () => {
+    it('maps direct package surfaces to companion package or app-level tests', () => {
         const expectedSurfaces = [
             'browser-auth-and-session',
             'browser-room-and-people-facades',
             'browser-message-and-realtime-facades',
             'browser-data-facade',
-            'server-rest-and-ws-facades',
+            'server-application-and-websocket-router',
             'remote-browser-command-bridge',
             'black-box-network-recipes',
             'app-specific-data-media-behavior'

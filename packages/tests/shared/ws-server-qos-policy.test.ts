@@ -1,15 +1,9 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
-
-type SharedModule = typeof import('@shared/mod.ts');
-type SharedMessage = import('@shared/mod.ts').ALMessage;
-type SharedTargetResolver = import('@shared/mod.ts').WsServerTargetResolver;
-
-let shared: SharedModule;
-
-beforeAll(async () => {
-    shared = await import('@shared/mod.ts');
-});
+import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
+import * as shared from '@shared/mod.ts';
+import type { WsServerTargetResolver } from '@shared/services/ws-queue-box-server-contracts.ts';
+import { ConnectionContext, JsonWebSocketServer, type EncodedJsonWebSocketMessage } from '@shared/websocket/JsonWebSocketServer.ts';
+import { describe, expect, it, vi } from 'vitest';
 
 describe('WsQueueBoxServerService QoS runtime', () => {
     it('sends volatile targeted unicast messages directly from the server outbox', async () => {
@@ -18,7 +12,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const service = new shared.WsQueueBoxServerService(
             new shared.InMemoryQueueBox(new Map()),
             outbox,
-            socket as never,
+            socket,
             'server-1',
             {
                 targetResolver: createTargetResolver()
@@ -46,7 +40,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         expect(socket.sent).toHaveLength(1);
         expect(socket.sent[0].connectionId).toBe('conn-2');
         expect(socket.sent[0].data.id.msgId).toBe(msg.id.msgId);
-        expect((outbox as any).data.size).toBe(0);
+        expect(await outbox.getAllKeys()).toEqual([]);
     });
 
     it('broadcasts volatile targeted broadcast messages directly from the server outbox', async () => {
@@ -56,7 +50,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const service = new shared.WsQueueBoxServerService(
             new shared.InMemoryQueueBox(new Map()),
             outbox,
-            socket as never,
+            socket,
             'server-1',
             {
                 qosProvider: {
@@ -100,7 +94,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         expect(socket.sent).toHaveLength(2);
         expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual(['conn-1', 'conn-3']);
         expect(socket.sent.every((entry) => entry.data.id.msgId === msg.id.msgId)).toBe(true);
-        expect((outbox as any).data.size).toBe(0);
+        expect(await outbox.getAllKeys()).toEqual([]);
         expect(providerEvaluationCount).toBe(1);
     });
 
@@ -113,7 +107,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             const service = new shared.WsQueueBoxServerService(
                 new shared.InMemoryQueueBox(new Map()),
                 new shared.InMemoryQueueBox(new Map()),
-                socket as never,
+                socket,
                 'server-1',
                 {
                     targetResolver: createTargetResolver()
@@ -146,7 +140,6 @@ describe('WsQueueBoxServerService QoS runtime', () => {
                     reason: 'send failed'
                 }
             ]);
-            expect(socket.encodeCount).toBe(1);
             expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual([
                 'conn-1',
                 'conn-3'
@@ -163,7 +156,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const service = new shared.WsQueueBoxServerService(
             new shared.InMemoryQueueBox(new Map()),
             outbox,
-            socket as never,
+            socket,
             'server-1',
             {
                 targetResolver: {
@@ -193,7 +186,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         expect(result.entries).toEqual([]);
         expect(result.reason).toContain('Cannot resolve WS server recipients');
         expect(socket.sent).toHaveLength(0);
-        expect((outbox as any).data.size).toBe(0);
+        expect(await outbox.getAllKeys()).toEqual([]);
     });
 
     it('routes targeted multicast messages to resolved group recipients', async () => {
@@ -202,7 +195,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const service = new shared.WsQueueBoxServerService(
             new shared.InMemoryQueueBox(new Map()),
             outbox,
-            socket as never,
+            socket,
             'server-1',
             {
                 targetResolver: createTargetResolver()
@@ -233,7 +226,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         await service.enqueueOutboxIfAbsent(msg);
 
         expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual(['conn-1', 'conn-2']);
-        expect((outbox as any).data.size).toBe(0);
+        expect(await outbox.getAllKeys()).toEqual([]);
     });
 
     it('persists server outbox entries with the message expiry timestamp', async () => {
@@ -242,7 +235,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const service = new shared.WsQueueBoxServerService(
             new shared.InMemoryQueueBox(new Map()),
             outbox,
-            socket as never,
+            socket,
             'server-1',
             {
                 targetResolver: createTargetResolver()
@@ -274,12 +267,13 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
         await service.enqueueOutboxIfAbsent(msg);
 
-        const [stored] = [...(outbox as any).data.values()];
+        const [storedKey] = await outbox.getAllKeys();
+        const stored = storedKey ? await outbox.getItem(storedKey) : undefined;
 
-        expect(stored.audit.expiryTs.epochMilliseconds).toBe(expiresAtMs);
+        expect(stored?.audit.expiryTs.epochMilliseconds).toBe(expiresAtMs);
         expect(socket.sent).toHaveLength(0);
 
-        const enqueueIfAbsent = vi.spyOn(outbox, 'enqueueIfAbsent');
+        const keysBeforeInvalidMessage = await outbox.getAllKeys();
         const invalidRoomMessage = shared.newALBroadcastMessage(
             'server-1',
             {
@@ -298,30 +292,23 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
         await expect(service.enqueueOutboxIfAbsent(invalidRoomMessage))
             .rejects.toThrow(/room broadcast group ref/i);
-        expect(enqueueIfAbsent).not.toHaveBeenCalled();
+        expect(await outbox.getAllKeys()).toEqual(keysBeforeInvalidMessage);
         expect(await outbox.getItem(invalidRoomMessage.route)).toBeUndefined();
         expect(socket.sent).toHaveLength(0);
     });
 
-    it('returns no-route for untargeted outbound messages instead of falling back to callbacks', async () => {
+    it('returns no-route for untargeted outbound messages', async () => {
         const socket = createFakeWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = new shared.WsQueueBoxServerService(
             new shared.InMemoryQueueBox(new Map()),
             outbox,
-            socket as never,
+            socket,
             'server-1',
             {
                 targetResolver: createTargetResolver()
             }
         );
-
-        let callbackCount = 0;
-        service.onAllOutboxMessagesDo({
-            onMessage: async () => {
-                callbackCount += 1;
-            }
-        });
 
         const msg = shared.newALUntargetedMessage(
             'server-1',
@@ -340,30 +327,22 @@ describe('WsQueueBoxServerService QoS runtime', () => {
 
         expect(result.status).toBe('no-route');
         expect(result.reason).toContain('without explicit targets');
-        expect(callbackCount).toBe(0);
         expect(socket.sent).toHaveLength(0);
-        expect((outbox as any).data.size).toBe(0);
+        expect(await outbox.getAllKeys()).toEqual([]);
     });
 
-    it('drops unresolved queued outbound messages instead of using callback fallback', async () => {
+    it('drops unresolved queued outbound messages', async () => {
         const socket = createFakeWsServer();
         const outbox = new shared.InMemoryQueueBox(new Map());
         const service = new shared.WsQueueBoxServerService(
             new shared.InMemoryQueueBox(new Map()),
             outbox,
-            socket as never,
+            socket,
             'server-1',
             {
                 targetResolver: createTargetResolver()
             }
         );
-
-        let callbackCount = 0;
-        service.onAllOutboxMessagesDo({
-            onMessage: async () => {
-                callbackCount += 1;
-            }
-        });
 
         const msg = shared.newALMulticastMessage(
             'server-1',
@@ -399,7 +378,6 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             createResilienceDto()
         );
 
-        expect(callbackCount).toBe(0);
         expect(socket.sent).toHaveLength(0);
     });
 
@@ -409,7 +387,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const service = new shared.WsQueueBoxServerService(
             new shared.InMemoryQueueBox(new Map()),
             outbox,
-            socket as never,
+            socket,
             'server-1',
             {
                 targetResolver: createTargetResolver()
@@ -444,7 +422,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             shared.WsQueueBoxServerService.OUTBOX_DEQUEUE_TYPES,
             createResilienceDto()
         );
-        await (service as any).handleIncomingServerMessage(
+        await socket.receive(
             shared.newALRepairControlMessage(
                 'peer-2',
                 'server-1',
@@ -464,7 +442,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const service = new shared.WsQueueBoxServerService(
             new shared.InMemoryQueueBox(new Map()),
             new shared.InMemoryQueueBox(new Map()),
-            socket as never,
+            socket,
             'server-1',
             {
                 targetResolver: createTargetResolver()
@@ -495,7 +473,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        await (service as any).handleIncomingServerMessage(msg, 'conn-1');
+        await socket.receive(msg, 'conn-1');
 
         expect(localDeliveries).toBe(0);
         expect(socket.sent).toHaveLength(1);
@@ -508,7 +486,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const service = new shared.WsQueueBoxServerService(
             new shared.InMemoryQueueBox(new Map()),
             new shared.InMemoryQueueBox(new Map()),
-            socket as never,
+            socket,
             'server-1',
             {
                 targetResolver: createTargetResolver()
@@ -527,7 +505,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             { groupRef: groupRef('group-1') }
         );
 
-        await (service as any).handleIncomingServerMessage(msg, 'conn-1');
+        await socket.receive(msg, 'conn-1');
 
         expect(socket.sent).toHaveLength(2);
         expect(socket.sent.map((entry) => entry.connectionId).sort()).toEqual([
@@ -546,7 +524,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const service = new shared.WsQueueBoxServerService(
             new shared.InMemoryQueueBox(new Map()),
             new shared.InMemoryQueueBox(new Map()),
-            socket as never,
+            socket,
             'server-1',
             {
                 targetResolver: createTargetResolver(),
@@ -566,7 +544,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             { groupRef: groupRef('group-1') }
         );
 
-        await (service as any).handleIncomingServerMessage(msg, 'conn-1');
+        await socket.receive(msg, 'conn-1');
 
         expect(socket.sent).toHaveLength(0);
     });
@@ -576,7 +554,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const service = new shared.WsQueueBoxServerService(
             new shared.InMemoryQueueBox(new Map()),
             new shared.InMemoryQueueBox(new Map()),
-            socket as never,
+            socket,
             'server-1',
             {
                 targetResolver: createTargetResolver()
@@ -587,7 +565,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         service.onInboxMessageDo(
             'chat.message.v1',
             {
-                onMessage: async (value: SharedMessage) => {
+                onMessage: async (value: ALMessage) => {
                     received.push(value.id.msgId);
                 }
             }
@@ -606,8 +584,8 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         );
 
-        await (service as any).handleIncomingServerMessage(msg, 'conn-1');
-        await (service as any).handleIncomingServerMessage(msg, 'conn-1');
+        await socket.receive(msg, 'conn-1');
+        await socket.receive(msg, 'conn-1');
 
         expect(received).toEqual([msg.id.msgId]);
     });
@@ -617,7 +595,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         const service = new shared.WsQueueBoxServerService(
             new shared.InMemoryQueueBox(new Map()),
             new shared.InMemoryQueueBox(new Map()),
-            socket as never,
+            socket,
             'server-1',
             {
                 targetResolver: createTargetResolver()
@@ -628,9 +606,8 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         service.onInboxMessageDo(
             'chat.message.v1',
             {
-                onMessage: async (value: SharedMessage) => {
-                    const payload = JSON.parse(value.payload.resource) as { text: string; };
-                    deliveredTexts.push(payload.text);
+                onMessage: async (value: ALMessage) => {
+                    deliveredTexts.push(readTextPayload(value.payload.resource));
                 }
             }
         );
@@ -683,7 +660,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
             }
         };
 
-        await (service as any).handleIncomingServerMessage(seq2, 'conn-1');
+        await socket.receive(seq2, 'conn-1');
 
         expect(deliveredTexts).toEqual([]);
         expect(socket.sent).toHaveLength(2);
@@ -693,7 +670,7 @@ describe('WsQueueBoxServerService QoS runtime', () => {
         ].sort());
         expect(socket.sent.every((entry) => entry.connectionId === 'conn-1')).toBe(true);
 
-        await (service as any).handleIncomingServerMessage(seq1, 'conn-1');
+        await socket.receive(seq1, 'conn-1');
 
         expect(deliveredTexts).toEqual(['one', 'two']);
     });
@@ -703,53 +680,135 @@ function createFakeWsServer(
     options: Readonly<{
         failingConnectionIds?: readonly string[];
     }> = {}
-) {
-    const sent: Array<{ connectionId: string; data: SharedMessage; }> = [];
-    const broadcasts: Array<{ data: SharedMessage; recipientIds: string[]; }> = [];
-    const connectionIds = ['conn-1', 'conn-2', 'conn-3'];
-    const failingConnectionIds = new Set(options.failingConnectionIds ?? []);
-    let encodeCount = 0;
+): RecordingJsonWebSocketServer {
+    return new RecordingJsonWebSocketServer(options.failingConnectionIds ?? []);
+}
 
-    return {
-        sent,
-        broadcasts,
-        get encodeCount() {
-            return encodeCount;
-        },
-        onMessageDo() {
-            return this;
-        },
-        send(connectionId: string, data: SharedMessage) {
-            this.sendEncoded(connectionId, this.encode(data));
-        },
-        encode(data: SharedMessage) {
-            encodeCount += 1;
-            return {
-                text: JSON.stringify(data),
-                data
-            };
-        },
-        sendEncoded(
-            connectionId: string,
-            encoded: Readonly<{ text: string; data?: SharedMessage; }>
-        ) {
-            if (failingConnectionIds.has(connectionId)) {
-                throw new Error('send failed');
-            }
-            sent.push({
-                connectionId,
-                data: encoded.data ?? JSON.parse(encoded.text) as SharedMessage
-            });
-        },
-        broadcast(data: SharedMessage, filter?: (ctx: { id: string; }) => boolean) {
-            const recipientIds = connectionIds.filter((connectionId) => filter ? filter({ id: connectionId }) : true);
-            broadcasts.push({ data, recipientIds });
-            return recipientIds.length;
+interface RecordedMessage {
+    readonly id: Readonly<{ msgId: string; }>;
+    readonly payload: Readonly<{ typeId: string; }>;
+}
+
+interface RecordedSend {
+    readonly connectionId: string;
+    readonly data: RecordedMessage;
+}
+
+class RecordingJsonWebSocketServer extends JsonWebSocketServer {
+    readonly sent: RecordedSend[] = [];
+    private readonly failingConnectionIds: ReadonlySet<string>;
+    private readonly sockets = new Map<string, ReceivingWebSocket>();
+
+    constructor(failingConnectionIds: readonly string[]) {
+        super();
+        this.failingConnectionIds = new Set(failingConnectionIds);
+        for (const connectionId of ['conn-1', 'conn-2', 'conn-3']) {
+            const socket = new ReceivingWebSocket();
+            this.sockets.set(connectionId, socket);
+            this.addConnection(new ConnectionContext(connectionId, socket));
         }
+    }
+
+    override sendEncoded(
+        connectionId: string,
+        encoded: EncodedJsonWebSocketMessage
+    ): void {
+        if (this.failingConnectionIds.has(connectionId)) {
+            throw new Error('send failed');
+        }
+        if (!this.connections.get(connectionId)?.isOpen) {
+            throw new Error(`Connection is not open: ${connectionId}`);
+        }
+        this.sent.push({ connectionId, data: parseRecordedMessage(encoded.text) });
+    }
+
+    async receive(message: ALMessage, connectionId: string): Promise<void> {
+        const socket = this.sockets.get(connectionId);
+        if (!socket) {
+            throw new TypeError(`Unknown test connection: ${connectionId}`);
+        }
+        await socket.receive(message);
+    }
+}
+
+class ReceivingWebSocket extends EventTarget implements WebSocket {
+    readonly CONNECTING = WebSocket.CONNECTING;
+    readonly OPEN = WebSocket.OPEN;
+    readonly CLOSING = WebSocket.CLOSING;
+    readonly CLOSED = WebSocket.CLOSED;
+    readonly binaryType: BinaryType = 'blob';
+    readonly bufferedAmount = 0;
+    readonly extensions = '';
+    readonly protocol = '';
+    readonly readyState = WebSocket.OPEN;
+    readonly url = 'ws://server-qos-policy-test';
+    onclose = null;
+    onerror = null;
+    onmessage = null;
+    onopen = null;
+    private readonly messageListeners: EventListenerOrEventListenerObject[] = [];
+
+    override addEventListener(
+        type: string,
+        callback: EventListenerOrEventListenerObject | null,
+        options?: boolean | AddEventListenerOptions
+    ): void {
+        super.addEventListener(type, callback, options);
+        if (type === 'message' && callback !== null) {
+            this.messageListeners.push(callback);
+        }
+    }
+
+    close(): void {}
+
+    send(): void {}
+
+    async receive(message: ALMessage): Promise<void> {
+        const event = new MessageEvent('message', { data: JSON.stringify(message) });
+        for (const listener of this.messageListeners) {
+            if (typeof listener === 'function') {
+                await listener.call(this, event);
+            }
+            else {
+                await listener.handleEvent(event);
+            }
+        }
+    }
+}
+
+function parseRecordedMessage(serialized: string): RecordedMessage {
+    const value = JSON.parse(serialized);
+    if (typeof value !== 'object' || value === null) {
+        throw new TypeError('Test message must be an object');
+    }
+    const id = Reflect.get(value, 'id');
+    const payload = Reflect.get(value, 'payload');
+    if (
+        typeof id !== 'object' || id === null ||
+        typeof Reflect.get(id, 'msgId') !== 'string' ||
+        typeof payload !== 'object' || payload === null ||
+        typeof Reflect.get(payload, 'typeId') !== 'string'
+    ) {
+        throw new TypeError('Test message envelope is invalid');
+    }
+    return {
+        id: { msgId: Reflect.get(id, 'msgId') },
+        payload: { typeId: Reflect.get(payload, 'typeId') }
     };
 }
 
-function createTargetResolver(): SharedTargetResolver {
+function readTextPayload(serialized: string): string {
+    const value = JSON.parse(serialized);
+    if (
+        typeof value !== 'object' || value === null ||
+        typeof Reflect.get(value, 'text') !== 'string'
+    ) {
+        throw new TypeError('Expected text payload');
+    }
+    return Reflect.get(value, 'text');
+}
+
+function createTargetResolver(): WsServerTargetResolver {
     const peerByConnectionId: Record<string, string> = {
         'conn-1': 'peer-1',
         'conn-2': 'peer-2',

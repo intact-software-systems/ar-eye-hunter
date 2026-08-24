@@ -55,8 +55,6 @@ to vary by machine, Postgres state, runtime version, cache warmth, and load.
 | `seed-perf-db-sparse-queue.sql`                      | Worst-case sparse queue fixture and EXPLAIN for runnable-row selection.                                                                                                           |
 | `client-list-fanout-bench.ts`                        | Client snapshot fanout/pagination workload.                                                                                                                                       |
 | `group-list-fanout-bench.ts`                         | Group snapshot fanout/pagination workload.                                                                                                                                        |
-| `state-sync/state-sync-resolve-member-scan-bench.ts` | State-sync member resolution scan workload.                                                                                                                                       |
-| `state-sync/state-sync-send-fanout-bench.ts`         | State-sync send fanout workload.                                                                                                                                                  |
 
 ## RTC/WebRTC benchmark package
 

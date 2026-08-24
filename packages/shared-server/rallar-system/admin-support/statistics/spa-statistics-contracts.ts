@@ -5,8 +5,8 @@ import type {
     WorkspaceSpaStatisticsResponse
 } from '@shared/api/spa-statistics-types.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
-import type { RallarServerWsStatus } from '../../../rallar-facade/ws-topic-router.ts';
 import type { ClientStateService } from '../../client-state/client-state-service-contracts.ts';
+import type { RallarServerWsStatus } from '../../websocket/router/rallar-server-ws-status.ts';
 import type { SpaStatisticsGroupStateReads } from './spa-statistics-group-reads.ts';
 
 export interface SpaStatisticsDependencies {

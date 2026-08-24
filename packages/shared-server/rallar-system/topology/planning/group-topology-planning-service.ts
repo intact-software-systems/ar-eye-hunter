@@ -293,7 +293,7 @@ export class GroupTopologyPlanningService {
             return false;
         }
         const createdAtEpochMs = this.dependencies.topologyService.readNowEpochMs();
-        await resolvedPublisher(
+        const deliveredCount = await resolvedPublisher(
             materializeRtcOverlayTopologyBroadcastMessage(group, result.snapshot, {
                 workId: crypto.randomUUID(),
                 createdAtEpochMs,
@@ -301,8 +301,9 @@ export class GroupTopologyPlanningService {
             }),
             result.snapshot
         );
-        this.recordTopologyPublication(true);
-        return true;
+        const published = deliveredCount > 0;
+        this.recordTopologyPublication(published);
+        return published;
     }
 
     private requireLocalTopology(message: string): void {

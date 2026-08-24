@@ -5,9 +5,9 @@ import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import type {
     WsSessionGenerationCloseFacts,
     WsSessionGenerationLifecycleComputed,
-    WsSessionGenerationLifecycleService,
     WsSessionHighWaterIdentity
-} from '../../websocket/ws-session-generation-lifecycle.ts';
+} from '../../websocket/ws-session-generation-computation.ts';
+import type { WsSessionGenerationLifecycleService } from '../../websocket/ws-session-generation-lifecycle.ts';
 import type {
     GroupMutationPreparation,
     GroupStateMutationCommand,

@@ -1,9 +1,10 @@
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
+import { installRtcRttSystemTopic, type InstallRtcRttSystemTopicOptions } from '@shared-server/rallar-system/rtc-rtt/topic/install-rtc-rtt-system-topic.ts';
 import type { GroupTopologyGroupSnapshotReader } from '@shared-server/rallar-system/topology/group-topology-management-contracts.ts';
 import { RtcTopologyExecutionRepository } from '@shared-server/rallar-system/topology/persistence/rtc-topology-execution-repository.ts';
 import { createGroupTopologyOwners, type GroupTopologyOwners } from '@shared-server/rallar-system/topology/runtime/create-group-topology-owners.ts';
+import { installTopologyAppOutbox } from '@shared-server/rallar-system/topology/runtime/install-topology-app-outbox.ts';
 import { RallarRtcTopologyService } from '@shared-server/rallar-system/topology/runtime/rallar-rtc-topology-service.ts';
-import { initRallarSystemWsTopics, type InitRallarSystemWsTopicsOptions } from '@shared-server/rallar-system/websocket/ws-system-topics.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import type { AuditStamp, GroupSnapshot } from '@shared/api/group-types.ts';
 import {
@@ -274,10 +275,9 @@ describe('RTC RTT websocket topic', () => {
             }
 
             const service = new WsQueueBoxServerService(new InMemoryQueueBox(new Map()), new InMemoryQueueBox(new Map()), server, 'server-1');
-            initRallarSystemWsTopics(service, {
-                rtcTopologyOptions: {
-                    rttRebuildDebounceMs: 100
-                }
+            installRtcRttSystemTopic(service, {
+                serviceOptions: { rttRebuildDebounceMs: 100 },
+                findGroupSnapshotByRef: (ref) => groupStateSnapshotsRepository.findGroupStateSnapshotByRef(ref)
             });
 
             const group = createGroupSnapshot('room-1', [...sockets.keys()]);
@@ -353,17 +353,22 @@ describe('RTC RTT websocket topic', () => {
             const service = new WsQueueBoxServerService(new InMemoryQueueBox(new Map()), new InMemoryQueueBox(new Map()), server, 'server-1');
             const group = createGroupSnapshot('room-1', [...sockets.keys()]);
             const findGroupSnapshotByRef = vi.fn(() => Promise.resolve(group));
-            initRallarSystemWsTopics(service, {
-                rtcTopologyOptions: {
-                    rttRebuildDebounceMs: 100
-                },
-                ...topologyOptions(createTopologyOwners(undefined, findGroupSnapshotByRef)),
-                rtcTopologyAppOutbox: {
-                    outboxQueueReader,
-                    ...createTopologyExecutionDependencies(runtimeRepository),
-                    wake,
-                    findGroupSnapshotByRef
-                }
+            const owners = createTopologyOwners(undefined, findGroupSnapshotByRef);
+            const topologyWorkPublisher = installTopologyAppOutbox({
+                outboxQueueReader,
+                ...createTopologyExecutionDependencies(runtimeRepository),
+                senderId: service.name,
+                wake,
+                findGroupSnapshotByRef,
+                topologyQuery: owners.query,
+                topologyPlanning: owners.planning,
+                nowEpochMs: Date.now
+            });
+            installRtcRttSystemTopic(service, {
+                serviceOptions: { rttRebuildDebounceMs: 100 },
+                topologyQuery: owners.query,
+                topologyWorkPublisher,
+                findGroupSnapshotByRef
             });
 
             clientStateSnapshotsRepository.setClientStateSnapshots([...sockets.keys()].map(createClientSnapshot));
@@ -481,7 +486,7 @@ function createRttHarness(
     sessionIds: readonly string[],
     options: Readonly<{
         rtcTopologyOptions?: ConstructorParameters<typeof RallarRtcTopologyService>[0];
-        enqueueRtcRttMutation?: InitRallarSystemWsTopicsOptions['enqueueRtcRttMutation'];
+        enqueueRtcRttMutation?: InstallRtcRttSystemTopicOptions['enqueueMutation'];
     }> = {}
 ): {
     readonly sockets: Map<string, FakeSocket>;
@@ -495,9 +500,10 @@ function createRttHarness(
 
     const service = new WsQueueBoxServerService(new InMemoryQueueBox(new Map()), new InMemoryQueueBox(new Map()), server, 'server-1');
     const topologyService = new RallarRtcTopologyService(options.rtcTopologyOptions);
-    initRallarSystemWsTopics(service, {
-        rtcTopologyService: topologyService,
-        enqueueRtcRttMutation: options.enqueueRtcRttMutation
+    installRtcRttSystemTopic(service, {
+        service: topologyService,
+        enqueueMutation: options.enqueueRtcRttMutation,
+        findGroupSnapshotByRef: (ref) => groupStateSnapshotsRepository.findGroupStateSnapshotByRef(ref)
     });
 
     return { sockets, topologyService };

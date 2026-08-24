@@ -4,9 +4,9 @@ import type { AppInboxExecutionMetadata, AppInboxMessageContext } from '../../ap
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/app-inbox-transaction-writer.ts';
 import {
     type WsSessionGenerationFacts,
-    type WsSessionGenerationLifecycleComputed,
-    type WsSessionGenerationLifecycleService
-} from '../../websocket/ws-session-generation-lifecycle.ts';
+    type WsSessionGenerationLifecycleComputed
+} from '../../websocket/ws-session-generation-computation.ts';
+import type { WsSessionGenerationLifecycleService } from '../../websocket/ws-session-generation-lifecycle.ts';
 import {
     requiresClientWrite,
     toClientStateWritten,

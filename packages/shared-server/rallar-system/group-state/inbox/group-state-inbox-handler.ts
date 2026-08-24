@@ -4,10 +4,8 @@ import type {
     GroupFormationGroupMutationSink,
     GroupFormationMutationOutcome
 } from '../../observability/formation-metrics.ts';
-import type {
-    WsSessionGenerationLifecycleComputed,
-    WsSessionGenerationLifecycleService
-} from '../../websocket/ws-session-generation-lifecycle.ts';
+import type { WsSessionGenerationLifecycleComputed } from '../../websocket/ws-session-generation-computation.ts';
+import type { WsSessionGenerationLifecycleService } from '../../websocket/ws-session-generation-lifecycle.ts';
 import { GroupMutationAuthorizationError } from '../group-mutation-authority.ts';
 import type {
     AuthorizedGroupMutation,

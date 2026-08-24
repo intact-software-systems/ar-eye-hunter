@@ -7,7 +7,7 @@ import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app
 import type {
     RallarAdminInboxServiceFactory,
     RallarCrdtInboxServiceFactory
-} from '@shared-server/rallar-system/middleware/rallar-middleware-options.ts';
+} from '@shared-server/rallar-system/middleware/rallar-middleware-inbox-service-factories.ts';
 import type { RallarTimingSink } from '@shared-server/rallar-system/observability/timing.ts';
 
 import { createApiAdminInboxService } from '../admin-operations/create-api-admin-inbox-service.ts';

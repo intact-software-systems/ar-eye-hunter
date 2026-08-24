@@ -198,8 +198,10 @@ Use this checklist when Rallar behavior is surprising in a browser or server int
 
 - `createRallarMiddleware(...)` receives durable queuebox repositories in production.
 - `outbox` is set when inbound and outbound queues are separate.
-- `createAppGroupInboxService` and `createAppClientInboxService` use durable resource inbox and results repositories.
-- `createWsStateSyncPublisher(...)` uses the same `wsQBoxServerService`.
+- Group-state, topology, RTC-RTT, client, and configured auth/admin/CRDT inbox
+  factories use durable resource-inbox and result repositories.
+- Feature-owned state-sync publication uses the middleware's
+  `wsQBoxServerService` and is installed before worker start.
 - `findGroupSnapshotByRef` uses a current or read-through cache.
 - `inboundStores` and `outboundStores` are configured for AL runtime persistence.
 - `runtime.qboxEngine.start()` is called.

@@ -2,17 +2,26 @@ import { installRallarGameAuthorityServer, type RallarGameAuthorityServerRallarF
 import type {
     RallarServerWsMessage,
     RallarServerWsMessageContext,
+    RallarServerWsPayload,
     RallarServerWsSelector,
     RallarServerWsTopicDefinition
-} from '@shared-server/rallar-facade/ws-topic-router.ts';
+} from '@shared-server/rallar-system/websocket/router/rallar-server-ws-router-contracts.ts';
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
 import type { GroupRef } from '@shared/api/group-types.ts';
 import { createRallarGameAuthorityEnvelope, type RallarGameAuthorityEnvelope, type RallarGameAuthorityRef } from '@shared/rallar-game/mod.ts';
 import { describe, expect, it, vi } from 'vitest';
 
-type Command = Readonly<{ action: string; }>;
-type Snapshot = Readonly<{ tick: number; }>;
-type Event = Readonly<{ kind: string; }>;
+interface Command {
+    readonly action: string;
+}
+
+interface Snapshot {
+    readonly tick: number;
+}
+
+interface Event {
+    readonly kind: string;
+}
 
 const roomRef: GroupRef = {
     applicationId: 'app-1',
@@ -73,13 +82,16 @@ describe('Rallar Game Authority server installer', () => {
 
     it('rejects invalid command envelopes before app handlers run', async () => {
         const fake = createFakeServerRallar();
-        const handleCommand = vi.fn(async () => ({ status: 'accepted' as const }));
+        let commandHandled = false;
         installRallarGameAuthorityServer<Command, Snapshot, Event>({
             rallar: fake.rallar,
             protocol: 'test.authority.v1',
             topicId: 'game.authority',
             authority,
-            handleCommand
+            handleCommand: async () => {
+                commandHandled = true;
+                return { status: 'accepted' as const };
+            }
         });
 
         await fake.emit(
@@ -91,7 +103,7 @@ describe('Rallar Game Authority server installer', () => {
             }
         );
 
-        expect(handleCommand).not.toHaveBeenCalled();
+        expect(commandHandled).toBe(false);
         expect(fake.published).toHaveLength(0);
     });
 
@@ -219,13 +231,16 @@ describe('Rallar Game Authority server installer', () => {
 
     it('unsubscribes handlers and prevents later command handling on stop', async () => {
         const fake = createFakeServerRallar();
-        const handleCommand = vi.fn(async () => ({ status: 'accepted' as const }));
+        let commandHandled = false;
         const server = installRallarGameAuthorityServer<Command, Snapshot, Event>({
             rallar: fake.rallar,
             protocol: 'test.authority.v1',
             topicId: 'game.authority',
             authority,
-            handleCommand
+            handleCommand: async () => {
+                commandHandled = true;
+                return { status: 'accepted' as const };
+            }
         });
 
         server.stop();
@@ -235,7 +250,7 @@ describe('Rallar Game Authority server installer', () => {
             envelope('command', 'peer-a', { action: 'late' }, 1)
         );
 
-        expect(handleCommand).not.toHaveBeenCalled();
+        expect(commandHandled).toBe(false);
         expect(fake.handlers).toHaveLength(0);
         expect(server.status().stopped).toBe(true);
     });
@@ -260,11 +275,11 @@ function envelope<T>(
 }
 
 function createFakeServerRallar() {
-    const definitions: RallarServerWsTopicDefinition<unknown>[] = [];
+    const definitions: RallarServerWsTopicDefinition<RallarServerWsPayload>[] = [];
     const handlers: HandlerSubscription[] = [];
     const published: Array<{ message: ALMessage; fanout?: string; }> = [];
     const ws = {
-        defineTopic: vi.fn((definition: RallarServerWsTopicDefinition<unknown>) => {
+        defineTopic: vi.fn((definition: RallarServerWsTopicDefinition<RallarServerWsPayload>) => {
             definitions.push(definition);
             return definition;
         }),
@@ -306,14 +321,14 @@ function createFakeServerRallar() {
             }
             return definition;
         },
-        context(senderId: string): RallarServerWsMessageContext<unknown> {
+        context(senderId: string): RallarServerWsMessageContext {
             return {
-                service: {} as RallarServerWsMessageContext<unknown>['service'],
+                service: {} as RallarServerWsMessageContext['service'],
                 definition: definitions[0],
                 roomId: 'room-1',
                 roomRef,
                 senderId,
-                proxy: {} as RallarServerWsMessageContext<unknown>['proxy']
+                proxy: {} as RallarServerWsMessageContext['proxy']
             };
         },
         async emit<T>(
@@ -339,13 +354,13 @@ function createFakeServerRallar() {
     };
 }
 
-type HandlerSubscription = Readonly<{
+interface HandlerSubscription {
     selector: RallarServerWsSelector;
     handler: (
-        message: RallarServerWsMessage<unknown>,
-        context: RallarServerWsMessageContext<unknown>
+        message: RallarServerWsMessage<RallarServerWsPayload>,
+        context: RallarServerWsMessageContext
     ) => void | Promise<void>;
-}>;
+}
 
 function parseEnvelope(message: ALMessage): RallarGameAuthorityEnvelope<unknown> {
     return JSON.parse(message.payload.resource) as RallarGameAuthorityEnvelope<unknown>;
