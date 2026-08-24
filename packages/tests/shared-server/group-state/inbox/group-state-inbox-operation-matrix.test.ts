@@ -1,4 +1,4 @@
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import {
     type GroupAdmissionDeclineAppInboxPayload,
     type GroupAdmissionGrantAppInboxPayload,

@@ -1,5 +1,4 @@
 import { parse } from '@babel/parser';
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { createMutationBoundaryLexicalValues, mutationBoundaryLexicalValuesEqual } from './mutation-boundary-lexical-values.ts';
@@ -17,7 +16,13 @@ import { MUTATION_ROUTE_INVENTORY, validateMutationRouteInventory } from './muta
 import { knownRegistrationTypes, unknownRegistrationTypes, type RegistrationTypeCollection } from './mutation-routing-registration-predicate.ts';
 
 const GROUP_OWNER = 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
-const { collection: LIVE_GROUP_COLLECTION, loopStart: LOOP_START, loopEnd: LOOP_END, classStart: CLASS_START } = readGroupOwnerAnchors();
+const {
+    source: GROUP_OWNER_SOURCE,
+    collection: LIVE_GROUP_COLLECTION,
+    loopStart: LOOP_START,
+    loopEnd: LOOP_END,
+    classStart: CLASS_START
+} = readGroupOwnerAnchors();
 const TYPE_MAP = `const C19_TYPE_MAP = new Map([
     [AppInboxType.GROUP_CREATE, AppInboxType.GROUP_UPDATE],
 ]);`;
@@ -206,7 +211,7 @@ const STRING_ADAPTER: MutationExecutionAdapter<string> = {
 };
 
 function validateInvocations(invocation: string): readonly string[] {
-    const source = readFileSync(GROUP_OWNER, 'utf8');
+    const source = GROUP_OWNER_SOURCE;
     let mutated = source.replace(
         CLASS_START,
         `${TYPE_MAP}\ndeclare const c19Enabled: boolean;\n\n${CLASS_START}`

@@ -9,7 +9,7 @@ export function requireRecord(value: unknown, label: string): Record<string, unk
 }
 
 export function requireExactKeys(
-    value: Record<string, unknown>,
+    value: Readonly<Record<string, unknown>>,
     keys: readonly string[],
     label: string
 ): void {
@@ -19,7 +19,7 @@ export function requireExactKeys(
 }
 
 export interface RequireExactOptionalKeysInput {
-    readonly value: Record<string, unknown>;
+    readonly value: Readonly<Record<string, unknown>>;
     readonly required: readonly string[];
     readonly optional: readonly string[];
     readonly label: string;

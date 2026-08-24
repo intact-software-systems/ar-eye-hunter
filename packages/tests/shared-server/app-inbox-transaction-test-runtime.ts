@@ -1,12 +1,13 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/app-inbox-handler-registry.ts';
-import { AppInboxQueueClient, AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxQueueClient } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
-import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import { Reservator } from '@shared/queuebox/DequeueController.ts';
 import {
@@ -15,7 +16,13 @@ import {
     type ResourceInboxRetryExhaustionRecovery
 } from '@shared/queuebox/DequeueResourceEntryController.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { EntityStatus, toKeyAsString, type Key, type ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    isExpiredResourceEntry,
+    toKeyAsString,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { CircuitBreakerPolicy } from '@shared/resilience/circuit-breaker.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { createAppInboxTestDatabase } from './app-inbox-test-database.ts';
@@ -76,7 +83,7 @@ class AtomicAppInboxService {
     }
 
     async commit<R>(
-        context: AppInboxMessageContext,
+        context: AppInboxMessageContext<R>,
         write: (transaction: PSqlSql) => Promise<R>
     ): Promise<R> {
         return await this.handlerRegistry.writeMutation(context, write);
@@ -86,11 +93,29 @@ class AtomicAppInboxService {
         await this.handlerRegistry.transactionWriter.writeTerminalFailure(context, error);
     }
 
-    onStateMessage<V>(
+    onStateMessage<Result>(
         type: AppInboxType,
-        handler: (data: V, context: AppInboxMessageContext) => Promise<unknown>
+        handler: (
+            data: JsonWireValue,
+            context: AppInboxMessageContext<Result>
+        ) => Promise<Result>
     ): void {
-        this.handlerRegistry.onStateMessage(type, handler);
+        this.handlerRegistry.registerHandler({
+            type,
+            decodeCommand: (value) => value,
+            encodeResult: (result) => decodeJsonWireValue(result, 'Test AppInbox result'),
+            handle: handler
+        });
+    }
+
+    registerHandler<Command, Result>(
+        registration: AppInboxHandlerRegistry.Registration<Command, Result>
+    ): void {
+        this.handlerRegistry.registerHandler(registration);
+    }
+
+    assertRegistrationComplete(expectedTypes: readonly AppInboxType[]): void {
+        this.handlerRegistry.assertRegistrationComplete(expectedTypes);
     }
 
     processEntryUntilCompletion<V>(
@@ -106,6 +131,7 @@ class AtomicAppInboxService {
 
 class RegisteredHandlerInbox extends InMemoryQueueBox {
     private latestKey: Key | undefined;
+    private readonly materializations = new Map<string, Promise<ResourceEntry>>();
 
     override async enqueue(entry: ResourceEntry): Promise<ResourceEntry | undefined> {
         this.latestKey = entry.key;
@@ -120,6 +146,37 @@ class RegisteredHandlerInbox extends InMemoryQueueBox {
     async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
         const entry = await this.getItem(key);
         return entry !== undefined && statuses.includes(entry.status);
+    }
+
+    async writeMaterializedIfAbsentOrReplaceExpired(
+        placeholder: ResourceEntry,
+        materialize: () => Promise<ResourceEntry>
+    ): Promise<ResourceEntry> {
+        const key = toKeyAsString(placeholder.key);
+        const active = this.materializations.get(key);
+        if (active !== undefined) {
+            return await active;
+        }
+        const pending = this.materializeEntry(placeholder, materialize);
+        this.materializations.set(key, pending);
+        try {
+            return await pending;
+        }
+        finally {
+            this.materializations.delete(key);
+        }
+    }
+
+    private async materializeEntry(
+        placeholder: ResourceEntry,
+        materialize: () => Promise<ResourceEntry>
+    ): Promise<ResourceEntry> {
+        const existing = await this.getItem(placeholder.key);
+        if (existing !== undefined && !isExpiredResourceEntry(existing)) {
+            return existing;
+        }
+        const materialized = await materialize();
+        return await this.enqueueIfAbsent({ ...placeholder, resource: materialized.resource });
     }
 
     async readLatest(): Promise<ResourceEntry | undefined> {
@@ -456,7 +513,8 @@ export function createAtomicHarness(
             enqueue.type,
             enqueue
         ),
-        entry
+        entry,
+        encodeResult: (result) => result
     };
     return { context, database, entry, service };
 }

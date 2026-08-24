@@ -20,7 +20,7 @@ import type {
     UpsertGroupMemberRequest
 } from '@shared/api/state-types.ts';
 
-import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-queue-client.ts';
+import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 
 export type GroupCreateAppInboxPayload = Readonly<{
     scope: StateScope;

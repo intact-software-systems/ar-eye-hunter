@@ -521,13 +521,14 @@ async function verifyMalformedStrictCrdtDurableResult(
     set ris_resource = ${JSON.stringify({ version: 1, operation: 'compact' })}
     where ris_resource_id = ${requestId} and ris_topic_id = 'CRDT_SNAPSHOT_COMPACT'
     returning ris_resource_id
-  `;
+    `;
     assert.equal(corrupted.length, 1);
 
     const replay = await postJson(harness.app, path, request);
-    assert.equal(replay.response.status, 400);
+    assert.equal(replay.response.status, 500);
     assert.equal(replay.body.type, 'api-mutation-failure');
     assert.equal(replay.body.version, 'canonical.v2');
+    assert.equal(replay.body.code, 'app-inbox-result-corrupt');
     assert.deepEqual(await mutationCounts(harness.sql, harness.documentKey), beforeReplay);
     assert.deepEqual(await readStrictAppInboxPersistence(harness.sql, requestId), {
         inboxCount: 1,

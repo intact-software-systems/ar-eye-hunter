@@ -4,36 +4,42 @@ import { decodeAuthMutationIntent } from '../auth/mutation/decode-auth-mutation-
 import { toDescriptorCommand } from '../group-state/group-mutation-authority.ts';
 import type { GroupMutationDescriptor } from '../group-state/group-state-service-contracts.ts';
 import { validateGroupMutationCommand } from '../group-state/mutation/command-validation/validate-group-mutation-command.ts';
-import type { JsonWireValue } from '../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '../protocol/json-wire-identity.ts';
 import { validateRtcRttMeasurement } from '../rtc-rtt/persistence/rtc-rtt-persistence-validation.ts';
 import { AppInboxType, type AppInboxEnqueueInput } from './app-inbox-contracts.ts';
 
 export interface LogicalAppInboxCommand {
     readonly type: AppInboxType;
-    readonly authority: unknown;
-    readonly data: unknown;
+    readonly authority: JsonWireValue;
+    readonly data: JsonWireValue;
 }
 
 export function toLogicalAppInboxCommand(
-    enqueue: AppInboxEnqueueInput<unknown>
-): LogicalAppInboxCommand {
-    const stableAuth = toStableAuthCommand(enqueue.type, enqueue.data as JsonWireValue);
+    enqueue: AppInboxEnqueueInput<JsonWireValue, JsonWireValue>
+): JsonWireValue {
+    const stableAuth = toStableAuthCommand(enqueue.type, enqueue.data);
     if (stableAuth) {
-        return { type: enqueue.type, authority: null, data: stableAuth };
+        return encodeLogicalCommand({ type: enqueue.type, authority: null, data: stableAuth });
     }
     const stableGroup = toStableGroupCommand(enqueue.type, enqueue.authority);
     if (stableGroup) {
-        return { type: enqueue.type, authority: null, data: stableGroup };
+        return encodeLogicalCommand({ type: enqueue.type, authority: null, data: stableGroup });
     }
     const stableDomainCommand = toStableDomainCommand(enqueue.type, enqueue.data);
     if (stableDomainCommand) {
-        return { type: enqueue.type, authority: null, data: stableDomainCommand };
+        return encodeLogicalCommand({ type: enqueue.type, authority: null, data: stableDomainCommand });
     }
-    return {
+    return encodeLogicalCommand({
         type: enqueue.type,
-        authority: enqueue.authority ?? null,
+        authority: enqueue.authority === undefined
+            ? null
+            : decodeJsonWireValue(enqueue.authority, 'AppInbox logical authority'),
         data: enqueue.data
-    };
+    });
+}
+
+function encodeLogicalCommand(command: LogicalAppInboxCommand): JsonWireValue {
+    return decodeJsonWireValue(command, 'Logical AppInbox command');
 }
 
 function toStableGroupCommand<Authority>(
@@ -53,10 +59,10 @@ function toStableGroupCommand<Authority>(
     if (command.operation !== expectedOperation) {
         throw new TypeError('Group mutation operation differs from AppInbox type');
     }
-    return {
+    return decodeJsonWireValue({
         ...command,
         input: { ...command.input, actorSessionId: null }
-    } as JsonWireValue;
+    }, 'Logical group AppInbox command');
 }
 
 const GROUP_APP_INBOX_OPERATIONS = new Map<AppInboxType, GroupMutationDescriptor['operation']>([
@@ -95,7 +101,7 @@ function toStableAuthCommand(type: AppInboxType, value: JsonWireValue): JsonWire
         return undefined;
     }
     try {
-        const intent = decodeAuthMutationIntent(JSON.parse(JSON.stringify(value)) as JsonWireValue);
+        const intent = decodeAuthMutationIntent(value);
         if (toAuthAppInboxType(intent) !== type) {
             return undefined;
         }
@@ -160,12 +166,12 @@ function toStableAuthCommand(type: AppInboxType, value: JsonWireValue): JsonWire
     }
 }
 
-function toStableDomainCommand(type: AppInboxType, value: unknown): unknown | undefined {
+function toStableDomainCommand(type: AppInboxType, value: JsonWireValue): JsonWireValue | undefined {
     try {
         if (type === AppInboxType.CRDT_UPDATE_APPEND) {
             const command = requireRecord(value);
             const actor = requireRecord(command.actor);
-            return {
+            return decodeJsonWireValue({
                 operation: command.operation,
                 commandId: command.commandId,
                 document: command.document,
@@ -173,7 +179,7 @@ function toStableDomainCommand(type: AppInboxType, value: unknown): unknown | un
                 update: command.update,
                 authorizationScope: command.authorizationScope,
                 actor: { actorId: actor.actorId, principalId: actor.principalId }
-            };
+            }, 'Logical CRDT AppInbox command');
         }
         if (type === AppInboxType.RTC_RTT_SUBMIT) {
             const command = requireExactRecord(value, [
@@ -190,13 +196,13 @@ function toStableDomainCommand(type: AppInboxType, value: unknown): unknown | un
             readNonEmptyString(command.mutationCommandHash);
             readEpoch(command.capturedAtEpochMs);
             validateRtcRttMeasurement(command.rtt);
-            return {
+            return decodeJsonWireValue({
                 actor,
                 requestId: command.requestId,
                 commandHash: command.commandHash,
                 mutationCommandHash: command.mutationCommandHash,
                 rtt: command.rtt
-            };
+            }, 'Logical RTC RTT AppInbox command');
         }
         if (!TOPOLOGY_APP_INBOX_TYPES.has(type)) {
             return undefined;
@@ -226,13 +232,13 @@ function toStableDomainCommand(type: AppInboxType, value: unknown): unknown | un
         if (command.operation !== payload.operation) {
             throw new TypeError('Topology operation differs from payload');
         }
-        return {
+        return decodeJsonWireValue({
             actor: { principalId: actor.principalId },
             groupRef,
             requestId: command.requestId,
             operation: command.operation,
             payload
-        };
+        }, 'Logical topology AppInbox command');
     }
     catch {
         return undefined;

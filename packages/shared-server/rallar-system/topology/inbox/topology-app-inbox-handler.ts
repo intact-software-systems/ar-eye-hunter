@@ -1,6 +1,6 @@
 import { fromCanonicalGroupTopologyConfigPatch } from '@shared/api/group-topology-config-canonical.ts';
 
-import type { AppInboxEnqueueInput, AppInboxMessageContext } from '../../app-inbox/app-inbox-queue-client.ts';
+import { type AppInboxEnqueueInput, type AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AppInboxMutationTransactionWriter } from '../../app-inbox/app-inbox-transaction-writer.ts';
 import type { PersistedAuthSession } from '../../auth/persistence/auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';
@@ -164,7 +164,7 @@ export class TopologyAppInboxHandler {
     }
 
     async processMutation(
-        context: AppInboxMessageContext,
+        context: AppInboxMessageContext<TopologyAppInboxResult>,
         owners: TopologyAppInboxMutationOwners
     ): Promise<TopologyAppInboxResult> {
         const authority = readTopologyAppInboxAuthority(context.enqueue.authority);
@@ -211,7 +211,7 @@ export class TopologyAppInboxHandler {
     }
 
     private async processTopologyReconfigureMutation(
-        context: AppInboxMessageContext,
+        context: AppInboxMessageContext<TopologyAppInboxResult>,
         authority: TopologyReconfigureAppInboxAuthority,
         mutation: TopologyAppInboxMutationOwners['reconfigureMutation']
     ): Promise<TopologyReconfigureInboxResult> {

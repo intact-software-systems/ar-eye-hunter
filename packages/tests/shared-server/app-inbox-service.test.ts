@@ -1,13 +1,9 @@
 import { Temporal } from '@js-temporal/polyfill';
 import type { PSqlSql } from '@shared-server/postgres/p-sql-sql.ts';
 import { toResultsDomain } from '@shared-server/queuebox/postgres/resource-inbox-row-codec.ts';
+import { AppInboxType, type AppInboxEnqueueInput, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/app-inbox-handler-registry.ts';
-import {
-    AppInboxQueueClient,
-    AppInboxType,
-    type AppInboxEnqueueInput,
-    type AppInboxMessageContext
-} from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxQueueClient } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type { GroupMemberUpsertAppInboxPayload } from '@shared-server/rallar-system/group-state/inbox/group-state-inbox-contracts.ts';
 import { ClientStateEventCollisionError } from '@shared-server/rallar-system/state-events/client-state-event-store.ts';
 import { GroupStateEventCollisionError } from '@shared-server/rallar-system/state-events/group-state-event-store.ts';
@@ -18,7 +14,7 @@ import { ClientMutationIdempotencyConflictError } from '@shared-server/rallar-sy
 
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
-import type { JsonWireObject, JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
 import { EnqueuedType } from '@shared/api/api-config.ts';
 import type { StateScope } from '@shared/api/state-types.ts';
@@ -273,7 +269,7 @@ describe('AppInboxQueueClient', () => {
         );
     });
 
-    it('uses stored JSON wire identity for sparse upserts and rejects unsafe accessors', async () => {
+    it('uses exact stored JSON wire identity and rejects unsafe accessors', async () => {
         const queue = new TestResourceInbox();
         const reader = new InboxQueueReader(queue);
         const results = new TestResourceInboxResults();
@@ -301,7 +297,7 @@ describe('AppInboxQueueClient', () => {
             handledPayloads.push(payload);
             return { accepted: payload };
         });
-        const sparse = {
+        const current = {
             type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
             resourceId: 'sparse-member-upsert',
             contextId: 'ar-eye-hunter:default:group-1',
@@ -312,20 +308,19 @@ describe('AppInboxQueueClient', () => {
                 principalId: 'alice',
                 request: {
                     status: 'active' as const,
-                    role: undefined,
                     actorPrincipalId: 'alice',
                     requestId: 'sparse-member-upsert'
                 }
             }
         } satisfies AppInboxEnqueueInput<GroupMemberUpsertAppInboxPayload>;
 
-        const pending = service.processEntryUntilCompletion(sparse);
+        const pending = service.processEntryUntilCompletion(current);
         await reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
         const first = await pending;
 
         await expect(
             service.processEntryUntilCompletion({
-                ...sparse,
+                ...current,
                 data: {
                     principalId: 'alice',
                     request: {
@@ -340,23 +335,20 @@ describe('AppInboxQueueClient', () => {
         ).resolves.toEqual(first);
         await expect(
             service.processEntryUntilCompletion({
-                ...sparse,
+                ...current,
                 data: {
-                    ...sparse.data,
-                    request: { ...sparse.data.request, status: 'left' }
+                    ...current.data,
+                    request: { ...current.data.request, status: 'left' }
                 }
             })
         ).rejects.toMatchObject({ status: 409 });
-        expect(Object.hasOwn(sparse.data.request, 'role')).toBe(true);
-        expect(sparse.data.request.role).toBeUndefined();
-
         let getterCalls = 0;
         const unsafe = {
-            ...sparse,
+            ...current,
             resourceId: 'unsafe-member-upsert',
             data: {
-                ...sparse.data,
-                request: { ...sparse.data.request }
+                ...current.data,
+                request: { ...current.data.request }
             }
         };
         Object.defineProperty(unsafe.data.request, 'role', {
@@ -367,16 +359,16 @@ describe('AppInboxQueueClient', () => {
             }
         });
         await expect(service.processEntryUntilCompletion(unsafe)).rejects.toThrow(
-            /JSON wire|accessor/u
+            /JSON-safe/u
         );
         expect(getterCalls).toBe(0);
         await expect(
             service.processEntryUntilCompletion({
-                ...sparse,
+                ...current,
                 resourceId: 'unsafe-array',
-                data: { ...sparse.data, unsafe: [undefined] }
+                data: { ...current.data, unsafe: [undefined] }
             })
-        ).rejects.toThrow(/JSON wire|array/u);
+        ).rejects.toThrow(/JSON-safe/u);
         const cycle: Record<string, object> = {};
         cycle.self = cycle;
         for (
@@ -389,13 +381,13 @@ describe('AppInboxQueueClient', () => {
         ) {
             await expect(
                 service.processEntryUntilCompletion({
-                    ...sparse,
+                    ...current,
                     resourceId,
-                    data: { ...sparse.data, unsafe: value }
+                    data: { ...current.data, unsafe: value }
                 })
-            ).rejects.toThrow(/JSON wire/u);
+            ).rejects.toThrow(/JSON-safe/u);
         }
-        expect(handledPayloads).toEqual([sparse.data]);
+        expect(handledPayloads).toEqual([current.data]);
     });
 
     it('preserves an own __proto__ key through write, replay, and conflict', async () => {
@@ -422,7 +414,7 @@ describe('AppInboxQueueClient', () => {
             }
         );
         service.onStateMessage(AppInboxType.CLIENT_PRINCIPAL_UPSERT, async (data) => {
-            const payload = data as ProtoPayload;
+            const payload = decodeProtoPayload(data);
             handledPayloads.push(payload);
             return { accepted: payload };
         });
@@ -528,7 +520,7 @@ describe('AppInboxQueueClient', () => {
                     senderId: 'alice',
                     data: { unsafe }
                 })
-            ).rejects.toThrow(/JSON wire/u);
+            ).rejects.toThrow(/JSON-safe/u);
             expect(await readEntries(queue)).toHaveLength(0);
         }
         expect(getterCalls).toBe(0);
@@ -793,11 +785,19 @@ class TestAppInboxRuntime extends AppInboxQueueClient {
         );
     }
 
-    onStateMessage<V>(
+    onStateMessage<Result>(
         type: AppInboxType,
-        handler: (data: V, context: AppInboxMessageContext) => Promise<unknown>
+        handler: (
+            data: JsonWireValue,
+            context: AppInboxMessageContext<Result>
+        ) => Promise<Result>
     ): void {
-        this.handlers.onStateMessage(type, handler);
+        this.handlers.registerHandler({
+            type,
+            decodeCommand: (value) => value,
+            encodeResult: (result) => decodeJsonWireValue(result, 'Test AppInbox result'),
+            handle: handler
+        });
     }
 }
 
@@ -942,4 +942,30 @@ interface ProtoPayload {
         requestId: string;
         metadata: JsonWireObject;
     }>;
+}
+
+function decodeProtoPayload(value: JsonWireValue): ProtoPayload {
+    if (!isJsonWireObject(value)) {
+        throw new TypeError('Proto payload must be an object');
+    }
+    const request = value.request;
+    if (
+        typeof value.principalId !== 'string' ||
+        !isJsonWireObject(request) ||
+        typeof request.requestId !== 'string' ||
+        !isJsonWireObject(request.metadata)
+    ) {
+        throw new TypeError('Proto payload fields are invalid');
+    }
+    return {
+        principalId: value.principalId,
+        request: {
+            requestId: request.requestId,
+            metadata: request.metadata
+        }
+    };
+}
+
+function isJsonWireObject(value: JsonWireValue): value is JsonWireObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

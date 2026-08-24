@@ -1,100 +1,29 @@
-import { ALMessage, newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
-import {
-    toAppQueueCreatedBy as toAppInboxQueueCreatedBy,
-    toAppQueueKey as toAppInboxQueueKey,
-    toStrictAppInboxQueueKey
-} from '@shared/queuebox/AppQueueIdentity.ts';
-import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { newALRoute, newALUntargetedMessage } from '@shared/al-contracts/al-contract.ts';
+import { toAppQueueCreatedBy as toAppInboxQueueCreatedBy } from '@shared/queuebox/AppQueueIdentity.ts';
 import { EntityStatus, Key, ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 import { Either } from '@shared/resilience/Either.ts';
-import { TryWithExhaustedError, TryWithPolicy, tryWithPolicy } from '@shared/resilience/TryWith.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { QueueBoxUtilities } from '@shared/services/QueueBoxUtilities.ts';
-import { validateAppInboxCommandIdentity } from '../app-inbox/app-inbox-command-identity.ts';
-import {
-    AppInboxIdempotencyConflictError,
-    AppInboxReservationConflictError,
-    AppInboxType,
-    type AppInboxEnqueueInput,
-    type AppInboxMessageContext
-} from '../app-inbox/app-inbox-contracts.ts';
-import {
-    classifyAppInboxError,
-    toAppInboxErrorCode,
-    type AppInboxErrorClassification
-} from '../app-inbox/app-inbox-error-classification.ts';
-import {
-    readPersistedAppInboxFailure,
-    toTerminalAppInboxFailure,
-    toUnavailableAppInboxFailure,
-    type AppInboxFailure
-} from '../app-inbox/app-inbox-failure.ts';
-import {
-    recordRallarTiming,
-    timeRallarAsync,
-    type RallarTimingDetails,
-    type RallarTimingSink
-} from '../observability/timing.ts';
+import type { AppInboxEnqueueInput, AppInboxMessageContext } from '../app-inbox/app-inbox-contracts.ts';
+import { toUnavailableAppInboxFailure, type AppInboxFailure } from '../app-inbox/app-inbox-failure.ts';
+import { timeRallarAsync, type RallarTimingDetails, type RallarTimingSink } from '../observability/timing.ts';
 import type { JsonWireValue } from '../protocol/json-wire-identity.ts';
 import { serializeCanonicalJsonWire, toJsonWireAppInboxEnqueue } from './app-inbox-command-wire.ts';
+import { normalizeAppInboxOptions, type AppInboxOptions, type NormalizedAppInboxOptions } from './app-inbox-options.ts';
+import type { AppInboxEntryRepository, AppInboxResultRepository } from './app-inbox-persistence-ports.ts';
+import { toPhysicalAppInboxQueueKey } from './app-inbox-queue-entry.ts';
+import { AppInboxReservationClient, type MaterializedAppInboxReservation } from './app-inbox-reservation-client.ts';
+import { AppInboxResultWaiter, type AppInboxResultDecoder } from './app-inbox-result-waiter.ts';
 import { assertMatchingAppInboxCommand } from './assert-matching-app-inbox-command.ts';
 import { toLogicalAppInboxCommand } from './logical-app-inbox-command.ts';
 
 export const SIMPLER_GROUP_STATE_APP_INBOX_TOPIC = 'app-inbox.group-state';
 export const SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC = 'app-inbox.client-state';
 
-export {
-    AppInboxIdempotencyConflictError,
-    AppInboxReservationConflictError,
-    AppInboxType,
-    classifyAppInboxError,
-    NonRetryableException
-};
-export type {
-    AppInboxEnqueueInput,
-    AppInboxErrorClassification,
-    AppInboxFailure,
-    AppInboxMessageContext
-};
-
-export type AppInboxResultDecoder<R> = (value: JsonWireValue) => R;
-export {
-    createAppInboxRetryExhaustionHandler,
-    createAppInboxRetryExhaustionRecoveryHandler
-} from '../app-inbox/app-inbox-retry-finalization.ts';
-
-export interface AppInboxOptions {
-    readonly phaseTiming?: boolean;
-    readonly waitMaxElapsedMsecs?: number;
-    readonly waitRetryIntervalMsecs?: number;
-    readonly waitMaxRetryIntervalMsecs?: number;
-    readonly waitJitterRatio?: number;
-    readonly nowEpochMs?: () => number;
-    readonly timingNowEpochMs?: () => number;
-}
-
-interface NormalizedAppInboxOptions {
-    readonly phaseTiming: boolean;
-    readonly waitMaxElapsedMsecs: number;
-    readonly waitRetryIntervalMsecs: number;
-    readonly waitMaxRetryIntervalMsecs: number;
-    readonly waitJitterRatio: number;
-}
-
 export namespace AppInboxQueueClient {
-    export interface InboxRepository {
-        isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean>;
-    }
-
-    export interface ResultRepository {
-        replace(entry: ResourceEntry): Promise<ResourceEntry>;
-        findByKey(key: Key): Promise<ResourceEntry | undefined>;
-    }
-
     export interface Dependencies {
         readonly inboxQueueReader: InboxQueueReader;
-        readonly resourceInboxRepository: InboxRepository;
-        readonly resourceInboxResultsRepository: ResultRepository;
+        readonly resourceInboxRepository: AppInboxEntryRepository;
+        readonly resourceInboxResultsRepository: AppInboxResultRepository;
     }
 
     export interface Config {
@@ -106,29 +35,14 @@ export namespace AppInboxQueueClient {
     }
 }
 
-interface MaterializedAppInboxRepository {
-    writeMaterializedIfAbsentOrReplaceExpired(
-        placeholder: ResourceEntry,
-        materialize: () => Promise<ResourceEntry>
-    ): Promise<ResourceEntry>;
-}
-
-interface MaterializedAppInboxReservation<V> {
-    readonly enqueue: AppInboxEnqueueInput<V>;
-    readonly winner: boolean;
-}
-
 export class AppInboxQueueClient {
-    public static readonly MAX_ELAPSED_MSECS = 10_000;
-    public static readonly WAIT_RETRY_INTERVAL_MSECS = 500;
-    public static readonly WAIT_MAX_RETRY_INTERVAL_MSECS = 20_000;
-    public static readonly WAIT_JITTER_RATIO = 0.2;
-
     private readonly options: NormalizedAppInboxOptions;
     private readonly optionsInput: AppInboxOptions;
+    private readonly resultWaiter: AppInboxResultWaiter;
+    private readonly reservationClient: AppInboxReservationClient;
     public readonly inbox: InboxQueueReader;
-    public readonly resourceInbox: AppInboxQueueClient.InboxRepository;
-    public readonly resourceInboxResults: AppInboxQueueClient.ResultRepository;
+    public readonly resourceInbox: AppInboxEntryRepository;
+    public readonly resourceInboxResults: AppInboxResultRepository;
     public readonly serviceId: string;
     private readonly defaultTopicId: string;
     private readonly timing?: RallarTimingSink;
@@ -144,80 +58,38 @@ export class AppInboxQueueClient {
         this.timing = config.timing;
         this.wakeOwningQueue = config.wakeOwningQueue;
         this.optionsInput = options;
-        this.options = {
-            phaseTiming: options.phaseTiming ?? false,
-            waitMaxElapsedMsecs: toNonNegativeFiniteNumber(
-                options.waitMaxElapsedMsecs,
-                AppInboxQueueClient.MAX_ELAPSED_MSECS
-            ),
-            waitRetryIntervalMsecs: toNonNegativeFiniteNumber(
-                options.waitRetryIntervalMsecs,
-                AppInboxQueueClient.WAIT_RETRY_INTERVAL_MSECS
-            ),
-            waitMaxRetryIntervalMsecs: toNonNegativeFiniteNumber(
-                options.waitMaxRetryIntervalMsecs,
-                AppInboxQueueClient.WAIT_MAX_RETRY_INTERVAL_MSECS
-            ),
-            waitJitterRatio: toRatio(options.waitJitterRatio, AppInboxQueueClient.WAIT_JITTER_RATIO)
-        };
+        this.options = normalizeAppInboxOptions(options);
+        this.resultWaiter = new AppInboxResultWaiter(
+            {
+                statusRepository: dependencies.resourceInboxRepository,
+                resultRepository: dependencies.resourceInboxResultsRepository
+            },
+            {
+                serviceId: config.serviceId,
+                timing: config.timing,
+                options: this.options
+            }
+        );
+        this.reservationClient = new AppInboxReservationClient(
+            {
+                inboxQueueReader: dependencies.inboxQueueReader,
+                repository: dependencies.resourceInboxRepository
+            },
+            { serviceId: config.serviceId }
+        );
     }
-    async persistReservedEntryAuthority<Authority>(
-        context: AppInboxMessageContext,
+    async persistReservedEntryAuthority<Authority, Result>(
+        context: AppInboxMessageContext<Result>,
         authority: Authority
     ): Promise<void> {
-        const enqueue = toJsonWireAppInboxEnqueue({ ...context.enqueue, authority });
-        const message: ALMessage = {
-            ...context.message,
-            payload: {
-                ...context.message.payload,
-                resource: JSON.stringify(enqueue)
-            }
-        };
-        const replacement: ResourceEntry = {
-            ...context.entry,
-            resource: JSON.stringify(message)
-        };
-        const result = await this.inbox.inbox.enqueueOrUpdate(
-            replacement,
-            (existing) =>
-                existing.status === EntityStatus.RESERVED &&
-                    existing.dequeueAudit.attempts === context.entry.dequeueAudit.attempts &&
-                    existing.resource === context.entry.resource
-                    ? replacement
-                    : undefined
-        );
-        if (result.action !== 'updated') {
-            throw new AppInboxReservationConflictError(context.entry.key);
-        }
+        await this.reservationClient.persistAuthority(context, authority);
     }
 
     async reserveMaterializedEntry<V>(
         placeholder: AppInboxEnqueueInput<null>,
         materialize: () => Promise<AppInboxEnqueueInput<V>>
-    ): Promise<MaterializedAppInboxReservation<V>> {
-        if (!isMaterializedAppInboxRepository(this.resourceInbox)) {
-            throw new Error('App inbox repository does not support atomic fact materialization');
-        }
-        let winner = false;
-        const entry = await this.resourceInbox.writeMaterializedIfAbsentOrReplaceExpired(
-            toAppInboxResourceEntry(placeholder, `${this.serviceId}:fact-reservation`),
-            async () => {
-                winner = true;
-                return toAppInboxResourceEntry(await materialize(), this.serviceId);
-            }
-        );
-        const validation = validateAppInboxCommandIdentity(entry);
-        if (!validation.valid) {
-            throw new AppInboxIdempotencyConflictError(
-                entry.key.resourceId,
-                'invalid-existing-command',
-                'invalid-received-command'
-            );
-        }
-        return {
-            enqueue: validation.command as AppInboxEnqueueInput<V>,
-            winner
-        };
+    ): Promise<MaterializedAppInboxReservation> {
+        return await this.reservationClient.reserveMaterializedEntry(placeholder, materialize);
     }
 
     async waitForReservedEntryResult<V, R>(
@@ -398,7 +270,7 @@ export class AppInboxQueueClient {
         enforceCommandIdentity: boolean,
         enqueuer: (
             key: Key,
-            wireEnqueue: AppInboxEnqueueInput<V>
+            wireEnqueue: AppInboxEnqueueInput<JsonWireValue, JsonWireValue>
         ) => Promise<ResourceEntry | undefined>,
         decodeResult: AppInboxResultDecoder<R>,
         strictQueueIdentity = false
@@ -446,142 +318,9 @@ export class AppInboxQueueClient {
                     return Either.ofLeft(toUnavailableAppInboxFailure());
                 }
 
-                const isCompleted = await this.waitForCompletion(wireEnqueue, key);
-
-                if (!isCompleted) {
-                    return Either.ofLeft(toUnavailableAppInboxFailure());
-                }
-
-                return await this.timePhase(
-                    'read-result',
-                    enqueue,
-                    key,
-                    async () => await this.findByKeyAndReturnEither(key, decodeResult)
-                );
+                return await this.resultWaiter.waitForResult(wireEnqueue, key, decodeResult);
             }
         );
-    }
-
-    private async findByKeyAndReturnEither<R>(
-        key: Key,
-        decodeResult: AppInboxResultDecoder<R>
-    ): Promise<Either<AppInboxFailure, R>> {
-        const result = await this.resourceInboxResults.findByKey(key);
-        if (result === undefined) {
-            return Either.ofLeft(
-                toTerminalAppInboxFailure(
-                    Object.assign(new Error('App inbox entry result was not found'), {
-                        status: 500
-                    }),
-                    'app-inbox-result-not-found'
-                )
-            );
-        }
-        if (result.status === EntityStatus.FAILED) {
-            return Either.ofLeft(readPersistedAppInboxFailure(result.resource));
-        }
-        if (result.status !== EntityStatus.COMPLETED) {
-            return Either.ofLeft(toUnavailableAppInboxFailure());
-        }
-
-        try {
-            const parsed: JsonWireValue = JSON.parse(result.resource);
-            return Either.ofRight(decodeResult(parsed));
-        }
-        catch (error) {
-            return Either.ofLeft(toTerminalAppInboxFailure(error, toAppInboxErrorCode(error)));
-        }
-    }
-
-    private async waitForCompletion<V>(enqueue: AppInboxEnqueueInput<V>, key: Key): Promise<boolean> {
-        try {
-            return await this.timePhase(
-                'wait-completion',
-                enqueue,
-                key,
-                async () =>
-                    await tryWithPolicy<boolean>(
-                        async () => {
-                            const isCompleted = await this.resourceInbox.isEntryWithStatus(key, [
-                                EntityStatus.COMPLETED,
-                                EntityStatus.FAILED
-                            ]);
-
-                            if (!isCompleted) {
-                                throw new Error('App inbox entry not found');
-                            }
-
-                            return true;
-                        },
-                        this.toWaitPolicy(enqueue, key)
-                    ),
-                {
-                    waitMaxElapsedMsecs: this.options.waitMaxElapsedMsecs
-                }
-            );
-        }
-        catch (error) {
-            if (!(error instanceof TryWithExhaustedError)) {
-                throw error;
-            }
-
-            recordRallarTiming({
-                sink: this.timing,
-                event: {
-                    component: 'app-inbox-phase',
-                    operation: 'wait-fallback',
-                    serviceId: this.serviceId,
-                    requestId: enqueue.resourceId,
-                    details: {
-                        ...this.toTimingDetails(enqueue, key),
-                        attempt: error.context.attempt,
-                        elapsedMsecs: error.context.elapsedMsecs,
-                        waitMaxElapsedMsecs: this.options.waitMaxElapsedMsecs,
-                        errorName: error.name,
-                        errorMessage: error.message
-                    }
-                },
-                status: 'ok',
-                durationMs: 0
-            });
-            return false;
-        }
-    }
-
-    private toWaitPolicy<V>(enqueue: AppInboxEnqueueInput<V>, key: Key): TryWithPolicy {
-        let policy = TryWithPolicy.defaults()
-            .label(`app-inbox:${key.topicId}:${key.resourceId}`)
-            .maxElapsedMsecs(this.options.waitMaxElapsedMsecs)
-            .retryIntervalMsecs(this.options.waitRetryIntervalMsecs)
-            .maxRetryIntervalMsecs(this.options.waitMaxRetryIntervalMsecs)
-            .jitterRatio(this.options.waitJitterRatio);
-
-        if (this.options.phaseTiming) {
-            policy = policy.onRetry((context) => {
-                recordRallarTiming({
-                    sink: this.timing,
-                    event: {
-                        component: 'app-inbox-phase',
-                        operation: 'wait-retry',
-                        serviceId: this.serviceId,
-                        requestId: enqueue.resourceId,
-                        details: {
-                            ...this.toTimingDetails(enqueue, key),
-                            attempt: context.attempt,
-                            nextAttempt: context.nextAttempt,
-                            delayMsecs: context.delayMsecs,
-                            elapsedMsecs: context.elapsedMsecs,
-                            errorName: context.error instanceof Error ? context.error.name : undefined,
-                            errorMessage: context.error instanceof Error ? context.error.message : String(context.error)
-                        }
-                    },
-                    status: 'ok',
-                    durationMs: 0
-                });
-            });
-        }
-
-        return policy;
     }
 
     private async timePhase<T, V>(
@@ -629,66 +368,6 @@ export class AppInboxQueueClient {
     }
 }
 
-function toNonNegativeFiniteNumber(value: number | undefined, fallback: number): number {
-    return value === undefined || !Number.isFinite(value) || value < 0 ? fallback : value;
-}
-
-function isMaterializedAppInboxRepository(
-    repository: AppInboxQueueClient.InboxRepository
-): repository is AppInboxQueueClient.InboxRepository & MaterializedAppInboxRepository {
-    return (
-        'writeMaterializedIfAbsentOrReplaceExpired' in repository &&
-        typeof Reflect.get(repository, 'writeMaterializedIfAbsentOrReplaceExpired') === 'function'
-    );
-}
-
-function toAppInboxResourceEntry<V>(
-    enqueue: AppInboxEnqueueInput<V>,
-    serviceId: string
-): ResourceEntry {
-    const wire = toJsonWireAppInboxEnqueue(enqueue);
-    const key = toPhysicalAppInboxQueueKey(
-        {
-            ...wire,
-            topicId: wire.topicId ?? '',
-            resourceId: wire.resourceId ?? '',
-            contextId: wire.contextId ?? ''
-        },
-        '',
-        true
-    );
-    return QueueBoxUtilities.toResourceEntryFromMsg(
-        newALUntargetedMessage(
-            toAppInboxQueueCreatedBy(serviceId),
-            newALRoute(key.topicId, key.contextId, key.resourceId),
-            wire.type,
-            wire
-        ),
-        'APP_INBOX'
-    );
-}
-
-function toPhysicalAppInboxQueueKey<V>(
-    enqueue: AppInboxEnqueueInput<V>,
-    defaultTopicId = '',
-    strictQueueIdentity = false
-): Key {
-    const key = {
-        topicId: enqueue.topicId ?? defaultTopicId,
-        resourceId: enqueue.resourceId ?? crypto.randomUUID().toString(),
-        contextId: enqueue.contextId ?? enqueue.senderId ?? 'rallar-server'
-    };
-    return strictQueueIdentity ? toStrictAppInboxQueueKey(key) : toAppInboxQueueKey(key);
-}
-
 function decodeJsonWireResult(value: JsonWireValue): JsonWireValue {
     return value;
-}
-
-function toRatio(value: number | undefined, fallback: number): number {
-    if (value === undefined || !Number.isFinite(value)) {
-        return fallback;
-    }
-
-    return Math.max(0, Math.min(1, value));
 }

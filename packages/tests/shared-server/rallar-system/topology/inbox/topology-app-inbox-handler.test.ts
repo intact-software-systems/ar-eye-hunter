@@ -18,7 +18,13 @@ import type { GroupStateService } from '@shared-server/rallar-system/group-state
 
 import type { GroupStateAuthorityGuard } from '@shared-server/rallar-system/group-state/persistence/group-state-persistence-contracts.ts';
 
-import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import {
+    AppInboxType,
+    type AppInboxEnqueueInput,
+    type AppInboxMessageContext
+} from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { toJsonWireAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-wire.ts';
+import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import type { ComputedRtcTopologyOutbox } from '@shared-server/rallar-system/topology/mutation/rtc-topology-outbox-entry.ts';
 
 import { createAuthenticatedTopologyEnqueue } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-authority.ts';
@@ -31,8 +37,10 @@ import { writeTopologyConfigMutation } from '@shared-server/rallar-system/topolo
 import {
     decodeTopologyAppInboxResult,
     TopologyAppInboxHandler,
-    type TopologyAppInboxMutationOwners
+    type TopologyAppInboxMutationOwners,
+    type TopologyAppInboxResult
 } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-handler.ts';
+import type { TopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-contracts.ts';
 
 import type {
     GroupTopologyConfigMutationComputed,
@@ -249,7 +257,9 @@ describe('TopologyAppInboxHandler', () => {
     });
 });
 
-async function topologyContext(phases: string[]): Promise<AppInboxMessageContext> {
+async function topologyContext(
+    phases: string[]
+): Promise<AppInboxMessageContext<TopologyAppInboxResult>> {
     const command = await toTopologyAppInboxCommand({
         actor: { principalId: SESSION.clientId, sessionId: SESSION.sessionId },
         groupRef: {
@@ -274,7 +284,9 @@ async function topologyContext(phases: string[]): Promise<AppInboxMessageContext
     return createMessageContext(enqueue);
 }
 
-async function reconfigureTopologyContext(phases: string[]): Promise<AppInboxMessageContext> {
+async function reconfigureTopologyContext(
+    phases: string[]
+): Promise<AppInboxMessageContext<TopologyAppInboxResult>> {
     const command = await toTopologyAppInboxCommand({
         actor: { principalId: SESSION.clientId, sessionId: SESSION.sessionId },
         groupRef: {
@@ -313,21 +325,25 @@ function sessionReader(
     };
 }
 
-function createMessageContext(enqueue: AppInboxMessageContext['enqueue']): AppInboxMessageContext {
+function createMessageContext(
+    enqueue: AppInboxEnqueueInput<TopologyAppInboxCommand>
+): AppInboxMessageContext<TopologyAppInboxResult> {
+    const wireEnqueue = toJsonWireAppInboxEnqueue(enqueue);
     const message = newALUntargetedMessage(
         'topology-handler-test',
         newALRoute(
-            enqueue.topicId ?? 'app-inbox.group-state',
-            enqueue.contextId ?? 'topology-handler-context',
-            requireResourceId(enqueue.resourceId)
+            wireEnqueue.topicId ?? 'app-inbox.group-state',
+            wireEnqueue.contextId ?? 'topology-handler-context',
+            requireResourceId(wireEnqueue.resourceId)
         ),
-        enqueue.type,
-        enqueue
+        wireEnqueue.type,
+        wireEnqueue
     );
     const entry = QueueBoxUtilities.toResourceEntryFromMsg(message, EnqueuedType.APP_INBOX);
     return {
-        enqueue,
+        enqueue: wireEnqueue,
         message,
+        encodeResult: (result) => encodeAppInboxResult(result, 'Topology handler test result'),
         entry: {
             ...entry,
             dequeueAudit: { ...entry.dequeueAudit, attempts: 7 }

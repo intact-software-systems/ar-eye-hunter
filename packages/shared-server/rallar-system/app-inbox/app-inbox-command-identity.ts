@@ -1,4 +1,6 @@
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
+import type { JsonWireValue } from '../protocol/json-wire-identity.ts';
+import { AppInboxTypeUnavailableError, decodeAppInboxEnqueue } from './app-inbox-command-decoding.ts';
 import { AppInboxType, type AppInboxEnqueueInput } from './app-inbox-contracts.ts';
 
 interface ValidAppInboxCommandIdentity {
@@ -7,7 +9,7 @@ interface ValidAppInboxCommandIdentity {
         operation: AppInboxType;
         operationSource: 'command';
     }>;
-    readonly command: AppInboxEnqueueInput<unknown>;
+    readonly command: AppInboxEnqueueInput<JsonWireValue, JsonWireValue>;
 }
 
 interface InvalidAppInboxCommandIdentity {
@@ -58,12 +60,6 @@ const APP_INBOX_OPERATION_SPECIFIC_TOPIC_BY_OPERATION: Readonly<Partial<Record<A
     [AppInboxType.CRDT_ERASE]: APP_INBOX_CRDT_TOPIC,
     [AppInboxType.ADMIN_PRUNE_EXPIRED]: APP_INBOX_ADMIN_TOPIC
 };
-const OPTIONAL_STRING_FIELDS = [
-    'topicId',
-    'resourceId',
-    'contextId',
-    'senderId'
-] as const;
 
 export class AppInboxCommandIdentityError extends Error {
     readonly code = 'app-inbox-malformed-command';
@@ -96,7 +92,7 @@ export function validatePersistedAppInboxCommandIdentity(
 ): AppInboxCommandIdentityValidation {
     let outer: unknown;
     try {
-        outer = JSON.parse(input.resource) as unknown;
+        outer = JSON.parse(input.resource);
     }
     catch {
         return toInvalidIdentity(input.topicId, 'corrupt');
@@ -111,15 +107,15 @@ export function validatePersistedAppInboxCommandIdentity(
     }
     const dispatchedOperation = outer.payload.typeId;
 
-    let command: unknown;
+    let command: AppInboxEnqueueInput<JsonWireValue, JsonWireValue>;
     try {
-        command = JSON.parse(outer.payload.resource) as unknown;
+        command = decodeAppInboxEnqueue(JSON.parse(outer.payload.resource));
     }
-    catch {
-        return toInvalidIdentity(input.topicId, 'corrupt');
-    }
-    if (!isAppInboxEnqueueShape(command)) {
-        return toInvalidIdentity(input.topicId, 'corrupt');
+    catch (error) {
+        return toInvalidIdentity(
+            input.topicId,
+            error instanceof AppInboxTypeUnavailableError ? 'unavailable' : 'corrupt'
+        );
     }
     if (
         !APP_INBOX_OPERATIONS.has(dispatchedOperation) ||
@@ -139,7 +135,7 @@ export function validatePersistedAppInboxCommandIdentity(
             operation: dispatchedOperation as AppInboxType,
             operationSource: 'command'
         },
-        command: command as AppInboxEnqueueInput<unknown>
+        command
     };
 }
 
@@ -171,22 +167,6 @@ function isOperationForTopic(
     return topicId === APP_INBOX_GROUP_TOPIC
         ? APP_INBOX_GROUP_OPERATIONS.has(operation)
         : topicId === APP_INBOX_CLIENT_TOPIC && operation.startsWith('CLIENT_');
-}
-
-function isAppInboxEnqueueShape(value: unknown): value is
-    & Record<string, unknown>
-    & {
-        type: string;
-        data: unknown;
-    } {
-    return (
-        isRecord(value) &&
-        typeof value.type === 'string' &&
-        Object.prototype.hasOwnProperty.call(value, 'data') &&
-        OPTIONAL_STRING_FIELDS.every(
-            (field) => value[field] === undefined || typeof value[field] === 'string'
-        )
-    );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

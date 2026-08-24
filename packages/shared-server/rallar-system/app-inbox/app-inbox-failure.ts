@@ -1,14 +1,16 @@
+import { decodeJsonWireValue, type JsonWireObject, type JsonWireValue } from '../protocol/json-wire-identity.ts';
+
 export interface AppInboxFailureIssue {
     readonly code: string;
     readonly path: readonly (string | number)[] | null;
     readonly message: string;
-    readonly details: Readonly<Record<string, unknown>> | null;
+    readonly details: JsonWireObject | null;
 }
 
 export interface AppInboxFailureDenial {
     readonly code: string;
     readonly message: string;
-    readonly details: Readonly<Record<string, unknown>> | null;
+    readonly details: JsonWireObject | null;
 }
 
 export interface AppInboxFailureRetry {
@@ -21,7 +23,6 @@ export interface AppInboxFailureRetry {
 
 export interface AppInboxFailure {
     readonly type: 'app-inbox-failure';
-    readonly version: AppInboxFailureVersion;
     readonly code: string;
     readonly status: number;
     readonly message: string;
@@ -30,56 +31,42 @@ export interface AppInboxFailure {
     readonly retry: AppInboxFailureRetry | null;
 }
 
-export type AppInboxFailureVersion =
-    | 'canonical.v2'
-    | 'retry-exhausted.v1'
-    | 'malformed.v0';
+export interface TerminalAppInboxFailureInput {
+    readonly code: string;
+    readonly status: number;
+    readonly message: string;
+    readonly issues?: readonly AppInboxFailureIssue[];
+    readonly denial?: AppInboxFailureDenial;
+}
 
-export { readAppInboxFailure, readPersistedAppInboxFailure } from './app-inbox-failure-decoding.ts';
+export function encodeAppInboxFailure(failure: AppInboxFailure): JsonWireValue {
+    return decodeJsonWireValue(failure, 'AppInbox failure');
+}
 
 export function toTerminalAppInboxFailure(
-    error: unknown,
-    code: string
+    input: TerminalAppInboxFailureInput
 ): AppInboxFailure {
-    const message = error instanceof Error ? error.message : String(error);
-    const status = readErrorStatus(error, 400);
     return {
         type: 'app-inbox-failure',
-        version: 'canonical.v2',
-        code,
-        status,
-        message,
-        issues: readErrorIssues(error),
-        denial: status === 403
-            ? {
-                code,
-                message,
-                details: readErrorDetails(error)
-            }
-            : null,
+        code: input.code,
+        status: input.status,
+        message: input.message,
+        issues: input.issues ?? null,
+        denial: input.denial ?? null,
         retry: null
     };
 }
 
 export function toPolicyDeniedAppInboxFailure(
-    input: Readonly<{
-        code: string;
-        message: string;
-        details: Readonly<Record<string, unknown>> | undefined;
-    }>
+    denial: AppInboxFailureDenial
 ): AppInboxFailure {
     return {
         type: 'app-inbox-failure',
-        version: 'canonical.v2',
-        code: input.code,
+        code: denial.code,
         status: 403,
-        message: input.message,
+        message: denial.message,
         issues: null,
-        denial: {
-            code: input.code,
-            message: input.message,
-            details: input.details ?? null
-        },
+        denial,
         retry: null
     };
 }
@@ -87,7 +74,6 @@ export function toPolicyDeniedAppInboxFailure(
 export function toUnavailableAppInboxFailure(): AppInboxFailure {
     return {
         type: 'app-inbox-failure',
-        version: 'canonical.v2',
         code: 'app-inbox-unavailable',
         status: 503,
         message: 'App inbox entry did not complete within the wait budget',
@@ -103,56 +89,26 @@ export function toUnavailableAppInboxFailure(): AppInboxFailure {
     };
 }
 
-function readErrorStatus(error: unknown, fallback: number): number {
-    if (!isRecord(error) || !Number.isInteger(error.status)) {
-        return fallback;
-    }
-    const status = Number(error.status);
-    return status >= 400 && status <= 599 ? status : fallback;
-}
-
-function readErrorIssues(error: unknown): readonly AppInboxFailureIssue[] | null {
-    if (!isRecord(error) || !Array.isArray(error.issues)) {
-        return null;
-    }
-    return error.issues.map((value) => toFailureIssue(value));
-}
-
-function toFailureIssue(value: unknown): AppInboxFailureIssue {
-    if (!isRecord(value)) {
-        return {
-            code: 'invalid-issue',
-            path: null,
-            message: 'Validation issue metadata is malformed',
-            details: null
-        };
-    }
+export function toUnexpectedAppInboxFailure(): AppInboxFailure {
     return {
-        code: typeof value.code === 'string' ? value.code : 'invalid-issue',
-        path: Array.isArray(value.path) &&
-                value.path.every((part) => typeof part === 'string' || typeof part === 'number')
-            ? value.path as readonly (string | number)[]
-            : null,
-        message: typeof value.message === 'string'
-            ? value.message
-            : 'Validation issue metadata is malformed',
-        details: isRecord(value.details) ? value.details : null
+        type: 'app-inbox-failure',
+        code: 'app-inbox-unexpected',
+        status: 500,
+        message: 'App inbox processing failed unexpectedly',
+        issues: null,
+        denial: null,
+        retry: null
     };
 }
 
-function readErrorDetails(error: unknown): Readonly<Record<string, unknown>> | null {
-    if (!isRecord(error)) {
-        return null;
-    }
-    if (isRecord(error.details)) {
-        return error.details;
-    }
-    if (isRecord(error.denial) && isRecord(error.denial.details)) {
-        return error.denial.details;
-    }
-    return null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
+export function toPersistedAppInboxFailureCorruption(): AppInboxFailure {
+    return {
+        type: 'app-inbox-failure',
+        code: 'app-inbox-persisted-failure-corrupt',
+        status: 500,
+        message: 'Persisted AppInbox failure is corrupt',
+        issues: null,
+        denial: null,
+        retry: null
+    };
 }

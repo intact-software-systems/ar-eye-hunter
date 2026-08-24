@@ -4,15 +4,13 @@ import { isCompletedOrFailed } from '@shared/queuebox/ResourceEntry.ts';
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
+import { AppInboxType, type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
-import {
-    AppInboxQueueClient,
-    AppInboxType,
-    SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC,
-    type AppInboxEnqueueInput,
-    type AppInboxOptions
-} from '../../app-inbox/app-inbox-queue-client.ts';
+import type { AppInboxOptions } from '../../app-inbox/app-inbox-options.ts';
+import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
+import { AppInboxQueueClient, SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '../../app-inbox/app-inbox-queue-client.ts';
+import { encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import type { RallarTimingSink } from '../../observability/timing.ts';
 import type { ClientStateService, ClientStateWritten } from '../client-state-service-contracts.ts';
 import {
@@ -27,6 +25,7 @@ import {
     toUpsertPrincipalCommandInput
 } from '../mutation/client-mutation-command.ts';
 import {
+    CLIENT_STATE_INBOX_REGISTRATION_TYPES,
     type ClientAuthorisedWsSessionConnectAppInboxPayload,
     type ClientAuthorisedWsSessionDisconnectAppInboxPayload,
     type ClientExpiredSessionsAppInboxPayload,
@@ -46,6 +45,16 @@ import {
     type ToAuthorisedWsClientConnectEnqueueInput,
     type ToAuthorisedWsClientDisconnectEnqueueInput
 } from './authorised-ws-client-app-inbox.ts';
+import {
+    decodeClientAuthorisedWsSessionConnectAppInboxPayload,
+    decodeClientAuthorisedWsSessionDisconnectAppInboxPayload,
+    decodeClientExpiredSessionsAppInboxPayload,
+    decodeClientInstanceUpsertAppInboxPayload,
+    decodeClientPrincipalUpsertAppInboxPayload,
+    decodeClientSessionConnectAppInboxPayload,
+    decodeClientSessionDisconnectAppInboxPayload,
+    decodeClientSessionHeartbeatAppInboxPayload
+} from './client-state-inbox-command-codec.ts';
 import { ClientStateInboxHandler } from './client-state-inbox-handler.ts';
 import {
     decodeAuthorisedWsClientMutationResult,
@@ -57,8 +66,8 @@ import {
 export namespace AppClientInboxService {
     export interface Dependencies {
         readonly inboxQueueReader: InboxQueueReader;
-        readonly resourceInboxRepository: AppInboxQueueClient.InboxRepository;
-        readonly resourceInboxResultsRepository: AppInboxQueueClient.ResultRepository;
+        readonly resourceInboxRepository: AppInboxEntryRepository;
+        readonly resourceInboxResultsRepository: AppInboxResultRepository;
         readonly database: PSqlSql;
         readonly clientStateService: ClientStateService;
     }
@@ -120,6 +129,7 @@ export class AppClientInboxService {
             serviceId: config.serviceId
         });
         this.registerClientStateMessages();
+        this.handlers.assertRegistrationComplete(CLIENT_STATE_INBOX_REGISTRATION_TYPES);
     }
 
     public async processAuthenticatedEntryUntilCompletion<V>(
@@ -198,9 +208,11 @@ export class AppClientInboxService {
     }
 
     private registerClientPrincipalUpsert(): void {
-        this.handlers.onStateMessage<ClientPrincipalUpsertAppInboxPayload>(
-            AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-            async (principal, context) =>
+        this.handlers.registerHandler({
+            type: AppInboxType.CLIENT_PRINCIPAL_UPSERT,
+            decodeCommand: decodeClientPrincipalUpsertAppInboxPayload,
+            encodeResult: (result) => encodeAppInboxResult(result, 'Client principal AppInbox result'),
+            handle: async (principal, context) =>
                 await this.handler.processCommand(
                     context,
                     toUpsertPrincipalCommandInput(
@@ -210,13 +222,15 @@ export class AppClientInboxService {
                         context.entry.key.resourceId
                     )
                 )
-        );
+        });
     }
 
     private registerClientInstanceUpsert(): void {
-        this.handlers.onStateMessage<ClientInstanceUpsertAppInboxPayload>(
-            AppInboxType.CLIENT_INSTANCE_UPSERT,
-            async (instance, context) =>
+        this.handlers.registerHandler({
+            type: AppInboxType.CLIENT_INSTANCE_UPSERT,
+            decodeCommand: decodeClientInstanceUpsertAppInboxPayload,
+            encodeResult: (result) => encodeAppInboxResult(result, 'Client instance AppInbox result'),
+            handle: async (instance, context) =>
                 await this.handler.processCommand(
                     context,
                     toUpsertInstanceCommandInput(
@@ -227,13 +241,15 @@ export class AppClientInboxService {
                         context.entry.key.resourceId
                     )
                 )
-        );
+        });
     }
 
     private registerClientSessionConnect(): void {
-        this.handlers.onStateMessage<ClientSessionConnectAppInboxPayload>(
-            AppInboxType.CLIENT_SESSION_CONNECT,
-            async (session, context) =>
+        this.handlers.registerHandler({
+            type: AppInboxType.CLIENT_SESSION_CONNECT,
+            decodeCommand: decodeClientSessionConnectAppInboxPayload,
+            encodeResult: (result) => encodeAppInboxResult(result, 'Client connect AppInbox result'),
+            handle: async (session, context) =>
                 await this.handler.processCommand(
                     context,
                     toConnectCommandInput(
@@ -247,13 +263,15 @@ export class AppClientInboxService {
                         {}
                     )
                 )
-        );
+        });
     }
 
     private registerClientSessionHeartbeat(): void {
-        this.handlers.onStateMessage<ClientSessionHeartbeatAppInboxPayload>(
-            AppInboxType.CLIENT_SESSION_HEARTBEAT,
-            async (session, context) =>
+        this.handlers.registerHandler({
+            type: AppInboxType.CLIENT_SESSION_HEARTBEAT,
+            decodeCommand: decodeClientSessionHeartbeatAppInboxPayload,
+            encodeResult: (result) => encodeAppInboxResult(result, 'Client heartbeat AppInbox result'),
+            handle: async (session, context) =>
                 await this.handler.processCommand(
                     context,
                     toHeartbeatCommandInput(
@@ -265,13 +283,15 @@ export class AppClientInboxService {
                         context.entry.key.resourceId
                     )
                 )
-        );
+        });
     }
 
     private registerClientSessionDisconnect(): void {
-        this.handlers.onStateMessage<ClientSessionDisconnectAppInboxPayload>(
-            AppInboxType.CLIENT_SESSION_DISCONNECT,
-            async (session, context) =>
+        this.handlers.registerHandler({
+            type: AppInboxType.CLIENT_SESSION_DISCONNECT,
+            decodeCommand: decodeClientSessionDisconnectAppInboxPayload,
+            encodeResult: (result) => encodeAppInboxResult(result, 'Client disconnect AppInbox result'),
+            handle: async (session, context) =>
                 await this.handler.processCommand(
                     context,
                     toDisconnectCommandInput(
@@ -284,28 +304,34 @@ export class AppClientInboxService {
                         context.entry.key.resourceId
                     )
                 )
-        );
+        });
     }
 
     private registerAuthorisedWsClientConnect(): void {
-        this.handlers.onStateMessage<ClientAuthorisedWsSessionConnectAppInboxPayload>(
-            AppInboxType.CLIENT_AUTHORISED_WS_CONNECT,
-            async (session, context) => await this.handler.processAuthorisedWsConnect(session, context)
-        );
+        this.handlers.registerHandler({
+            type: AppInboxType.CLIENT_AUTHORISED_WS_CONNECT,
+            decodeCommand: decodeClientAuthorisedWsSessionConnectAppInboxPayload,
+            encodeResult: (result) => encodeAppInboxResult(result, 'Authorised WebSocket connect AppInbox result'),
+            handle: async (session, context) => await this.handler.processAuthorisedWsConnect(session, context)
+        });
     }
 
     private registerAuthorisedWsClientDisconnect(): void {
-        this.handlers.onStateMessage<ClientAuthorisedWsSessionDisconnectAppInboxPayload>(
-            AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT,
-            async (input, context) => await this.handler.processAuthorisedWsDisconnect(input, context)
-        );
+        this.handlers.registerHandler({
+            type: AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT,
+            decodeCommand: decodeClientAuthorisedWsSessionDisconnectAppInboxPayload,
+            encodeResult: (result) => encodeAppInboxResult(result, 'Authorised WebSocket disconnect AppInbox result'),
+            handle: async (input, context) => await this.handler.processAuthorisedWsDisconnect(input, context)
+        });
     }
 
     private registerExpiredClientSessions(): void {
-        this.handlers.onStateMessage<ClientExpiredSessionsAppInboxPayload>(
-            AppInboxType.CLIENT_EXPIRED_SESSIONS,
-            async (input, context) => await this.handler.processExpiredSessionCommands(context, input.atEpochMs)
-        );
+        this.handlers.registerHandler({
+            type: AppInboxType.CLIENT_EXPIRED_SESSIONS,
+            decodeCommand: decodeClientExpiredSessionsAppInboxPayload,
+            encodeResult: (result) => encodeAppInboxResult(result, 'Client expiry AppInbox result'),
+            handle: async (input, context) => await this.handler.processExpiredSessionCommands(context, input.atEpochMs)
+        });
     }
 
     private toExpiredSessionsEnqueue(

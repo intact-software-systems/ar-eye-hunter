@@ -3,7 +3,7 @@ import type { PSqlResourceInboxRepository } from '@shared-server/queuebox/postgr
 import type {
     ResourceInboxResultsRepository
 } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
-import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import type {
     RallarAdminInboxServiceFactory,
     RallarCrdtInboxServiceFactory

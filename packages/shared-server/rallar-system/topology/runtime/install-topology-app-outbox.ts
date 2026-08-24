@@ -1,5 +1,4 @@
 import type { GroupRef } from '@shared/api/group-types.ts';
-import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { OutboxQueueReader } from '@shared/services/OutboxQueueReader.ts';
 import type { PSqlSql } from '../../../postgres/p-sql-sql.ts';
 import { AppOutboxType } from '../../app-outbox/app-outbox-type.ts';
@@ -52,11 +51,10 @@ export function installTopologyAppOutbox(
         options.outboxQueueReader.onOutboxMessageDo(
             AppOutboxType.FORMATION_TIMER,
             createFormationTimerWorkHandler({
-                findGroupSnapshotByRef: async (ref) => await options.findGroupSnapshotByRef(ref),
+                findGroupSnapshotByRef: async (ref, readOptions) =>
+                    await options.findGroupSnapshotByRef(ref, readOptions),
                 readPlannedTopology: async (ref) => {
-                    const view = (await options.topologyQuery.readTopologyView(ref)) as Readonly<{
-                        snapshot: RallarOverlayTopologySnapshot | null;
-                    }>;
+                    const view = await options.topologyQuery.readTopologyView(ref);
                     return view.snapshot;
                 },
                 topologyPlanning: options.topologyPlanning,

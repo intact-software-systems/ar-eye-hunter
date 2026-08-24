@@ -1,4 +1,4 @@
-import type { AppInboxEnqueueInput } from '../../app-inbox/app-inbox-queue-client.ts';
+import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
 import { hashCanonicalCommand } from '../../app-inbox/hash-canonical-command.ts';
 import type { PersistedAuthSession } from '../../auth/persistence/auth-persistence-contracts.ts';
 import type { IssuedAuthSession } from '../../auth/persistence/auth-session-types.ts';

@@ -1,7 +1,7 @@
 import { decodeAuthMutationResult } from '@shared-server/mod.ts';
 import type { AdminPruneCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-command-codec.ts';
 import { decodeAdminPruneEnqueueResultForCommand } from '@shared-server/rallar-system/admin-operations/inbox/admin-prune-inbox-codec.ts';
-import { readPersistedAppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
+import { decodePersistedAppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure-decoding.ts';
 import * as CrdtResult from '@shared-server/rallar-system/crdt/mutation/decode-crdt-mutation-result.ts';
 import type { RallarCrdtJsonValue } from '@shared/crdt/mod.ts';
 
@@ -101,8 +101,8 @@ export function validatePersistedAppInboxResult(
         return invalid(parsedResult, 'malformed-result-resource');
     }
     if (input.resultStatus === 'FAILED') {
-        const failure = readPersistedAppInboxFailure(input.resultResource ?? '');
-        return failure.version !== 'malformed.v0'
+        const failure = decodePersistedAppInboxFailure(input.resultResource ?? '');
+        return failure.code !== 'app-inbox-persisted-failure-corrupt'
             ? { valid: true, result }
             : invalid(result, 'malformed-failure-result');
     }

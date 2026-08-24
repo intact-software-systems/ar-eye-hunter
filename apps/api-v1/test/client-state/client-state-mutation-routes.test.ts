@@ -1,7 +1,7 @@
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
-import type { AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { type AppInboxEnqueueInput } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
 import { Either } from '@shared/resilience/Either.ts';
 

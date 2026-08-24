@@ -1,7 +1,7 @@
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 import { DEFAULT_STATE_APPLICATION_ID, DEFAULT_STATE_WORKSPACE_ID, type StateScope } from '@shared/api/state-types.ts';
-import type { AppInboxEnqueueInput } from '../../app-inbox/app-inbox-queue-client.ts';
-import { AppInboxType } from '../../app-inbox/app-inbox-queue-client.ts';
+import { type AppInboxEnqueueInput } from '../../app-inbox/app-inbox-contracts.ts';
+import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import type { RegisterAuthorisedWsClientInput } from '../client-state-service-contracts.ts';
 import { toClientMutationIssuedSessionAuthority } from '../mutation/client-mutation-authority.ts';
 import type {

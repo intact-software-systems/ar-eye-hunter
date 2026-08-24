@@ -1,7 +1,7 @@
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { ApiMutationFailure } from '@shared/api/mutation/api-mutation-failure.ts';
 import { Either } from '@shared/resilience/Either.ts';
 import { authenticationRequired } from '../../src/services/request-auth-service.ts';

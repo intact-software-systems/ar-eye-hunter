@@ -12,9 +12,9 @@ import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryCont
 import type { Either } from '@shared/resilience/Either.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import type { AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
-import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/app-inbox-handler-registry.ts';
-import { AppInboxQueueClient, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxQueueClient } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import type { ClientStateService, ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 import { AppClientInboxService } from '@shared-server/rallar-system/client-state/inbox/app-client-inbox-service.ts';
 
@@ -30,27 +30,10 @@ import {
 import { TestResourceInbox, TestResourceInboxResults } from './app-client-inbox-resource-fixtures.ts';
 
 describe('AppClientInbox operation matrix', () => {
-    it('registers the established eight client mutation families in order', () => {
-        const registration = vi
-            .spyOn(AppInboxHandlerRegistry.prototype, 'onStateMessage')
-            .mockImplementation(() => undefined);
-        try {
-            createClientInboxServiceForRegistration();
-
-            expect(registration.mock.calls.map(([type]) => type)).toEqual([
-                AppInboxType.CLIENT_PRINCIPAL_UPSERT,
-                AppInboxType.CLIENT_INSTANCE_UPSERT,
-                AppInboxType.CLIENT_SESSION_CONNECT,
-                AppInboxType.CLIENT_SESSION_HEARTBEAT,
-                AppInboxType.CLIENT_SESSION_DISCONNECT,
-                AppInboxType.CLIENT_AUTHORISED_WS_CONNECT,
-                AppInboxType.CLIENT_AUTHORISED_WS_DISCONNECT,
-                AppInboxType.CLIENT_EXPIRED_SESSIONS
-            ]);
-        }
-        finally {
-            registration.mockRestore();
-        }
+    it('finishes construction only after all eight client handlers are registered', () => {
+        expect(createClientInboxServiceForRegistration()).toBeInstanceOf(
+            AppClientInboxService
+        );
     });
 });
 

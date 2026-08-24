@@ -7,7 +7,7 @@ import type {
     UpsertClientInstanceRequest,
     UpsertClientPrincipalRequest
 } from '@shared/api/state-types.ts';
-import { AppInboxType } from '../../app-inbox/app-inbox-queue-client.ts';
+import { AppInboxType } from '../../app-inbox/app-inbox-contracts.ts';
 import type { RegisterAuthorisedWsClientInput } from '../client-state-service-contracts.ts';
 
 export type ClientPrincipalUpsertAppInboxPayload = Readonly<{

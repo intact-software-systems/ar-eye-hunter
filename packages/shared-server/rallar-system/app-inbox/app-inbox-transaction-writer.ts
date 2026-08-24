@@ -10,14 +10,19 @@ import {
 } from '@shared/queuebox/ResourceEntry.ts';
 import type { RallarTimingDetails, RallarTimingSink } from '../observability/timing.ts';
 import { timeRallarAsync } from '../observability/timing.ts';
-import { AppInboxReservationConflictError, type AppInboxMessageContext } from './app-inbox-contracts.ts';
+import type { JsonWireValue } from '../protocol/json-wire-identity.ts';
+import {
+    AppInboxReservationConflictError,
+    type AppInboxExecutionMetadata,
+    type AppInboxMessageContext
+} from './app-inbox-contracts.ts';
 
 export type AppInboxHandlerFinalization =
     | Readonly<{ state: 'pending'; }>
     | Readonly<{
         state: 'transaction-finalized';
         status: typeof EntityStatus.COMPLETED | typeof EntityStatus.FAILED;
-        result: unknown;
+        result: JsonWireValue;
     }>;
 
 export interface AppInboxMutationTransactionResult<DurableResult, AfterCommitResult> {
@@ -27,12 +32,12 @@ export interface AppInboxMutationTransactionResult<DurableResult, AfterCommitRes
 
 export interface AppInboxMutationTransactionWriter {
     writeMutation<Result>(
-        context: AppInboxMessageContext,
+        context: AppInboxMessageContext<Result>,
         write: (transaction: PSqlSql) => Promise<Result>
     ): Promise<Result>;
 
     writeMutationWithAfterCommitResult<DurableResult, AfterCommitResult>(
-        context: AppInboxMessageContext,
+        context: AppInboxMessageContext<DurableResult>,
         write: (
             transaction: PSqlSql
         ) => Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>>
@@ -45,14 +50,14 @@ interface AppInboxMutationFinalization<DurableResult, ReturnResult> {
 }
 
 export class AppInboxTransactionWriter implements AppInboxMutationTransactionWriter {
-    private readonly finalizationByContext = new WeakMap<AppInboxMessageContext, AppInboxHandlerFinalization>();
+    private readonly finalizationByContext = new WeakMap<object, AppInboxHandlerFinalization>();
 
     private readonly options: Readonly<{
         database: PSqlSql;
         serviceId: string;
         timing?: RallarTimingSink;
         nowEpochMs: () => number;
-        toTimingDetails: (context: AppInboxMessageContext) => RallarTimingDetails;
+        toTimingDetails: (context: AppInboxExecutionMetadata) => RallarTimingDetails;
     }>;
 
     constructor(
@@ -61,24 +66,24 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
             serviceId: string;
             timing?: RallarTimingSink;
             nowEpochMs: () => number;
-            toTimingDetails: (context: AppInboxMessageContext) => RallarTimingDetails;
+            toTimingDetails: (context: AppInboxExecutionMetadata) => RallarTimingDetails;
         }>
     ) {
         this.options = options;
     }
 
-    begin(context: AppInboxMessageContext): void {
+    begin<Result>(context: AppInboxMessageContext<Result>): void {
         this.finalizationByContext.set(context, { state: 'pending' });
     }
 
-    read(context: AppInboxMessageContext): AppInboxHandlerFinalization {
+    read<Result>(context: AppInboxMessageContext<Result>): AppInboxHandlerFinalization {
         return this.finalizationByContext.get(context) ?? { state: 'pending' };
     }
 
-    async writeMutation<R>(
-        context: AppInboxMessageContext,
-        write: (transaction: PSqlSql) => Promise<R>
-    ): Promise<R> {
+    async writeMutation<Result>(
+        context: AppInboxMessageContext<Result>,
+        write: (transaction: PSqlSql) => Promise<Result>
+    ): Promise<Result> {
         return await this.writeFinalizedMutation(context, async (transaction) => {
             const durableResult = await write(transaction);
             return { durableResult, returnResult: durableResult };
@@ -86,7 +91,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
     }
 
     async writeMutationWithAfterCommitResult<DurableResult, AfterCommitResult>(
-        context: AppInboxMessageContext,
+        context: AppInboxMessageContext<DurableResult>,
         write: (
             transaction: PSqlSql
         ) => Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>>
@@ -98,7 +103,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
     }
 
     private async writeFinalizedMutation<DurableResult, ReturnResult>(
-        context: AppInboxMessageContext,
+        context: AppInboxMessageContext<DurableResult>,
         write: (
             transaction: PSqlSql
         ) => Promise<AppInboxMutationFinalization<DurableResult, ReturnResult>>
@@ -117,7 +122,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
                     toResourceEntryWithUpdatedResource(
                         context.entry,
                         EntityStatus.COMPLETED,
-                        result.durableResult
+                        context.encodeResult(result.durableResult)
                     )
                 );
                 await this.finish(
@@ -132,12 +137,15 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         this.finalizationByContext.set(context, {
             state: 'transaction-finalized',
             status: EntityStatus.COMPLETED,
-            result: finalized.durableResult
+            result: context.encodeResult(finalized.durableResult)
         });
         return finalized.returnResult;
     }
 
-    async writeTerminalFailure(context: AppInboxMessageContext, result: unknown): Promise<void> {
+    async writeTerminalFailure<Result>(
+        context: AppInboxMessageContext<Result>,
+        result: JsonWireValue
+    ): Promise<void> {
         this.ensurePending(context);
         const details = {
             ...this.options.toTimingDetails(context),
@@ -163,7 +171,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         });
     }
 
-    private ensurePending(context: AppInboxMessageContext): void {
+    private ensurePending<Result>(context: AppInboxMessageContext<Result>): void {
         const current = this.finalizationByContext.get(context);
         if (current?.state === 'transaction-finalized') {
             throw new Error('App inbox handler context is already finalized');
@@ -173,8 +181,8 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         }
     }
 
-    private async inTransaction<R>(
-        context: AppInboxMessageContext,
+    private async inTransaction<ReturnResult, Result>(
+        context: AppInboxMessageContext<Result>,
         details: RallarTimingDetails,
         write: (
             transaction: PSqlSql,
@@ -182,8 +190,8 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
                 finalization: PSqlResourceInboxFinalizationRepository;
                 results: ResourceInboxResultsRepository;
             }>
-        ) => Promise<R>
-    ): Promise<R> {
+        ) => Promise<ReturnResult>
+    ): Promise<ReturnResult> {
         return await timeRallarAsync(
             this.options.timing,
             {
@@ -205,11 +213,11 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
         );
     }
 
-    private async timeWrite<R>(
-        context: AppInboxMessageContext,
+    private async timeWrite<ReturnResult, Result>(
+        context: AppInboxMessageContext<Result>,
         details: RallarTimingDetails,
-        write: () => Promise<R>
-    ): Promise<R> {
+        write: () => Promise<ReturnResult>
+    ): Promise<ReturnResult> {
         return await timeRallarAsync(
             this.options.timing,
             {
@@ -224,7 +232,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
     }
 
     private async finish(
-        context: AppInboxMessageContext,
+        context: AppInboxExecutionMetadata,
         finalization: PSqlResourceInboxFinalizationRepository,
         status: typeof EntityStatus.COMPLETED | typeof EntityStatus.FAILED,
         completedAtEpochMs: number
@@ -242,7 +250,7 @@ export class AppInboxTransactionWriter implements AppInboxMutationTransactionWri
 }
 
 export function toFinalizedResourceEntry(
-    context: AppInboxMessageContext,
+    context: AppInboxExecutionMetadata,
     status: typeof EntityStatus.COMPLETED | typeof EntityStatus.FAILED,
     completedAtEpochMs: number
 ): ResourceEntry {

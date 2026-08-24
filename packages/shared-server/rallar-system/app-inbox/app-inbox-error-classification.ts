@@ -1,13 +1,26 @@
-import { isGroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
+import type { GroupTopologyValidationIssue } from '@shared/api/graph-topology-management-types.ts';
 import { NonRetryableException } from '@shared/queuebox/DequeueResourceEntryController.ts';
+import { AdminPruneValidationError } from '../admin-operations/inbox/admin-prune-inbox-validation.ts';
+import { AuthMutationRejectedError } from '../auth/mutation/auth-mutation-rejected-error.ts';
+import { CrdtHttpAdminRejectionError } from '../crdt/inbox/crdt-http-admin-rejection-error.ts';
+import { GroupPolicyDeniedError, isGroupPolicyDeniedError } from '../group-state/policy/group-policy-result.ts';
+import { decodeJsonWireValue, type JsonWireObject } from '../protocol/json-wire-identity.ts';
+import { GroupTopologyConfigValidationError } from '../topology/config/group-topology-config.ts';
+import { GroupTopologyValidationError } from '../topology/group-topology-errors.ts';
 import { AppInboxReservationConflictError } from './app-inbox-contracts.ts';
-import { toPolicyDeniedAppInboxFailure, toTerminalAppInboxFailure } from './app-inbox-failure.ts';
+import {
+    toPolicyDeniedAppInboxFailure,
+    toTerminalAppInboxFailure,
+    type AppInboxFailure,
+    type AppInboxFailureDenial,
+    type AppInboxFailureIssue
+} from './app-inbox-failure.ts';
 
 export type AppInboxErrorClassification =
     | Readonly<{
         kind: 'terminal';
         code: string;
-        result: unknown;
+        result: AppInboxFailure;
     }>
     | Readonly<{
         kind: 'retryable';
@@ -25,88 +38,73 @@ const RETRYABLE_CONFLICT_CODES = new Set([
 
 const RETRYABLE_CODES = new Set([...RETRYABLE_CONFLICT_CODES, 'app-inbox-transient']);
 
-const TERMINAL_CODES = new Set([
-    'app-inbox-malformed-command',
-    'app-inbox-idempotency-conflict',
-    'app-inbox-lifecycle-rejected',
-    'auth-mutation-rejected',
-    'client-mutation-idempotency-conflict',
-    'client-mutation-rejected',
-    'client-state-event-collision',
-    'client-state-event-repository-invariant-corruption',
-    'client-state-repository-invariant-corruption',
-    'admin-prune-authority-denied',
-    'crdt-admin-mutation-rejected',
-    'crdt-authority-denied',
-    'group-mutation-authority-denied',
-    'group-mutation-idempotency-conflict',
-    'group-mutation-rejected',
-    'group-state-event-collision',
-    'group-state-event-repository-invariant-corruption',
-    'group-state-repository-invariant-corruption',
-    'group-topology-config-idempotency-conflict',
-    'group-topology-config-repository-invariant-corruption',
-    'group-topology-config-validation-failed',
-    'group-topology-validation-failed',
-    'resource-inbox-invariant-corruption',
-    'rtc-rtt-idempotency-conflict',
-    'rtc-topology-publication-collision',
-    'rtc-topology-repository-invariant-corruption',
-    'state-mutation-outbox-collision',
-    'state-mutation-outbox-invariant-corruption'
+const TERMINAL_STATUS_BY_CODE = new Map<string, number>([
+    ['app-inbox-malformed-command', 400],
+    ['app-inbox-idempotency-conflict', 409],
+    ['app-inbox-lifecycle-rejected', 409],
+    ['client-mutation-idempotency-conflict', 409],
+    ['client-mutation-rejected', 400],
+    ['client-state-event-collision', 409],
+    ['client-state-event-repository-invariant-corruption', 500],
+    ['client-state-repository-invariant-corruption', 500],
+    ['admin-prune-authority-denied', 403],
+    ['crdt-authority-denied', 403],
+    ['group-mutation-authority-denied', 403],
+    ['group-mutation-idempotency-conflict', 409],
+    ['group-mutation-rejected', 400],
+    ['group-state-event-collision', 409],
+    ['group-state-event-repository-invariant-corruption', 500],
+    ['group-state-repository-invariant-corruption', 500],
+    ['group-topology-config-idempotency-conflict', 409],
+    ['group-topology-config-repository-invariant-corruption', 500],
+    ['resource-inbox-invariant-corruption', 500],
+    ['rtc-rtt-idempotency-conflict', 409],
+    ['rtc-topology-publication-collision', 409],
+    ['rtc-topology-repository-invariant-corruption', 500],
+    ['state-mutation-outbox-collision', 409],
+    ['state-mutation-outbox-invariant-corruption', 500]
 ]);
+
+interface FailureDenialInput {
+    readonly code: string;
+    readonly status: number;
+    readonly message: string;
+    readonly details: JsonWireObject | null;
+}
 
 export function classifyAppInboxError(error: unknown): AppInboxErrorClassification {
     const code = toAppInboxErrorCode(error);
     if (error instanceof AppInboxReservationConflictError || RETRYABLE_CODES.has(code)) {
-        return {
-            kind: 'retryable',
-            code,
-            message: toRetryableAppInboxMessage(code)
-        };
+        return toRetryableClassification(code);
     }
     if (isGroupPolicyDeniedError(error)) {
-        return {
-            kind: 'terminal',
-            code: error.denial.code,
-            result: toPolicyDeniedAppInboxFailure({
-                code: error.denial.code,
-                message: error.denial.message,
-                details: error.denial.details
-            })
-        };
+        return toTerminalClassification(toGroupPolicyFailure(error));
+    }
+    if (error instanceof GroupTopologyConfigValidationError || error instanceof GroupTopologyValidationError) {
+        return toTerminalClassification(toTopologyValidationFailure(error));
+    }
+    if (error instanceof AdminPruneValidationError) {
+        return toTerminalClassification(toAdminPruneValidationFailure(error));
+    }
+    if (error instanceof CrdtHttpAdminRejectionError) {
+        return toTerminalClassification(toCrdtAdminRejectionFailure(error));
+    }
+    if (error instanceof AuthMutationRejectedError) {
+        return toTerminalClassification(toExplicitStatusFailure(error, error.code, error.status));
     }
     if (error instanceof SyntaxError || error instanceof TypeError) {
-        return {
-            kind: 'terminal',
-            code: 'app-inbox-malformed-command',
-            result: toTerminalAppInboxFailure(
-                Object.assign(new Error('App inbox command is malformed'), {
-                    status: 400
-                }),
-                'app-inbox-malformed-command'
-            )
-        };
+        return toMalformedCommandClassification();
     }
     if (error instanceof NonRetryableException) {
-        return {
-            kind: 'terminal',
-            code: 'app-inbox-non-retryable',
-            result: toTerminalAppInboxFailure(error, 'app-inbox-non-retryable')
-        };
+        return toTerminalClassification(
+            toExplicitStatusFailure(error, 'app-inbox-non-retryable', 400)
+        );
     }
-    if (TERMINAL_CODES.has(code)) {
-        return {
-            kind: 'terminal',
-            code,
-            result: toTerminalResult(error, code)
-        };
+    const terminalStatus = TERMINAL_STATUS_BY_CODE.get(code);
+    if (terminalStatus !== undefined) {
+        return toTerminalClassification(toExplicitStatusFailure(error, code, terminalStatus));
     }
-    return {
-        kind: 'retryable',
-        code,
-        message: toRetryableAppInboxMessage(code)
-    };
+    return toRetryableClassification(code);
 }
 
 export function toAppInboxErrorCode(error: unknown): string {
@@ -124,6 +122,141 @@ export function toRetryableAppInboxMessage(code: string): string {
     return 'AppInbox processing encountered a retryable transient failure';
 }
 
-function toTerminalResult(error: unknown, code: string): unknown {
-    return toTerminalAppInboxFailure(error, code);
+function toRetryableClassification(code: string): AppInboxErrorClassification {
+    return {
+        kind: 'retryable',
+        code,
+        message: toRetryableAppInboxMessage(code)
+    };
+}
+
+function toTerminalClassification(result: AppInboxFailure): AppInboxErrorClassification {
+    return { kind: 'terminal', code: result.code, result };
+}
+
+function toMalformedCommandClassification(): AppInboxErrorClassification {
+    const code = 'app-inbox-malformed-command';
+    return toTerminalClassification(toTerminalAppInboxFailure({
+        code,
+        status: 400,
+        message: 'App inbox command is malformed'
+    }));
+}
+
+function toGroupPolicyFailure(error: GroupPolicyDeniedError): AppInboxFailure {
+    try {
+        return toPolicyDeniedAppInboxFailure({
+            code: error.denial.code,
+            message: error.denial.message,
+            details: decodeNullableFailureDetails(error.denial.details, 'Group policy denial details')
+        });
+    }
+    catch {
+        return toInvalidFailureMetadata();
+    }
+}
+
+function toTopologyValidationFailure(
+    error: GroupTopologyConfigValidationError | GroupTopologyValidationError
+): AppInboxFailure {
+    try {
+        return toTerminalAppInboxFailure({
+            code: error.code,
+            status: error.status,
+            message: error.message,
+            issues: error.issues.map(toTopologyFailureIssue)
+        });
+    }
+    catch {
+        return toInvalidFailureMetadata();
+    }
+}
+
+function toTopologyFailureIssue(issue: GroupTopologyValidationIssue): AppInboxFailureIssue {
+    return {
+        code: issue.code,
+        path: issue.path ?? null,
+        message: issue.message,
+        details: decodeNullableFailureDetails(issue.details, 'Topology validation issue details')
+    };
+}
+
+function toAdminPruneValidationFailure(error: AdminPruneValidationError): AppInboxFailure {
+    const issues = error.issues.map((issue): AppInboxFailureIssue => ({
+        code: issue.code,
+        path: null,
+        message: issue.message,
+        details: null
+    }));
+    const denial = toFailureDenial({
+        code: error.code,
+        status: error.status,
+        message: error.message,
+        details: null
+    });
+    return toTerminalAppInboxFailure({
+        code: error.code,
+        status: error.status,
+        message: error.message,
+        issues,
+        ...(denial ? { denial } : {})
+    });
+}
+
+function toCrdtAdminRejectionFailure(error: CrdtHttpAdminRejectionError): AppInboxFailure {
+    const denial = toFailureDenial({
+        code: error.code,
+        status: error.status,
+        message: error.message,
+        details: error.details
+    });
+    return toTerminalAppInboxFailure({
+        code: error.code,
+        status: error.status,
+        message: error.message,
+        ...(denial ? { denial } : {})
+    });
+}
+
+function toExplicitStatusFailure(error: unknown, code: string, status: number): AppInboxFailure {
+    const message = error instanceof Error ? error.message : String(error);
+    const denial = toFailureDenial({ code, status, message, details: null });
+    return toTerminalAppInboxFailure({
+        code,
+        status,
+        message,
+        ...(denial ? { denial } : {})
+    });
+}
+
+function toFailureDenial(input: FailureDenialInput): AppInboxFailureDenial | undefined {
+    return input.status === 401 || input.status === 403
+        ? { code: input.code, message: input.message, details: input.details }
+        : undefined;
+}
+
+function decodeNullableFailureDetails(
+    value: unknown,
+    label: string
+): JsonWireObject | null {
+    if (value === undefined || value === null) {
+        return null;
+    }
+    const decoded = decodeJsonWireValue(value, label);
+    if (!isJsonWireObject(decoded)) {
+        throw new TypeError(`${label} must be a JSON object`);
+    }
+    return decoded;
+}
+
+function isJsonWireObject(value: ReturnType<typeof decodeJsonWireValue>): value is JsonWireObject {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function toInvalidFailureMetadata(): AppInboxFailure {
+    return toTerminalAppInboxFailure({
+        code: 'app-inbox-failure-metadata-invalid',
+        status: 500,
+        message: 'AppInbox failure metadata is not JSON-safe'
+    });
 }

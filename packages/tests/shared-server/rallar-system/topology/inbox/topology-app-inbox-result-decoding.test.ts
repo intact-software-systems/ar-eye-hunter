@@ -1,7 +1,7 @@
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
 
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { createAuthorityHarness, waitForQueueEntry } from '../../../group-state/inbox/group-state-inbox-test-runtime.ts';
 
 import { toTopologyAppInboxCommand } from '@shared-server/rallar-system/topology/inbox/topology-app-inbox-command.ts';
@@ -70,10 +70,9 @@ describe('topology inbox result decoding', () => {
         expect(result.right).toBeUndefined();
         expect(result.left).toEqual({
             type: 'app-inbox-failure',
-            version: 'canonical.v2',
-            code: 'TypeError',
-            status: 400,
-            message: 'Topology config AppInbox receipt must be an exact object',
+            code: 'app-inbox-result-corrupt',
+            status: 500,
+            message: 'Persisted AppInbox result is corrupt',
             issues: null,
             denial: null,
             retry: null

@@ -16,8 +16,9 @@ import {
 
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
 
+import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { AppInboxHandlerRegistry } from '@shared-server/rallar-system/app-inbox/app-inbox-handler-registry.ts';
-import { AppInboxType, type AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import { PSqlRuntimeStateRepository } from '@shared-server/runtime-state/postgres/p-sql-runtime-state-repository.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
@@ -142,7 +143,8 @@ describe('Postgres transaction write boundary', () => {
                 enqueue.type,
                 enqueue
             ),
-            entry: incomingEntry
+            entry: incomingEntry,
+            encodeResult: (result) => encodeAppInboxResult(result, 'Postgres transaction test result')
         };
 
         const result = await handlerRegistry.writeMutation(context, async (transaction) => {

@@ -11,7 +11,8 @@ import type { Either } from '@shared/resilience/Either.ts';
 
 import { type IssuedAuthSession } from '@shared-server/rallar-system/auth/persistence/auth-session-types.ts';
 
-import { AppInboxType, type AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { type AppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
 import type { GroupTopologyConfigMutationExecution } from '@shared-server/rallar-system/topology/config/mutation/to-topology-config-mutation-result.ts';
 
 import { requireExactKeys, requireExactOptionalKeys, requireOneOf, requireString } from '@shared-server/rallar-system/protocol/exact-object-decoding.ts';

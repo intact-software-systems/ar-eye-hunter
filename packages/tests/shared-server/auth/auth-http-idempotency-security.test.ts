@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { createHmacAuthCredentialIssuer } from '@shared-server/rallar-system/auth/credentials/auth-credential-issuer.ts';
 import { AuthSessionRepository } from '@shared-server/rallar-system/auth/persistence/auth-session-repository.ts';
 import { toAppQueueKey } from '@shared/queuebox/AppQueueIdentity.ts';
@@ -107,14 +107,25 @@ describe('auth HTTP AppInbox idempotency security', () => {
         const issuer = createHmacAuthCredentialIssuer(
             'auth-winner-fact-secret-0123456789abcdef'
         );
-        const issueAccessToken = vi.spyOn(issuer, 'issueAccessToken');
-        const nowEpochMs = vi.fn(() => 5_000);
+        const issuedAccessTokenSessionIds: string[] = [];
+        const credentialIssuer = {
+            ...issuer,
+            issueAccessToken: async (sessionId: string) => {
+                issuedAccessTokenSessionIds.push(sessionId);
+                return await issuer.issueAccessToken(sessionId);
+            }
+        };
+        const sampledTimes: number[] = [];
+        const nowEpochMs = () => {
+            sampledTimes.push(5_000);
+            return 5_000;
+        };
         const runtimeRepository = new FakeRuntimeStateRepository();
         const auth = createAuthInboxTestRuntime({
             runtimeRepository,
             serviceId: 'auth-winner-fact-service',
             credentialSecret: 'unused-auth-winner-fact-secret-0123456789abcdef',
-            credentialIssuer: issuer,
+            credentialIssuer,
             nowEpochMs
         });
         const input = {
@@ -133,8 +144,8 @@ describe('auth HTTP AppInbox idempotency security', () => {
         const second = auth.service.issueSession(input);
         await waitForAuthInboxEntry(auth.queue);
 
-        expect(nowEpochMs).not.toHaveBeenCalled();
-        expect(issueAccessToken).not.toHaveBeenCalled();
+        expect(sampledTimes).toEqual([]);
+        expect(issuedAccessTokenSessionIds).toEqual([]);
 
         await auth.reader.dequeueInbox(
             InboxQueueReader.INBOX_DEQUEUE_TYPES,
@@ -142,20 +153,24 @@ describe('auth HTTP AppInbox idempotency security', () => {
         );
         const [firstResult, secondResult] = await Promise.all([first, second]);
 
-        expect(nowEpochMs).toHaveBeenCalledOnce();
-        expect(issueAccessToken).toHaveBeenCalledTimes(3);
+        expect(sampledTimes).toEqual([5_000]);
+        expect(issuedAccessTokenSessionIds).toHaveLength(3);
         expect(firstResult.right).toEqual(secondResult.right);
 
         const replay = await auth.service.issueSession(input);
 
         expect(replay.right).toEqual(firstResult.right);
-        expect(nowEpochMs).toHaveBeenCalledOnce();
-        expect(issueAccessToken).toHaveBeenCalledTimes(4);
+        expect(sampledTimes).toEqual([5_000]);
+        expect(issuedAccessTokenSessionIds).toHaveLength(4);
     });
 
     it('starts login TTL after winner execution rather than reservation queue delay', async () => {
         let currentTime = 0;
-        const nowEpochMs = vi.fn(() => currentTime);
+        const sampledTimes: number[] = [];
+        const nowEpochMs = () => {
+            sampledTimes.push(currentTime);
+            return currentTime;
+        };
         const runtimeRepository = new FakeRuntimeStateRepository();
         const auth = createAuthInboxTestRuntime({
             runtimeRepository,
@@ -176,7 +191,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
         });
         await waitForAuthInboxEntry(auth.queue);
         const [queued] = await readEntries(auth.queue);
-        expect(nowEpochMs).not.toHaveBeenCalled();
+        expect(sampledTimes).toEqual([]);
         expect(queued.resource).not.toContain('capturedAtEpochMs');
         expect(queued.resource).not.toContain('sessionId');
         expect(queued.resource).not.toContain('accessTokenDigest');
@@ -189,12 +204,16 @@ describe('auth HTTP AppInbox idempotency security', () => {
         const result = await pending;
 
         expect(result.right?.expiresAtEpochMs).toBe(69_000);
-        expect(nowEpochMs).toHaveBeenCalledOnce();
+        expect(sampledTimes).toEqual([9_000]);
     });
 
     it('timestamps registration at worker execution without persisting the password', async () => {
         let currentTime = 0;
-        const nowEpochMs = vi.fn(() => currentTime);
+        const sampledTimes: number[] = [];
+        const nowEpochMs = () => {
+            sampledTimes.push(currentTime);
+            return currentTime;
+        };
         const runtimeRepository = new FakeRuntimeStateRepository();
         const auth = createAuthInboxTestRuntime({
             runtimeRepository,
@@ -213,7 +232,7 @@ describe('auth HTTP AppInbox idempotency security', () => {
         await waitForAuthInboxEntry(auth.queue);
         const [queued] = await readEntries(auth.queue);
 
-        expect(nowEpochMs).not.toHaveBeenCalled();
+        expect(sampledTimes).toEqual([]);
         expect(queued.resource).not.toContain(input.request.password);
         expect(queued.resource).not.toContain('capturedAtEpochMs');
         expect(queued.resource).not.toContain('createdAtEpochMs');
@@ -227,12 +246,12 @@ describe('auth HTTP AppInbox idempotency security', () => {
         const result = await pending;
 
         expect(result.right?.registeredAtEpochMs).toBe(9_000);
-        expect(nowEpochMs).toHaveBeenCalledOnce();
+        expect(sampledTimes).toEqual([9_000]);
 
         const replay = await auth.service.registerUser(input);
 
         expect(replay.right).toEqual(result.right);
-        expect(nowEpochMs).toHaveBeenCalledOnce();
+        expect(sampledTimes).toEqual([9_000]);
     });
 
     it('replays a consumed agent ticket only with its original credential proof', async () => {

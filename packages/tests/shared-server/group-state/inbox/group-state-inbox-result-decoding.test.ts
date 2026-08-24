@@ -1,4 +1,4 @@
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
 import { describe, expect, it } from 'vitest';
 
@@ -52,10 +52,9 @@ describe('group-state AppInbox durable result decoding', () => {
         expect(result.right).toBeUndefined();
         expect(result.left).toEqual({
             type: 'app-inbox-failure',
-            version: 'canonical.v2',
-            code: 'TypeError',
-            status: 400,
-            message: 'Group state result fields are invalid',
+            code: 'app-inbox-result-corrupt',
+            status: 500,
+            message: 'Persisted AppInbox result is corrupt',
             issues: null,
             denial: null,
             retry: null

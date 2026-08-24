@@ -5,11 +5,11 @@ import {
 } from '@shared-server/queuebox/postgres/create-p-sql-resource-inbox-repository.ts';
 import { PSqlQueueBox } from '@shared-server/queuebox/postgres/p-sql-queue-box.ts';
 import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres/resource-inbox-results-repository.ts';
+import type { AppInboxOptions } from '@shared-server/rallar-system/app-inbox/app-inbox-options.ts';
 import {
     createAppInboxRetryExhaustionHandler,
-    createAppInboxRetryExhaustionRecoveryHandler,
-    type AppInboxOptions
-} from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+    createAppInboxRetryExhaustionRecoveryHandler
+} from '@shared-server/rallar-system/app-inbox/app-inbox-retry-finalization.ts';
 import { AppOutboxType } from '@shared-server/rallar-system/app-outbox/app-outbox-type.ts';
 import { createAuthMutationService } from '@shared-server/rallar-system/auth/auth-mutation-service.ts';
 import {

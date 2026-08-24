@@ -1,10 +1,8 @@
-import { readFileSync } from 'node:fs';
+import { GROUP_OWNER_FIXTURE_SOURCE } from './fixtures/mutation-route-owner/group-state-inbox-owner-fixture.ts';
 
-// These suites rewrite the live group owner to prove the routing analyzer's behaviour, so they need
-// exact source text to splice against. Pinning that text as literals coupled every suite to the
-// formatter: a repository reformat changed indentation and trailing commas, every `replace` silently
-// became a no-op, and the analyzer reported no issues against sources nobody had actually mutated.
-// Deriving each anchor from the file keeps the coupling to the *construct* rather than its layout.
+// The analyzer's focused algorithm suites mutate this representative source fixture. Live production
+// connectivity has its own inventory test; keeping mutation scenarios synthetic prevents formatter or
+// ownership refactors from silently changing what an analyzer unit test is intended to exercise.
 
 export const GROUP_OWNER_PATH = 'packages/shared-server/rallar-system/group-state/inbox/group-state-inbox-service.ts';
 
@@ -20,7 +18,7 @@ export interface GroupOwnerAnchors {
 }
 
 export function readGroupOwnerAnchors(): GroupOwnerAnchors {
-    const source = readFileSync(GROUP_OWNER_PATH, 'utf8');
+    const source = GROUP_OWNER_FIXTURE_SOURCE;
     return {
         source,
         collection: matchAnchor(
@@ -35,7 +33,7 @@ export function readGroupOwnerAnchors(): GroupOwnerAnchors {
         ),
         loopEnd: matchAnchor(
             source,
-            /[^\S\r\n]*this\.handlers\.onStateMessage<GroupPresenceSessionCleanupAppInboxPayload>\(/u,
+            /[^\S\r\n]*this\.handlers\.registerHandler\(\{\r?\n\s*type:\s*AppInboxType\.GROUP_PRESENCE_SESSION_CLEANUP,/u,
             'group presence cleanup registration'
         ),
         classStart: matchAnchor(
@@ -50,7 +48,7 @@ function matchAnchor(source: string, pattern: RegExp, description: string): stri
     const matched = pattern.exec(source);
     if (matched === null) {
         throw new Error(
-            `${GROUP_OWNER_PATH} no longer contains the ${description} these suites splice against. ` +
+            `The group owner fixture no longer contains the ${description} these suites splice against. ` +
                 'Update the pattern in mutation-route-owner-anchors.ts rather than the callers.'
         );
     }

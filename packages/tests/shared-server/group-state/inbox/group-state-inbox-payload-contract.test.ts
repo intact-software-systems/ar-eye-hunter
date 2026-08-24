@@ -1,6 +1,7 @@
-import { describe, expectTypeOf, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { decodeGroupStateAppInboxCommand } from '@shared-server/rallar-system/group-state/inbox/decode-group-state-app-inbox-command.ts';
 import {
     type AuthenticatedGroupMutationEnqueue,
     type AuthenticatedGroupMutationPayloadByType,
@@ -17,6 +18,53 @@ describe('authenticated group mutation enqueue payload contract', () => {
         expectTypeOf<AuthenticatedGroupMutationPayloadByType[typeof AppInboxType.GROUP_MEMBER_REMOVE]>().toEqualTypeOf<GroupMemberRemoveAppInboxPayload>();
         expectTypeOf<AuthenticatedGroupMutationPayloadByType[typeof AppInboxType.GROUP_MEMBER_BAN]>().toEqualTypeOf<GroupMemberBanAppInboxPayload>();
         expectTypeOf<AuthenticatedGroupMutationPayloadByType[typeof AppInboxType.GROUP_MEMBER_UNBAN]>().toEqualTypeOf<GroupMemberUnbanAppInboxPayload>();
+    });
+
+    it('rejects malformed persisted payloads before group mutation handling', () => {
+        const command = {
+            scope: { applicationId: 'app', workspaceId: 'workspace' },
+            request: {
+                requestId: 'request-1',
+                actorPrincipalId: 'owner',
+                actorSessionId: 'session-1',
+                groupId: 'group',
+                displayName: 'Payload contract',
+                kind: 'room',
+                createdByPrincipalId: 'owner'
+            }
+        } as const;
+
+        expect(decodeGroupStateAppInboxCommand(AppInboxType.GROUP_CREATE, command)).toEqual(
+            command
+        );
+        expect(() =>
+            decodeGroupStateAppInboxCommand(AppInboxType.GROUP_CREATE, {
+                ...command,
+                unexpectedField: true
+            })
+        ).toThrow('fields are invalid');
+    });
+
+    it('accepts current package payloads whose actor identity is owned by authority', () => {
+        const command = {
+            scope: { applicationId: 'app', workspaceId: 'workspace' },
+            groupId: 'group',
+            principalId: 'member',
+            request: {
+                requestId: 'request-1',
+                status: 'active'
+            }
+        } as const;
+
+        expect(decodeGroupStateAppInboxCommand(AppInboxType.GROUP_MEMBER_UPSERT, command)).toEqual(
+            command
+        );
+        expect(() =>
+            decodeGroupStateAppInboxCommand(AppInboxType.GROUP_MEMBER_UPSERT, {
+                ...command,
+                request: { ...command.request, actorSessionId: '' }
+            })
+        ).toThrow('actorSessionId must be a non-empty string');
     });
 });
 

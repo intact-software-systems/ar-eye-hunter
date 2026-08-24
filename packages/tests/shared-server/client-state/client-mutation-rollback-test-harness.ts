@@ -15,7 +15,7 @@ import { ClientStateRepository } from '@shared-server/rallar-system/client-state
 
 import type { ClientStateWritten } from '@shared-server/rallar-system/client-state/client-state-service-contracts.ts';
 
-import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
+import { AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
 import { TestClientStateEventStore } from '@shared-test/shared-server/test-client-state-event-store.ts';
 
 import { createAppInboxTestDatabase } from '../app-inbox-test-database.ts';

@@ -25,7 +25,13 @@ export * from './rallar-system/admin-support/admin-support-contracts.ts';
 export * from './rallar-system/admin-support/create-admin-support-use-cases.ts';
 export * from './rallar-system/admin-support/statistics/create-spa-statistics-use-cases.ts';
 export * from './rallar-system/admin-support/statistics/spa-statistics-contracts.ts';
+export * from './rallar-system/app-inbox/app-inbox-contracts.ts';
+export * from './rallar-system/app-inbox/app-inbox-error-classification.ts';
+export * from './rallar-system/app-inbox/app-inbox-failure.ts';
+export * from './rallar-system/app-inbox/app-inbox-options.ts';
+export * from './rallar-system/app-inbox/app-inbox-persistence-ports.ts';
 export * from './rallar-system/app-inbox/app-inbox-queue-client.ts';
+export * from './rallar-system/app-inbox/app-inbox-retry-finalization.ts';
 export * from './rallar-system/app-outbox/app-outbox-type.ts';
 export * from './rallar-system/app-outbox/coalesced-app-outbox-work-service.ts';
 export {

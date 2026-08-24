@@ -17,7 +17,16 @@ import { ResourceInboxResultsRepository } from '@shared-server/queuebox/postgres
 import type { AppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import { toUnavailableAppInboxFailure } from '../../app-inbox/app-inbox-failure.ts';
 import { AppInboxHandlerRegistry } from '../../app-inbox/app-inbox-handler-registry.ts';
-import { AppInboxQueueClient, type AppInboxOptions } from '../../app-inbox/app-inbox-queue-client.ts';
+import {
+    DEFAULT_APP_INBOX_WAIT_JITTER_RATIO,
+    DEFAULT_APP_INBOX_WAIT_MAX_ELAPSED_MSECS,
+    DEFAULT_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MSECS,
+    DEFAULT_APP_INBOX_WAIT_RETRY_INTERVAL_MSECS,
+    type AppInboxOptions
+} from '../../app-inbox/app-inbox-options.ts';
+import type { AppInboxEntryRepository, AppInboxResultRepository } from '../../app-inbox/app-inbox-persistence-ports.ts';
+import { AppInboxQueueClient } from '../../app-inbox/app-inbox-queue-client.ts';
+import { encodeAppInboxResult } from '../../app-inbox/app-inbox-registration-codecs.ts';
 import type { AdminOperationsPruner } from '../admin-operations-service.ts';
 import { toAdminPruneExpiredOptions } from '../admin-prune-options.ts';
 import { toAdminPruneOutbox } from '../prune/admin-prune-page-codec.ts';
@@ -37,7 +46,7 @@ import {
 import { AppInboxType, type AppInboxMessageContext } from '../../app-inbox/app-inbox-contracts.ts';
 
 import { recordRallarTiming, timeRallarAsync, type RallarTimingSink } from '../../observability/timing.ts';
-import { decodeJsonWireValue } from '../../protocol/json-wire-identity.ts';
+import { decodeJsonWireValue, type JsonWireValue } from '../../protocol/json-wire-identity.ts';
 import {
     decodeAdminPruneEnqueueResultForCommand,
     decodeAdminPruneRequest,
@@ -83,8 +92,8 @@ export type AdminPruneAuthorityReader = (
 
 export interface AppAdminInboxServiceDependencies {
     readonly inboxQueueReader: InboxQueueReader;
-    readonly resourceInboxRepository: AppInboxQueueClient.InboxRepository;
-    readonly resourceInboxResultsRepository: AppInboxQueueClient.ResultRepository;
+    readonly resourceInboxRepository: AppInboxEntryRepository;
+    readonly resourceInboxResultsRepository: AppInboxResultRepository;
     readonly database: PSqlSql;
     readonly pruner: Pick<AdminOperationsPruner, 'countExpired'>;
     readonly readAuthority: AdminPruneAuthorityReader;
@@ -155,10 +164,13 @@ export class AppAdminInboxService {
         this.dependencies = dependencies;
         this.config = config;
         this.aggregateWaitPolicy = createWaitPolicy('app-inbox:admin-prune-aggregate', config.appInbox);
-        this.handlers.onStateMessage<AdminPruneCommand>(
-            AppInboxType.ADMIN_PRUNE_EXPIRED,
-            async (value, context) => await this.processCommand(value, context)
-        );
+        this.handlers.registerHandler({
+            type: AppInboxType.ADMIN_PRUNE_EXPIRED,
+            decodeCommand: decodeAdminPruneCommand,
+            encodeResult: (result) => encodeAppInboxResult(result, 'Admin prune AppInbox result'),
+            handle: async (command, context) => await this.processCommand(command, context)
+        });
+        this.handlers.assertRegistrationComplete([AppInboxType.ADMIN_PRUNE_EXPIRED]);
     }
 
     async pruneExpired(
@@ -219,7 +231,7 @@ export class AppAdminInboxService {
         );
         await assertAdminPruneStoredIdentity(key, reservation.enqueue, command);
         assertMatchingAdminPruneIdentity(identity, command);
-        const enqueued = await this.queueClient.waitForReservedEntryResult<AdminPruneCommand, AdminPruneEnqueueResult>(
+        const enqueued = await this.queueClient.waitForReservedEntryResult<JsonWireValue, AdminPruneEnqueueResult>(
             reservation.enqueue,
             (value) => decodeAdminPruneEnqueueResultForCommand(value, command),
             reservation.winner
@@ -229,7 +241,7 @@ export class AppAdminInboxService {
 
     private async processCommand(
         value: AdminPruneCommand,
-        context: AppInboxMessageContext
+        context: AppInboxMessageContext<AdminPruneEnqueueResult>
     ): Promise<AdminPruneEnqueueResult> {
         const command = decodeAdminPruneCommand(value);
         await assertAdminPruneQueueIdentity(command, context);
@@ -449,12 +461,12 @@ export class AppAdminInboxService {
 function createWaitPolicy(label: string, options: AppInboxOptions): TryWithPolicy {
     return TryWithPolicy.defaults()
         .label(label)
-        .maxElapsedMsecs(options.waitMaxElapsedMsecs ?? AppInboxQueueClient.MAX_ELAPSED_MSECS)
-        .retryIntervalMsecs(options.waitRetryIntervalMsecs ?? AppInboxQueueClient.WAIT_RETRY_INTERVAL_MSECS)
+        .maxElapsedMsecs(options.waitMaxElapsedMsecs ?? DEFAULT_APP_INBOX_WAIT_MAX_ELAPSED_MSECS)
+        .retryIntervalMsecs(options.waitRetryIntervalMsecs ?? DEFAULT_APP_INBOX_WAIT_RETRY_INTERVAL_MSECS)
         .maxRetryIntervalMsecs(
-            options.waitMaxRetryIntervalMsecs ?? AppInboxQueueClient.WAIT_MAX_RETRY_INTERVAL_MSECS
+            options.waitMaxRetryIntervalMsecs ?? DEFAULT_APP_INBOX_WAIT_MAX_RETRY_INTERVAL_MSECS
         )
-        .jitterRatio(options.waitJitterRatio ?? AppInboxQueueClient.WAIT_JITTER_RATIO);
+        .jitterRatio(options.waitJitterRatio ?? DEFAULT_APP_INBOX_WAIT_JITTER_RATIO);
 }
 
 function createInitialAdminPrunePages(

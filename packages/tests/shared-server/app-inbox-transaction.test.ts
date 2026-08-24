@@ -1,17 +1,13 @@
+import { AppInboxReservationConflictError, AppInboxType } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { classifyAppInboxError } from '@shared-server/rallar-system/app-inbox/app-inbox-error-classification.ts';
 import { GroupPolicyDeniedError } from '@shared-server/rallar-system/group-state/policy/group-policy-result.ts';
-
-import { readPersistedAppInboxFailure } from '@shared-server/rallar-system/app-inbox/app-inbox-failure.ts';
-import { AppInboxReservationConflictError, AppInboxType, classifyAppInboxError } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
-
-import { GroupMutationAuthorizationError } from '@shared-server/rallar-system/group-state/group-mutation-authority.ts';
 
 import type { RallarTimingEvent } from '@shared-server/rallar-system/observability/timing.ts';
 import type { JsonWireValue } from '@shared-server/rallar-system/protocol/json-wire-identity.ts';
 
-import { GroupTopologyConfigValidationError } from '@shared-server/rallar-system/topology/config/group-topology-config.ts';
 import { EntityStatus, toKeyAsString } from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 const NOW_EPOCH_MS = Date.parse('2026-07-22T12:00:00.000Z');
 
@@ -99,7 +95,7 @@ describe('AppInboxHandlerRegistry transaction ownership', () => {
             })
         ).rejects.toBeInstanceOf(AppInboxReservationConflictError);
         await expect(
-            harness.service.commit(harness.context, async () => undefined)
+            harness.service.commit(harness.context, async () => null)
         ).rejects.toMatchObject({ code: 'app-inbox-reservation-conflict' });
 
         expect(harness.database.state.mutations.size).toBe(0);
@@ -176,6 +172,16 @@ describe('AppInboxHandlerRegistry transaction ownership', () => {
 });
 
 describe('AppInboxHandlerRegistry registered handler finalization', () => {
+    it('rejects startup when a configured handler has not been registered', () => {
+        const harness = createRegisteredHandlerHarness();
+
+        expect(() => harness.service.assertRegistrationComplete([AppInboxType.GROUP_CREATE])).toThrow('missing=GROUP_CREATE');
+
+        harness.service.onStateMessage(AppInboxType.GROUP_CREATE, async () => null);
+
+        expect(() => harness.service.assertRegistrationComplete([AppInboxType.GROUP_CREATE])).not.toThrow();
+    });
+
     it('skips duplicate result persistence after a transaction-owned commit', async () => {
         const timing: RallarTimingEvent[] = [];
         const harness = createRegisteredHandlerHarness({
@@ -231,10 +237,17 @@ describe('AppInboxHandlerRegistry registered handler finalization', () => {
 
     it('persists a non-transactional handler result exactly once', async () => {
         const harness = createRegisteredHandlerHarness();
-        harness.service.onStateMessage(AppInboxType.GROUP_CREATE, async () => ({
-            status: 'accepted',
-            source: 'handler'
-        }));
+        harness.service.registerHandler({
+            type: AppInboxType.GROUP_CREATE,
+            decodeCommand: (value) => {
+                if (!isJsonWireObject(value) || typeof value.requestId !== 'string') {
+                    throw new TypeError('Group create command is invalid');
+                }
+                return { requestId: value.requestId };
+            },
+            encodeResult: (result) => ({ status: result.outcome, source: 'handler' }),
+            handle: async () => ({ outcome: 'accepted' as const })
+        });
 
         const pending = harness.service.processEntryUntilCompletion(harness.enqueue);
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
@@ -245,9 +258,38 @@ describe('AppInboxHandlerRegistry registered handler finalization', () => {
         expect(harness.results.replaceCalls).toBe(1);
     });
 
+    it('rejects malformed domain commands before handler invocation', async () => {
+        const harness = createRegisteredHandlerHarness();
+        let domainMutationStarted = false;
+        harness.service.registerHandler({
+            type: AppInboxType.GROUP_CREATE,
+            decodeCommand: () => {
+                throw new TypeError('Group create command is invalid');
+            },
+            encodeResult: (result) => result,
+            handle: async () => {
+                domainMutationStarted = true;
+                return { status: 'unexpected' as const };
+            }
+        });
+
+        const pending = harness.service.processEntryUntilCompletion(harness.enqueue);
+        await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
+
+        await expect(pending).resolves.toMatchObject({
+            left: { code: 'app-inbox-malformed-command', status: 400 }
+        });
+        expect(domainMutationStarted).toBe(false);
+        expect(harness.results.replaceCalls).toBe(1);
+    });
+
     it('classifies malformed handler JSON as terminal before handler invocation', async () => {
         const harness = createRegisteredHandlerHarness();
-        const handler = vi.fn(async () => ({ status: 'unexpected' }));
+        let domainMutationStarted = false;
+        const handler = async () => {
+            domainMutationStarted = true;
+            return { status: 'unexpected' };
+        };
         harness.service.onStateMessage(AppInboxType.GROUP_CREATE, handler);
         harness.service.processEntryNoWaiting(harness.enqueue);
         const entry = await waitForRegisteredHandlerEntry(harness.queue);
@@ -262,7 +304,7 @@ describe('AppInboxHandlerRegistry registered handler finalization', () => {
 
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
-        expect(handler).not.toHaveBeenCalled();
+        expect(domainMutationStarted).toBe(false);
         expect((await harness.readEntry())?.status).toBe(EntityStatus.FAILED);
         expect([...harness.results.entries.values()]).toEqual([
             expect.objectContaining({ status: EntityStatus.FAILED })
@@ -359,14 +401,12 @@ describe('AppInboxHandlerRegistry registered handler finalization', () => {
                 timing: (event) => timing.push(event),
                 topicId
             });
-            let mutationCommitted = false;
-            const handler = vi.fn(
-                async (_data, context) =>
-                    await harness.service.commit(context, async () => {
-                        mutationCommitted = true;
-                        return { status: 'accepted' };
-                    })
-            );
+            let acceptedMutationExecutions = 0;
+            const handler = async (_data: JsonWireValue, context: Parameters<typeof harness.service.commit>[0]) =>
+                await harness.service.commit(context, async () => {
+                    acceptedMutationExecutions += 1;
+                    return { status: 'accepted' };
+                });
             harness.service.onStateMessage(outerType as AppInboxType, handler);
             harness.service.processEntryNoWaiting(harness.enqueue);
             const entry = await waitForRegisteredHandlerEntry(harness.queue);
@@ -388,14 +428,12 @@ describe('AppInboxHandlerRegistry registered handler finalization', () => {
             expect(finalized.dequeueAudit.attempts).toBe(attempt);
             expect(finalized.dequeueAudit.nextTs).toBeUndefined();
             if (valid) {
-                expect(handler).toHaveBeenCalledTimes(1);
-                expect(mutationCommitted).toBe(true);
+                expect(acceptedMutationExecutions).toBe(1);
                 expect(finalized.status).toBe(EntityStatus.COMPLETED);
                 expect(result?.status).toBe(EntityStatus.COMPLETED);
             }
             else {
-                expect(handler).not.toHaveBeenCalled();
-                expect(mutationCommitted).toBe(false);
+                expect(acceptedMutationExecutions).toBe(0);
                 expect(finalized.status).toBe(EntityStatus.FAILED);
                 expect(result?.status).toBe(EntityStatus.FAILED);
                 expect(JSON.parse(result!.resource)).toMatchObject({
@@ -410,20 +448,18 @@ describe('AppInboxHandlerRegistry registered handler finalization', () => {
 
             await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
             expect((await harness.readEntry())?.dequeueAudit.attempts).toBe(attempt);
-            expect(handler).toHaveBeenCalledTimes(valid ? 1 : 0);
+            expect(acceptedMutationExecutions).toBe(valid ? 1 : 0);
         }
     );
 
     it('keeps mismatched identity out of the transaction mutation callback', async () => {
         const harness = createRegisteredHandlerHarness();
         let mutationCommitted = false;
-        const handler = vi.fn(
-            async (_data, context) =>
-                await harness.service.commit(context, async () => {
-                    mutationCommitted = true;
-                    return { status: 'accepted' };
-                })
-        );
+        const handler = async (_data: JsonWireValue, context: Parameters<typeof harness.service.commit>[0]) =>
+            await harness.service.commit(context, async () => {
+                mutationCommitted = true;
+                return { status: 'accepted' };
+            });
         harness.service.onStateMessage(AppInboxType.GROUP_UPDATE, handler);
         harness.service.processEntryNoWaiting(harness.enqueue);
         const entry = await waitForRegisteredHandlerEntry(harness.queue);
@@ -440,219 +476,14 @@ describe('AppInboxHandlerRegistry registered handler finalization', () => {
 
         await harness.reader.dequeueInbox(InboxQueueReader.INBOX_DEQUEUE_TYPES, createResilience());
 
-        expect(handler).not.toHaveBeenCalled();
         expect(mutationCommitted).toBe(false);
         expect((await harness.readEntry())?.status).toBe(EntityStatus.FAILED);
         expect((await harness.readEntry())?.dequeueAudit.attempts).toBe(1);
     });
 });
 
-describe('AppInbox error classification', () => {
-    it('fails closed when persisted failure metadata is structurally corrupt', () => {
-        const malformed = readPersistedAppInboxFailure(
-            JSON.stringify({
-                type: 'app-inbox-retry-exhausted',
-                status: 503,
-                message: 'AppInbox processing exhausted its retry budget',
-                issues: null,
-                denial: null,
-                retry: {
-                    kind: 'exhausted',
-                    attempts: 20,
-                    lane: 'NEW',
-                    queueAgeMs: 10,
-                    dueAgeMs: 5
-                },
-                commandIdentity: {
-                    contextId: '',
-                    resourceId: 'request-1',
-                    topicId: 'app-inbox.group-state',
-                    operation: 'TOPOLOGY_CONFIG_PUT',
-                    operationSource: 'command'
-                },
-                selectedLane: 'NEW',
-                processingAttempts: 20,
-                reservationAttempt: 20,
-                lastError: {
-                    source: 'processing',
-                    code: 'runtime-state-write-conflict',
-                    message: 'retryable conflict'
-                },
-                queueAgeMs: 10,
-                dueAgeMs: 5,
-                exhaustedAtEpochMs: NOW_EPOCH_MS
-            })
-        );
-
-        expect(malformed).toEqual({
-            type: 'app-inbox-failure',
-            version: 'malformed.v0',
-            code: 'app-inbox-malformed-persisted-failure',
-            status: 500,
-            message: 'Persisted AppInbox failure is malformed',
-            issues: null,
-            denial: null,
-            retry: null
-        });
-    });
-
-    it('serializes validation and authority failures with mandatory structured fields', () => {
-        const validation = classifyAppInboxError(
-            new GroupTopologyConfigValidationError([
-                {
-                    code: 'invalid-positive-integer',
-                    path: ['degreeLimit'],
-                    message: 'degreeLimit must be a positive integer',
-                    details: { value: 0 }
-                }
-            ])
-        );
-        expect(validation).toEqual({
-            kind: 'terminal',
-            code: 'group-topology-config-validation-failed',
-            result: {
-                type: 'app-inbox-failure',
-                version: 'canonical.v2',
-                code: 'group-topology-config-validation-failed',
-                status: 422,
-                message: 'Group topology config validation failed',
-                issues: [
-                    {
-                        code: 'invalid-positive-integer',
-                        path: ['degreeLimit'],
-                        message: 'degreeLimit must be a positive integer',
-                        details: { value: 0 }
-                    }
-                ],
-                denial: null,
-                retry: null
-            }
-        });
-
-        const authority = classifyAppInboxError(
-            new GroupMutationAuthorizationError('session was revoked')
-        );
-        expect(authority).toEqual({
-            kind: 'terminal',
-            code: 'group-mutation-authority-denied',
-            result: {
-                type: 'app-inbox-failure',
-                version: 'canonical.v2',
-                code: 'group-mutation-authority-denied',
-                status: 403,
-                message: 'Forbidden: session was revoked',
-                issues: null,
-                denial: {
-                    code: 'group-mutation-authority-denied',
-                    message: 'Forbidden: session was revoked',
-                    details: null
-                },
-                retry: null
-            }
-        });
-    });
-
-    it.each([
-        {
-            name: 'typed reservation conflict with 409',
-            error: Object.assign(new Error('reservation changed'), {
-                code: 'app-inbox-reservation-conflict',
-                status: 409
-            }),
-            kind: 'retryable'
-        },
-        {
-            name: 'typed CAS conflict with 409',
-            error: Object.assign(new Error('predecessor changed'), {
-                code: 'runtime-state-write-conflict',
-                status: 409
-            }),
-            kind: 'retryable'
-        },
-        {
-            name: 'typed transient error',
-            error: Object.assign(new Error('database unavailable'), {
-                code: 'app-inbox-transient',
-                status: 503
-            }),
-            kind: 'retryable'
-        },
-        {
-            name: 'authorization denial',
-            error: Object.assign(new Error('forbidden'), {
-                code: 'group-mutation-authority-denied',
-                status: 403
-            }),
-            kind: 'terminal'
-        },
-        {
-            name: 'malformed command with non-4xx status',
-            error: Object.assign(new Error('invalid command'), {
-                code: 'app-inbox-malformed-command',
-                status: 503
-            }),
-            kind: 'terminal'
-        },
-        {
-            name: 'invariant corruption with non-4xx status',
-            error: Object.assign(new Error('corrupt state'), {
-                code: 'resource-inbox-invariant-corruption',
-                status: 503
-            }),
-            kind: 'terminal'
-        },
-        {
-            name: 'lifecycle rejection with non-4xx status',
-            error: Object.assign(new Error('expired lifecycle'), {
-                code: 'app-inbox-lifecycle-rejected',
-                status: 503
-            }),
-            kind: 'terminal'
-        },
-        {
-            name: 'syntax decoding failure',
-            error: new SyntaxError('unexpected token secret'),
-            kind: 'terminal'
-        },
-        {
-            name: 'type decoding failure',
-            error: new TypeError('invalid persisted shape secret'),
-            kind: 'terminal'
-        },
-        {
-            name: 'unknown error',
-            error: new Error('unknown failure'),
-            kind: 'retryable'
-        },
-        ...[
-            'future-validation-timeout',
-            'network-collision-course',
-            'transient-invariant-corruption-wrapper',
-            'authority-denied-by-upstream-ish',
-            'policy-denied-retry-proxy',
-            'lifecycle-rejected-temporarily'
-        ].map((code) => ({
-            name: `unknown fragment-bearing code ${code}`,
-            error: Object.assign(new Error('unknown transient failure'), { code }),
-            kind: 'retryable' as const
-        })),
-        {
-            name: 'known idempotency conflict',
-            error: Object.assign(new Error('command identity changed'), {
-                code: 'app-inbox-idempotency-conflict',
-                status: 409
-            }),
-            kind: 'terminal'
-        },
-        {
-            name: 'known mutation rejection',
-            error: Object.assign(new Error('mutation rejected'), {
-                code: 'group-mutation-rejected',
-                status: 409
-            }),
-            kind: 'terminal'
-        }
-    ])('classifies $name by typed code precedence', ({ error, kind }) => {
-        expect(classifyAppInboxError(error).kind).toBe(kind);
-    });
-});
+function isJsonWireObject(value: JsonWireValue): value is Readonly<{
+    readonly [key: string]: JsonWireValue;
+}> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}

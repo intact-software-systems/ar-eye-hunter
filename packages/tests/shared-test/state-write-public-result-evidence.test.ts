@@ -456,7 +456,6 @@ describe('durable AppInbox public result evidence', () => {
             }),
             result_resource: JSON.stringify({
                 type: 'app-inbox-failure',
-                version: 'canonical.v2',
                 code: 'group-capacity-denied',
                 status: 409,
                 message: 'Group capacity reached',

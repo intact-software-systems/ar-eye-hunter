@@ -120,7 +120,6 @@ function toDiagnostics(exhaustion: AppInboxRetryFinalization): AppInboxFailure {
     validateAppInboxCommandIdentity(exhaustion.entry);
     return {
         type: 'app-inbox-failure',
-        version: 'retry-exhausted.v1',
         code: 'app-inbox-retry-exhausted',
         status: 503,
         message: 'AppInbox processing exhausted its retry budget',

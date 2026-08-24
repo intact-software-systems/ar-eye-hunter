@@ -16,8 +16,11 @@ import type {
     AuthMutationRead,
     AuthMutationResult
 } from '@shared-server/rallar-system/auth/mutation/auth-mutation-contracts.ts';
+import { decodeAuthMutationIntent } from '@shared-server/rallar-system/auth/mutation/decode-auth-mutation-intent.ts';
 
 import type { AppInboxMessageContext } from '@shared-server/rallar-system/app-inbox/app-inbox-contracts.ts';
+import { toJsonWireAppInboxEnqueue } from '@shared-server/rallar-system/app-inbox/app-inbox-command-wire.ts';
+import { encodeAppInboxResult } from '@shared-server/rallar-system/app-inbox/app-inbox-registration-codecs.ts';
 import type {
     AppInboxMutationTransactionResult,
     AppInboxMutationTransactionWriter
@@ -101,7 +104,7 @@ describe('auth inbox routing rejection', () => {
             }
         });
 
-        await expect(handler.processAuthMutation({}, context)).rejects.toThrow(
+        expect(() => decodeAuthMutationIntent({})).toThrow(
             'Auth mutation intent version is invalid'
         );
         await expect(handler.processAuthMutation(intent, context)).rejects.toThrow(
@@ -194,7 +197,7 @@ class RecordingTransactionWriter implements AppInboxMutationTransactionWriter {
     }
 
     async writeMutation<Result>(
-        _context: AppInboxMessageContext,
+        _context: AppInboxMessageContext<Result>,
         write: (transaction: PSqlSql) => Promise<Result>
     ): Promise<Result> {
         this.actions.push('transaction');
@@ -202,7 +205,7 @@ class RecordingTransactionWriter implements AppInboxMutationTransactionWriter {
     }
 
     async writeMutationWithAfterCommitResult<DurableResult, AfterCommitResult>(
-        _context: AppInboxMessageContext,
+        _context: AppInboxMessageContext<DurableResult>,
         _write: (
             transaction: PSqlSql
         ) => Promise<AppInboxMutationTransactionResult<DurableResult, AfterCommitResult>>
@@ -214,19 +217,19 @@ class RecordingTransactionWriter implements AppInboxMutationTransactionWriter {
 function createContext(
     intent: AuthMutationIntent,
     contextId: string = toAuthIntentContextId(intent)
-): AppInboxMessageContext {
-    const enqueue = {
+): AppInboxMessageContext<AuthMutationResult> {
+    const enqueue = toJsonWireAppInboxEnqueue({
         type: toAuthAppInboxType(intent),
         topicId: toAuthAppInboxType(intent),
         resourceId: intent.requestId,
         contextId,
         data: intent
-    };
+    });
     const entry: ResourceEntry = {
         key: toAppQueueKey({
-            topicId: enqueue.topicId,
-            resourceId: enqueue.resourceId,
-            contextId: enqueue.contextId
+            topicId: requireQueueIdentity(enqueue.topicId, 'topicId'),
+            resourceId: requireQueueIdentity(enqueue.resourceId, 'resourceId'),
+            contextId: requireQueueIdentity(enqueue.contextId, 'contextId')
         }),
         resource: JSON.stringify(enqueue),
         typeId: EnqueuedType.APP_INBOX,
@@ -239,5 +242,17 @@ function createContext(
         status: EntityStatus.RESERVED,
         dequeueAudit: { attempts: 1 }
     };
-    return { enqueue, message: { id: { ts: 1_000 } } as never, entry };
+    return {
+        enqueue,
+        message: { id: { ts: 1_000 } } as never,
+        entry,
+        encodeResult: (result) => encodeAppInboxResult(result, 'Auth handler test result')
+    };
+}
+
+function requireQueueIdentity(value: string | undefined, field: string): string {
+    if (value === undefined || value.length === 0) {
+        throw new TypeError(`Auth handler test ${field} is required`);
+    }
+    return value;
 }

@@ -1,5 +1,5 @@
 import type { ALMessage } from '@shared/al-contracts/al-contract.ts';
-import type { GroupRef, GroupSnapshot } from '@shared/api/group-types.ts';
+import type { GroupRef } from '@shared/api/group-types.ts';
 import type { RallarOverlayTopologySnapshot } from '@shared/api/overlay-topology.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
@@ -10,6 +10,7 @@ import {
 import { toFormationRetryEstablishCommand } from '../../group-state/group-formation-mutation-command.ts';
 import type { GroupMutationCommand } from '../../group-state/mutation/group-mutation-contracts.ts';
 import type { GroupLifecyclePolicyRead } from '../../group-state/persistence/group-lifecycle-policy-repository.ts';
+import type { GroupTopologyGroupSnapshotReader } from '../group-topology-management-contracts.ts';
 import type { GroupTopologyPlanningService } from '../planning/group-topology-planning-service.ts';
 import { computeFormationCriterionCommand } from './compute-formation-criterion-command.ts';
 
@@ -18,7 +19,7 @@ interface OnMessageCallback {
 }
 
 export interface FormationTimerWorkHandlerOptions {
-    readonly findGroupSnapshotByRef: (ref: GroupRef) => Promise<GroupSnapshot | undefined>;
+    readonly findGroupSnapshotByRef: GroupTopologyGroupSnapshotReader;
     readonly readPlannedTopology: (ref: GroupRef) => Promise<RallarOverlayTopologySnapshot | null>;
     readonly topologyPlanning: Pick<GroupTopologyPlanningService, 'readTopologyPlanningAuthority'>;
     readonly readLifecyclePolicy: (ref: GroupRef) => Promise<GroupLifecyclePolicyRead>;
@@ -54,8 +55,16 @@ async function processFormationTimerWork(
     if (options.nowEpochMs() < work.notBeforeEpochMs) {
         throw new Error('Formation timer is not due yet; retry release will walk it forward');
     }
-    const snapshot = await options.findGroupSnapshotByRef(work.groupRef);
-    if (!snapshot || snapshot.group.formationEpoch !== work.formationEpoch) {
+    const snapshot = await options.findGroupSnapshotByRef(work.groupRef, {
+        minSnapshotVersion: work.groupSnapshotVersion
+    });
+    if (!snapshot) {
+        return;
+    }
+    if (snapshot.group.formationEpoch < work.formationEpoch) {
+        throw new Error('Formation timer group snapshot is behind; retry after refreshing group state');
+    }
+    if (snapshot.group.formationEpoch > work.formationEpoch) {
         return;
     }
     const nowEpochMs = options.nowEpochMs();

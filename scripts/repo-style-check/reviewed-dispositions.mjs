@@ -52,6 +52,14 @@ export const reviewedDispositions = Object.freeze([
         rule: 'layout.primary-export-name',
         symbol: 'createRtcBaselineRepeatInitializer'
     }),
+    // AppInbox accepts raw JSON only at this exact decoder. It immediately
+    // validates the complete persisted command as JsonWireValue before any
+    // identity, routing, hashing, or domain decision consumes it.
+    Object.freeze({
+        path: 'packages/shared-server/rallar-system/app-inbox/app-inbox-command-decoding.ts',
+        rule: 'boundary.unknown',
+        symbol: 'decodeAppInboxEnqueue'
+    }),
     // Group mutation operation-input validation narrows raw request fields at
     // the HTTP/WS boundary. Both listed owners validate their unknown input
     // before any domain use, mirroring the persisted-JSON decoder entries below.

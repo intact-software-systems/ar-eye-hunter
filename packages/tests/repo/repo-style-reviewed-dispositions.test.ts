@@ -62,6 +62,12 @@ describe('reviewed repository style dispositions', () => {
                 symbol: 'createRtcBaselineRepeatInitializer'
             },
             {
+                path: 'packages/shared-server/rallar-system/app-inbox/' +
+                    'app-inbox-command-decoding.ts',
+                rule: 'boundary.unknown',
+                symbol: 'decodeAppInboxEnqueue'
+            },
+            {
                 path: 'packages/shared-server/rallar-system/group-state/mutation/command-validation/' +
                     'validate-group-mutation-operation-input.ts',
                 rule: 'boundary.unknown',

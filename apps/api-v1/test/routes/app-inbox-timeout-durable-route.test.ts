@@ -1,22 +1,23 @@
+import type { AppInboxEntryRepository } from '@shared-server/rallar-system/app-inbox/app-inbox-persistence-ports.ts';
 import { AppInboxQueueClient, SIMPLER_CLIENT_STATE_APP_INBOX_TOPIC } from '@shared-server/rallar-system/app-inbox/app-inbox-queue-client.ts';
 import { InMemoryQueueBox } from '@shared/queuebox/in-memory-queue-box.ts';
-import { EntityStatus } from '@shared/queuebox/ResourceEntry.ts';
+import {
+    EntityStatus,
+    isExpiredResourceEntry,
+    type Key,
+    type ResourceEntry
+} from '@shared/queuebox/ResourceEntry.ts';
 import { InboxQueueReader } from '@shared/services/InboxQueueReader.ts';
 import { Hono } from 'jsr:@hono/hono@4.11.9';
 import assert from 'node:assert/strict';
 import * as clientStateRoutes from '../../src/routes/client-state-routes.ts';
 
 Deno.test('HTTP wait timeout leaves its durable AppInbox row eligible', async () => {
-    const queue = new InMemoryQueueBox(new Map());
+    const queue = new DurableTimeoutQueue();
     const service = new AppInboxQueueClient(
         {
             inboxQueueReader: new InboxQueueReader(queue),
-            resourceInboxRepository: {
-                isEntryWithStatus: async (key, statuses) => {
-                    const entry = await queue.getItem(key);
-                    return entry !== undefined && statuses.includes(entry.status);
-                }
-            },
+            resourceInboxRepository: queue,
             resourceInboxResultsRepository: {
                 replace: (entry) => Promise.resolve(entry),
                 findByKey: () => Promise.resolve(undefined)
@@ -96,3 +97,22 @@ Deno.test('HTTP wait timeout leaves its durable AppInbox row eligible', async ()
     assert.equal(row?.status, EntityStatus.NEW);
     assert.equal(row?.dequeueAudit.attempts, 0);
 });
+
+class DurableTimeoutQueue extends InMemoryQueueBox implements AppInboxEntryRepository {
+    async isEntryWithStatus(key: Key, statuses: EntityStatus[]): Promise<boolean> {
+        const entry = await this.getItem(key);
+        return entry !== undefined && statuses.includes(entry.status);
+    }
+
+    async writeMaterializedIfAbsentOrReplaceExpired(
+        placeholder: ResourceEntry,
+        materialize: () => Promise<ResourceEntry>
+    ): Promise<ResourceEntry> {
+        const existing = await this.getItem(placeholder.key);
+        if (existing !== undefined && !isExpiredResourceEntry(existing)) {
+            return existing;
+        }
+        const materialized = await materialize();
+        return await this.enqueueIfAbsent({ ...placeholder, resource: materialized.resource });
+    }
+}
