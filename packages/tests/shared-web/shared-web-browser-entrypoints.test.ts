@@ -86,7 +86,6 @@ const PUBLIC_FACADE_MODULES = [
     'packages/shared-web/browser/rallar-messages-facade.ts',
     'packages/shared-web/browser/rallar-people-facade.ts',
     'packages/shared-web/browser/rallar-realtime-facade.ts',
-    'packages/shared-web/browser/rallar-rooms-facade.ts',
     'packages/shared-web/browser/rooms/rallar-room-contracts.ts',
     'packages/shared-web/browser/rooms/rallar-rooms-facade.ts',
     'packages/shared-web/browser/rallar-rtc-facade.ts',
@@ -140,9 +139,11 @@ describe('shared-web browser entrypoints', () => {
             path.resolve('packages/shared-web/browser/rallar-runtime')
         ).filter((fileName) => fileName.endsWith('.ts'));
         const references = runtimeFiles.flatMap((fileName) =>
-            collectFullFacadeReferences(readSourceAnalysis(
-                `packages/shared-web/browser/rallar-runtime/${fileName}`
-            )).map((reference) => `${fileName}: ${reference}`)
+            collectFullFacadeReferences(
+                readSourceAnalysis(
+                    `packages/shared-web/browser/rallar-runtime/${fileName}`
+                )
+            ).map((reference) => `${fileName}: ${reference}`)
         );
 
         expect(references).toEqual([]);
@@ -152,7 +153,9 @@ describe('shared-web browser entrypoints', () => {
         const allowedFiles = new Set(['composition.ts']);
         const runtimeFiles = readdirSync(
             path.resolve('packages/shared-web/browser/rallar-runtime')
-        ).filter((fileName) => fileName.endsWith('.ts') && !allowedFiles.has(fileName));
+        ).filter(
+            (fileName) => fileName.endsWith('.ts') && !allowedFiles.has(fileName)
+        );
         const references = runtimeFiles.flatMap((fileName) =>
             collectModuleReferences(
                 readSourceAnalysis(
@@ -169,7 +172,9 @@ describe('shared-web browser entrypoints', () => {
         const allowedFiles = new Set(['state-store.ts']);
         const runtimeFiles = readdirSync(
             path.resolve('packages/shared-web/browser/rallar-runtime')
-        ).filter((fileName) => fileName.endsWith('.ts') && !allowedFiles.has(fileName));
+        ).filter(
+            (fileName) => fileName.endsWith('.ts') && !allowedFiles.has(fileName)
+        );
         const references = runtimeFiles.flatMap((fileName) =>
             collectModuleReferences(
                 readSourceAnalysis(
@@ -206,7 +211,7 @@ function collectFullFacadeReferences(
             .filter(isFullFacadeSpecifier)
             .map((specifier) => `import ${specifier}`),
         ...sourceFile.exports
-            .flatMap((entry) => entry.specifier ? [entry.specifier] : [])
+            .flatMap((entry) => (entry.specifier ? [entry.specifier] : []))
             .filter(isFullFacadeSpecifier)
             .map((specifier) => `export ${specifier}`)
     ];
@@ -216,7 +221,7 @@ function collectInternalRuntimeExports(
     sourceFile: SourceAnalysis
 ): readonly string[] {
     return sourceFile.exports
-        .flatMap((entry) => entry.specifier ? [entry.specifier] : [])
+        .flatMap((entry) => (entry.specifier ? [entry.specifier] : []))
         .filter((moduleSpecifier) => moduleSpecifier.includes('/rallar-runtime/'));
 }
 
@@ -245,18 +250,19 @@ function collectRuntimeFullFacadeReferences(
             .map((specifier) => `import ${specifier}`),
         ...sourceFile.exports
             .filter((entry) => !entry.typeOnly)
-            .flatMap((entry) => entry.specifier ? [entry.specifier] : [])
+            .flatMap((entry) => (entry.specifier ? [entry.specifier] : []))
             .filter(isFullFacadeSpecifier)
             .map((specifier) => `export ${specifier}`)
     ];
 }
 
 function isRuntimeImport(entry: SourceImport): boolean {
-    return !entry.typeOnly && (
-        entry.sideEffectOnly ||
-        entry.defaultImport !== undefined ||
-        entry.namespaceImport !== undefined ||
-        entry.namedImports.some((namedImport) => !namedImport.typeOnly)
+    return (
+        !entry.typeOnly &&
+        (entry.sideEffectOnly ||
+            entry.defaultImport !== undefined ||
+            entry.namespaceImport !== undefined ||
+            entry.namedImports.some((namedImport) => !namedImport.typeOnly))
     );
 }
 
@@ -265,6 +271,7 @@ function readSourceAnalysis(filePath: string): SourceAnalysis {
 }
 
 function isFullFacadeSpecifier(specifier: string): boolean {
-    return specifier === '@shared-web/browser/rallar.ts' ||
-        specifier === './rallar.ts';
+    return (
+        specifier === '@shared-web/browser/rallar.ts' || specifier === './rallar.ts'
+    );
 }

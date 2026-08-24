@@ -1,8 +1,7 @@
 import * as api from '@shared-web/browser/api-integration.ts';
-import type { RallarMessage } from '@shared-web/browser/rallar-messages-facade.ts';
+import type { RallarMessage, RallarStateEventListener } from '@shared-web/browser/rallar-messages-facade.ts';
 import type {
     RallarListPeopleEventsOptions,
-    RallarPeopleEventListener,
     RallarPeopleEventOptions,
     RallarReplayPeopleEventsOptions
 } from '@shared-web/browser/rallar-people-facade.ts';
@@ -25,15 +24,19 @@ const DEFAULT_RALLAR_REPLAY_MAX_PAGES = 1;
 const MAX_RALLAR_REPLAY_MAX_PAGES = 50;
 
 interface RallarPeopleEventSubscription {
-    readonly listener: RallarPeopleEventListener;
+    readonly listener: RallarStateEventListener<ClientEvent>;
     readonly options: RallarPeopleEventOptions;
 }
 
 interface ReplayStateEventPagesInput<TEvent> {
     readonly after?: StateEventCursor;
     readonly maxPages?: number;
-    readonly readPage: (after?: StateEventCursor) => Promise<StateEventPage<TEvent>>;
-    readonly replayEvent: (event: TEvent) => Promise<'replayed' | 'duplicate' | 'no-listeners'>;
+    readonly readPage: (
+        after?: StateEventCursor
+    ) => Promise<StateEventPage<TEvent>>;
+    readonly replayEvent: (
+        event: TEvent
+    ) => Promise<'replayed' | 'duplicate' | 'no-listeners'>;
 }
 
 export interface CreateRallarStateEventsInput {
@@ -42,8 +45,12 @@ export interface CreateRallarStateEventsInput {
     readonly resolveOperationOptions: <T extends RallarOperationOptions>(
         options: T
     ) => T & RallarOperationOptions;
-    readonly resolveOperationScope: (scope?: StateScope) => StateScope | undefined;
-    readonly runAuthAwareOperation: <T>(operation: () => Promise<T>) => Promise<T>;
+    readonly resolveOperationScope: (
+        scope?: StateScope
+    ) => StateScope | undefined;
+    readonly runAuthAwareOperation: <T>(
+        operation: () => Promise<T>
+    ) => Promise<T>;
 }
 
 export type RallarStateEventsPort = Readonly<{
@@ -58,10 +65,10 @@ export type RallarStateEventsPort = Readonly<{
     replayPeopleEventsFromFacade(
         principalId: string,
         options?: RallarReplayPeopleEventsOptions,
-        listener?: RallarPeopleEventListener
+        listener?: RallarStateEventListener<ClientEvent>
     ): Promise<RallarReplayEventsResult<ClientEvent>>;
     onPeopleEvent(
-        listener: RallarPeopleEventListener,
+        listener: RallarStateEventListener<ClientEvent>,
         options: RallarPeopleEventOptions
     ): RallarUnsubscribe;
 }>;
@@ -123,7 +130,7 @@ class RallarStateEvents implements RallarStateEventsPort {
     async replayPeopleEventsFromFacade(
         principalId: string,
         options: RallarReplayPeopleEventsOptions = {},
-        listener?: RallarPeopleEventListener
+        listener?: RallarStateEventListener<ClientEvent>
     ): Promise<RallarReplayEventsResult<ClientEvent>> {
         const operationOptions = this.#input.resolveOperationOptions(options);
         const scope = this.resolveScope(options.scope);
@@ -141,7 +148,10 @@ class RallarStateEvents implements RallarStateEventsPort {
                                     toStateEventListRequestOptions({ ...options, after }, signal)
                                 ),
                             replayEvent: async (event) =>
-                                await this.replayPeopleEvent(event, listener ?? options.listener)
+                                await this.replayPeopleEvent(
+                                    event,
+                                    listener ?? options.listener
+                                )
                         }),
                     operationOptions
                 )
@@ -149,7 +159,7 @@ class RallarStateEvents implements RallarStateEventsPort {
     }
 
     onPeopleEvent(
-        listener: RallarPeopleEventListener,
+        listener: RallarStateEventListener<ClientEvent>,
         options: RallarPeopleEventOptions
     ): RallarUnsubscribe {
         const subscription = { listener, options };
@@ -163,7 +173,7 @@ class RallarStateEvents implements RallarStateEventsPort {
 
     private async replayPeopleEvent(
         event: ClientEvent,
-        listener?: RallarPeopleEventListener
+        listener?: RallarStateEventListener<ClientEvent>
     ): Promise<'replayed' | 'duplicate' | 'no-listeners'> {
         if (!isClientEventPayload(event)) {
             return 'no-listeners';
@@ -191,13 +201,22 @@ class RallarStateEvents implements RallarStateEventsPort {
         return 'replayed';
     }
 
-    private async dispatchStateEventMessage(message: RallarMessage<unknown>): Promise<void> {
-        if (message.typeId === AppTopics.clientStateEvent && isClientEventPayload(message.payload)) {
-            await this.dispatchPeopleStateEvent(message as RallarMessage<ClientEvent>);
+    private async dispatchStateEventMessage(
+        message: RallarMessage<unknown>
+    ): Promise<void> {
+        if (
+            message.typeId === AppTopics.clientStateEvent &&
+            isClientEventPayload(message.payload)
+        ) {
+            await this.dispatchPeopleStateEvent(
+                message as RallarMessage<ClientEvent>
+            );
         }
     }
 
-    private async dispatchPeopleStateEvent(message: RallarMessage<ClientEvent>): Promise<void> {
+    private async dispatchPeopleStateEvent(
+        message: RallarMessage<ClientEvent>
+    ): Promise<void> {
         const event = message.payload;
         const subscriptions = this.matchingSubscriptions(event);
         const dedupeKey = toClientStateEventDedupeKey(event);
@@ -212,9 +231,15 @@ class RallarStateEvents implements RallarStateEventsPort {
         );
     }
 
-    private matchingSubscriptions(event: ClientEvent): RallarPeopleEventSubscription[] {
+    private matchingSubscriptions(
+        event: ClientEvent
+    ): RallarPeopleEventSubscription[] {
         return [...this.#subscriptions].filter((subscription) =>
-            matchesPeopleEventSubscription(subscription, event, this.#input.readDefaultScope())
+            matchesPeopleEventSubscription(
+                subscription,
+                event,
+                this.#input.readDefaultScope()
+            )
         );
     }
 
@@ -301,7 +326,9 @@ export function toStateEventListRequestOptions<TEventType extends string>(
     signal?: AbortSignal
 ) {
     return {
-        ...(options.eventTypes !== undefined ? { eventTypes: options.eventTypes } : {}),
+        ...(options.eventTypes !== undefined
+            ? { eventTypes: options.eventTypes }
+            : {}),
         ...(options.limit !== undefined ? { limit: options.limit } : {}),
         ...(options.after !== undefined ? { after: options.after } : {}),
         ...(signal ? { signal } : {})
@@ -353,7 +380,8 @@ function isSameStateScopeValue(
     }
     return (
         value.applicationId === scope.applicationId &&
-        normalizeStateWorkspaceId(value.workspaceId) === normalizeStateWorkspaceId(scope.workspaceId)
+        normalizeStateWorkspaceId(value.workspaceId) ===
+            normalizeStateWorkspaceId(scope.workspaceId)
     );
 }
 
@@ -361,7 +389,9 @@ function normalizeStateWorkspaceId(workspaceId?: string): string {
     return workspaceId ?? DEFAULT_STATE_WORKSPACE_ID;
 }
 
-function toReplayClientStateEventMessage(event: ClientEvent): RallarMessage<ClientEvent> {
+function toReplayClientStateEventMessage(
+    event: ClientEvent
+): RallarMessage<ClientEvent> {
     return toRallarMessage(
         'replay',
         newALBroadcastMessage(

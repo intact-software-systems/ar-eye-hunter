@@ -951,8 +951,6 @@ import { createRallarDataFacade, defineRallarDataStore } from '@shared-web/brows
 
 `destroy(input, options?)` clears persisted data and closes/disposes the store.
 
-`destroyStore(...)` aliases `destroy(...)`.
-
 `destroyScope(scope)` clears and closes active stores in a scope.
 
 `estimateUsage()` returns browser storage usage/quota when available.

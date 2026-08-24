@@ -28,7 +28,7 @@ read visibility, and browser-safe group administration workflows.
 Primary browser files:
 
 - `packages/shared-web/browser/rallar.ts`
-- `packages/shared-web/browser/rallar-rooms-facade.ts`
+- `packages/shared-web/browser/rooms/rallar-rooms-facade.ts`
 - `packages/shared-web/browser/api-workflows.ts`
 - `packages/shared-web/browser/api-integration.ts`
 - `packages/shared-web/browser/rallar-operation-options.ts`
@@ -47,7 +47,6 @@ Primary shared/server files:
 Relevant tests and docs:
 
 - `packages/tests/shared-web/api-workflows.test.ts`
-- `packages/tests/shared-web/rallar-rooms-facade.test.ts`
 - `packages/tests/shared-web/rallar-workflow-options-compat.test.ts`
 - `packages/tests/shared-server/group-state-service-idempotency.test.ts`
 - `apps/api-v1/test/services/group-state-service.test.ts`

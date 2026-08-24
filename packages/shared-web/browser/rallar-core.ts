@@ -4,21 +4,13 @@ export {
     readApiBaseUrl
 } from '@shared-web/browser/api-client-config.ts';
 
-export {
-    createRallarRoomsFacade
-} from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
+export { createRallarRoomsFacade } from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
 
-export {
-    createRallarPeopleFacade
-} from '@shared-web/browser/rallar-people-facade.ts';
+export { createRallarPeopleFacade } from '@shared-web/browser/rallar-people-facade.ts';
 
-export {
-    createRallarStatsFacade
-} from '@shared-web/browser/rallar-stats-facade.ts';
+export { createRallarStatsFacade } from '@shared-web/browser/rallar-stats-facade.ts';
 
-export {
-    createRallarMessagesFacade
-} from '@shared-web/browser/rallar-messages-facade.ts';
+export { createRallarMessagesFacade } from '@shared-web/browser/rallar-messages-facade.ts';
 
 export {
     matchesRallarMessageSelector,
@@ -32,29 +24,15 @@ export type {
     RallarConnectionOperations
 } from '@shared-web/browser/rallar-connection-facade.ts';
 
-export type {
-    RallarAuthFacade
-} from '@shared-web/browser/rallar-auth-facade.ts';
+export type { RallarAuthFacade } from '@shared-web/browser/rallar-auth-facade.ts';
 
-export type {
-    CreateRallarRoomsFacadeOptions,
-    RallarRoomsFacade
-} from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
+export type { RallarRoomsFacade } from '@shared-web/browser/rooms/rallar-rooms-facade.ts';
 
-export type {
-    CreateRallarPeopleFacadeOptions,
-    RallarPeopleFacade
-} from '@shared-web/browser/rallar-people-facade.ts';
+export type { RallarPeopleFacade } from '@shared-web/browser/rallar-people-facade.ts';
 
-export type {
-    CreateRallarStatsFacadeOptions,
-    RallarStatsFacade
-} from '@shared-web/browser/rallar-stats-facade.ts';
+export type { RallarStatsFacade } from '@shared-web/browser/rallar-stats-facade.ts';
 
-export type {
-    CreateRallarMessagesFacadeOptions,
-    RallarMessagesFacade
-} from '@shared-web/browser/rallar-messages-facade.ts';
+export type { RallarMessagesFacade } from '@shared-web/browser/rallar-messages-facade.ts';
 
 export type {
     RallarMessageSelector,
@@ -91,7 +69,6 @@ export type {
     RallarMessageSendStatus,
     RallarMessageTransport,
     RallarOnChangeOptions,
-    RallarPeopleEventListener,
     RallarPeopleEventOptions,
     RallarPeopleState,
     RallarPerson,
@@ -103,7 +80,6 @@ export type {
     RallarRoomEventListener,
     RallarRoomEventOptions,
     RallarRoomMember,
-    RallarRoomMessageChannel,
     RallarRoomMessageChannelDefinition,
     RallarRoomSession,
     RallarRoomSessionMessageDefinition,

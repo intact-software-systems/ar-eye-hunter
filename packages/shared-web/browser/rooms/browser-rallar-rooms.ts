@@ -32,7 +32,7 @@ import { createAndJoinRoom, createAndSwitchRoom } from './create-and-join-room.t
 import { enterRoom, joinRoom } from './join-room.ts';
 import { leaveRoom } from './leave-room.ts';
 import type { RallarRoomSession, RallarRoomState } from './rallar-room-contracts.ts';
-import type { CreateRallarRoomsFacadeOptions } from './rallar-rooms-facade.ts';
+import type { RallarRoomsFacade } from './rallar-rooms-facade.ts';
 import type { RallarRoomEventsPort } from './room-events.ts';
 import type { GroupRef, GroupSnapshot, StateScope } from './room-group-state-translation.ts';
 import {
@@ -54,15 +54,21 @@ export interface CreateBrowserRallarRoomsInput {
     readonly roomEvents: RallarRoomEventsPort;
     readonly messages: RallarMessagesFacade;
     readonly realtime: RallarRealtimeFacade;
-    readonly connect: (options?: RallarOperationOptions) => Promise<ApiMiddleware>;
+    readonly connect: (
+        options?: RallarOperationOptions
+    ) => Promise<ApiMiddleware>;
     readonly requireSession: () => AuthSession;
     readonly resolveOperationOptions: <T extends RallarOperationOptions>(
         options: T
     ) => T & RallarOperationOptions;
-    readonly resolveOperationScope: (scope?: StateScope) => StateScope | undefined;
+    readonly resolveOperationScope: (
+        scope?: StateScope
+    ) => StateScope | undefined;
     readonly resolveDefaultRoom: () => string | GroupRef | undefined;
     readonly resolveDefaultRoomRef: () => GroupRef | undefined;
-    readonly runAuthAwareOperation: <T>(operation: () => Promise<T>) => Promise<T>;
+    readonly runAuthAwareOperation: <T>(
+        operation: () => Promise<T>
+    ) => Promise<T>;
     readonly acceptSnapshots: (
         context: ApiMiddleware,
         clients: readonly ClientSnapshot[],
@@ -74,20 +80,29 @@ export interface CreateBrowserRallarRoomsInput {
 interface CreateRoomEntryOperationsInput {
     readonly rooms: CreateBrowserRallarRoomsInput;
     readonly createSession: (roomRef: GroupRef) => RallarRoomSession;
-    readonly resolveRoomRef: (room: string | GroupRef, scope?: StateScope) => GroupRef | undefined;
-    readonly onCacheChange: (listener: () => void | Promise<void>) => RallarUnsubscribe;
+    readonly resolveRoomRef: (
+        room: string | GroupRef,
+        scope?: StateScope
+    ) => GroupRef | undefined;
+    readonly onCacheChange: (
+        listener: () => void | Promise<void>
+    ) => RallarUnsubscribe;
 }
 
 export function createBrowserRallarRooms(
     input: CreateBrowserRallarRoomsInput
-): CreateRallarRoomsFacadeOptions {
-    const resolveRoomRef = (room: string | GroupRef, scope?: StateScope): GroupRef | undefined =>
+): RallarRoomsFacade {
+    const resolveRoomRef = (
+        room: string | GroupRef,
+        scope?: StateScope
+    ): GroupRef | undefined =>
         typeof room === 'string'
             ? (toGroupRefFromScope(room, input.resolveOperationScope(scope)) ??
                 input.stateStore.findGroupSnapshot(room)?.group)
             : room;
-    const onCacheChange = (listener: () => void | Promise<void>): RallarUnsubscribe =>
-        input.stateStore.onCacheChange(listener);
+    const onCacheChange = (
+        listener: () => void | Promise<void>
+    ): RallarUnsubscribe => input.stateStore.onCacheChange(listener);
     const refresh = async (
         refreshInput?: StateScope | RallarScopedOperationOptions
     ): Promise<RallarRoomState> => await refreshRooms(input, refreshInput);
@@ -116,9 +131,11 @@ export function createBrowserRallarRooms(
 
 function createRoomReadOperations(
     input: CreateBrowserRallarRoomsInput,
-    refresh: (input?: StateScope | RallarScopedOperationOptions) => Promise<RallarRoomState>
+    refresh: (
+        input?: StateScope | RallarScopedOperationOptions
+    ) => Promise<RallarRoomState>
 ): Pick<
-    CreateRallarRoomsFacadeOptions,
+    RallarRoomsFacade,
     | 'state'
     | 'list'
     | 'refresh'
@@ -148,8 +165,14 @@ function createRoomReadOperations(
 function createRoomEntryOperations(
     input: CreateRoomEntryOperationsInput
 ): Pick<
-    CreateRallarRoomsFacadeOptions,
-    'create' | 'createAndSwitch' | 'join' | 'enter' | 'session' | 'leave' | 'waitForPresence'
+    RallarRoomsFacade,
+    | 'create'
+    | 'createAndSwitch'
+    | 'join'
+    | 'enter'
+    | 'session'
+    | 'leave'
+    | 'waitForPresence'
 > {
     return {
         create: async (room) => await createAndJoinRoom({ ...input.rooms, room }),
@@ -168,7 +191,10 @@ function createRoomEntryOperations(
                 options,
                 createRoomSession: input.createSession
             }),
-        session: (room) => input.createSession(resolveRoomSessionRef(input.rooms, room, input.resolveRoomRef)),
+        session: (room) =>
+            input.createSession(
+                resolveRoomSessionRef(input.rooms, room, input.resolveRoomRef)
+            ),
         leave: async (leaveInput) => await leaveRoom({ ...input.rooms, input: leaveInput }),
         waitForPresence: async (room, options = {}) =>
             await waitForRoomPresence({
@@ -185,7 +211,7 @@ function createRoomEntryOperations(
 function createRoomMembershipOperations(
     input: CreateBrowserRallarRoomsInput
 ): Pick<
-    CreateRallarRoomsFacadeOptions,
+    RallarRoomsFacade,
     | 'invite'
     | 'acceptInvite'
     | 'removeMember'
@@ -213,7 +239,7 @@ function createRoomMembershipOperations(
 
 function createRoomUpdateOperations(
     input: CreateBrowserRallarRoomsInput
-): Pick<CreateRallarRoomsFacadeOptions, 'update' | 'archive' | 'delete' | 'updateMetadata'> {
+): Pick<RallarRoomsFacade, 'update' | 'archive' | 'delete' | 'updateMetadata'> {
     return {
         update: async (updateInput) => await updateRoom({ ...input, input: updateInput }),
         archive: async (room, options = {}) => await archiveRoom({ ...input, room, options }),
@@ -267,10 +293,7 @@ async function refreshRoom(
         }
         catch (error) {
             if (error instanceof ApiHttpError && error.status === 404 && observed) {
-                const removed = removeGroupStateSnapshotIfUnchanged(
-                    roomRef,
-                    observed
-                );
+                const removed = removeGroupStateSnapshotIfUnchanged(roomRef, observed);
                 emitBrowserStateReadDiagnostic({
                     name: 'rallar.browser.state-read',
                     feature: 'group',
@@ -288,7 +311,10 @@ async function refreshRoom(
 function resolveRoomSessionRef(
     input: CreateBrowserRallarRoomsInput,
     room: string | GroupRef | undefined,
-    resolveRoomRef: (room: string | GroupRef, scope?: StateScope) => GroupRef | undefined
+    resolveRoomRef: (
+        room: string | GroupRef,
+        scope?: StateScope
+    ) => GroupRef | undefined
 ): GroupRef {
     const target = room ??
         input.resolveDefaultRoomRef() ??

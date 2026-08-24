@@ -22,9 +22,7 @@ type GroupStateSnapshotsRepositoryModule = typeof import('@shared/repository/gro
 type RoomGroupStateWorkflowsModule = typeof import('@shared-web/browser/rooms/room-group-state-workflows.ts');
 
 const mocks = await vi.hoisted(async () => {
-    const { createApiMiddlewareTestDouble } = await import(
-        './api-middleware-test-double.ts'
-    );
+    const { createApiMiddlewareTestDouble } = await import('./api-middleware-test-double.ts');
     const ctx = createApiMiddlewareTestDouble();
     const session = ctx.session;
 
@@ -36,9 +34,7 @@ const mocks = await vi.hoisted(async () => {
         webRtcConnectionService: vi.mocked(ctx.middleware.webRtcConnectionService),
         webSocketQueueBox: vi.mocked(ctx.middleware.webSocketQueueBox),
         webSocket: vi.mocked(ctx.middleware.webSocketQueueBox.socket),
-        initialiseMiddleware: vi.fn<MiddlewareModule['initialiseMiddleware']>(
-            () => Promise.resolve(ctx.middleware)
-        ),
+        initialiseMiddleware: vi.fn<MiddlewareModule['initialiseMiddleware']>(() => Promise.resolve(ctx.middleware)),
         clearSession: vi.fn<AuthModule['clearSession']>(),
         readSession: vi.fn<AuthModule['readSession']>(() => session),
         writeSession: vi.fn<AuthModule['writeSession']>(),
@@ -53,15 +49,13 @@ const mocks = await vi.hoisted(async () => {
                 deleted: 0
             })
         ),
-        createAndJoinStateGroup: vi.fn<ApiWorkflowsModule['createAndJoinStateGroup']>(
-            () => Promise.reject(new Error('create not mocked'))
-        ),
+        createAndJoinStateGroup: vi.fn<ApiWorkflowsModule['createAndJoinStateGroup']>(() => Promise.reject(new Error('create not mocked'))),
         joinStateGroup: vi.fn<ApiWorkflowsModule['joinStateGroup']>(() => Promise.reject(new Error('join not mocked'))),
         leaveStateGroup: vi.fn<ApiWorkflowsModule['leaveStateGroup']>(() => Promise.reject(new Error('leave not mocked'))),
-        updateStateGroupMetadata: vi.fn<ApiWorkflowsModule['updateStateGroupMetadata']>(
-            () => Promise.reject(new Error('metadata update not mocked'))
+        updateStateGroupMetadata: vi.fn<ApiWorkflowsModule['updateStateGroupMetadata']>(() => Promise.reject(new Error('metadata update not mocked'))),
+        refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(
+            () => Promise.resolve({ clients: [], groups: [] })
         ),
-        refreshStateSnapshots: vi.fn<ApiWorkflowsModule['refreshStateSnapshots']>(() => Promise.resolve({ clients: [], groups: [] })),
         loginToApi: vi.fn<AuthApiModule['loginToApi']>(() => Promise.resolve(session)),
         logoutFromApi: vi.fn<AuthApiModule['logoutFromApi']>(() => Promise.resolve({ loggedOut: true })),
         registerWithApi: vi.fn<AuthApiModule['registerWithApi']>(() =>
@@ -72,19 +66,17 @@ const mocks = await vi.hoisted(async () => {
                 registeredAtEpochMs: 1_000
             })
         ),
-        listStateClientEvents: vi.fn<ApiIntegrationModule['listStateClientEvents']>(() => Promise.reject(new Error('client events not mocked'))),
-        listStateClientEventPage: vi.fn<ApiIntegrationModule['listStateClientEventPage']>(() => Promise.reject(new Error('client event page not mocked'))),
-        listStateGroupEvents: vi.fn<ApiIntegrationModule['listStateGroupEvents']>(() => Promise.reject(new Error('group events not mocked'))),
-        listStateGroupEventPage: vi.fn<ApiIntegrationModule['listStateGroupEventPage']>(
-            () => Promise.reject(new Error('group event page not mocked'))
+        listStateClientEvents: vi.fn<ApiIntegrationModule['listStateClientEvents']>(
+            () => Promise.reject(new Error('client events not mocked'))
         ),
+        listStateClientEventPage: vi.fn<ApiIntegrationModule['listStateClientEventPage']>(() => Promise.reject(new Error('client event page not mocked'))),
+        listStateGroupEvents: vi.fn<ApiIntegrationModule['listStateGroupEvents']>(
+            () => Promise.reject(new Error('group events not mocked'))
+        ),
+        listStateGroupEventPage: vi.fn<ApiIntegrationModule['listStateGroupEventPage']>(() => Promise.reject(new Error('group event page not mocked'))),
         clientRepositoryMissing: vi.fn(() => undefined),
         getAllClientStateSnapshots: vi.fn<ClientStateSnapshotsRepositoryModule['getAllClientStateSnapshots']>(() => []),
-        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<
-            GroupStateSnapshotsRepositoryModule[
-                'findFirstGroupStateSnapshotRefSessionIdIsIn'
-            ]
-        >(),
+        findFirstGroupStateSnapshotRefSessionIdIsIn: vi.fn<GroupStateSnapshotsRepositoryModule['findFirstGroupStateSnapshotRefSessionIdIsIn']>(),
         findGroupStateSnapshotByRef: vi.fn<GroupStateSnapshotsRepositoryModule['findGroupStateSnapshotByRef']>(),
         getAllGroupStateSnapshots: vi.fn<GroupStateSnapshotsRepositoryModule['getAllGroupStateSnapshots']>()
     };
@@ -107,11 +99,14 @@ vi.mock(
     })
 );
 
-vi.mock(import('@shared-web/browser/auth/session-http-api.ts'), (): Partial<AuthApiModule> => ({
-    loginToApi: mocks.loginToApi,
-    logoutFromApi: mocks.logoutFromApi,
-    registerWithApi: mocks.registerWithApi
-}));
+vi.mock(
+    import('@shared-web/browser/auth/session-http-api.ts'),
+    (): Partial<AuthApiModule> => ({
+        loginToApi: mocks.loginToApi,
+        logoutFromApi: mocks.logoutFromApi,
+        registerWithApi: mocks.registerWithApi
+    })
+);
 
 vi.mock(
     import('@shared-web/browser/api-workflows.ts'),
@@ -147,15 +142,12 @@ vi.mock(
     })
 );
 
-vi.mock(
-    import('@shared/api/auth.ts'),
-    (): Partial<AuthModule> => ({
-        clearSession: mocks.clearSession,
-        isLoggedIn: vi.fn(() => true),
-        readSession: mocks.readSession,
-        writeSession: mocks.writeSession
-    })
-);
+vi.mock(import('@shared/api/auth.ts'), (): Partial<AuthModule> => ({
+    clearSession: mocks.clearSession,
+    isLoggedIn: vi.fn(() => true),
+    readSession: mocks.readSession,
+    writeSession: mocks.writeSession
+}));
 
 vi.mock(
     import('@shared/repository/client-state-snapshots-repository.ts'),
@@ -176,8 +168,9 @@ vi.mock(
 
 describe('Rallar auth session contract', () => {
     beforeEach(async () => {
-        (await import('@shared-web/browser/connection/browser-transport-runtime.ts'))
-            .browserTransportRuntime.shutdown('test-reset');
+        (
+            await import('@shared-web/browser/connection/browser-transport-runtime.ts')
+        ).browserTransportRuntime.shutdown('test-reset');
         vi.clearAllMocks();
         vi.useRealTimers();
         mocks.clientRepositoryMissing.mockReturnValue(undefined);
@@ -195,14 +188,17 @@ describe('Rallar auth session contract', () => {
             scanned: 0,
             deleted: 0
         });
-        mocks.createAndJoinStateGroup.mockRejectedValue(new Error('create not mocked'));
+        mocks.createAndJoinStateGroup.mockRejectedValue(
+            new Error('create not mocked')
+        );
         mocks.joinStateGroup.mockRejectedValue(new Error('join not mocked'));
         mocks.leaveStateGroup.mockRejectedValue(new Error('leave not mocked'));
         mocks.updateStateGroupMetadata.mockRejectedValue(
             new Error('metadata update not mocked')
         );
-        mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes
-            .mockReturnValue([]);
+        mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes.mockReturnValue(
+            []
+        );
         mocks.webRtcConnectionService.knownPeerIds.mockReturnValue([]);
         mocks.webRtcConnectionService.activePeerIds.mockReturnValue([]);
         mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue([]);
@@ -222,9 +218,13 @@ describe('Rallar auth session contract', () => {
                 error: new Error('connect not mocked')
             })
         );
-        mocks.webRtcConnectionService.onRtcPeerLifecycleDo.mockImplementation(() => mocks.ctx.middleware.webRtcConnectionService);
+        mocks.webRtcConnectionService.onRtcPeerLifecycleDo.mockImplementation(
+            () => mocks.ctx.middleware.webRtcConnectionService
+        );
         mocks.webRtcConnectionService.readPeer.mockReturnValue(undefined);
-        mocks.webRtcConnectionService.removeRtcPeerLifecycleById.mockReturnValue(true);
+        mocks.webRtcConnectionService.removeRtcPeerLifecycleById.mockReturnValue(
+            true
+        );
         mocks.rtcRxStreamer.enqueueOutboxIfAbsent.mockImplementation(
             async (message) => ({
                 status: 'enqueued',
@@ -286,9 +286,7 @@ describe('Rallar auth session contract', () => {
     });
 
     it('passes signal and timeout options into auth login', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const signal = new AbortController().signal;
 
         await createRallarFacade().auth.login(
@@ -306,16 +304,12 @@ describe('Rallar auth session contract', () => {
             username: 'principal-1',
             password: 'password-1'
         });
-        const loginOptions = mocks.loginToApi.mock.calls[0]?.[1] as
-            | { signal?: AbortSignal; }
-            | undefined;
+        const loginOptions = mocks.loginToApi.mock.calls[0]?.[1] as { signal?: AbortSignal; } | undefined;
         expect(loginOptions?.signal).toBeInstanceOf(AbortSignal);
     });
 
     it('reuses one request ID when login retries after a lost response', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         mocks.loginToApi
             .mockRejectedValueOnce(apiHttpError(503, 'response lost'))
             .mockResolvedValueOnce(mocks.ctx.session);
@@ -325,16 +319,16 @@ describe('Rallar auth session contract', () => {
             { maxAttempts: 2 }
         );
 
-        const requestIds = mocks.loginToApi.mock.calls.map((call) => (call[1] as { requestId?: string; } | undefined)?.requestId);
+        const requestIds = mocks.loginToApi.mock.calls.map(
+            (call) => (call[1] as { requestId?: string; } | undefined)?.requestId
+        );
         expect(requestIds).toHaveLength(2);
         expect(requestIds[0]).toBeTruthy();
         expect(new Set(requestIds).size).toBe(1);
     });
 
     it('emits the current auth state to auth change subscribers', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const listener = vi.fn();
 
         const unsubscribe = createRallarFacade().auth.onChange(listener);
@@ -349,9 +343,7 @@ describe('Rallar auth session contract', () => {
     });
 
     it('locally logs out and tears down active transports when the session expires', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         vi.useFakeTimers();
         vi.setSystemTime(1_000);
         const expiringSession = {
@@ -359,7 +351,11 @@ describe('Rallar auth session contract', () => {
             expiresAtEpochMs: 1_500
         };
         mocks.initialiseMiddleware.mockResolvedValue(mocks.ctx.middleware);
-        mocks.readSession.mockImplementation(() => Date.now() >= expiringSession.expiresAtEpochMs ? undefined : expiringSession);
+        mocks.readSession.mockImplementation(() =>
+            Date.now() >= expiringSession.expiresAtEpochMs
+                ? undefined
+                : expiringSession
+        );
         const facade = createRallarFacade();
         const authListener = vi.fn();
         facade.auth.onChange(authListener, { emitCurrent: false });
@@ -369,11 +365,12 @@ describe('Rallar auth session contract', () => {
         await Promise.resolve();
         await Promise.resolve();
 
-        expect(mocks.webSocketQueueBox.close)
-            .toHaveBeenCalledWith(1000, 'rallar-disconnect');
+        expect(mocks.webSocketQueueBox.close).toHaveBeenCalledWith(
+            1000,
+            'rallar-disconnect'
+        );
         expect(mocks.heartbeat.stop).toHaveBeenCalledOnce();
-        expect(mocks.rtcRxStreamer.stopAllHeartbeats)
-            .toHaveBeenCalledOnce();
+        expect(mocks.rtcRxStreamer.stopAllHeartbeats).toHaveBeenCalledOnce();
         expect(mocks.logoutFromApi).not.toHaveBeenCalled();
         expect(mocks.clearSession).toHaveBeenCalledOnce();
         expect(authListener).toHaveBeenCalledWith({
@@ -385,9 +382,7 @@ describe('Rallar auth session contract', () => {
     });
 
     it('does not expire a replacement session when an old expiry timer fires', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         vi.useFakeTimers();
         vi.setSystemTime(1_000);
         const oldSession = {
@@ -416,19 +411,21 @@ describe('Rallar auth session contract', () => {
     });
 
     it('locally logs out on API 401 without calling the logout endpoint', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
         const authListener = vi.fn();
         facade.auth.onChange(authListener, { emitCurrent: false });
         await facade.connect();
-        mocks.refreshStateSnapshots.mockRejectedValue(apiHttpError(401, 'Unauthorized'));
+        mocks.refreshStateSnapshots.mockRejectedValue(
+            apiHttpError(401, 'Unauthorized')
+        );
 
         await expect(facade.rooms.refresh()).rejects.toThrow('Unauthorized');
 
-        expect(mocks.webSocketQueueBox.close)
-            .toHaveBeenCalledWith(1000, 'rallar-disconnect');
+        expect(mocks.webSocketQueueBox.close).toHaveBeenCalledWith(
+            1000,
+            'rallar-disconnect'
+        );
         expect(mocks.logoutFromApi).not.toHaveBeenCalled();
         expect(mocks.clearSession).toHaveBeenCalledOnce();
         expect(authListener).toHaveBeenCalledWith({
@@ -439,9 +436,7 @@ describe('Rallar auth session contract', () => {
     });
 
     it('emits unauthorized auth state once when nested room operations see the same 401', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
         const authListener = vi.fn();
         const oldRoom = createGroupSnapshot('old-room', ['session-1']);
@@ -457,7 +452,9 @@ describe('Rallar auth session contract', () => {
 
         facade.auth.onChange(authListener, { emitCurrent: false });
         mocks.joinStateGroup.mockResolvedValueOnce(newRoom);
-        mocks.leaveStateGroup.mockRejectedValueOnce(apiHttpError(401, 'Unauthorized'));
+        mocks.leaveStateGroup.mockRejectedValueOnce(
+            apiHttpError(401, 'Unauthorized')
+        );
 
         await expect(facade.rooms.join('new-room')).rejects.toThrow('Unauthorized');
 
@@ -471,13 +468,13 @@ describe('Rallar auth session contract', () => {
     });
 
     it('does not locally log out on API 403 authorization errors', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
         await facade.connect();
         mocks.webSocketQueueBox.close.mockClear();
-        mocks.refreshStateSnapshots.mockRejectedValue(apiHttpError(403, 'Forbidden'));
+        mocks.refreshStateSnapshots.mockRejectedValue(
+            apiHttpError(403, 'Forbidden')
+        );
 
         await expect(facade.rooms.refresh()).rejects.toThrow('Forbidden');
 
@@ -487,9 +484,7 @@ describe('Rallar auth session contract', () => {
     });
 
     it('passes an explicit admin session into auth registration', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const signal = new AbortController().signal;
         const adminSession = {
             ...mocks.ctx.session,
@@ -516,17 +511,13 @@ describe('Rallar auth session contract', () => {
             password: 'password-1',
             displayName: 'New User'
         });
-        const registerOptions = mocks.registerWithApi.mock.calls[0]?.[1] as
-            | { signal?: AbortSignal; authSession?: unknown; }
-            | undefined;
+        const registerOptions = mocks.registerWithApi.mock.calls[0]?.[1] as { signal?: AbortSignal; authSession?: unknown; } | undefined;
         expect(registerOptions?.signal).toBeInstanceOf(AbortSignal);
         expect(registerOptions?.authSession).toBe(adminSession);
     });
 
     it('reuses one request ID when registration retries after a lost response', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         mocks.registerWithApi
             .mockRejectedValueOnce(apiHttpError(503, 'response lost'))
             .mockResolvedValueOnce({
@@ -541,16 +532,16 @@ describe('Rallar auth session contract', () => {
             { maxAttempts: 2 }
         );
 
-        const requestIds = mocks.registerWithApi.mock.calls.map((call) => (call[1] as { requestId?: string; } | undefined)?.requestId);
+        const requestIds = mocks.registerWithApi.mock.calls.map(
+            (call) => (call[1] as { requestId?: string; } | undefined)?.requestId
+        );
         expect(requestIds).toHaveLength(2);
         expect(requestIds[0]).toBeTruthy();
         expect(new Set(requestIds).size).toBe(1);
     });
 
     it('can register and then log in with the new user', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
 
         await createRallarFacade().auth.registerAndLogin({
             username: 'new-user',
@@ -569,71 +560,63 @@ describe('Rallar auth session contract', () => {
     });
 
     it('revokes the backend session when logging out', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const signal = new AbortController().signal;
 
         await createRallarFacade().auth.logout({ signal, timeoutMs: 123 });
 
         expect(mocks.logoutFromApi).toHaveBeenCalledOnce();
-        const logoutOptions = mocks.logoutFromApi.mock.calls[0]?.[0] as
-            | { signal?: AbortSignal; }
-            | undefined;
+        const logoutOptions = mocks.logoutFromApi.mock.calls[0]?.[0] as { signal?: AbortSignal; } | undefined;
         expect(logoutOptions?.signal).toBeInstanceOf(AbortSignal);
         expect(mocks.clearSession).toHaveBeenCalledOnce();
     });
 
     it('reuses one request ID when logout retries after a lost response', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         mocks.logoutFromApi
             .mockRejectedValueOnce(apiHttpError(503, 'response lost'))
             .mockResolvedValueOnce({ loggedOut: true });
 
         await createRallarFacade().auth.logout({ maxAttempts: 2 });
 
-        const requestIds = mocks.logoutFromApi.mock.calls.map((call) => (call[0] as { requestId?: string; } | undefined)?.requestId);
+        const requestIds = mocks.logoutFromApi.mock.calls.map(
+            (call) => (call[0] as { requestId?: string; } | undefined)?.requestId
+        );
         expect(requestIds).toHaveLength(2);
         expect(requestIds[0]).toBeTruthy();
         expect(new Set(requestIds).size).toBe(1);
     });
 
     it('clears local auth before revoking manual logout and uses the captured session', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
 
         await createRallarFacade().auth.logout();
 
         expect(mocks.clearSession).toHaveBeenCalledOnce();
         expect(mocks.logoutFromApi).toHaveBeenCalledOnce();
-        expect(mocks.clearSession.mock.invocationCallOrder[0])
-            .toBeLessThan(mocks.logoutFromApi.mock.invocationCallOrder[0]);
+        expect(mocks.clearSession.mock.invocationCallOrder[0]).toBeLessThan(
+            mocks.logoutFromApi.mock.invocationCallOrder[0]
+        );
         expect(mocks.logoutFromApi.mock.calls[0]?.[0]).toMatchObject({
             authSession: mocks.ctx.session
         });
     });
 
     it('deletes captured session browser AL runtime rows even when revoke fails', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         mocks.logoutFromApi.mockRejectedValueOnce(new Error('revoke failed'));
 
         await expect(createRallarFacade().auth.logout()).rejects.toThrow(
             'revoke failed'
         );
 
-        expect(mocks.deleteBrowserALRuntimeEntriesForSession)
-            .toHaveBeenCalledWith('session-1');
+        expect(mocks.deleteBrowserALRuntimeEntriesForSession).toHaveBeenCalledWith(
+            'session-1'
+        );
     });
 
     it('does not reconnect with a stale session while manual logout is in progress', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         let storedSession: typeof mocks.ctx.session | undefined = mocks.ctx.session;
         let releaseLogout: (() => void) | undefined;
         mocks.readSession.mockImplementation(() => storedSession);
@@ -668,9 +651,7 @@ describe('Rallar auth session contract', () => {
     });
 
     it('shuts down middleware that resolves after logout during connect', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const deferred = createDeferred<Middleware>();
         mocks.initialiseMiddleware.mockReturnValueOnce(deferred.promise);
         const facade = createRallarFacade();
@@ -689,37 +670,79 @@ describe('Rallar auth session contract', () => {
         expect(facade.status()).toBe('idle');
         expect(facade.isConnected()).toBe(false);
         expect(mocks.heartbeat.stop).toHaveBeenCalled();
-        expect(mocks.rtcRxStreamer.stopAllHeartbeats)
-            .toHaveBeenCalled();
-        expect(mocks.webRtcConnectionService.knownPeerIds)
-            .toHaveBeenCalled();
+        expect(mocks.rtcRxStreamer.stopAllHeartbeats).toHaveBeenCalled();
+        expect(mocks.webRtcConnectionService.knownPeerIds).toHaveBeenCalled();
         expect(mocks.qboxEngine.stop).toHaveBeenCalled();
-        expect(mocks.webSocketQueueBox.close)
-            .toHaveBeenCalledWith(1000, 'rallar-disconnect');
+        expect(mocks.webSocketQueueBox.close).toHaveBeenCalledWith(
+            1000,
+            'rallar-disconnect'
+        );
+    });
+
+    it('cancels a pending connection before replacing credentials and reconnects with the replacement', async () => {
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
+        const pendingMiddleware = createDeferred<Middleware>();
+        const replacementSession = {
+            ...mocks.ctx.session,
+            sessionId: 'session-2',
+            accessToken: 'token-2'
+        };
+        let currentSession = mocks.ctx.session;
+        mocks.readSession.mockImplementation(() => currentSession);
+        mocks.writeSession.mockImplementation((session) => {
+            currentSession = session;
+        });
+        mocks.initialiseMiddleware
+            .mockReturnValueOnce(pendingMiddleware.promise)
+            .mockResolvedValueOnce(mocks.ctx.middleware);
+        mocks.loginToApi.mockResolvedValue(replacementSession);
+        const facade = createRallarFacade();
+
+        const pendingConnect = facade.connect();
+        await vi.waitFor(() => {
+            expect(mocks.initialiseMiddleware).toHaveBeenCalledOnce();
+        });
+
+        await expect(
+            facade.auth.login({
+                username: 'principal-2',
+                password: 'password-2'
+            })
+        ).resolves.toBe(replacementSession);
+
+        expect(facade.status()).toBe('idle');
+        expect(facade.isConnected()).toBe(false);
+
+        pendingMiddleware.resolve(mocks.ctx.middleware);
+        await expect(pendingConnect).rejects.toThrow(
+            'Rallar connection was cancelled because auth ended.'
+        );
+
+        await expect(facade.connect()).resolves.toMatchObject({
+            session: replacementSession
+        });
+        expect(mocks.initialiseMiddleware).toHaveBeenCalledTimes(2);
     });
 
     it('closes WS through the queue-box service when logging out after connect', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         const facade = createRallarFacade();
 
         await facade.connect();
         await facade.auth.logout();
 
-        expect(mocks.webSocketQueueBox.close)
-            .toHaveBeenCalledWith(1000, 'rallar-disconnect');
+        expect(mocks.webSocketQueueBox.close).toHaveBeenCalledWith(
+            1000,
+            'rallar-disconnect'
+        );
         expect(mocks.heartbeat.stop).toHaveBeenCalledOnce();
-        expect(mocks.rtcRxStreamer.stopAllHeartbeats)
-            .toHaveBeenCalledOnce();
+        expect(mocks.rtcRxStreamer.stopAllHeartbeats).toHaveBeenCalledOnce();
         expect(mocks.logoutFromApi).toHaveBeenCalledOnce();
         expect(mocks.clearSession).toHaveBeenCalledOnce();
     });
 
     it('disconnects every known RTC peer, including stale lane peers', async () => {
-        const { createRallarFacade } = await import(
-            '@shared-web/browser/rallar.ts'
-        );
+        const { createRallarFacade } = await import('@shared-web/browser/rallar.ts');
         mocks.webRtcConnectionService.knownPeerIds.mockReturnValue([
             'peer-ready',
             'peer-stale'
@@ -728,10 +751,12 @@ describe('Rallar auth session contract', () => {
             'peer-ready',
             'peer-stale'
         ]);
-        mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes
-            .mockReturnValue(['peer-ready']);
-        mocks.webRtcConnectionService.readyPeerIdsForLane
-            .mockReturnValue(['peer-ready']);
+        mocks.webRtcConnectionService.peerIdsWithNoReconnectableLanes.mockReturnValue(
+            ['peer-ready']
+        );
+        mocks.webRtcConnectionService.readyPeerIdsForLane.mockReturnValue([
+            'peer-ready'
+        ]);
         const facade = createRallarFacade();
         const wsLifecycle: unknown[] = [];
         facade.ws.onLifecycle(
@@ -746,16 +771,23 @@ describe('Rallar auth session contract', () => {
         await facade.connect();
         await facade.disconnect();
 
-        expect(mocks.webRtcConnectionService.disconnectPeer)
-            .toHaveBeenCalledWith('peer-ready');
-        expect(mocks.webRtcConnectionService.disconnectPeer)
-            .toHaveBeenCalledWith('peer-stale');
-        expect(mocks.webRtcConnectionService.disconnectPeer)
-            .toHaveBeenCalledTimes(2);
-        expect(mocks.webSocketQueueBox.close)
-            .toHaveBeenCalledWith(1000, 'rallar-disconnect');
-        expect(mocks.webSocket.close)
-            .toHaveBeenCalledWith(1000, 'rallar-disconnect');
+        expect(mocks.webRtcConnectionService.disconnectPeer).toHaveBeenCalledWith(
+            'peer-ready'
+        );
+        expect(mocks.webRtcConnectionService.disconnectPeer).toHaveBeenCalledWith(
+            'peer-stale'
+        );
+        expect(mocks.webRtcConnectionService.disconnectPeer).toHaveBeenCalledTimes(
+            2
+        );
+        expect(mocks.webSocketQueueBox.close).toHaveBeenCalledWith(
+            1000,
+            'rallar-disconnect'
+        );
+        expect(mocks.webSocket.close).toHaveBeenCalledWith(
+            1000,
+            'rallar-disconnect'
+        );
         expect(wsLifecycle.at(-1)).toMatchObject({
             kind: 'disconnected',
             code: 1000,
@@ -771,8 +803,7 @@ describe('Rallar auth session contract', () => {
 });
 
 function findLatestWsAnyMessageCallback(): OnMessageCallback | undefined {
-    return mocks.webSocketQueueBox
-        .onAnyInboxMessageDo.mock.calls
+    return mocks.webSocketQueueBox.onAnyInboxMessageDo.mock.calls
         .filter(([callbackId]) => callbackId === 'rallar:ws:any-message')
         .at(-1)?.[1];
 }
@@ -826,14 +857,15 @@ function mockGroupSnapshot(snapshot: GroupSnapshot): void {
 function mockGroupSnapshots(snapshots: readonly GroupSnapshot[]): void {
     mocks.getAllGroupStateSnapshots.mockImplementation(() => [...snapshots]);
     mocks.findGroupStateSnapshotByRef.mockImplementation((ref) =>
-        snapshots.find((snapshot) =>
-            snapshot.group.groupId === ref.groupId &&
-            snapshot.group.applicationId === ref.applicationId &&
-            (snapshot.group.workspaceId ?? '') === (ref.workspaceId ?? '')
+        snapshots.find(
+            (snapshot) =>
+                snapshot.group.groupId === ref.groupId &&
+                snapshot.group.applicationId === ref.applicationId &&
+                (snapshot.group.workspaceId ?? '') === (ref.workspaceId ?? '')
         )
     );
-    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation((sessionId) =>
-        snapshots.find((snapshot) => snapshot.group.groupId === sessionId)?.group
+    mocks.findFirstGroupStateSnapshotRefSessionIdIsIn.mockImplementation(
+        (sessionId) => snapshots.find((snapshot) => snapshot.group.groupId === sessionId)?.group
     );
 }
 
@@ -884,33 +916,41 @@ function createDirectorGroupSnapshot(
     }>
 ): GroupSnapshot {
     const snapshot = createGroupSnapshot('room-1', ['session-1']);
-    const activeSessions: GroupSnapshot['activeSessions'][number][] = [{
-        ...snapshot.activeSessions[0],
-        principalId: 'principal-1',
-        sessionId: 'session-1'
-    }];
-    const members: GroupSnapshot['members'][number][] = [{
-        ...snapshot.members[0],
-        principalId: 'principal-1',
-        role: 'owner'
-    }];
+    const activeSessions: GroupSnapshot['activeSessions'][number][] = [
+        {
+            ...snapshot.activeSessions[0],
+            principalId: 'principal-1',
+            sessionId: 'session-1'
+        }
+    ];
+    const members: GroupSnapshot['members'][number][] = [
+        {
+            ...snapshot.members[0],
+            principalId: 'principal-1',
+            role: 'owner'
+        }
+    ];
 
     if (appointment) {
-        activeSessions.push(createActiveGroupPresenceSessionFixture({
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
-            groupId: 'room-1',
-            principalId: appointment.principalId,
-            sessionId: appointment.sessionId
-        }));
-        members.push(createActiveGroupMemberFixture({
-            applicationId: 'app-1',
-            workspaceId: 'workspace-1',
-            groupId: 'room-1',
-            principalId: appointment.principalId,
-            role: 'member',
-            actorPrincipalId: 'principal-1'
-        }));
+        activeSessions.push(
+            createActiveGroupPresenceSessionFixture({
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-1',
+                principalId: appointment.principalId,
+                sessionId: appointment.sessionId
+            })
+        );
+        members.push(
+            createActiveGroupMemberFixture({
+                applicationId: 'app-1',
+                workspaceId: 'workspace-1',
+                groupId: 'room-1',
+                principalId: appointment.principalId,
+                role: 'member',
+                actorPrincipalId: 'principal-1'
+            })
+        );
     }
 
     return {
@@ -987,22 +1027,20 @@ function createMediaTrack(
         kind,
         enabled: true,
         readyState: 'live',
-        addEventListener: vi.fn((
-            type: string,
-            listener: EventListenerOrEventListenerObject
-        ) => {
-            if (type === 'ended') {
-                listeners.add(listener);
+        addEventListener: vi.fn(
+            (type: string, listener: EventListenerOrEventListenerObject) => {
+                if (type === 'ended') {
+                    listeners.add(listener);
+                }
             }
-        }),
-        removeEventListener: vi.fn((
-            type: string,
-            listener: EventListenerOrEventListenerObject
-        ) => {
-            if (type === 'ended') {
-                listeners.delete(listener);
+        ),
+        removeEventListener: vi.fn(
+            (type: string, listener: EventListenerOrEventListenerObject) => {
+                if (type === 'ended') {
+                    listeners.delete(listener);
+                }
             }
-        }),
+        ),
         stop: vi.fn(() => {
             track.readyState = 'ended';
             const event = { type: 'ended' } as Event;

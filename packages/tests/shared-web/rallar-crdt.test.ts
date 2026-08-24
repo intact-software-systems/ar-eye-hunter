@@ -11,11 +11,7 @@ import type {
     RallarCrdtTransportSendResult
 } from '@shared-web/browser/rallar-crdt-transport.ts';
 import { createRallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
-import {
-    createRallarDataFacade as createConfiguredRallarDataFacade,
-    type CreateRallarDataFacadeInput,
-    type RallarDataScope
-} from '@shared-web/browser/rallar-data.ts';
+import { createRallarDataFacade, type RallarDataScope } from '@shared-web/browser/rallar-data.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
 import {
@@ -41,16 +37,7 @@ const roomRef = {
     groupId: 'room-1'
 };
 
-function createRallarDataFacade(
-    input:
-        & Omit<CreateRallarDataFacadeInput, 'resolveScopeKey'>
-        & Partial<Pick<CreateRallarDataFacadeInput, 'resolveScopeKey'>>
-) {
-    return createConfiguredRallarDataFacade({
-        ...input,
-        resolveScopeKey: input.resolveScopeKey ?? ((scope: RallarDataScope) => String(scope))
-    });
-}
+const resolveTestDataScopeKey = (scope: RallarDataScope): string => String(scope);
 
 describe('Rallar CRDT browser facade', () => {
     const originalBroadcastChannel = globalThis.BroadcastChannel;
@@ -97,7 +84,8 @@ describe('Rallar CRDT browser facade', () => {
     it('offers ordered-list helpers and actor-scoped undo/redo metadata', async () => {
         const document = await createRallarCrdtFacade({
             data: createRallarDataFacade({
-                manager: new RepositoryManager()
+                manager: new RepositoryManager(),
+                resolveScopeKey: resolveTestDataScopeKey
             })
         }).open<Record<string, unknown>>('room-checklist', {
             applicationId: 'rallar-test',
@@ -192,7 +180,8 @@ describe('Rallar CRDT browser facade', () => {
     it('offers numeric counter and min/max helpers', async () => {
         const document = await createRallarCrdtFacade({
             data: createRallarDataFacade({
-                manager: new RepositoryManager()
+                manager: new RepositoryManager(),
+                resolveScopeKey: resolveTestDataScopeKey
             })
         }).open<Record<string, unknown>>('room-metrics', {
             applicationId: 'rallar-test',
@@ -244,7 +233,8 @@ describe('Rallar CRDT browser facade', () => {
         const dbName = `rallar-crdt-${crypto.randomUUID()}`;
         const firstFacade = createRallarCrdtFacade({
             data: createRallarDataFacade({
-                manager: new RepositoryManager()
+                manager: new RepositoryManager(),
+                resolveScopeKey: resolveTestDataScopeKey
             }),
             readDefaults: () => ({
                 applicationId: 'rallar-test',
@@ -285,7 +275,8 @@ describe('Rallar CRDT browser facade', () => {
 
         const secondFacade = createRallarCrdtFacade({
             data: createRallarDataFacade({
-                manager: new RepositoryManager()
+                manager: new RepositoryManager(),
+                resolveScopeKey: resolveTestDataScopeKey
             }),
             readDefaults: () => ({
                 applicationId: 'rallar-test',
@@ -315,7 +306,8 @@ describe('Rallar CRDT browser facade', () => {
 
     it('quarantines corrupt local artifacts during hydration', async () => {
         const data = createRallarDataFacade({
-            manager: new RepositoryManager()
+            manager: new RepositoryManager(),
+            resolveScopeKey: resolveTestDataScopeKey
         });
         const ref = {
             applicationId: 'rallar-test',
@@ -380,7 +372,8 @@ describe('Rallar CRDT browser facade', () => {
         const dbName = `rallar-crdt-${crypto.randomUUID()}`;
         const first = await createRallarCrdtFacade({
             data: createRallarDataFacade({
-                manager: new RepositoryManager()
+                manager: new RepositoryManager(),
+                resolveScopeKey: resolveTestDataScopeKey
             })
         }).open<Record<string, unknown>>('room-checklist', {
             applicationId: 'rallar-test',
@@ -396,7 +389,8 @@ describe('Rallar CRDT browser facade', () => {
         });
         const second = await createRallarCrdtFacade({
             data: createRallarDataFacade({
-                manager: new RepositoryManager()
+                manager: new RepositoryManager(),
+                resolveScopeKey: resolveTestDataScopeKey
             })
         }).open<Record<string, unknown>>('room-checklist', {
             applicationId: 'rallar-test',
@@ -457,7 +451,8 @@ describe('Rallar CRDT browser facade', () => {
         const metrics = new InMemoryRallarCrdtMetricsSink();
         const facade = createRallarCrdtFacade({
             data: createRallarDataFacade({
-                manager: new RepositoryManager()
+                manager: new RepositoryManager(),
+                resolveScopeKey: resolveTestDataScopeKey
             }),
             readDefaults: () => ({
                 applicationId: 'rallar-test',
@@ -533,9 +528,7 @@ describe('Rallar CRDT browser facade', () => {
         expect(isRallarCrdtEncryptedOperationBatch(update.payload)).toBe(true);
         expect(JSON.stringify(update)).not.toContain('Encrypted WS title');
         await waitFor(
-            () =>
-                JSON.stringify(second.read()) ===
-                    '{"title":"Encrypted WS title"}'
+            () => JSON.stringify(second.read()) === '{"title":"Encrypted WS title"}'
         );
         expect(second.health()).toMatchObject({
             liveReceivedUpdateCount: 1,
@@ -618,9 +611,7 @@ describe('Rallar CRDT browser facade', () => {
         );
 
         await waitFor(
-            () =>
-                JSON.stringify(receiver.read()) ===
-                    '{"title":"Fallback title"}'
+            () => JSON.stringify(receiver.read()) === '{"title":"Fallback title"}'
         );
         expect(fallback.sentUpdateTransports()).toEqual(['rtc', 'ws']);
     });
@@ -763,7 +754,8 @@ describe('Rallar CRDT browser facade', () => {
     it('uses HTTP durable catch-up when no live transport is configured', async () => {
         const document = await createRallarCrdtFacade({
             data: createRallarDataFacade({
-                manager: new RepositoryManager()
+                manager: new RepositoryManager(),
+                resolveScopeKey: resolveTestDataScopeKey
             })
         }).open<Record<string, unknown>>('room-checklist', {
             applicationId: 'rallar-test',
@@ -810,10 +802,7 @@ class FakeBroadcastChannel {
     }
 
     public postMessage(message: unknown): void {
-        for (
-            const channel of FakeBroadcastChannel.channels.get(this.name) ??
-                []
-        ) {
+        for (const channel of FakeBroadcastChannel.channels.get(this.name) ?? []) {
             if (channel === this) {
                 continue;
             }
@@ -862,7 +851,8 @@ async function createTransportDocument(
     const endpoint = network.createEndpoint(replicaId);
     return await createRallarCrdtFacade({
         data: createRallarDataFacade({
-            manager: new RepositoryManager()
+            manager: new RepositoryManager(),
+            resolveScopeKey: resolveTestDataScopeKey
         }),
         readTransport: () => endpoint
     }).open<Record<string, unknown>>('room-checklist', {
@@ -977,10 +967,7 @@ class FakeCrdtTransportNetwork {
                     endpoint.deliver(transport, input);
                 }
             }
-            if (
-                this.appendResponses &&
-                input.typeId === RALLAR_CRDT_UPDATE_TYPE_ID
-            ) {
+            if (this.appendResponses && input.typeId === RALLAR_CRDT_UPDATE_TYPE_ID) {
                 this.deliverAppendResponse(
                     fromEndpointId,
                     transport,
@@ -1083,10 +1070,7 @@ class FakeCrdtTransportEndpoint {
     private readonly id: string;
     private readonly network: FakeCrdtTransportNetwork;
 
-    public constructor(
-        id: string,
-        network: FakeCrdtTransportNetwork
-    ) {
+    public constructor(id: string, network: FakeCrdtTransportNetwork) {
         this.id = id;
         this.network = network;
         this.transport = {

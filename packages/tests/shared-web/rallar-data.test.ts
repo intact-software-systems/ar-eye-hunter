@@ -2,12 +2,7 @@
 
 import '../setup-browser-indexeddb.ts';
 
-import {
-    createRallarDataFacade as createConfiguredRallarDataFacade,
-    defineRallarDataStore,
-    type CreateRallarDataFacadeInput,
-    type RallarDataScope
-} from '@shared-web/browser/rallar-data.ts';
+import { createRallarDataFacade, defineRallarDataStore, type RallarDataScope } from '@shared-web/browser/rallar-data.ts';
 import { createRallarFacade } from '@shared-web/browser/rallar.ts';
 import { ObservableValueEventType } from '@shared/cache/RepositoryInterfaces.ts';
 import { RepositoryManager } from '@shared/cache/RepositoryManager.ts';
@@ -19,16 +14,7 @@ type Todo = Readonly<{
     done: boolean;
 }>;
 
-function createRallarDataFacade(
-    input:
-        & Omit<CreateRallarDataFacadeInput, 'resolveScopeKey'>
-        & Partial<Pick<CreateRallarDataFacadeInput, 'resolveScopeKey'>>
-) {
-    return createConfiguredRallarDataFacade({
-        ...input,
-        resolveScopeKey: input.resolveScopeKey ?? ((scope: RallarDataScope) => String(scope))
-    });
-}
+const resolveTestDataScopeKey = (scope: RallarDataScope): string => String(scope);
 
 describe('Rallar data stores', () => {
     const originalBroadcastChannel = globalThis.BroadcastChannel;
@@ -40,12 +26,9 @@ describe('Rallar data stores', () => {
 
     it('stores custom data in memory and IndexedDB', async () => {
         const facade = createRallarFacade();
-        const todos = await facade.data.open<Todo>(
-            `todos-${crypto.randomUUID()}`,
-            {
-                dbName: `rallar-data-${crypto.randomUUID()}`
-            }
-        );
+        const todos = await facade.data.open<Todo>(`todos-${crypto.randomUUID()}`, {
+            dbName: `rallar-data-${crypto.randomUUID()}`
+        });
 
         await todos.set('1', { title: 'Implement data stores', done: false });
 
@@ -64,14 +47,12 @@ describe('Rallar data stores', () => {
 
     it('rehydrates from IndexedDB after the repository is closed', async () => {
         const data = createRallarDataFacade({
-            manager: new RepositoryManager()
+            manager: new RepositoryManager(),
+            resolveScopeKey: resolveTestDataScopeKey
         });
-        const definition = data.define<Todo>(
-            `todos-${crypto.randomUUID()}`,
-            {
-                dbName: `rallar-data-${crypto.randomUUID()}`
-            }
-        );
+        const definition = data.define<Todo>(`todos-${crypto.randomUUID()}`, {
+            dbName: `rallar-data-${crypto.randomUUID()}`
+        });
 
         const first = await data.open(definition);
         await first.set('1', { title: 'Persist me', done: true });
@@ -87,7 +68,8 @@ describe('Rallar data stores', () => {
 
     it('keeps stores with the same item key isolated by store definition', async () => {
         const data = createRallarDataFacade({
-            manager: new RepositoryManager()
+            manager: new RepositoryManager(),
+            resolveScopeKey: resolveTestDataScopeKey
         });
         const dbName = `rallar-data-${crypto.randomUUID()}`;
         const firstDefinition = defineRallarDataStore<Todo>('first', { dbName });
@@ -111,14 +93,14 @@ describe('Rallar data stores', () => {
 
     it('uses RepositoryManager lookup for opened stores', async () => {
         const manager = new RepositoryManager();
-        const data = createRallarDataFacade({ manager });
-        const definition = data.define<Todo>(
-            `todos-${crypto.randomUUID()}`,
-            {
-                dbName: `rallar-data-${crypto.randomUUID()}`,
-                hydrate: 'lazy'
-            }
-        );
+        const data = createRallarDataFacade({
+            manager,
+            resolveScopeKey: resolveTestDataScopeKey
+        });
+        const definition = data.define<Todo>(`todos-${crypto.randomUUID()}`, {
+            dbName: `rallar-data-${crypto.randomUUID()}`,
+            hydrate: 'lazy'
+        });
 
         expect(data.lookup(definition)).toBeUndefined();
 
@@ -131,14 +113,12 @@ describe('Rallar data stores', () => {
 
     it('notifies listeners when custom data changes', async () => {
         const data = createRallarDataFacade({
-            manager: new RepositoryManager()
+            manager: new RepositoryManager(),
+            resolveScopeKey: resolveTestDataScopeKey
         });
-        const store = await data.open<Todo>(
-            `todos-${crypto.randomUUID()}`,
-            {
-                dbName: `rallar-data-${crypto.randomUUID()}`
-            }
-        );
+        const store = await data.open<Todo>(`todos-${crypto.randomUUID()}`, {
+            dbName: `rallar-data-${crypto.randomUUID()}`
+        });
         const events: Array<readonly [string, ObservableValueEventType]> = [];
 
         const unsubscribe = store.onChange((event) => {
@@ -176,7 +156,8 @@ describe('Rallar data stores', () => {
         );
 
         const data = createRallarDataFacade({
-            manager: new RepositoryManager()
+            manager: new RepositoryManager(),
+            resolveScopeKey: resolveTestDataScopeKey
         });
         const store = await data.open<Todo>(storeName, {
             dbName,
@@ -203,7 +184,8 @@ describe('Rallar data stores', () => {
 
     it('rejects opening the same store identity with incompatible options', async () => {
         const data = createRallarDataFacade({
-            manager: new RepositoryManager()
+            manager: new RepositoryManager(),
+            resolveScopeKey: resolveTestDataScopeKey
         });
         const dbName = `rallar-data-${crypto.randomUUID()}`;
         const storeName = `todos-${crypto.randomUUID()}`;
@@ -232,10 +214,12 @@ describe('Rallar data stores', () => {
             { dbName }
         );
         const first = await createRallarDataFacade({
-            manager: new RepositoryManager()
+            manager: new RepositoryManager(),
+            resolveScopeKey: resolveTestDataScopeKey
         }).open(definition);
         const second = await createRallarDataFacade({
-            manager: new RepositoryManager()
+            manager: new RepositoryManager(),
+            resolveScopeKey: resolveTestDataScopeKey
         }).open(definition);
 
         await first.set('1', { title: 'Synced', done: false });
@@ -270,10 +254,12 @@ describe('Rallar data stores', () => {
 
         expect(await data.closeScope('principal')).toBe(1);
 
-        expect(data.lookup<Todo>('principal-data', {
-            dbName,
-            scope: 'principal'
-        })).toBeUndefined();
+        expect(
+            data.lookup<Todo>('principal-data', {
+                dbName,
+                scope: 'principal'
+            })
+        ).toBeUndefined();
         expect(
             data.lookup<Todo>('app-data', {
                 dbName,
@@ -286,15 +272,13 @@ describe('Rallar data stores', () => {
 
     it('deletes disk-only write-behind entries without requiring manual hydration', async () => {
         const data = createRallarDataFacade({
-            manager: new RepositoryManager()
+            manager: new RepositoryManager(),
+            resolveScopeKey: resolveTestDataScopeKey
         });
-        const definition = data.define<Todo>(
-            `todos-${crypto.randomUUID()}`,
-            {
-                dbName: `rallar-data-${crypto.randomUUID()}`,
-                durability: 'write-behind'
-            }
-        );
+        const definition = data.define<Todo>(`todos-${crypto.randomUUID()}`, {
+            dbName: `rallar-data-${crypto.randomUUID()}`,
+            durability: 'write-behind'
+        });
 
         const writer = await data.open(definition);
         await writer.set('1', { title: 'Disk only', done: false });
@@ -312,15 +296,13 @@ describe('Rallar data stores', () => {
 
     it('supports convenience and maintenance operations', async () => {
         const data = createRallarDataFacade({
-            manager: new RepositoryManager()
+            manager: new RepositoryManager(),
+            resolveScopeKey: resolveTestDataScopeKey
         });
         const dbName = `rallar-data-${crypto.randomUUID()}`;
-        const store = await data.open<Todo>(
-            `todos-${crypto.randomUUID()}`,
-            {
-                dbName
-            }
-        );
+        const store = await data.open<Todo>(`todos-${crypto.randomUUID()}`, {
+            dbName
+        });
 
         expect(
             await store.setIfAbsent('1', () => ({
@@ -366,11 +348,10 @@ describe('Rallar data stores', () => {
             )
         ).toBe(false);
         expect(
-            await store.compareAndSet(
-                '2',
-                await store.get('2'),
-                { title: 'Matched', done: true }
-            )
+            await store.compareAndSet('2', await store.get('2'), {
+                title: 'Matched',
+                done: true
+            })
         ).toBe(true);
         expect(
             await store.getAndSet('2', {
@@ -394,9 +375,11 @@ describe('Rallar data stores', () => {
 
         await store.set('3', { title: 'Destroy me', done: false });
         await store.destroy();
-        expect(data.lookup<Todo>(store.name, {
-            dbName
-        })).toBeUndefined();
+        expect(
+            data.lookup<Todo>(store.name, {
+                dbName
+            })
+        ).toBeUndefined();
 
         const reopened = await data.open<Todo>(store.name, { dbName });
         expect(await reopened.getAll()).toEqual([]);

@@ -120,10 +120,10 @@ await todos.destroy();
 
 await rallar.data.closeScope('principal');
 await rallar.data.clearScope('workspace:alpha');
-await rallar.data.destroyStore(definition);
+await rallar.data.destroy(definition);
 
 const usage = await rallar.data.estimateUsage();
 ```
 
-`destroy()` and `destroyStore()` clear IndexedDB data and close the live
-repository. `close()` only disposes the in-memory repository.
+`destroy()` clears IndexedDB data and closes the live repository. `close()`
+only disposes the in-memory repository.

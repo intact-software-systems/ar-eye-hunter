@@ -84,9 +84,8 @@ export function createRallarSessionController(
         operationOptions: T
     ): T & RallarOperationOptions => options.connectionRuntime.resolveOperationOptions(operationOptions);
 
-    const resolveOperationScope = (
-        scope?: StateScope
-    ): StateScope | undefined => options.connectionRuntime.resolveOperationScope(scope);
+    const resolveOperationScope = (scope?: StateScope): StateScope | undefined =>
+        options.connectionRuntime.resolveOperationScope(scope);
 
     const requireSession = (): AuthSession => {
         const session = readSession();
@@ -106,9 +105,14 @@ export function createRallarSessionController(
             return;
         }
         const delayMs = Math.max(0, session.expiresAtEpochMs - Date.now());
-        options.authRuntime.setAuthExpiryTimer(setTimeout(() => {
-            void expireAuthSessionIfCurrent(session);
-        }, Math.min(delayMs, MAX_AUTH_EXPIRY_TIMEOUT_MS)));
+        options.authRuntime.setAuthExpiryTimer(
+            setTimeout(
+                () => {
+                    void expireAuthSessionIfCurrent(session);
+                },
+                Math.min(delayMs, MAX_AUTH_EXPIRY_TIMEOUT_MS)
+            )
+        );
     };
 
     const expireAuthSessionIfCurrent = async (
@@ -206,7 +210,8 @@ export function createRallarSessionController(
         }>
     ): Promise<void> => {
         const session = endOptions.session ??
-            options.connectionRuntime.readMiddleware()?.session ?? readSession();
+            options.connectionRuntime.readMiddleware()?.session ??
+            readSession();
         let disconnectError: Error | undefined;
         let revokeError: Error | undefined;
         let dataCleanupError: Error | undefined;
@@ -246,9 +251,7 @@ export function createRallarSessionController(
                     dataCleanupError = toSessionError(error);
                 }
                 try {
-                    await deleteBrowserALRuntimeEntriesForSession(
-                        session.sessionId
-                    );
+                    await deleteBrowserALRuntimeEntriesForSession(session.sessionId);
                 }
                 catch {
                     // Browser-local AL cleanup is best-effort.
@@ -277,7 +280,8 @@ export function createRallarSessionController(
         }>
     ): Promise<void> {
         const session = endOptions.session ??
-            options.connectionRuntime.readMiddleware()?.session ?? readSession();
+            options.connectionRuntime.readMiddleware()?.session ??
+            readSession();
         const sessionKey = session ? toAuthSessionKey(session) : undefined;
         const currentPromise = options.authRuntime.readAuthEndPromise();
         if (currentPromise) {
@@ -313,7 +317,11 @@ export function createRallarSessionController(
                 (signal) => authApi.loginToApi(request, { requestId, signal }),
                 operationOptions
             );
-            if (options.connectionRuntime.readMiddleware() || options.transportRuntime.isReady()) {
+            if (
+                options.connectionRuntime.readMiddleware() ||
+                options.transportRuntime.isReady() ||
+                options.transportRuntime.isInitializing()
+            ) {
                 await disconnect();
             }
             const previous = readSession();
@@ -321,9 +329,9 @@ export function createRallarSessionController(
                 await options.closeDataScopes(previous);
             }
             writeSession(response);
-            options.authRuntime.endedAuthSessionKeys().delete(
-                toAuthSessionKey(response)
-            );
+            options.authRuntime
+                .endedAuthSessionKeys()
+                .delete(toAuthSessionKey(response));
             scheduleAuthExpiry(response);
             emitAuthState('login', response);
             return response;
@@ -351,10 +359,13 @@ export function createRallarSessionController(
             registerOptions: RallarRegisterOptions = {}
         ): Promise<LoginResponse> => {
             await authOperations.register(request, registerOptions);
-            return await authOperations.login({
-                username: request.username,
-                password: request.password
-            }, registerOptions);
+            return await authOperations.login(
+                {
+                    username: request.username,
+                    password: request.password
+                },
+                registerOptions
+            );
         },
         logout: async (authOptions: RallarOperationOptions = {}) => {
             await endAuthSession('logout', {
@@ -438,7 +449,9 @@ function isUnauthorizedApiError(error: Error): boolean {
 }
 
 function toSessionError(error: unknown): Error {
-    return error instanceof Error ? error : new Error('Rallar session operation failed.');
+    return error instanceof Error
+        ? error
+        : new Error('Rallar session operation failed.');
 }
 
 function toAuthSessionKey(session: AuthSession): string {

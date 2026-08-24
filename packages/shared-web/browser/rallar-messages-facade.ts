@@ -5,12 +5,7 @@ import type { ALOutboundEnqueueStatus } from '@shared/alm/ALOutboundMessageRunti
 import type { GroupRef } from '@shared/api/group-types.ts';
 import type { ResourceEntry } from '@shared/queuebox/ResourceEntry.ts';
 
-export type RallarTypedMessageSendStrategy =
-    | 'ws'
-    | 'rtc'
-    | 'realtime'
-    | 'ws-then-rtc'
-    | 'rtc-with-ws-fallback';
+export type RallarTypedMessageSendStrategy = 'ws' | 'rtc' | 'realtime' | 'ws-then-rtc' | 'rtc-with-ws-fallback';
 
 export type RallarMessageTransport = 'rtc' | 'ws' | 'replay';
 
@@ -139,8 +134,6 @@ export type RallarRoomMessageChannelDefinition =
         roomRef?: GroupRef;
     }>;
 
-export type RallarRoomMessageChannel<T> = RallarTypedMessageChannel<T>;
-
 export type RallarMessagesFacade = Readonly<{
     rtc: RallarMessageLane<RallarRtcSendInput<unknown>, RallarMessageSelectorInput>;
     ws: RallarMessageLane<RallarWsSendInput<unknown>, RallarMessageSelectorInput>;
@@ -149,13 +142,11 @@ export type RallarMessagesFacade = Readonly<{
     ): RallarTypedMessageChannel<T>;
     room<T>(
         definition: RallarRoomMessageChannelDefinition
-    ): RallarRoomMessageChannel<T>;
+    ): RallarTypedMessageChannel<T>;
 }>;
 
-export type CreateRallarMessagesFacadeOptions = RallarMessagesFacade;
-
 export function createRallarMessagesFacade(
-    operations: CreateRallarMessagesFacadeOptions
+    operations: RallarMessagesFacade
 ): RallarMessagesFacade {
     return {
         rtc: {
@@ -171,6 +162,6 @@ export function createRallarMessagesFacade(
         ): RallarTypedMessageChannel<T> => operations.channel<T>(definition),
         room: <T>(
             definition: RallarRoomMessageChannelDefinition
-        ): RallarRoomMessageChannel<T> => operations.room<T>(definition)
+        ): RallarTypedMessageChannel<T> => operations.room<T>(definition)
     };
 }

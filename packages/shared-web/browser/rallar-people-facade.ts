@@ -43,15 +43,15 @@ export type RallarReplayPeopleEventsOptions =
     & RallarListPeopleEventsOptions
     & Readonly<{
         maxPages?: number;
-        listener?: RallarPeopleEventListener;
+        listener?: RallarStateEventListener<ClientEvent>;
     }>;
-
-export type RallarPeopleEventListener = RallarStateEventListener<ClientEvent>;
 
 export type RallarPeopleFacade = Readonly<{
     state(): RallarPeopleState;
     list(): readonly RallarPerson[];
-    refresh(input?: StateScope | RallarScopedOperationOptions): Promise<RallarPeopleState>;
+    refresh(
+        input?: StateScope | RallarScopedOperationOptions
+    ): Promise<RallarPeopleState>;
     listEvents(
         principalId: string,
         options?: RallarListPeopleEventsOptions
@@ -63,7 +63,7 @@ export type RallarPeopleFacade = Readonly<{
     replayEvents(
         principalId: string,
         options?: RallarReplayPeopleEventsOptions,
-        listener?: RallarPeopleEventListener
+        listener?: RallarStateEventListener<ClientEvent>
     ): Promise<RallarReplayEventsResult<ClientEvent>>;
     get(principalId: string): RallarPerson | undefined;
     onChange(
@@ -71,15 +71,13 @@ export type RallarPeopleFacade = Readonly<{
         options?: RallarOnChangeOptions
     ): RallarUnsubscribe;
     onEvent(
-        listener: RallarPeopleEventListener,
+        listener: RallarStateEventListener<ClientEvent>,
         options?: RallarPeopleEventOptions
     ): RallarUnsubscribe;
 }>;
 
-export type CreateRallarPeopleFacadeOptions = RallarPeopleFacade;
-
 export function createRallarPeopleFacade(
-    operations: CreateRallarPeopleFacadeOptions
+    operations: RallarPeopleFacade
 ): RallarPeopleFacade {
     return {
         state: (): RallarPeopleState => operations.state(),
@@ -100,13 +98,7 @@ export function createRallarPeopleFacade(
         ): Promise<RallarReplayEventsResult<ClientEvent>> =>
             await operations.replayEvents(principalId, options, listener),
         get: (principalId): RallarPerson | undefined => operations.get(principalId),
-        onChange: (
-            listener,
-            options = {}
-        ): RallarUnsubscribe => operations.onChange(listener, options),
-        onEvent: (
-            listener,
-            options = {}
-        ): RallarUnsubscribe => operations.onEvent(listener, options)
+        onChange: (listener, options = {}): RallarUnsubscribe => operations.onChange(listener, options),
+        onEvent: (listener, options = {}): RallarUnsubscribe => operations.onEvent(listener, options)
     };
 }

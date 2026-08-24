@@ -1,5 +1,5 @@
 import type { RallarFacade } from '@shared-web/browser/rallar-facade-contract.ts';
-import { createBrowserRallarFacade } from '@shared-web/browser/rallar-runtime/compose.ts';
+import { createBrowserRallarFacade } from '@shared-web/browser/rallar-runtime/composition.ts';
 
 export {
     createDefaultRallarDataFacade,
@@ -7,9 +7,7 @@ export {
     defineRallarDataStore
 } from '@shared-web/browser/rallar-data.ts';
 
-export {
-    createRallarCrdtFacade
-} from '@shared-web/browser/rallar-crdt.ts';
+export { createRallarCrdtFacade } from '@shared-web/browser/rallar-crdt.ts';
 
 export {
     matchesRallarMessageSelector,
@@ -51,11 +49,7 @@ export type {
     RallarMessageSelectorInput
 } from '@shared-web/browser/rallar-message-selectors.ts';
 
-export type {
-    RallarStatsFacade,
-    RallarStatsGroupInput,
-    RallarStatsReadOptions
-} from '@shared-web/browser/rallar-stats-facade.ts';
+export type { RallarStatsFacade } from '@shared-web/browser/rallar-stats-facade.ts';
 
 export type {
     RallarOperationOptions,
@@ -137,7 +131,6 @@ export type {
     RallarMessageTransport,
     RallarMicrophoneSourceStartOptions,
     RallarOnChangeOptions,
-    RallarPeopleEventListener,
     RallarPeopleEventOptions,
     RallarPeopleState,
     RallarPerson,
@@ -164,7 +157,6 @@ export type {
     RallarRoomInviteOptions,
     RallarRoomLifecycleOptions,
     RallarRoomMember,
-    RallarRoomMessageChannel,
     RallarRoomMessageChannelDefinition,
     RallarRoomPresenceWaitOptions,
     RallarRoomPresenceWaitResult,

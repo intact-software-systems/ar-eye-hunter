@@ -1,8 +1,8 @@
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import type {
-    RallarRoomMessageChannel,
     RallarRoomMessageChannelDefinition,
-    RallarStateEventListener
+    RallarStateEventListener,
+    RallarTypedMessageChannel
 } from '@shared-web/browser/rallar-messages-facade.ts';
 import type {
     RallarRoomRealtimeJsonChannel,
@@ -217,6 +217,10 @@ export type RallarRoomSession = Readonly<{
         options?: Omit<RallarLeaveRoomOptions, 'roomId' | 'roomRef'>
     ): Promise<GroupSnapshot | undefined>;
     refresh(options?: RallarScopedOperationOptions): Promise<RallarRoomSession>;
-    realtime<T>(laneIdOrOptions?: RallarRoomSessionRealtimeInput): RallarRoomRealtimeJsonChannel<T>;
-    message<T>(nameOrDefinition: RallarRoomSessionMessageDefinition): RallarRoomMessageChannel<T>;
+    realtime<T>(
+        laneIdOrOptions?: RallarRoomSessionRealtimeInput
+    ): RallarRoomRealtimeJsonChannel<T>;
+    message<T>(
+        nameOrDefinition: RallarRoomSessionMessageDefinition
+    ): RallarTypedMessageChannel<T>;
 }>;

@@ -2,7 +2,7 @@ import * as apiWorkflows from '@shared-web/browser/api-workflows.ts';
 import type { ApiMiddleware } from '@shared-web/browser/app-context.ts';
 import type { RallarScopedOperationOptions } from '@shared-web/browser/rallar-connection-facade.ts';
 import { toRallarWorkflowPolicies, type RallarOperationOptions } from '@shared-web/browser/rallar-operation-options.ts';
-import type { CreateRallarPeopleFacadeOptions, RallarPeopleState } from '@shared-web/browser/rallar-people-facade.ts';
+import type { RallarPeopleFacade, RallarPeopleState } from '@shared-web/browser/rallar-people-facade.ts';
 import type { RallarStateEventsPort } from '@shared-web/browser/rallar-runtime/state-events.ts';
 import type { RallarStatePort } from '@shared-web/browser/rallar-runtime/state-store.ts';
 import type { ClientSnapshot } from '@shared/api/client-types.ts';
@@ -27,7 +27,7 @@ export type CreateRallarPeopleControllerOptions = Readonly<{
 }>;
 
 export type RallarPeopleController = Readonly<{
-    operations: CreateRallarPeopleFacadeOptions;
+    operations: RallarPeopleFacade;
 }>;
 
 export function createRallarPeopleController(
@@ -38,9 +38,7 @@ export function createRallarPeopleController(
     ): Promise<RallarPeopleState> =>
         await options.runAuthAwareOperation(async () => {
             const refreshOptions = toRallarScopedOperationOptions(input);
-            const operationOptions = options.resolveOperationOptions(
-                refreshOptions
-            );
+            const operationOptions = options.resolveOperationOptions(refreshOptions);
             const ctx = await options.connect(operationOptions);
             const operationScope = options.resolveOperationScope(
                 refreshOptions.scope
@@ -49,12 +47,7 @@ export function createRallarPeopleController(
                 operationScope,
                 toRallarWorkflowPolicies(operationOptions)
             );
-            await options.acceptSnapshots(
-                ctx,
-                clients,
-                groups,
-                operationScope
-            );
+            await options.acceptSnapshots(ctx, clients, groups, operationScope);
             return options.stateStore.peopleState();
         });
 
@@ -64,24 +57,18 @@ export function createRallarPeopleController(
             list: () => options.stateStore.peopleState().people,
             refresh,
             listEvents: async (principalId, eventOptions = {}) =>
-                await options.stateEvents.listPeopleEvents(
-                    principalId,
-                    eventOptions
-                ),
+                await options.stateEvents.listPeopleEvents(principalId, eventOptions),
             listEventPage: async (principalId, eventOptions = {}) =>
                 await options.stateEvents.listPeopleEventPage(
                     principalId,
                     eventOptions
                 ),
-            replayEvents: async (
-                principalId,
-                eventOptions = {},
-                listener
-            ) => await options.stateEvents.replayPeopleEventsFromFacade(
-                principalId,
-                eventOptions,
-                listener
-            ),
+            replayEvents: async (principalId, eventOptions = {}, listener) =>
+                await options.stateEvents.replayPeopleEventsFromFacade(
+                    principalId,
+                    eventOptions,
+                    listener
+                ),
             get: (principalId) => options.stateStore.person(principalId),
             onChange: (listener, changeOptions = {}) => options.stateStore.onPeopleChange(listener, changeOptions),
             onEvent: (listener, eventOptions = {}) => options.stateEvents.onPeopleEvent(listener, eventOptions)
@@ -101,7 +88,10 @@ function toRallarScopedOperationOptions(
 function isStateScope(
     input: StateScope | RallarScopedOperationOptions
 ): input is StateScope {
-    return typeof input === 'object' && input !== null &&
+    return (
+        typeof input === 'object' &&
+        input !== null &&
         !Array.isArray(input) &&
-        typeof (input as { applicationId?: unknown; }).applicationId === 'string';
+        typeof (input as { applicationId?: unknown; }).applicationId === 'string'
+    );
 }

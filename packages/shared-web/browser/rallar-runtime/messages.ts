@@ -8,13 +8,11 @@ import {
     type RallarMessageSelectorInput
 } from '@shared-web/browser/rallar-message-selectors.ts';
 import type {
-    CreateRallarMessagesFacadeOptions,
     RallarMessageHandler,
     RallarMessageSendBase,
     RallarMessageSendResult,
     RallarMessageSendStatus,
     RallarMessageTransport,
-    RallarRoomMessageChannel,
     RallarRoomMessageChannelDefinition,
     RallarRtcSendInput,
     RallarTypedMessageChannel,
@@ -24,6 +22,7 @@ import type {
     RallarTypedWsSendOptions,
     RallarWsSendInput
 } from '@shared-web/browser/rallar-messages-facade.ts';
+import type { RallarMessagesFacade } from '@shared-web/browser/rallar-messages-facade.ts';
 import { toRallarMessage } from '@shared-web/browser/rallar-runtime/message-conversion.ts';
 import type { RallarWsInbox } from '@shared-web/browser/rallar-runtime/ws-inbox.ts';
 import type { RallarUnsubscribe } from '@shared-web/browser/rallar-shared-contracts.ts';
@@ -73,7 +72,7 @@ export type CreateRallarMessagesControllerOptions = Readonly<{
 }>;
 
 export type RallarMessagesController = Readonly<{
-    operations: CreateRallarMessagesFacadeOptions;
+    operations: RallarMessagesFacade;
     sendWsUnicast<T>(
         peerId: string,
         payload: T,
@@ -103,13 +102,11 @@ class BrowserRallarMessagesController implements RallarMessagesController {
 
     private readonly options: CreateRallarMessagesControllerOptions;
 
-    constructor(
-        options: CreateRallarMessagesControllerOptions
-    ) {
+    constructor(options: CreateRallarMessagesControllerOptions) {
         this.options = options;
     }
 
-    readonly operations: CreateRallarMessagesFacadeOptions = {
+    readonly operations: RallarMessagesFacade = {
         rtc: {
             send: async <T>(input: RallarRtcSendInput<T>) => await this.sendRtcMessage(input),
             onMessage: <T = unknown>(
@@ -129,7 +126,7 @@ class BrowserRallarMessagesController implements RallarMessagesController {
         ): RallarTypedMessageChannel<T> => this.createMessageChannel<T>(definition),
         room: <T>(
             definition: RallarRoomMessageChannelDefinition
-        ): RallarRoomMessageChannel<T> => this.createRoomMessageChannel<T>(definition)
+        ): RallarTypedMessageChannel<T> => this.createRoomMessageChannel<T>(definition)
     };
 
     async sendWsUnicast<T>(
@@ -155,8 +152,7 @@ class BrowserRallarMessagesController implements RallarMessagesController {
             typeId,
             payload
         );
-        const enqueueResult = await ctx.middleware.webSocketQueueBox
-            .enqueueOutboxIfAbsent(message);
+        const enqueueResult = await ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent(message);
         wakeQBoxEngineIfQueued(ctx.middleware.qboxEngine, enqueueResult);
         return toRallarMessageSendResult('ws', message, enqueueResult);
     }
@@ -169,8 +165,18 @@ class BrowserRallarMessagesController implements RallarMessagesController {
         this.pushBaseMessageValidationIssues(input, 'rtc', issues);
         this.pushOptionalRouteIdIssue(input.roomId, '$.roomId', 'Room ID', issues);
         this.pushOptionalGroupRefIssue(input.roomRef, '$.roomRef', issues);
-        this.pushOptionalRouteIdIssue(input.orderingKey, '$.orderingKey', 'Ordering key', issues);
-        this.pushOptionalRouteIdIssue(input.overlayId, '$.overlayId', 'Overlay ID', issues);
+        this.pushOptionalRouteIdIssue(
+            input.orderingKey,
+            '$.orderingKey',
+            'Ordering key',
+            issues
+        );
+        this.pushOptionalRouteIdIssue(
+            input.overlayId,
+            '$.overlayId',
+            'Overlay ID',
+            issues
+        );
         input.nextHopPeerIds?.forEach((peerId, index) =>
             this.pushOptionalRouteIdIssue(
                 peerId,
@@ -195,7 +201,11 @@ class BrowserRallarMessagesController implements RallarMessagesController {
             '$.fanoutLimit',
             issues
         );
-        if (input.roomId && input.roomRef && input.roomId !== input.roomRef.groupId) {
+        if (
+            input.roomId &&
+            input.roomRef &&
+            input.roomId !== input.roomRef.groupId
+        ) {
             issues.push({
                 path: '$.roomRef.groupId',
                 code: 'room-id-mismatch',
@@ -238,7 +248,11 @@ class BrowserRallarMessagesController implements RallarMessagesController {
                 message: 'WS scope must be room, world, or all.'
             });
         }
-        if (input.roomId && input.roomRef && input.roomId !== input.roomRef.groupId) {
+        if (
+            input.roomId &&
+            input.roomRef &&
+            input.roomId !== input.roomRef.groupId
+        ) {
             issues.push({
                 path: '$.roomRef.groupId',
                 code: 'room-id-mismatch',
@@ -292,9 +306,23 @@ class BrowserRallarMessagesController implements RallarMessagesController {
         issues.push(
             ...validateRallarRouteId(input.typeId, '$.typeId', 'Type ID').issues
         );
-        this.pushOptionalRouteIdIssue(input.contextId, '$.contextId', 'Context ID', issues);
-        this.pushOptionalRouteIdIssue(input.resourceId, '$.resourceId', 'Resource ID', issues);
-        this.pushOptionalNonNegativeIntegerIssue(input.ttlHops, '$.ttlHops', issues);
+        this.pushOptionalRouteIdIssue(
+            input.contextId,
+            '$.contextId',
+            'Context ID',
+            issues
+        );
+        this.pushOptionalRouteIdIssue(
+            input.resourceId,
+            '$.resourceId',
+            'Resource ID',
+            issues
+        );
+        this.pushOptionalNonNegativeIntegerIssue(
+            input.ttlHops,
+            '$.ttlHops',
+            issues
+        );
         this.pushOptionalNonNegativeIntegerIssue(input.ttlMs, '$.ttlMs', issues);
         issues.push(
             ...validateRallarJsonPayload(input.payload, {
@@ -408,8 +436,7 @@ class BrowserRallarMessagesController implements RallarMessagesController {
                 ttlHops: input.ttlHops,
                 ttlMs: input.ttlMs,
                 seq: input.seq,
-                orderingKey: input.orderingKey ??
-                    toALGroupTargetKey(roomRef),
+                orderingKey: input.orderingKey ?? toALGroupTargetKey(roomRef),
                 reliability: input.reliability ?? 'at-least-once',
                 ack: input.ack ?? 'none',
                 ownership: input.ownership ?? 'shared',
@@ -420,26 +447,18 @@ class BrowserRallarMessagesController implements RallarMessagesController {
         );
 
         if (this.resolveRoomPeerIds(roomRef).length === 0) {
-            return toRallarMessageSendResult(
-                'rtc',
-                msg,
-                {
-                    status: 'no-route',
-                    message: msg,
-                    entries: [],
-                    reason: 'No RTC peers are desired for this room.'
-                }
-            );
+            return toRallarMessageSendResult('rtc', msg, {
+                status: 'no-route',
+                message: msg,
+                entries: [],
+                reason: 'No RTC peers are desired for this room.'
+            });
         }
 
         const enqueueResult = await ctx.middleware.rtcRxStreamer.enqueueOutboxIfAbsent(msg);
         wakeQBoxEngineIfQueued(ctx.middleware.qboxEngine, enqueueResult);
 
-        return toRallarMessageSendResult(
-            'rtc',
-            msg,
-            enqueueResult
-        );
+        return toRallarMessageSendResult('rtc', msg, enqueueResult);
     }
 
     private onRtcMessage<T = unknown>(
@@ -467,13 +486,9 @@ class BrowserRallarMessagesController implements RallarMessagesController {
 
         const ctx = await this.connect();
         const session = this.requireSession();
-        const contextId = input.contextId ?? roomId ?? input.scope ??
-            'all';
+        const contextId = input.contextId ?? roomId ?? input.scope ?? 'all';
         const minSnapshotVersion = room
-            ? this.resolveRoomMinSnapshotVersion(
-                room,
-                input.minSnapshotVersion
-            )
+            ? this.resolveRoomMinSnapshotVersion(room, input.minSnapshotVersion)
             : input.minSnapshotVersion;
         const msg = newALBroadcastMessage(
             session.sessionId,
@@ -500,11 +515,7 @@ class BrowserRallarMessagesController implements RallarMessagesController {
         const enqueueResult = await ctx.middleware.webSocketQueueBox.enqueueOutboxIfAbsent(msg);
         wakeQBoxEngineIfQueued(ctx.middleware.qboxEngine, enqueueResult);
 
-        return toRallarMessageSendResult(
-            'ws',
-            msg,
-            enqueueResult
-        );
+        return toRallarMessageSendResult('ws', msg, enqueueResult);
     }
 
     private onWsMessage<T = unknown>(
@@ -575,52 +586,40 @@ class BrowserRallarMessagesController implements RallarMessagesController {
         this.assertValidTypedMessageChannelDefinition(channelDefinition);
 
         return {
-            send: async (
-                payload,
-                options: RallarTypedMessageSendOptions<T> = {}
-            ) => await this.sendTypedMessageWithStrategy(
-                channelDefinition,
-                payload,
-                options
-            ),
-            sendRtc: async (
-                payload,
-                options: RallarTypedRtcSendOptions<T> = {}
-            ) => await this.operations.rtc.send<T>({
-                ...options,
-                topicId: channelDefinition.topicId,
-                typeId: channelDefinition.typeId,
-                payload
-            }),
-            sendWs: async (
-                payload,
-                options: RallarTypedWsSendOptions<T> = {}
-            ) => await this.operations.ws.send<T>({
-                ...options,
-                topicId: channelDefinition.topicId,
-                typeId: channelDefinition.typeId,
-                payload
-            }),
-            onRtc: (handler) =>
-                this.operations.rtc.onMessage<T>(
+            send: async (payload, options: RallarTypedMessageSendOptions<T> = {}) =>
+                await this.sendTypedMessageWithStrategy(
                     channelDefinition,
-                    async (message) => {
-                        await handler(message.payload, message);
-                    }
+                    payload,
+                    options
                 ),
+            sendRtc: async (payload, options: RallarTypedRtcSendOptions<T> = {}) =>
+                await this.operations.rtc.send<T>({
+                    ...options,
+                    topicId: channelDefinition.topicId,
+                    typeId: channelDefinition.typeId,
+                    payload
+                }),
+            sendWs: async (payload, options: RallarTypedWsSendOptions<T> = {}) =>
+                await this.operations.ws.send<T>({
+                    ...options,
+                    topicId: channelDefinition.topicId,
+                    typeId: channelDefinition.typeId,
+                    payload
+                }),
+            onRtc: (handler) =>
+                this.operations.rtc.onMessage<T>(channelDefinition, async (message) => {
+                    await handler(message.payload, message);
+                }),
             onWs: (handler) =>
-                this.operations.ws.onMessage<T>(
-                    channelDefinition,
-                    async (message) => {
-                        await handler(message.payload, message);
-                    }
-                )
+                this.operations.ws.onMessage<T>(channelDefinition, async (message) => {
+                    await handler(message.payload, message);
+                })
         };
     }
 
     private createRoomMessageChannel<T>(
         definition: RallarRoomMessageChannelDefinition
-    ): RallarRoomMessageChannel<T> {
+    ): RallarTypedMessageChannel<T> {
         this.assertValidRoomMessageChannelDefinition(definition);
         const channel = this.createMessageChannel<T>(definition);
         const roomDefaults = {
@@ -629,29 +628,23 @@ class BrowserRallarMessagesController implements RallarMessagesController {
         };
 
         return {
-            send: async (
-                payload,
-                options: RallarTypedMessageSendOptions<T> = {}
-            ) => await channel.send(payload, {
-                ...roomDefaults,
-                strategy: options.strategy ?? 'rtc-with-ws-fallback',
-                ...options
-            }),
-            sendRtc: async (
-                payload,
-                options: RallarTypedRtcSendOptions<T> = {}
-            ) => await channel.sendRtc(payload, {
-                ...roomDefaults,
-                ...options
-            }),
-            sendWs: async (
-                payload,
-                options: RallarTypedWsSendOptions<T> = {}
-            ) => await channel.sendWs(payload, {
-                ...roomDefaults,
-                scope: options.scope ?? 'room',
-                ...options
-            }),
+            send: async (payload, options: RallarTypedMessageSendOptions<T> = {}) =>
+                await channel.send(payload, {
+                    ...roomDefaults,
+                    strategy: options.strategy ?? 'rtc-with-ws-fallback',
+                    ...options
+                }),
+            sendRtc: async (payload, options: RallarTypedRtcSendOptions<T> = {}) =>
+                await channel.sendRtc(payload, {
+                    ...roomDefaults,
+                    ...options
+                }),
+            sendWs: async (payload, options: RallarTypedWsSendOptions<T> = {}) =>
+                await channel.sendWs(payload, {
+                    ...roomDefaults,
+                    scope: options.scope ?? 'room',
+                    ...options
+                }),
             onRtc: (handler) => channel.onRtc(handler),
             onWs: (handler) => channel.onWs(handler)
         };
@@ -661,7 +654,12 @@ class BrowserRallarMessagesController implements RallarMessagesController {
         definition: RallarTypedMessageChannelDefinition
     ): void {
         const issues: RallarValidationIssue[] = [];
-        this.pushOptionalRouteIdIssue(definition.topicId, '$.topicId', 'Topic ID', issues);
+        this.pushOptionalRouteIdIssue(
+            definition.topicId,
+            '$.topicId',
+            'Topic ID',
+            issues
+        );
         issues.push(
             ...validateRallarRouteId(definition.typeId, '$.typeId', 'Type ID').issues
         );
@@ -672,7 +670,12 @@ class BrowserRallarMessagesController implements RallarMessagesController {
         definition: RallarRoomMessageChannelDefinition
     ): void {
         const issues: RallarValidationIssue[] = [];
-        this.pushOptionalRouteIdIssue(definition.roomId, '$.roomId', 'Room ID', issues);
+        this.pushOptionalRouteIdIssue(
+            definition.roomId,
+            '$.roomId',
+            'Room ID',
+            issues
+        );
         this.pushOptionalGroupRefIssue(definition.roomRef, '$.roomRef', issues);
         if (
             definition.roomId &&
@@ -819,9 +822,7 @@ class BrowserRallarMessagesController implements RallarMessagesController {
         transport: RallarMessageTransport,
         selector: RallarMessageSelector
     ): RallarMessageSubscription {
-        const registry = transport === 'rtc'
-            ? this.rtcMessageListeners
-            : this.wsMessageListeners;
+        const registry = transport === 'rtc' ? this.rtcMessageListeners : this.wsMessageListeners;
         const key = toRallarMessageSelectorKey(selector);
         const existing = registry.get(key);
         if (existing) {
@@ -883,9 +884,7 @@ class BrowserRallarMessagesController implements RallarMessagesController {
         transport: RallarMessageTransport,
         message: ALMessage
     ): Promise<void> {
-        const registry = transport === 'rtc'
-            ? this.rtcMessageListeners
-            : this.wsMessageListeners;
+        const registry = transport === 'rtc' ? this.rtcMessageListeners : this.wsMessageListeners;
         const listeners = new Set<RallarMessageHandler<unknown>>();
         for (const subscription of registry.values()) {
             if (!matchesRallarMessageSelector(subscription.selector, message)) {
@@ -913,8 +912,10 @@ class BrowserRallarMessagesController implements RallarMessagesController {
     }
 
     private resolveMessageMaxPayloadBytes(): number {
-        return this.options.readMessageMaxPayloadBytes?.() ??
-            RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES;
+        return (
+            this.options.readMessageMaxPayloadBytes?.() ??
+                RALLAR_DEFAULT_MAX_MESSAGE_PAYLOAD_BYTES
+        );
     }
 
     private connect(): Promise<ApiMiddleware> {
@@ -941,7 +942,9 @@ class BrowserRallarMessagesController implements RallarMessagesController {
         return this.options.toRoomId(room);
     }
 
-    private resolveRoomRef(room: string | GroupRef | undefined): GroupRef | undefined {
+    private resolveRoomRef(
+        room: string | GroupRef | undefined
+    ): GroupRef | undefined {
         return this.options.resolveRoomRef(room);
     }
 
@@ -978,11 +981,13 @@ function toRallarMessageSendResult(
 function isSuccessfulRallarMessageSendStatus(
     status: RallarMessageSendStatus
 ): boolean {
-    return status === 'enqueued' ||
+    return (
+        status === 'enqueued' ||
         status === 'sent-immediate' ||
         status === 'duplicate' ||
         status === 'superseded' ||
-        status === 'skipped';
+        status === 'skipped'
+    );
 }
 
 function wakeQBoxEngineIfQueued(

@@ -120,7 +120,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarOnChangeOptions',
                 'RallarOperationOptions',
                 'RallarOperationRetryPredicate',
-                'RallarPeopleEventListener',
                 'RallarPeopleEventOptions',
                 'RallarPeopleState',
                 'RallarPerson',
@@ -150,7 +149,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarRoomInviteOptions',
                 'RallarRoomLifecycleOptions',
                 'RallarRoomMember',
-                'RallarRoomMessageChannel',
                 'RallarRoomMessageChannelDefinition',
                 'RallarRoomPresenceWaitOptions',
                 'RallarRoomPresenceWaitResult',
@@ -204,8 +202,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarStateEventListener',
                 'RallarStateListener',
                 'RallarStatsFacade',
-                'RallarStatsGroupInput',
-                'RallarStatsReadOptions',
                 'RallarSubscriptionScope',
                 'RallarTargetMembership',
                 'RallarTargetSelector',
@@ -256,10 +252,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
             types: [
                 'CommandsOrchestrator',
                 'CommandsOrchestratorPolicies',
-                'CreateRallarMessagesFacadeOptions',
-                'CreateRallarPeopleFacadeOptions',
-                'CreateRallarRoomsFacadeOptions',
-                'CreateRallarStatsFacadeOptions',
                 'RallarApiClientConfig',
                 'RallarAuthChangeListener',
                 'RallarAuthChangeReason',
@@ -288,7 +280,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarOnChangeOptions',
                 'RallarOperationOptions',
                 'RallarOperationRetryPredicate',
-                'RallarPeopleEventListener',
                 'RallarPeopleEventOptions',
                 'RallarPeopleFacade',
                 'RallarPeopleState',
@@ -301,7 +292,6 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarRoomEventListener',
                 'RallarRoomEventOptions',
                 'RallarRoomMember',
-                'RallarRoomMessageChannel',
                 'RallarRoomMessageChannelDefinition',
                 'RallarRoomSession',
                 'RallarRoomSessionMessageDefinition',
@@ -337,10 +327,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
     {
         filePath: 'packages/shared-web/browser/rallar-realtime.ts',
         expected: {
-            values: [
-                'createRallarRealtimeFacade',
-                'createRallarRtcFacade'
-            ],
+            values: ['createRallarRealtimeFacade', 'createRallarRtcFacade'],
             types: [
                 'CreateRallarRealtimeFacadeOptions',
                 'CreateRallarRtcFacadeOptions',
@@ -393,19 +380,14 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
                 'RallarWaitForOpenOptions',
                 'RallarWaitForOpenStatus'
             ],
-            starExports: [
-                '@shared-web/browser/rallar-core.ts'
-            ],
+            starExports: ['@shared-web/browser/rallar-core.ts'],
             namespaceExports: []
         }
     },
     {
         filePath: 'packages/shared-web/browser/rallar-media-calls.ts',
         expected: {
-            values: [
-                'createRallarCallsFacade',
-                'createRallarMediaFacade'
-            ],
+            values: ['createRallarCallsFacade', 'createRallarMediaFacade'],
             types: [
                 'CreateRallarCallsFacadeOptions',
                 'CreateRallarMediaFacadeOptions',
@@ -478,9 +460,7 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
     {
         filePath: 'packages/shared-web/browser/rallar-crdt.ts',
         expected: {
-            values: [
-                'createRallarCrdtFacade'
-            ],
+            values: ['createRallarCrdtFacade'],
             types: [
                 'RallarCrdtCounterAddInput',
                 'RallarCrdtDocument',
@@ -643,8 +623,14 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
     {
         filePath: 'packages/shared-web/browser/state-read/diagnostics.ts',
         expected: {
-            values: ['emitBrowserStateReadDiagnostic', 'setBrowserStateReadDiagnosticsSink'],
-            types: ['BrowserStateReadDiagnosticEvent', 'BrowserStateReadDiagnosticsSink'],
+            values: [
+                'emitBrowserStateReadDiagnostic',
+                'setBrowserStateReadDiagnosticsSink'
+            ],
+            types: [
+                'BrowserStateReadDiagnosticEvent',
+                'BrowserStateReadDiagnosticsSink'
+            ],
             starExports: [],
             namespaceExports: []
         }
@@ -717,9 +703,11 @@ const PUBLIC_SURFACES: readonly PublicSurfaceSnapshot[] = [
 describe('shared-web public API snapshots', () => {
     for (const surface of PUBLIC_SURFACES) {
         it(`keeps ${surface.filePath} exports intentional`, () => {
-            expect(collectExportSnapshot(surface.filePath, {
-                resolveStarExports: surface.resolveStarExports === true
-            })).toEqual(surface.expected);
+            expect(
+                collectExportSnapshot(surface.filePath, {
+                    resolveStarExports: surface.resolveStarExports === true
+                })
+            ).toEqual(surface.expected);
         });
     }
 });
@@ -782,20 +770,12 @@ function collectDirectExports(analysis: SourceAnalysis): ExportSnapshot {
             continue;
         }
 
-        if (
-            entry.kind === 'namespace' &&
-            entry.exportedName &&
-            entry.specifier
-        ) {
-            namespaceExports.push(
-                `${entry.exportedName} from ${entry.specifier}`
-            );
+        if (entry.kind === 'namespace' && entry.exportedName && entry.specifier) {
+            namespaceExports.push(`${entry.exportedName} from ${entry.specifier}`);
             continue;
         }
 
-        const exportName = entry.kind === 'default'
-            ? entry.localName
-            : entry.exportedName;
+        const exportName = entry.kind === 'default' ? entry.localName : entry.exportedName;
         if (!exportName) {
             continue;
         }
@@ -820,7 +800,10 @@ function readSourceAnalysis(filePath: string): SourceAnalysis {
     return analyzeSourceFile(toAbsolutePath(filePath));
 }
 
-function resolveLocalModule(filePath: string, specifier: string): string | undefined {
+function resolveLocalModule(
+    filePath: string,
+    specifier: string
+): string | undefined {
     if (!specifier.startsWith('.')) {
         return undefined;
     }

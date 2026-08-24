@@ -292,9 +292,7 @@ describe('Rallar browser AI facade', () => {
     });
 
     it('supports dynamic import of the browser WebLLM provider entry point', async () => {
-        const { createWebLlmRallarAiProvider } = await import(
-            '@shared-web/browser/rallar-ai-providers/webllm.ts'
-        );
+        const { createWebLlmRallarAiProvider } = await import('@shared-web/browser/rallar-ai-providers/webllm.ts');
         const runtime = {
             generateJson: vi.fn(async (input: unknown) => {
                 expect(JSON.stringify(input)).toContain('Generate a spawn');
@@ -355,7 +353,6 @@ function createFakeRallar() {
             closeScope: async () => 0,
             clearScope: async () => 0,
             destroy: async () => false,
-            destroyStore: async () => false,
             destroyScope: async () => 0,
             estimateUsage: async () => ({})
         },

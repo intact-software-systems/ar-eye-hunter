@@ -6,23 +6,21 @@ import type {
     WorkspaceSpaStatisticsResponse
 } from '@shared/api/spa-statistics-types.ts';
 
-export type RallarStatsReadOptions = RallarScopedOperationOptions;
-
-export type RallarStatsGroupInput = string | GroupRef;
-
 export type RallarStatsFacade = Readonly<{
-    summary(options?: RallarStatsReadOptions): Promise<WorkspaceSpaStatisticsResponse>;
+    summary(
+        options?: RallarScopedOperationOptions
+    ): Promise<WorkspaceSpaStatisticsResponse>;
     group(
-        group: RallarStatsGroupInput,
-        options?: RallarStatsReadOptions
+        group: string | GroupRef,
+        options?: RallarScopedOperationOptions
     ): Promise<GroupSpaStatisticsResponse>;
-    meRealtime(options?: RallarStatsReadOptions): Promise<MyRealtimeSpaStatisticsResponse>;
+    meRealtime(
+        options?: RallarScopedOperationOptions
+    ): Promise<MyRealtimeSpaStatisticsResponse>;
 }>;
 
-export type CreateRallarStatsFacadeOptions = RallarStatsFacade;
-
 export function createRallarStatsFacade(
-    operations: CreateRallarStatsFacadeOptions
+    operations: RallarStatsFacade
 ): RallarStatsFacade {
     return {
         summary: async (options) => await operations.summary(options),

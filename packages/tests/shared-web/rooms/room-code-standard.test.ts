@@ -25,7 +25,10 @@ interface CallableMetric {
 
 const ROOM_SOURCE_DIRECTORY = 'packages/shared-web/browser/rooms';
 const ROOM_TEST_DIRECTORY = 'packages/tests/shared-web/rooms';
-const REMOVED_PRIVATE_STATE_PASS_THROUGHS = ['isSameRoomRefOrId', 'resolveCurrentRoomId'] as const;
+const REMOVED_PRIVATE_STATE_PASS_THROUGHS = [
+    'isSameRoomRefOrId',
+    'resolveCurrentRoomId'
+] as const;
 
 const EXPECTED_ROOM_SOURCE_FILES = [
     'browser-rallar-rooms.ts',
@@ -52,7 +55,6 @@ const EXPECTED_ROOM_TEST_FILES = [
     'join-room.test.ts',
     'leave-room.test.ts',
     'rallar-room-realtime-channel.test.ts',
-    'rallar-rooms-facade.test.ts',
     'room-code-standard.test.ts',
     'room-event-test-runtime.ts',
     'room-events-list-and-page.test.ts',
@@ -78,7 +80,11 @@ const REQUIRED_OWNING_DECLARATIONS = new Map<string, readonly string[]>([
     ['browser-rallar-rooms.ts', ['createBrowserRallarRooms']],
     [
         'create-and-join-room.ts',
-        ['createAndJoinRoom', 'createAndSwitchRoom', 'createRoomSwitchPartialFailureError']
+        [
+            'createAndJoinRoom',
+            'createAndSwitchRoom',
+            'createRoomSwitchPartialFailureError'
+        ]
     ],
     ['join-room.ts', ['enterRoom', 'joinRoom']],
     ['leave-room.ts', ['leaveRoom']],
@@ -118,8 +124,14 @@ const REQUIRED_OWNING_DECLARATIONS = new Map<string, readonly string[]>([
     ['room-presence.ts', ['waitForRoomPresence']],
     ['room-session.ts', ['createRoomSession']],
     ['room-state-store.ts', ['createRoomStateStore']],
-    ['room-target.ts', ['assertValidRoomTarget', 'toJoinRoomTarget', 'toRoomTarget']],
-    ['update-room.ts', ['archiveRoom', 'deleteRoom', 'updateRoom', 'updateRoomMetadata']]
+    [
+        'room-target.ts',
+        ['assertValidRoomTarget', 'toJoinRoomTarget', 'toRoomTarget']
+    ],
+    [
+        'update-room.ts',
+        ['archiveRoom', 'deleteRoom', 'updateRoom', 'updateRoomMetadata']
+    ]
 ]);
 
 const LEGACY_POSITIONAL_SIGNATURES = new Map<string, number>([
@@ -184,30 +196,38 @@ const AUTHORITATIVE_IMPORT_NAMES = new Map<string, ReadonlySet<string>>([
             'UpsertGroupMemberRequest'
         ])
     ],
-    ['@shared/api/state-event-types.ts', new Set(['StateEventCursor', 'StateEventPage'])]
+    [
+        '@shared/api/state-event-types.ts',
+        new Set(['StateEventCursor', 'StateEventPage'])
+    ]
 ]);
 
 describe('browser room code standard', () => {
     it('keeps the exact room source and mirrored test ownership trees', () => {
-        expect(readTypeScriptFileNames(ROOM_SOURCE_DIRECTORY)).toEqual(EXPECTED_ROOM_SOURCE_FILES);
-        expect(readTypeScriptFileNames(ROOM_TEST_DIRECTORY)).toEqual(EXPECTED_ROOM_TEST_FILES);
-        expect(readTypeScriptFileNames('packages/tests/shared-web')).not.toContain(
-            'rallar-room-realtime-channel.test.ts'
+        expect(readTypeScriptFileNames(ROOM_SOURCE_DIRECTORY)).toEqual(
+            EXPECTED_ROOM_SOURCE_FILES
+        );
+        expect(readTypeScriptFileNames(ROOM_TEST_DIRECTORY)).toEqual(
+            EXPECTED_ROOM_TEST_FILES
         );
         expect(readTypeScriptFileNames('packages/tests/shared-web')).not.toContain(
-            'rallar-rooms-facade.test.ts'
+            'rallar-room-realtime-channel.test.ts'
         );
     });
 
     it('keeps the approved primary declarations in their owning files', () => {
         for (const [fileName, expectedNames] of REQUIRED_OWNING_DECLARATIONS) {
-            const analysis = analyzeSourceFile(path.join(ROOM_SOURCE_DIRECTORY, fileName));
+            const analysis = analyzeSourceFile(
+                path.join(ROOM_SOURCE_DIRECTORY, fileName)
+            );
             const exportedDeclarations = analysis.topLevelDeclarations
                 .filter((declaration) => declaration.exported)
                 .map((declaration) => declaration.name)
                 .sort();
 
-            expect(exportedDeclarations, fileName).toEqual(expect.arrayContaining([...expectedNames]));
+            expect(exportedDeclarations, fileName).toEqual(
+                expect.arrayContaining([...expectedNames])
+            );
         }
     });
 
@@ -216,9 +236,13 @@ describe('browser room code standard', () => {
             if (fileName === 'room-group-state-translation.ts') {
                 return [];
             }
-            const analysis = analyzeSourceFile(path.join(ROOM_SOURCE_DIRECTORY, fileName));
+            const analysis = analyzeSourceFile(
+                path.join(ROOM_SOURCE_DIRECTORY, fileName)
+            );
             return analysis.imports.flatMap((sourceImport) => {
-                const authoritativeNames = AUTHORITATIVE_IMPORT_NAMES.get(sourceImport.specifier);
+                const authoritativeNames = AUTHORITATIVE_IMPORT_NAMES.get(
+                    sourceImport.specifier
+                );
                 if (!authoritativeNames) {
                     return [];
                 }
@@ -239,12 +263,12 @@ describe('browser room code standard', () => {
     });
 
     it('does not retain unused private state-store pass-throughs', () => {
-        const violations = readTypeScriptFilePaths('packages/shared-web/browser').flatMap(
-            (filePath) => {
-                const identifiers = new Set(analyzeSourceFile(filePath).identifierNames);
-                return REMOVED_PRIVATE_STATE_PASS_THROUGHS.flatMap((name) => identifiers.has(name) ? [`${filePath}: ${name}`] : []);
-            }
-        );
+        const violations = readTypeScriptFilePaths(
+            'packages/shared-web/browser'
+        ).flatMap((filePath) => {
+            const identifiers = new Set(analyzeSourceFile(filePath).identifierNames);
+            return REMOVED_PRIVATE_STATE_PASS_THROUGHS.flatMap((name) => identifiers.has(name) ? [`${filePath}: ${name}`] : []);
+        });
 
         expect(violations).toEqual([]);
     });
@@ -262,8 +286,12 @@ describe('browser room code standard', () => {
 
         const violations = metrics
             .filter((metric) => metric.parameterCount > 3)
-            .filter((metric) => !LEGACY_POSITIONAL_SIGNATURES.has(toCallableKey(metric)))
-            .map((metric) => `${metric.fileName}: ${metric.name}(${metric.parameterCount})`);
+            .filter(
+                (metric) => !LEGACY_POSITIONAL_SIGNATURES.has(toCallableKey(metric))
+            )
+            .map(
+                (metric) => `${metric.fileName}: ${metric.name}(${metric.parameterCount})`
+            );
 
         expect(violations).toEqual([]);
     });
@@ -271,7 +299,9 @@ describe('browser room code standard', () => {
     it('keeps room-owned functions within the 60-line hard tier', () => {
         const violations = readRoomCallableMetrics()
             .filter((metric) => metric.physicalLines > 60)
-            .map((metric) => `${metric.fileName}: ${metric.name}(${metric.physicalLines})`);
+            .map(
+                (metric) => `${metric.fileName}: ${metric.name}(${metric.physicalLines})`
+            );
 
         expect(violations).toEqual([]);
     });
@@ -295,7 +325,10 @@ function readTypeScriptFilePaths(directory: string): readonly string[] {
 
 function readRoomCallableMetrics(): readonly CallableMetric[] {
     return EXPECTED_ROOM_SOURCE_FILES.flatMap((fileName) => {
-        const source = readFileSync(path.join(ROOM_SOURCE_DIRECTORY, fileName), 'utf8');
+        const source = readFileSync(
+            path.join(ROOM_SOURCE_DIRECTORY, fileName),
+            'utf8'
+        );
         const ast = parse(source, {
             sourceType: 'module',
             sourceFilename: fileName,
@@ -310,7 +343,9 @@ function readRoomCallableMetrics(): readonly CallableMetric[] {
                 fileName,
                 name: readCallableName(node, parent),
                 parameterCount: Array.isArray(node.params) ? node.params.length : 0,
-                physicalLines: node.loc ? node.loc.end.line - node.loc.start.line + 1 : 0
+                physicalLines: node.loc
+                    ? node.loc.end.line - node.loc.start.line + 1
+                    : 0
             });
         });
         return metrics;
@@ -366,11 +401,17 @@ function readCallableName(node: AstNode, parent: AstNode | undefined): string {
 }
 
 function readIdentifier(value: unknown): string | undefined {
-    return isAstNode(value) && value.type === 'Identifier' && typeof value.name === 'string'
+    return isAstNode(value) &&
+            value.type === 'Identifier' &&
+            typeof value.name === 'string'
         ? value.name
         : undefined;
 }
 
 function isAstNode(value: unknown): value is AstNode {
-    return typeof value === 'object' && value !== null && typeof (value as AstNode).type === 'string';
+    return (
+        typeof value === 'object' &&
+        value !== null &&
+        typeof (value as AstNode).type === 'string'
+    );
 }
