@@ -17,7 +17,9 @@
 developer can follow each public contract or runtime-neutral capability through
 validation, policy, state transition, persistence or transport port, failure,
 and caller-visible result without first understanding generic implementation
-buckets.
+buckets. Delete superseded production/test code, exports, aliases, deep paths,
+and fallback implementations instead of preserving them through backward-
+compatibility scaffolding.
 
 **Architecture:** Preserve `packages/shared` as the runtime-agnostic contract
 and reusable-behavior package. Recover ownership incrementally: first establish
@@ -27,7 +29,8 @@ authoritative feature. Only after those foundations are stable should child
 slices consolidate AL, dissolve the remaining `services/` and `repository/`
 buckets, or split CRDT and other high-density feature internals. Move each
 control-flow family with its tests, canonical imports, public disposition, and
-navigation evidence.
+navigation evidence; update verified consumers atomically and delete the old
+path without a shim or re-export file.
 
 **Tech Stack:** TypeScript with `erasableSyntaxOnly`, runtime-neutral WebSocket
 and WebRTC ports, QueueBox/AL, IndexedDB adapters, CRDT, Vitest, Deno API checks,
@@ -42,8 +45,8 @@ the package navigation changes.
 
 **Planning base:** `4d46d428d` (`main` and `origin/main` when this audit began).
 Before implementation, fetch current `origin/main`, authenticate live paths and
-consumers again, and amend this plan only if ownership, compatibility, or
-acceptance materially changed.
+consumers again, and amend this plan only if ownership, intentional public or
+persisted contracts, or acceptance materially changed.
 
 ## Global Constraints
 
@@ -57,19 +60,34 @@ acceptance materially changed.
 - Preserve scoped `GroupRef` identity, AL and QueueBox contracts, authoritative
   state and topology schemas, retry/fairness/lease semantics, CRDT wire and
   persisted formats, AI proposal lifecycle, and game/motion authority behavior.
-- Treat `packages/shared/mod.ts`, feature `mod.ts` entrypoints, and verified deep
-  imports as compatibility evidence, not permission to preserve or remove them
-  automatically. Export removal, rename, persisted-format change, and protocol
-  change require explicit compatibility or migration approval.
+- Keep `packages/shared/mod.ts` and coherent feature `mod.ts` files only as
+  intentional package entrypoints. Remove obsolete root exports, deep paths,
+  rename-only aliases, and deprecated symbols; update every verified repository
+  consumer and the public snapshot in the same slice. This plan authorizes that
+  code-level surface cleanup without an old-path shim.
+- Do not add or retain backward-compatibility modules, re-export hops, shims,
+  deprecated aliases, dual old/new implementations, or fallback modes. If a
+  wire or persisted contract cannot change atomically, stop for a direct
+  migration decision instead of adding coexistence scaffolding.
 - Do not create a second generic bucket while removing `services/` or
   `repository/`. Every moved module must have a named domain, lifecycle,
-  protocol, compatibility, or side-effect owner.
+  protocol, or side-effect owner.
+- Production code, tests, fixtures, mocks, test-support helpers, scripts, and
+  configuration are all human-authored code and follow the authoritative
+  repository code standard. Tests receive no structural, naming, construction,
+  callback, type-organization, cognitive-indirection, or touched-file exemption.
 - Every changed human-authored file is reviewed and remediated in full. Every
   support file modified by that remediation enters closure recursively until
   closure. Independent untouched code remains outside closure.
-- Remove affected legacy when no independent requirement or verified consumer
-  needs it. Any retained production legacy must be a thin named boundary with
-  explicit maintainer approval and the required registry entry.
+- Delete all affected legacy production and test code after moving verified
+  consumers. A pre-existing path, external-use uncertainty, coupled test, old
+  snapshot, or previous compatibility approval is not a retention reason. No
+  affected legacy item may finish this plan as `retained` or
+  `minimized-boundary`.
+- When improved production ownership invalidates a test coupled to private file
+  placement, helper topology, call order, or predecessor behavior, rewrite or
+  delete the test. Never restore inferior production structure or keep a shim
+  to satisfy it.
 - Semantic behavior tests are primary. Public-surface snapshots, dependency
   direction tests, source inventories, and navigation checks supplement rather
   than replace behavior tests.
@@ -155,8 +173,8 @@ WebRTC, multicast, cache, and generic services. Feature barrels already exist
 for CRDT, ontology, RallarAI, Rallar Game, Rallar Match, and Rallar Motion.
 Repository-local code also uses many deep imports, especially from `api`,
 `queuebox`, `services`, `repository`, and `al-contracts`. Therefore file moves
-are possible, but an exported symbol or established import path is not removed
-without an explicit consumer and compatibility disposition.
+must update verified repository consumers atomically and delete the obsolete
+export or deep path. Do not leave a forwarding file or alias behind.
 
 The audit counted approximately 1,520 repository import occurrences into
 `api`, 377 into `queuebox`, 234 into `services`, 195 into `repository`, 142 into
@@ -165,8 +183,9 @@ into `webrtc`, 40 into `websocket`, 38 into `persistence`, and 33 into `alm`.
 The largest consumer groups are shared tests, `packages/shared-server`,
 `apps/api-v1`, `packages/shared-web`, and `apps/rallar-black-box`. These counts
 are repository evidence rather than a claim about unknown external consumers;
-implementation re-runs exact symbol/path searches before any compatibility
-decision.
+implementation re-runs exact symbol/path searches to migrate verified
+repository callers, while unknown external use does not justify legacy
+retention.
 
 ### Existing behavior and characterization evidence
 
@@ -177,8 +196,9 @@ decision.
 - Auth, authoritative state, group lifecycle/policy/director, mutation,
   topology, statistics, and validation suites under `packages/tests/shared`
   cover the broad contract families selected for Slice 2. They are moved with
-  their owners and supplemented only where exact boundary rejection or alias
-  behavior is currently unproved.
+  their owners and supplemented where exact boundary rejection or canonical
+  contract behavior is currently unproved. Tests whose only purpose is a
+  rename-only alias are deleted with the alias.
 - `npx tsc -p packages/shared/tsconfig.json --noEmit` passed on the planning
   base. The audit command
   `npx vitest run packages/tests/shared --reporter=dot` also passed, but the
@@ -242,48 +262,46 @@ approval and add the required registry entry.
 
 ### Concrete-slice change classification
 
-| Slice   | Mechanical                                                 | Structural                                                                                                                                             | Semantic                                                                                                                           | Contractual                                                                                                                         | Operational                                                                                                                                          |
-| ------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Slice 1 | Kebab-case moves, mirrored test moves, and import updates. | QueueBox owns readers, dequeue phases, resilience, and entry translation instead of generic `services/`.                                               | Preserve queue selection, fairness, retry, callback dispatch, entry conversion, and error propagation; first add characterization. | Preserve root-exported symbol names. Deep-path retention requires an explicit supported-consumer decision and retirement condition. | Reservation/lease, retry, telemetry, finalization, clocks, identifiers, and randomness are operationally sensitive and become explicit dependencies. |
-| Slice 2 | Contract/test moves and canonical import updates.          | API contracts and validators are owned by auth, client state, group state, topology, mutation, identity, configuration, QueueBox, and realtime topics. | Preserve exact-shape validation and request/response meaning.                                                                      | Public aliases, root exports, protocol fields, and default constants require individual compatibility dispositions.                 | Browser storage selection moves to shared-web; consumer configuration supplies defaults without changing authentication persistence behavior.        |
+| Slice   | Mechanical                                                                                                     | Structural                                                                                                                                             | Semantic                                                                                                                           | Contractual                                                                                                                        | Operational                                                                                                                                          |
+| ------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Slice 1 | Kebab-case moves, mirrored test moves, import updates, and deletion of old files/tests.                        | QueueBox owns readers, dequeue phases, resilience, and entry translation instead of generic `services/`.                                               | Preserve queue selection, fairness, retry, callback dispatch, entry conversion, and error propagation; first add characterization. | Update verified consumers and root exports to canonical symbols, then delete old deep paths without re-export files.               | Reservation/lease, retry, telemetry, finalization, clocks, identifiers, and randomness are operationally sensitive and become explicit dependencies. |
+| Slice 2 | Contract/test moves, canonical import updates, and deletion of aliases, mixed files, and alias/old-path tests. | API contracts and validators are owned by auth, client state, group state, topology, mutation, identity, configuration, QueueBox, and realtime topics. | Preserve exact-shape validation and request/response meaning.                                                                      | Remove obsolete aliases, exports, and defaults from the public surface; preserve protocol fields, not predecessor code identities. | Browser storage selection moves to shared-web; consumer configuration supplies defaults without changing authentication persistence behavior.        |
 
 ### Exact current-to-target map for the concrete slices
 
-| Current source/symbol                                           | Canonical target                                                                                                                 |
-| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `queuebox/DequeueController.ts`                                 | `queuebox/dequeue/dequeue-controller.ts`                                                                                         |
-| `queuebox/DequeueResourceEntryController.ts`                    | `queuebox/dequeue/dequeue-resource-entry-controller.ts`                                                                          |
-| `services/QueueMessageReader.ts`                                | `queuebox/queue-message-reader.ts`                                                                                               |
-| `services/InboxQueueReader.ts`                                  | `queuebox/inbox/inbox-queue-reader.ts`                                                                                           |
-| `services/OutboxQueueReader.ts`                                 | `queuebox/outbox/outbox-queue-reader.ts`                                                                                         |
-| `QueueBoxUtilities.defaultDequeue` and `withRetryDisposition`   | `queuebox/dequeue/run-resilient-dequeue.ts`                                                                                      |
-| `QueueBoxUtilities.toResourceEntry`                             | `queuebox/resource-entry-factory.ts`, with clock, identifier, creator, and context supplied explicitly                           |
-| `QueueBoxUtilities.toResourceEntryFromMsg`                      | `queuebox/al-message-resource-entry.ts`, the one named AL-to-QueueBox translation boundary                                       |
-| `api-config.ts#ApiConfig`                                       | `api/configuration/api-client-config.ts`                                                                                         |
-| auth/session/ticket contracts in `api-config.ts`                | `api/auth/auth-contracts.ts`                                                                                                     |
-| `api/auth.ts` browser storage selection and session persistence | `packages/shared-web/browser/session/browser-auth-session-store.ts`                                                              |
-| `api-config.ts#EnqueuedType`                                    | `queuebox/queue-entry-type.ts`                                                                                                   |
-| `api-config.ts#AppTopics`                                       | `api/realtime/application-topic.ts`                                                                                              |
-| peer/client identity in `api-config.ts`                         | `api/identity/client-identity.ts`                                                                                                |
-| ICE configuration in `api-config.ts`                            | `api/topology/ice-config.ts`                                                                                                     |
-| group identity in `api-config.ts`                               | existing `api/group-types.ts`, with alias removal only by approved compatibility decision                                        |
-| overlay and RTT contracts in `api-config.ts`                    | `api/topology/overlay-types.ts` and `rtc/rtt-measurement-info.ts`                                                                |
-| client validators in `authoritative-state-validation.ts`        | `api/client-state/client-state-validation.ts`                                                                                    |
-| group validators in `authoritative-state-validation.ts`         | `api/group-state/group-state-validation.ts`                                                                                      |
-| overlay validators in `authoritative-state-validation.ts`       | `api/topology/topology-validation.ts`                                                                                            |
-| `state-types.ts#StateScope`                                     | `api/identity/state-scope.ts`                                                                                                    |
-| default state-scope constants in `state-types.ts`               | authenticated browser/server/app composition; any retained public constants require explicit approval and a retirement condition |
-| `state-types.ts#MutationActorInput`                             | `api/mutation/mutation-actor-input.ts`                                                                                           |
-| client mutation requests in `state-types.ts`                    | `api/client-state/client-state-mutation-contracts.ts`                                                                            |
-| group mutation/presence requests in `state-types.ts`            | `api/group-state/group-state-mutation-contracts.ts`                                                                              |
-| `state-types.ts#StateErrorResponse`                             | `api/mutation/state-mutation-error.ts`                                                                                           |
+| Current source/symbol                                           | Canonical target                                                                                        |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `queuebox/DequeueController.ts`                                 | `queuebox/dequeue/dequeue-controller.ts`                                                                |
+| `queuebox/DequeueResourceEntryController.ts`                    | `queuebox/dequeue/dequeue-resource-entry-controller.ts`                                                 |
+| `services/QueueMessageReader.ts`                                | `queuebox/queue-message-reader.ts`                                                                      |
+| `services/InboxQueueReader.ts`                                  | `queuebox/inbox/inbox-queue-reader.ts`                                                                  |
+| `services/OutboxQueueReader.ts`                                 | `queuebox/outbox/outbox-queue-reader.ts`                                                                |
+| `QueueBoxUtilities.defaultDequeue` and `withRetryDisposition`   | `queuebox/dequeue/run-resilient-dequeue.ts`                                                             |
+| `QueueBoxUtilities.toResourceEntry`                             | `queuebox/resource-entry-factory.ts`, with clock, identifier, creator, and context supplied explicitly  |
+| `QueueBoxUtilities.toResourceEntryFromMsg`                      | `queuebox/al-message-resource-entry.ts`, the one named AL-to-QueueBox translation boundary              |
+| `api-config.ts#ApiConfig`                                       | `api/configuration/api-client-config.ts`                                                                |
+| auth/session/ticket contracts in `api-config.ts`                | `api/auth/auth-contracts.ts`                                                                            |
+| `api/auth.ts` browser storage selection and session persistence | `packages/shared-web/browser/session/browser-auth-session-store.ts`                                     |
+| `api-config.ts#EnqueuedType`                                    | `queuebox/queue-entry-type.ts`                                                                          |
+| `api-config.ts#AppTopics`                                       | `api/realtime/application-topic.ts`                                                                     |
+| peer/client identity in `api-config.ts`                         | `api/identity/client-identity.ts`                                                                       |
+| ICE configuration in `api-config.ts`                            | `api/topology/ice-config.ts`                                                                            |
+| group identity in `api-config.ts`                               | canonical identity in existing `api/group-types.ts`; delete the duplicate alias and update every caller |
+| overlay and RTT contracts in `api-config.ts`                    | `api/topology/overlay-types.ts` and `rtc/rtt-measurement-info.ts`                                       |
+| client validators in `authoritative-state-validation.ts`        | `api/client-state/client-state-validation.ts`                                                           |
+| group validators in `authoritative-state-validation.ts`         | `api/group-state/group-state-validation.ts`                                                             |
+| overlay validators in `authoritative-state-validation.ts`       | `api/topology/topology-validation.ts`                                                                   |
+| `state-types.ts#StateScope`                                     | `api/identity/state-scope.ts`                                                                           |
+| default state-scope constants in `state-types.ts`               | authenticated browser/server/app composition; delete the deep defaults and update every caller          |
+| `state-types.ts#MutationActorInput`                             | `api/mutation/mutation-actor-input.ts`                                                                  |
+| client mutation requests in `state-types.ts`                    | `api/client-state/client-state-mutation-contracts.ts`                                                   |
+| group mutation/presence requests in `state-types.ts`            | `api/group-state/group-state-mutation-contracts.ts`                                                     |
+| `state-types.ts#StateErrorResponse`                             | `api/mutation/state-mutation-error.ts`                                                                  |
 
 Existing repository callers move directly to these owners. Root `mod.ts`
-symbols keep exact exported names during the concrete slices. An old deep path
-is not retained unless the implementation-time inventory proves a supported
-external consumer and the maintainer explicitly approves one direct
-compatibility hop; retirement requires zero supported consumers plus separate
-removal approval.
+retains only intentional canonical symbols. Delete obsolete exports, aliases,
+and old deep paths in the same slice; external-use uncertainty does not create
+a shim, re-export file, or retention task.
 
 ## Target Ownership and Navigation
 
@@ -383,7 +401,7 @@ QueueBox. It removes one generic-service dependency without rewriting AL.
       private file placement.
 - [ ] Add a dependency-direction test for the slice's target: QueueBox
       production modules must not import from generic `services/` after the move,
-      and canonical callers must not use a compatibility-only path.
+      and no old-path module or re-export file may remain.
 - [ ] Record a durable package navigation table in `architecture.md` for API,
       QueueBox, AL, cache/repository, CRDT, transports, and product features.
 - [ ] Add semantic characterization only where current coverage does not prove
@@ -468,16 +486,17 @@ npx vitest run \
 - [ ] Inventory every production and test importer before moving files,
       grouped by `shared-web`, `shared-server`, API-v1, shared-test, apps, and
       examples.
-- [ ] Move reader behavior without forwarding modules. If a deep path has a
-      verified external consumer, stop and request a compatibility decision for
-      that path instead of guessing.
+- [ ] Move reader behavior without forwarding modules. Update every verified
+      repository consumer and delete the old deep path in the same family;
+      unknown external use does not create a shim or retention task.
 - [ ] Replace the static `QueueBoxUtilities` vocabulary with the three named
       owners in the exact map. Expose clocks, identifiers, audit creator/context,
       queue conversions, and side effects at the call site; remove hard-coded
       test identity/defaults from production entry creation while preserving
       current values through explicit caller composition where required.
-- [ ] Update canonical imports and `mod.ts` exports. A root public symbol keeps
-      its exported name unless separately approved.
+- [ ] Update canonical imports and `mod.ts` to the intentional canonical
+      symbols. Delete obsolete root exports and aliases rather than re-exporting
+      them from their new location.
 - [ ] Move tests with the production family and rename them around observable
       behavior, not the old file layout.
 - [ ] Prove with `rg` and the dependency-direction test that QueueBox canonical
@@ -501,6 +520,13 @@ npx vitest run \
 - [ ] Run public snapshot and dependency-direction tests.
 - [ ] Run changed-file style, changed-range regression, structure, legacy, and
       formatting gates from `rallar-testing`.
+- [ ] Complete a production-and-test legacy review. Every affected item is
+      `removed` or `resolved`; this child does not permit `minimized-boundary` or
+      `retained` dispositions.
+- [ ] Review every changed production file, test, fixture, mock, and support
+      helper in full against the authoritative code standard. Recursively include
+      every support file changed by remediation and leave independent untouched
+      files outside closure.
 - [ ] Perform a code-only navigation probe: start from enqueue/dequeue public
       usage and locate read, claim, process, retry, release/finalize, telemetry, and
       result without entering `services/` or relying on tests.
@@ -511,9 +537,9 @@ npx vitest run \
       request is mergeable.
 
 **Slice 1 exit:** QueueBox read/dequeue has one feature owner, required
-dependencies are valid at creation, tests mirror the owner, public names remain
-compatible, and a developer can follow the lifecycle without the generic
-`services/` directory.
+dependencies are valid at creation, tests mirror the owner, verified consumers
+use canonical paths, old files/exports/tests are deleted, and a developer can
+follow the lifecycle without the generic `services/` directory.
 
 ## Slice 2: Recover API Contract Ownership
 
@@ -532,11 +558,11 @@ This slice changes contract organization, not authoritative server behavior.
 
 - [ ] Inventory every export and importer of `api-config.ts`, `auth.ts`,
       `authoritative-state-validation.ts`, and `state-types.ts` by semantic owner.
-- [ ] Record each rename-only or compatibility alias separately, including
+- [ ] Record every rename-only alias and its verified callers, including
       `ConsumeAgentSessionTicketResponse`, request aliases to
-      `MutationActorInput`, and `AnyGroupPresence`. Classify each as verified
-      consumer compatibility, protocol/persistence contract, or removable only
-      with explicit approval.
+      `MutationActorInput`, and `AnyGroupPresence`. Move callers to the canonical
+      type and delete the alias plus alias-only tests; do not preserve it as a
+      deprecated export.
 - [ ] Add behavior tests for pure auth parsing, client-state validation,
       group-state validation, topology validation, and invalid boundary rejection.
       Do not snapshot private filenames.
@@ -578,9 +604,9 @@ This slice changes contract organization, not authoritative server behavior.
       dumping ground.
 - [ ] Keep administration and statistics contracts in named feature folders
       when they are not owned by client, group, or topology state.
-- [ ] Update canonical imports directly and preserve public symbol names at the
-      root barrel. Do not create nested barrels except where an existing public
-      feature boundary needs one stable entrypoint.
+- [ ] Update canonical imports and the root barrel directly. Keep only
+      intentional canonical symbols, delete obsolete names and aliases, and do
+      not create nested barrels or old-path re-export files.
 - [ ] For each touched source and test, close type organization, boundary
       typing, function size, responsibility, naming, and affected legacy across the
       full file and recursively touched support files.
@@ -606,15 +632,22 @@ This slice changes contract organization, not authoritative server behavior.
       when browser import shape changes.
 - [ ] Search production imports and prove canonical code uses the new feature
       owners rather than the old `api-config.ts` or mixed validation paths.
+- [ ] Prove the split source files, removed aliases/defaults, old deep paths,
+      and tests coupled only to them no longer exist; public snapshots assert the
+      smaller canonical surface.
 - [ ] Perform code-only probes from an auth contract, client mutation, group
       mutation, topology contract, and QueueBox topic to validation and consumer.
 - [ ] Run changed-file style, changed-range regression, structure, legacy,
       formatting, and publication gates.
+- [ ] Complete the final production-and-test legacy review with only `removed`
+      or `resolved` dispositions, and prove every changed human-authored file
+      satisfies the authoritative code standard in full.
 
 **Slice 2 exit:** API contracts are discoverable by authoritative feature,
-browser persistence is outside shared, public symbols and protocol shapes are
-preserved or explicitly approved, tests mirror owners, and the `api` directory
-no longer acts as a cross-domain type junction.
+browser persistence is outside shared, verified consumers and public snapshots
+use only canonical symbols, obsolete aliases/paths/tests are deleted, protocol
+shapes remain correct, tests mirror owners, and `api/` is no longer a
+cross-domain type junction.
 
 ## Concrete-Slice Focused Validation Commands
 
@@ -661,7 +694,7 @@ report every unavailable or skipped check rather than silently omitting it.
 ## Later Independently Testable Outcomes
 
 These are ordered outcomes, not authorized move manifests. Re-authenticate
-paths, consumers, behavior, and compatibility before making each one the next
+paths, consumers, behavior, and affected legacy before making each one the next
 concrete slice.
 
 ### Outcome 3: QueueBox engine and WebSocket adapter ownership
@@ -684,7 +717,8 @@ concrete slice.
 - Preserve AL wire shapes, priorities, deduplication, ordering, retry timing,
   multicast targets, and scoped identity.
 - Inventory public deep imports before changing `al-contracts/` or `alm/`
-  paths; do not keep old internal paths without an approved compatibility need.
+  paths, update every verified consumer, and delete old paths without re-export
+  files or alias barrels.
 
 ### Outcome 5: Consolidate AL inbound runtime and stores
 
@@ -714,7 +748,8 @@ concrete slice.
   group-state RTC adapter owner.
 - Keep shared WebRTC primitives only when they remain free of direct browser
   globals. A cross-package move to shared-web is an explicit architecture and
-  public compatibility decision, not an assumption based on the technology.
+  ownership decision, not an assumption based on the technology; update all
+  verified consumers and leave no shared compatibility wrapper.
 - Move multicast behavior to its existing owner and remove `services/` once no
   coherent responsibility remains.
 
@@ -726,9 +761,10 @@ concrete slice.
   owners rather than a generic storage-mechanism directory.
 - In a separate behavior slice, pass an explicit `RepositoryManager` from
   composition owners and remove implicit process-global defaults.
-- Treat removal of `defaultRepositoryManager` and `LatestRepositoryHelpers`
-  defaults as composition and public compatibility changes; preserve no hidden
-  console failure path.
+- Move every verified caller off `defaultRepositoryManager` and
+  `LatestRepositoryHelpers` defaults, then delete those globals, exports, and
+  global-dependent tests without aliases or wrappers. Preserve no hidden console
+  failure path.
 
 ### Outcome 9: Split CRDT policy and administration
 
@@ -755,18 +791,21 @@ concrete slice.
 - Apply focused type-organization, filename, navigation, cognitive-load, and
   affected-legacy closure to one feature at a time.
 - Replace generic `types.ts` or `diagnostics.ts` only when the real concept
-  owner is clear and public compatibility is resolved.
+  owner is clear; update verified consumers and delete the generic predecessor
+  without a re-export file.
 - Preserve strict RallarAI schemas and proposal lifecycle, game authority and
   replay/idempotency, match state, motion lane freshness, and app builds.
 
 ### Outcome 12: Final package closure
 
-- `services/` and generic `repository/` no longer exist unless an explicitly
-  approved thin compatibility boundary remains.
+- `services/` and generic `repository/` no longer exist. No compatibility
+  boundary, shim, alias barrel, or old-path module remains.
 - Tests mirror production feature and control-flow ownership, except genuine
   cross-feature public/protocol suites.
-- No canonical import traverses a compatibility-only wrapper, process-global
-  service locator, or cross-domain API dumping ground.
+- No affected legacy production/test code, backward-compatibility wrapper,
+  process-global service locator, deprecated alias, dual implementation,
+  predecessor fallback, coupled old-path test, or cross-domain API dumping
+  ground remains.
 - Every feature with more than 20 modules or three control-flow families has a
   durable navigation map.
 - A human can trace API validation, QueueBox, inbound/outbound AL, WebSocket,
@@ -781,22 +820,29 @@ concrete slice.
       have explicit ownership and inward dependency direction.
 - [ ] Browser-only session storage selection is outside shared; remaining code
       is safe for browser, server, tests, and apps under injected runtime ports.
-- [ ] Public exports, verified deep imports, protocol and persisted shapes,
-      scoped identity, retry/fairness, and product behavior are unchanged unless a
-      separately approved migration says otherwise.
+- [ ] Intentional package entrypoints, protocol and persisted shapes, scoped
+      identity, retry/fairness, and product behavior remain correct. Obsolete
+      exports, aliases, and deep paths are removed; verified consumers and public
+      snapshots use only canonical owners.
 - [ ] Tests mirror their production owner and assert observable semantics rather
       than private file placement.
 - [ ] Every moved or split module has a matching primary exported symbol and
       filename; no unexplained new repository checker finding remains on the
       changed surface.
-- [ ] Canonical internal code bypasses every compatibility-only wrapper and
-      implicit global composition route.
+- [ ] No affected backward-compatibility wrapper, shim, old-path re-export,
+      deprecated alias, predecessor fallback, duplicate implementation,
+      implicit global composition route, or test coupled only to those shapes
+      exists.
 - [ ] Re-run the concrete-slice file-size and AST 40/50/60 inventory on final
       code. Every materially touched file over 800 lines and function over 60
       lines is split at a coherent boundary or has explicit human approval and a
       current `docs/repo-code-style-exceptions.md` entry.
 - [ ] All changed files satisfy full recursive touched-file standards closure;
       independent untouched code remained outside closure.
+- [ ] Every changed production file, test, fixture, mock, test-support helper,
+      script, and configuration file satisfies the authoritative repository code
+      standard in full. Tests have no relaxed naming, construction, callback,
+      type, function-size, responsibility, or cognitive-indirection standard.
 - [ ] Focused behavior tests, shared/shared-web/shared-server typechecks,
       affected API/app checks, public API snapshots, style, changed-range,
       structure, legacy, and publication gates are reported as passed, failed,
@@ -809,9 +855,9 @@ concrete slice.
 - Do not redesign protocols, persisted formats, authoritative state behavior,
   CRDT semantics, WebRTC policy, AL QoS, or product authority as part of folder
   ownership recovery.
-- Do not remove public exports, deep paths, or apparent aliases without an
-  authenticated consumer/contract inventory and explicit approval when
-  required.
+- Do not preserve an obsolete public export, deep path, alias, or default after
+  the authenticated inventory has identified and migrated verified consumers.
+  Delete it in the owning slice without a shim.
 - Do not split files mechanically by line count or create one helper,
   interface, adapter, controller, or barrel per file.
 - Do not replace generic `services/` or `repository/` with generic `runtime/`,
@@ -826,10 +872,12 @@ For every slice, report:
 
 - changed files and the owner-to-result behavior made easier to trace;
 - why each keep/split/move/consolidate decision was chosen;
-- public, deep-import, protocol, persisted, cross-runtime, and app compatibility
-  dispositions;
+- the intentional canonical public surface, deleted exports/deep paths/aliases,
+  and preserved protocol, persisted, cross-runtime, and app behavior;
 - exact passed, failed, unavailable, and skipped validation;
-- affected legacy dispositions and any approved registry entry;
+- confirmation that every affected legacy production/test item was deleted or
+  resolved and none was retained as a shim, wrapper, fallback, alias, or coupled
+  test;
 - the code-only navigation probe result;
 - the final concrete-slice file-size tiers and 40/50/60 function inventory,
   including the disposition of every touched over-800-line file and over-60-line
@@ -841,4 +889,7 @@ For every slice, report:
 - confirmation that every changed human-authored file was reviewed in full,
   support-file remediation recursively reached closure, and independent
   untouched files stayed outside closure;
+- confirmation that every changed production file, test, fixture, mock, and
+  test-support helper satisfies the authoritative code standard in full, not
+  merely the currently blocking checker subset;
 - follow-up issue URLs, or `Follow-up: None`.

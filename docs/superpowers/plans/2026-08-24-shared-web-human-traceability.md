@@ -15,15 +15,17 @@
 
 **Goal:** Make `packages/shared-web/**` directly navigable from each public
 browser entry through construction, lifecycle, feature decisions, transport or
-persistence effects, failures, cleanup, and caller-visible results without
-changing its public API or browser behavior.
+persistence effects, failures, cleanup, and caller-visible results. Preserve
+browser behavior and intentional package entrypoints while deleting obsolete
+exports, aliases, old paths, compatibility modules, and coupled tests.
 
 **Architecture:** Preserve `rallar.ts`, the five narrow browser entrypoints,
 `mod.ts`, and `game/mod.ts` as intentional public boundaries. Repair the hidden
 construction cycles and duplicate connection shutdown before relocating
 implementation owners from the technical `rallar-runtime/` bucket into
 feature-owned folders. Migrate one control-flow family at a time, mirror its
-tests, and keep compatibility-only modules out of canonical internal call paths.
+tests, update all consumers atomically, and delete the superseded path instead
+of adding or retaining backward-compatibility scaffolding.
 
 **Tech Stack:** TypeScript with `erasableSyntaxOnly`, browser APIs, IndexedDB,
 WebSocket, WebRTC, QueueBox/AL, Vitest, esbuild bundle analysis, Vite application
@@ -33,24 +35,28 @@ builds, dprint, and repository style/structure/legacy checks.
 [`plans/repo-human-traceability-refactoring-program-plan.md`](../../../plans/repo-human-traceability-refactoring-program-plan.md),
 Wave 4 and the child-plan entry/exit contract. The completed
 [`plans/rallar-shared-web-modularization-iterations-plan.md`](../../../plans/rallar-shared-web-modularization-iterations-plan.md)
-is historical implementation evidence whose public-surface and bundle results
-remain compatibility constraints; it is not current coding-standard authority.
+is historical implementation evidence whose intentional entrypoint and bundle
+results remain constraints. Its old export inventory is audit evidence, not
+authority to keep obsolete exports or paths.
 
 **Planning base:** `4d46d428d` (`main` and `origin/main` when this audit began).
 Before implementation, fetch current `origin/main`, authenticate the live paths
-and consumers again, and amend this plan only if ownership, compatibility, or
-acceptance materially changed.
+and consumers again, and amend this plan only if ownership, intentional public
+or persisted contracts, or acceptance materially changed.
 
 ## Global Constraints
 
 - Implement each approved slice on a fresh `codex/` branch based on current
   `origin/main`; this plan's presence on `main` does not authorize production
   changes or a default-branch commit.
-- Preserve the runtime exports and type exports of
-  `browser/rallar.ts`, `browser/rallar-core.ts`,
+- Keep `browser/rallar.ts`, `browser/rallar-core.ts`,
   `browser/rallar-realtime.ts`, `browser/rallar-data.ts`,
   `browser/rallar-crdt.ts`, `browser/rallar-media-calls.ts`, `game/mod.ts`, and
-  `mod.ts`. A removal or rename is a separately approved public migration.
+  `mod.ts` only as intentional current package entrypoints. Remove obsolete
+  factories, aliases, and exports from those entrypoints, update every verified
+  repository consumer in the same slice, and intentionally update public
+  snapshots. This plan authorizes that code-level surface cleanup without an
+  old-path shim.
 - Preserve the full-facade singleton and factory behavior, room and message
   behavior, connect/auth/start/disconnect ordering, cache convergence,
   IndexedDB formats and keys, WS/RTC wire shapes, CRDT formats, AI lifecycle,
@@ -59,20 +65,34 @@ acceptance materially changed.
   translation at `browser/rooms/room-group-state-translation.ts`. Do not add a
   second translation boundary or replace scoped `GroupRef`/`roomRef` identity
   with bare IDs.
-- Keep `browser/rallar-rooms-facade.ts` and the room workflows exposed from
-  `browser/api-workflows.ts` only under their already-approved compatibility
-  conditions. Canonical internal callers use the owning `browser/rooms/**`
-  modules directly.
-- Do not infer that current public API snapshots approve every forwarding
-  factory or rename-only alias forever. For each such export, either preserve a
-  real public boundary or request explicit compatibility removal approval; no
-  implementation task silently decides this.
+- Delete `browser/rallar-rooms-facade.ts`, the old room workflow exports from
+  `browser/api-workflows.ts`, and their exact-identity compatibility tests when
+  Slice 2 moves every verified consumer to the owning `browser/rooms/**`
+  modules. Do not replace them with re-export files or forwarding functions.
+- Delete forwarding factories, rename-only aliases, deprecated exports,
+  old-path modules, fallbacks retained for predecessor behavior, and tests that
+  only protect those shapes. Public snapshots are updated to the intended
+  canonical surface; they do not veto legacy deletion.
+- Do not add or retain backward-compatibility modules, shims, re-export hops,
+  dual old/new implementations, deprecated aliases, or fallback modes. If a
+  wire or persisted contract cannot change atomically, stop for a direct
+  migration decision; do not solve it with coexistence scaffolding.
+- Production code, tests, fixtures, mocks, test-support helpers, scripts, and
+  configuration are all human-authored code and follow the authoritative
+  repository code standard. Tests receive no structural, naming, construction,
+  callback, type-organization, cognitive-indirection, or touched-file exemption.
 - Every changed human-authored file is reviewed and remediated in full. Every
   support file modified by that remediation enters closure recursively until
   closure. Independent untouched code remains outside closure.
-- Remove affected legacy when no independent requirement or verified consumer
-  needs it. Any retained production legacy must be a thin named boundary with
-  explicit maintainer approval and the required registry entry.
+- Delete all affected legacy production and test code after moving verified
+  consumers. A pre-existing path, external-use uncertainty, coupled test, old
+  snapshot, or previous compatibility approval is not a retention reason. No
+  affected legacy item may finish this plan as `retained` or
+  `minimized-boundary`.
+- When improved production ownership invalidates a test coupled to private file
+  placement, helper topology, call order, or predecessor behavior, rewrite or
+  delete the test. Never restore inferior production structure or keep a shim
+  to satisfy it.
 - Semantic behavior tests are primary. Public-export, import-tree, source
   inventory, and bundle-boundary tests remain supplementary protection for the
   public or build boundary they actually own.
@@ -113,8 +133,10 @@ acceptance materially changed.
   repository code; `browser/rallar-ai.ts` has five app consumers.
 - No repository app, example, or shared-test consumer imports the individual
   root `rallar-*-facade.ts` modules, but the public snapshots deliberately
-  export their factories and contracts. External use remains unknown and is a
-  compatibility decision, not evidence for deletion.
+  export their factories and contracts. External-use uncertainty does not
+  justify retaining these forwarding exports: the implementation inventory
+  updates verified repository consumers, removes obsolete exports, and updates
+  the snapshots without a compatibility layer.
 - The current full facade remains close to its strict bundle ceiling. Re-run
   the enforcing bundle command before every slice; do not rely on the stale
   measurements in `packages/shared-web/architecture.md`.
@@ -126,19 +148,40 @@ acceptance materially changed.
   `shared-web-browser-bundle-boundaries.test.ts` protect the intended package
   entries and build boundary.
 - `rallar-runtime-foundations.test.ts`, `rallar-startup-lifecycle.test.ts`,
-  `rallar-facade-compat.test.ts`, state/cache/event tests, room tests, and auth/
-  middleware tests cover the construction and lifecycle families selected for
-  Slice 1, but none currently proves completed-value construction or one
-  exactly-once transport cleanup owner.
+  current facade/workflow-options compatibility tests, state/cache/event tests,
+  room tests, and auth/middleware tests cover the construction and lifecycle
+  families selected for Slice 1. Move independently required facade/setup
+  assertions to canonical behavior tests and delete the compatibility tests;
+  none currently proves completed-value construction or one exactly-once
+  transport cleanup owner.
 - `api-integration-ws-ticket-backoff.test.ts`, `api-mutation-failure.test.ts`,
   `api-workflows.test.ts`, `api-workflows-group-mutations.test.ts`, and room
-  workflow compatibility tests cover the broad modules selected for Slice 2.
+  old-path workflow tests cover the broad modules selected for Slice 2. Move
+  independently required assertions to canonical feature tests and delete the
+  old-path coupling.
 - The planning audit's focused seven-file runtime suite passed 62 tests;
   `npx tsc -p packages/shared-web/tsconfig.json --noEmit` passed; and
   `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles` passed
   with the full facade at about 158.7 KiB Brotli against the strict 160 KiB
   limit. These results characterize the planning base only and are rerun on
   the implementation branch.
+
+The current compatibility-named test inventory is explicit deletion work, not
+a protected surface:
+
+| Owning slice/outcome | Delete after transferring independent behavior                                                                                                                                                                                                      |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Slice 1              | `rallar-facade-compat.test.ts`, `rallar-workflow-options-compat.test.ts`                                                                                                                                                                            |
+| Slice 2              | `rooms/room-workflow-compat.test.ts`                                                                                                                                                                                                                |
+| Outcome 4            | `rallar-message-channel-compat.test.ts`, `rallar-message-send-compat.test.ts`, `rallar-ws-lifecycle-compat.test.ts`                                                                                                                                 |
+| Outcome 5            | `rallar-realtime-send-listen-compat.test.ts`, `rallar-realtime-json-lane-compat.test.ts`, `rallar-targeted-channel-compat.test.ts`, `rallar-rtc-recovery-compat.test.ts`, `rallar-rtc-wait-compat.test.ts`, `rallar-rtc-diagnostics-compat.test.ts` |
+| Outcome 6            | `rallar-calls-compat.test.ts`, `rallar-media-sources-compat.test.ts`                                                                                                                                                                                |
+| Outcome 7            | `people/people-events-compat.test.ts`, `people/people-state-compat.test.ts`, `rallar-stats-compat.test.ts`, `rallar-director-relay-compat.test.ts`                                                                                                  |
+
+For each file, first identify any independent observable behavior or current
+product boundary it proves and move that assertion to the canonical feature
+suite. Then delete the compatibility test and the predecessor production path;
+do not merely rename a coupled assertion.
 
 ### Representative construction and runtime trace
 
@@ -225,10 +268,10 @@ registry entry.
 
 ### Concrete-slice change classification
 
-| Slice   | Mechanical                                                                      | Structural                                                             | Semantic                                                                                                               | Contractual                                                                                                      | Operational                                                                                                                                               |
-| ------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Slice 1 | Test co-location, import updates, and removal of obsolete late-binding symbols. | Acyclic construction and one session/transport lifecycle owner.        | Preserve setup, connect, auth, state, Data scope, and cleanup results; add characterization before changing ownership. | Preserve all public facade types and entrypoints; no compatibility shim is authorized.                           | Cleanup ordering, exactly-once teardown, cancellation, and best-effort failure handling are operationally sensitive and require semantic lifecycle tests. |
-| Slice 2 | Feature file/test moves and canonical import updates.                           | Replace broad API/workflow buckets with product-owned HTTP operations. | Preserve URLs, methods, headers, serialization, validation, abort, and typed failure behavior.                         | Keep old broad public exports as at most one direct compatibility hop unless removal receives explicit approval. | Network timing and retry behavior remain unchanged; bundle and application consumers are revalidated.                                                     |
+| Slice   | Mechanical                                                                                                            | Structural                                                             | Semantic                                                                                                               | Contractual                                                                                                                             | Operational                                                                                                                                               |
+| ------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Slice 1 | Test co-location, import updates, and removal of obsolete late-binding symbols.                                       | Acyclic construction and one session/transport lifecycle owner.        | Preserve setup, connect, auth, state, Data scope, and cleanup results; add characterization before changing ownership. | Preserve intentional entrypoints while deleting obsolete facade factories, aliases, and old paths; no compatibility shim is authorized. | Cleanup ordering, exactly-once teardown, cancellation, and best-effort failure handling are operationally sensitive and require semantic lifecycle tests. |
+| Slice 2 | Feature file/test moves, canonical import updates, and deletion of the broad modules and coupled compatibility tests. | Replace broad API/workflow buckets with product-owned HTTP operations. | Preserve URLs, methods, headers, serialization, validation, abort, and typed failure behavior.                         | Update all verified consumers and public snapshots to canonical owners, then delete the old exports and files in the same slice.        | Network timing and retry behavior remain unchanged; bundle and application consumers are revalidated.                                                     |
 
 ### Slice 1 exact current-to-target map
 
@@ -243,10 +286,10 @@ registry entry.
 | `rallar-runtime/composition.ts` top-level `sessionController!` supplier                   | Direct completed capabilities returned by `createBrowserSessionComposition`; no replacement mutable supplier.                                                                                                                                        |
 
 New filenames in this map are implementation targets. Existing internal paths
-receive no forwarding shim unless the implementation-time consumer inventory
-finds a genuine supported external path and the maintainer explicitly approves
-retention. The later feature relocation outcomes must re-authenticate these
-temporary same-path dispositions rather than assuming they are permanent.
+receive no forwarding shim. The implementation-time inventory is used to move
+verified repository consumers, not to justify legacy retention. The later
+feature relocation outcomes must re-authenticate temporary same-path
+dispositions rather than assuming they are permanent.
 
 ## Locked Target Ownership
 
@@ -328,11 +371,15 @@ packages/shared-web/
 
 - Create: `packages/shared-web/browser/README.md`
 - Create: `packages/tests/shared-web/composition/browser-runtime-construction.test.ts`
+- Create: `packages/tests/shared-web/composition/browser-facade-behavior.test.ts`
 - Create: `packages/tests/shared-web/session/browser-connection-cleanup.test.ts`
 - Modify: `packages/shared-web/architecture.md`
 - Modify: `packages/tests/shared-web/rallar-runtime-foundations.test.ts`
 - Modify: `packages/tests/shared-web/rallar-startup-lifecycle.test.ts`
-- Modify: `packages/tests/shared-web/rallar-facade-compat.test.ts`
+- Delete after transferring independent behavior:
+  `packages/tests/shared-web/rallar-facade-compat.test.ts`
+- Delete after transferring independent behavior:
+  `packages/tests/shared-web/rallar-workflow-options-compat.test.ts`
 - Read and preserve: `packages/tests/shared-web/shared-web-public-api-snapshots.test.ts`
 - Read and preserve: `packages/tests/shared-web/shared-web-browser-entrypoints.test.ts`
 - Read and preserve: `packages/tests/shared-web/shared-web-browser-bundle-boundaries.test.ts`
@@ -362,6 +409,10 @@ packages/shared-web/
       initialization failure, 401-triggered auth termination, concurrent auth end
       during connect, expiry, explicit disconnect, and logout without asserting
       helper topology.
+- [ ] Move independently required public facade and setup-options assertions to
+      `browser-facade-behavior.test.ts`, then delete both compatibility tests. Do
+      not preserve exact factory identity, old overloads, or predecessor import
+      paths.
 - [ ] Run the new and changed test files. Confirm RED specifically because
       construction still relies on late-bound suppliers and live cleanup has two
       owners; do not accept an unrelated fixture or import failure as the RED gate.
@@ -369,7 +420,7 @@ packages/shared-web/
       registration, then runtime invocation and cleanup. Mark the current late
       binding and double shutdown as the next owned correction without claiming
       they are already fixed.
-- [ ] Run `npm run format -- packages/shared-web/browser/README.md packages/shared-web/architecture.md packages/tests/shared-web/composition packages/tests/shared-web/session packages/tests/shared-web/rallar-runtime-foundations.test.ts packages/tests/shared-web/rallar-startup-lifecycle.test.ts packages/tests/shared-web/rallar-facade-compat.test.ts`.
+- [ ] Run `npm run format -- packages/shared-web/browser/README.md packages/shared-web/architecture.md packages/tests/shared-web/composition packages/tests/shared-web/session packages/tests/shared-web/rallar-runtime-foundations.test.ts packages/tests/shared-web/rallar-startup-lifecycle.test.ts`.
 - [ ] Run the focused tests again and retain the expected RED evidence for the
       two new semantic failures while all unchanged characterization remains green.
 - [ ] Review every changed file in full. Recursively include support files
@@ -472,9 +523,10 @@ packages/shared-web/
       `browser-transport-runtime.ts`, give it explicit pending/active lifecycle
       state, and delete both duplicates. Preserve intentional cleanup ordering and
       best-effort error behavior with semantic tests.
-- [ ] Keep public connection/auth facade types and returned behavior unchanged;
-      canonical internal composition may return the public capability directly and
-      bypass pure forwarding factories.
+- [ ] Keep intentional public connection/auth behavior unchanged, return the
+      public capability directly from canonical composition, and delete any pure
+      forwarding factory, obsolete exported facade type, and coupled test in the
+      touched closure after updating verified consumers.
 - [ ] Run focused auth, startup, data, middleware, connection, lifecycle, and
       facade tests until GREEN.
 - [ ] Run the construction-detail checker and confirm zero forward captures in
@@ -507,8 +559,9 @@ packages/shared-web/
       `npm run check:repo-structure -- --base origin/main`.
 - [ ] Review affected production legacy and run
       `npm run review:legacy -- $(git merge-base origin/main HEAD) HEAD`. Give each
-      candidate one disposition: `removed`, `minimized-boundary`, `resolved`, or
-      explicitly approved `retained`.
+      candidate one disposition: `removed` or `resolved`. Delete affected legacy
+      tests with the production path; this child does not permit
+      `minimized-boundary` or `retained` dispositions.
 - [ ] Confirm every changed human-authored file was reviewed and remediated in
       full, every changed support file recursively entered closure, and independent
       untouched files remained outside closure.
@@ -520,7 +573,7 @@ packages/shared-web/
 
 ## Slice 2 — Feature-Owned Browser HTTP And Workflow Boundaries
 
-### Task 5: Characterize the broad API buckets and lock compatibility identities
+### Task 5: Characterize broad API behavior before deleting the old owners
 
 **Files:**
 
@@ -528,40 +581,36 @@ packages/shared-web/
 - Modify: `packages/tests/shared-web/api-mutation-failure.test.ts`
 - Modify: `packages/tests/shared-web/api-workflows.test.ts`
 - Modify: `packages/tests/shared-web/api-workflows-group-mutations.test.ts`
-- Modify: `packages/tests/shared-web/rooms/room-workflow-compat.test.ts`
-- Create: `packages/tests/shared-web/api/browser-http-public-compatibility.test.ts`
+- Delete after transferring independent behavior coverage:
+  `packages/tests/shared-web/rooms/room-workflow-compat.test.ts`
+- Create: `packages/tests/shared-web/api/browser-http-feature-ownership.test.ts`
 - Read: `packages/shared-web/browser/api-integration.ts`
 - Read: `packages/shared-web/browser/api-workflows.ts`
 - Read: every repository consumer returned by the current deep-import search
 
-**Interfaces:**
+**Tests:**
 
-- Compatibility assertions protect the exported value/type inventory and exact
-  public function identity at the old module only.
 - Feature tests call the future owned module and assert request path, method,
   headers, serialized body, response validation, abort behavior, and typed
-  failures independently of the old re-export topology.
+  failures independently of the old module topology.
+- No test asserts exact old-module identity, deprecated exports, forwarding
+  behavior, or an obsolete file path. Transfer any independently required
+  behavior assertion, then delete the coupled test.
 
 - [ ] Re-run consumer searches for every export in `api-integration.ts` and
-      `api-workflows.ts`; classify repository-internal, intentional public,
-      compatibility-only, and unverified external consumers.
+      `api-workflows.ts`; map every verified repository consumer to its canonical
+      target. Unknown external use does not create a retention task.
 - [ ] Add semantic tests for config/ICE, CRDT catch-up, state collections and
       event pages, topology/graph, statistics, group mutation/membership/presence,
       client session, state refresh, heartbeat, and director appointment families.
-- [ ] Preserve the existing room old-path exact-identity seam in its dedicated
-      compatibility suite; do not duplicate room behavior tests there.
+- [ ] Move independently required room workflow assertions to the canonical
+      room owner and delete the old-path exact-identity suite.
 - [ ] Run the new feature tests and confirm GREEN against the current broad
       modules before movement. These tests are characterization, so a forced RED is
       neither required nor desirable.
-- [ ] Record the public compatibility decision needed for the old broad modules.
-      If removal was not explicitly approved, plan them as one-hop public
-      compatibility exports while canonical internal code bypasses them.
-- [ ] Apply the retirement condition explicitly: remove `api-integration.ts` or
-      `api-workflows.ts` only after repository-internal canonical imports are
-      zero, all supported external consumers have migrated to approved public
-      entries, removal has separate maintainer approval, and public snapshots
-      are intentionally updated. Otherwise retain one direct public
-      compatibility hop and record its supported consumers.
+- [ ] Record the old exports and coupled tests that will be deleted. This plan's
+      no-shim decision is already explicit: after verified repository consumers
+      move, update public snapshots and remove both broad modules in Slice 2.
 - [ ] Apply full touched-file standards closure and commit with message
       `test(shared-web): characterize browser HTTP ownership`.
 
@@ -569,25 +618,30 @@ packages/shared-web/
 
 **Current-to-target ownership map:**
 
-| Current exports                                              | Canonical target                                                                                 |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| `readApiConfig`, `readIceCandidates`                         | `browser/connection/connection-http-api.ts`                                                      |
-| `catchUpRallarCrdtDocument`                                  | `browser/crdt/crdt-catch-up-http-api.ts`                                                         |
-| state client/group collections, point reads, and event pages | `browser/state-read/state-snapshot-http-api.ts` and `browser/state-read/state-event-http-api.ts` |
-| graph reads and topology config/override/reconfigure         | `browser/rtc/rtc-topology-http-api.ts`                                                           |
-| workspace/group/me statistics                                | `browser/stats/rallar-stats-http-api.ts`                                                         |
-| group create/update/membership/presence requests             | `browser/rooms/room-group-state-http-api.ts` behind the named room/group-state translation       |
-| client session connect/heartbeat                             | `browser/session/client-session-http-api.ts`                                                     |
-| `refreshStateSnapshots`                                      | `browser/state-read/refresh-state-snapshots.ts`                                                  |
-| `refreshStateHeartbeat`                                      | `browser/session/refresh-state-heartbeat.ts`                                                     |
-| director appointment workflow                                | `browser/director/appoint-room-director.ts`                                                      |
-| room invite/join-code compatibility workflows                | existing `browser/rooms/room-membership-group-state-workflows.ts`                                |
+| Current exports                                                | Canonical target                                                                                              |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `readApiConfig`, `readIceCandidates`                           | `browser/connection/connection-http-api.ts`                                                                   |
+| `catchUpRallarCrdtDocument`                                    | `browser/crdt/crdt-catch-up-http-api.ts`                                                                      |
+| state client/group collections, point reads, and event pages   | `browser/state-read/state-snapshot-http-api.ts` and `browser/state-read/state-event-http-api.ts`              |
+| graph reads and topology config/override/reconfigure           | `browser/rtc/rtc-topology-http-api.ts`                                                                        |
+| workspace/group/me statistics                                  | `browser/stats/rallar-stats-http-api.ts`                                                                      |
+| group create/update/membership/presence requests               | `browser/rooms/room-group-state-http-api.ts` behind the named room/group-state translation                    |
+| client session connect/heartbeat                               | `browser/session/client-session-http-api.ts`                                                                  |
+| `refreshStateSnapshots`                                        | `browser/state-read/refresh-state-snapshots.ts`                                                               |
+| `refreshStateHeartbeat`                                        | `browser/session/refresh-state-heartbeat.ts`                                                                  |
+| director appointment workflow                                  | `browser/director/appoint-room-director.ts`                                                                   |
+| room invite/join-code workflows                                | existing canonical `browser/rooms/room-membership-group-state-workflows.ts`                                   |
+| `browser/rallar-rooms-facade.ts` and old room workflow exports | canonical `browser/rooms/**` owners; update verified consumers and delete the predecessor files/exports/tests |
 
 **Files:**
 
 - Create the canonical target modules in the table
-- Modify: `packages/shared-web/browser/api-integration.ts`
-- Modify: `packages/shared-web/browser/api-workflows.ts`
+- Delete after moving all owned operations:
+  `packages/shared-web/browser/api-integration.ts`
+- Delete after moving all owned workflows:
+  `packages/shared-web/browser/api-workflows.ts`
+- Delete after moving every verified room consumer:
+  `packages/shared-web/browser/rallar-rooms-facade.ts`
 - Modify: `packages/shared-web/browser/api/http-request.ts`
 - Modify: `packages/shared-web/browser/api/http-error.ts`
 - Modify: `packages/shared-web/browser/api/state-mutation-http-contracts.ts`
@@ -607,16 +661,17 @@ packages/shared-web/
       `room-group-state-translation.ts`; run the browser-room boundary checker after
       each room family move.
 - [ ] Replace four-or-more positional parameters in canonical owned operations
-      with named feature inputs. Keep a positional signature only in an explicitly
-      approved compatibility export and make it delegate directly to the named
-      input owner.
-- [ ] Update canonical internal imports to direct owning modules. Leave the old
-      broad module as one-hop compatibility exports only when the explicit
-      compatibility decision requires it; otherwise delete it after the last
-      consumer moves.
-- [ ] Move tests with their production owner. Keep public compatibility tests at
-      the old module and cross-feature public/bundle tests at the shared-web test
-      root.
+      with named feature inputs and update every caller in the same family. Do not
+      retain the positional form as an overload, alias, or forwarding export.
+- [ ] Update every verified consumer to direct owning modules, remove old
+      exports from `mod.ts` and the public snapshots, and delete
+      `api-integration.ts`, `api-workflows.ts`, and `rallar-rooms-facade.ts` after
+      the final consumer moves. Do not leave re-export files.
+- [ ] Move semantic tests with their production owner. Delete public
+      compatibility, exact-identity, and old-path tests after transferring any
+      independently required behavior assertion. Cross-feature public/bundle
+      tests remain at the shared-web test root and assert only the canonical
+      surface.
 - [ ] Run each moved family's focused tests, then the whole Slice 2 test set and
       package typecheck.
 - [ ] Update `browser/README.md` API and result/failure paths from production
@@ -631,15 +686,16 @@ packages/shared-web/
 - [ ] Run `npx vitest run packages/tests/shared-web`.
 - [ ] Run `npx tsc -p packages/shared-web/tsconfig.json --noEmit`.
 - [ ] Run the public API snapshot, browser entrypoint, bundle-boundary, app
-      import-boundary, and room translation/compatibility suites explicitly.
+      import-boundary, and canonical room translation suites explicitly.
 - [ ] Run `npm --workspace @ar-eye-hunter/shared-web run check:browser-bundles`.
 - [ ] Build AR Eye and Relic Hunters. Build Rallar Black Box when a full-facade
       or API-integration path moved.
 - [ ] Run default, construction-detail, changed-range, and repository-structure
       checks and give changed-surface findings human dispositions.
-- [ ] Confirm no internal canonical import enters `api-integration.ts` or
-      `api-workflows.ts`, no room/group-state crossing bypasses the named boundary,
-      and no unapproved public export changed.
+- [ ] Confirm `api-integration.ts`, `api-workflows.ts`,
+      `rallar-rooms-facade.ts`, their old exports, and their compatibility tests
+      no longer exist; no room/group-state crossing bypasses the named boundary;
+      and the public snapshots contain only the intentional canonical surface.
 - [ ] Confirm full recursive touched-file closure and record exact command
       results in the pull request before selecting the next horizon.
 
@@ -648,7 +704,7 @@ packages/shared-web/
 ## Later Required Outcomes
 
 After Slice 2, recover the live owner, entry, dataflow, failures, tests,
-consumers, and compatibility for the next one or two families. These outcomes
+consumers, and affected legacy for the next one or two families. These outcomes
 are ordered by dependency and navigation risk; they are not permission to
 activate all families concurrently.
 
@@ -662,9 +718,10 @@ activate all families concurrently.
   message families named dispatch owners.
 - Characterize whether multiple `createRallarFacade()` instances intentionally
   share global cache/session state before changing isolation semantics.
-- Preserve the legacy bare-event/delta fallback only through an approved named
-  compatibility boundary with a verified rolling-deploy consumer and removal
-  condition.
+- Delete the legacy bare-event/delta fallback and its coupled tests after all
+  verified producers and consumers use the canonical event envelope. If that
+  cannot be deployed atomically, stop for a direct protocol migration decision;
+  do not add a dual-format decoder or fallback.
 
 ### Outcome 4: Messages, WebSocket, browser AL, and QueueBox
 
@@ -699,8 +756,9 @@ activate all families concurrently.
 - Split director appointment/status from relay lifecycle.
 - Keep auth/session decisions in the session owner; keep people event/state and
   stats reads beside their feature contracts.
-- Decide every public forwarding factory and rename-only alias explicitly.
-  Canonical composition bypasses any retained compatibility factory.
+- Delete public forwarding factories and rename-only aliases, update every
+  verified caller to the canonical owner, and update the public snapshots. Do
+  not preserve the old symbols as wrappers or deprecated exports.
 
 ### Outcome 8: Browser CRDT
 
@@ -734,8 +792,8 @@ activate all families concurrently.
 - Keep `game/mod.ts` as the package barrel; split match lifecycle/status,
   election/appointment, lane readiness/egress, transport routing,
   relay/recovery, and diagnostics.
-- Move types beside their owner and eliminate generic `game/types.ts` only
-  through public compatibility review.
+- Move types beside their owner, update all verified consumers, and delete
+  generic `game/types.ts` without an alias or re-export file.
 - Run shared-web game tests, AR Eye package tests/build, and Relic tests/build.
 
 ### Outcome 12: Final package closure
@@ -744,9 +802,9 @@ activate all families concurrently.
   runtime owners are feature-colocated.
 - Tests mirror production, except genuinely cross-feature public/bundle/app
   boundary suites.
-- No construction forward capture, unapproved retained legacy, unexplained new
-  checker warning, or compatibility-only hop occurs on canonical internal
-  paths.
+- No construction forward capture, affected legacy production/test code,
+  backward-compatibility module, shim, deprecated alias, dual implementation,
+  fallback, coupled old-path test, or unexplained new checker warning remains.
 - Every feature with more than 20 modules or three control-flow families has a
   current durable navigation map.
 - Public snapshots and bundle budgets pass, both game apps build, and a human
@@ -766,16 +824,23 @@ activate all families concurrently.
 - [ ] Every moved or split module has a matching primary exported symbol and
       filename; no unexplained new repository checker finding remains on the
       changed surface.
-- [ ] Public exports/import paths, runtime behavior, wire/persisted contracts,
-      scoped identity, and bundle budgets are unchanged unless a separately
-      approved migration says otherwise.
-- [ ] Canonical internal code bypasses every compatibility-only wrapper.
+- [ ] Intentional package entrypoints, runtime behavior, wire/persisted
+      contracts, scoped identity, and bundle budgets remain correct. Obsolete
+      exports and import paths are removed, every verified consumer is updated,
+      and public snapshots intentionally record the smaller canonical surface.
+- [ ] No affected backward-compatibility wrapper, shim, old-path re-export,
+      deprecated alias, predecessor fallback, duplicate implementation, or test
+      coupled only to those shapes exists.
 - [ ] Re-run the concrete-slice file-size and AST 40/50/60 inventory on final
       code. Every materially touched file over 800 lines and function over 60
       lines is split at a coherent boundary or has explicit human approval and a
       current `docs/repo-code-style-exceptions.md` entry.
 - [ ] All changed files satisfy full recursive touched-file standards closure;
       independent untouched code remained outside closure.
+- [ ] Every changed production file, test, fixture, mock, test-support helper,
+      script, and configuration file satisfies the authoritative repository code
+      standard in full. Tests have no relaxed naming, construction, callback,
+      type, function-size, responsibility, or cognitive-indirection standard.
 - [ ] Focused tests, `packages/tests/shared-web`, package typecheck, bundle
       budgets, affected app tests/builds, style, changed-range, structure, legacy,
       and required publication gates are reported as passed, failed, unavailable,
@@ -785,9 +850,10 @@ activate all families concurrently.
 
 - Do not redesign authoritative group-state, topology, AppInbox, or server
   behavior from this browser package plan.
-- Do not change public product vocabulary, return `GroupSnapshot` compatibility,
-  transport fallback policy, persistence formats, or multi-facade isolation
-  without separate approval.
+- Do not redesign public product vocabulary, caller-visible `GroupSnapshot`
+  semantics, transport selection policy, persistence formats, or multi-facade
+  isolation. This does not preserve obsolete code paths, exports, aliases, or
+  fallback implementations.
 - Do not split files mechanically by line count or introduce one interface,
   helper, controller, or adapter per file.
 - Do not add nested barrels, a second facade singleton, a service locator, or a
@@ -800,9 +866,12 @@ For every slice, report:
 
 - changed files and the owner-to-result behavior made easier to trace;
 - why each keep/split/move/consolidate decision was chosen;
-- public, protocol, persisted, bundle, and app compatibility dispositions;
+- the intentional canonical public surface, deleted exports/paths/aliases, and
+  preserved protocol, persisted, bundle, and app behavior;
 - exact passed, failed, unavailable, and skipped validation;
-- affected legacy dispositions and any approved registry entry;
+- confirmation that every affected legacy production/test item was deleted or
+  resolved and none was retained as a shim, wrapper, fallback, alias, or coupled
+  test;
 - the code-only navigation probe result;
 - the final concrete-slice file-size tiers and 40/50/60 function inventory,
   including the disposition of every touched over-800-line file and over-60-line
@@ -814,4 +883,7 @@ For every slice, report:
 - confirmation that every changed human-authored file was reviewed in full,
   support-file remediation recursively reached closure, and independent
   untouched files stayed outside closure;
+- confirmation that every changed production file, test, fixture, mock, and
+  test-support helper satisfies the authoritative code standard in full, not
+  merely the currently blocking checker subset;
 - follow-up issue URLs, or `Follow-up: None`.

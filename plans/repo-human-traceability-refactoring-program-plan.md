@@ -1227,6 +1227,10 @@ Its active horizon first removes forward-captured construction and duplicate
 transport shutdown ownership, then moves broad browser HTTP/workflow behavior
 to feature owners. Later browser families remain ordered outcomes and are not
 authorized until the first two slices refresh their evidence.
+For this child, explicit maintainer direction rejects backward-compatibility
+scaffolding: verified consumers move atomically, obsolete exports/paths/aliases
+and coupled tests are deleted, and no shim, re-export hop, deprecated wrapper,
+dual implementation, or predecessor fallback is retained.
 
 ### Wave 5: Test and black-box tooling structure
 
@@ -1257,6 +1261,11 @@ Its active horizon first recovers QueueBox read/dequeue ownership, then divides
 the mixed API contract junction by authoritative feature. AL, remaining
 transports, cache/repository composition, CRDT, and product-feature closure stay
 as later evidence-gated outcomes.
+For this child, explicit maintainer direction rejects backward-compatibility
+scaffolding: verified consumers move atomically, obsolete exports/deep
+paths/aliases/defaults and coupled tests are deleted, and no shim, re-export
+hop, deprecated wrapper, dual implementation, or predecessor fallback is
+retained.
 
 ### Wave 7: Broader enforcement decision
 
